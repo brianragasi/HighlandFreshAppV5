@@ -39,26 +39,19 @@ The current operations at Highland Fresh suffer from:
 | **Finance Officer** | Treasury Manager | Farmer Payout Execution; Staggered Supplier Payments; Bank/Check Metadata. |
 | **Bookkeeper** | Auditor / Analyst | Verification of Automated Journals; Generation of 4 Financial Statements. |
 | **Maintenance Head** | Internal Requester | Spare part requisitions; Machine health logging. |
-| **Wholesaler** | External Partner | Bulk purchasing at wholesale prices; Independent resale to retail customers; Markup tracking. |
-| **Customer (Retail)** | Self-Service Portal User | Direct ordering via web portal; Payment submission; Order history viewing. |
 
-### 2.1 Wholesaler Role (External Partners)
-Wholesalers are **NOT** company employees. They are independent business partners (often using motorcycles) who:
-*   Purchase products at **wholesale/production prices** from Highland Fresh.
-*   Sell to small retail stores (sari-sari stores) at their own **retail markup**.
-*   Manage their own delivery routes and customer relationships.
-*   Are treated as a special customer category in the system with wholesale pricing access.
-*   Have their markup rates tracked per product for business intelligence.
+### 2.1 Scope Clarification: External Parties (OUT OF SCOPE)
+The following entities are **OUTSIDE the system scope** and do NOT have system UI access:
 
-**Note:** The system tracks wholesaler transactions but does not manage their downstream sales to end retailers.
+| External Party | Reason Out of Scope |
+|---------------|---------------------|
+| **Wholesalers** | Independent resellers - transactions handled via Cashier/Sales Custodian |
+| **Retail Customers** | Sari-sari stores - orders handled via phone/in-person through Sales Custodian |
+| **Drivers** | Delivery personnel - dispatch managed by Warehouse FG, no driver UI needed |
 
-### 2.2 Customer Self-Service Portal
-Small retail customers (sari-sari stores) can:
-*   **Register for accounts** through a web-based portal.
-*   **Browse available products** with real-time stock visibility.
-*   **Place orders directly** without calling or visiting.
-*   **Submit payments** that reflect immediately in the system.
-*   **View order history** and outstanding balances.
+**How External Parties Are Handled:**
+- **Wholesalers & Customers:** Managed as records in the customer database; orders entered by Sales Custodian or Cashier on their behalf.
+- **Drivers:** Dispatch information printed on Delivery Receipts; no driver mobile app required.
 
 ---
 
