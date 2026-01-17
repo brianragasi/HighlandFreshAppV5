@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Orders - Customer Portal | Highland Fresh</title>
+    
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .timeline-step { @apply relative flex items-center gap-4; }
+        .timeline-step::before { @apply content-[''] absolute left-4 top-10 w-0.5 h-full bg-base-300 -z-10; }
+        .timeline-step:last-child::before { @apply hidden; }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-cow text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Customer Portal</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <!-- Main Menu -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Shop -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Shop</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="products.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-boxes w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Products</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="cart.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-shopping-cart w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Shopping Cart</span>
+                            <span class="badge badge-sm badge-primary" id="sidebarCartBadge">0</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Orders -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">My Orders</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="orders.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-receipt w-5 text-center"></i>
+                            <span class="flex-1">Order History</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+        
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">CS</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Customer</p>
+                    <p class="text-xs text-base-content/60 truncate">Customer Portal</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a href="dashboard.html"><i class="fas fa-user-cog w-4"></i> Profile</a></li>
+                        <li class="border-t border-base-300 mt-1 pt-1">
+                            <a onclick="CustomerService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold text-base-content">
+                    <i class="fas fa-receipt mr-2"></i>My Orders
+                </h1>
+            </div>
+            <div class="flex-none">
+                <a href="cart.html" class="btn btn-ghost btn-circle">
+                    <div class="indicator">
+                        <i class="fas fa-shopping-cart text-lg"></i>
+                        <span class="indicator-item badge badge-primary badge-xs" id="cartBadge">0</span>
+                    </div>
+                </a>
+            </div>
+        </header>
+        
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+            
+            <!-- Filters -->
+            <div class="flex flex-col md:flex-row gap-4 mb-6">
+                <div class="flex-1">
+                    <div class="flex flex-wrap gap-2">
+                        <button class="btn btn-sm btn-primary" data-status="" onclick="filterByStatus('')">
+                            All Orders
+                        </button>
+                        <button class="btn btn-sm btn-ghost" data-status="pending" onclick="filterByStatus('pending')">
+                            <i class="fas fa-clock text-warning"></i> Pending
+                        </button>
+                        <button class="btn btn-sm btn-ghost" data-status="confirmed" onclick="filterByStatus('confirmed')">
+                            <i class="fas fa-check text-info"></i> Confirmed
+                        </button>
+                        <button class="btn btn-sm btn-ghost" data-status="out_for_delivery" onclick="filterByStatus('out_for_delivery')">
+                            <i class="fas fa-truck text-primary"></i> In Transit
+                        </button>
+                        <button class="btn btn-sm btn-ghost" data-status="delivered" onclick="filterByStatus('delivered')">
+                            <i class="fas fa-check-circle text-success"></i> Delivered
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Track Order -->
+                <div class="flex items-center gap-2">
+                    <label class="input input-bordered input-sm flex items-center gap-2">
+                        <i class="fas fa-search text-base-content/40"></i>
+                        <input type="text" placeholder="Order number..." id="trackOrderInput" class="w-36" />
+                    </label>
+                    <button onclick="trackOrder()" class="btn btn-sm btn-outline">
+                        <i class="fas fa-location-dot"></i> Track
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Orders List -->
+            <div id="ordersContainer">
+                <!-- Loading state -->
+                <div class="space-y-4" id="loadingState">
+                    <div class="card bg-base-100 border border-base-300 animate-pulse">
+                        <div class="card-body">
+                            <div class="h-6 bg-base-200 rounded w-1/4 mb-2"></div>
+                            <div class="h-4 bg-base-200 rounded w-1/2"></div>
+                        </div>
+                    </div>
+                    <div class="card bg-base-100 border border-base-300 animate-pulse">
+                        <div class="card-body">
+                            <div class="h-6 bg-base-200 rounded w-1/4 mb-2"></div>
+                            <div class="h-4 bg-base-200 rounded w-1/2"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Orders will be loaded here -->
+                <div id="ordersList" class="space-y-4 hidden"></div>
+                
+                <!-- Empty State -->
+                <div id="emptyState" class="text-center py-12 hidden">
+                    <i class="fas fa-receipt text-6xl text-base-content/20 mb-4"></i>
+                    <h3 class="text-xl font-semibold mb-2">No orders found</h3>
+                    <p class="text-base-content/60 mb-4">You haven't placed any orders yet.</p>
+                    <a href="products.html" class="btn btn-primary">
+                        <i class="fas fa-shopping-bag mr-2"></i>Start Shopping
+                    </a>
+                </div>
+            </div>
+            
+            <!-- Load More -->
+            <div class="text-center mt-6" id="loadMoreContainer" style="display: none;">
+                <button class="btn btn-outline btn-primary" onclick="loadMoreOrders()" id="loadMoreBtn">
+                    <i class="fas fa-spinner fa-spin mr-2 hidden" id="loadMoreSpinner"></i>
+                    Load More Orders
+                </button>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Order Detail Modal -->
+    <dialog id="orderDetailModal" class="modal">
+        <div class="modal-box max-w-2xl max-h-[90vh]">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            
+            <h3 class="font-bold text-lg mb-4">
+                <i class="fas fa-receipt mr-2"></i>Order Details
+            </h3>
+            
+            <div id="orderDetailContent">
+                <!-- Content will be loaded dynamically -->
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
+    
+    <!-- Cancel Order Modal -->
+    <dialog id="cancelOrderModal" class="modal">
+        <div class="modal-box">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            
+            <h3 class="font-bold text-lg mb-4 text-error">
+                <i class="fas fa-times-circle mr-2"></i>Cancel Order
+            </h3>
+            
+            <p class="mb-4">Are you sure you want to cancel this order?</p>
+            <p class="font-mono mb-4" id="cancelOrderNumber">ORD-XXXXXX</p>
+            
+            <div class="form-control mb-4">
+                <label class="label"><span class="label-text">Reason (optional)</span></label>
+                <textarea id="cancelReason" class="textarea textarea-bordered" rows="2" placeholder="Tell us why you're cancelling..."></textarea>
+            </div>
+            
+            <div class="modal-action">
+                <button onclick="confirmCancelOrder()" class="btn btn-error">
+                    <i class="fas fa-times mr-2"></i>Cancel Order
+                </button>
+                <form method="dialog">
+                    <button class="btn btn-ghost">Keep Order</button>
+                </form>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
+    
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="/HighlandFreshAppV4/js/config/api.js"></script>
+    <script src="/HighlandFreshAppV4/js/customer/customer.api.js"></script>
+    <script src="/HighlandFreshAppV4/js/customer/customer.service.js"></script>
+    
+    <script>
+        // State
+        let currentStatus = '';
+        let currentOffset = 0;
+        let hasMore = false;
+        let selectedOrderId = null;
+        const LIMIT = 10;
+        
+        // Check authentication
+        if (!CustomerService.isLoggedIn()) {
+            window.location.href = 'login.html';
+        }
+        
+        // Toggle sidebar
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+        
+        // Load customer info
+        const customer = CustomerService.getCurrentCustomer();
+        if (customer) {
+            document.getElementById('sidebarUserName').textContent = customer.name || 'Customer';
+            document.getElementById('userInitials').textContent = (customer.name || 'CS').substring(0, 2).toUpperCase();
+        }
+        
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', async () => {
+            CustomerService.updateCartBadge();
+            updateCartBadges();
+            
+            // Check URL params
+            const urlParams = new URLSearchParams(window.location.search);
+            const statusParam = urlParams.get('status');
+            const orderIdParam = urlParams.get('id');
+            
+            if (statusParam) {
+                currentStatus = statusParam;
+                updateStatusButtons();
+            }
+            
+            await loadOrders();
+            
+            if (orderIdParam) {
+                await showOrderDetail(orderIdParam);
+            }
+        });
+        
+        async function loadOrders(append = false) {
+            const loadingState = document.getElementById('loadingState');
+            const ordersList = document.getElementById('ordersList');
+            const emptyState = document.getElementById('emptyState');
+            
+            if (!append) {
+                loadingState.classList.remove('hidden');
+                ordersList.classList.add('hidden');
+                emptyState.classList.add('hidden');
+            }
+            
+            try {
+                const params = {
+                    limit: LIMIT,
+                    offset: append ? currentOffset : 0
+                };
+                
+                if (currentStatus) {
+                    params.status = currentStatus;
+                }
+                
+                const response = await CustomerService.getOrders(params);
+                
+                if (response.success) {
+                    const orders = response.data.orders || [];
+                    hasMore = (response.data.pagination?.offset + LIMIT) < response.data.pagination?.total;
+                    currentOffset = append ? currentOffset + LIMIT : LIMIT;
+                    
+                    loadingState.classList.add('hidden');
+                    
+                    if (orders.length === 0 && !append) {
+                        emptyState.classList.remove('hidden');
+                        ordersList.classList.add('hidden');
+                    } else {
+                        emptyState.classList.add('hidden');
+                        ordersList.classList.remove('hidden');
+                        
+                        if (append) {
+                            ordersList.innerHTML += renderOrders(orders);
+                        } else {
+                            ordersList.innerHTML = renderOrders(orders);
+                        }
+                    }
+                    
+                    document.getElementById('loadMoreContainer').style.display = hasMore ? 'block' : 'none';
+                }
+            } catch (error) {
+                console.error('Error loading orders:', error);
+                loadingState.classList.add('hidden');
+                showToast('Error loading orders', 'error');
+            }
+        }
+        
+        function renderOrders(orders) {
+            return orders.map(order => `
+                <div class="card bg-base-100 border border-base-300 hover:shadow-md transition-shadow">
+                    <div class="card-body p-4">
+                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="font-mono font-semibold">${order.order_number}</span>
+                                    <span class="badge badge-${CustomerService.getStatusColor(order.status)} badge-sm">
+                                        ${CustomerService.getStatusText(order.status)}
+                                    </span>
+                                    <span class="badge badge-${CustomerService.getPaymentStatusColor(order.payment_status)} badge-sm badge-outline">
+                                        ${order.payment_status === 'paid' ? 'Paid' : 'Unpaid'}
+                                    </span>
+                                </div>
+                                <p class="text-sm text-base-content/60">
+                                    ${order.item_count || 0} item(s) · ${CustomerService.formatDate(order.created_at, true)}
+                                </p>
+                                ${order.delivery_date ? `
+                                    <p class="text-sm text-base-content/60">
+                                        <i class="fas fa-truck mr-1"></i>Delivery: ${CustomerService.formatDate(order.delivery_date)}
+                                    </p>
+                                ` : ''}
+                            </div>
+                            
+                            <div class="flex items-center gap-4">
+                                <div class="text-right">
+                                    <p class="text-sm text-base-content/60">Total</p>
+                                    <p class="text-xl font-bold text-primary">${CustomerService.formatCurrency(order.total_amount)}</p>
+                                </div>
+                                
+                                <div class="flex flex-col gap-1">
+                                    <button onclick="showOrderDetail(${order.id})" class="btn btn-sm btn-ghost">
+                                        <i class="fas fa-eye mr-1"></i>View
+                                    </button>
+                                    ${order.status === 'pending' ? `
+                                        <button onclick="showCancelModal(${order.id}, '${order.order_number}')" class="btn btn-sm btn-ghost text-error">
+                                            <i class="fas fa-times mr-1"></i>Cancel
+                                        </button>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function filterByStatus(status) {
+            currentStatus = status;
+            currentOffset = 0;
+            updateStatusButtons();
+            loadOrders();
+        }
+        
+        function updateStatusButtons() {
+            document.querySelectorAll('[data-status]').forEach(btn => {
+                if (btn.dataset.status === currentStatus) {
+                    btn.classList.remove('btn-ghost');
+                    btn.classList.add('btn-primary');
+                } else {
+                    btn.classList.remove('btn-primary');
+                    btn.classList.add('btn-ghost');
+                }
+            });
+        }
+        
+        async function loadMoreOrders() {
+            const spinner = document.getElementById('loadMoreSpinner');
+            const btn = document.getElementById('loadMoreBtn');
+            
+            spinner.classList.remove('hidden');
+            btn.disabled = true;
+            
+            await loadOrders(true);
+            
+            spinner.classList.add('hidden');
+            btn.disabled = false;
+        }
+        
+        async function showOrderDetail(orderId) {
+            const modal = document.getElementById('orderDetailModal');
+            const content = document.getElementById('orderDetailContent');
+            
+            content.innerHTML = `
+                <div class="text-center py-8">
+                    <i class="fas fa-spinner fa-spin text-2xl"></i>
+                    <p class="mt-2">Loading order details...</p>
+                </div>
+            `;
+            
+            modal.showModal();
+            
+            try {
+                const response = await CustomerService.getOrder(orderId);
+                
+                if (response.success) {
+                    const order = response.data;
+                    selectedOrderId = order.id;
+                    
+                    content.innerHTML = `
+                        <!-- Order Header -->
+                        <div class="flex items-center justify-between mb-4 pb-4 border-b border-base-300">
+                            <div>
+                                <p class="font-mono text-lg font-bold">${order.order_number}</p>
+                                <p class="text-sm text-base-content/60">Placed on ${CustomerService.formatDate(order.created_at, true)}</p>
+                            </div>
+                            <div class="text-right">
+                                <span class="badge badge-${CustomerService.getStatusColor(order.status)} badge-lg">
+                                    ${CustomerService.getStatusText(order.status)}
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <!-- Order Status Timeline -->
+                        <div class="mb-6">
+                            <h4 class="font-semibold mb-3">Order Status</h4>
+                            <div class="space-y-4">
+                                ${renderStatusTimeline(order)}
+                            </div>
+                        </div>
+                        
+                        <!-- Order Items -->
+                        <div class="mb-6">
+                            <h4 class="font-semibold mb-3">Items Ordered</h4>
+                            <div class="space-y-3">
+                                ${order.items.map(item => `
+                                    <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
+                                        <div class="w-14 h-14 bg-base-300 rounded-lg flex items-center justify-center overflow-hidden">
+                                            ${item.image_url 
+                                                ? `<img src="${item.image_url}" alt="${escapeHtml(item.product_name)}" class="w-full h-full object-cover" />`
+                                                : `<i class="fas fa-box text-base-content/20"></i>`
+                                            }
+                                        </div>
+                                        <div class="flex-1">
+                                            <p class="font-medium">${item.product_name}</p>
+                                            <p class="text-sm text-base-content/60">${CustomerService.formatCurrency(item.unit_price)} × ${item.quantity}</p>
+                                        </div>
+                                        <p class="font-semibold">${CustomerService.formatCurrency(item.total_price)}</p>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                        
+                        <!-- Delivery Info -->
+                        <div class="mb-6">
+                            <h4 class="font-semibold mb-3">Delivery Information</h4>
+                            <div class="bg-base-200 rounded-lg p-4">
+                                <p class="text-sm text-base-content/60">Delivery Address</p>
+                                <p class="mb-2">${order.delivery_address || 'Not specified'}</p>
+                                ${order.delivery_date ? `
+                                    <p class="text-sm text-base-content/60">Delivery Date</p>
+                                    <p>${CustomerService.formatDate(order.delivery_date)}</p>
+                                ` : ''}
+                            </div>
+                        </div>
+                        
+                        <!-- Payment Summary -->
+                        <div class="mb-4">
+                            <h4 class="font-semibold mb-3">Payment Summary</h4>
+                            <div class="bg-base-200 rounded-lg p-4 space-y-2">
+                                <div class="flex justify-between">
+                                    <span class="text-base-content/60">Subtotal</span>
+                                    <span>${CustomerService.formatCurrency(order.subtotal)}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-base-content/60">Delivery Fee</span>
+                                    <span>${order.delivery_fee > 0 ? CustomerService.formatCurrency(order.delivery_fee) : 'FREE'}</span>
+                                </div>
+                                <div class="divider my-1"></div>
+                                <div class="flex justify-between text-lg font-bold">
+                                    <span>Total</span>
+                                    <span class="text-primary">${CustomerService.formatCurrency(order.total_amount)}</span>
+                                </div>
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-base-content/60">Payment Method</span>
+                                    <span>${order.payment_method === 'cod' ? 'Cash on Delivery' : 'Online Payment'}</span>
+                                </div>
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-base-content/60">Payment Status</span>
+                                    <span class="badge badge-${CustomerService.getPaymentStatusColor(order.payment_status)} badge-sm">
+                                        ${order.payment_status === 'paid' ? 'Paid' : 'Unpaid'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        ${order.notes ? `
+                            <div class="mb-4">
+                                <h4 class="font-semibold mb-2">Notes</h4>
+                                <p class="text-base-content/60">${order.notes}</p>
+                            </div>
+                        ` : ''}
+                        
+                        ${order.status === 'pending' ? `
+                            <div class="modal-action">
+                                <button onclick="showCancelModal(${order.id}, '${order.order_number}')" class="btn btn-error">
+                                    <i class="fas fa-times mr-2"></i>Cancel Order
+                                </button>
+                            </div>
+                        ` : ''}
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading order details:', error);
+                content.innerHTML = `
+                    <div class="text-center py-8 text-error">
+                        <i class="fas fa-exclamation-circle text-4xl mb-2"></i>
+                        <p>Error loading order details</p>
+                    </div>
+                `;
+            }
+        }
+        
+        function renderStatusTimeline(order) {
+            const steps = [
+                { status: 'pending', icon: 'clock', label: 'Order Placed', date: order.created_at },
+                { status: 'confirmed', icon: 'check', label: 'Confirmed', date: order.confirmed_at },
+                { status: 'preparing', icon: 'box', label: 'Preparing', date: null },
+                { status: 'out_for_delivery', icon: 'truck', label: 'Out for Delivery', date: null },
+                { status: 'delivered', icon: 'check-circle', label: 'Delivered', date: order.delivered_at }
+            ];
+            
+            const statusOrder = ['pending', 'confirmed', 'preparing', 'out_for_delivery', 'delivered'];
+            const currentIndex = statusOrder.indexOf(order.status);
+            
+            if (order.status === 'cancelled') {
+                return `
+                    <div class="flex items-center gap-4">
+                        <div class="w-8 h-8 rounded-full bg-error flex items-center justify-center">
+                            <i class="fas fa-times text-white text-sm"></i>
+                        </div>
+                        <div>
+                            <p class="font-medium">Order Cancelled</p>
+                            <p class="text-sm text-base-content/60">${CustomerService.formatDate(order.updated_at, true)}</p>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            return steps.map((step, index) => {
+                const isCompleted = index <= currentIndex;
+                const isCurrent = index === currentIndex;
+                
+                return `
+                    <div class="timeline-step">
+                        <div class="w-8 h-8 rounded-full ${isCompleted ? 'bg-success' : 'bg-base-300'} flex items-center justify-center">
+                            <i class="fas fa-${step.icon} ${isCompleted ? 'text-white' : 'text-base-content/40'} text-sm"></i>
+                        </div>
+                        <div class="flex-1">
+                            <p class="font-medium ${isCurrent ? 'text-success' : ''}">${step.label}</p>
+                            ${step.date ? `<p class="text-sm text-base-content/60">${CustomerService.formatDate(step.date, true)}</p>` : ''}
+                        </div>
+                        ${isCurrent ? '<span class="badge badge-success badge-sm">Current</span>' : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function showCancelModal(orderId, orderNumber) {
+            selectedOrderId = orderId;
+            document.getElementById('cancelOrderNumber').textContent = orderNumber;
+            document.getElementById('cancelReason').value = '';
+            document.getElementById('cancelOrderModal').showModal();
+            document.getElementById('orderDetailModal').close();
+        }
+        
+        async function confirmCancelOrder() {
+            if (!selectedOrderId) return;
+            
+            const reason = document.getElementById('cancelReason').value;
+            
+            try {
+                const response = await CustomerService.cancelOrder(selectedOrderId, reason);
+                
+                if (response.success) {
+                    document.getElementById('cancelOrderModal').close();
+                    showToast('Order cancelled successfully');
+                    loadOrders();
+                } else {
+                    showToast(response.message || 'Failed to cancel order', 'error');
+                }
+            } catch (error) {
+                console.error('Error cancelling order:', error);
+                showToast(error.message || 'Failed to cancel order', 'error');
+            }
+        }
+        
+        async function trackOrder() {
+            const orderNumber = document.getElementById('trackOrderInput').value.trim();
+            
+            if (!orderNumber) {
+                showToast('Please enter an order number', 'error');
+                return;
+            }
+            
+            try {
+                const response = await CustomerService.trackOrder(orderNumber);
+                
+                if (response.success) {
+                    showOrderDetail(response.data.id);
+                } else {
+                    showToast('Order not found', 'error');
+                }
+            } catch (error) {
+                showToast('Order not found', 'error');
+            }
+        }
+        
+        function updateCartBadges() {
+            const totals = CustomerService.getCartTotals();
+            document.getElementById('cartBadge').textContent = totals.itemCount;
+            document.getElementById('sidebarCartBadge').textContent = totals.itemCount;
+        }
+        
+        // Track order on Enter key
+        document.getElementById('trackOrderInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                trackOrder();
+            }
+        });
+        
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `alert alert-${type} fixed bottom-4 right-4 w-auto max-w-sm z-50 shadow-lg`;
+            toast.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>
+                <span>${message}</span>
+            `;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        function escapeHtml(str) {
+            if (!str) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

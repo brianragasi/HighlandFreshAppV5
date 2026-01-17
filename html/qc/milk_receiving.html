@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Milk Receiving - Quality Control | Highland Fresh</title>
+    
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        
+        /* Grade badges */
+        .grade-a { @apply bg-emerald-100 text-emerald-700 border-emerald-200; }
+        .grade-b { @apply bg-blue-100 text-blue-700 border-blue-200; }
+        .grade-c { @apply bg-amber-100 text-amber-700 border-amber-200; }
+        .grade-d { @apply bg-orange-100 text-orange-700 border-orange-200; }
+        .grade-rejected { @apply bg-red-100 text-red-700 border-red-200; }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-flask text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Quality Control</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <!-- Main Menu -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Inbound Milk -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inbound Milk</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="milk_receiving.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-truck-loading w-5 text-center"></i>
+                            <span class="flex-1">Milk Receiving</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="milk_grading.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-flask w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Milk Grading</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="farmers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-users w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Farmers</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Production QC -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Production QC</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="batch_release.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-check-double w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Batch Release</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Inventory QC -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory QC</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="expiry_management.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-calendar-times w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Expiry Management</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+        
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">QC</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">QC Officer</p>
+                    <p class="text-xs text-base-content/60 truncate">Quality Control</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a><i class="fas fa-user-cog w-4"></i> Profile</a></li>
+                        <li><a><i class="fas fa-cog w-4"></i> Settings</a></li>
+                        <li class="border-t border-base-300 mt-1 pt-1">
+                            <a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <div>
+                    <h1 class="text-lg lg:text-xl font-bold text-base-content">Milk Receiving</h1>
+                    <div class="text-sm breadcrumbs py-0">
+                        <ul class="text-xs">
+                            <li><a href="dashboard.html">Dashboard</a></li>
+                            <li>Milk Receiving</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <button class="btn btn-primary btn-sm" onclick="openNewDeliveryModal()">
+                    <i class="fas fa-plus"></i>
+                    <span class="hidden sm:inline">New Delivery</span>
+                </button>
+                
+                <!-- Theme toggle -->
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+        
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+            
+            <!-- Filters Card -->
+            <div class="card bg-base-100 border border-base-300 mb-4">
+                <div class="card-body p-4">
+                    <div class="flex flex-wrap gap-3 items-end">
+                        <div class="form-control w-full sm:w-auto">
+                            <label class="label py-1">
+                                <span class="label-text text-xs">Date</span>
+                            </label>
+                            <input type="date" class="input input-bordered input-sm w-full sm:w-40" id="filterDate">
+                        </div>
+                        <div class="form-control w-full sm:w-auto">
+                            <label class="label py-1">
+                                <span class="label-text text-xs">Status</span>
+                            </label>
+                            <select class="select select-bordered select-sm w-full sm:w-40" id="filterStatus">
+                                <option value="">All Status</option>
+                                <option value="pending_test">Pending Test</option>
+                                <option value="accepted">Accepted</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                        </div>
+                        <div class="form-control w-full sm:w-auto flex-1">
+                            <label class="label py-1">
+                                <span class="label-text text-xs">Search</span>
+                            </label>
+                            <input type="text" class="input input-bordered input-sm" id="filterSearch" placeholder="Search farmer...">
+                        </div>
+                        <div class="flex gap-2">
+                            <button class="btn btn-primary btn-sm" onclick="loadDeliveries()">
+                                <i class="fas fa-search"></i>
+                                Filter
+                            </button>
+                            <button class="btn btn-ghost btn-sm" onclick="resetFilters()">
+                                <i class="fas fa-redo"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Deliveries Table Card -->
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body p-0">
+                    <div class="flex items-center justify-between p-4 border-b border-base-300">
+                        <h3 class="font-semibold flex items-center gap-2">
+                            <i class="fas fa-list text-primary"></i>
+                            Today's Deliveries
+                        </h3>
+                        <span class="text-sm text-base-content/60" id="totalRecords">0 records</span>
+                    </div>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Delivery Code</th>
+                                    <th>Farmer</th>
+                                    <th>Date/Time</th>
+                                    <th class="text-right">Volume (L)</th>
+                                    <th>Status</th>
+                                    <th>Grade</th>
+                                    <th class="text-right">Amount</th>
+                                    <th class="text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="deliveriesTable">
+                                <tr>
+                                    <td colspan="8" class="text-center py-8 text-base-content/40">
+                                        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                                        <p>Loading...</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Pagination -->
+                    <div class="p-4 border-t border-base-300">
+                        <div class="join" id="pagination"></div>
+                    </div>
+                </div>
+            </div>
+            
+        </main>
+    </div>
+    
+    <!-- New Delivery Modal -->
+    <dialog id="newDeliveryModal" class="modal">
+        <div class="modal-box max-w-lg">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">X</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-truck-loading text-primary"></i>
+                Record New Milk Delivery
+            </h3>
+            
+            <form id="newDeliveryForm" onsubmit="submitNewDelivery(event)">
+                <div class="space-y-4">
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Farmer <span class="text-error">*</span></span>
+                        </label>
+                        <select class="select select-bordered w-full" id="deliveryFarmer" required>
+                            <option value="">Select Farmer...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text">Date <span class="text-error">*</span></span>
+                            </label>
+                            <input type="date" class="input input-bordered w-full" id="deliveryDate" required>
+                        </div>
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text">Time <span class="text-error">*</span></span>
+                            </label>
+                            <input type="time" class="input input-bordered w-full" id="deliveryTime" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Volume (Liters) <span class="text-error">*</span></span>
+                        </label>
+                        <input type="number" class="input input-bordered w-full" id="deliveryVolume" step="0.01" min="0.01" required placeholder="Enter volume in liters">
+                    </div>
+                    
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">APT (Alcohol Precipitation Test) <span class="text-error">*</span></span>
+                        </label>
+                        <select class="select select-bordered w-full" id="deliveryApt" required>
+                            <option value="">Select APT Result...</option>
+                            <option value="negative">Negative (Accept)</option>
+                            <option value="positive">Positive (Reject)</option>
+                        </select>
+                        <label class="label">
+                            <span class="label-text-alt text-base-content/60">Milk with positive APT result will be rejected</span>
+                        </label>
+                    </div>
+                    
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Notes</span>
+                        </label>
+                        <textarea class="textarea textarea-bordered w-full" id="deliveryNotes" rows="2" placeholder="Optional notes..."></textarea>
+                    </div>
+                    
+                    <!-- Farmer Info Preview -->
+                    <div id="farmerPreview" class="hidden alert alert-info">
+                        <div class="w-full">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="font-semibold" id="previewFarmerName">-</span>
+                                <span class="badge" id="previewMembership">-</span>
+                            </div>
+                            <p class="text-sm">Base Price: <span class="font-semibold" id="previewPrice">₱0.00</span> per liter</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('newDeliveryModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="submitDeliveryBtn">
+                        <i class="fas fa-check"></i>
+                        Record Delivery
+                    </button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Grade Milk Modal -->
+    <dialog id="gradeMilkModal" class="modal">
+        <div class="modal-box max-w-3xl max-h-[90vh]">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">X</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-flask text-success"></i>
+                Grade Milk - <span id="gradeDeliveryCode">-</span>
+            </h3>
+            
+            <form id="gradeMilkForm" onsubmit="submitMilkGrading(event)">
+                <input type="hidden" id="gradeDeliveryId">
+                
+                <div class="space-y-4 overflow-y-auto max-h-[60vh] pr-2">
+                    <!-- Delivery Info -->
+                    <div class="bg-base-200 rounded-xl p-4">
+                        <div class="grid grid-cols-3 gap-4">
+                            <div>
+                                <p class="text-xs text-base-content/60">Farmer</p>
+                                <p class="font-semibold" id="gradeFarmerName">-</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-base-content/60">Volume</p>
+                                <p class="font-semibold" id="gradeVolume">-</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-base-content/60">Base Price</p>
+                                <p class="font-semibold text-primary" id="gradeBasePrice">-</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Primary Tests -->
+                    <div class="divider text-primary text-sm">Primary Tests (Required)</div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text">Fat Content (%) <span class="text-error">*</span></span>
+                            </label>
+                            <input type="number" class="input input-bordered w-full" id="testFat" step="0.01" min="0" max="10" required placeholder="e.g., 3.75">
+                            <label class="label">
+                                <span class="label-text-alt">Standard: 3.5% - 4.0%</span>
+                            </label>
+                        </div>
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text">Titratable Acidity (%) <span class="text-error">*</span></span>
+                            </label>
+                            <input type="number" class="input input-bordered w-full" id="testAcidity" step="0.01" min="0" max="1" required placeholder="e.g., 0.16">
+                            <label class="label">
+                                <span class="label-text-alt">Standard: 0.14-0.18% | Reject >= 0.25%</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text">Specific Gravity (SG) <span class="text-error">*</span></span>
+                            </label>
+                            <input type="number" class="input input-bordered w-full" id="testDensity" step="0.001" min="1" max="1.1" required placeholder="e.g., 1.028">
+                            <label class="label">
+                                <span class="label-text-alt">Standard: >= 1.025</span>
+                            </label>
+                        </div>
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text">Sediment Grade <span class="text-error">*</span></span>
+                            </label>
+                            <select class="select select-bordered w-full" id="testSediment" required>
+                                <option value="1">Grade 1 - Clean (No deduction)</option>
+                                <option value="2">Grade 2 - Slight (-₱0.50/L)</option>
+                                <option value="3">Grade 3 - Dirty (-₱1.00/L)</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Temperature at Receiving (°C) <span class="text-error">*</span></span>
+                        </label>
+                        <input type="number" class="input input-bordered w-full" id="testTemp" step="0.1" required placeholder="e.g., 4.0">
+                        <label class="label">
+                            <span class="label-text-alt">Should be chilled (target: 4°C)</span>
+                        </label>
+                    </div>
+                    
+                    <!-- Optional Analyzer Results -->
+                    <div class="divider text-secondary text-sm">Milkosonic SL50 Results (Optional)</div>
+                    
+                    <div class="grid grid-cols-3 gap-4">
+                        <div class="form-control">
+                            <label class="label py-1">
+                                <span class="label-text text-xs">Protein (%)</span>
+                            </label>
+                            <input type="number" class="input input-bordered input-sm w-full" id="testProtein" step="0.01" placeholder="3.50">
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-1">
+                                <span class="label-text text-xs">SNF (%)</span>
+                            </label>
+                            <input type="number" class="input input-bordered input-sm w-full" id="testSnf" step="0.01" placeholder="8.50">
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-1">
+                                <span class="label-text text-xs">Lactose (%)</span>
+                            </label>
+                            <input type="number" class="input input-bordered input-sm w-full" id="testLactose" step="0.01" placeholder="4.80">
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-3 gap-4">
+                        <div class="form-control">
+                            <label class="label py-1">
+                                <span class="label-text text-xs">Salts (%)</span>
+                            </label>
+                            <input type="number" class="input input-bordered input-sm w-full" id="testSalts" step="0.01" placeholder="0.70">
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-1">
+                                <span class="label-text text-xs">Total Solids (%)</span>
+                            </label>
+                            <input type="number" class="input input-bordered input-sm w-full" id="testTotalSolids" step="0.01" placeholder="12.50">
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-1">
+                                <span class="label-text text-xs">Added Water (%)</span>
+                            </label>
+                            <input type="number" class="input input-bordered input-sm w-full" id="testAddedWater" step="0.01" placeholder="0.00">
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="form-control">
+                            <label class="label py-1">
+                                <span class="label-text text-xs">Freezing Point (°C)</span>
+                            </label>
+                            <input type="number" class="input input-bordered input-sm w-full" id="testFreezingPoint" step="0.001" placeholder="-0.520">
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-1">
+                                <span class="label-text text-xs">Sample Temperature (°C)</span>
+                            </label>
+                            <input type="number" class="input input-bordered input-sm w-full" id="testSampleTemp" step="0.1" placeholder="25.0">
+                        </div>
+                    </div>
+                    
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Notes</span>
+                        </label>
+                        <textarea class="textarea textarea-bordered w-full" id="testNotes" rows="2" placeholder="Optional notes..."></textarea>
+                    </div>
+                    
+                    <!-- Price Preview -->
+                    <div id="gradePreview" class="bg-base-200 rounded-xl p-4">
+                        <div class="flex justify-between items-center mb-2">
+                            <div>
+                                <p class="text-xs text-base-content/60">Status</p>
+                                <span class="badge badge-lg" id="previewGrade">-</span>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-xs text-base-content/60">Estimated Total</p>
+                                <p class="text-2xl font-bold text-primary" id="previewTotal">₱0.00</p>
+                            </div>
+                        </div>
+                        <div id="priceBreakdown" class="hidden border-t border-base-300 pt-2 mt-2 text-sm space-y-1">
+                            <div class="flex justify-between"><span>Base Price (₱25 + ₱5 incentive):</span><span id="previewBase">₱30.00/L</span></div>
+                            <div class="flex justify-between"><span>Fat Adjustment:</span><span id="previewFatAdj">₱0.00</span></div>
+                            <div class="flex justify-between"><span>Acidity Deduction:</span><span id="previewAcidityDed">₱0.00</span></div>
+                            <div class="flex justify-between"><span>Sediment Deduction:</span><span id="previewSedimentDed">₱0.00</span></div>
+                            <div class="flex justify-between font-bold border-t border-base-300 pt-1 mt-1"><span>Final Price/L:</span><span id="previewFinalPrice">₱30.00</span></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('gradeMilkModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-success" id="submitGradeBtn">
+                        <i class="fas fa-check"></i>
+                        Submit Test Results
+                    </button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+    
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/qc/farmers.service.js"></script>
+    <script src="../../js/qc/deliveries.service.js"></script>
+    <script src="../../js/qc/milk_grading.service.js"></script>
+    
+    <script>
+        // Toggle sidebar
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+        
+        // Theme toggle
+        document.getElementById('themeToggle')?.addEventListener('change', function() {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'forest' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'forest' : 'emerald');
+        });
+        
+        // Show toast
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type];
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.remove(); }, 3000);
+        }
+        
+        // Alias for backwards compatibility
+        function showNotification(title, message, type) {
+            showToast(`${title}: ${message}`, type);
+        }
+        
+        // Format helpers
+        function formatCurrency(amount) {
+            if (amount === null || amount === undefined) return '-';
+            return '₱' + parseFloat(amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        
+        function formatDate(dateStr, style = 'short') {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: style === 'long' ? 'numeric' : undefined });
+        }
+        
+        function formatTime(timeStr) {
+            if (!timeStr) return '-';
+            const [hours, minutes] = timeStr.split(':');
+            const h = parseInt(hours);
+            const ampm = h >= 12 ? 'PM' : 'AM';
+            const hour12 = h % 12 || 12;
+            return `${hour12}:${minutes} ${ampm}`;
+        }
+        
+        function getStatusBadgeClass(status) {
+            const map = {
+                'pending_test': 'badge-warning',
+                'accepted': 'badge-success',
+                'rejected': 'badge-error',
+                'partial': 'badge-info'
+            };
+            return map[status] || 'badge-ghost';
+        }
+        
+        function formatStatus(status) {
+            const map = {
+                'pending_test': 'Pending',
+                'accepted': 'Accepted',
+                'rejected': 'Rejected',
+                'partial': 'Partial'
+            };
+            return map[status] || status;
+        }
+        
+        function getGradeBadgeClass(grade) {
+            const gradeMap = { 'A': 'grade-a', 'B': 'grade-b', 'C': 'grade-c', 'D': 'grade-d', 'Rejected': 'grade-rejected' };
+            return gradeMap[grade] || 'badge-ghost';
+        }
+        
+        // State
+        let currentPage = 1;
+        const limit = 20;
+        let farmers = [];
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Check authentication
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../login.html';
+                return;
+            }
+            
+            if (!AuthService.requireRole(['qc_officer', 'general_manager'])) {
+                return;
+            }
+            
+            // Set user info
+            const user = AuthService.getCurrentUser();
+            if (user) {
+                document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
+                document.getElementById('userInitials').textContent = (user.first_name[0] + user.last_name[0]).toUpperCase();
+            }
+            
+            // Load saved theme
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'forest') {
+                document.getElementById('themeToggle').checked = true;
+                document.documentElement.setAttribute('data-theme', 'forest');
+            }
+            
+            // Set default dates
+            const today = new Date().toISOString().split('T')[0];
+            const now = new Date().toTimeString().slice(0, 5);
+            document.getElementById('filterDate').value = today;
+            document.getElementById('deliveryDate').value = today;
+            document.getElementById('deliveryTime').value = now;
+            
+            // Load data
+            loadFarmers();
+            loadDeliveries();
+        });
+        
+        // Load farmers for dropdown
+        async function loadFarmers() {
+            try {
+                const response = await FarmersService.getForDropdown();
+                if (response.success) {
+                    farmers = response.data;
+                    const select = document.getElementById('deliveryFarmer');
+                    select.innerHTML = '<option value="">Select Farmer...</option>' + 
+                        farmers.map(f => `<option value="${f.id}" data-name="${f.first_name} ${f.last_name}" data-membership="${f.membership_type}" data-price="${f.base_price_per_liter}">${f.farmer_code} - ${f.first_name} ${f.last_name}</option>`).join('');
+                }
+            } catch (error) {
+                console.error('Failed to load farmers:', error);
+                showToast('Failed to load farmers list', 'error');
+            }
+        }
+        
+        // Load deliveries
+        async function loadDeliveries() {
+            const table = document.getElementById('deliveriesTable');
+            table.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-base-content/40"><i class="fas fa-spinner fa-spin text-2xl"></i><p>Loading...</p></td></tr>';
+            
+            try {
+                const params = { page: currentPage, limit: limit };
+                
+                const date = document.getElementById('filterDate').value;
+                const status = document.getElementById('filterStatus').value;
+                const search = document.getElementById('filterSearch').value;
+                
+                if (date) { params.date_from = date; params.date_to = date; }
+                if (status) params.status = status;
+                
+                const response = await DeliveriesService.getAll(params);
+                
+                if (response.success) {
+                    document.getElementById('totalRecords').textContent = `${response.pagination.total} records`;
+                    
+                    if (response.data.length > 0) {
+                        table.innerHTML = response.data.map(d => `
+                            <tr>
+                                <td><code class="text-xs bg-base-200 px-2 py-1 rounded">${d.delivery_code}</code></td>
+                                <td>
+                                    <div class="font-medium text-sm">${d.farmer_code}</div>
+                                    <div class="text-xs text-base-content/60">${d.farmer_first_name} ${d.farmer_last_name}</div>
+                                </td>
+                                <td>
+                                    <div class="text-sm">${formatDate(d.delivery_date)}</div>
+                                    <div class="text-xs text-base-content/60">${formatTime(d.delivery_time)}</div>
+                                </td>
+                                <td class="text-right font-semibold">${parseFloat(d.volume_liters).toLocaleString()} L</td>
+                                <td><span class="badge ${getStatusBadgeClass(d.status)} badge-sm">${formatStatus(d.status)}</span></td>
+                                <td>${d.grade ? `<span class="badge ${getGradeBadgeClass(d.grade)} badge-sm font-bold">${d.grade}</span>` : '<span class="text-base-content/40">-</span>'}</td>
+                                <td class="text-right font-semibold">${d.total_amount ? formatCurrency(d.total_amount) : '-'}</td>
+                                <td class="text-center">
+                                    <div class="flex justify-center gap-1">
+                                        ${d.status === 'pending_test' ? `
+                                            <button class="btn btn-success btn-xs" onclick="openGradeModal(${d.id}, '${d.delivery_code}', '${d.farmer_first_name} ${d.farmer_last_name}', ${d.volume_liters}, ${d.membership_type === 'member' ? 40 : 38})" title="Grade Milk">
+                                                <i class="fas fa-flask"></i>
+                                            </button>
+                                        ` : ''}
+                                        <button class="btn btn-ghost btn-xs" onclick="viewDelivery(${d.id})" title="View">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `).join('');
+                    } else {
+                        table.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-base-content/40"><i class="fas fa-inbox text-2xl mb-2"></i><p>No deliveries found</p></td></tr>';
+                    }
+                    
+                    renderPagination(response.pagination);
+                }
+            } catch (error) {
+                console.error('Failed to load deliveries:', error);
+                table.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-error">Failed to load deliveries</td></tr>';
+            }
+        }
+        
+        function renderPagination(pagination) {
+            const container = document.getElementById('pagination');
+            const totalPages = pagination.total_pages;
+            
+            if (totalPages <= 1) { container.innerHTML = ''; return; }
+            
+            let html = `<button class="join-item btn btn-sm" onclick="goToPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}><i class="fas fa-chevron-left"></i></button>`;
+            
+            for (let i = 1; i <= Math.min(totalPages, 5); i++) {
+                html += `<button class="join-item btn btn-sm ${i === currentPage ? 'btn-active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+            }
+            
+            if (totalPages > 5) {
+                html += `<button class="join-item btn btn-sm btn-disabled">...</button>`;
+                html += `<button class="join-item btn btn-sm" onclick="goToPage(${totalPages})">${totalPages}</button>`;
+            }
+            
+            html += `<button class="join-item btn btn-sm" onclick="goToPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}><i class="fas fa-chevron-right"></i></button>`;
+            
+            container.innerHTML = html;
+        }
+        
+        function goToPage(page) { currentPage = page; loadDeliveries(); }
+        
+        function resetFilters() {
+            document.getElementById('filterDate').value = new Date().toISOString().split('T')[0];
+            document.getElementById('filterStatus').value = '';
+            document.getElementById('filterSearch').value = '';
+            currentPage = 1;
+            loadDeliveries();
+        }
+        
+        // Modal functions
+        function openNewDeliveryModal() {
+            document.getElementById('newDeliveryForm').reset();
+            document.getElementById('deliveryDate').value = new Date().toISOString().split('T')[0];
+            document.getElementById('deliveryTime').value = new Date().toTimeString().slice(0, 5);
+            document.getElementById('farmerPreview').classList.add('hidden');
+            document.getElementById('newDeliveryModal').showModal();
+        }
+        
+        // Farmer selection change
+        document.getElementById('deliveryFarmer').addEventListener('change', function() {
+            const option = this.selectedOptions[0];
+            const preview = document.getElementById('farmerPreview');
+            
+            if (this.value) {
+                document.getElementById('previewFarmerName').textContent = option.dataset.name;
+                document.getElementById('previewMembership').textContent = option.dataset.membership === 'member' ? 'Member' : 'Non-Member';
+                document.getElementById('previewMembership').className = 'badge ' + (option.dataset.membership === 'member' ? 'badge-success' : 'badge-ghost');
+                document.getElementById('previewPrice').textContent = formatCurrency(option.dataset.price);
+                preview.classList.remove('hidden');
+            } else {
+                preview.classList.add('hidden');
+            }
+        });
+        
+        // Submit new delivery
+        async function submitNewDelivery(e) {
+            e.preventDefault();
+            
+            const btn = document.getElementById('submitDeliveryBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Saving...';
+            
+            try {
+                const response = await DeliveriesService.create({
+                    farmer_id: document.getElementById('deliveryFarmer').value,
+                    delivery_date: document.getElementById('deliveryDate').value,
+                    delivery_time: document.getElementById('deliveryTime').value,
+                    volume_liters: document.getElementById('deliveryVolume').value,
+                    apt_result: document.getElementById('deliveryApt').value,
+                    notes: document.getElementById('deliveryNotes').value
+                });
+                
+                if (response.success) {
+                    showToast('Delivery recorded successfully', 'success');
+                    document.getElementById('newDeliveryModal').close();
+                    loadDeliveries();
+                }
+            } catch (error) {
+                showToast(error.message || 'Failed to record delivery', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-check"></i> Record Delivery';
+            }
+        }
+        
+        // Open grade modal
+        function openGradeModal(deliveryId, deliveryCode, farmerName, volume, basePrice) {
+            document.getElementById('gradeMilkForm').reset();
+            document.getElementById('gradeDeliveryId').value = deliveryId;
+            document.getElementById('gradeDeliveryCode').textContent = deliveryCode;
+            document.getElementById('gradeFarmerName').textContent = farmerName;
+            document.getElementById('gradeVolume').textContent = volume.toLocaleString() + ' L';
+            document.getElementById('gradeBasePrice').textContent = formatCurrency(basePrice) + '/L';
+            document.getElementById('previewGrade').textContent = '-';
+            document.getElementById('previewGrade').className = 'badge badge-lg badge-ghost';
+            document.getElementById('previewTotal').textContent = '₱0.00';
+            document.getElementById('priceBreakdown').classList.add('hidden');
+            document.getElementById('gradeMilkModal').showModal();
+        }
+        
+        // Price preview calculation (ANNEX B)
+        ['testFat', 'testAcidity', 'testTemp', 'testSediment', 'testDensity'].forEach(id => {
+            document.getElementById(id).addEventListener('input', updateGradePreview);
+        });
+        
+        function updateGradePreview() {
+            const fat = parseFloat(document.getElementById('testFat').value) || 0;
+            const acidity = parseFloat(document.getElementById('testAcidity').value) || 0;
+            const density = parseFloat(document.getElementById('testDensity').value) || 0;
+            const sedimentGrade = parseInt(document.getElementById('testSediment').value) || 1;
+            const volume = parseFloat(document.getElementById('gradeVolume').textContent) || 0;
+            
+            const badge = document.getElementById('previewGrade');
+            const breakdown = document.getElementById('priceBreakdown');
+            
+            if (fat > 0 && acidity > 0) {
+                // Check rejection conditions
+                if (acidity >= 0.25 || (density > 0 && density < 1.025)) {
+                    badge.textContent = 'REJECTED';
+                    badge.className = 'badge badge-lg badge-error';
+                    document.getElementById('previewTotal').textContent = '₱0.00';
+                    breakdown.classList.add('hidden');
+                    return;
+                }
+                
+                // ANNEX B Pricing Calculation
+                const basePrice = 30.00;
+                
+                // Fat adjustment
+                let fatAdj = 0;
+                if (fat >= 1.5 && fat < 2.0) fatAdj = -1.00;
+                else if (fat >= 2.0 && fat < 2.5) fatAdj = -0.75;
+                else if (fat >= 2.5 && fat < 3.0) fatAdj = -0.50;
+                else if (fat >= 3.0 && fat < 3.5) fatAdj = -0.25;
+                else if (fat >= 3.5 && fat <= 4.0) fatAdj = 0;
+                else if (fat > 4.0 && fat <= 4.5) fatAdj = 0.25;
+                else if (fat > 4.5 && fat <= 5.0) fatAdj = 0.50;
+                else if (fat > 5.0 && fat <= 5.5) fatAdj = 0.75;
+                else if (fat > 5.5 && fat <= 6.0) fatAdj = 1.00;
+                else if (fat > 6.0 && fat <= 6.5) fatAdj = 1.25;
+                else if (fat > 6.5 && fat <= 7.0) fatAdj = 1.50;
+                else if (fat > 7.0 && fat <= 7.5) fatAdj = 1.75;
+                else if (fat > 7.5 && fat <= 8.0) fatAdj = 2.00;
+                else if (fat > 8.0 && fat <= 8.5) fatAdj = 2.25;
+                
+                // Acidity deduction
+                let acidityDed = 0;
+                if (acidity >= 0.19 && acidity < 0.20) acidityDed = 0.25;
+                else if (acidity >= 0.20 && acidity < 0.21) acidityDed = 0.50;
+                else if (acidity >= 0.21 && acidity < 0.22) acidityDed = 0.75;
+                else if (acidity >= 0.22 && acidity < 0.23) acidityDed = 1.00;
+                else if (acidity >= 0.23 && acidity < 0.24) acidityDed = 1.25;
+                else if (acidity >= 0.24 && acidity < 0.25) acidityDed = 1.50;
+                
+                // Sediment deduction
+                let sedimentDed = sedimentGrade === 2 ? 0.50 : sedimentGrade === 3 ? 1.00 : 0;
+                
+                const finalPrice = basePrice + fatAdj - acidityDed - sedimentDed;
+                const total = volume * finalPrice;
+                
+                badge.textContent = 'ACCEPTED';
+                badge.className = 'badge badge-lg badge-success';
+                document.getElementById('previewTotal').textContent = formatCurrency(total);
+                
+                breakdown.classList.remove('hidden');
+                document.getElementById('previewFatAdj').textContent = (fatAdj >= 0 ? '+' : '') + formatCurrency(fatAdj);
+                document.getElementById('previewFatAdj').className = fatAdj >= 0 ? 'text-success' : 'text-error';
+                document.getElementById('previewAcidityDed').textContent = '-' + formatCurrency(acidityDed);
+                document.getElementById('previewAcidityDed').className = acidityDed > 0 ? 'text-error' : '';
+                document.getElementById('previewSedimentDed').textContent = '-' + formatCurrency(sedimentDed);
+                document.getElementById('previewSedimentDed').className = sedimentDed > 0 ? 'text-error' : '';
+                document.getElementById('previewFinalPrice').textContent = formatCurrency(finalPrice);
+            }
+        }
+        
+        // Submit milk grading
+        async function submitMilkGrading(e) {
+            e.preventDefault();
+            
+            const btn = document.getElementById('submitGradeBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Processing...';
+            
+            try {
+                const response = await MilkGradingService.create({
+                    delivery_id: document.getElementById('gradeDeliveryId').value,
+                    fat_percentage: document.getElementById('testFat').value,
+                    titratable_acidity: document.getElementById('testAcidity').value,
+                    temperature_celsius: document.getElementById('testTemp').value,
+                    sediment_grade: document.getElementById('testSediment').value,
+                    density: document.getElementById('testDensity').value || null,
+                    protein_percentage: document.getElementById('testProtein').value || null,
+                    snf_percentage: document.getElementById('testSnf').value || null,
+                    lactose_percentage: document.getElementById('testLactose').value || null,
+                    salts_percentage: document.getElementById('testSalts').value || null,
+                    total_solids_percentage: document.getElementById('testTotalSolids').value || null,
+                    added_water_percentage: document.getElementById('testAddedWater').value || null,
+                    freezing_point: document.getElementById('testFreezingPoint').value || null,
+                    sample_temperature: document.getElementById('testSampleTemp').value || null,
+                    notes: document.getElementById('testNotes').value
+                });
+                
+                if (response.success) {
+                    const test = response.data;
+                    showToast(`${test.is_accepted ? 'Milk Accepted' : 'Milk Rejected'} - Grade: ${test.grade} | Total: ${formatCurrency(test.total_amount)}`, test.is_accepted ? 'success' : 'warning');
+                    document.getElementById('gradeMilkModal').close();
+                    loadDeliveries();
+                }
+            } catch (error) {
+                showToast(error.message || 'Failed to grade milk', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-check"></i> Submit Test Results';
+            }
+        }
+        
+        function viewDelivery(id) {
+            showToast('View delivery feature coming soon', 'info');
+        }
+    </script>
+</body>
+</html>

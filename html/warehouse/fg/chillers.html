@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chiller Storage - Warehouse Finished Goods | Highland Fresh</title>
+    
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .bento-card { @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .chiller-card { @apply relative overflow-hidden; }
+        .chiller-fill { @apply absolute bottom-0 left-0 right-0 bg-gradient-to-t from-secondary/30 to-secondary/10 transition-all duration-500; }
+        .temp-normal { @apply text-success; }
+        .temp-warning { @apply text-warning; }
+        .temp-critical { @apply text-error; }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-secondary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-boxes-stacked text-secondary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Warehouse - Finished Goods</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <!-- Main Menu -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Inventory -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="inventory.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-boxes w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">FG Inventory</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="chillers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-secondary text-secondary-content">
+                            <i class="fas fa-temperature-low w-5 text-center"></i>
+                            <span class="flex-1">Chiller Storage</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Operations -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Operations</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="receiving.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-truck-loading w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Receive from Production</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="delivery_receipts.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-file-invoice w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Delivery Receipts</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="dispatch.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-truck w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dispatch</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Customers -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Customers</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="customers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-users w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Customer List</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Reports -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="reports/inventory.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-chart-bar w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Inventory Report</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="reports/dispatch.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-shipping-fast w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dispatch Report</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+        
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-secondary text-secondary-content">
+                        <span class="text-sm font-semibold" id="userInitials">FG</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Warehouse Staff</p>
+                    <p class="text-xs text-base-content/60 truncate">Finished Goods</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-temperature-low text-secondary"></i>
+                    <span class="font-semibold">Chiller Storage</span>
+                </div>
+            </div>
+            <div class="flex-none gap-2">
+                <button class="btn btn-secondary btn-sm" onclick="openAddChillerModal()">
+                    <i class="fas fa-plus"></i> Add Chiller
+                </button>
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+        
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+            
+            <!-- Page Header -->
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                <div>
+                    <h1 class="text-2xl font-bold text-base-content">Chiller Storage Management</h1>
+                    <p class="text-base-content/60">Monitor temperature and manage storage locations</p>
+                </div>
+            </div>
+            
+            <!-- Temperature Alert Banner -->
+            <div id="tempAlertBanner" class="alert alert-warning mb-6 hidden">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span id="tempAlertText">Temperature alert detected in some chillers!</span>
+            </div>
+            
+            <!-- Chiller Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6" id="chillerGrid">
+                <div class="col-span-full text-center py-12">
+                    <span class="loading loading-spinner loading-lg"></span>
+                    <p class="text-base-content/60 mt-2">Loading chillers...</p>
+                </div>
+            </div>
+            
+        </main>
+        
+        <!-- Footer -->
+        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
+            <div>
+                <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+            </div>
+        </footer>
+    </div>
+    
+    <!-- Add/Edit Chiller Modal -->
+    <dialog id="chillerModal" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg mb-4" id="chillerModalTitle">Add New Chiller</h3>
+            <form id="chillerForm">
+                <input type="hidden" id="chillerId">
+                <div class="form-control mb-4">
+                    <label class="label"><span class="label-text">Chiller Name</span></label>
+                    <input type="text" id="chillerName" class="input input-bordered" placeholder="e.g., Chiller A" required>
+                </div>
+                <div class="form-control mb-4">
+                    <label class="label"><span class="label-text">Location</span></label>
+                    <input type="text" id="chillerLocation" class="input input-bordered" placeholder="e.g., Cold Room 1">
+                </div>
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Capacity (units)</span></label>
+                        <input type="number" id="chillerCapacity" class="input input-bordered" placeholder="1000" required>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Target Temp (°C)</span></label>
+                        <input type="number" id="chillerTargetTemp" class="input input-bordered" placeholder="4" step="0.1">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Min Temp (°C)</span></label>
+                        <input type="number" id="chillerMinTemp" class="input input-bordered" placeholder="2" step="0.1">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Max Temp (°C)</span></label>
+                        <input type="number" id="chillerMaxTemp" class="input input-bordered" placeholder="8" step="0.1">
+                    </div>
+                </div>
+                <div class="modal-action">
+                    <button type="button" class="btn" onclick="chillerModal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-secondary">Save</button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Log Temperature Modal -->
+    <dialog id="logTempModal" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg mb-4">Log Temperature Reading</h3>
+            <form id="logTempForm">
+                <input type="hidden" id="logTempChillerId">
+                <div class="form-control mb-4">
+                    <label class="label"><span class="label-text">Current Temperature (°C)</span></label>
+                    <input type="number" id="logTempValue" class="input input-bordered" step="0.1" required>
+                </div>
+                <div class="form-control mb-4">
+                    <label class="label"><span class="label-text">Notes (optional)</span></label>
+                    <textarea id="logTempNotes" class="textarea textarea-bordered" placeholder="Any observations..."></textarea>
+                </div>
+                <div class="modal-action">
+                    <button type="button" class="btn" onclick="logTempModal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-secondary">Log Reading</button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+    
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../../js/config/api.js"></script>
+    <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/warehouse/fg.service.js"></script>
+    
+    <script>
+        let chillers = [];
+        
+        // Sidebar toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+        
+        // Theme toggle
+        document.getElementById('themeToggle').addEventListener('change', function() {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+        
+        // Load saved theme
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('themeToggle').checked = true;
+        }
+        
+        // Show toast
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `alert alert-${type} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            document.getElementById('toastContainer').appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                await AuthService.init();
+                const user = AuthService.getUser();
+                if (user) {
+                    document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
+                    document.getElementById('userInitials').textContent = `${user.first_name[0]}${user.last_name[0]}`;
+                }
+                await loadChillers();
+            } catch (error) {
+                console.error('Init error:', error);
+                showToast('Failed to initialize page', 'error');
+            }
+        });
+        
+        // Load chillers
+        async function loadChillers() {
+            try {
+                const response = await WarehouseFGService.getChillers();
+                chillers = response.data || [];
+                renderChillers();
+                checkTemperatureAlerts();
+            } catch (error) {
+                console.error('Failed to load chillers:', error);
+                document.getElementById('chillerGrid').innerHTML = `
+                    <div class="col-span-full text-center py-12 text-error">
+                        <i class="fas fa-exclamation-circle text-4xl mb-2"></i>
+                        <p>Failed to load chillers</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Render chiller cards
+        function renderChillers() {
+            const grid = document.getElementById('chillerGrid');
+            
+            if (!chillers || chillers.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-full text-center py-12">
+                        <i class="fas fa-temperature-low text-4xl text-base-content/30 mb-4"></i>
+                        <p class="text-base-content/60">No chillers configured</p>
+                        <button class="btn btn-secondary btn-sm mt-4" onclick="openAddChillerModal()">
+                            <i class="fas fa-plus"></i> Add First Chiller
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+            
+            grid.innerHTML = chillers.map(chiller => {
+                const fillPercent = Math.min((chiller.current_stock / chiller.capacity) * 100, 100);
+                const currentTemp = parseFloat(chiller.current_temperature) || 0;
+                const minTemp = parseFloat(chiller.min_temp) || 2;
+                const maxTemp = parseFloat(chiller.max_temp) || 8;
+                
+                let tempClass = 'temp-normal';
+                let tempIcon = 'fa-thermometer-half';
+                if (currentTemp < minTemp || currentTemp > maxTemp) {
+                    tempClass = 'temp-critical';
+                    tempIcon = 'fa-thermometer-full';
+                } else if (currentTemp <= minTemp + 1 || currentTemp >= maxTemp - 1) {
+                    tempClass = 'temp-warning';
+                }
+                
+                const statusBadge = chiller.status === 'active' 
+                    ? '<span class="badge badge-success badge-sm">Active</span>'
+                    : '<span class="badge badge-error badge-sm">Inactive</span>';
+                
+                return `
+                    <div class="card bg-base-100 shadow-md chiller-card bento-card">
+                        <div class="chiller-fill" style="height: ${fillPercent}%"></div>
+                        <div class="card-body relative z-10">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="card-title text-lg">${chiller.name}</h3>
+                                    <p class="text-sm text-base-content/60">${chiller.location || 'No location'}</p>
+                                </div>
+                                ${statusBadge}
+                            </div>
+                            
+                            <div class="flex items-center gap-4 mt-4">
+                                <div class="flex-1">
+                                    <div class="text-xs text-base-content/60 mb-1">Temperature</div>
+                                    <div class="flex items-center gap-2">
+                                        <i class="fas ${tempIcon} ${tempClass}"></i>
+                                        <span class="text-2xl font-bold ${tempClass}">${currentTemp.toFixed(1)}°C</span>
+                                    </div>
+                                    <div class="text-xs text-base-content/60 mt-1">Range: ${minTemp}°C - ${maxTemp}°C</div>
+                                </div>
+                                <div class="flex-1 text-right">
+                                    <div class="text-xs text-base-content/60 mb-1">Capacity</div>
+                                    <div class="text-2xl font-bold">${chiller.current_stock || 0}</div>
+                                    <div class="text-xs text-base-content/60">/ ${chiller.capacity} units</div>
+                                </div>
+                            </div>
+                            
+                            <progress class="progress progress-secondary w-full mt-4" value="${fillPercent}" max="100"></progress>
+                            
+                            <div class="card-actions justify-end mt-4">
+                                <button class="btn btn-ghost btn-sm" onclick="logTemperature(${chiller.id})">
+                                    <i class="fas fa-thermometer-half"></i> Log Temp
+                                </button>
+                                <button class="btn btn-ghost btn-sm" onclick="editChiller(${chiller.id})">
+                                    <i class="fas fa-edit"></i> Edit
+                                </button>
+                                <button class="btn btn-ghost btn-sm" onclick="viewChillerContents(${chiller.id})">
+                                    <i class="fas fa-boxes"></i> Contents
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Check temperature alerts
+        function checkTemperatureAlerts() {
+            const alerts = chillers.filter(c => {
+                const temp = parseFloat(c.current_temperature) || 0;
+                const min = parseFloat(c.min_temp) || 2;
+                const max = parseFloat(c.max_temp) || 8;
+                return temp < min || temp > max;
+            });
+            
+            if (alerts.length > 0) {
+                document.getElementById('tempAlertBanner').classList.remove('hidden');
+                document.getElementById('tempAlertText').textContent = 
+                    `Temperature alert in ${alerts.length} chiller(s): ${alerts.map(c => c.name).join(', ')}`;
+            } else {
+                document.getElementById('tempAlertBanner').classList.add('hidden');
+            }
+        }
+        
+        // Open add chiller modal
+        function openAddChillerModal() {
+            document.getElementById('chillerModalTitle').textContent = 'Add New Chiller';
+            document.getElementById('chillerForm').reset();
+            document.getElementById('chillerId').value = '';
+            document.getElementById('chillerModal').showModal();
+        }
+        
+        // Edit chiller
+        function editChiller(id) {
+            const chiller = chillers.find(c => c.id === id);
+            if (!chiller) return;
+            
+            document.getElementById('chillerModalTitle').textContent = 'Edit Chiller';
+            document.getElementById('chillerId').value = chiller.id;
+            document.getElementById('chillerName').value = chiller.name;
+            document.getElementById('chillerLocation').value = chiller.location || '';
+            document.getElementById('chillerCapacity').value = chiller.capacity;
+            document.getElementById('chillerTargetTemp').value = chiller.target_temp || '';
+            document.getElementById('chillerMinTemp').value = chiller.min_temp || '';
+            document.getElementById('chillerMaxTemp').value = chiller.max_temp || '';
+            document.getElementById('chillerModal').showModal();
+        }
+        
+        // Handle chiller form
+        document.getElementById('chillerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('chillerId').value;
+            const data = {
+                name: document.getElementById('chillerName').value,
+                location: document.getElementById('chillerLocation').value,
+                capacity: parseInt(document.getElementById('chillerCapacity').value),
+                target_temp: parseFloat(document.getElementById('chillerTargetTemp').value) || null,
+                min_temp: parseFloat(document.getElementById('chillerMinTemp').value) || null,
+                max_temp: parseFloat(document.getElementById('chillerMaxTemp').value) || null
+            };
+            
+            try {
+                if (id) {
+                    await WarehouseFGService.updateChiller(id, data);
+                    showToast('Chiller updated successfully', 'success');
+                } else {
+                    await WarehouseFGService.createChiller(data);
+                    showToast('Chiller added successfully', 'success');
+                }
+                document.getElementById('chillerModal').close();
+                await loadChillers();
+            } catch (error) {
+                showToast('Failed to save chiller', 'error');
+            }
+        });
+        
+        // Log temperature
+        function logTemperature(id) {
+            document.getElementById('logTempChillerId').value = id;
+            document.getElementById('logTempForm').reset();
+            document.getElementById('logTempModal').showModal();
+        }
+        
+        // Handle log temp form
+        document.getElementById('logTempForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('logTempChillerId').value;
+            const temperature = parseFloat(document.getElementById('logTempValue').value);
+            const notes = document.getElementById('logTempNotes').value;
+            
+            try {
+                await WarehouseFGService.logChillerTemperature(id, temperature, notes);
+                showToast('Temperature logged successfully', 'success');
+                document.getElementById('logTempModal').close();
+                await loadChillers();
+            } catch (error) {
+                showToast('Failed to log temperature', 'error');
+            }
+        });
+        
+        // View chiller contents
+        function viewChillerContents(id) {
+            window.location.href = `inventory.html?chiller=${id}`;
+        }
+    </script>
+</body>
+</html>

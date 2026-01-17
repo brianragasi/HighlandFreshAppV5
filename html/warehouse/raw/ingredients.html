@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ingredients - Warehouse Raw | Highland Fresh</title>
+    
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Fonts & Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .bento-card { @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <!-- Mobile Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar (same as dashboard) -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-warehouse text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60">Warehouse Raw</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-th-large w-5 text-center text-base-content/60"></i><span>Dashboard</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="milk_storage.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-tint w-5 text-center text-base-content/60"></i><span>Milk Storage</span></a></li>
+                    <li><a href="ingredients.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content"><i class="fas fa-box-open w-5 text-center"></i><span>Ingredients</span></a></li>
+                    <li><a href="mro.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-tools w-5 text-center text-base-content/60"></i><span>MRO Supplies</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Operations</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="requisitions.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-clipboard-check w-5 text-center text-base-content/60"></i><span>Requisitions</span></a></li>
+                </ul>
+            </div>
+        </nav>
+        
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder"><div class="w-10 rounded-xl bg-primary text-primary-content"><span class="text-sm font-semibold" id="userInitials">WR</span></div></div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Warehouse Staff</p>
+                    <p class="text-xs text-base-content/60">Warehouse Raw</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square" onclick="AuthService.logout()"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold">Ingredients Inventory</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <button class="btn btn-primary btn-sm" onclick="openReceiveModal()">
+                    <i class="fas fa-plus"></i> <span class="hidden sm:inline">Receive Stock</span>
+                </button>
+            </div>
+        </header>
+        
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+            
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                                <i class="fas fa-box-open text-primary"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="totalIngredients">0</p>
+                                <p class="text-xs text-base-content/60">Total Items</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center">
+                                <i class="fas fa-check-circle text-success"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="inStockCount">0</p>
+                                <p class="text-xs text-base-content/60">In Stock</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center">
+                                <i class="fas fa-exclamation-triangle text-warning"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="lowStockCount">0</p>
+                                <p class="text-xs text-base-content/60">Low Stock</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-error/10 flex items-center justify-center">
+                                <i class="fas fa-clock text-error"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="expiringCount">0</p>
+                                <p class="text-xs text-base-content/60">Expiring Soon</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Filters -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body p-4">
+                    <!-- Category Tabs -->
+                    <div class="flex flex-wrap gap-2 mb-4" id="categoryTabs">
+                        <button class="btn btn-sm btn-primary" data-category="all">All</button>
+                    </div>
+                    
+                    <!-- Search & Filters -->
+                    <div class="flex flex-col md:flex-row gap-3">
+                        <label class="input input-bordered input-sm flex items-center gap-2 flex-1">
+                            <i class="fas fa-search text-base-content/40"></i>
+                            <input type="text" id="searchInput" placeholder="Search ingredients..." class="grow" />
+                        </label>
+                        <select class="select select-bordered select-sm w-full md:w-48" id="stockFilter">
+                            <option value="">All Stock Levels</option>
+                            <option value="ok">In Stock</option>
+                            <option value="low">Low Stock</option>
+                            <option value="critical">Critical</option>
+                            <option value="out">Out of Stock</option>
+                        </select>
+                        <select class="select select-bordered select-sm w-full md:w-40" id="sortBy">
+                            <option value="name">Sort by Name</option>
+                            <option value="stock_asc">Stock: Low → High</option>
+                            <option value="stock_desc">Stock: High → Low</option>
+                            <option value="expiry">Expiring Soon</option>
+                        </select>
+                        <button class="btn btn-ghost btn-sm" onclick="loadIngredients()">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Ingredients Grid -->
+            <div id="ingredientsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div class="col-span-full text-center py-12">
+                    <span class="loading loading-spinner loading-lg text-primary"></span>
+                    <p class="text-base-content/60 mt-2">Loading ingredients...</p>
+                </div>
+            </div>
+            
+        </main>
+    </div>
+    
+    <!-- Receive Stock Modal -->
+    <dialog id="receiveModal" class="modal">
+        <div class="modal-box max-w-md">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-4"><i class="fas fa-truck-loading text-primary"></i> Receive Ingredient Stock</h3>
+            
+            <form id="receiveForm" onsubmit="submitReceive(event)">
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">Ingredient *</span></label>
+                    <select class="select select-bordered w-full" id="receiveIngredientId" required>
+                        <option value="">Select ingredient...</option>
+                    </select>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Quantity *</span></label>
+                        <input type="number" class="input input-bordered" id="receiveQuantity" step="0.01" min="0.01" required>
+                        <label class="label"><span class="label-text-alt" id="receiveUnit"></span></label>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Unit Cost</span></label>
+                        <input type="number" class="input input-bordered" id="receiveUnitCost" step="0.01" min="0" placeholder="0.00">
+                    </div>
+                </div>
+                
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">Batch/Lot Number</span></label>
+                    <input type="text" class="input input-bordered" id="receiveBatchNumber" placeholder="LOT-2026-001">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Manufacture Date</span></label>
+                        <input type="date" class="input input-bordered" id="receiveManufactureDate">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Expiry Date *</span></label>
+                        <input type="date" class="input input-bordered" id="receiveExpiryDate" required>
+                    </div>
+                </div>
+                
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">Supplier</span></label>
+                    <input type="text" class="input input-bordered" id="receiveSupplier" placeholder="Supplier name">
+                </div>
+                
+                <div class="form-control mb-4">
+                    <label class="label"><span class="label-text">Notes</span></label>
+                    <textarea class="textarea textarea-bordered" id="receiveNotes" rows="2" placeholder="Delivery notes..."></textarea>
+                </div>
+                
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('receiveModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-check"></i> Receive</button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Detail Modal -->
+    <dialog id="detailModal" class="modal">
+        <div class="modal-box max-w-2xl">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-4" id="detailModalTitle">Ingredient Details</h3>
+            <div id="detailModalBody">
+                <div class="text-center py-8"><span class="loading loading-spinner loading-lg"></span></div>
+            </div>
+            <div class="modal-action" id="detailModalFooter">
+                <button class="btn btn-ghost" onclick="document.getElementById('detailModal').close()">Close</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Issue Modal -->
+    <dialog id="issueModal" class="modal">
+        <div class="modal-box max-w-sm">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-4"><i class="fas fa-arrow-up text-warning"></i> Issue Ingredient</h3>
+            
+            <form id="issueForm" onsubmit="submitIssue(event)">
+                <input type="hidden" id="issueIngredientId">
+                
+                <div class="alert alert-info mb-4">
+                    <div>
+                        <strong id="issueIngredientName">-</strong><br>
+                        <small>Available: <span id="issueAvailable">0</span> <span id="issueUnitLabel"></span></small>
+                    </div>
+                </div>
+                
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">Quantity to Issue *</span></label>
+                    <input type="number" class="input input-bordered" id="issueQuantity" step="0.01" min="0.01" required>
+                </div>
+                
+                <div class="form-control mb-4">
+                    <label class="label"><span class="label-text">Reason</span></label>
+                    <select class="select select-bordered" id="issueReason">
+                        <option value="Issued for production">Issued for production</option>
+                        <option value="Quality testing">Quality testing</option>
+                        <option value="Sample">Sample</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                
+                <div class="form-control mb-4 hidden" id="issueOtherReasonGroup">
+                    <input type="text" class="input input-bordered" id="issueOtherReason" placeholder="Specify reason...">
+                </div>
+                
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('issueModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-warning"><i class="fas fa-arrow-up"></i> Issue</button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Adjust Modal -->
+    <dialog id="adjustModal" class="modal">
+        <div class="modal-box max-w-sm">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-4"><i class="fas fa-sliders-h text-info"></i> Adjust Stock</h3>
+            
+            <form id="adjustForm" onsubmit="submitAdjust(event)">
+                <input type="hidden" id="adjustIngredientId">
+                
+                <div class="alert alert-warning mb-4">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span class="text-sm">Only adjust after physical inventory count.</span>
+                </div>
+                
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">Current Stock</span></label>
+                    <input type="text" class="input input-bordered" id="adjustCurrentStock" readonly>
+                </div>
+                
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">New Quantity *</span></label>
+                    <input type="number" class="input input-bordered" id="adjustNewQuantity" step="0.01" min="0" required>
+                </div>
+                
+                <div class="form-control mb-4">
+                    <label class="label"><span class="label-text">Reason *</span></label>
+                    <select class="select select-bordered" id="adjustReason" required>
+                        <option value="">Select reason...</option>
+                        <option value="Physical count correction">Physical count correction</option>
+                        <option value="Damage/spoilage">Damage/spoilage</option>
+                        <option value="System error correction">System error correction</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                
+                <div class="form-control mb-4 hidden" id="adjustOtherReasonGroup">
+                    <textarea class="textarea textarea-bordered" id="adjustOtherReason" placeholder="Specify reason..." rows="2"></textarea>
+                </div>
+                
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('adjustModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-info"><i class="fas fa-check"></i> Save</button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+    
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../../js/config/api.js"></script>
+    <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/warehouse/raw.service.js"></script>
+    
+    <script>
+        let ingredients = [];
+        let categories = [];
+        let currentFilter = { category: 'all', search: '', stock: '', sort: 'name' };
+        
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('-translate-x-full');
+            document.getElementById('sidebarBackdrop').classList.toggle('hidden');
+        }
+        
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../../login.html';
+                return;
+            }
+            
+            const user = AuthService.getCurrentUser();
+            document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
+            document.getElementById('userInitials').textContent = (user.first_name[0] + user.last_name[0]).toUpperCase();
+            
+            // Check for URL filter
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('filter') === 'low_stock') {
+                currentFilter.stock = 'low';
+                document.getElementById('stockFilter').value = 'low';
+            }
+            
+            await Promise.all([loadCategories(), loadIngredients()]);
+            setupEventListeners();
+        });
+        
+        function setupEventListeners() {
+            document.getElementById('searchInput').addEventListener('input', debounce(() => {
+                currentFilter.search = document.getElementById('searchInput').value;
+                renderIngredients();
+            }, 300));
+            
+            document.getElementById('stockFilter').addEventListener('change', (e) => {
+                currentFilter.stock = e.target.value;
+                renderIngredients();
+            });
+            
+            document.getElementById('sortBy').addEventListener('change', (e) => {
+                currentFilter.sort = e.target.value;
+                renderIngredients();
+            });
+            
+            document.getElementById('receiveIngredientId').addEventListener('change', (e) => {
+                const ing = ingredients.find(i => i.id == e.target.value);
+                document.getElementById('receiveUnit').textContent = ing ? `Unit: ${ing.unit_of_measure}` : '';
+            });
+            
+            document.getElementById('issueReason').addEventListener('change', (e) => {
+                document.getElementById('issueOtherReasonGroup').classList.toggle('hidden', e.target.value !== 'other');
+            });
+            
+            document.getElementById('adjustReason').addEventListener('change', (e) => {
+                document.getElementById('adjustOtherReasonGroup').classList.toggle('hidden', e.target.value !== 'other');
+            });
+        }
+        
+        async function loadCategories() {
+            try {
+                const response = await WarehouseRawService.getIngredientCategories();
+                if (response.success) {
+                    categories = response.data;
+                    renderCategoryTabs();
+                }
+            } catch (e) { console.error(e); }
+        }
+        
+        function renderCategoryTabs() {
+            const container = document.getElementById('categoryTabs');
+            const icons = { sugar: 'fa-cubes', powder: 'fa-mortar-pestle', flavor: 'fa-flask', culture: 'fa-microscope', enzyme: 'fa-dna', packaging: 'fa-box', additive: 'fa-vial' };
+            
+            let html = '<button class="btn btn-sm btn-primary" data-category="all">All</button>';
+            categories.forEach(cat => {
+                html += `<button class="btn btn-sm btn-ghost" data-category="${cat.id}"><i class="fas ${icons[cat.slug] || 'fa-tag'}"></i> ${cat.name}</button>`;
+            });
+            container.innerHTML = html;
+            
+            container.querySelectorAll('button').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    container.querySelectorAll('button').forEach(b => b.classList.replace('btn-primary', 'btn-ghost'));
+                    btn.classList.replace('btn-ghost', 'btn-primary');
+                    currentFilter.category = btn.dataset.category;
+                    renderIngredients();
+                });
+            });
+        }
+        
+        async function loadIngredients() {
+            try {
+                const response = await WarehouseRawService.getIngredients();
+                if (response.success) {
+                    ingredients = response.data.ingredients || response.data;
+                    updateStats();
+                    renderIngredients();
+                    populateReceiveDropdown();
+                }
+            } catch (e) {
+                console.error(e);
+                showToast('Failed to load ingredients', 'error');
+            }
+        }
+        
+        function updateStats() {
+            const total = ingredients.length;
+            const inStock = ingredients.filter(i => parseFloat(i.current_stock) > parseFloat(i.minimum_stock)).length;
+            const lowStock = ingredients.filter(i => { const s = parseFloat(i.current_stock), m = parseFloat(i.minimum_stock); return s > 0 && s <= m; }).length;
+            const expiring = ingredients.filter(i => i.nearest_expiry && daysUntil(i.nearest_expiry) <= 7 && daysUntil(i.nearest_expiry) >= 0).length;
+            
+            document.getElementById('totalIngredients').textContent = total;
+            document.getElementById('inStockCount').textContent = inStock;
+            document.getElementById('lowStockCount').textContent = lowStock;
+            document.getElementById('expiringCount').textContent = expiring;
+        }
+        
+        function populateReceiveDropdown() {
+            const select = document.getElementById('receiveIngredientId');
+            select.innerHTML = '<option value="">Select ingredient...</option>';
+            
+            const grouped = {};
+            ingredients.forEach(ing => {
+                const cat = ing.category_name || 'Uncategorized';
+                if (!grouped[cat]) grouped[cat] = [];
+                grouped[cat].push(ing);
+            });
+            
+            Object.keys(grouped).sort().forEach(cat => {
+                const og = document.createElement('optgroup');
+                og.label = cat;
+                grouped[cat].forEach(ing => {
+                    const opt = document.createElement('option');
+                    opt.value = ing.id;
+                    opt.textContent = `${ing.code} - ${ing.name}`;
+                    og.appendChild(opt);
+                });
+                select.appendChild(og);
+            });
+        }
+        
+        function renderIngredients() {
+            const container = document.getElementById('ingredientsGrid');
+            let filtered = [...ingredients];
+            
+            if (currentFilter.category !== 'all') filtered = filtered.filter(i => i.category_id == currentFilter.category);
+            if (currentFilter.search) {
+                const s = currentFilter.search.toLowerCase();
+                filtered = filtered.filter(i => i.name.toLowerCase().includes(s) || i.code.toLowerCase().includes(s));
+            }
+            if (currentFilter.stock) {
+                filtered = filtered.filter(i => {
+                    const stock = parseFloat(i.current_stock), min = parseFloat(i.minimum_stock), reorder = min * 1.5;
+                    switch (currentFilter.stock) {
+                        case 'ok': return stock > reorder;
+                        case 'low': return stock > 0 && stock <= reorder;
+                        case 'critical': return stock > 0 && stock <= min;
+                        case 'out': return stock <= 0;
+                        default: return true;
+                    }
+                });
+            }
+            
+            switch (currentFilter.sort) {
+                case 'stock_asc': filtered.sort((a, b) => parseFloat(a.current_stock) - parseFloat(b.current_stock)); break;
+                case 'stock_desc': filtered.sort((a, b) => parseFloat(b.current_stock) - parseFloat(a.current_stock)); break;
+                case 'expiry': filtered.sort((a, b) => { if (!a.nearest_expiry) return 1; if (!b.nearest_expiry) return -1; return new Date(a.nearest_expiry) - new Date(b.nearest_expiry); }); break;
+                default: filtered.sort((a, b) => a.name.localeCompare(b.name));
+            }
+            
+            if (!filtered.length) {
+                container.innerHTML = `<div class="col-span-full text-center py-12"><i class="fas fa-box-open text-4xl text-base-content/20 mb-3"></i><h3 class="font-semibold">No ingredients found</h3><p class="text-base-content/60">Try adjusting your filters</p></div>`;
+                return;
+            }
+            
+            const catColors = { sugar: 'bg-amber-500/10 text-amber-600', powder: 'bg-purple-500/10 text-purple-600', flavor: 'bg-blue-500/10 text-blue-600', culture: 'bg-emerald-500/10 text-emerald-600', enzyme: 'bg-red-500/10 text-red-600', packaging: 'bg-slate-500/10 text-slate-600', additive: 'bg-pink-500/10 text-pink-600' };
+            const catIcons = { sugar: 'fa-cubes', powder: 'fa-mortar-pestle', flavor: 'fa-flask', culture: 'fa-microscope', enzyme: 'fa-dna', packaging: 'fa-box', additive: 'fa-vial' };
+            
+            container.innerHTML = filtered.map(ing => {
+                const stock = parseFloat(ing.current_stock), min = parseFloat(ing.minimum_stock), max = parseFloat(ing.maximum_stock || min * 3);
+                const pct = Math.min(100, (stock / max) * 100);
+                
+                let statusClass, statusText, barColor;
+                if (stock <= 0) { statusClass = 'badge-ghost'; statusText = 'Out'; barColor = 'bg-base-300'; }
+                else if (stock <= min) { statusClass = 'badge-error'; statusText = 'Critical'; barColor = 'bg-error'; }
+                else if (stock <= min * 1.5) { statusClass = 'badge-warning'; statusText = 'Low'; barColor = 'bg-warning'; }
+                else { statusClass = 'badge-success'; statusText = 'OK'; barColor = 'bg-success'; }
+                
+                const slug = ing.category_slug || 'additive';
+                const color = catColors[slug] || catColors.additive;
+                const icon = catIcons[slug] || 'fa-tag';
+                
+                let expiryBadge = '';
+                if (ing.nearest_expiry) {
+                    const days = daysUntil(ing.nearest_expiry);
+                    if (days < 0) expiryBadge = '<span class="badge badge-error badge-xs">EXPIRED</span>';
+                    else if (days <= 7) expiryBadge = `<span class="badge badge-warning badge-xs">${days}d left</span>`;
+                }
+                
+                return `
+                    <div class="bento-card card bg-base-100 border border-base-300 cursor-pointer" onclick="openDetailModal(${ing.id})">
+                        <div class="card-body p-4">
+                            <div class="flex items-start justify-between mb-2">
+                                <div class="w-10 h-10 rounded-xl ${color} flex items-center justify-center">
+                                    <i class="fas ${icon}"></i>
+                                </div>
+                                <span class="badge ${statusClass} badge-sm">${statusText}</span>
+                            </div>
+                            <h3 class="font-semibold text-sm line-clamp-1">${ing.name}</h3>
+                            <p class="text-xs text-base-content/60 mb-2">${ing.code}</p>
+                            <div class="flex items-baseline justify-between mb-1">
+                                <span class="text-xl font-bold">${stock.toLocaleString()}</span>
+                                <span class="text-xs text-base-content/60">${ing.unit_of_measure}</span>
+                            </div>
+                            <div class="w-full h-1.5 bg-base-200 rounded-full overflow-hidden mb-1">
+                                <div class="h-full ${barColor} rounded-full" style="width: ${pct}%"></div>
+                            </div>
+                            <div class="flex justify-between text-xs text-base-content/60">
+                                <span>Min: ${min}</span>
+                                ${expiryBadge}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function openReceiveModal() {
+            document.getElementById('receiveForm').reset();
+            document.getElementById('receiveUnit').textContent = '';
+            document.getElementById('receiveModal').showModal();
+        }
+        
+        async function submitReceive(e) {
+            e.preventDefault();
+            const data = {
+                ingredient_id: document.getElementById('receiveIngredientId').value,
+                quantity: document.getElementById('receiveQuantity').value,
+                unit_cost: document.getElementById('receiveUnitCost').value || null,
+                batch_number: document.getElementById('receiveBatchNumber').value || null,
+                manufacture_date: document.getElementById('receiveManufactureDate').value || null,
+                expiry_date: document.getElementById('receiveExpiryDate').value,
+                supplier: document.getElementById('receiveSupplier').value || null,
+                notes: document.getElementById('receiveNotes').value || null
+            };
+            
+            try {
+                const response = await WarehouseRawService.receiveIngredient(data);
+                if (response.success) {
+                    showToast('Stock received successfully', 'success');
+                    document.getElementById('receiveModal').close();
+                    loadIngredients();
+                } else {
+                    showToast(response.error || 'Failed', 'error');
+                }
+            } catch (e) { showToast('Failed to receive stock', 'error'); }
+        }
+        
+        async function openDetailModal(id) {
+            document.getElementById('detailModal').showModal();
+            document.getElementById('detailModalBody').innerHTML = '<div class="text-center py-8"><span class="loading loading-spinner loading-lg"></span></div>';
+            
+            try {
+                const response = await WarehouseRawService.getIngredient(id);
+                if (response.success) renderDetailModal(response.data);
+            } catch (e) {
+                showToast('Failed to load details', 'error');
+                document.getElementById('detailModal').close();
+            }
+        }
+        
+        function renderDetailModal(ing) {
+            const stock = parseFloat(ing.current_stock);
+            const batches = ing.batches || [];
+            
+            document.getElementById('detailModalTitle').innerHTML = `<i class="fas fa-box-open text-primary"></i> ${ing.name} <span class="text-base-content/60 font-normal text-sm">(${ing.code})</span>`;
+            
+            let batchesHtml = batches.length ? batches.map(b => {
+                const days = daysUntil(b.expiry_date);
+                const expClass = days < 0 ? 'badge-error' : days <= 7 ? 'badge-warning' : 'badge-ghost';
+                return `
+                    <div class="flex items-center justify-between p-3 bg-base-200 rounded-lg mb-2">
+                        <div>
+                            <p class="font-semibold text-sm">${b.batch_number || 'No batch #'}</p>
+                            <p class="text-xs text-base-content/60">Rcvd: ${formatDate(b.received_date)}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="font-bold">${parseFloat(b.quantity_remaining).toLocaleString()} ${ing.unit_of_measure}</p>
+                            <span class="badge ${expClass} badge-xs">${days < 0 ? 'EXPIRED' : formatDate(b.expiry_date)}</span>
+                        </div>
+                    </div>`;
+            }).join('') : '<p class="text-center text-base-content/60 py-4">No batches in stock</p>';
+            
+            document.getElementById('detailModalBody').innerHTML = `
+                <div class="grid grid-cols-3 gap-4 mb-4">
+                    <div><p class="text-xs text-base-content/60">Category</p><p class="font-semibold">${ing.category_name || '-'}</p></div>
+                    <div><p class="text-xs text-base-content/60">Unit</p><p class="font-semibold">${ing.unit_of_measure}</p></div>
+                    <div><p class="text-xs text-base-content/60">Current Stock</p><p class="font-bold text-2xl">${stock.toLocaleString()}</p></div>
+                </div>
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div><p class="text-xs text-base-content/60">Min Stock</p><p class="font-semibold">${ing.minimum_stock}</p></div>
+                    <div><p class="text-xs text-base-content/60">Max Stock</p><p class="font-semibold">${ing.maximum_stock || '-'}</p></div>
+                </div>
+                <h4 class="font-semibold mb-2"><i class="fas fa-layer-group"></i> Batches (FIFO)</h4>
+                <div class="max-h-48 overflow-y-auto scrollbar-thin">${batchesHtml}</div>
+            `;
+            
+            document.getElementById('detailModalFooter').innerHTML = `
+                <button class="btn btn-ghost" onclick="document.getElementById('detailModal').close()">Close</button>
+                <button class="btn btn-info btn-sm" onclick="openAdjustModal(${ing.id}, '${ing.name}', ${stock}, '${ing.unit_of_measure}')"><i class="fas fa-sliders-h"></i> Adjust</button>
+                <button class="btn btn-warning btn-sm" onclick="openIssueModal(${ing.id}, '${ing.name}', ${stock}, '${ing.unit_of_measure}')" ${stock <= 0 ? 'disabled' : ''}><i class="fas fa-arrow-up"></i> Issue</button>
+            `;
+        }
+        
+        function openIssueModal(id, name, available, unit) {
+            document.getElementById('issueIngredientId').value = id;
+            document.getElementById('issueIngredientName').textContent = name;
+            document.getElementById('issueAvailable').textContent = available.toLocaleString();
+            document.getElementById('issueUnitLabel').textContent = unit;
+            document.getElementById('issueQuantity').max = available;
+            document.getElementById('issueForm').reset();
+            document.getElementById('issueOtherReasonGroup').classList.add('hidden');
+            document.getElementById('detailModal').close();
+            document.getElementById('issueModal').showModal();
+        }
+        
+        async function submitIssue(e) {
+            e.preventDefault();
+            const id = document.getElementById('issueIngredientId').value;
+            const qty = document.getElementById('issueQuantity').value;
+            let reason = document.getElementById('issueReason').value;
+            if (reason === 'other') reason = document.getElementById('issueOtherReason').value;
+            
+            try {
+                const response = await WarehouseRawService.issueIngredient(id, qty, null, reason);
+                if (response.success) {
+                    showToast('Stock issued', 'success');
+                    document.getElementById('issueModal').close();
+                    loadIngredients();
+                } else showToast(response.error || 'Failed', 'error');
+            } catch (e) { showToast('Failed to issue', 'error'); }
+        }
+        
+        function openAdjustModal(id, name, current, unit) {
+            document.getElementById('adjustIngredientId').value = id;
+            document.getElementById('adjustCurrentStock').value = `${current.toLocaleString()} ${unit}`;
+            document.getElementById('adjustForm').reset();
+            document.getElementById('adjustCurrentStock').value = `${current.toLocaleString()} ${unit}`;
+            document.getElementById('adjustOtherReasonGroup').classList.add('hidden');
+            document.getElementById('detailModal').close();
+            document.getElementById('adjustModal').showModal();
+        }
+        
+        async function submitAdjust(e) {
+            e.preventDefault();
+            const id = document.getElementById('adjustIngredientId').value;
+            const qty = document.getElementById('adjustNewQuantity').value;
+            let reason = document.getElementById('adjustReason').value;
+            if (reason === 'other') reason = document.getElementById('adjustOtherReason').value;
+            if (!reason) { showToast('Please provide a reason', 'error'); return; }
+            
+            try {
+                const response = await WarehouseRawService.adjustIngredientStock(id, qty, reason);
+                if (response.success) {
+                    showToast('Stock adjusted', 'success');
+                    document.getElementById('adjustModal').close();
+                    loadIngredients();
+                } else showToast(response.error || 'Failed', 'error');
+            } catch (e) { showToast('Failed to adjust', 'error'); }
+        }
+        
+        // Helpers
+        function formatDate(d) { return d ? new Date(d).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : '-'; }
+        function daysUntil(d) { const date = new Date(d), today = new Date(); today.setHours(0,0,0,0); date.setHours(0,0,0,0); return Math.ceil((date - today) / 86400000); }
+        function debounce(fn, wait) { let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); }; }
+        function showToast(msg, type = 'info') {
+            const c = document.getElementById('toastContainer');
+            const cls = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type];
+            const t = document.createElement('div');
+            t.className = `alert ${cls} shadow-lg`;
+            t.innerHTML = `<span>${msg}</span>`;
+            c.appendChild(t);
+            setTimeout(() => t.remove(), 3000);
+        }
+    </script>
+</body>
+</html>

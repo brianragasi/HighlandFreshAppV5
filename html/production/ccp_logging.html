@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CCP Logging - Highland Fresh System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../css/style.css">
+    <style>
+        .ccp-form-card {
+            background: linear-gradient(135deg, var(--primary-50) 0%, var(--surface) 100%);
+            border: 2px solid var(--primary-200);
+        }
+        
+        .temp-display {
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--primary-700);
+            text-align: center;
+            padding: 1rem;
+        }
+        
+        .temp-display.warning { color: var(--warning); }
+        .temp-display.danger { color: var(--danger); }
+        .temp-display.success { color: var(--success); }
+        
+        .temp-slider {
+            width: 100%;
+            height: 12px;
+            border-radius: 6px;
+            background: linear-gradient(to right, #3b82f6, #22c55e, #f59e0b, #ef4444);
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        .temp-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: var(--surface);
+            border: 3px solid var(--primary-600);
+            cursor: pointer;
+            box-shadow: var(--shadow-md);
+        }
+        
+        .target-indicator {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem;
+            background: var(--gray-100);
+            border-radius: var(--border-radius);
+            margin-bottom: 1rem;
+        }
+        
+        .pass-badge {
+            padding: 1rem 2rem;
+            border-radius: var(--border-radius-lg);
+            text-align: center;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        
+        .pass-badge.pass {
+            background: var(--primary-100);
+            color: var(--primary-700);
+        }
+        
+        .pass-badge.fail {
+            background: #fef2f2;
+            color: var(--danger);
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <div class="user-avatar" style="width:40px;height:40px;font-size:1.25rem;">
+                        <i class="fas fa-industry"></i>
+                    </div>
+                    <div>
+                        <div class="sidebar-logo-text">Highland Fresh</div>
+                        <div class="sidebar-logo-subtitle">Production</div>
+                    </div>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <div class="nav-section">
+                    <div class="nav-section-title">Main Menu</div>
+                    <a href="dashboard.html" class="nav-link">
+                        <i class="fas fa-th-large"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </div>
+                
+                <div class="nav-section">
+                    <div class="nav-section-title">Production</div>
+                    <a href="batches.html" class="nav-link">
+                        <i class="fas fa-box"></i>
+                        <span>Production Batches</span>
+                    </a>
+                    <a href="recipes.html" class="nav-link">
+                        <i class="fas fa-book"></i>
+                        <span>Recipes</span>
+                    </a>
+                    <a href="ccp_logging.html" class="nav-link active">
+                        <i class="fas fa-thermometer-half"></i>
+                        <span>CCP Logging</span>
+                    </a>
+                </div>
+                
+                <div class="nav-section">
+                    <div class="nav-section-title">Materials</div>
+                    <a href="requisitions.html" class="nav-link">
+                        <i class="fas fa-clipboard-list"></i>
+                        <span>Requisitions</span>
+                    </a>
+                    <a href="byproducts.html" class="nav-link">
+                        <i class="fas fa-recycle"></i>
+                        <span>Byproducts</span>
+                    </a>
+                </div>
+            </nav>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <h1 class="header-title">CCP Logging</h1>
+                </div>
+                
+                <div class="header-right">
+                    <button class="header-icon-btn" title="Logout" onclick="AuthService.logout()">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            </header>
+            
+            <!-- Page Content -->
+            <div class="page-content">
+                <!-- CRITICAL Safety Notice -->
+                <div class="card mb-4" style="background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%); border: 3px solid var(--danger); border-left: 8px solid var(--danger);">
+                    <div class="card-body">
+                        <div class="d-flex align-center gap-3 mb-3">
+                            <div style="width: 60px; height: 60px; background: var(--danger); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 1.75rem;">
+                                <i class="fas fa-exclamation-triangle"></i>
+                            </div>
+                            <div>
+                                <h2 class="mb-0 text-danger">⚠️ CRITICAL CONTROL POINT (CCP)</h2>
+                                <p class="text-muted mb-0 text-lg">Food Safety Monitoring - MUST be recorded!</p>
+                            </div>
+                        </div>
+                        <div style="background: white; padding: 1rem; border-radius: 8px; border: 1px solid #fecaca;">
+                            <p class="mb-2"><strong>🔴 WHY IS THIS IMPORTANT?</strong></p>
+                            <p class="mb-0">Recording temperatures and pressures at critical points ensures our products are <strong>SAFE TO EAT</strong>. 
+                            If temperatures are wrong, bacteria can grow and make people sick!</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Simple Step Guide -->
+                <div class="card mb-4" style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 2px solid var(--success);">
+                    <div class="card-body">
+                        <h3 class="mb-3"><i class="fas fa-shoe-prints"></i> 👣 Simple Steps to Log CCP</h3>
+                        <div class="d-flex flex-wrap gap-3">
+                            <div style="flex: 1; min-width: 150px; background: white; padding: 1rem; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 2rem;">1️⃣</div>
+                                <strong>Select Run</strong>
+                                <p class="text-sm text-muted mb-0">Pick which batch</p>
+                            </div>
+                            <div style="flex: 1; min-width: 150px; background: white; padding: 1rem; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 2rem;">2️⃣</div>
+                                <strong>Pick Check Type</strong>
+                                <p class="text-sm text-muted mb-0">What stage?</p>
+                            </div>
+                            <div style="flex: 1; min-width: 150px; background: white; padding: 1rem; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 2rem;">3️⃣</div>
+                                <strong>Enter Reading</strong>
+                                <p class="text-sm text-muted mb-0">Temperature/Pressure</p>
+                            </div>
+                            <div style="flex: 1; min-width: 150px; background: white; padding: 1rem; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 2rem;">4️⃣</div>
+                                <strong>Click Save</strong>
+                                <p class="text-sm text-muted mb-0">That's it!</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="grid-2">
+                    <!-- CCP Entry Form -->
+                    <div class="card ccp-form-card">
+                        <div class="card-header" style="background: linear-gradient(135deg, var(--primary) 0%, #2563eb 100%); color: white;">
+                            <h3 class="card-title text-white">
+                                <i class="fas fa-edit"></i>
+                                📝 Record Your Reading Here
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <form id="ccpForm" onsubmit="recordCCP(event)">
+                                <div class="form-group">
+                                    <label class="form-label" style="font-size: 1.1rem;">
+                                        <strong>Step 1:</strong> Which production batch? 
+                                        <span class="text-danger">*</span>
+                                    </label>
+                                    <select id="runSelect" class="form-control" required onchange="updateRunInfo()" style="font-size: 1rem; padding: 0.75rem;">
+                                        <option value="">👆 Click here to select a batch...</option>
+                                    </select>
+                                    <div class="form-text">Choose the production run you're working on</div>
+                                </div>
+                                
+                                <div id="runInfo" style="display: none;" class="mb-3">
+                                    <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); padding: 1rem; border-radius: 8px; border: 2px solid var(--success);">
+                                        <div class="text-success font-semibold mb-1">✅ Selected Batch:</div>
+                                        <strong id="runInfoProduct" style="font-size: 1.1rem;"></strong>
+                                        <div class="text-sm mt-1" id="runInfoDetails"></div>
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label class="form-label" style="font-size: 1.1rem;">
+                                        <strong>Step 2:</strong> What are you checking?
+                                        <span class="text-danger">*</span>
+                                    </label>
+                                    <div class="form-text mb-2">Click one of the boxes below</div>
+                                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem;">
+                                        <label class="radio-card" style="cursor: pointer;">
+                                            <input type="radio" name="checkType" value="chilling" required onchange="updateTarget()">
+                                            <div class="radio-card-content" style="padding: 0.75rem; border: 2px solid var(--border); border-radius: var(--border-radius); text-align: center;">
+                                                <i class="fas fa-temperature-low text-info" style="font-size: 1.25rem;"></i>
+                                                <div class="font-semibold mt-1" style="font-size: 0.85rem;">Chilling</div>
+                                                <div class="text-secondary" style="font-size: 0.7rem;">Target: 4°C</div>
+                                            </div>
+                                        </label>
+                                        <label class="radio-card" style="cursor: pointer;">
+                                            <input type="radio" name="checkType" value="preheating" required onchange="updateTarget()">
+                                            <div class="radio-card-content" style="padding: 0.75rem; border: 2px solid var(--border); border-radius: var(--border-radius); text-align: center;">
+                                                <i class="fas fa-temperature-high text-orange" style="font-size: 1.25rem; color: #f97316;"></i>
+                                                <div class="font-semibold mt-1" style="font-size: 0.85rem;">Pre-heating</div>
+                                                <div class="text-secondary" style="font-size: 0.7rem;">Target: 65°C</div>
+                                            </div>
+                                        </label>
+                                        <label class="radio-card" style="cursor: pointer;">
+                                            <input type="radio" name="checkType" value="homogenization" required onchange="updateTarget()">
+                                            <div class="radio-card-content" style="padding: 0.75rem; border: 2px solid var(--border); border-radius: var(--border-radius); text-align: center;">
+                                                <i class="fas fa-compress-arrows-alt text-purple" style="font-size: 1.25rem; color: #8b5cf6;"></i>
+                                                <div class="font-semibold mt-1" style="font-size: 0.85rem;">Homogenization</div>
+                                                <div class="text-secondary" style="font-size: 0.7rem;">1000-1500 psi</div>
+                                            </div>
+                                        </label>
+                                        <label class="radio-card" style="cursor: pointer;">
+                                            <input type="radio" name="checkType" value="pasteurization" required onchange="updateTarget()">
+                                            <div class="radio-card-content" style="padding: 0.75rem; border: 2px solid var(--border); border-radius: var(--border-radius); text-align: center;">
+                                                <i class="fas fa-fire text-danger" style="font-size: 1.25rem;"></i>
+                                                <div class="font-semibold mt-1" style="font-size: 0.85rem;">🔥 Pasteurization</div>
+                                                <div class="text-secondary" style="font-size: 0.7rem;">75°C / 15 sec</div>
+                                            </div>
+                                        </label>
+                                        <label class="radio-card" style="cursor: pointer;">
+                                            <input type="radio" name="checkType" value="cooling" required onchange="updateTarget()">
+                                            <div class="radio-card-content" style="padding: 0.75rem; border: 2px solid var(--border); border-radius: var(--border-radius); text-align: center;">
+                                                <i class="fas fa-snowflake text-info" style="font-size: 1.25rem;"></i>
+                                                <div class="font-semibold mt-1" style="font-size: 0.85rem;">❄️ Cooling</div>
+                                                <div class="text-secondary" style="font-size: 0.7rem;">Target: ≤4°C</div>
+                                            </div>
+                                        </label>
+                                        <label class="radio-card" style="cursor: pointer;">
+                                            <input type="radio" name="checkType" value="storage" required onchange="updateTarget()">
+                                            <div class="radio-card-content" style="padding: 0.75rem; border: 2px solid var(--border); border-radius: var(--border-radius); text-align: center;">
+                                                <i class="fas fa-warehouse text-secondary" style="font-size: 1.25rem;"></i>
+                                                <div class="font-semibold mt-1" style="font-size: 0.85rem;">🏭 Storage</div>
+                                                <div class="text-secondary" style="font-size: 0.7rem;">Target: 4°C</div>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label class="form-label" style="font-size: 1.1rem;">
+                                        <strong>Step 3:</strong> Enter your reading
+                                        <span class="text-danger">*</span>
+                                    </label>
+                                    
+                                    <div class="target-indicator" id="targetIndicator" style="display: none; background: #fef3c7; padding: 1rem; border-radius: 8px; border: 2px solid #f59e0b; margin-bottom: 1rem;">
+                                        <div class="d-flex align-center gap-2">
+                                            <i class="fas fa-bullseye fa-lg text-warning"></i>
+                                            <div>
+                                                <strong>🎯 Your target temperature is:</strong>
+                                                <div style="font-size: 1.5rem; font-weight: bold; color: var(--primary);">
+                                                    <span id="targetTemp">-</span>°C
+                                                    <span class="text-sm text-muted">(±<span id="tolerance">2</span>°C is okay)</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="temp-display" id="tempDisplay" style="font-size: 3rem; font-weight: bold; text-align: center; padding: 1rem; background: #f8fafc; border-radius: 8px; margin-bottom: 1rem;">--°C</div>
+                                    
+                                    <div class="form-text mb-2 text-center">👆 Drag the slider OR type the number below</div>
+                                    
+                                    <input type="range" id="tempSlider" class="temp-slider" 
+                                           min="-10" max="100" step="0.5" value="20"
+                                           oninput="updateTempDisplay()" style="width: 100%; height: 30px;">
+                                    
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; gap: 1rem;">
+                                        <span class="text-sm text-muted">Cold ❄️ -10°C</span>
+                                        <input type="number" id="tempInput" class="form-control" 
+                                               style="width: 120px; text-align: center; font-size: 1.25rem; font-weight: bold;" 
+                                               step="0.1" required placeholder="Type here"
+                                               oninput="syncSlider()">
+                                        <span class="text-sm text-muted">Hot 🔥 100°C</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group" id="holdTimeGroup" style="display: none;">
+                                    <label class="form-label">
+                                        <i class="fas fa-stopwatch text-warning"></i>
+                                        ⏱️ How long did you hold this temperature? (seconds)
+                                    </label>
+                                    <input type="number" id="holdTime" class="form-control" min="0" step="1" 
+                                           placeholder="e.g., 15" style="font-size: 1.1rem;">
+                                    <div class="form-text" style="background: #fef3c7; padding: 0.5rem; border-radius: 4px; margin-top: 0.5rem;">
+                                        ⚠️ <strong>IMPORTANT:</strong> Pasteurization needs at least 15 seconds at 75°C to kill bacteria!
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group" id="pressureGroup" style="display: none;">
+                                    <label class="form-label">
+                                        <i class="fas fa-tachometer-alt text-info"></i>
+                                        📊 Pressure Reading (psi)
+                                        <span class="text-danger">*</span>
+                                    </label>
+                                    <div style="background: #dbeafe; padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem;">
+                                        <strong>🎯 Target: 1000 - 1500 psi</strong>
+                                    </div>
+                                    <input type="number" id="pressureInput" class="form-control" min="0" step="10" 
+                                           placeholder="Type the pressure reading..." style="font-size: 1.1rem;">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label class="form-label">
+                                        <i class="fas fa-sticky-note text-muted"></i>
+                                        📝 Any notes? (optional)
+                                    </label>
+                                    <textarea id="ccpNotes" class="form-control" rows="2" 
+                                              placeholder="Add any observations here..."></textarea>
+                                </div>
+                                
+                                <button type="submit" class="btn btn-success btn-lg btn-block" style="padding: 1rem; font-size: 1.25rem;">
+                                    <i class="fas fa-save"></i> 💾 SAVE THIS READING
+                                </button>
+                                
+                                <div class="text-center mt-3 text-muted text-sm">
+                                    <i class="fas fa-info-circle"></i> Your reading will be saved and the system will tell you if it PASSED or FAILED
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    
+                    <!-- Recent CCP Logs -->
+                    <div class="card">
+                        <div class="card-header" style="background: #f8fafc;">
+                            <h3 class="card-title">📋 Recent Readings (CCP Logs)</h3>
+                            <span class="text-muted text-sm">Your saved temperature checks</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-container">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Run</th>
+                                            <th>Type</th>
+                                            <th>Temp</th>
+                                            <th>Status</th>
+                                            <th>Time</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="recentLogsTable">
+                                        <tr>
+                                            <td colspan="5" class="text-center">Loading...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- CCP Guidelines -->
+                <div class="card mt-4">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-info-circle text-info"></i>
+                            CCP Guidelines - Fresh Milk Process Flow
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <!-- Process Flow Diagram -->
+                        <div class="mb-4" style="background: var(--gray-50); padding: 1rem; border-radius: var(--border-radius); overflow-x: auto;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem; min-width: 900px; justify-content: center;">
+                                <div style="text-align: center; padding: 0.5rem;">
+                                    <i class="fas fa-truck text-primary" style="font-size: 1.25rem;"></i>
+                                    <div style="font-size: 0.7rem; font-weight: 600;">Receiving</div>
+                                </div>
+                                <i class="fas fa-arrow-right text-gray-400"></i>
+                                <div style="text-align: center; padding: 0.5rem; background: var(--info-100); border-radius: 4px;">
+                                    <i class="fas fa-temperature-low text-info" style="font-size: 1.25rem;"></i>
+                                    <div style="font-size: 0.7rem; font-weight: 600;">Chilling</div>
+                                    <div style="font-size: 0.65rem; color: var(--info);">4°C</div>
+                                </div>
+                                <i class="fas fa-arrow-right text-gray-400"></i>
+                                <div style="text-align: center; padding: 0.5rem; background: var(--warning-100); border-radius: 4px;">
+                                    <i class="fas fa-temperature-high" style="font-size: 1.25rem; color: #f97316;"></i>
+                                    <div style="font-size: 0.7rem; font-weight: 600;">Pre-heat</div>
+                                    <div style="font-size: 0.65rem; color: #f97316;">65°C</div>
+                                </div>
+                                <i class="fas fa-arrow-right text-gray-400"></i>
+                                <div style="text-align: center; padding: 0.5rem; background: #ede9fe; border-radius: 4px;">
+                                    <i class="fas fa-compress-arrows-alt" style="font-size: 1.25rem; color: #8b5cf6;"></i>
+                                    <div style="font-size: 0.7rem; font-weight: 600;">Homogenize</div>
+                                    <div style="font-size: 0.65rem; color: #8b5cf6;">1000-1500 psi</div>
+                                </div>
+                                <i class="fas fa-arrow-right text-gray-400"></i>
+                                <div style="text-align: center; padding: 0.5rem; background: var(--danger-100); border-radius: 4px;">
+                                    <i class="fas fa-fire text-danger" style="font-size: 1.25rem;"></i>
+                                    <div style="font-size: 0.7rem; font-weight: 600;">Pasteurize</div>
+                                    <div style="font-size: 0.65rem; color: var(--danger);">75°C/15s</div>
+                                </div>
+                                <i class="fas fa-arrow-right text-gray-400"></i>
+                                <div style="text-align: center; padding: 0.5rem; background: var(--info-100); border-radius: 4px;">
+                                    <i class="fas fa-snowflake text-info" style="font-size: 1.25rem;"></i>
+                                    <div style="font-size: 0.7rem; font-weight: 600;">Cooling</div>
+                                    <div style="font-size: 0.65rem; color: var(--info);">4°C</div>
+                                </div>
+                                <i class="fas fa-arrow-right text-gray-400"></i>
+                                <div style="text-align: center; padding: 0.5rem;">
+                                    <i class="fas fa-box text-success" style="font-size: 1.25rem;"></i>
+                                    <div style="font-size: 0.7rem; font-weight: 600;">Packaging</div>
+                                </div>
+                                <i class="fas fa-arrow-right text-gray-400"></i>
+                                <div style="text-align: center; padding: 0.5rem; background: var(--gray-200); border-radius: 4px;">
+                                    <i class="fas fa-warehouse text-secondary" style="font-size: 1.25rem;"></i>
+                                    <div style="font-size: 0.7rem; font-weight: 600;">Storage</div>
+                                    <div style="font-size: 0.65rem; color: var(--gray-600);">4°C</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="grid-3">
+                            <div class="alert alert-danger">
+                                <h4><i class="fas fa-fire"></i> Pasteurization (HTST)</h4>
+                                <ul style="margin: 0.5rem 0 0 1.5rem; font-size: 0.85rem;">
+                                    <li>Temperature: <strong>75°C</strong></li>
+                                    <li>Hold time: <strong>15 seconds</strong></li>
+                                    <li>High Temperature Short Time method</li>
+                                    <li>Verify before proceeding to cooling</li>
+                                </ul>
+                            </div>
+                            <div style="background: #ede9fe; padding: 1rem; border-radius: var(--border-radius);">
+                                <h4 style="color: #8b5cf6;"><i class="fas fa-compress-arrows-alt"></i> Homogenization</h4>
+                                <ul style="margin: 0.5rem 0 0 1.5rem; font-size: 0.85rem;">
+                                    <li>Pressure: <strong>1000-1500 psi</strong></li>
+                                    <li>Ensures uniform fat distribution</li>
+                                    <li>Performed after pre-heating (65°C)</li>
+                                    <li>Cool to 4°C before pasteurization</li>
+                                </ul>
+                            </div>
+                            <div class="alert alert-info">
+                                <h4><i class="fas fa-snowflake"></i> Temperature Control</h4>
+                                <ul style="margin: 0.5rem 0 0 1.5rem; font-size: 0.85rem;">
+                                    <li>Chilling/Cooling/Storage: <strong>4°C</strong></li>
+                                    <li>Pre-heating: <strong>65°C</strong></li>
+                                    <li>Maintain cold chain throughout</li>
+                                    <li>Log at each critical stage</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+    
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/production/production.service.js"></script>
+    <script>
+        let activeRuns = [];
+        let currentTarget = null;
+        let currentTolerance = 2;
+        let isPasteurization = true;
+        
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../login.html';
+                return;
+            }
+            
+            await loadActiveRuns();
+            loadRecentLogs();
+            
+            // Check if run_id in URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const runId = urlParams.get('run_id');
+            if (runId) {
+                document.getElementById('runSelect').value = runId;
+                updateRunInfo();
+            }
+        });
+        
+        async function loadActiveRuns() {
+            try {
+                // Get runs that are in progress (any active status)
+                const response = await ProductionService.getRuns({
+                    status: 'in_progress',
+                    limit: 50
+                });
+                
+                // Also get pasteurization, processing, cooling, packaging status
+                const statuses = ['pasteurization', 'processing', 'cooling', 'packaging'];
+                for (const status of statuses) {
+                    const resp = await ProductionService.getRuns({ status, limit: 50 });
+                    if (resp.success && resp.data) {
+                        response.data = [...(response.data || []), ...resp.data];
+                    }
+                }
+                
+                if (response.success) {
+                    activeRuns = response.data || [];
+                    
+                    const select = document.getElementById('runSelect');
+                    if (activeRuns.length === 0) {
+                        select.innerHTML = '<option value="">No active production runs</option>';
+                    } else {
+                        select.innerHTML = '<option value="">Select active run...</option>' +
+                            activeRuns.map(r => `<option value="${r.id}">${r.run_code} - ${r.product_name} (${r.status})</option>`).join('');
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading runs:', error);
+            }
+        }
+        
+        async function loadRecentLogs() {
+            try {
+                const response = await ProductionService.getCCPLogs({ limit: 10 });
+                
+                if (response.success) {
+                    renderRecentLogs(response.data || []);
+                }
+            } catch (error) {
+                console.error('Error loading logs:', error);
+            }
+        }
+        
+        function renderRecentLogs(logs) {
+            const tbody = document.getElementById('recentLogsTable');
+            
+            if (!logs.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-secondary">No recent logs</td></tr>';
+                return;
+            }
+            
+            const iconMap = {
+                'chilling': 'temperature-low text-info',
+                'preheating': 'temperature-high',
+                'homogenization': 'compress-arrows-alt',
+                'pasteurization': 'fire text-danger',
+                'cooling': 'snowflake text-info',
+                'storage': 'warehouse text-secondary'
+            };
+            
+            tbody.innerHTML = logs.map(log => {
+                const icon = iconMap[log.check_type] || 'thermometer-half';
+                const reading = log.pressure_psi ? `${log.pressure_psi} psi` : `${log.temperature}°C`;
+                return `
+                <tr>
+                    <td class="font-mono text-sm">${log.run_code}</td>
+                    <td>
+                        <i class="fas fa-${icon}" ${log.check_type === 'preheating' ? 'style="color:#f97316"' : log.check_type === 'homogenization' ? 'style="color:#8b5cf6"' : ''}></i>
+                        ${log.check_type}
+                    </td>
+                    <td><strong>${reading}</strong></td>
+                    <td>
+                        <span class="badge badge-${log.status === 'pass' ? 'success' : 'danger'}">
+                            ${log.status}
+                        </span>
+                    </td>
+                    <td class="text-secondary text-sm">${new Date(log.check_datetime).toLocaleTimeString()}</td>
+                </tr>
+            `}).join('');
+        }
+        
+        function updateRunInfo() {
+            const runId = document.getElementById('runSelect').value;
+            const infoDiv = document.getElementById('runInfo');
+            
+            if (!runId) {
+                infoDiv.style.display = 'none';
+                return;
+            }
+            
+            const run = activeRuns.find(r => r.id == runId);
+            if (run) {
+                document.getElementById('runInfoProduct').textContent = `${run.product_name} ${run.variant || ''}`;
+                document.getElementById('runInfoDetails').textContent = 
+                    `Run Code: ${run.run_code} • Status: ${run.status} • Planned: ${run.planned_quantity} ${run.yield_unit}`;
+                infoDiv.style.display = 'block';
+            }
+        }
+        
+        function updateTarget() {
+            const checkType = document.querySelector('input[name="checkType"]:checked')?.value;
+            const targetIndicator = document.getElementById('targetIndicator');
+            const holdTimeGroup = document.getElementById('holdTimeGroup');
+            const pressureGroup = document.getElementById('pressureGroup');
+            const tempSection = document.querySelector('#tempSlider').closest('.form-group');
+            
+            if (!checkType) {
+                targetIndicator.style.display = 'none';
+                return;
+            }
+            
+            // Reset visibility
+            holdTimeGroup.style.display = 'none';
+            pressureGroup.style.display = 'none';
+            tempSection.style.display = 'block';
+            
+            // CCP Check Types based on Production Staff documentation
+            const ccpTargets = {
+                'chilling': { target: 4, tolerance: 1, isMax: true, label: 'Chilling' },
+                'preheating': { target: 65, tolerance: 2, isMax: false, label: 'Pre-heating' },
+                'homogenization': { target: null, tolerance: 0, isPressure: true, label: 'Homogenization' },
+                'pasteurization': { target: 75, tolerance: 2, isMax: false, showHoldTime: true, label: 'HTST Pasteurization' },
+                'cooling': { target: 4, tolerance: 1, isMax: true, label: 'Cooling' },
+                'storage': { target: 4, tolerance: 1, isMax: true, label: 'Storage' }
+            };
+            
+            const config = ccpTargets[checkType];
+            
+            if (config.isPressure) {
+                // Homogenization uses pressure, not temperature
+                tempSection.style.display = 'none';
+                pressureGroup.style.display = 'block';
+                targetIndicator.style.display = 'none';
+                isPasteurization = false;
+                currentTarget = null;
+            } else {
+                currentTarget = config.target;
+                currentTolerance = config.tolerance;
+                isPasteurization = !config.isMax; // If not max temp, it's a min temp check
+                
+                if (config.showHoldTime) {
+                    holdTimeGroup.style.display = 'block';
+                }
+                
+                document.getElementById('targetTemp').textContent = currentTarget;
+                document.getElementById('tolerance').textContent = currentTolerance;
+                targetIndicator.style.display = 'flex';
+            }
+            
+            // Update temp display color
+            updateTempDisplay();
+            
+            // Update radio card styling
+            document.querySelectorAll('.radio-card-content').forEach(card => {
+                card.style.borderColor = 'var(--border)';
+                card.style.background = 'var(--surface)';
+            });
+            const selectedCard = document.querySelector('input[name="checkType"]:checked')?.closest('.radio-card');
+            if (selectedCard) {
+                const content = selectedCard.querySelector('.radio-card-content');
+                content.style.borderColor = 'var(--primary-500)';
+                content.style.background = 'var(--primary-50)';
+            }
+        }
+        
+        function updateTempDisplay() {
+            const temp = parseFloat(document.getElementById('tempSlider').value);
+            const display = document.getElementById('tempDisplay');
+            
+            display.textContent = `${temp}°C`;
+            document.getElementById('tempInput').value = temp;
+            
+            // Update color based on pass/fail
+            display.className = 'temp-display';
+            
+            if (currentTarget !== null) {
+                if (isPasteurization) {
+                    // Pasteurization: must be >= target
+                    if (temp >= currentTarget) {
+                        display.classList.add('success');
+                    } else if (temp >= currentTarget - currentTolerance) {
+                        display.classList.add('warning');
+                    } else {
+                        display.classList.add('danger');
+                    }
+                } else {
+                    // Cooling: must be <= target
+                    if (temp <= currentTarget) {
+                        display.classList.add('success');
+                    } else if (temp <= currentTarget + currentTolerance) {
+                        display.classList.add('warning');
+                    } else {
+                        display.classList.add('danger');
+                    }
+                }
+            }
+        }
+        
+        function syncSlider() {
+            const temp = parseFloat(document.getElementById('tempInput').value);
+            if (!isNaN(temp)) {
+                document.getElementById('tempSlider').value = temp;
+                updateTempDisplay();
+            }
+        }
+        
+        async function recordCCP(event) {
+            event.preventDefault();
+            
+            const runId = document.getElementById('runSelect').value;
+            const checkType = document.querySelector('input[name="checkType"]:checked')?.value;
+            const temperature = document.getElementById('tempInput').value;
+            const pressure = document.getElementById('pressureInput').value;
+            const holdTime = document.getElementById('holdTime').value;
+            const notes = document.getElementById('ccpNotes').value;
+            
+            // Validation based on check type
+            if (!runId || !checkType) {
+                showToast('Please select a production run and check type', 'error');
+                return;
+            }
+            
+            if (checkType === 'homogenization') {
+                if (!pressure) {
+                    showToast('Please enter pressure reading for homogenization', 'error');
+                    return;
+                }
+            } else {
+                if (!temperature) {
+                    showToast('Please enter temperature reading', 'error');
+                    return;
+                }
+            }
+            
+            try {
+                const response = await ProductionService.recordCCPCheck({
+                    run_id: runId,
+                    check_type: checkType,
+                    temperature: checkType === 'homogenization' ? null : temperature,
+                    pressure_psi: checkType === 'homogenization' ? pressure : null,
+                    hold_time_secs: holdTime || 0,
+                    notes: notes
+                });
+                
+                if (response.success) {
+                    const result = response.data;
+                    
+                    if (result.status === 'pass') {
+                        showToast('✓ CCP Check PASSED - Within acceptable range', 'success');
+                    } else {
+                        showToast('⚠ CCP Check FAILED - Out of range!', 'error');
+                    }
+                    
+                    // Reset form
+                    document.getElementById('ccpForm').reset();
+                    document.getElementById('runInfo').style.display = 'none';
+                    document.getElementById('targetIndicator').style.display = 'none';
+                    document.getElementById('holdTimeGroup').style.display = 'none';
+                    document.getElementById('pressureGroup').style.display = 'none';
+                    document.querySelector('#tempSlider').closest('.form-group').style.display = 'block';
+                    document.getElementById('tempDisplay').textContent = '--°C';
+                    document.getElementById('tempDisplay').className = 'temp-display';
+                    document.querySelectorAll('.radio-card-content').forEach(card => {
+                        card.style.borderColor = 'var(--border)';
+                        card.style.background = 'var(--surface)';
+                    });
+                    
+                    // Reload logs
+                    loadRecentLogs();
+                } else {
+                    showToast(response.message || 'Failed to record CCP check', 'error');
+                }
+            } catch (error) {
+                console.error('Error recording CCP:', error);
+                showToast(error.message || 'Failed to record CCP check', 'error');
+            }
+        }
+        
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+                <span>${message}</span>
+            `;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.add('toast-hide');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+    </script>
+</body>
+</html>

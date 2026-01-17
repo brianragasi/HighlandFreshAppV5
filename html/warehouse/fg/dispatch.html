@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dispatch - Warehouse FG | Highland Fresh</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } }
+        }
+    </script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .fifo-warning { @apply border-2 border-warning bg-warning/10; }
+        .fifo-ok { @apply border-2 border-success bg-success/5; }
+        .scan-input:focus { @apply ring-4 ring-secondary/50; }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-secondary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-boxes-stacked text-secondary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Warehouse - Finished Goods</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-th-large w-5 text-center text-base-content/60"></i><span>Dashboard</span>
+                    </a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="inventory.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-boxes w-5 text-center text-base-content/60"></i><span>FG Inventory</span>
+                    </a></li>
+                    <li><a href="chillers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-temperature-low w-5 text-center text-base-content/60"></i><span>Chiller Storage</span>
+                    </a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Operations</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="receiving.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-truck-loading w-5 text-center text-base-content/60"></i><span>Receive from Production</span>
+                    </a></li>
+                    <li><a href="delivery_receipts.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-file-invoice w-5 text-center text-base-content/60"></i><span>Delivery Receipts</span>
+                    </a></li>
+                    <li><a href="dispatch.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-secondary text-secondary-content">
+                        <i class="fas fa-truck w-5 text-center"></i><span>Dispatch</span>
+                    </a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Customers</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="customers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-users w-5 text-center text-base-content/60"></i><span>Customer List</span>
+                    </a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="reports/inventory.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-chart-bar w-5 text-center text-base-content/60"></i><span>Inventory Report</span>
+                    </a></li>
+                    <li><a href="reports/dispatch.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-shipping-fast w-5 text-center text-base-content/60"></i><span>Dispatch Report</span>
+                    </a></li>
+                </ul>
+            </div>
+        </nav>
+        
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-secondary text-secondary-content">
+                        <span class="text-sm font-semibold" id="userInitials">FG</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Warehouse Staff</p>
+                    <p class="text-xs text-base-content/60 truncate">Finished Goods</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square"><i class="fas fa-ellipsis-v"></i></label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button>
+            </div>
+            <div class="flex-1">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-truck text-secondary"></i>
+                    <span class="font-semibold">Barcode Dispatch</span>
+                </div>
+            </div>
+            <div class="flex-none gap-2">
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+        
+        <main class="flex-1 p-4 lg:p-6">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                <div>
+                    <h1 class="text-2xl font-bold text-base-content">Barcode-Based Dispatch</h1>
+                    <p class="text-base-content/60">Scan products to release with FIFO enforcement</p>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Left: Scanner Section -->
+                <div class="lg:col-span-2 space-y-6">
+                    <!-- Barcode Scanner -->
+                    <div class="card bg-base-100 shadow-sm">
+                        <div class="card-body">
+                            <h2 class="card-title text-lg mb-4">
+                                <i class="fas fa-barcode text-secondary"></i>
+                                Scan Product Barcode
+                            </h2>
+                            
+                            <div class="form-control mb-4">
+                                <label class="label"><span class="label-text">Select Delivery Receipt</span></label>
+                                <select id="selectDR" class="select select-bordered" onchange="loadDRDetails()">
+                                    <option value="">Select pending DR...</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-control">
+                                <label class="label"><span class="label-text">Barcode / Batch Code</span></label>
+                                <div class="join w-full">
+                                    <input type="text" id="barcodeInput" 
+                                           class="input input-bordered join-item flex-1 scan-input text-lg font-mono" 
+                                           placeholder="Scan or enter barcode..."
+                                           onkeypress="if(event.key==='Enter') scanBarcode()"
+                                           autofocus>
+                                    <button class="btn btn-secondary join-item" onclick="scanBarcode()">
+                                        <i class="fas fa-search"></i> Lookup
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Scan Result -->
+                            <div id="scanResult" class="mt-4 hidden">
+                                <div id="scanResultContent" class="rounded-lg p-4"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- FIFO Warning Banner -->
+                    <div id="fifoWarning" class="alert alert-warning hidden">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <div>
+                            <h3 class="font-bold">FIFO Warning!</h3>
+                            <div id="fifoWarningText">There are older batches that should be released first.</div>
+                        </div>
+                        <div>
+                            <button class="btn btn-sm" onclick="showOlderBatches()">View Older</button>
+                            <button class="btn btn-sm btn-warning" onclick="overrideFIFO()">Override</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Scanned Items -->
+                    <div class="card bg-base-100 shadow-sm">
+                        <div class="card-body">
+                            <div class="flex justify-between items-center mb-4">
+                                <h2 class="card-title text-lg">
+                                    <i class="fas fa-list-check text-success"></i>
+                                    Scanned Items for Release
+                                </h2>
+                                <span class="badge badge-secondary" id="scannedCount">0 items</span>
+                            </div>
+                            
+                            <div class="overflow-x-auto">
+                                <table class="table">
+                                    <thead>
+                                        <tr class="bg-base-200">
+                                            <th>Product</th>
+                                            <th>Batch</th>
+                                            <th>Expiry</th>
+                                            <th class="text-right">Boxes</th>
+                                            <th class="text-right">Pieces</th>
+                                            <th class="text-right">Total Pcs</th>
+                                            <th>FIFO</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="scannedItemsTable">
+                                        <tr>
+                                            <td colspan="8" class="text-center py-8 text-base-content/60">
+                                                <i class="fas fa-barcode text-4xl mb-2 opacity-30"></i>
+                                                <p>Scan items to add to release list</p>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <div class="card-actions justify-end mt-4">
+                                <button class="btn btn-outline" onclick="clearScanned()">
+                                    <i class="fas fa-trash"></i> Clear All
+                                </button>
+                                <button class="btn btn-secondary" id="btnConfirmRelease" onclick="confirmRelease()" disabled>
+                                    <i class="fas fa-truck"></i> Confirm Release
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Right: DR Summary -->
+                <div class="space-y-6">
+                    <!-- Selected DR Info -->
+                    <div class="card bg-base-100 shadow-sm">
+                        <div class="card-body">
+                            <h2 class="card-title text-lg mb-4">
+                                <i class="fas fa-file-invoice text-info"></i>
+                                DR Summary
+                            </h2>
+                            
+                            <div id="drSummary" class="text-base-content/60 text-center py-4">
+                                Select a Delivery Receipt to begin
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Quick Stats -->
+                    <div class="card bg-base-100 shadow-sm">
+                        <div class="card-body">
+                            <h2 class="card-title text-lg mb-4">
+                                <i class="fas fa-chart-bar text-secondary"></i>
+                                Today's Dispatch
+                            </h2>
+                            
+                            <div class="stats stats-vertical w-full">
+                                <div class="stat">
+                                    <div class="stat-title">DRs Dispatched</div>
+                                    <div class="stat-value text-secondary" id="todayDRs">0</div>
+                                </div>
+                                <div class="stat">
+                                    <div class="stat-title">Units Released</div>
+                                    <div class="stat-value" id="todayUnits">0</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+        
+        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
+            <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+        </footer>
+    </div>
+    
+    <!-- Quantity Modal -->
+    <dialog id="quantityModal" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg mb-4">Enter Release Quantity</h3>
+            <form id="quantityForm">
+                <input type="hidden" id="qtyInventoryId">
+                
+                <div class="bg-base-200 rounded-lg p-4 mb-4">
+                    <div class="text-sm">
+                        <div><span class="text-base-content/60">Product:</span> <strong id="qtyProduct">-</strong></div>
+                        <div><span class="text-base-content/60">Batch:</span> <strong id="qtyBatch">-</strong></div>
+                        <div><span class="text-base-content/60">Available:</span> <strong id="qtyAvailable">-</strong></div>
+                        <div class="mt-2 p-2 bg-info/10 rounded text-info text-xs">
+                            <i class="fas fa-box"></i> 1 Box = <span id="qtyPiecesPerBox">1</span> Pieces
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-control mb-4">
+                    <label class="label"><span class="label-text">Release Quantity</span></label>
+                    <div class="flex gap-2 items-center">
+                        <div class="form-control flex-1">
+                            <label class="label py-0"><span class="label-text text-xs">Boxes</span></label>
+                            <input type="number" id="qtyBoxes" class="input input-bordered w-full" min="0" value="0" onchange="calculateTotalReleasePieces()" oninput="calculateTotalReleasePieces()">
+                        </div>
+                        <span class="self-end pb-3 text-lg font-bold">+</span>
+                        <div class="form-control flex-1">
+                            <label class="label py-0"><span class="label-text text-xs">Pieces</span></label>
+                            <input type="number" id="qtyPieces" class="input input-bordered w-full" min="0" value="0" onchange="calculateTotalReleasePieces()" oninput="calculateTotalReleasePieces()">
+                        </div>
+                    </div>
+                    <div class="mt-3 p-3 bg-secondary/10 rounded-lg">
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm">Total Pieces to Release:</span>
+                            <span class="text-xl font-bold text-secondary" id="qtyTotalPieces">0</span>
+                        </div>
+                    </div>
+                    <p class="text-xs text-base-content/60 mt-2" id="qtyValidation"></p>
+                </div>
+                
+                <div class="modal-action">
+                    <button type="button" class="btn" onclick="quantityModal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-secondary">Add to Release</button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../../js/config/api.js"></script>
+    <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/warehouse/fg.service.js"></script>
+    
+    <script>
+        let pendingDRs = [];
+        let currentDR = null;
+        let scannedItems = [];
+        let currentScanResult = null;
+        
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('-translate-x-full');
+            document.getElementById('sidebarBackdrop').classList.toggle('hidden');
+        }
+        
+        document.getElementById('themeToggle').addEventListener('change', function() {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+        
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('themeToggle').checked = true;
+        }
+        
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `alert alert-${type} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            document.getElementById('toastContainer').appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                await AuthService.init();
+                const user = AuthService.getUser();
+                if (user) {
+                    document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
+                    document.getElementById('userInitials').textContent = `${user.first_name[0]}${user.last_name[0]}`;
+                }
+                await loadPendingDRs();
+                await loadTodayStats();
+                document.getElementById('barcodeInput').focus();
+            } catch (error) {
+                console.error('Init error:', error);
+                showToast('Failed to initialize', 'error');
+            }
+        });
+        
+        async function loadPendingDRs() {
+            try {
+                const response = await WarehouseFGService.getPendingDRs();
+                pendingDRs = response.data || [];
+                const select = document.getElementById('selectDR');
+                select.innerHTML = '<option value="">Select pending DR...</option>';
+                pendingDRs.forEach(dr => {
+                    select.innerHTML += `<option value="${dr.id}">${dr.dr_number} - ${dr.customer_name}</option>`;
+                });
+            } catch (error) {
+                console.error('Failed to load pending DRs:', error);
+            }
+        }
+        
+        async function loadTodayStats() {
+            try {
+                const response = await WarehouseFGService.getDashboardStats();
+                const stats = response.data || {};
+                document.getElementById('todayDRs').textContent = stats.delivery?.dispatched_today || 0;
+                document.getElementById('todayUnits').textContent = (stats.delivery?.units_released || 0).toLocaleString();
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+            }
+        }
+        
+        async function loadDRDetails() {
+            const drId = document.getElementById('selectDR').value;
+            if (!drId) {
+                currentDR = null;
+                document.getElementById('drSummary').innerHTML = '<div class="text-base-content/60 text-center py-4">Select a Delivery Receipt to begin</div>';
+                return;
+            }
+            
+            try {
+                const response = await WarehouseFGService.getDeliveryReceipt(drId);
+                currentDR = response.data;
+                
+                document.getElementById('drSummary').innerHTML = `
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold text-lg">${currentDR.dr_number}</span>
+                            <span class="badge badge-${currentDR.status === 'pending' ? 'warning' : 'info'}">${currentDR.status}</span>
+                        </div>
+                        <div class="divider my-2"></div>
+                        <div class="text-sm space-y-1">
+                            <div><i class="fas fa-user w-5 text-base-content/60"></i> ${currentDR.customer_name}</div>
+                            <div><i class="fas fa-tag w-5 text-base-content/60"></i> ${currentDR.customer_type || 'N/A'}</div>
+                            <div><i class="fas fa-map-marker-alt w-5 text-base-content/60"></i> ${currentDR.delivery_address || 'N/A'}</div>
+                        </div>
+                        ${currentDR.items && currentDR.items.length > 0 ? `
+                            <div class="divider my-2"></div>
+                            <div class="text-sm">
+                                <div class="font-semibold mb-2">Required Items:</div>
+                                ${currentDR.items.map(i => `<div class="flex justify-between"><span>${i.product_name}</span><span>${i.quantity}</span></div>`).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+                
+                document.getElementById('barcodeInput').focus();
+            } catch (error) {
+                console.error('Failed to load DR:', error);
+                showToast('Failed to load DR details', 'error');
+            }
+        }
+        
+        async function scanBarcode() {
+            const barcode = document.getElementById('barcodeInput').value.trim();
+            if (!barcode) {
+                showToast('Please enter a barcode', 'warning');
+                return;
+            }
+            
+            try {
+                const response = await WarehouseFGService.lookupBatchByBarcode(barcode);
+                currentScanResult = response.data;
+                
+                const resultDiv = document.getElementById('scanResult');
+                const contentDiv = document.getElementById('scanResultContent');
+                
+                if (currentScanResult) {
+                    // Check FIFO
+                    const fifoCheck = await WarehouseFGService.checkFIFOCompliance(currentScanResult.id, currentScanResult.product_id);
+                    const isFIFOOk = fifoCheck.data?.is_compliant !== false;
+                    
+                    // Multi-unit calculations
+                    const piecesPerBox = parseInt(currentScanResult.pieces_per_box) || 1;
+                    const availableBoxes = parseInt(currentScanResult.quantity_boxes) || 0;
+                    const availablePieces = parseInt(currentScanResult.quantity_pieces) || 0;
+                    const totalAvailable = (availableBoxes * piecesPerBox) + availablePieces;
+                    const availableDisplay = availableBoxes > 0 
+                        ? `${availableBoxes} Boxes + ${availablePieces} Pieces (${totalAvailable} pcs)` 
+                        : `${availablePieces} Pieces`;
+                    
+                    contentDiv.className = `rounded-lg p-4 ${isFIFOOk ? 'fifo-ok' : 'fifo-warning'}`;
+                    contentDiv.innerHTML = `
+                        <div class="flex justify-between items-start mb-3">
+                            <div>
+                                <div class="font-bold text-lg">${currentScanResult.product_name}</div>
+                                <div class="text-sm text-base-content/60">${currentScanResult.variant || ''} ${currentScanResult.size_value || ''}${currentScanResult.size_unit || ''}</div>
+                            </div>
+                            <span class="badge ${isFIFOOk ? 'badge-success' : 'badge-warning'}">${isFIFOOk ? 'FIFO OK' : 'FIFO Warning'}</span>
+                        </div>
+                        <div class="bg-base-200 rounded-lg p-3 mb-3">
+                            <div class="text-xs text-base-content/60 mb-1">Available Stock</div>
+                            <div class="font-bold text-lg">${availableDisplay}</div>
+                            <div class="text-xs text-info mt-1"><i class="fas fa-box"></i> 1 Box = ${piecesPerBox} Pieces</div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-sm mb-4">
+                            <div><span class="text-base-content/60">Batch:</span> <code>${currentScanResult.batch_code}</code></div>
+                            <div><span class="text-base-content/60">Chiller:</span> ${currentScanResult.chiller_name || 'N/A'}</div>
+                            <div><span class="text-base-content/60">Mfg Date:</span> ${currentScanResult.manufacture_date ? new Date(currentScanResult.manufacture_date).toLocaleDateString() : 'N/A'}</div>
+                            <div><span class="text-base-content/60">Expiry:</span> ${currentScanResult.expiry_date ? new Date(currentScanResult.expiry_date).toLocaleDateString() : 'N/A'}</div>
+                        </div>
+                        <button class="btn btn-secondary btn-sm w-full" onclick="addToRelease()">
+                            <i class="fas fa-plus"></i> Add to Release List
+                        </button>
+                    `;
+                    
+                    if (!isFIFOOk) {
+                        document.getElementById('fifoWarning').classList.remove('hidden');
+                        document.getElementById('fifoWarningText').textContent = 
+                            `Batch ${fifoCheck.data?.oldest_batch || 'older'} should be released first (expires ${fifoCheck.data?.oldest_expiry || 'earlier'})`;
+                    } else {
+                        document.getElementById('fifoWarning').classList.add('hidden');
+                    }
+                } else {
+                    contentDiv.className = 'rounded-lg p-4 bg-error/10 border-2 border-error';
+                    contentDiv.innerHTML = `
+                        <div class="text-center">
+                            <i class="fas fa-exclamation-circle text-error text-3xl mb-2"></i>
+                            <p class="font-semibold">Barcode not found</p>
+                            <p class="text-sm text-base-content/60">No inventory item matches this barcode</p>
+                        </div>
+                    `;
+                }
+                
+                resultDiv.classList.remove('hidden');
+                document.getElementById('barcodeInput').value = '';
+                document.getElementById('barcodeInput').focus();
+                
+            } catch (error) {
+                console.error('Scan error:', error);
+                showToast('Failed to lookup barcode', 'error');
+            }
+        }
+        
+        function addToRelease() {
+            if (!currentScanResult) return;
+            
+            const piecesPerBox = parseInt(currentScanResult.pieces_per_box) || 1;
+            const availableBoxes = parseInt(currentScanResult.quantity_boxes) || 0;
+            const availablePieces = parseInt(currentScanResult.quantity_pieces) || 0;
+            const totalAvailable = (availableBoxes * piecesPerBox) + availablePieces;
+            const availableDisplay = availableBoxes > 0 
+                ? `${availableBoxes} Boxes + ${availablePieces} Pieces (${totalAvailable} pcs total)` 
+                : `${availablePieces} Pieces`;
+            
+            document.getElementById('qtyInventoryId').value = currentScanResult.id;
+            document.getElementById('qtyProduct').textContent = currentScanResult.product_name;
+            document.getElementById('qtyBatch').textContent = currentScanResult.batch_code;
+            document.getElementById('qtyAvailable').textContent = availableDisplay;
+            document.getElementById('qtyPiecesPerBox').textContent = piecesPerBox;
+            document.getElementById('qtyBoxes').value = 0;
+            document.getElementById('qtyBoxes').max = availableBoxes;
+            document.getElementById('qtyPieces').value = 0;
+            document.getElementById('qtyTotalPieces').textContent = '0';
+            document.getElementById('qtyValidation').textContent = '';
+            
+            // Store available stock for validation
+            currentScanResult._maxBoxes = availableBoxes;
+            currentScanResult._maxPieces = availablePieces;
+            currentScanResult._piecesPerBox = piecesPerBox;
+            currentScanResult._totalAvailable = totalAvailable;
+            
+            calculateTotalReleasePieces();
+            document.getElementById('quantityModal').showModal();
+        }
+        
+        function calculateTotalReleasePieces() {
+            if (!currentScanResult) return;
+            
+            const piecesPerBox = currentScanResult._piecesPerBox || 1;
+            const boxes = parseInt(document.getElementById('qtyBoxes').value) || 0;
+            const pieces = parseInt(document.getElementById('qtyPieces').value) || 0;
+            const total = (boxes * piecesPerBox) + pieces;
+            
+            document.getElementById('qtyTotalPieces').textContent = total.toLocaleString();
+            
+            // Validation
+            const maxAvailable = currentScanResult._totalAvailable || 0;
+            const validationEl = document.getElementById('qtyValidation');
+            
+            if (total > maxAvailable) {
+                validationEl.textContent = `⚠️ Exceeds available stock (${maxAvailable} pieces max)`;
+                validationEl.className = 'text-xs text-error mt-2';
+            } else if (total === 0) {
+                validationEl.textContent = 'Enter quantity to release';
+                validationEl.className = 'text-xs text-base-content/60 mt-2';
+            } else {
+                validationEl.textContent = `✓ ${maxAvailable - total} pieces will remain`;
+                validationEl.className = 'text-xs text-success mt-2';
+            }
+        }
+        
+        document.getElementById('quantityForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const piecesPerBox = currentScanResult._piecesPerBox || 1;
+            const releaseBoxes = parseInt(document.getElementById('qtyBoxes').value) || 0;
+            const releasePieces = parseInt(document.getElementById('qtyPieces').value) || 0;
+            const totalRelease = (releaseBoxes * piecesPerBox) + releasePieces;
+            const maxAvailable = currentScanResult._totalAvailable || 0;
+            
+            if (totalRelease <= 0) {
+                showToast('Please enter a quantity to release', 'warning');
+                return;
+            }
+            
+            if (totalRelease > maxAvailable) {
+                showToast('Quantity exceeds available stock', 'warning');
+                return;
+            }
+            
+            // Add to scanned items
+            const existingIndex = scannedItems.findIndex(i => i.id === currentScanResult.id);
+            if (existingIndex >= 0) {
+                scannedItems[existingIndex].releaseBoxes += releaseBoxes;
+                scannedItems[existingIndex].releasePieces += releasePieces;
+                scannedItems[existingIndex].releaseTotal += totalRelease;
+            } else {
+                scannedItems.push({
+                    ...currentScanResult,
+                    releaseBoxes: releaseBoxes,
+                    releasePieces: releasePieces,
+                    releaseTotal: totalRelease,
+                    piecesPerBox: piecesPerBox
+                });
+            }
+            
+            renderScannedItems();
+            document.getElementById('quantityModal').close();
+            document.getElementById('scanResult').classList.add('hidden');
+            showToast('Item added to release list', 'success');
+        });
+        
+        function renderScannedItems() {
+            const tbody = document.getElementById('scannedItemsTable');
+            
+            if (scannedItems.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="text-center py-8 text-base-content/60">
+                            <i class="fas fa-barcode text-4xl mb-2 opacity-30"></i>
+                            <p>Scan items to add to release list</p>
+                        </td>
+                    </tr>
+                `;
+                document.getElementById('scannedCount').textContent = '0 items';
+                document.getElementById('btnConfirmRelease').disabled = true;
+                return;
+            }
+            
+            // Calculate grand totals
+            let grandTotalPieces = 0;
+            
+            tbody.innerHTML = scannedItems.map((item, index) => {
+                grandTotalPieces += item.releaseTotal;
+                return `
+                <tr>
+                    <td>
+                        <div class="font-medium">${item.product_name}</div>
+                        <div class="text-xs text-base-content/60">${item.variant || ''}</div>
+                    </td>
+                    <td><code class="text-xs">${item.batch_code}</code></td>
+                    <td>${item.expiry_date ? new Date(item.expiry_date).toLocaleDateString() : 'N/A'}</td>
+                    <td class="text-right">${item.releaseBoxes > 0 ? item.releaseBoxes : '-'}</td>
+                    <td class="text-right">${item.releasePieces > 0 ? item.releasePieces : '-'}</td>
+                    <td class="text-right font-bold text-secondary">${item.releaseTotal}</td>
+                    <td><span class="badge badge-success badge-sm">OK</span></td>
+                    <td>
+                        <button class="btn btn-ghost btn-xs text-error" onclick="removeScannedItem(${index})">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </td>
+                </tr>
+            `}).join('');
+            
+            // Add total row
+            tbody.innerHTML += `
+                <tr class="bg-secondary/10 font-bold">
+                    <td colspan="5" class="text-right">Grand Total:</td>
+                    <td class="text-right text-secondary text-lg">${grandTotalPieces.toLocaleString()} pcs</td>
+                    <td colspan="2"></td>
+                </tr>
+            `;
+            
+            document.getElementById('scannedCount').textContent = `${scannedItems.length} items (${grandTotalPieces} pcs)`;
+            document.getElementById('btnConfirmRelease').disabled = false;
+        }
+        
+        function removeScannedItem(index) {
+            scannedItems.splice(index, 1);
+            renderScannedItems();
+        }
+        
+        function clearScanned() {
+            if (scannedItems.length === 0) return;
+            if (!confirm('Clear all scanned items?')) return;
+            scannedItems = [];
+            renderScannedItems();
+        }
+        
+        async function confirmRelease() {
+            if (scannedItems.length === 0) {
+                showToast('No items to release', 'warning');
+                return;
+            }
+            
+            const drId = currentDR?.id;
+            if (!drId) {
+                showToast('Please select a Delivery Receipt', 'warning');
+                return;
+            }
+            
+            if (!confirm(`Release ${scannedItems.length} items for ${currentDR.dr_number}?`)) return;
+            
+            try {
+                const items = scannedItems.map(i => ({
+                    inventory_id: i.id,
+                    quantity_boxes: i.releaseBoxes,
+                    quantity_pieces: i.releasePieces,
+                    total_pieces: i.releaseTotal,
+                    barcode: i.batch_code
+                }));
+                
+                await WarehouseFGService.bulkReleaseItems(drId, items);
+                showToast('Items released successfully!', 'success');
+                scannedItems = [];
+                renderScannedItems();
+                await loadPendingDRs();
+                await loadTodayStats();
+                
+                document.getElementById('selectDR').value = '';
+                document.getElementById('drSummary').innerHTML = '<div class="text-base-content/60 text-center py-4">Select a Delivery Receipt to begin</div>';
+                currentDR = null;
+                
+            } catch (error) {
+                console.error('Release error:', error);
+                showToast('Failed to release items', 'error');
+            }
+        }
+        
+        function showOlderBatches() {
+            showToast('View older batches feature coming soon', 'info');
+        }
+        
+        function overrideFIFO() {
+            if (confirm('Override FIFO and continue with this batch? This will be logged.')) {
+                document.getElementById('fifoWarning').classList.add('hidden');
+                addToRelease();
+            }
+        }
+    </script>
+</body>
+</html>

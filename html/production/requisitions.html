@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Requisitions - Highland Fresh System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../css/style.css">
+    <style>
+        /* Pulse animation for action buttons */
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+        .stat-card[style*="cursor"]:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: all 0.2s ease;
+        }
+        .card[onclick]:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+            transition: all 0.2s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <div class="user-avatar" style="width:40px;height:40px;font-size:1.25rem;">
+                        <i class="fas fa-industry"></i>
+                    </div>
+                    <div>
+                        <div class="sidebar-logo-text">Highland Fresh</div>
+                        <div class="sidebar-logo-subtitle">Production</div>
+                    </div>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <div class="nav-section">
+                    <div class="nav-section-title">Main Menu</div>
+                    <a href="dashboard.html" class="nav-link">
+                        <i class="fas fa-th-large"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </div>
+                
+                <div class="nav-section">
+                    <div class="nav-section-title">Production</div>
+                    <a href="batches.html" class="nav-link">
+                        <i class="fas fa-box"></i>
+                        <span>Production Batches</span>
+                    </a>
+                    <a href="recipes.html" class="nav-link">
+                        <i class="fas fa-book"></i>
+                        <span>Recipes</span>
+                    </a>
+                    <a href="ccp_logging.html" class="nav-link">
+                        <i class="fas fa-thermometer-half"></i>
+                        <span>CCP Logging</span>
+                    </a>
+                </div>
+                
+                <div class="nav-section">
+                    <div class="nav-section-title">Materials</div>
+                    <a href="requisitions.html" class="nav-link active">
+                        <i class="fas fa-clipboard-list"></i>
+                        <span>Requisitions</span>
+                    </a>
+                    <a href="byproducts.html" class="nav-link">
+                        <i class="fas fa-recycle"></i>
+                        <span>Byproducts</span>
+                    </a>
+                </div>
+            </nav>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <h1 class="header-title">Ingredient Requisitions</h1>
+                </div>
+                
+                <div class="header-right">
+                    <button class="header-icon-btn" title="Logout" onclick="AuthService.logout()">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            </header>
+            
+            <!-- Page Content -->
+            <div class="page-content">
+                <!-- 📋 WHAT IS A REQUISITION? - Explainer for new users -->
+                <div class="card mb-4" style="border-left: 4px solid #3b82f6; background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);">
+                    <div class="card-body">
+                        <div style="display: flex; align-items: flex-start; gap: 1rem;">
+                            <div style="background: #3b82f6; color: white; padding: 0.75rem; border-radius: 12px; font-size: 1.5rem;">
+                                📋
+                            </div>
+                            <div>
+                                <h4 style="margin: 0 0 0.5rem 0; color: #1e40af;">What is a Requisition? 🤔</h4>
+                                <p style="margin: 0; color: #64748b;">
+                                    <strong>A requisition is a request for ingredients/materials</strong> needed for production. 
+                                    When you need items from the warehouse, create a requisition so the warehouse team knows what to prepare for you.
+                                </p>
+                                <div style="margin-top: 0.75rem; display: flex; gap: 1.5rem; flex-wrap: wrap;">
+                                    <span style="color: #64748b;"><strong>📦 Example:</strong> Need 100L raw milk? → Create a requisition</span>
+                                    <span style="color: #64748b;"><strong>🧂 Example:</strong> Need salt for cheese? → Create a requisition</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 🆕 BIG ACTION BUTTON - Request Ingredients -->
+                <div class="card mb-4" onclick="showNewRequisitionModal()" style="cursor: pointer; border: 2px dashed #3b82f6; background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%); transition: all 0.2s ease;">
+                    <div class="card-body text-center" style="padding: 2rem;">
+                        <div style="font-size: 3rem; margin-bottom: 0.5rem;">📝</div>
+                        <h3 style="margin: 0 0 0.5rem 0; color: #1e40af;">Request Ingredients</h3>
+                        <p style="margin: 0; color: #64748b;">Click here to create a new requisition for materials you need</p>
+                        <div style="margin-top: 1rem;">
+                            <span class="badge" style="background: #3b82f6; color: white; padding: 0.5rem 1rem; font-size: 1rem;">
+                                <i class="fas fa-plus"></i> New Requisition
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Stat Cards - CLICKABLE to filter -->
+                <div class="stats-grid mb-4">
+                    <div class="stat-card" onclick="filterByStatus('pending')" style="cursor: pointer;" title="Click to see pending requisitions">
+                        <div class="stat-icon" style="background: linear-gradient(135deg, var(--warning) 0%, #f59e0b 100%);">
+                            <i class="fas fa-hourglass-half"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="statPending">0</div>
+                            <div class="stat-label">⏳ Pending</div>
+                        </div>
+                    </div>
+                    <div class="stat-card" onclick="filterByStatus('approved')" style="cursor: pointer;" title="Click to see approved requisitions">
+                        <div class="stat-icon" style="background: linear-gradient(135deg, var(--info) 0%, #0891b2 100%);">
+                            <i class="fas fa-thumbs-up"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="statApproved">0</div>
+                            <div class="stat-label">👍 Approved</div>
+                        </div>
+                    </div>
+                    <div class="stat-card" onclick="filterByStatus('fulfilled')" style="cursor: pointer;" title="Click to see fulfilled requisitions">
+                        <div class="stat-icon" style="background: linear-gradient(135deg, var(--success) 0%, #059669 100%);">
+                            <i class="fas fa-check-double"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="statFulfilled">0</div>
+                            <div class="stat-label">✅ Fulfilled</div>
+                        </div>
+                    </div>
+                    <div class="stat-card" onclick="filterByPriority('urgent')" style="cursor: pointer;" title="Click to see urgent requisitions">
+                        <div class="stat-icon" style="background: linear-gradient(135deg, var(--danger) 0%, #dc2626 100%);">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="statUrgent">0</div>
+                            <div class="stat-label">🔴 Urgent</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Filters & Actions -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-filter"></i>
+                            🔍 Filter Requisitions
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <p style="color: #64748b; margin-bottom: 1rem;">Use these filters to find specific requisitions quickly:</p>
+                        <div class="d-flex flex-wrap gap-3 align-center">
+                            <div class="form-group mb-0" style="min-width: 150px;">
+                                <label class="form-label text-sm mb-1">Status</label>
+                                <select id="statusFilter" class="form-control" onchange="loadRequisitions()">
+                                    <option value="">All Status</option>
+                                    <option value="pending">⏳ Pending</option>
+                                    <option value="approved">👍 Approved</option>
+                                    <option value="fulfilled">✅ Fulfilled</option>
+                                    <option value="rejected">❌ Rejected</option>
+                                    <option value="cancelled">🚫 Cancelled</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group mb-0" style="min-width: 150px;">
+                                <label class="form-label text-sm mb-1">Priority</label>
+                                <select id="priorityFilter" class="form-control" onchange="loadRequisitions()">
+                                    <option value="">All Priority</option>
+                                    <option value="urgent">🔴 Urgent</option>
+                                    <option value="high">🟠 High</option>
+                                    <option value="normal">🟢 Normal</option>
+                                    <option value="low">⚪ Low</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group mb-0" style="align-self: flex-end;">
+                                <button class="btn btn-outline" onclick="resetFilters()">
+                                    <i class="fas fa-redo"></i> Reset
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Requisitions List -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-list"></i>
+                            📋 Your Requisition Records
+                        </h3>
+                        <span class="text-muted" id="totalRecords">0 records</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <p style="padding: 0.75rem 1rem; background: #f1f5f9; margin: 0; color: #64748b; font-size: 0.875rem;">
+                            💡 <strong>Tip:</strong> Click on any row to view full details. Use the 👁️ button to see items requested.
+                        </p>
+                        <div class="table-container">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>📝 Requisition Code</th>
+                                        <th>🏭 Production Run</th>
+                                        <th>🚩 Priority</th>
+                                        <th>📦 Items</th>
+                                        <th>📊 Status</th>
+                                        <th>👤 Requested By</th>
+                                        <th>📅 Date</th>
+                                        <th class="text-center">⚡ Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="requisitionsTable">
+                                    <tr>
+                                        <td colspan="8" class="text-center p-4">
+                                            <i class="fas fa-spinner fa-spin"></i> Loading...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <div id="pagination" class="pagination" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- New Requisition Modal -->
+    <div class="modal-overlay" id="newRequisitionModal">
+        <div class="modal modal-lg">
+            <div class="modal-header" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white;">
+                <h3 class="modal-title">
+                    <i class="fas fa-clipboard-list"></i>
+                    📝 New Ingredient Requisition
+                </h3>
+                <button class="modal-close" onclick="closeModal('newRequisitionModal')" style="color: white;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form id="newRequisitionForm" onsubmit="createRequisition(event)">
+                <div class="modal-body">
+                    <!-- Step Guide -->
+                    <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem;">
+                        <h5 style="margin: 0 0 0.5rem 0; color: #166534;">📋 How to create a requisition:</h5>
+                        <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; color: #15803d; font-size: 0.875rem;">
+                            <span>1️⃣ Select priority level</span>
+                            <span>2️⃣ Add items you need</span>
+                            <span>3️⃣ Click Submit</span>
+                        </div>
+                    </div>
+                    
+                    <h5 style="color: #374151; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e5e7eb;">
+                        <span style="background: #3b82f6; color: white; padding: 0.25rem 0.5rem; border-radius: 50%; margin-right: 0.5rem; font-size: 0.75rem;">1</span>
+                        Basic Information
+                    </h5>
+                    
+                    <div class="d-flex gap-3 mb-3">
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label">
+                                <i class="fas fa-industry text-primary"></i>
+                                Production Run (Optional)
+                            </label>
+                            <select id="runSelect" class="form-control">
+                                <option value="">No specific run - General request</option>
+                            </select>
+                            <div class="form-text">💡 Link to a production run if this is for a specific batch</div>
+                        </div>
+                        
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label required">
+                                <i class="fas fa-flag text-warning"></i>
+                                How Urgent? ⚡
+                            </label>
+                            <select id="priority" class="form-control" required style="font-size: 1rem;">
+                                <option value="low">⚪ Low - Can wait a few days</option>
+                                <option value="normal" selected>🟢 Normal - Regular timing</option>
+                                <option value="high">🟠 High - Need it soon</option>
+                                <option value="urgent">🔴 URGENT - Need it NOW!</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex gap-3 mb-3">
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label">
+                                <i class="fas fa-calendar-alt text-info"></i>
+                                When do you need it? 📅
+                            </label>
+                            <input type="datetime-local" id="neededBy" class="form-control">
+                            <div class="form-text">💡 Leave blank if no specific deadline</div>
+                        </div>
+                        
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label">
+                                <i class="fas fa-bullseye text-success"></i>
+                                What is this for? 🎯
+                            </label>
+                            <input type="text" id="purpose" class="form-control" placeholder="e.g., Making Chocolate Milk today">
+                            <div class="form-text">💡 Helps warehouse understand your needs</div>
+                        </div>
+                    </div>
+                    
+                    <hr class="my-3">
+                    
+                    <h5 style="color: #374151; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e5e7eb;">
+                        <span style="background: #3b82f6; color: white; padding: 0.25rem 0.5rem; border-radius: 50%; margin-right: 0.5rem; font-size: 0.75rem;">2</span>
+                        What Items Do You Need? 📦
+                    </h5>
+                    
+                    <div style="background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; padding: 0.75rem; margin-bottom: 1rem;">
+                        <span style="color: #92400e; font-size: 0.875rem;">
+                            <strong>💡 How to add items:</strong> Type the item name, quantity, and select the unit. Click "➕ Add More" if you need multiple items.
+                        </span>
+                    </div>
+                    
+                    <div class="d-flex justify-between align-center mb-3">
+                        <h4 class="mb-0">
+                            <i class="fas fa-boxes text-primary"></i>
+                            Items List
+                        </h4>
+                        <button type="button" class="btn btn-outline btn-sm" onclick="addItem()" style="background: #dbeafe;">
+                            <i class="fas fa-plus"></i> ➕ Add More Items
+                        </button>
+                    </div>
+                    
+                    <div id="itemsContainer">
+                        <div class="item-row mb-2" style="display: flex; gap: 0.5rem; align-items: start; padding: 0.75rem; background: #f8fafc; border-radius: 8px;">
+                            <div style="flex: 2;">
+                                <small style="color: #64748b; display: block; margin-bottom: 0.25rem;">Item Name *</small>
+                                <input type="text" class="form-control item-name" placeholder="e.g., Raw Milk, Sugar, Salt..." required>
+                            </div>
+                            <div style="flex: 1;">
+                                <small style="color: #64748b; display: block; margin-bottom: 0.25rem;">Quantity *</small>
+                                <input type="number" class="form-control item-qty" placeholder="100" required min="1" step="0.01">
+                            </div>
+                            <div style="flex: 1;">
+                                <small style="color: #64748b; display: block; margin-bottom: 0.25rem;">Unit</small>
+                                <select class="form-control item-unit">
+                                    <option value="liters">Liters (L)</option>
+                                    <option value="kg">Kilograms (kg)</option>
+                                    <option value="grams">Grams (g)</option>
+                                    <option value="ml">Milliliters (mL)</option>
+                                    <option value="units">Units</option>
+                                    <option value="pieces">Pieces</option>
+                                </select>
+                            </div>
+                            <div style="flex: 1.5;">
+                                <small style="color: #64748b; display: block; margin-bottom: 0.25rem;">Notes</small>
+                                <input type="text" class="form-control item-notes" placeholder="Optional notes...">
+                            </div>
+                            <div style="padding-top: 1.25rem;">
+                                <button type="button" class="btn btn-outline btn-danger" onclick="removeItem(this)" title="Remove this item">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer" style="background: #f8fafc;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('newRequisitionModal')">
+                        ❌ Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary" style="padding: 0.75rem 2rem; font-size: 1rem;">
+                        <i class="fas fa-paper-plane"></i> ✅ Submit Requisition
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- View Requisition Modal -->
+    <div class="modal-overlay" id="viewRequisitionModal">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h3 class="modal-title">
+                    <i class="fas fa-clipboard-check text-primary"></i>
+                    Requisition Details
+                </h3>
+                <button class="modal-close" onclick="closeModal('viewRequisitionModal')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="requisitionDetailsContent">
+                <div class="text-center p-4">
+                    <i class="fas fa-spinner fa-spin fa-2x text-primary"></i>
+                    <p class="mt-2 text-muted">Loading details...</p>
+                </div>
+            </div>
+            <div class="modal-footer" id="requisitionDetailsFooter">
+                <button class="btn btn-secondary" onclick="closeModal('viewRequisitionModal')">Close</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+    
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/production/production.service.js"></script>
+    <script>
+        let currentPage = 1;
+        let currentUser = null;
+        
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../login.html';
+                return;
+            }
+            
+            currentUser = AuthService.getCurrentUser();
+            
+            await loadRuns();
+            loadStats();
+            loadRequisitions();
+            
+            // Check if action=new in URL
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('action') === 'new') {
+                showNewRequisitionModal();
+            }
+        });
+        
+        async function loadStats() {
+            try {
+                const [pendingRes, approvedRes, fulfilledRes, urgentRes] = await Promise.all([
+                    ProductionService.getRequisitions({ status: 'pending', limit: 1 }),
+                    ProductionService.getRequisitions({ status: 'approved', limit: 1 }),
+                    ProductionService.getRequisitions({ status: 'fulfilled', limit: 1 }),
+                    ProductionService.getRequisitions({ priority: 'urgent', status: 'pending', limit: 1 })
+                ]);
+                
+                document.getElementById('statPending').textContent = pendingRes.pagination?.total || 0;
+                document.getElementById('statApproved').textContent = approvedRes.pagination?.total || 0;
+                document.getElementById('statFulfilled').textContent = fulfilledRes.pagination?.total || 0;
+                document.getElementById('statUrgent').textContent = urgentRes.pagination?.total || 0;
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+        
+        function resetFilters() {
+            document.getElementById('statusFilter').value = '';
+            if (document.getElementById('priorityFilter')) {
+                document.getElementById('priorityFilter').value = '';
+            }
+            currentPage = 1;
+            loadRequisitions();
+        }
+        
+        // Quick filter by clicking on stat cards
+        function filterByStatus(status) {
+            document.getElementById('statusFilter').value = status;
+            if (document.getElementById('priorityFilter')) {
+                document.getElementById('priorityFilter').value = '';
+            }
+            currentPage = 1;
+            loadRequisitions();
+            showToast(`Showing ${status} requisitions`, 'info');
+        }
+        
+        function filterByPriority(priority) {
+            document.getElementById('statusFilter').value = '';
+            if (document.getElementById('priorityFilter')) {
+                document.getElementById('priorityFilter').value = priority;
+            }
+            currentPage = 1;
+            loadRequisitions();
+            showToast(`Showing ${priority} priority requisitions`, 'info');
+        }
+        
+        async function loadRuns() {
+            try {
+                const response = await ProductionService.getRuns({ limit: 50 });
+                if (response.success) {
+                    const select = document.getElementById('runSelect');
+                    select.innerHTML = '<option value="">No specific run</option>' +
+                        (response.data || []).map(r => 
+                            `<option value="${r.id}">${r.run_code} - ${r.product_name}</option>`
+                        ).join('');
+                }
+            } catch (error) {
+                console.error('Error loading runs:', error);
+            }
+        }
+        
+        async function loadRequisitions() {
+            try {
+                const params = {
+                    page: currentPage,
+                    limit: 20,
+                    status: document.getElementById('statusFilter').value,
+                    priority: document.getElementById('priorityFilter')?.value || ''
+                };
+                
+                const response = await ProductionService.getRequisitions(params);
+                
+                if (response.success) {
+                    renderRequisitions(response.data || []);
+                    renderPagination(response.pagination);
+                    
+                    // Update total count
+                    const total = response.pagination?.total || (response.data?.length || 0);
+                    document.getElementById('totalRecords').textContent = `${total} record${total !== 1 ? 's' : ''}`;
+                }
+            } catch (error) {
+                console.error('Error loading requisitions:', error);
+                showToast('Failed to load requisitions', 'error');
+            }
+        }
+        
+        function renderRequisitions(requisitions) {
+            const tbody = document.getElementById('requisitionsTable');
+            
+            if (!requisitions.length) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="text-center p-4">
+                            <div class="text-muted">
+                                <i class="fas fa-clipboard-list fa-2x mb-2"></i>
+                                <p>No requisitions found</p>
+                                <button class="btn btn-primary btn-sm mt-2" onclick="showNewRequisitionModal()">
+                                    <i class="fas fa-plus"></i> New Requisition
+                                </button>
+                            </div>
+                        </td>
+                    </tr>`;
+                return;
+            }
+            
+            const statusConfig = {
+                'pending': { color: 'warning', icon: 'fa-hourglass-half' },
+                'approved': { color: 'info', icon: 'fa-thumbs-up' },
+                'fulfilled': { color: 'success', icon: 'fa-check-double' },
+                'partially_fulfilled': { color: 'primary', icon: 'fa-tasks' },
+                'rejected': { color: 'danger', icon: 'fa-times-circle' },
+                'cancelled': { color: 'secondary', icon: 'fa-ban' }
+            };
+            
+            const priorityConfig = {
+                'low': { color: 'secondary', icon: '⚪' },
+                'normal': { color: 'primary', icon: '🟢' },
+                'high': { color: 'warning', icon: '🟠' },
+                'urgent': { color: 'danger', icon: '🔴' }
+            };
+            
+            tbody.innerHTML = requisitions.map(req => {
+                const statusCfg = statusConfig[req.status] || { color: 'secondary', icon: 'fa-question' };
+                const priorityCfg = priorityConfig[req.priority] || { color: 'secondary', icon: '⚪' };
+                
+                return `
+                <tr>
+                    <td>
+                        <span class="font-mono text-primary font-semibold">${req.requisition_code}</span>
+                    </td>
+                    <td>${req.run_code ? `<span class="font-mono">${req.run_code}</span>` : '<span class="text-muted">-</span>'}</td>
+                    <td>
+                        <span class="badge badge-${priorityCfg.color}">
+                            ${priorityCfg.icon} ${req.priority}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="font-semibold">${req.total_items}</span>
+                        <span class="text-muted">items</span>
+                    </td>
+                    <td>
+                        <span class="badge badge-${statusCfg.color}">
+                            <i class="fas ${statusCfg.icon} mr-1"></i>
+                            ${req.status.replace('_', ' ')}
+                        </span>
+                    </td>
+                    <td>${req.requested_by_first ? req.requested_by_first + ' ' + req.requested_by_last : '-'}</td>
+                    <td class="text-muted">${formatDate(req.created_at)}</td>
+                    <td class="text-center">
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-outline" onclick="viewRequisition(${req.id})" title="View">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            ${req.status === 'pending' && (currentUser.role === 'general_manager') ? `
+                                <button class="btn btn-sm btn-success" onclick="approveRequisition(${req.id})" title="Approve">
+                                    <i class="fas fa-check"></i>
+                                </button>
+                                <button class="btn btn-sm btn-danger" onclick="rejectRequisition(${req.id})" title="Reject">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            ` : ''}
+                            ${req.status === 'pending' ? `
+                                <button class="btn btn-sm btn-outline text-danger" onclick="cancelRequisition(${req.id})" title="Cancel">
+                                    <i class="fas fa-ban"></i>
+                                </button>
+                            ` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `}).join('');
+        }
+        
+        function renderPagination(pagination) {
+            if (!pagination || pagination.total_pages <= 1) {
+                document.getElementById('pagination').style.display = 'none';
+                return;
+            }
+            
+            const container = document.getElementById('pagination');
+            container.style.display = 'flex';
+            container.innerHTML = `
+                <button class="btn btn-sm btn-outline" ${pagination.page <= 1 ? 'disabled' : ''} 
+                        onclick="goToPage(${pagination.page - 1})">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <span class="mx-3">Page ${pagination.page} of ${pagination.total_pages}</span>
+                <button class="btn btn-sm btn-outline" ${pagination.page >= pagination.total_pages ? 'disabled' : ''} 
+                        onclick="goToPage(${pagination.page + 1})">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            `;
+        }
+        
+        function goToPage(page) {
+            currentPage = page;
+            loadRequisitions();
+        }
+        
+        function showNewRequisitionModal() {
+            document.getElementById('newRequisitionForm').reset();
+            document.getElementById('itemsContainer').innerHTML = `
+                <div class="item-row mb-2" style="display: flex; gap: 0.5rem; align-items: start;">
+                    <input type="text" class="form-input item-name" placeholder="Item name *" required style="flex: 2;">
+                    <input type="number" class="form-input item-qty" placeholder="Qty *" required min="1" step="0.01" style="flex: 1;">
+                    <select class="form-select item-unit" style="flex: 1;">
+                        <option value="units">Units</option>
+                        <option value="kg">Kg</option>
+                        <option value="liters">Liters</option>
+                        <option value="grams">Grams</option>
+                        <option value="ml">mL</option>
+                        <option value="pieces">Pieces</option>
+                    </select>
+                    <input type="text" class="form-input item-notes" placeholder="Notes" style="flex: 1.5;">
+                    <button type="button" class="btn btn-outline btn-danger" onclick="removeItem(this)" style="padding: 0.5rem;">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            `;
+            document.getElementById('newRequisitionModal').classList.add('active');
+        }
+        
+        function addItem() {
+            const container = document.getElementById('itemsContainer');
+            const row = document.createElement('div');
+            row.className = 'item-row mb-2';
+            row.style.cssText = 'display: flex; gap: 0.5rem; align-items: start;';
+            row.innerHTML = `
+                <input type="text" class="form-input item-name" placeholder="Item name *" required style="flex: 2;">
+                <input type="number" class="form-input item-qty" placeholder="Qty *" required min="1" step="0.01" style="flex: 1;">
+                <select class="form-select item-unit" style="flex: 1;">
+                    <option value="units">Units</option>
+                    <option value="kg">Kg</option>
+                    <option value="liters">Liters</option>
+                    <option value="grams">Grams</option>
+                    <option value="ml">mL</option>
+                    <option value="pieces">Pieces</option>
+                </select>
+                <input type="text" class="form-input item-notes" placeholder="Notes" style="flex: 1.5;">
+                <button type="button" class="btn btn-outline btn-danger" onclick="removeItem(this)" style="padding: 0.5rem;">
+                    <i class="fas fa-trash"></i>
+                </button>
+            `;
+            container.appendChild(row);
+        }
+        
+        function removeItem(btn) {
+            const rows = document.querySelectorAll('.item-row');
+            if (rows.length > 1) {
+                btn.closest('.item-row').remove();
+            } else {
+                showToast('At least one item is required', 'warning');
+            }
+        }
+        
+        async function createRequisition(event) {
+            event.preventDefault();
+            
+            // Collect items
+            const items = [];
+            document.querySelectorAll('.item-row').forEach(row => {
+                const name = row.querySelector('.item-name').value.trim();
+                const qty = row.querySelector('.item-qty').value;
+                const unit = row.querySelector('.item-unit').value;
+                const notes = row.querySelector('.item-notes').value.trim();
+                
+                if (name && qty) {
+                    items.push({
+                        item_name: name,
+                        quantity: parseFloat(qty),
+                        unit: unit,
+                        notes: notes
+                    });
+                }
+            });
+            
+            if (items.length === 0) {
+                showToast('At least one item is required', 'error');
+                return;
+            }
+            
+            try {
+                const data = {
+                    production_run_id: document.getElementById('runSelect').value || null,
+                    priority: document.getElementById('priority').value,
+                    needed_by: document.getElementById('neededBy').value || null,
+                    purpose: document.getElementById('purpose').value,
+                    items: items
+                };
+                
+                const response = await ProductionService.createRequisition(data);
+                
+                if (response.success) {
+                    showToast('Requisition submitted successfully - Awaiting GM approval', 'success');
+                    closeModal('newRequisitionModal');
+                    loadRequisitions();
+                } else {
+                    showToast(response.message || 'Failed to create requisition', 'error');
+                }
+            } catch (error) {
+                console.error('Error creating requisition:', error);
+                showToast(error.message || 'Failed to create requisition', 'error');
+            }
+        }
+        
+        async function viewRequisition(id) {
+            try {
+                const response = await ProductionService.getRequisition(id);
+                
+                if (response.success) {
+                    renderRequisitionDetails(response.data);
+                    document.getElementById('viewRequisitionModal').classList.add('active');
+                }
+            } catch (error) {
+                showToast('Failed to load requisition details', 'error');
+            }
+        }
+        
+        function renderRequisitionDetails(req) {
+            const statusColors = {
+                'pending': 'warning',
+                'approved': 'info',
+                'fulfilled': 'success',
+                'rejected': 'danger',
+                'cancelled': 'secondary'
+            };
+            
+            document.getElementById('requisitionDetailsContent').innerHTML = `
+                <div class="grid-2 mb-4">
+                    <div>
+                        <h4 class="mb-2">Requisition Info</h4>
+                        <table class="table table-sm">
+                            <tr><td class="text-secondary">Code</td><td class="font-mono font-semibold">${req.requisition_code}</td></tr>
+                            <tr><td class="text-secondary">Status</td><td><span class="badge badge-${statusColors[req.status]}">${req.status}</span></td></tr>
+                            <tr><td class="text-secondary">Priority</td><td>${req.priority}</td></tr>
+                            <tr><td class="text-secondary">Purpose</td><td>${req.purpose || '-'}</td></tr>
+                            <tr><td class="text-secondary">Needed By</td><td>${req.needed_by ? formatDate(req.needed_by) : '-'}</td></tr>
+                        </table>
+                    </div>
+                    <div>
+                        <h4 class="mb-2">Tracking</h4>
+                        <table class="table table-sm">
+                            <tr><td class="text-secondary">Requested By</td><td>${req.requested_by_first ? req.requested_by_first + ' ' + req.requested_by_last : '-'}</td></tr>
+                            <tr><td class="text-secondary">Created</td><td>${formatDate(req.created_at)}</td></tr>
+                            <tr><td class="text-secondary">Approved By</td><td>${req.approved_by_first ? req.approved_by_first + ' ' + req.approved_by_last : '-'}</td></tr>
+                            <tr><td class="text-secondary">Approved At</td><td>${req.approved_at ? formatDate(req.approved_at) : '-'}</td></tr>
+                            <tr><td class="text-secondary">Fulfilled By</td><td>${req.fulfilled_by_first ? req.fulfilled_by_first + ' ' + req.fulfilled_by_last : '-'}</td></tr>
+                        </table>
+                    </div>
+                </div>
+                
+                <h4 class="mb-2">Items (${req.items?.length || 0})</h4>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th class="text-right">Quantity</th>
+                            <th>Unit</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${(req.items || []).map(item => `
+                            <tr>
+                                <td>${item.item_name}</td>
+                                <td class="text-right font-semibold">${item.quantity}</td>
+                                <td>${item.unit}</td>
+                                <td class="text-secondary">${item.notes || '-'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+                
+                ${req.rejection_reason ? `
+                <div class="alert alert-danger mt-3">
+                    <strong>Rejection Reason:</strong> ${req.rejection_reason}
+                </div>
+                ` : ''}
+            `;
+        }
+        
+        async function approveRequisition(id) {
+            if (!confirm('Approve this requisition?')) return;
+            
+            try {
+                const response = await ProductionService.approveRequisition(id);
+                if (response.success) {
+                    showToast('Requisition approved', 'success');
+                    loadRequisitions();
+                } else {
+                    showToast(response.message || 'Failed to approve', 'error');
+                }
+            } catch (error) {
+                showToast(error.message || 'Failed to approve requisition', 'error');
+            }
+        }
+        
+        async function rejectRequisition(id) {
+            const reason = prompt('Enter rejection reason:');
+            if (reason === null) return;
+            
+            try {
+                const response = await ProductionService.rejectRequisition(id, reason);
+                if (response.success) {
+                    showToast('Requisition rejected', 'success');
+                    loadRequisitions();
+                } else {
+                    showToast(response.message || 'Failed to reject', 'error');
+                }
+            } catch (error) {
+                showToast(error.message || 'Failed to reject requisition', 'error');
+            }
+        }
+        
+        async function cancelRequisition(id) {
+            if (!confirm('Cancel this requisition?')) return;
+            
+            try {
+                const response = await ProductionService.cancelRequisition(id);
+                if (response.success) {
+                    showToast('Requisition cancelled', 'success');
+                    loadRequisitions();
+                } else {
+                    showToast(response.message || 'Failed to cancel', 'error');
+                }
+            } catch (error) {
+                showToast(error.message || 'Failed to cancel requisition', 'error');
+            }
+        }
+        
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleString();
+        }
+        
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+        
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : type === 'warning' ? 'exclamation-triangle' : 'info-circle'}"></i>
+                <span>${message}</span>
+            `;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.add('toast-hide');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

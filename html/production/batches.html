@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production Batches - Highland Fresh System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../css/style.css">
+    <style>
+        /* Pulse animation for Start button */
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+        
+        /* Clickable row hover */
+        tr[style*="cursor: pointer"]:hover {
+            background: #f0f9ff !important;
+        }
+        
+        /* Big action button hover */
+        .card[onclick]:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+            transition: all 0.2s ease;
+        }
+        
+        /* Stat card hover */
+        .stat-card[style*="cursor"]:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: all 0.2s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <div class="user-avatar" style="width:40px;height:40px;font-size:1.25rem;">
+                        <i class="fas fa-industry"></i>
+                    </div>
+                    <div>
+                        <div class="sidebar-logo-text">Highland Fresh</div>
+                        <div class="sidebar-logo-subtitle">Production</div>
+                    </div>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <div class="nav-section">
+                    <div class="nav-section-title">Main Menu</div>
+                    <a href="dashboard.html" class="nav-link">
+                        <i class="fas fa-th-large"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </div>
+                
+                <div class="nav-section">
+                    <div class="nav-section-title">Production</div>
+                    <a href="batches.html" class="nav-link active">
+                        <i class="fas fa-box"></i>
+                        <span>Production Batches</span>
+                    </a>
+                    <a href="recipes.html" class="nav-link">
+                        <i class="fas fa-book"></i>
+                        <span>Recipes</span>
+                    </a>
+                    <a href="ccp_logging.html" class="nav-link">
+                        <i class="fas fa-thermometer-half"></i>
+                        <span>CCP Logging</span>
+                    </a>
+                </div>
+                
+                <div class="nav-section">
+                    <div class="nav-section-title">Materials</div>
+                    <a href="requisitions.html" class="nav-link">
+                        <i class="fas fa-clipboard-list"></i>
+                        <span>Requisitions</span>
+                    </a>
+                    <a href="byproducts.html" class="nav-link">
+                        <i class="fas fa-recycle"></i>
+                        <span>Byproducts</span>
+                    </a>
+                </div>
+            </nav>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <button class="header-icon-btn d-none" id="sidebarToggle">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <h1 class="header-title">Production Batches</h1>
+                </div>
+                
+                <div class="header-right">
+                    <button class="header-icon-btn" title="Logout" onclick="AuthService.logout()">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            </header>
+            
+            <!-- Page Content -->
+            <div class="page-content">
+                <!-- Quick Start Guide -->
+                <div class="card mb-4" style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border: 2px solid var(--primary); border-left: 6px solid var(--primary);">
+                    <div class="card-body">
+                        <div class="d-flex align-center gap-3 mb-3">
+                            <div style="width: 50px; height: 50px; background: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 1.5rem;">
+                                <i class="fas fa-lightbulb"></i>
+                            </div>
+                            <div>
+                                <h3 class="mb-0 text-primary">📋 How Production Works</h3>
+                                <p class="text-muted mb-0">Follow these simple steps to manage production</p>
+                            </div>
+                            <button class="btn btn-sm btn-outline ml-auto" onclick="this.closest('.card').style.display='none'" title="Hide this guide">
+                                <i class="fas fa-times"></i> Hide
+                            </button>
+                        </div>
+                        <div class="d-flex flex-wrap gap-4">
+                            <div class="d-flex align-center gap-2" style="flex: 1; min-width: 200px;">
+                                <div style="width: 36px; height: 36px; background: var(--warning); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">1</div>
+                                <div>
+                                    <strong>Create New Run</strong>
+                                    <div class="text-sm text-muted">Click the big green button below</div>
+                                </div>
+                            </div>
+                            <div class="d-flex align-center gap-2" style="flex: 1; min-width: 200px;">
+                                <div style="width: 36px; height: 36px; background: var(--info); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">2</div>
+                                <div>
+                                    <strong>Start Production</strong>
+                                    <div class="text-sm text-muted">Click ▶️ Play to begin</div>
+                                </div>
+                            </div>
+                            <div class="d-flex align-center gap-2" style="flex: 1; min-width: 200px;">
+                                <div style="width: 36px; height: 36px; background: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">3</div>
+                                <div>
+                                    <strong>Log CCP Checks</strong>
+                                    <div class="text-sm text-muted">Record temperatures</div>
+                                </div>
+                            </div>
+                            <div class="d-flex align-center gap-2" style="flex: 1; min-width: 200px;">
+                                <div style="width: 36px; height: 36px; background: var(--success); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">4</div>
+                                <div>
+                                    <strong>Complete Run</strong>
+                                    <div class="text-sm text-muted">Click ✅ when done</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Big Action Button -->
+                <div class="card mb-4" style="background: linear-gradient(135deg, var(--success) 0%, #059669 100%); cursor: pointer;" onclick="showNewRunModal()">
+                    <div class="card-body text-center p-4">
+                        <i class="fas fa-plus-circle fa-3x text-white mb-2"></i>
+                        <h2 class="text-white mb-1">➕ Start New Production Run</h2>
+                        <p class="text-white mb-0" style="opacity: 0.9;">Click here to create a new batch of products</p>
+                    </div>
+                </div>
+                
+                <!-- Stats Cards -->
+                <div class="grid-4 mb-4">
+                    <div class="stat-card" style="cursor: pointer;" onclick="document.getElementById('statusFilter').value='in_progress';loadRuns();" title="Click to show only In Progress runs">
+                        <div class="stat-card-icon primary">
+                            <i class="fas fa-play-circle"></i>
+                        </div>
+                        <div class="stat-card-value" id="statInProgress">0</div>
+                        <div class="stat-card-label">🔄 Currently Running</div>
+                    </div>
+                    <div class="stat-card" style="cursor: pointer;" onclick="document.getElementById('statusFilter').value='completed';loadRuns();" title="Click to show only Completed runs">
+                        <div class="stat-card-icon success">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="stat-card-value" id="statCompleted">0</div>
+                        <div class="stat-card-label">✅ Done Today</div>
+                    </div>
+                    <div class="stat-card" style="cursor: pointer;" onclick="document.getElementById('statusFilter').value='planned';loadRuns();" title="Click to show only Planned runs">
+                        <div class="stat-card-icon warning">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="stat-card-value" id="statPlanned">0</div>
+                        <div class="stat-card-label">📋 Waiting to Start</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card-icon info">
+                            <i class="fas fa-percentage"></i>
+                        </div>
+                        <div class="stat-card-value" id="statAvgYield">-</div>
+                        <div class="stat-card-label">📊 Average Yield</div>
+                    </div>
+                </div>
+                
+                <!-- Filters Section -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-search"></i>
+                            🔍 Find Production Runs
+                        </h3>
+                        <span class="text-muted text-sm">Use filters below to find specific batches</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex flex-wrap gap-3 align-center">
+                            <div class="form-group mb-0" style="min-width: 150px;">
+                                <label class="form-label text-sm mb-1">Status</label>
+                                <select id="statusFilter" class="form-control" onchange="loadRuns()">
+                                    <option value="">All Status</option>
+                                    <option value="planned">📋 Planned</option>
+                                    <option value="in_progress">🔄 In Progress</option>
+                                    <option value="pasteurization">🔥 Pasteurization</option>
+                                    <option value="processing">⚙️ Processing</option>
+                                    <option value="cooling">❄️ Cooling</option>
+                                    <option value="packaging">📦 Packaging</option>
+                                    <option value="completed">✅ Completed</option>
+                                    <option value="cancelled">❌ Cancelled</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group mb-0" style="min-width: 150px;">
+                                <label class="form-label text-sm mb-1">Product Type</label>
+                                <select id="productTypeFilter" class="form-control" onchange="loadRuns()">
+                                    <option value="">All Products</option>
+                                    <option value="bottled_milk">🥛 Bottled Milk</option>
+                                    <option value="cheese">🧀 Cheese</option>
+                                    <option value="butter">🧈 Butter</option>
+                                    <option value="yogurt">🥣 Yogurt</option>
+                                    <option value="milk_bar">🍦 Milk Bar</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group mb-0" style="min-width: 140px;">
+                                <label class="form-label text-sm mb-1">📅 From Date</label>
+                                <input type="date" id="dateFrom" class="form-control" onchange="loadRuns()">
+                            </div>
+                            
+                            <div class="form-group mb-0" style="min-width: 140px;">
+                                <label class="form-label text-sm mb-1">📅 To Date</label>
+                                <input type="date" id="dateTo" class="form-control" onchange="loadRuns()">
+                            </div>
+                            
+                            <div class="form-group mb-0" style="align-self: flex-end;">
+                                <button class="btn btn-outline" onclick="resetFilters()" title="Clear all filters and show everything">
+                                    <i class="fas fa-redo"></i> Show All
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Action Legend -->
+                <div class="card mb-4" style="background: #fffbeb; border: 1px solid #fbbf24;">
+                    <div class="card-body py-2">
+                        <div class="d-flex flex-wrap gap-4 align-center justify-center">
+                            <span class="text-sm"><strong>🎮 Button Guide:</strong></span>
+                            <span class="text-sm">👁️ <strong>View</strong> = See details</span>
+                            <span class="text-sm">▶️ <strong>Play</strong> = Start production</span>
+                            <span class="text-sm">✅ <strong>Check</strong> = Mark as complete</span>
+                            <span class="text-sm">❌ <strong>X</strong> = Cancel run</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Runs List -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-list"></i>
+                            📋 All Production Runs
+                        </h3>
+                        <span class="text-muted" id="totalRecords">0 records</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <!-- Table Help Text -->
+                        <div style="background: #f8fafc; padding: 0.75rem 1rem; border-bottom: 1px solid var(--gray-200);">
+                            <span class="text-sm text-muted">💡 <strong>Tip:</strong> Click any row's action buttons on the right to manage that production run</span>
+                        </div>
+                        <div class="table-container">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>🏷️ Run Code</th>
+                                        <th>🥛 Product</th>
+                                        <th>📊 Status</th>
+                                        <th class="text-right">🎯 Target</th>
+                                        <th class="text-right">✅ Actual</th>
+                                        <th class="text-right">🥛 Milk Used</th>
+                                        <th>🕐 Started</th>
+                                        <th class="text-center">🎮 Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="runsTable">
+                                    <tr>
+                                        <td colspan="8" class="text-center text-muted p-4">
+                                            <i class="fas fa-spinner fa-spin"></i> Loading...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="pagination" id="pagination"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- New Run Modal -->
+    <div class="modal-overlay" id="newRunModal">
+        <div class="modal modal-lg">
+            <div class="modal-header" style="background: linear-gradient(135deg, var(--success) 0%, #059669 100%); color: white;">
+                <h3 class="modal-title">
+                    <i class="fas fa-plus-circle"></i>
+                    ➕ Create New Production Run
+                </h3>
+                <button class="modal-close" onclick="closeModal('newRunModal')" style="color: white;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form id="newRunForm" onsubmit="createRun(event)">
+                <div class="modal-body">
+                    <!-- 🥛 MILK AVAILABILITY CHECK - Critical for proper flow -->
+                    <div id="milkAvailabilitySection" style="margin-bottom: 1.5rem;">
+                        <div id="milkCheckLoading" style="background: #f1f5f9; padding: 1rem; border-radius: 8px; text-align: center;">
+                            <i class="fas fa-spinner fa-spin"></i> Checking available milk from QC...
+                        </div>
+                        <div id="milkCheckResult" style="display: none;"></div>
+                    </div>
+                    
+                    <!-- Step indicator -->
+                    <div style="background: #f0f9ff; padding: 1rem; border-radius: var(--border-radius); margin-bottom: 1.5rem; border: 1px solid var(--primary-100);">
+                        <div class="text-sm text-muted mb-2">📝 <strong>Fill in the details below to start a new production batch</strong></div>
+                        <div class="text-xs text-muted">Fields marked with <span class="text-danger">*</span> are required</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label required">
+                            <i class="fas fa-book text-primary"></i>
+                            Step 1: Select What to Make
+                        </label>
+                        <select id="recipeSelect" class="form-control" required onchange="updateRecipeDetails()" style="font-size: 1rem; padding: 0.75rem;">
+                            <option value="">👆 Click here to choose a recipe...</option>
+                        </select>
+                        <div class="form-text">Choose the product recipe from the dropdown list above</div>
+                    </div>
+                    
+                    <div id="recipeDetails" style="display: none;">
+                        <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); padding: 1rem; border-radius: var(--border-radius); margin-bottom: 1rem; border: 2px solid var(--success);">
+                            <div class="font-semibold text-success mb-1">✅ Recipe Selected:</div>
+                            <div class="font-semibold" id="selectedRecipeName" style="font-size: 1.1rem;"></div>
+                            <div class="text-sm mt-2" style="color: var(--gray-600);">
+                                <span style="background: white; padding: 0.25rem 0.5rem; border-radius: 4px; margin-right: 0.5rem;">
+                                    📦 <span id="selectedRecipeYield"></span>
+                                </span>
+                                <span style="background: white; padding: 0.25rem 0.5rem; border-radius: 4px;">
+                                    🥛 <span id="selectedRecipeMilk"></span> milk needed
+                                </span>
+                            </div>
+                        </div>
+                        <!-- Milk requirement check -->
+                        <div id="milkRequirementCheck" style="display: none;"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label required">
+                            <i class="fas fa-calculator text-primary"></i>
+                            Step 2: How Many to Make?
+                        </label>
+                        <div class="d-flex gap-2 align-center">
+                            <input type="number" id="plannedQuantity" class="form-control" 
+                                   required min="1" placeholder="Enter a number (e.g., 100)" 
+                                   style="flex: 1; font-size: 1.1rem; padding: 0.75rem;"
+                                   onchange="checkMilkRequirement()">
+                            <span id="yieldUnit" class="text-muted font-semibold" style="min-width: 60px;">units</span>
+                        </div>
+                        <div class="form-text">Enter how many products you want to produce</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">
+                            <i class="fas fa-tint text-info"></i>
+                            Step 3: Milk Amount (Optional Override)
+                        </label>
+                        <input type="number" id="milkLiters" class="form-control" step="0.1" 
+                               placeholder="Leave empty to auto-calculate" onchange="checkMilkRequirement()">
+                        <div class="form-text">💡 Leave empty to use recipe default. Only change if you have a specific amount.</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">
+                            <i class="fas fa-sticky-note text-muted"></i>
+                            Step 4: Any Notes? (Optional)
+                        </label>
+                        <textarea id="runNotes" class="form-control" rows="2" 
+                                  placeholder="Add any special instructions or notes here..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer" style="background: #f8fafc;">
+                    <button type="button" class="btn btn-secondary btn-lg" onclick="closeModal('newRunModal')">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button type="submit" class="btn btn-success btn-lg">
+                        <i class="fas fa-play"></i> Create & Start Production
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Run Details Modal -->
+    <div class="modal-overlay" id="runDetailsModal">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h3 class="modal-title">
+                    <i class="fas fa-info-circle text-primary"></i>
+                    Production Run Details
+                </h3>
+                <button class="modal-close" onclick="closeModal('runDetailsModal')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="runDetailsContent">
+                <div class="text-center p-4">
+                    <i class="fas fa-spinner fa-spin fa-2x text-primary"></i>
+                    <p class="mt-2 text-muted">Loading run details...</p>
+                </div>
+            </div>
+            <div class="modal-footer" id="runDetailsFooter">
+            </div>
+        </div>
+    </div>
+    
+    <!-- Complete Run Modal -->
+    <div class="modal-overlay" id="completeRunModal">
+        <div class="modal">
+            <div class="modal-header" style="background: linear-gradient(135deg, var(--success) 0%, #059669 100%); color: white;">
+                <h3 class="modal-title">
+                    <i class="fas fa-check-circle"></i>
+                    Complete Production Run
+                </h3>
+                <button class="modal-close" onclick="closeModal('completeRunModal')" style="color: white;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form id="completeRunForm" onsubmit="completeRun(event)">
+                <div class="modal-body">
+                    <input type="hidden" id="completeRunId">
+                    <input type="hidden" id="completeRunProductType">
+                    
+                    <!-- Run Summary Card -->
+                    <div style="background: linear-gradient(135deg, var(--primary-50) 0%, #dbeafe 100%); padding: 1.25rem; border-radius: var(--border-radius); margin-bottom: 1.5rem; border: 1px solid var(--primary-100);">
+                        <div class="d-flex gap-3">
+                            <div style="width: 50px; height: 50px; background: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white;">
+                                <i class="fas fa-industry"></i>
+                            </div>
+                            <div style="flex: 1;">
+                                <div class="font-semibold text-lg" id="completeRunCode"></div>
+                                <div class="text-sm text-muted" id="completeRunProduct"></div>
+                                <div class="mt-2">
+                                    <span class="badge badge-primary">
+                                        <i class="fas fa-bullseye"></i> Planned: <span id="completeRunPlanned"></span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Multi-Unit Output Entry -->
+                    <div class="form-group">
+                        <label class="form-label required">
+                            <i class="fas fa-calculator text-success"></i>
+                            Batch Output
+                        </label>
+                        <div style="display: flex; gap: 0;">
+                            <input type="number" id="actualQuantity" class="form-control" required min="0"
+                                   placeholder="Enter quantity" 
+                                   oninput="calculateUnitConversion()"
+                                   style="border-top-right-radius: 0; border-bottom-right-radius: 0; flex: 1;">
+                            <select id="outputUnit" class="form-control" 
+                                    onchange="calculateUnitConversion()"
+                                    style="border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; width: auto; min-width: 130px;">
+                                <option value="pieces">Pieces</option>
+                                <option value="boxes">Boxes</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Automatic Conversion Display -->
+                        <div id="unitConversionResult" style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); padding: 1rem; border-radius: 8px; margin-top: 0.75rem; border: 1px solid #86efac; display: none;">
+                            <div class="d-flex align-center gap-2">
+                                <i class="fas fa-exchange-alt text-success"></i>
+                                <div>
+                                    <div class="font-semibold text-success">
+                                        Converts to: <span id="boxCount">0</span> <span id="secondaryUnitLabel">Boxes</span> + <span id="pieceCount">0</span> <span id="primaryUnitLabel">Pieces</span>
+                                    </div>
+                                    <div class="text-sm text-muted mt-1">
+                                        <i class="fas fa-cubes"></i> Total: <span id="totalPiecesDisplay">0</span> <span id="totalUnitLabel">pieces</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Conversion Rate Info -->
+                        <div id="conversionRateInfo" class="form-text mt-2" style="background: #f8fafc; padding: 0.5rem; border-radius: 4px;">
+                            <i class="fas fa-info-circle text-info"></i>
+                            <span id="conversionRateText">1 Box = 50 Pieces</span>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">
+                            <i class="fas fa-comment-alt text-warning"></i>
+                            Variance Reason
+                        </label>
+                        <textarea id="varianceReason" class="form-control" rows="3" 
+                                  placeholder="Explain any variance from planned quantity..."></textarea>
+                        <div class="form-text">Required if actual differs from planned</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('completeRunModal')">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-check"></i> Complete Run
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+    
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/production/production.service.js"></script>
+    <script>
+        let recipes = [];
+        let currentPage = 1;
+        
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../login.html';
+                return;
+            }
+            
+            // Load recipes for dropdown
+            await loadRecipes();
+            
+            // Load stats and runs
+            loadStats();
+            loadRuns();
+            
+            // Check if action=new in URL
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('action') === 'new') {
+                showNewRunModal();
+            }
+            
+            // Check if specific run ID in URL
+            const runId = urlParams.get('id');
+            if (runId) {
+                viewRunDetails(runId);
+            }
+        });
+        
+        async function loadStats() {
+            try {
+                const today = new Date().toISOString().split('T')[0];
+                
+                // Fetch multiple stats in parallel
+                const [inProgressRes, completedRes, plannedRes, allRes] = await Promise.all([
+                    ProductionService.getRuns({ status: 'in_progress', limit: 1 }),
+                    ProductionService.getRuns({ status: 'completed', date_from: today, date_to: today, limit: 100 }),
+                    ProductionService.getRuns({ status: 'planned', limit: 1 }),
+                    ProductionService.getRuns({ status: 'completed', limit: 100 })
+                ]);
+                
+                // Update stat cards
+                document.getElementById('statInProgress').textContent = inProgressRes.pagination?.total || 0;
+                document.getElementById('statCompleted').textContent = completedRes.pagination?.total || 0;
+                document.getElementById('statPlanned').textContent = plannedRes.pagination?.total || 0;
+                
+                // Calculate average yield
+                let totalYield = 0;
+                let yieldCount = 0;
+                if (allRes.data) {
+                    allRes.data.forEach(run => {
+                        if (run.planned_quantity && run.actual_quantity) {
+                            totalYield += (run.actual_quantity / run.planned_quantity) * 100;
+                            yieldCount++;
+                        }
+                    });
+                }
+                const avgYield = yieldCount > 0 ? (totalYield / yieldCount).toFixed(1) : 0;
+                document.getElementById('statAvgYield').textContent = avgYield + '%';
+                
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+        
+        function resetFilters() {
+            document.getElementById('statusFilter').value = '';
+            document.getElementById('productTypeFilter').value = '';
+            document.getElementById('dateFrom').value = '';
+            document.getElementById('dateTo').value = '';
+            currentPage = 1;
+            loadRuns();
+        }
+        
+        async function loadRecipes() {
+            try {
+                const response = await ProductionService.getRecipes({ limit: 100 });
+                if (response.success) {
+                    recipes = response.data;
+                    
+                    const select = document.getElementById('recipeSelect');
+                    select.innerHTML = '<option value="">Select a recipe...</option>' +
+                        recipes.map(r => `<option value="${r.id}">${r.recipe_code} - ${r.product_name} ${r.variant || ''}</option>`).join('');
+                }
+            } catch (error) {
+                console.error('Error loading recipes:', error);
+            }
+        }
+        
+        function updateRecipeDetails() {
+            const recipeId = document.getElementById('recipeSelect').value;
+            const detailsDiv = document.getElementById('recipeDetails');
+            
+            if (!recipeId) {
+                detailsDiv.style.display = 'none';
+                selectedRecipeData = null;
+                document.getElementById('milkRequirementCheck').style.display = 'none';
+                return;
+            }
+            
+            const recipe = recipes.find(r => r.id == recipeId);
+            if (recipe) {
+                selectedRecipeData = recipe; // Store for milk calculation
+                document.getElementById('selectedRecipeName').textContent = `${recipe.product_name} ${recipe.variant || ''}`;
+                document.getElementById('selectedRecipeYield').textContent = `${recipe.expected_yield} ${recipe.yield_unit} per batch`;
+                document.getElementById('selectedRecipeMilk').textContent = `${recipe.base_milk_liters}L`;
+                document.getElementById('yieldUnit').textContent = recipe.yield_unit || 'units';
+                detailsDiv.style.display = 'block';
+                
+                // Check milk requirement
+                checkMilkRequirement();
+            }
+        }
+        
+        async function loadRuns() {
+            try {
+                const params = {
+                    page: currentPage,
+                    limit: 20,
+                    status: document.getElementById('statusFilter').value,
+                    product_type: document.getElementById('productTypeFilter').value,
+                    date_from: document.getElementById('dateFrom').value,
+                    date_to: document.getElementById('dateTo').value
+                };
+                
+                const response = await ProductionService.getRuns(params);
+                
+                if (response.success) {
+                    renderRuns(response.data);
+                    renderPagination(response.pagination);
+                    
+                    // Update total records count
+                    const total = response.pagination?.total || response.data.length;
+                    document.getElementById('totalRecords').textContent = `${total} record${total !== 1 ? 's' : ''}`;
+                }
+            } catch (error) {
+                console.error('Error loading runs:', error);
+                showToast('Failed to load production runs', 'error');
+            }
+        }
+        
+        function renderRuns(runs) {
+            const tbody = document.getElementById('runsTable');
+            
+            if (!runs.length) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="text-center p-5">
+                            <div style="max-width: 400px; margin: 0 auto;">
+                                <div style="width: 80px; height: 80px; background: #f3f4f6; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem;">
+                                    <i class="fas fa-box-open fa-2x text-muted"></i>
+                                </div>
+                                <h3 class="mb-2">No Production Runs Yet</h3>
+                                <p class="text-muted mb-3">You haven't created any production batches. Click the button below to get started!</p>
+                                <button class="btn btn-success btn-lg" onclick="showNewRunModal()" style="padding: 1rem 2rem;">
+                                    <i class="fas fa-plus-circle"></i> Create Your First Production Run
+                                </button>
+                            </div>
+                        </td>
+                    </tr>`;
+                return;
+            }
+            
+            const statusConfig = {
+                'planned': { color: 'secondary', icon: 'fa-clipboard-list', emoji: '📋', label: 'Waiting to Start' },
+                'in_progress': { color: 'primary', icon: 'fa-play-circle', emoji: '🔄', label: 'Running Now' },
+                'pasteurization': { color: 'warning', icon: 'fa-fire', emoji: '🔥', label: 'Pasteurizing' },
+                'processing': { color: 'info', icon: 'fa-cogs', emoji: '⚙️', label: 'Processing' },
+                'cooling': { color: 'info', icon: 'fa-snowflake', emoji: '❄️', label: 'Cooling' },
+                'packaging': { color: 'info', icon: 'fa-box', emoji: '📦', label: 'Packaging' },
+                'completed': { color: 'success', icon: 'fa-check-circle', emoji: '✅', label: 'Done!' },
+                'cancelled': { color: 'danger', icon: 'fa-times-circle', emoji: '❌', label: 'Cancelled' }
+            };
+            
+            tbody.innerHTML = runs.map(run => {
+                const config = statusConfig[run.status] || { color: 'secondary', icon: 'fa-question', emoji: '❓', label: 'Unknown' };
+                const yieldPercent = run.actual_quantity && run.planned_quantity 
+                    ? Math.round((run.actual_quantity / run.planned_quantity) * 100) 
+                    : null;
+                
+                return `
+                <tr style="cursor: pointer;" onclick="viewRunDetails(${run.id})">
+                    <td>
+                        <span class="font-mono font-semibold text-primary" style="font-size: 1rem;">${run.run_code}</span>
+                    </td>
+                    <td>
+                        <div class="font-medium">${run.product_name}</div>
+                        ${run.variant ? `<div class="text-muted text-sm">${run.variant}</div>` : ''}
+                    </td>
+                    <td>
+                        <span class="badge badge-${config.color}" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
+                            ${config.emoji} ${config.label}
+                        </span>
+                    </td>
+                    <td class="text-right font-medium" style="font-size: 1rem;">${run.planned_quantity.toLocaleString()}</td>
+                    <td class="text-right" style="font-size: 1rem;">
+                        ${run.actual_quantity 
+                            ? `<span class="${yieldPercent >= 95 ? 'text-success' : yieldPercent >= 85 ? 'text-warning' : 'text-danger'} font-semibold">${formatOutputDisplay(run)}</span>` 
+                            : '<span class="text-muted">—</span>'}
+                    </td>
+                    <td class="text-right">${run.milk_liters_used ? run.milk_liters_used.toLocaleString() + ' L' : '<span class="text-muted">—</span>'}</td>
+                    <td class="text-muted">${run.start_datetime ? formatDate(run.start_datetime) : '—'}</td>
+                    <td class="text-center" onclick="event.stopPropagation();">
+                        ${getActionButtons(run)}
+                    </td>
+                </tr>
+            `}).join('');
+        }
+        
+        function getActionButtons(run) {
+            let buttons = '<div class="d-flex gap-1 justify-center flex-wrap">';
+            
+            // View button - always shown
+            buttons += `<button class="btn btn-sm btn-outline" onclick="viewRunDetails(${run.id})" title="Click to see full details" style="min-width: 70px;">
+                👁️ View
+            </button>`;
+            
+            if (run.status === 'planned') {
+                buttons += `<button class="btn btn-sm btn-primary" onclick="startRun(${run.id})" title="Click to begin production" style="min-width: 70px; background: var(--primary); animation: pulse 2s infinite;">
+                    ▶️ Start
+                </button>`;
+            }
+            
+            if (['in_progress', 'pasteurization', 'processing', 'cooling', 'packaging'].includes(run.status)) {
+                buttons += `<button class="btn btn-sm btn-success" onclick="showCompleteModal(${run.id}, '${run.run_code}', '${run.product_name}', ${run.planned_quantity}, '${run.product_type || 'milk_bar'}')" title="Click when production is finished" style="min-width: 70px;">
+                    ✅ Done
+                </button>`;
+            }
+            
+            if (run.status !== 'completed' && run.status !== 'cancelled') {
+                buttons += `<button class="btn btn-sm btn-outline-danger" onclick="cancelRun(${run.id})" title="Click to cancel this run" style="min-width: 50px;">
+                    ❌
+                </button>`;
+            }
+            
+            if (run.status === 'completed') {
+                buttons += `<span class="badge badge-success" style="padding: 0.5rem;">✅ Completed</span>`;
+            }
+            
+            if (run.status === 'cancelled') {
+                buttons += `<span class="badge badge-danger" style="padding: 0.5rem;">❌ Cancelled</span>`;
+            }
+            
+            buttons += '</div>';
+            return buttons;
+        }
+        
+        function renderPagination(pagination) {
+            if (!pagination || pagination.total_pages <= 1) {
+                document.getElementById('pagination').style.display = 'none';
+                return;
+            }
+            
+            const container = document.getElementById('pagination');
+            container.style.display = 'flex';
+            container.innerHTML = `
+                <button class="btn btn-sm btn-outline" ${pagination.page <= 1 ? 'disabled' : ''} 
+                        onclick="goToPage(${pagination.page - 1})">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <span class="mx-3">Page ${pagination.page} of ${pagination.total_pages}</span>
+                <button class="btn btn-sm btn-outline" ${pagination.page >= pagination.total_pages ? 'disabled' : ''} 
+                        onclick="goToPage(${pagination.page + 1})">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            `;
+        }
+        
+        function goToPage(page) {
+            currentPage = page;
+            loadRuns();
+        }
+        
+        // Available milk data from QC
+        let availableMilkData = null;
+        let selectedRecipeData = null;
+        
+        async function showNewRunModal() {
+            document.getElementById('newRunForm').reset();
+            document.getElementById('recipeDetails').style.display = 'none';
+            document.getElementById('milkCheckLoading').style.display = 'block';
+            document.getElementById('milkCheckResult').style.display = 'none';
+            document.getElementById('newRunModal').classList.add('active');
+            
+            // Load available milk from QC
+            await loadAvailableMilk();
+        }
+        
+        async function loadAvailableMilk() {
+            try {
+                const response = await ProductionService.getAvailableMilk();
+                
+                if (response.success) {
+                    availableMilkData = response.data;
+                    const totalLiters = availableMilkData.total_available_liters || 0;
+                    const sources = availableMilkData.milk_sources || [];
+                    
+                    document.getElementById('milkCheckLoading').style.display = 'none';
+                    const resultDiv = document.getElementById('milkCheckResult');
+                    resultDiv.style.display = 'block';
+                    
+                    if (totalLiters > 0) {
+                        resultDiv.innerHTML = `
+                            <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); padding: 1rem; border-radius: 8px; border: 2px solid #22c55e;">
+                                <div style="display: flex; align-items: center; gap: 1rem;">
+                                    <div style="font-size: 2rem;">🥛</div>
+                                    <div style="flex: 1;">
+                                        <div style="font-weight: 600; color: #166534; font-size: 1.1rem;">
+                                            ✅ QC-Approved Milk Available: ${totalLiters.toLocaleString()}L
+                                        </div>
+                                        <div style="color: #15803d; font-size: 0.875rem; margin-top: 0.25rem;">
+                                            From ${sources.length} delivery${sources.length !== 1 ? 's' : ''} in the last 2 days
+                                        </div>
+                                    </div>
+                                </div>
+                                ${sources.length > 0 ? `
+                                    <details style="margin-top: 0.75rem;">
+                                        <summary style="cursor: pointer; color: #166534; font-size: 0.875rem;">
+                                            📋 View milk source details
+                                        </summary>
+                                        <div style="margin-top: 0.5rem; background: white; border-radius: 6px; padding: 0.5rem; font-size: 0.8rem;">
+                                            ${sources.map(s => `
+                                                <div style="padding: 0.5rem; border-bottom: 1px solid #e5e7eb;">
+                                                    <strong>${s.delivery_code}</strong> - ${parseFloat(s.remaining_liters).toFixed(1)}L available
+                                                    <br><span style="color: #64748b;">Farmer: ${s.farmer_name || 'Unknown'} | Fat: ${s.fat_percentage}% | Date: ${s.delivery_date}</span>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    </details>
+                                ` : ''}
+                            </div>
+                        `;
+                    } else {
+                        resultDiv.innerHTML = `
+                            <div style="background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%); padding: 1rem; border-radius: 8px; border: 2px solid #ef4444;">
+                                <div style="display: flex; align-items: center; gap: 1rem;">
+                                    <div style="font-size: 2rem;">⚠️</div>
+                                    <div>
+                                        <div style="font-weight: 600; color: #dc2626; font-size: 1.1rem;">
+                                            No QC-Approved Milk Available
+                                        </div>
+                                        <div style="color: #b91c1c; font-size: 0.875rem; margin-top: 0.25rem;">
+                                            You cannot start production until milk deliveries are tested and approved by QC.
+                                        </div>
+                                        <div style="color: #64748b; font-size: 0.8rem; margin-top: 0.5rem;">
+                                            📞 Contact the QC team to check if there are deliveries waiting to be graded.
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        // Disable the submit button
+                        document.querySelector('#newRunForm button[type="submit"]').disabled = true;
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading available milk:', error);
+                document.getElementById('milkCheckLoading').style.display = 'none';
+                document.getElementById('milkCheckResult').style.display = 'block';
+                document.getElementById('milkCheckResult').innerHTML = `
+                    <div style="background: #fef3c7; padding: 1rem; border-radius: 8px; border: 1px solid #fbbf24;">
+                        <span style="color: #92400e;">⚠️ Could not check milk availability. You may proceed, but the system will validate again on submission.</span>
+                    </div>
+                `;
+            }
+        }
+        
+        function checkMilkRequirement() {
+            if (!selectedRecipeData || !availableMilkData) return;
+            
+            const plannedQty = parseInt(document.getElementById('plannedQuantity').value) || 0;
+            const customMilk = parseFloat(document.getElementById('milkLiters').value) || 0;
+            
+            // Calculate required milk (use custom if provided, else calculate from recipe)
+            const baseMilk = selectedRecipeData.base_milk_liters || 0;
+            const baseYield = selectedRecipeData.expected_yield || 1;
+            const requiredMilk = customMilk > 0 ? customMilk : (baseMilk / baseYield) * plannedQty;
+            
+            const availableLiters = availableMilkData.total_available_liters || 0;
+            const checkDiv = document.getElementById('milkRequirementCheck');
+            
+            if (requiredMilk > 0) {
+                checkDiv.style.display = 'block';
+                
+                if (requiredMilk <= availableLiters) {
+                    checkDiv.innerHTML = `
+                        <div style="background: #ecfdf5; padding: 0.75rem; border-radius: 6px; border: 1px solid #86efac; margin-top: 0.5rem;">
+                            <span style="color: #166534;">✅ Milk OK: Need ${requiredMilk.toFixed(1)}L, Have ${availableLiters.toFixed(1)}L available</span>
+                        </div>
+                    `;
+                    document.querySelector('#newRunForm button[type="submit"]').disabled = false;
+                } else {
+                    checkDiv.innerHTML = `
+                        <div style="background: #fef2f2; padding: 0.75rem; border-radius: 6px; border: 1px solid #fca5a5; margin-top: 0.5rem;">
+                            <span style="color: #dc2626;">❌ Not enough milk: Need ${requiredMilk.toFixed(1)}L, Only ${availableLiters.toFixed(1)}L available</span>
+                            <br><small style="color: #b91c1c;">Reduce quantity or wait for more QC-approved milk.</small>
+                        </div>
+                    `;
+                    document.querySelector('#newRunForm button[type="submit"]').disabled = true;
+                }
+            } else {
+                checkDiv.style.display = 'none';
+            }
+        }
+        
+        async function createRun(event) {
+            event.preventDefault();
+            
+            try {
+                const data = {
+                    recipe_id: document.getElementById('recipeSelect').value,
+                    planned_quantity: document.getElementById('plannedQuantity').value,
+                    milk_liters_used: document.getElementById('milkLiters').value || null,
+                    notes: document.getElementById('runNotes').value
+                };
+                
+                const response = await ProductionService.createRun(data);
+                
+                if (response.success) {
+                    showToast('Production run created with QC-approved milk!', 'success');
+                    closeModal('newRunModal');
+                    loadRuns();
+                } else {
+                    showToast(response.message || 'Failed to create run', 'error');
+                }
+            } catch (error) {
+                console.error('Error creating run:', error);
+                
+                // Handle validation errors (422) - check for milk source issues
+                if (error.type === 'validation' && error.errors) {
+                    // Check for milk-related errors
+                    if (error.errors.milk_source) {
+                        // Show a big, clear error for milk issues
+                        showMilkError(error.errors.milk_source);
+                    } else {
+                        // Show other validation errors
+                        const errorMessages = Object.values(error.errors).join('\n');
+                        showToast(errorMessages || 'Validation failed', 'error');
+                    }
+                } else {
+                    showToast(error.message || 'Failed to create production run', 'error');
+                }
+            }
+        }
+        
+        async function startRun(id) {
+            if (!confirm('Start this production run?')) return;
+            
+            try {
+                const response = await ProductionService.startRun(id);
+                if (response.success) {
+                    showToast('Production run started', 'success');
+                    loadRuns();
+                } else {
+                    showToast(response.message || 'Failed to start run', 'error');
+                }
+            } catch (error) {
+                showToast(error.message || 'Failed to start run', 'error');
+            }
+        }
+        
+        // Unit conversion configurations by product type
+        const unitConversions = {
+            'bottled_milk': { primary: 'Bottles', secondary: 'Crates', conversion: 24 },
+            'milk_bar': { primary: 'Pieces', secondary: 'Boxes', conversion: 50 },
+            'cheese': { primary: 'Blocks', secondary: 'Cases', conversion: 12 },
+            'butter': { primary: 'Packs', secondary: 'Cases', conversion: 20 },
+            'yogurt': { primary: 'Cups', secondary: 'Trays', conversion: 12 }
+        };
+        
+        let currentProductConversion = null;
+        
+        function showCompleteModal(id, code, product, planned, productType = 'milk_bar') {
+            document.getElementById('completeRunId').value = id;
+            document.getElementById('completeRunCode').textContent = code;
+            document.getElementById('completeRunProduct').textContent = product;
+            document.getElementById('completeRunPlanned').textContent = planned.toLocaleString();
+            document.getElementById('completeRunProductType').value = productType;
+            document.getElementById('actualQuantity').value = planned;
+            document.getElementById('varianceReason').value = '';
+            
+            // Set up unit conversion based on product type
+            currentProductConversion = unitConversions[productType] || unitConversions['milk_bar'];
+            
+            // Update unit selector options
+            const unitSelect = document.getElementById('outputUnit');
+            unitSelect.innerHTML = `
+                <option value="pieces">${currentProductConversion.primary}</option>
+                <option value="boxes">${currentProductConversion.secondary}</option>
+            `;
+            
+            // Update labels
+            document.getElementById('secondaryUnitLabel').textContent = currentProductConversion.secondary;
+            document.getElementById('primaryUnitLabel').textContent = currentProductConversion.primary;
+            document.getElementById('totalUnitLabel').textContent = currentProductConversion.primary.toLowerCase();
+            document.getElementById('conversionRateText').textContent = 
+                `1 ${currentProductConversion.secondary.slice(0, -1)} = ${currentProductConversion.conversion} ${currentProductConversion.primary}`;
+            
+            // Calculate initial conversion
+            calculateUnitConversion();
+            
+            document.getElementById('completeRunModal').classList.add('active');
+        }
+        
+        function calculateUnitConversion() {
+            const quantity = parseInt(document.getElementById('actualQuantity').value) || 0;
+            const unit = document.getElementById('outputUnit').value;
+            const resultDiv = document.getElementById('unitConversionResult');
+            
+            if (!currentProductConversion || quantity <= 0) {
+                resultDiv.style.display = 'none';
+                return;
+            }
+            
+            const conversionFactor = currentProductConversion.conversion;
+            let totalPieces = quantity;
+            
+            // If entered in boxes/crates/cases, convert to pieces
+            if (unit === 'boxes') {
+                totalPieces = quantity * conversionFactor;
+            }
+            
+            // Calculate breakdown
+            const secondaryCount = Math.floor(totalPieces / conversionFactor);
+            const remainingPrimary = totalPieces % conversionFactor;
+            
+            // Update display
+            document.getElementById('boxCount').textContent = secondaryCount.toLocaleString();
+            document.getElementById('pieceCount').textContent = remainingPrimary.toLocaleString();
+            document.getElementById('totalPiecesDisplay').textContent = totalPieces.toLocaleString();
+            
+            resultDiv.style.display = 'block';
+        }
+        
+        async function completeRun(event) {
+            event.preventDefault();
+            
+            try {
+                const id = document.getElementById('completeRunId').value;
+                const actualQuantity = document.getElementById('actualQuantity').value;
+                const outputUnit = document.getElementById('outputUnit').value;
+                const varianceReason = document.getElementById('varianceReason').value;
+                
+                if (!actualQuantity || actualQuantity <= 0) {
+                    showToast('Please enter a valid output quantity', 'error');
+                    return;
+                }
+                
+                // Use updated API call with output_unit
+                const response = await api.put('/production/runs.php', {
+                    id: id,
+                    action: 'complete',
+                    actual_quantity: actualQuantity,
+                    output_unit: outputUnit,
+                    variance_reason: varianceReason
+                });
+                
+                if (response.success) {
+                    // Show breakdown in success message if available
+                    let successMsg = 'Production run completed!';
+                    if (response.data && response.data.output_breakdown) {
+                        successMsg = `Completed: ${response.data.output_breakdown.display}`;
+                    }
+                    showToast(successMsg, 'success');
+                    closeModal('completeRunModal');
+                    loadRuns();
+                } else {
+                    showToast(response.message || 'Failed to complete run', 'error');
+                }
+            } catch (error) {
+                console.error('Complete run error:', error);
+                const message = error.message || 'Failed to complete run. Make sure the run has been started first.';
+                showToast(message, 'error');
+            }
+        }
+        
+        async function cancelRun(id) {
+            if (!confirm('Are you sure you want to cancel this production run?')) return;
+            
+            try {
+                const response = await ProductionService.cancelRun(id);
+                if (response.success) {
+                    showToast('Production run cancelled', 'success');
+                    loadRuns();
+                } else {
+                    showToast(response.message || 'Failed to cancel run', 'error');
+                }
+            } catch (error) {
+                showToast(error.message || 'Failed to cancel run', 'error');
+            }
+        }
+        
+        async function viewRunDetails(id) {
+            try {
+                const response = await ProductionService.getRun(id);
+                
+                if (response.success) {
+                    const run = response.data;
+                    renderRunDetails(run);
+                    document.getElementById('runDetailsModal').classList.add('active');
+                }
+            } catch (error) {
+                showToast('Failed to load run details', 'error');
+            }
+        }
+        
+        function renderRunDetails(run) {
+            const statusColors = {
+                'planned': 'secondary',
+                'in_progress': 'primary',
+                'pasteurization': 'warning',
+                'processing': 'info',
+                'cooling': 'info',
+                'packaging': 'info',
+                'completed': 'success',
+                'cancelled': 'danger'
+            };
+            
+            document.getElementById('runDetailsContent').innerHTML = `
+                <div class="grid-2 mb-4">
+                    <div>
+                        <h4 class="mb-2">Run Information</h4>
+                        <table class="table table-sm">
+                            <tr><td class="text-secondary">Run Code</td><td class="font-mono font-semibold">${run.run_code}</td></tr>
+                            <tr><td class="text-secondary">Status</td><td><span class="badge badge-${statusColors[run.status]}">${run.status.replace('_', ' ')}</span></td></tr>
+                            <tr><td class="text-secondary">Product</td><td>${run.product_name} ${run.variant || ''}</td></tr>
+                            <tr><td class="text-secondary">Recipe Code</td><td>${run.recipe_code}</td></tr>
+                            <tr><td class="text-secondary">Product Type</td><td>${run.product_type}</td></tr>
+                        </table>
+                    </div>
+                    <div>
+                        <h4 class="mb-2">Quantities</h4>
+                        <table class="table table-sm">
+                            <tr><td class="text-secondary">Planned</td><td>${run.planned_quantity} ${run.yield_unit}</td></tr>
+                            <tr><td class="text-secondary">Actual Output</td><td>${formatOutputDisplayFull(run)}</td></tr>
+                            <tr><td class="text-secondary">Variance</td><td>${run.yield_variance !== null ? run.yield_variance : '-'}</td></tr>
+                            <tr><td class="text-secondary">Milk Used</td><td>${run.milk_liters_used || '-'} L</td></tr>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="grid-2 mb-4">
+                    <div>
+                        <h4 class="mb-2">Timeline</h4>
+                        <table class="table table-sm">
+                            <tr><td class="text-secondary">Created</td><td>${formatDate(run.created_at)}</td></tr>
+                            <tr><td class="text-secondary">Started</td><td>${run.start_datetime ? formatDate(run.start_datetime) : '-'}</td></tr>
+                            <tr><td class="text-secondary">Completed</td><td>${run.end_datetime ? formatDate(run.end_datetime) : '-'}</td></tr>
+                            <tr><td class="text-secondary">Started By</td><td>${run.started_by_first ? run.started_by_first + ' ' + run.started_by_last : '-'}</td></tr>
+                            <tr><td class="text-secondary">Completed By</td><td>${run.completed_by_first ? run.completed_by_first + ' ' + run.completed_by_last : '-'}</td></tr>
+                        </table>
+                    </div>
+                    <div>
+                        <h4 class="mb-2">CCP Requirements</h4>
+                        <table class="table table-sm">
+                            <tr><td class="text-secondary">Pasteurization Temp</td><td>${run.pasteurization_temp}°C</td></tr>
+                            <tr><td class="text-secondary">Pasteurization Time</td><td>${run.pasteurization_time_mins} mins</td></tr>
+                            <tr><td class="text-secondary">Cooling Temp</td><td>≤${run.cooling_temp}°C</td></tr>
+                        </table>
+                    </div>
+                </div>
+                
+                ${run.ccp_logs && run.ccp_logs.length ? `
+                <div class="mb-4">
+                    <h4 class="mb-2">CCP Logs</h4>
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Temperature</th>
+                                <th>Target</th>
+                                <th>Status</th>
+                                <th>Time</th>
+                                <th>Verified By</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${run.ccp_logs.map(log => `
+                                <tr>
+                                    <td>${log.check_type}</td>
+                                    <td>${log.temperature}°C</td>
+                                    <td>${log.target_temp}°C (±${log.temp_tolerance})</td>
+                                    <td><span class="badge badge-${log.status === 'pass' ? 'success' : 'danger'}">${log.status}</span></td>
+                                    <td>${formatDate(log.check_datetime)}</td>
+                                    <td>${log.first_name ? log.first_name + ' ' + log.last_name : '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                ` : ''}
+                
+                ${run.notes ? `
+                <div class="mb-4">
+                    <h4 class="mb-2">Notes</h4>
+                    <p class="text-secondary">${run.notes}</p>
+                </div>
+                ` : ''}
+                
+                ${run.variance_reason ? `
+                <div class="mb-4">
+                    <h4 class="mb-2">Variance Reason</h4>
+                    <p class="text-secondary">${run.variance_reason}</p>
+                </div>
+                ` : ''}
+            `;
+            
+            // Footer actions
+            const footer = document.getElementById('runDetailsFooter');
+            let actions = '<button class="btn btn-outline" onclick="closeModal(\'runDetailsModal\')">Close</button>';
+            
+            if (['in_progress', 'pasteurization', 'processing', 'cooling', 'packaging'].includes(run.status)) {
+                actions += `<a href="ccp_logging.html?run_id=${run.id}" class="btn btn-primary">Log CCP Check</a>`;
+            }
+            
+            footer.innerHTML = actions;
+        }
+        
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleString();
+        }
+        
+        // Format output display with multi-unit breakdown
+        function formatOutputDisplay(run) {
+            if (!run.actual_quantity) return '—';
+            
+            // If we have output_breakdown data, show breakdown
+            if (run.output_breakdown) {
+                try {
+                    const breakdown = typeof run.output_breakdown === 'string' 
+                        ? JSON.parse(run.output_breakdown) 
+                        : run.output_breakdown;
+                    
+                    if (breakdown.secondary_count !== undefined) {
+                        const secondary = breakdown.secondary_count;
+                        const remaining = breakdown.remaining_primary;
+                        const secUnit = breakdown.secondary_unit || 'boxes';
+                        const primUnit = breakdown.primary_unit || 'pcs';
+                        
+                        if (secondary > 0 || remaining > 0) {
+                            return `${secondary}${secUnit.charAt(0).toUpperCase()}+${remaining}${primUnit.charAt(0)}`;
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error parsing output_breakdown:', e);
+                }
+            }
+            
+            // Default: just show the number
+            return run.actual_quantity.toLocaleString();
+        }
+        
+        // Format output for details view with full display
+        function formatOutputDisplayFull(run) {
+            if (!run.actual_quantity) return '-';
+            
+            // If we have output_breakdown data, show full breakdown
+            if (run.output_breakdown) {
+                try {
+                    const breakdown = typeof run.output_breakdown === 'string' 
+                        ? JSON.parse(run.output_breakdown) 
+                        : run.output_breakdown;
+                    
+                    if (breakdown.secondary_count !== undefined) {
+                        const secondary = breakdown.secondary_count;
+                        const remaining = breakdown.remaining_primary;
+                        const secUnit = breakdown.secondary_unit || 'boxes';
+                        const primUnit = breakdown.primary_unit || 'pieces';
+                        const total = breakdown.total_pieces || run.actual_quantity;
+                        
+                        return `${secondary} ${secUnit} + ${remaining} ${primUnit}<br><small class="text-muted">(${total.toLocaleString()} total ${primUnit})</small>`;
+                    }
+                } catch (e) {
+                    console.error('Error parsing output_breakdown:', e);
+                }
+            }
+            
+            // Default: just show the number
+            return `${run.actual_quantity} ${run.yield_unit || 'units'}`;
+        }
+        
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+        
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+                <span>${message}</span>
+            `;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.add('toast-hide');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Milk Storage - Warehouse Raw | Highland Fresh</title>
+    
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Fonts & Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .bento-card { @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        
+        /* Tank Visual Styles */
+        .tank-visual {
+            position: relative;
+            background: linear-gradient(180deg, #e2e8f0 0%, #cbd5e1 100%);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid #cbd5e1;
+        }
+        .tank-fill {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, oklch(var(--p)), oklch(var(--p) / 0.7), oklch(var(--p) / 0.4));
+            transition: height 0.5s ease;
+        }
+        .tank-fill.warning {
+            background: linear-gradient(to top, oklch(var(--wa)), oklch(var(--wa) / 0.7), oklch(var(--wa) / 0.4));
+        }
+        .tank-fill.danger {
+            background: linear-gradient(to top, oklch(var(--er)), oklch(var(--er) / 0.7), oklch(var(--er) / 0.4));
+        }
+        .tank-label {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-weight: 700;
+            font-size: 1.5rem;
+            color: #1e293b;
+            text-shadow: 0 2px 4px rgba(255,255,255,0.8);
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <!-- Mobile Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-warehouse text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60">Warehouse Raw</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-th-large w-5 text-center text-base-content/60"></i><span>Dashboard</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="milk_storage.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content"><i class="fas fa-tint w-5 text-center"></i><span>Milk Storage</span></a></li>
+                    <li><a href="ingredients.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-box-open w-5 text-center text-base-content/60"></i><span>Ingredients</span></a></li>
+                    <li><a href="mro.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-tools w-5 text-center text-base-content/60"></i><span>MRO Supplies</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Operations</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="requisitions.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-clipboard-check w-5 text-center text-base-content/60"></i><span>Requisitions</span><span class="badge badge-warning badge-sm" id="pendingReqsBadge">0</span></a></li>
+                </ul>
+            </div>
+        </nav>
+        
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder"><div class="w-10 rounded-xl bg-primary text-primary-content"><span class="text-sm font-semibold" id="userInitials">WR</span></div></div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Warehouse Staff</p>
+                    <p class="text-xs text-base-content/60">Warehouse Raw</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square" onclick="AuthService.logout()"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold">Milk Storage</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <button class="btn btn-primary btn-sm" onclick="openReceiveModal()">
+                    <i class="fas fa-plus"></i> <span class="hidden sm:inline">Receive Milk</span>
+                </button>
+            </div>
+        </header>
+        
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+            
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                                <i class="fas fa-tint text-primary"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="totalMilk">0</p>
+                                <p class="text-xs text-base-content/60">Total Liters</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-info/10 flex items-center justify-center">
+                                <i class="fas fa-database text-info"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="activeTanks">0</p>
+                                <p class="text-xs text-base-content/60">Active Tanks</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center">
+                                <i class="fas fa-hourglass-half text-warning"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="pendingStorage">0</p>
+                                <p class="text-xs text-base-content/60">Awaiting Storage</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-error/10 flex items-center justify-center">
+                                <i class="fas fa-clock text-error"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="expiringCount">0</p>
+                                <p class="text-xs text-base-content/60">Expiring Soon</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- View Tabs -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body p-4">
+                    <div class="flex flex-wrap gap-2">
+                        <button class="btn btn-primary btn-sm" id="tabTanks" onclick="switchTab('tanks')">
+                            <i class="fas fa-database"></i> Storage Tanks
+                        </button>
+                        <button class="btn btn-ghost btn-sm gap-2" id="tabPending" onclick="switchTab('pending')">
+                            <i class="fas fa-hourglass-half"></i> Pending Storage
+                            <span class="badge badge-warning badge-sm" id="pendingBadge">0</span>
+                        </button>
+                        <button class="btn btn-ghost btn-sm" id="tabAvailable" onclick="switchTab('available')">
+                            <i class="fas fa-check-circle"></i> Available for Production
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Tank View -->
+            <div id="tanksView">
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6" id="tankGrid">
+                    <div class="col-span-full flex flex-col items-center justify-center py-12">
+                        <span class="loading loading-spinner loading-lg text-primary"></span>
+                        <p class="text-base-content/60 mt-2">Loading tanks...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Pending Storage View -->
+            <div id="pendingView" class="hidden">
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body">
+                        <h3 class="card-title text-lg"><i class="fas fa-hourglass-half text-warning mr-2"></i>QC-Approved Milk Awaiting Storage</h3>
+                        <div id="pendingMilkList">
+                            <div class="flex flex-col items-center justify-center py-8">
+                                <span class="loading loading-spinner loading-lg text-primary"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Available Milk View -->
+            <div id="availableView" class="hidden">
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body">
+                        <h3 class="card-title text-lg"><i class="fas fa-check-circle text-success mr-2"></i>Available Milk for Production (FIFO Order)</h3>
+                        <div id="availableMilkList">
+                            <div class="flex flex-col items-center justify-center py-8">
+                                <span class="loading loading-spinner loading-lg text-primary"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Receive Milk Modal -->
+    <dialog id="receiveModal" class="modal">
+        <div class="modal-box max-w-lg">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">X</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-truck-loading text-primary"></i> Receive Milk into Tank
+            </h3>
+            
+            <div class="mb-6">
+                <h4 class="font-semibold mb-2">1. Select QC-Approved Milk</h4>
+                <div id="pendingMilkSelect" class="max-h-48 overflow-y-auto space-y-2">
+                    <div class="flex justify-center py-4">
+                        <span class="loading loading-spinner loading-md text-primary"></span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mb-6">
+                <h4 class="font-semibold mb-2">2. Select Destination Tank</h4>
+                <div id="tankSelect" class="max-h-48 overflow-y-auto space-y-2">
+                    <div class="flex justify-center py-4">
+                        <span class="loading loading-spinner loading-md text-primary"></span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-control mb-4">
+                <label class="label"><span class="label-text">Notes (Optional)</span></label>
+                <textarea class="textarea textarea-bordered" id="receiveNotes" rows="2" placeholder="Any notes about this receipt..."></textarea>
+            </div>
+            
+            <div class="modal-action">
+                <button class="btn btn-ghost" onclick="document.getElementById('receiveModal').close()">Cancel</button>
+                <button class="btn btn-primary" id="confirmReceiveBtn" onclick="confirmReceive()" disabled>
+                    <i class="fas fa-check"></i> Confirm Receipt
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Tank Detail Modal -->
+    <dialog id="tankDetailModal" class="modal">
+        <div class="modal-box max-w-2xl max-h-[90vh]">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">X</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4" id="tankDetailTitle">Tank Details</h3>
+            <div id="tankDetailContent" class="overflow-y-auto max-h-[60vh]">
+                <div class="flex flex-col items-center justify-center py-8">
+                    <span class="loading loading-spinner loading-lg text-primary"></span>
+                </div>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-bottom z-50"></div>
+    
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../../js/config/api.js"></script>
+    <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/warehouse/raw.service.js"></script>
+    <script>
+        // Sidebar toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+        
+        let tanksData = [];
+        let pendingMilkData = [];
+        let selectedMilkId = null;
+        let selectedTankId = null;
+        
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../../login.html';
+                return;
+            }
+            
+            const user = AuthService.getCurrentUser();
+            document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
+            document.getElementById('userInitials').textContent = (user.first_name[0] + user.last_name[0]).toUpperCase();
+            
+            // Check URL params
+            const urlParams = new URLSearchParams(window.location.search);
+            const action = urlParams.get('action');
+            
+            await loadData();
+            
+            if (action === 'receive') {
+                openReceiveModal();
+            }
+        });
+        
+        async function loadData() {
+            try {
+                const [tanksResponse, pendingResponse, availableResponse] = await Promise.all([
+                    WarehouseRawService.getTanks(),
+                    WarehouseRawService.getPendingMilkStorage(),
+                    WarehouseRawService.getAvailableMilk()
+                ]);
+                
+                if (tanksResponse.success) {
+                    tanksData = tanksResponse.data.tanks;
+                    renderTanks();
+                    
+                    // Update stats
+                    const totalMilk = tanksData.reduce((sum, t) => sum + parseFloat(t.stored_liters || 0), 0);
+                    const activeTanks = tanksData.filter(t => t.status === 'in_use').length;
+                    
+                    document.getElementById('totalMilk').textContent = totalMilk.toLocaleString();
+                    document.getElementById('activeTanks').textContent = activeTanks;
+                }
+                
+                if (pendingResponse.success) {
+                    pendingMilkData = pendingResponse.data.pending_milk;
+                    document.getElementById('pendingStorage').textContent = pendingMilkData.length;
+                    document.getElementById('pendingBadge').textContent = pendingMilkData.length;
+                    renderPendingMilk();
+                }
+                
+                if (availableResponse.success) {
+                    renderAvailableMilk(availableResponse.data);
+                    
+                    // Count expiring soon (within 2 days)
+                    const expiring = availableResponse.data.available_milk.filter(m => m.days_until_expiry <= 2).length;
+                    document.getElementById('expiringCount').textContent = expiring;
+                }
+            } catch (error) {
+                console.error('Load error:', error);
+                showToast('Failed to load data', 'error');
+            }
+        }
+        
+        function switchTab(tab) {
+            // Update buttons
+            document.getElementById('tabTanks').className = tab === 'tanks' ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm';
+            document.getElementById('tabPending').className = tab === 'pending' ? 'btn btn-primary btn-sm gap-2' : 'btn btn-ghost btn-sm gap-2';
+            document.getElementById('tabAvailable').className = tab === 'available' ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm';
+            
+            // Show/hide views
+            document.getElementById('tanksView').classList.toggle('hidden', tab !== 'tanks');
+            document.getElementById('pendingView').classList.toggle('hidden', tab !== 'pending');
+            document.getElementById('availableView').classList.toggle('hidden', tab !== 'available');
+        }
+        
+        function renderTanks() {
+            const grid = document.getElementById('tankGrid');
+            
+            if (!tanksData.length) {
+                grid.innerHTML = `
+                    <div class="col-span-full flex flex-col items-center justify-center py-12">
+                        <i class="fas fa-database fa-3x text-base-content/20 mb-4"></i>
+                        <p class="text-base-content/60">No storage tanks configured</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            grid.innerHTML = tanksData.map(tank => {
+                const fillPercent = tank.capacity_liters > 0 
+                    ? Math.round((tank.stored_liters / tank.capacity_liters) * 100) 
+                    : 0;
+                
+                let fillClass = '';
+                if (fillPercent > 90) fillClass = 'danger';
+                else if (fillPercent > 70) fillClass = 'warning';
+                
+                const statusBadges = {
+                    'available': 'badge-success',
+                    'in_use': 'badge-primary',
+                    'cleaning': 'badge-warning',
+                    'maintenance': 'badge-warning',
+                    'offline': 'badge-error'
+                };
+                
+                return `
+                    <div class="bento-card card bg-base-100 border border-base-300 cursor-pointer" onclick="openTankDetail(${tank.id})">
+                        <div class="card-body p-4">
+                            <div class="flex justify-between items-start mb-3">
+                                <div>
+                                    <h3 class="font-bold text-lg">${tank.tank_code}</h3>
+                                    <p class="text-sm text-base-content/60">${tank.tank_name}</p>
+                                </div>
+                                <span class="badge ${statusBadges[tank.status] || 'badge-ghost'} badge-sm">${tank.status}</span>
+                            </div>
+                            
+                            <div class="tank-visual h-36 mb-4">
+                                <div class="tank-fill ${fillClass}" style="height: ${fillPercent}%;"></div>
+                                <div class="tank-label">${fillPercent}%</div>
+                            </div>
+                            
+                            <div class="grid grid-cols-2 gap-3 text-sm">
+                                <div>
+                                    <p class="text-base-content/60 text-xs">Stored</p>
+                                    <p class="font-semibold">${parseFloat(tank.stored_liters || 0).toLocaleString()}L</p>
+                                </div>
+                                <div>
+                                    <p class="text-base-content/60 text-xs">Capacity</p>
+                                    <p class="font-semibold">${parseFloat(tank.capacity_liters).toLocaleString()}L</p>
+                                </div>
+                                <div>
+                                    <p class="text-base-content/60 text-xs">Batches</p>
+                                    <p class="font-semibold">${tank.batch_count || 0}</p>
+                                </div>
+                                <div>
+                                    <p class="text-base-content/60 text-xs">Earliest Expiry</p>
+                                    <p class="font-semibold ${tank.earliest_expiry && new Date(tank.earliest_expiry) <= new Date(Date.now() + 2*24*60*60*1000) ? 'text-error' : ''}">
+                                        ${tank.earliest_expiry ? formatDate(tank.earliest_expiry) : '-'}
+                                    </p>
+                                </div>
+                            </div>
+                            
+                            ${tank.temperature_celsius ? `
+                                <div class="mt-3 pt-3 border-t border-base-300 flex items-center justify-between text-sm">
+                                    <span class="text-base-content/60"><i class="fas fa-thermometer-half mr-1"></i>Temperature</span>
+                                    <span class="font-semibold ${tank.temperature_celsius > 8 ? 'text-error' : 'text-success'}">${tank.temperature_celsius}°C</span>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function renderPendingMilk() {
+            const container = document.getElementById('pendingMilkList');
+            
+            if (!pendingMilkData.length) {
+                container.innerHTML = `
+                    <div class="flex flex-col items-center justify-center py-8">
+                        <i class="fas fa-check-circle fa-3x text-success mb-4"></i>
+                        <p class="text-base-content/60">All QC-approved milk has been stored</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = pendingMilkData.map(milk => `
+                <div class="p-4 bg-info/10 rounded-xl border border-info/30 mb-3">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <h4 class="font-semibold">${milk.farmer_name}</h4>
+                            <p class="text-sm text-base-content/60">${milk.farmer_code} | ${milk.delivery_code || 'N/A'}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xl font-bold text-primary">${parseFloat(milk.volume_liters).toLocaleString()}L</p>
+                            <span class="badge ${milk.grade === 'A' ? 'badge-success' : milk.grade === 'B' ? 'badge-info' : 'badge-warning'} badge-sm">Grade ${milk.grade}</span>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap gap-4 mt-3 text-sm text-base-content/60">
+                        <span><i class="fas fa-calendar mr-1"></i>Received: ${formatDate(milk.received_date)}</span>
+                        <span><i class="fas fa-clock mr-1"></i>Expires: ${formatDate(milk.expiry_date)}</span>
+                        <span><i class="fas fa-percent mr-1"></i>Fat: ${milk.fat_percentage}%</span>
+                    </div>
+                    <div class="mt-3">
+                        <button class="btn btn-primary btn-sm" onclick="quickReceive(${milk.id})">
+                            <i class="fas fa-arrow-right"></i> Store in Tank
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function renderAvailableMilk(data) {
+            const container = document.getElementById('availableMilkList');
+            
+            if (!data.available_milk || !data.available_milk.length) {
+                container.innerHTML = `
+                    <div class="flex flex-col items-center justify-center py-8">
+                        <i class="fas fa-exclamation-triangle fa-3x text-warning mb-4"></i>
+                        <p class="text-base-content/60">No milk available for production</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = `
+                <div class="alert alert-success mb-4">
+                    <i class="fas fa-info-circle"></i>
+                    <span><strong>Total Available:</strong> ${parseFloat(data.total_liters).toLocaleString()}L (${data.available_milk.length} batches)</span>
+                </div>
+                <div class="space-y-2">
+                    ${data.available_milk.map((milk, index) => `
+                        <div class="flex flex-wrap items-center justify-between p-3 bg-base-200 rounded-lg gap-3">
+                            <div class="flex items-center gap-3">
+                                <span class="badge badge-ghost">#${index + 1}</span>
+                                <div>
+                                    <p class="font-semibold">${milk.tank_code} - ${milk.tank_name}</p>
+                                    <p class="text-sm text-base-content/60">Grade ${milk.grade} | Fat: ${milk.fat_percentage}%</p>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <p class="font-bold">${parseFloat(milk.remaining_liters).toLocaleString()}L</p>
+                                <p class="text-sm ${milk.days_until_expiry <= 2 ? 'text-error' : 'text-base-content/60'}">
+                                    ${milk.days_until_expiry <= 0 ? 'EXPIRED' : `${milk.days_until_expiry} days left`}
+                                </p>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+        
+        async function openTankDetail(tankId) {
+            document.getElementById('tankDetailModal').showModal();
+            document.getElementById('tankDetailContent').innerHTML = `
+                <div class="flex flex-col items-center justify-center py-8">
+                    <span class="loading loading-spinner loading-lg text-primary"></span>
+                </div>
+            `;
+            
+            try {
+                const response = await WarehouseRawService.getTank(tankId);
+                
+                if (response.success) {
+                    const tank = response.data.tank;
+                    const batches = response.data.milk_batches;
+                    
+                    document.getElementById('tankDetailTitle').textContent = `${tank.tank_code} - ${tank.tank_name}`;
+                    
+                    const statusBadges = {
+                        'available': 'badge-success',
+                        'in_use': 'badge-primary',
+                        'cleaning': 'badge-warning',
+                        'maintenance': 'badge-warning',
+                        'offline': 'badge-error'
+                    };
+                    
+                    let batchesHtml = '';
+                    if (!batches || batches.length === 0) {
+                        batchesHtml = '<p class="text-base-content/60 text-center py-4">No milk batches in this tank</p>';
+                    } else {
+                        batchesHtml = batches.map((batch, i) => `
+                            <div class="flex flex-wrap items-center justify-between p-3 bg-base-200 rounded-lg gap-3 mb-2">
+                                <div class="flex items-center gap-3">
+                                    <span class="badge badge-ghost">#${i+1}</span>
+                                    <div>
+                                        <p class="font-semibold">${batch.farmer_name} (${batch.farmer_code})</p>
+                                        <span class="badge ${batch.grade === 'A' ? 'badge-success' : 'badge-info'} badge-sm">Grade ${batch.grade}</span>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <p class="font-bold">${parseFloat(batch.remaining_liters).toLocaleString()}L</p>
+                                    <p class="text-sm text-base-content/60">Exp: ${formatDate(batch.expiry_date)}</p>
+                                </div>
+                            </div>
+                        `).join('');
+                    }
+                    
+                    document.getElementById('tankDetailContent').innerHTML = `
+                        <div class="grid grid-cols-2 gap-4 mb-6">
+                            <div>
+                                <p class="text-xs text-base-content/60">Status</p>
+                                <span class="badge ${statusBadges[tank.status] || 'badge-ghost'}">${tank.status}</span>
+                            </div>
+                            <div>
+                                <p class="text-xs text-base-content/60">Type</p>
+                                <p class="font-semibold">${tank.tank_type}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-base-content/60">Location</p>
+                                <p class="font-semibold">${tank.location || '-'}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-base-content/60">Temperature</p>
+                                <p class="font-semibold">${tank.temperature_celsius ? tank.temperature_celsius + '°C' : '-'}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-base-content/60">Capacity</p>
+                                <p class="font-semibold">${parseFloat(tank.capacity_liters).toLocaleString()}L</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-base-content/60">Current Volume</p>
+                                <p class="font-semibold">${parseFloat(tank.current_volume).toLocaleString()}L</p>
+                            </div>
+                        </div>
+                        
+                        <div class="divider"></div>
+                        <h4 class="font-semibold mb-3"><i class="fas fa-layer-group mr-2"></i>Milk Batches (FIFO Order)</h4>
+                        <div class="max-h-60 overflow-y-auto">
+                            ${batchesHtml}
+                        </div>
+                        
+                        <div class="flex flex-wrap gap-2 mt-6">
+                            <button class="btn btn-ghost btn-sm" onclick="updateTankStatus(${tank.id}, 'cleaning')">
+                                <i class="fas fa-broom"></i> Mark Cleaning
+                            </button>
+                            <button class="btn btn-ghost btn-sm" onclick="updateTankStatus(${tank.id}, 'maintenance')">
+                                <i class="fas fa-wrench"></i> Mark Maintenance
+                            </button>
+                            ${tank.status !== 'available' && tank.current_volume <= 0 ? `
+                                <button class="btn btn-success btn-sm" onclick="updateTankStatus(${tank.id}, 'available')">
+                                    <i class="fas fa-check"></i> Mark Available
+                                </button>
+                            ` : ''}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Tank detail error:', error);
+                document.getElementById('tankDetailContent').innerHTML = '<p class="text-error text-center py-4">Failed to load tank details</p>';
+            }
+        }
+        
+        async function updateTankStatus(tankId, status) {
+            try {
+                const response = await WarehouseRawService.updateTankStatus(tankId, status);
+                if (response.success) {
+                    showToast('Tank status updated', 'success');
+                    document.getElementById('tankDetailModal').close();
+                    loadData();
+                }
+            } catch (error) {
+                showToast('Failed to update tank status', 'error');
+            }
+        }
+        
+        function openReceiveModal() {
+            selectedMilkId = null;
+            selectedTankId = null;
+            document.getElementById('confirmReceiveBtn').disabled = true;
+            document.getElementById('receiveModal').showModal();
+            
+            // Render pending milk selection
+            const pendingContainer = document.getElementById('pendingMilkSelect');
+            if (!pendingMilkData.length) {
+                pendingContainer.innerHTML = `
+                    <div class="flex items-center gap-2 text-success">
+                        <i class="fas fa-check-circle"></i>
+                        <span>No pending milk to store</span>
+                    </div>
+                `;
+            } else {
+                pendingContainer.innerHTML = pendingMilkData.map(milk => `
+                    <div class="p-3 bg-info/10 rounded-lg border border-info/30 cursor-pointer hover:bg-info/20 transition-colors" 
+                         id="milk-${milk.id}" onclick="selectMilk(${milk.id})">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="font-semibold">${milk.farmer_name}</p>
+                                <p class="text-sm text-base-content/60">${milk.farmer_code}</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="font-bold">${parseFloat(milk.volume_liters).toLocaleString()}L</p>
+                                <span class="badge ${milk.grade === 'A' ? 'badge-success' : 'badge-info'} badge-sm">Grade ${milk.grade}</span>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            // Render tank selection
+            renderTankSelect();
+        }
+        
+        function renderTankSelect() {
+            const tankContainer = document.getElementById('tankSelect');
+            const availableTanks = tanksData.filter(t => ['available', 'in_use'].includes(t.status));
+            
+            if (!availableTanks.length) {
+                tankContainer.innerHTML = `
+                    <div class="flex items-center gap-2 text-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span>No tanks available</span>
+                    </div>
+                `;
+                return;
+            }
+            
+            tankContainer.innerHTML = availableTanks.map(tank => {
+                const available = tank.capacity_liters - (tank.stored_liters || 0);
+                return `
+                    <div class="p-3 bg-success/10 rounded-lg border border-success/30 cursor-pointer hover:bg-success/20 transition-colors" 
+                         id="tank-${tank.id}" onclick="selectTank(${tank.id})">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="font-semibold">${tank.tank_code}</p>
+                                <p class="text-sm text-base-content/60">${tank.tank_name}</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="font-bold text-success">${parseFloat(available).toLocaleString()}L available</p>
+                                <p class="text-sm text-base-content/60">${parseFloat(tank.stored_liters || 0).toLocaleString()}L / ${parseFloat(tank.capacity_liters).toLocaleString()}L</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function selectMilk(milkId) {
+            // Deselect previous
+            document.querySelectorAll('#pendingMilkSelect > div').forEach(el => {
+                el.classList.remove('ring-2', 'ring-primary');
+            });
+            // Select new
+            document.getElementById(`milk-${milkId}`).classList.add('ring-2', 'ring-primary');
+            selectedMilkId = milkId;
+            checkReceiveReady();
+        }
+        
+        function selectTank(tankId) {
+            // Deselect previous
+            document.querySelectorAll('#tankSelect > div').forEach(el => {
+                el.classList.remove('ring-2', 'ring-primary');
+            });
+            // Select new
+            document.getElementById(`tank-${tankId}`).classList.add('ring-2', 'ring-primary');
+            selectedTankId = tankId;
+            checkReceiveReady();
+        }
+        
+        function checkReceiveReady() {
+            document.getElementById('confirmReceiveBtn').disabled = !(selectedMilkId && selectedTankId);
+        }
+        
+        async function confirmReceive() {
+            if (!selectedMilkId || !selectedTankId) return;
+            
+            const notes = document.getElementById('receiveNotes').value;
+            const btn = document.getElementById('confirmReceiveBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Processing...';
+            
+            try {
+                const response = await WarehouseRawService.receiveMilkIntoTank(selectedTankId, selectedMilkId, notes);
+                
+                if (response.success) {
+                    showToast(`Milk stored successfully! ${response.data.volume_stored}L into ${response.data.tank_code}`, 'success');
+                    document.getElementById('receiveModal').close();
+                    loadData();
+                } else {
+                    showToast(response.message || 'Failed to store milk', 'error');
+                }
+            } catch (error) {
+                showToast(error.message || 'Failed to store milk', 'error');
+            }
+            
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check"></i> Confirm Receipt';
+        }
+        
+        function quickReceive(milkId) {
+            selectedMilkId = milkId;
+            openReceiveModal();
+            document.getElementById(`milk-${milkId}`).classList.add('ring-2', 'ring-primary');
+            checkReceiveReady();
+        }
+        
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+        
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = {
+                success: 'alert-success',
+                error: 'alert-error',
+                warning: 'alert-warning',
+                info: 'alert-info'
+            }[type] || 'alert-info';
+            
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

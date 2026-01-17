@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shopping Cart - Customer Portal | Highland Fresh</title>
+    
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-cow text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Customer Portal</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <!-- Main Menu -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Shop -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Shop</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="products.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-boxes w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Products</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="cart.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-shopping-cart w-5 text-center"></i>
+                            <span class="flex-1">Shopping Cart</span>
+                            <span class="badge badge-sm bg-white/20" id="sidebarCartBadge">0</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Orders -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">My Orders</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="orders.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-receipt w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Order History</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+        
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">CS</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Customer</p>
+                    <p class="text-xs text-base-content/60 truncate">Customer Portal</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a href="dashboard.html"><i class="fas fa-user-cog w-4"></i> Profile</a></li>
+                        <li class="border-t border-base-300 mt-1 pt-1">
+                            <a onclick="CustomerService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold text-base-content">
+                    <i class="fas fa-shopping-cart mr-2"></i>Shopping Cart
+                </h1>
+            </div>
+            <div class="flex-none">
+                <a href="products.html" class="btn btn-ghost btn-sm">
+                    <i class="fas fa-arrow-left mr-2"></i>Continue Shopping
+                </a>
+            </div>
+        </header>
+        
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                <!-- Cart Items -->
+                <div class="lg:col-span-2">
+                    <div class="card bg-base-100 border border-base-300">
+                        <div class="card-body">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="card-title">
+                                    Cart Items (<span id="itemCount">0</span>)
+                                </h3>
+                                <button onclick="clearCart()" class="btn btn-ghost btn-sm text-error" id="clearCartBtn">
+                                    <i class="fas fa-trash mr-1"></i>Clear Cart
+                                </button>
+                            </div>
+                            
+                            <!-- Cart Items List -->
+                            <div id="cartItemsList" class="space-y-4">
+                                <!-- Items will be loaded here -->
+                            </div>
+                            
+                            <!-- Empty Cart State -->
+                            <div id="emptyCartState" class="text-center py-12 hidden">
+                                <i class="fas fa-shopping-cart text-6xl text-base-content/20 mb-4"></i>
+                                <h3 class="text-xl font-semibold mb-2">Your cart is empty</h3>
+                                <p class="text-base-content/60 mb-4">Add some products to your cart to get started.</p>
+                                <a href="products.html" class="btn btn-primary">
+                                    <i class="fas fa-shopping-bag mr-2"></i>Browse Products
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Order Summary -->
+                <div class="lg:col-span-1">
+                    <div class="card bg-base-100 border border-base-300 sticky top-24">
+                        <div class="card-body">
+                            <h3 class="card-title mb-4">Order Summary</h3>
+                            
+                            <!-- Summary Items -->
+                            <div class="space-y-3 mb-4">
+                                <div class="flex justify-between">
+                                    <span class="text-base-content/60">Subtotal</span>
+                                    <span id="subtotal">₱0.00</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-base-content/60">Delivery Fee</span>
+                                    <span class="text-success" id="deliveryFee">FREE</span>
+                                </div>
+                                <div class="divider my-2"></div>
+                                <div class="flex justify-between text-lg font-bold">
+                                    <span>Total</span>
+                                    <span class="text-primary" id="total">₱0.00</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Delivery Address -->
+                            <div class="form-control mb-4">
+                                <label class="label">
+                                    <span class="label-text font-semibold">Delivery Address</span>
+                                </label>
+                                <textarea id="deliveryAddress" class="textarea textarea-bordered" rows="3" placeholder="Enter your delivery address..."></textarea>
+                            </div>
+                            
+                            <!-- Preferred Delivery Date -->
+                            <div class="form-control mb-4">
+                                <label class="label">
+                                    <span class="label-text font-semibold">Preferred Delivery Date</span>
+                                </label>
+                                <input type="date" id="deliveryDate" class="input input-bordered" min="" />
+                            </div>
+                            
+                            <!-- Payment Method -->
+                            <div class="form-control mb-4">
+                                <label class="label">
+                                    <span class="label-text font-semibold">Payment Method</span>
+                                </label>
+                                <div class="space-y-2">
+                                    <label class="flex items-center gap-3 p-3 border border-base-300 rounded-lg cursor-pointer hover:bg-base-200">
+                                        <input type="radio" name="paymentMethod" value="cod" class="radio radio-primary" checked />
+                                        <div>
+                                            <p class="font-medium">Cash on Delivery</p>
+                                            <p class="text-xs text-base-content/60">Pay when you receive your order</p>
+                                        </div>
+                                    </label>
+                                    <label class="flex items-center gap-3 p-3 border border-base-300 rounded-lg cursor-pointer hover:bg-base-200">
+                                        <input type="radio" name="paymentMethod" value="online" class="radio radio-primary" />
+                                        <div>
+                                            <p class="font-medium">Online Payment</p>
+                                            <p class="text-xs text-base-content/60">Pay now via GCash/Bank Transfer</p>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <!-- Notes -->
+                            <div class="form-control mb-4">
+                                <label class="label">
+                                    <span class="label-text font-semibold">Order Notes (Optional)</span>
+                                </label>
+                                <textarea id="orderNotes" class="textarea textarea-bordered" rows="2" placeholder="Special instructions..."></textarea>
+                            </div>
+                            
+                            <!-- Checkout Button -->
+                            <button onclick="placeOrder()" class="btn btn-primary btn-block" id="checkoutBtn">
+                                <i class="fas fa-check mr-2"></i>Place Order
+                            </button>
+                            
+                            <p class="text-xs text-base-content/60 text-center mt-2">
+                                By placing an order, you agree to our terms and conditions.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Order Success Modal -->
+    <dialog id="orderSuccessModal" class="modal">
+        <div class="modal-box text-center">
+            <div class="w-20 h-20 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-check-circle text-5xl text-success"></i>
+            </div>
+            <h3 class="font-bold text-2xl mb-2">Order Placed!</h3>
+            <p class="text-base-content/60 mb-2">Your order has been successfully placed.</p>
+            <p class="font-mono text-lg mb-4" id="orderNumberDisplay">ORD-20240101-XXXXXX</p>
+            
+            <div class="bg-base-200 rounded-lg p-4 mb-4 text-left">
+                <p class="text-sm text-base-content/60 mb-2">What's next?</p>
+                <ul class="text-sm space-y-1">
+                    <li><i class="fas fa-check text-success mr-2"></i>We'll confirm your order shortly</li>
+                    <li><i class="fas fa-check text-success mr-2"></i>You'll receive updates on your order status</li>
+                    <li><i class="fas fa-check text-success mr-2"></i>Track your order in Order History</li>
+                </ul>
+            </div>
+            
+            <div class="modal-action justify-center gap-2">
+                <a href="orders.html" class="btn btn-primary">
+                    <i class="fas fa-receipt mr-2"></i>View Orders
+                </a>
+                <a href="products.html" class="btn btn-ghost">
+                    Continue Shopping
+                </a>
+            </div>
+        </div>
+    </dialog>
+    
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="/HighlandFreshAppV4/js/config/api.js"></script>
+    <script src="/HighlandFreshAppV4/js/customer/customer.api.js"></script>
+    <script src="/HighlandFreshAppV4/js/customer/customer.service.js"></script>
+    
+    <script>
+        // Check authentication
+        if (!CustomerService.isLoggedIn()) {
+            window.location.href = 'login.html';
+        }
+        
+        // Toggle sidebar
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+        
+        // Load customer info
+        const customer = CustomerService.getCurrentCustomer();
+        if (customer) {
+            document.getElementById('sidebarUserName').textContent = customer.name || 'Customer';
+            document.getElementById('userInitials').textContent = (customer.name || 'CS').substring(0, 2).toUpperCase();
+            
+            // Pre-fill delivery address
+            if (customer.address) {
+                document.getElementById('deliveryAddress').value = customer.address;
+            }
+        }
+        
+        // Set minimum delivery date to tomorrow
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        document.getElementById('deliveryDate').min = tomorrow.toISOString().split('T')[0];
+        document.getElementById('deliveryDate').value = tomorrow.toISOString().split('T')[0];
+        
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', () => {
+            renderCart();
+        });
+        
+        function renderCart() {
+            const cart = CustomerService.getCart();
+            const totals = CustomerService.getCartTotals();
+            const listContainer = document.getElementById('cartItemsList');
+            const emptyState = document.getElementById('emptyCartState');
+            const clearBtn = document.getElementById('clearCartBtn');
+            const checkoutBtn = document.getElementById('checkoutBtn');
+            
+            // Update counts
+            document.getElementById('itemCount').textContent = totals.items;
+            document.getElementById('sidebarCartBadge').textContent = totals.itemCount;
+            
+            // Update totals
+            document.getElementById('subtotal').textContent = CustomerService.formatCurrency(totals.subtotal);
+            document.getElementById('deliveryFee').textContent = totals.deliveryFee > 0 ? CustomerService.formatCurrency(totals.deliveryFee) : 'FREE';
+            document.getElementById('total').textContent = CustomerService.formatCurrency(totals.total);
+            
+            if (cart.length === 0) {
+                listContainer.innerHTML = '';
+                emptyState.classList.remove('hidden');
+                clearBtn.classList.add('hidden');
+                checkoutBtn.disabled = true;
+                return;
+            }
+            
+            emptyState.classList.add('hidden');
+            clearBtn.classList.remove('hidden');
+            checkoutBtn.disabled = false;
+            
+            listContainer.innerHTML = cart.map((item, index) => `
+                <div class="flex gap-4 p-4 bg-base-200 rounded-xl">
+                    <div class="w-20 h-20 bg-base-300 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
+                        ${item.image_url 
+                            ? `<img src="${item.image_url}" alt="${escapeHtml(item.name)}" class="w-full h-full object-cover" />`
+                            : `<i class="fas fa-box text-2xl text-base-content/20"></i>`
+                        }
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <h4 class="font-semibold truncate">${item.name}</h4>
+                        <p class="text-sm text-base-content/60">${item.product_code || ''} · ${CustomerService.formatCurrency(item.price)}/${item.unit || 'pc'}</p>
+                        
+                        <div class="flex items-center justify-between mt-2">
+                            <div class="flex items-center gap-2">
+                                <button onclick="updateQuantity(${item.product_id}, ${item.quantity - 1})" class="btn btn-xs btn-ghost btn-square">
+                                    <i class="fas fa-minus"></i>
+                                </button>
+                                <input type="number" value="${item.quantity}" min="1" 
+                                       onchange="updateQuantity(${item.product_id}, parseInt(this.value))"
+                                       class="input input-bordered input-xs w-14 text-center" />
+                                <button onclick="updateQuantity(${item.product_id}, ${item.quantity + 1})" class="btn btn-xs btn-ghost btn-square">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                            <span class="font-bold text-primary">${CustomerService.formatCurrency(item.price * item.quantity)}</span>
+                        </div>
+                    </div>
+                    <button onclick="removeItem(${item.product_id})" class="btn btn-ghost btn-sm btn-square text-error self-start">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+        
+        function updateQuantity(productId, quantity) {
+            if (quantity < 1) {
+                removeItem(productId);
+                return;
+            }
+            CustomerService.updateCartQuantity(productId, quantity);
+            renderCart();
+        }
+        
+        function removeItem(productId) {
+            CustomerService.removeFromCart(productId);
+            renderCart();
+            showToast('Item removed from cart');
+        }
+        
+        function clearCart() {
+            if (confirm('Are you sure you want to clear your cart?')) {
+                CustomerService.clearCart();
+                renderCart();
+                showToast('Cart cleared');
+            }
+        }
+        
+        async function placeOrder() {
+            const cart = CustomerService.getCart();
+            
+            if (cart.length === 0) {
+                showToast('Your cart is empty', 'error');
+                return;
+            }
+            
+            const deliveryAddress = document.getElementById('deliveryAddress').value.trim();
+            const deliveryDate = document.getElementById('deliveryDate').value;
+            const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked').value;
+            const notes = document.getElementById('orderNotes').value.trim();
+            
+            if (!deliveryAddress) {
+                showToast('Please enter a delivery address', 'error');
+                document.getElementById('deliveryAddress').focus();
+                return;
+            }
+            
+            if (!deliveryDate) {
+                showToast('Please select a delivery date', 'error');
+                document.getElementById('deliveryDate').focus();
+                return;
+            }
+            
+            // Prepare order items
+            const items = cart.map(item => ({
+                product_id: item.product_id,
+                quantity: item.quantity
+            }));
+            
+            // Disable button and show loading
+            const btn = document.getElementById('checkoutBtn');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processing...';
+            
+            try {
+                const response = await CustomerService.placeOrder({
+                    items,
+                    delivery_address: deliveryAddress,
+                    delivery_date: deliveryDate,
+                    payment_method: paymentMethod,
+                    notes
+                });
+                
+                if (response.success) {
+                    // Clear cart
+                    CustomerService.clearCart();
+                    
+                    // Show success modal
+                    document.getElementById('orderNumberDisplay').textContent = response.data.order_number;
+                    document.getElementById('orderSuccessModal').showModal();
+                } else {
+                    showToast(response.message || 'Failed to place order', 'error');
+                }
+            } catch (error) {
+                console.error('Error placing order:', error);
+                showToast(error.message || 'Failed to place order', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        }
+        
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `alert alert-${type} fixed bottom-4 right-4 w-auto max-w-sm z-50 shadow-lg`;
+            toast.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>
+                <span>${message}</span>
+            `;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        function escapeHtml(str) {
+            if (!str) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

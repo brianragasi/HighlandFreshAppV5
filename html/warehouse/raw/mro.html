@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MRO Supplies - Warehouse Raw | Highland Fresh</title>
+    
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Fonts & Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .bento-card { @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <!-- Mobile Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-warehouse text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60">Warehouse Raw</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-th-large w-5 text-center text-base-content/60"></i><span>Dashboard</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="milk_storage.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-tint w-5 text-center text-base-content/60"></i><span>Milk Storage</span></a></li>
+                    <li><a href="ingredients.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-box-open w-5 text-center text-base-content/60"></i><span>Ingredients</span></a></li>
+                    <li><a href="mro.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content"><i class="fas fa-tools w-5 text-center"></i><span>MRO Supplies</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Operations</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="requisitions.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-clipboard-check w-5 text-center text-base-content/60"></i><span>Requisitions</span><span class="badge badge-warning badge-sm" id="pendingReqsBadge">0</span></a></li>
+                </ul>
+            </div>
+        </nav>
+        
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder"><div class="w-10 rounded-xl bg-primary text-primary-content"><span class="text-sm font-semibold" id="userInitials">WR</span></div></div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Warehouse Staff</p>
+                    <p class="text-xs text-base-content/60">Warehouse Raw</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square" onclick="AuthService.logout()"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold">MRO Supplies</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <button class="btn btn-primary btn-sm" onclick="openReceiveModal()">
+                    <i class="fas fa-plus"></i> <span class="hidden sm:inline">Receive Stock</span>
+                </button>
+            </div>
+        </header>
+        
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+            
+            <!-- Info Banner -->
+            <div class="alert alert-info mb-6">
+                <i class="fas fa-info-circle"></i>
+                <span><strong>MRO</strong> = Maintenance, Repair & Operations supplies. These items support production but are not direct ingredients.</span>
+            </div>
+            
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                                <i class="fas fa-tools text-primary"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="totalItems">0</p>
+                                <p class="text-xs text-base-content/60">Total Items</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center">
+                                <i class="fas fa-check-circle text-success"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="inStockCount">0</p>
+                                <p class="text-xs text-base-content/60">In Stock</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center">
+                                <i class="fas fa-exclamation-triangle text-warning"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="lowStockCount">0</p>
+                                <p class="text-xs text-base-content/60">Low Stock</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-error/10 flex items-center justify-center">
+                                <i class="fas fa-times-circle text-error"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="criticalCount">0</p>
+                                <p class="text-xs text-base-content/60">Critical Items</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Filters Card -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body p-4">
+                    <!-- Category Filter Tabs -->
+                    <div class="flex flex-wrap gap-2 mb-4" id="categoryTabs">
+                        <button class="btn btn-primary btn-sm" data-category="all">All</button>
+                        <!-- Categories loaded dynamically -->
+                    </div>
+                    
+                    <!-- Search and Filters -->
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <div class="form-control">
+                            <label class="input input-bordered input-sm flex items-center gap-2">
+                                <i class="fas fa-search text-base-content/40"></i>
+                                <input type="text" id="searchInput" class="grow" placeholder="Search MRO items..." />
+                            </label>
+                        </div>
+                        <select class="select select-bordered select-sm" id="stockFilter">
+                            <option value="">All Stock Levels</option>
+                            <option value="ok">In Stock</option>
+                            <option value="low">Low Stock</option>
+                            <option value="critical">Critical</option>
+                            <option value="out">Out of Stock</option>
+                        </select>
+                        <select class="select select-bordered select-sm" id="criticalFilter">
+                            <option value="">All Items</option>
+                            <option value="critical_only">Critical Items Only</option>
+                        </select>
+                        <button class="btn btn-ghost btn-sm" onclick="loadMROItems()">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- MRO Items Grid -->
+            <div id="mroGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                <div class="col-span-full flex flex-col items-center justify-center py-12">
+                    <span class="loading loading-spinner loading-lg text-primary"></span>
+                    <p class="text-base-content/60 mt-2">Loading MRO items...</p>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Receive Stock Modal -->
+    <dialog id="receiveModal" class="modal">
+        <div class="modal-box max-w-md">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">X</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-truck-loading text-primary"></i> Receive MRO Stock
+            </h3>
+            <form id="receiveForm" onsubmit="submitReceive(event)">
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">MRO Item <span class="text-error">*</span></span></label>
+                    <select class="select select-bordered w-full" id="receiveMROId" required>
+                        <option value="">Select item...</option>
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Quantity <span class="text-error">*</span></span></label>
+                        <input type="number" class="input input-bordered" id="receiveQuantity" step="1" min="1" required>
+                        <label class="label"><span class="label-text-alt text-base-content/60" id="receiveUnit"></span></label>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Unit Cost</span></label>
+                        <input type="number" class="input input-bordered" id="receiveUnitCost" step="0.01" min="0" placeholder="0.00">
+                    </div>
+                </div>
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">PO/Reference Number</span></label>
+                    <input type="text" class="input input-bordered" id="receiveReference" placeholder="e.g., PO-2026-001">
+                </div>
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">Supplier</span></label>
+                    <input type="text" class="input input-bordered" id="receiveSupplier" placeholder="Supplier name">
+                </div>
+                <div class="form-control mb-4">
+                    <label class="label"><span class="label-text">Notes</span></label>
+                    <textarea class="textarea textarea-bordered" id="receiveNotes" rows="2" placeholder="Delivery notes..."></textarea>
+                </div>
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('receiveModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-check"></i> Receive Stock</button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Item Detail Modal -->
+    <dialog id="detailModal" class="modal">
+        <div class="modal-box max-w-2xl">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">X</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4" id="detailModalTitle">MRO Item Details</h3>
+            <div id="detailModalBody" class="py-4">
+                <div class="flex flex-col items-center justify-center py-8">
+                    <span class="loading loading-spinner loading-lg text-primary"></span>
+                </div>
+            </div>
+            <div class="modal-action" id="detailModalFooter">
+                <button class="btn btn-ghost" onclick="document.getElementById('detailModal').close()">Close</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Issue Stock Modal -->
+    <dialog id="issueModal" class="modal">
+        <div class="modal-box max-w-md">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">X</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-arrow-up text-warning"></i> Issue MRO Item
+            </h3>
+            <form id="issueForm" onsubmit="submitIssue(event)">
+                <input type="hidden" id="issueMROId">
+                <div class="alert alert-info mb-4">
+                    <div>
+                        <strong id="issueItemName">-</strong>
+                        <p class="text-sm">Available: <span id="issueAvailable">0</span> <span id="issueUnitLabel"></span></p>
+                    </div>
+                </div>
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">Quantity to Issue <span class="text-error">*</span></span></label>
+                    <input type="number" class="input input-bordered" id="issueQuantity" step="1" min="1" required>
+                </div>
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">Reason</span></label>
+                    <select class="select select-bordered w-full" id="issueReason">
+                        <option value="Issued for maintenance">Issued for maintenance</option>
+                        <option value="Equipment repair">Equipment repair</option>
+                        <option value="Production support">Production support</option>
+                        <option value="Cleaning/sanitation">Cleaning/sanitation</option>
+                        <option value="Safety equipment">Safety equipment</option>
+                        <option value="other">Other (specify below)</option>
+                    </select>
+                </div>
+                <div class="form-control mb-3 hidden" id="issueOtherReasonGroup">
+                    <label class="label"><span class="label-text">Specify Reason</span></label>
+                    <input type="text" class="input input-bordered" id="issueOtherReason">
+                </div>
+                <div class="form-control mb-4">
+                    <label class="label"><span class="label-text">Issued To (Optional)</span></label>
+                    <input type="text" class="input input-bordered" id="issueIssuedTo" placeholder="Person/department name">
+                </div>
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('issueModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-warning"><i class="fas fa-arrow-up"></i> Issue Stock</button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Adjust Stock Modal -->
+    <dialog id="adjustModal" class="modal">
+        <div class="modal-box max-w-md">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">X</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-sliders-h text-info"></i> Adjust Stock
+            </h3>
+            <form id="adjustForm" onsubmit="submitAdjust(event)">
+                <input type="hidden" id="adjustMROId">
+                <div class="alert alert-warning mb-4">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>Stock adjustments should only be made after physical inventory counts.</span>
+                </div>
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">Current Stock</span></label>
+                    <input type="text" class="input input-bordered bg-base-200" id="adjustCurrentStock" readonly>
+                </div>
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">New Stock Quantity <span class="text-error">*</span></span></label>
+                    <input type="number" class="input input-bordered" id="adjustNewQuantity" step="1" min="0" required>
+                </div>
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">Reason for Adjustment <span class="text-error">*</span></span></label>
+                    <select class="select select-bordered w-full" id="adjustReason" required>
+                        <option value="">Select reason...</option>
+                        <option value="Physical count correction">Physical count correction</option>
+                        <option value="Damage/loss">Damage/loss</option>
+                        <option value="System error correction">System error correction</option>
+                        <option value="Found stock">Found stock</option>
+                        <option value="other">Other (specify)</option>
+                    </select>
+                </div>
+                <div class="form-control mb-4 hidden" id="adjustOtherReasonGroup">
+                    <label class="label"><span class="label-text">Specify Reason</span></label>
+                    <textarea class="textarea textarea-bordered" id="adjustOtherReason" rows="2"></textarea>
+                </div>
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('adjustModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-info"><i class="fas fa-check"></i> Save Adjustment</button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-bottom z-50"></div>
+    
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../../js/config/api.js"></script>
+    <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/warehouse/raw.service.js"></script>
+    <script>
+        // Sidebar toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+        
+        // Global state
+        let mroItems = [];
+        let categories = [];
+        let currentFilter = {
+            category: 'all',
+            search: '',
+            stock: '',
+            critical: ''
+        };
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../../login.html';
+                return;
+            }
+            
+            const user = AuthService.getCurrentUser();
+            document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
+            document.getElementById('userInitials').textContent = (user.first_name[0] + user.last_name[0]).toUpperCase();
+            
+            // Load data
+            await Promise.all([
+                loadCategories(),
+                loadMROItems()
+            ]);
+            
+            // Setup event listeners
+            setupEventListeners();
+        });
+        
+        function setupEventListeners() {
+            // Search input
+            document.getElementById('searchInput').addEventListener('input', debounce(() => {
+                currentFilter.search = document.getElementById('searchInput').value;
+                renderMROItems();
+            }, 300));
+            
+            // Stock filter
+            document.getElementById('stockFilter').addEventListener('change', () => {
+                currentFilter.stock = document.getElementById('stockFilter').value;
+                renderMROItems();
+            });
+            
+            // Critical filter
+            document.getElementById('criticalFilter').addEventListener('change', () => {
+                currentFilter.critical = document.getElementById('criticalFilter').value;
+                renderMROItems();
+            });
+            
+            // Receive item selection
+            document.getElementById('receiveMROId').addEventListener('change', (e) => {
+                const item = mroItems.find(i => i.id == e.target.value);
+                if (item) {
+                    document.getElementById('receiveUnit').textContent = `Unit: ${item.unit_of_measure}`;
+                } else {
+                    document.getElementById('receiveUnit').textContent = '';
+                }
+            });
+            
+            // Issue reason change
+            document.getElementById('issueReason').addEventListener('change', (e) => {
+                document.getElementById('issueOtherReasonGroup').classList.toggle('hidden', e.target.value !== 'other');
+            });
+            
+            // Adjust reason change
+            document.getElementById('adjustReason').addEventListener('change', (e) => {
+                document.getElementById('adjustOtherReasonGroup').classList.toggle('hidden', e.target.value !== 'other');
+            });
+        }
+        
+        async function loadCategories() {
+            try {
+                const response = await WarehouseRawService.getMROCategories();
+                if (response.success) {
+                    categories = response.data;
+                    renderCategoryTabs();
+                }
+            } catch (error) {
+                console.error('Failed to load categories:', error);
+            }
+        }
+        
+        function renderCategoryTabs() {
+            const container = document.getElementById('categoryTabs');
+            
+            const categoryIcons = {
+                'spare_parts': 'fa-cogs',
+                'tools': 'fa-wrench',
+                'safety': 'fa-hard-hat',
+                'cleaning': 'fa-broom',
+                'electrical': 'fa-bolt',
+                'lubricants': 'fa-oil-can',
+                'office': 'fa-paperclip'
+            };
+            
+            let html = '<button class="btn btn-primary btn-sm" data-category="all">All</button>';
+            
+            categories.forEach(cat => {
+                const icon = categoryIcons[cat.slug] || 'fa-tag';
+                html += `<button class="btn btn-ghost btn-sm" data-category="${cat.id}"><i class="fas ${icon}"></i> ${cat.name}</button>`;
+            });
+            
+            container.innerHTML = html;
+            
+            // Add click handlers
+            container.querySelectorAll('button').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    container.querySelectorAll('button').forEach(b => {
+                        b.classList.remove('btn-primary');
+                        b.classList.add('btn-ghost');
+                    });
+                    btn.classList.remove('btn-ghost');
+                    btn.classList.add('btn-primary');
+                    currentFilter.category = btn.dataset.category;
+                    renderMROItems();
+                });
+            });
+        }
+        
+        async function loadMROItems() {
+            try {
+                const response = await WarehouseRawService.getMROItems();
+                if (response.success) {
+                    mroItems = response.data.items || response.data;
+                    updateStats();
+                    renderMROItems();
+                    populateReceiveDropdown();
+                }
+            } catch (error) {
+                console.error('Failed to load MRO items:', error);
+                showToast('Failed to load MRO items', 'error');
+            }
+        }
+        
+        function updateStats() {
+            const total = mroItems.length;
+            const inStock = mroItems.filter(i => parseFloat(i.current_stock) > parseFloat(i.minimum_stock)).length;
+            const lowStock = mroItems.filter(i => {
+                const stock = parseFloat(i.current_stock);
+                const min = parseFloat(i.minimum_stock);
+                return stock > 0 && stock <= min;
+            }).length;
+            const critical = mroItems.filter(i => i.is_critical == 1 && parseFloat(i.current_stock) <= parseFloat(i.minimum_stock)).length;
+            
+            document.getElementById('totalItems').textContent = total;
+            document.getElementById('inStockCount').textContent = inStock;
+            document.getElementById('lowStockCount').textContent = lowStock;
+            document.getElementById('criticalCount').textContent = critical;
+        }
+        
+        function populateReceiveDropdown() {
+            const select = document.getElementById('receiveMROId');
+            select.innerHTML = '<option value="">Select item...</option>';
+            
+            // Group by category
+            const grouped = {};
+            mroItems.forEach(item => {
+                const catName = item.category_name || 'Uncategorized';
+                if (!grouped[catName]) grouped[catName] = [];
+                grouped[catName].push(item);
+            });
+            
+            Object.keys(grouped).sort().forEach(catName => {
+                const optgroup = document.createElement('optgroup');
+                optgroup.label = catName;
+                grouped[catName].forEach(item => {
+                    const option = document.createElement('option');
+                    option.value = item.id;
+                    option.textContent = `${item.code} - ${item.name}`;
+                    optgroup.appendChild(option);
+                });
+                select.appendChild(optgroup);
+            });
+        }
+        
+        function renderMROItems() {
+            const container = document.getElementById('mroGrid');
+            let filtered = [...mroItems];
+            
+            // Apply filters
+            if (currentFilter.category !== 'all') {
+                filtered = filtered.filter(i => i.category_id == currentFilter.category);
+            }
+            
+            if (currentFilter.search) {
+                const search = currentFilter.search.toLowerCase();
+                filtered = filtered.filter(i => 
+                    i.name.toLowerCase().includes(search) ||
+                    i.code.toLowerCase().includes(search)
+                );
+            }
+            
+            if (currentFilter.stock) {
+                filtered = filtered.filter(i => {
+                    const stock = parseFloat(i.current_stock);
+                    const min = parseFloat(i.minimum_stock);
+                    const reorder = parseFloat(i.reorder_point || min * 1.5);
+                    
+                    switch (currentFilter.stock) {
+                        case 'ok': return stock > reorder;
+                        case 'low': return stock > 0 && stock <= reorder;
+                        case 'critical': return stock > 0 && stock <= min;
+                        case 'out': return stock <= 0;
+                        default: return true;
+                    }
+                });
+            }
+            
+            if (currentFilter.critical === 'critical_only') {
+                filtered = filtered.filter(i => i.is_critical == 1);
+            }
+            
+            // Sort: critical items first, then by name
+            filtered.sort((a, b) => {
+                if (a.is_critical !== b.is_critical) {
+                    return b.is_critical - a.is_critical;
+                }
+                return a.name.localeCompare(b.name);
+            });
+            
+            if (filtered.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full flex flex-col items-center justify-center py-12">
+                        <i class="fas fa-tools fa-3x text-base-content/20 mb-4"></i>
+                        <h4 class="font-semibold text-lg">No MRO items found</h4>
+                        <p class="text-base-content/60">Try adjusting your filters or add new items</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            const categoryColors = {
+                'spare_parts': { bg: 'bg-indigo-100', text: 'text-indigo-600' },
+                'tools': { bg: 'bg-amber-100', text: 'text-amber-600' },
+                'safety': { bg: 'bg-red-100', text: 'text-red-600' },
+                'cleaning': { bg: 'bg-emerald-100', text: 'text-emerald-600' },
+                'electrical': { bg: 'bg-yellow-100', text: 'text-yellow-600' },
+                'lubricants': { bg: 'bg-purple-100', text: 'text-purple-600' },
+                'office': { bg: 'bg-slate-100', text: 'text-slate-600' }
+            };
+            
+            const categoryIcons = {
+                'spare_parts': 'fa-cogs',
+                'tools': 'fa-wrench',
+                'safety': 'fa-hard-hat',
+                'cleaning': 'fa-broom',
+                'electrical': 'fa-bolt',
+                'lubricants': 'fa-oil-can',
+                'office': 'fa-paperclip'
+            };
+            
+            container.innerHTML = filtered.map(item => {
+                const stock = parseFloat(item.current_stock);
+                const min = parseFloat(item.minimum_stock);
+                const max = parseFloat(item.maximum_stock || min * 3);
+                const stockPercent = Math.min(100, (stock / max) * 100);
+                
+                let stockBadge, barColor;
+                if (stock <= 0) {
+                    stockBadge = '<span class="badge badge-ghost badge-sm">Out of Stock</span>';
+                    barColor = 'bg-base-content/20';
+                } else if (stock <= min) {
+                    stockBadge = '<span class="badge badge-error badge-sm">Critical</span>';
+                    barColor = 'bg-error';
+                } else if (stock <= min * 1.5) {
+                    stockBadge = '<span class="badge badge-warning badge-sm">Low Stock</span>';
+                    barColor = 'bg-warning';
+                } else {
+                    stockBadge = '<span class="badge badge-success badge-sm">In Stock</span>';
+                    barColor = 'bg-success';
+                }
+                
+                const catSlug = item.category_slug || 'tools';
+                const catColor = categoryColors[catSlug] || categoryColors.tools;
+                const catIcon = categoryIcons[catSlug] || 'fa-tag';
+                
+                const criticalBadge = item.is_critical == 1 ? 
+                    '<span class="badge badge-error badge-outline badge-xs gap-1"><i class="fas fa-exclamation"></i>CRITICAL</span>' : '';
+                
+                return `
+                    <div class="bento-card card bg-base-100 border border-base-300 cursor-pointer" onclick="openDetailModal(${item.id})">
+                        <div class="card-body p-4">
+                            <div class="flex justify-between items-start mb-3">
+                                <div class="w-12 h-12 rounded-xl ${catColor.bg} flex items-center justify-center">
+                                    <i class="fas ${catIcon} ${catColor.text} text-lg"></i>
+                                </div>
+                                <div class="flex flex-col items-end gap-1">
+                                    ${criticalBadge}
+                                    ${stockBadge}
+                                </div>
+                            </div>
+                            <h3 class="font-semibold line-clamp-1">${item.name}</h3>
+                            <p class="text-sm text-base-content/60 mb-3">${item.code}</p>
+                            <div class="flex justify-between items-baseline mb-2">
+                                <div>
+                                    <span class="text-2xl font-bold">${parseInt(stock).toLocaleString()}</span>
+                                    <span class="text-sm text-base-content/60">${item.unit_of_measure}</span>
+                                </div>
+                                <span class="text-xs text-base-content/60">${item.category_name || ''}</span>
+                            </div>
+                            <div class="w-full bg-base-200 rounded-full h-2 mb-2">
+                                <div class="h-2 rounded-full ${barColor}" style="width: ${stockPercent}%"></div>
+                            </div>
+                            <p class="text-xs text-base-content/60">Min: ${min} / Max: ${max}</p>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        async function openDetailModal(id) {
+            document.getElementById('detailModal').showModal();
+            document.getElementById('detailModalBody').innerHTML = `
+                <div class="flex flex-col items-center justify-center py-8">
+                    <span class="loading loading-spinner loading-lg text-primary"></span>
+                </div>
+            `;
+            
+            try {
+                const response = await WarehouseRawService.getMROItem(id);
+                if (response.success) {
+                    const item = response.data;
+                    renderDetailModal(item);
+                }
+            } catch (error) {
+                console.error('Failed to load MRO item:', error);
+                showToast('Failed to load item details', 'error');
+                document.getElementById('detailModal').close();
+            }
+        }
+        
+        function renderDetailModal(item) {
+            const stock = parseFloat(item.current_stock);
+            const inventory = item.inventory || [];
+            
+            const criticalBadge = item.is_critical == 1 ? 
+                '<span class="badge badge-error badge-outline badge-sm ml-2"><i class="fas fa-exclamation mr-1"></i>CRITICAL</span>' : '';
+            
+            document.getElementById('detailModalTitle').innerHTML = `
+                <i class="fas fa-tools text-primary"></i>
+                ${item.name}
+                <span class="text-base-content/60 text-sm font-normal">(${item.code})</span>
+                ${criticalBadge}
+            `;
+            
+            let inventoryHtml = '';
+            if (inventory.length === 0) {
+                inventoryHtml = '<p class="text-base-content/60 text-center py-4">No stock on hand</p>';
+            } else {
+                inventoryHtml = inventory.map(inv => `
+                    <div class="flex items-center justify-between p-3 bg-base-200 rounded-lg mb-2">
+                        <div>
+                            <p class="font-semibold">${inv.reference_number || 'No reference'}</p>
+                            <p class="text-sm text-base-content/60">
+                                Received: ${formatDate(inv.received_date)}
+                                ${inv.supplier ? ` - ${inv.supplier}` : ''}
+                            </p>
+                        </div>
+                        <div class="text-right">
+                            <p class="font-bold">${parseInt(inv.quantity_remaining).toLocaleString()} ${item.unit_of_measure}</p>
+                            ${inv.unit_cost ? `<p class="text-sm text-base-content/60">@ ${formatCurrency(inv.unit_cost)}</p>` : ''}
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            document.getElementById('detailModalBody').innerHTML = `
+                <div class="grid grid-cols-2 gap-4 mb-6">
+                    <div>
+                        <p class="text-sm text-base-content/60">Category</p>
+                        <p class="font-semibold">${item.category_name || 'Uncategorized'}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-base-content/60">Unit of Measure</p>
+                        <p class="font-semibold">${item.unit_of_measure}</p>
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-4 mb-6">
+                    <div>
+                        <p class="text-sm text-base-content/60">Current Stock</p>
+                        <p class="text-2xl font-bold">${parseInt(stock).toLocaleString()}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-base-content/60">Minimum Stock</p>
+                        <p class="font-semibold">${item.minimum_stock}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-base-content/60">Reorder Point</p>
+                        <p class="font-semibold">${item.reorder_point || '-'}</p>
+                    </div>
+                </div>
+                ${item.location ? `<div class="mb-4"><p class="text-sm text-base-content/60">Storage Location</p><p class="font-semibold">${item.location}</p></div>` : ''}
+                ${item.description ? `<div class="mb-4"><p class="text-sm text-base-content/60">Description</p><p>${item.description}</p></div>` : ''}
+                
+                <div class="divider"></div>
+                <h4 class="font-semibold mb-3"><i class="fas fa-layer-group mr-2"></i>Stock on Hand (FIFO)</h4>
+                <div class="max-h-60 overflow-y-auto">
+                    ${inventoryHtml}
+                </div>
+            `;
+            
+            document.getElementById('detailModalFooter').innerHTML = `
+                <button class="btn btn-ghost" onclick="document.getElementById('detailModal').close()">Close</button>
+                <button class="btn btn-info btn-outline" onclick="openAdjustModal(${item.id}, '${item.name}', ${stock}, '${item.unit_of_measure}')">
+                    <i class="fas fa-sliders-h"></i> Adjust
+                </button>
+                <button class="btn btn-warning" onclick="openIssueModal(${item.id}, '${item.name}', ${stock}, '${item.unit_of_measure}')" ${stock <= 0 ? 'disabled' : ''}>
+                    <i class="fas fa-arrow-up"></i> Issue
+                </button>
+            `;
+        }
+        
+        function openReceiveModal() {
+            document.getElementById('receiveForm').reset();
+            document.getElementById('receiveUnit').textContent = '';
+            document.getElementById('receiveModal').showModal();
+        }
+        
+        async function submitReceive(e) {
+            e.preventDefault();
+            
+            const data = {
+                mro_item_id: document.getElementById('receiveMROId').value,
+                quantity: document.getElementById('receiveQuantity').value,
+                unit_cost: document.getElementById('receiveUnitCost').value || null,
+                reference_number: document.getElementById('receiveReference').value || null,
+                supplier: document.getElementById('receiveSupplier').value || null,
+                notes: document.getElementById('receiveNotes').value || null
+            };
+            
+            try {
+                const response = await WarehouseRawService.receiveMROItem(data);
+                if (response.success) {
+                    showToast('Stock received successfully', 'success');
+                    document.getElementById('receiveModal').close();
+                    loadMROItems();
+                } else {
+                    showToast(response.error || 'Failed to receive stock', 'error');
+                }
+            } catch (error) {
+                console.error('Receive error:', error);
+                showToast('Failed to receive stock', 'error');
+            }
+        }
+        
+        function openIssueModal(id, name, available, unit) {
+            document.getElementById('issueMROId').value = id;
+            document.getElementById('issueItemName').textContent = name;
+            document.getElementById('issueAvailable').textContent = available.toLocaleString();
+            document.getElementById('issueUnitLabel').textContent = unit;
+            document.getElementById('issueQuantity').max = available;
+            document.getElementById('issueForm').reset();
+            document.getElementById('issueOtherReasonGroup').classList.add('hidden');
+            document.getElementById('detailModal').close();
+            document.getElementById('issueModal').showModal();
+        }
+        
+        async function submitIssue(e) {
+            e.preventDefault();
+            
+            const id = document.getElementById('issueMROId').value;
+            const quantity = document.getElementById('issueQuantity').value;
+            let reason = document.getElementById('issueReason').value;
+            
+            if (reason === 'other') {
+                reason = document.getElementById('issueOtherReason').value;
+            }
+            
+            const issuedTo = document.getElementById('issueIssuedTo').value;
+            if (issuedTo) {
+                reason += ` (To: ${issuedTo})`;
+            }
+            
+            try {
+                const response = await WarehouseRawService.issueMROItem(id, quantity, null, reason);
+                if (response.success) {
+                    showToast('Stock issued successfully', 'success');
+                    document.getElementById('issueModal').close();
+                    loadMROItems();
+                } else {
+                    showToast(response.error || 'Failed to issue stock', 'error');
+                }
+            } catch (error) {
+                console.error('Issue error:', error);
+                showToast('Failed to issue stock', 'error');
+            }
+        }
+        
+        function openAdjustModal(id, name, currentStock, unit) {
+            document.getElementById('adjustMROId').value = id;
+            document.getElementById('adjustCurrentStock').value = `${currentStock.toLocaleString()} ${unit}`;
+            document.getElementById('adjustForm').reset();
+            document.getElementById('adjustCurrentStock').value = `${currentStock.toLocaleString()} ${unit}`;
+            document.getElementById('adjustOtherReasonGroup').classList.add('hidden');
+            document.getElementById('detailModal').close();
+            document.getElementById('adjustModal').showModal();
+        }
+        
+        async function submitAdjust(e) {
+            e.preventDefault();
+            
+            const id = document.getElementById('adjustMROId').value;
+            const newQuantity = document.getElementById('adjustNewQuantity').value;
+            let reason = document.getElementById('adjustReason').value;
+            
+            if (reason === 'other') {
+                reason = document.getElementById('adjustOtherReason').value;
+            }
+            
+            if (!reason) {
+                showToast('Please provide a reason for adjustment', 'error');
+                return;
+            }
+            
+            try {
+                const response = await WarehouseRawService.adjustMROStock(id, newQuantity, reason);
+                if (response.success) {
+                    showToast('Stock adjusted successfully', 'success');
+                    document.getElementById('adjustModal').close();
+                    loadMROItems();
+                } else {
+                    showToast(response.error || 'Failed to adjust stock', 'error');
+                }
+            } catch (error) {
+                console.error('Adjust error:', error);
+                showToast('Failed to adjust stock', 'error');
+            }
+        }
+        
+        // Utility functions
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+        
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount);
+        }
+        
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+        
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = {
+                success: 'alert-success',
+                error: 'alert-error',
+                warning: 'alert-warning',
+                info: 'alert-info'
+            }[type] || 'alert-info';
+            
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
