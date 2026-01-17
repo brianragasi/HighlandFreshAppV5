@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production Dashboard - Highland Fresh System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../css/style.css">
+    <style>
+        /* Quick action cards */
+        .quick-action {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 1.5rem;
+            border-radius: 12px;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+        .quick-action:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        .quick-action-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
+        }
+        .quick-action-title {
+            font-weight: 600;
+            font-size: 1rem;
+            margin-bottom: 0.25rem;
+        }
+        .quick-action-desc {
+            font-size: 0.75rem;
+            opacity: 0.8;
+        }
+        
+        /* Stat card hover */
+        .stat-card[onclick] {
+            cursor: pointer;
+        }
+        .stat-card[onclick]:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <div class="user-avatar" style="width:40px;height:40px;font-size:1.25rem;">
+                        <i class="fas fa-industry"></i>
+                    </div>
+                    <div>
+                        <div class="sidebar-logo-text">Highland Fresh</div>
+                        <div class="sidebar-logo-subtitle">Production</div>
+                    </div>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <div class="nav-section">
+                    <div class="nav-section-title">Main Menu</div>
+                    <a href="dashboard.html" class="nav-link active">
+                        <i class="fas fa-th-large"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </div>
+                
+                <div class="nav-section">
+                    <div class="nav-section-title">Production</div>
+                    <a href="batches.html" class="nav-link">
+                        <i class="fas fa-box"></i>
+                        <span>Production Batches</span>
+                        <span class="nav-badge" id="activeRuns">0</span>
+                    </a>
+                    <a href="recipes.html" class="nav-link">
+                        <i class="fas fa-book"></i>
+                        <span>Recipes</span>
+                    </a>
+                    <a href="ccp_logging.html" class="nav-link">
+                        <i class="fas fa-thermometer-half"></i>
+                        <span>CCP Logging</span>
+                    </a>
+                </div>
+                
+                <div class="nav-section">
+                    <div class="nav-section-title">Materials</div>
+                    <a href="requisitions.html" class="nav-link">
+                        <i class="fas fa-clipboard-list"></i>
+                        <span>Requisitions</span>
+                        <span class="nav-badge" id="pendingReqs">0</span>
+                    </a>
+                    <a href="byproducts.html" class="nav-link">
+                        <i class="fas fa-recycle"></i>
+                        <span>Byproducts</span>
+                    </a>
+                </div>
+                
+                <div class="nav-section">
+                    <div class="nav-section-title">Reports</div>
+                    <a href="reports/daily.html" class="nav-link">
+                        <i class="fas fa-chart-bar"></i>
+                        <span>Daily Output</span>
+                    </a>
+                    <a href="reports/yield.html" class="nav-link">
+                        <i class="fas fa-chart-pie"></i>
+                        <span>Yield Analysis</span>
+                    </a>
+                </div>
+            </nav>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <button class="header-icon-btn d-none" id="sidebarToggle">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <h1 class="header-title">Production Dashboard</h1>
+                </div>
+                
+                <div class="header-right">
+                    <button class="header-icon-btn" title="Notifications">
+                        <i class="fas fa-bell"></i>
+                        <span class="badge" id="notificationCount">0</span>
+                    </button>
+                    
+                    <div class="user-dropdown">
+                        <button class="user-dropdown-toggle" id="userDropdownToggle">
+                            <div class="user-avatar" id="userAvatar">PS</div>
+                            <div class="user-info">
+                                <div class="user-name" id="userName">Production Staff</div>
+                                <div class="user-role" id="userRole">Production</div>
+                            </div>
+                            <i class="fas fa-chevron-down" style="color: var(--text-muted); font-size: 0.75rem;"></i>
+                        </button>
+                    </div>
+                    
+                    <button class="header-icon-btn" title="Logout" onclick="AuthService.logout()">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            </header>
+            
+            <!-- Page Content -->
+            <div class="page-content">
+                <!-- Welcome Message -->
+                <div class="mb-4">
+                    <h2 style="margin-bottom: 0.25rem;">👋 Good <span id="greeting">Morning</span>, <span id="welcomeName">Production Staff</span>!</h2>
+                    <p class="text-secondary">Here's today's production overview. Click on any card to take action!</p>
+                </div>
+                
+                <!-- 🚀 QUICK ACTIONS - Big clickable cards for main tasks -->
+                <div class="card mb-4" style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border: none;">
+                    <div class="card-header" style="border-bottom: none; background: transparent;">
+                        <h3 class="card-title">🚀 Quick Actions - What do you want to do?</h3>
+                    </div>
+                    <div class="card-body" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
+                        <a href="batches.html?action=new" class="quick-action" style="background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white;">
+                            <div class="quick-action-icon">▶️</div>
+                            <div class="quick-action-title">Start Production</div>
+                            <div class="quick-action-desc">Begin a new production run</div>
+                        </a>
+                        
+                        <a href="ccp_logging.html" class="quick-action" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white;">
+                            <div class="quick-action-icon">🌡️</div>
+                            <div class="quick-action-title">Log Temperature</div>
+                            <div class="quick-action-desc">Record CCP checks</div>
+                        </a>
+                        
+                        <a href="requisitions.html?action=new" class="quick-action" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white;">
+                            <div class="quick-action-icon">📋</div>
+                            <div class="quick-action-title">Request Items</div>
+                            <div class="quick-action-desc">Create requisition</div>
+                        </a>
+                        
+                        <a href="byproducts.html" class="quick-action" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;">
+                            <div class="quick-action-icon">♻️</div>
+                            <div class="quick-action-title">Record Byproduct</div>
+                            <div class="quick-action-desc">Log leftover products</div>
+                        </a>
+                    </div>
+                </div>
+                
+                <!-- Stats Cards - Now clickable -->
+                <div class="grid-4 mb-4">
+                    <div class="stat-card" onclick="window.location='batches.html?status=in_progress'" title="Click to see running batches">
+                        <div class="stat-card-icon primary">
+                            <i class="fas fa-play-circle"></i>
+                        </div>
+                        <div class="stat-card-value" id="runsInProgress">0</div>
+                        <div class="stat-card-label">🔄 Runs In Progress</div>
+                    </div>
+                    
+                    <div class="stat-card" onclick="window.location='batches.html?status=completed'" title="Click to see completed batches">
+                        <div class="stat-card-icon success">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="stat-card-value" id="runsCompleted">0</div>
+                        <div class="stat-card-label">✅ Completed Today</div>
+                    </div>
+                    
+                    <div class="stat-card" title="Available raw milk for production">
+                        <div class="stat-card-icon info">
+                            <i class="fas fa-tint"></i>
+                        </div>
+                        <div class="stat-card-value" id="availableMilk">0</div>
+                        <div class="stat-card-label">🥛 Available Milk (L)</div>
+                    </div>
+                    
+                    <div class="stat-card" onclick="window.location='ccp_logging.html'" title="Click to check CCP logs" style="border-color: #fbbf24;">
+                        <div class="stat-card-icon warning">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="stat-card-value" id="ccpAlerts">0</div>
+                        <div class="stat-card-label">⚠️ CCP Alerts</div>
+                    </div>
+                </div>
+                
+                <div class="grid-2 mb-4">
+                    <!-- This Week's Production -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">📊 This Week's Production</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-container">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>📦 Product Type</th>
+                                            <th class="text-right">📏 Quantity</th>
+                                            <th class="text-right">📐 Unit</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="weekProductionTable">
+                                        <tr>
+                                            <td colspan="3" class="text-center">
+                                                <i class="fas fa-spinner fa-spin"></i> Loading...
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Pending Requisitions -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">⏳ Pending Requisitions</h3>
+                            <a href="requisitions.html" class="btn btn-outline btn-sm">View All →</a>
+                        </div>
+                        <div class="card-body">
+                            <div id="pendingReqsList">
+                                <p class="text-secondary text-center"><i class="fas fa-spinner fa-spin"></i> Loading...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Recent Production Runs -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">🏭 Recent Production Runs</h3>
+                        <a href="batches.html" class="btn btn-outline btn-sm">View All →</a>
+                    </div>
+                    <div class="card-body p-0">
+                        <p style="padding: 0.75rem 1rem; background: #f1f5f9; margin: 0; color: #64748b; font-size: 0.875rem;">
+                            💡 <strong>Tip:</strong> Click on any row to see full details of the production run
+                        </p>
+                        <div class="table-container">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>📝 Run Code</th>
+                                        <th>🥛 Product</th>
+                                        <th>📊 Status</th>
+                                        <th class="text-right">🎯 Planned</th>
+                                        <th class="text-right">✅ Actual</th>
+                                        <th>📅 Started</th>
+                                        <th class="text-center">⚡ Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="recentRunsTable">
+                                    <tr>
+                                        <td colspan="7" class="text-center">
+                                            <i class="fas fa-spinner fa-spin"></i> Loading...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+    
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/production/production.service.js"></script>
+    <script>
+        // Check authentication
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Require authentication
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../login.html';
+                return;
+            }
+            
+            const user = AuthService.getCurrentUser();
+            
+            // Update user display
+            document.getElementById('userName').textContent = `${user.first_name} ${user.last_name}`;
+            document.getElementById('welcomeName').textContent = user.first_name;
+            document.getElementById('userAvatar').textContent = (user.first_name[0] + user.last_name[0]).toUpperCase();
+            
+            // Set greeting
+            const hour = new Date().getHours();
+            let greeting = 'Morning';
+            if (hour >= 12 && hour < 17) greeting = 'Afternoon';
+            else if (hour >= 17) greeting = 'Evening';
+            document.getElementById('greeting').textContent = greeting;
+            
+            // Load dashboard data
+            loadDashboard();
+        });
+        
+        async function loadDashboard() {
+            try {
+                const response = await ProductionService.getDashboardStats();
+                
+                if (response.success) {
+                    const data = response.data;
+                    
+                    // Update stat cards
+                    document.getElementById('runsInProgress').textContent = data.today_stats?.in_progress || 0;
+                    document.getElementById('runsCompleted').textContent = data.today_stats?.completed || 0;
+                    const availableMilk = parseFloat(data.available_milk || 0);
+                    document.getElementById('availableMilk').textContent = availableMilk.toLocaleString();
+                    document.getElementById('ccpAlerts').textContent = data.ccp_alerts || 0;
+                    
+                    // Show warning if no milk available
+                    if (availableMilk <= 0) {
+                        showMilkWarning();
+                    }
+                    
+                    // Update sidebar badges
+                    document.getElementById('activeRuns').textContent = data.today_stats?.in_progress || 0;
+                    document.getElementById('pendingReqs').textContent = data.pending_requisitions || 0;
+                    
+                    // Render week production
+                    renderWeekProduction(data.week_production || []);
+                    
+                    // Render pending requisitions
+                    renderPendingRequisitions(data.pending_requisitions_list || []);
+                    
+                    // Render recent runs
+                    renderRecentRuns(data.recent_runs || []);
+                }
+            } catch (error) {
+                console.error('Dashboard error:', error);
+                showToast('Failed to load dashboard data', 'error');
+            }
+        }
+        
+        function showMilkWarning() {
+            // Insert warning after quick actions
+            const quickActions = document.querySelector('.card.mb-4[style*="linear-gradient"]');
+            if (quickActions && !document.getElementById('milkWarning')) {
+                const warning = document.createElement('div');
+                warning.id = 'milkWarning';
+                warning.className = 'card mb-4';
+                warning.style.cssText = 'background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%); border: 2px solid #ef4444;';
+                warning.innerHTML = `
+                    <div class="card-body" style="display: flex; align-items: center; gap: 1rem;">
+                        <div style="font-size: 2.5rem;">⚠️</div>
+                        <div style="flex: 1;">
+                            <h4 style="margin: 0 0 0.25rem 0; color: #dc2626;">No QC-Approved Milk Available!</h4>
+                            <p style="margin: 0; color: #b91c1c;">
+                                You cannot start new production runs until milk deliveries are tested and approved by QC.
+                            </p>
+                            <div style="margin-top: 0.5rem; font-size: 0.875rem; color: #64748b;">
+                                💡 <strong>What to do:</strong> Contact the QC team to check if there are deliveries waiting to be graded.
+                            </div>
+                        </div>
+                    </div>
+                `;
+                quickActions.parentNode.insertBefore(warning, quickActions.nextSibling);
+            }
+        }
+        
+        function renderWeekProduction(production) {
+            const tbody = document.getElementById('weekProductionTable');
+            
+            if (!production.length) {
+                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-secondary">No production this week</td></tr>';
+                return;
+            }
+            
+            const productTypes = {
+                'bottled_milk': 'Bottled Milk',
+                'cheese': 'Cheese',
+                'butter': 'Butter',
+                'yogurt': 'Yogurt',
+                'milk_bar': 'Milk Bar'
+            };
+            
+            tbody.innerHTML = production.map(item => `
+                <tr>
+                    <td>
+                        <span class="badge badge-${getProductTypeColor(item.product_type)}">
+                            ${productTypes[item.product_type] || item.product_type}
+                        </span>
+                    </td>
+                    <td class="text-right font-semibold">${parseFloat(item.total_quantity).toLocaleString()}</td>
+                    <td class="text-right text-secondary">${item.yield_unit || 'units'}</td>
+                </tr>
+            `).join('');
+        }
+        
+        function getProductTypeColor(type) {
+            const colors = {
+                'bottled_milk': 'primary',
+                'cheese': 'warning',
+                'butter': 'info',
+                'yogurt': 'success',
+                'milk_bar': 'secondary'
+            };
+            return colors[type] || 'secondary';
+        }
+        
+        function renderPendingRequisitions(requisitions) {
+            const container = document.getElementById('pendingReqsList');
+            
+            if (!requisitions || !requisitions.length) {
+                container.innerHTML = '<p class="text-secondary text-center">No pending requisitions</p>';
+                return;
+            }
+            
+            container.innerHTML = requisitions.slice(0, 5).map(req => `
+                <div class="list-item" style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
+                    <div>
+                        <div class="font-semibold">${req.requisition_code}</div>
+                        <div class="text-secondary text-sm">${req.total_items} items • ${req.priority} priority</div>
+                    </div>
+                    <span class="badge badge-${req.status === 'pending' ? 'warning' : 'info'}">${req.status}</span>
+                </div>
+            `).join('');
+        }
+        
+        function renderRecentRuns(runs) {
+            const tbody = document.getElementById('recentRunsTable');
+            
+            if (!runs.length) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-secondary">No recent runs</td></tr>';
+                return;
+            }
+            
+            const statusColors = {
+                'planned': 'secondary',
+                'in_progress': 'primary',
+                'pasteurization': 'warning',
+                'processing': 'info',
+                'cooling': 'info',
+                'packaging': 'info',
+                'completed': 'success',
+                'cancelled': 'danger'
+            };
+            
+            tbody.innerHTML = runs.map(run => `
+                <tr>
+                    <td><span class="font-mono font-semibold">${run.run_code}</span></td>
+                    <td>
+                        <div>${run.product_name}</div>
+                        <div class="text-secondary text-sm">${run.variant || ''}</div>
+                    </td>
+                    <td>
+                        <span class="badge badge-${statusColors[run.status] || 'secondary'}">
+                            ${run.status.replace('_', ' ')}
+                        </span>
+                    </td>
+                    <td class="text-right">${run.planned_quantity} ${run.yield_unit || ''}</td>
+                    <td class="text-right">${run.actual_quantity ? run.actual_quantity + ' ' + (run.yield_unit || '') : '-'}</td>
+                    <td class="text-secondary">${run.start_datetime ? new Date(run.start_datetime).toLocaleString() : 'Not started'}</td>
+                    <td class="text-center">
+                        <a href="batches.html?id=${run.id}" class="btn btn-sm btn-outline">View</a>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+                <span>${message}</span>
+            `;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.add('toast-hide');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

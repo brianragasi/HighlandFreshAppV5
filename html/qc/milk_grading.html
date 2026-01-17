@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Milk Grading - Quality Control | Highland Fresh</title>
+    
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .bento-card { @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .stat-value { font-variant-numeric: tabular-nums; }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-flask text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Quality Control</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inbound Milk</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="milk_receiving.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-truck-loading w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Milk Receiving</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="milk_grading.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-flask w-5 text-center"></i>
+                            <span class="flex-1">Milk Grading</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="farmers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-users w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Farmers</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Production QC</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="batch_release.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-check-double w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Batch Release</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory QC</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="expiry_management.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-calendar-times w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Expiry Management</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+        
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">QC</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">QC Officer</p>
+                    <p class="text-xs text-base-content/60 truncate">Quality Control</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a><i class="fas fa-user-cog w-4"></i> Profile</a></li>
+                        <li class="border-t border-base-300 mt-1 pt-1">
+                            <a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <div>
+                    <h1 class="text-lg lg:text-xl font-bold text-base-content">Milk Grading</h1>
+                    <div class="text-sm breadcrumbs py-0">
+                        <ul class="text-xs">
+                            <li><a href="dashboard.html">Dashboard</a></li>
+                            <li>Milk Grading</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+        
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+            
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                                <i class="fas fa-vial text-blue-500"></i>
+                            </div>
+                            <span class="badge badge-ghost badge-sm">Today</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="totalTests">0</p>
+                        <p class="text-sm text-base-content/60">Total Tests</p>
+                    </div>
+                </div>
+                
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                                <i class="fas fa-check-circle text-emerald-500"></i>
+                            </div>
+                            <span class="badge badge-success badge-sm">Accepted</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="acceptedTests">0</p>
+                        <p class="text-sm text-base-content/60">Accepted</p>
+                    </div>
+                </div>
+                
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
+                                <i class="fas fa-times-circle text-red-500"></i>
+                            </div>
+                            <span class="badge badge-error badge-sm">Rejected</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="rejectedTests">0</p>
+                        <p class="text-sm text-base-content/60">Rejected</p>
+                    </div>
+                </div>
+                
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                                <i class="fas fa-peso-sign text-amber-500"></i>
+                            </div>
+                            <span class="badge badge-warning badge-sm">Average</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="avgPrice">-</p>
+                        <p class="text-sm text-base-content/60">Avg Price/L</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Charts Row -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+                <!-- Quality Metrics Distribution -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body">
+                        <h3 class="card-title text-base mb-4">
+                            <i class="fas fa-chart-bar text-primary"></i>
+                            Quality Metrics Distribution
+                        </h3>
+                        
+                        <div class="space-y-3" id="gradeDistribution">
+                            <div class="flex items-center gap-3">
+                                <span class="w-24 text-sm font-medium">Fat Bonus</span>
+                                <div class="flex-1 h-6 bg-base-200 rounded-full overflow-hidden">
+                                    <div id="fatBonusBar" class="h-full bg-success rounded-full transition-all duration-300" style="width: 0%"></div>
+                                </div>
+                                <span class="w-10 text-right font-semibold" id="fatBonusCount">0</span>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <span class="w-24 text-sm font-medium">Standard</span>
+                                <div class="flex-1 h-6 bg-base-200 rounded-full overflow-hidden">
+                                    <div id="standardBar" class="h-full bg-info rounded-full transition-all duration-300" style="width: 0%"></div>
+                                </div>
+                                <span class="w-10 text-right font-semibold" id="standardCount">0</span>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <span class="w-24 text-sm font-medium">Fat Deduct</span>
+                                <div class="flex-1 h-6 bg-base-200 rounded-full overflow-hidden">
+                                    <div id="fatDeductBar" class="h-full bg-warning rounded-full transition-all duration-300" style="width: 0%"></div>
+                                </div>
+                                <span class="w-10 text-right font-semibold" id="fatDeductCount">0</span>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <span class="w-24 text-sm font-medium">Acidity Ded</span>
+                                <div class="flex-1 h-6 bg-base-200 rounded-full overflow-hidden">
+                                    <div id="acidityDeductBar" class="h-full bg-secondary rounded-full transition-all duration-300" style="width: 0%"></div>
+                                </div>
+                                <span class="w-10 text-right font-semibold" id="acidityDeductCount">0</span>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <span class="w-24 text-sm font-medium">Rejected</span>
+                                <div class="flex-1 h-6 bg-base-200 rounded-full overflow-hidden">
+                                    <div id="rejectedBar" class="h-full bg-error rounded-full transition-all duration-300" style="width: 0%"></div>
+                                </div>
+                                <span class="w-10 text-right font-semibold" id="rejectedCount">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Quality Standards -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body">
+                        <h3 class="card-title text-base mb-4">
+                            <i class="fas fa-clipboard-check text-primary"></i>
+                            Quality Standards (ANNEX B)
+                        </h3>
+                        
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Parameter</th>
+                                        <th>Standard</th>
+                                        <th>Reject If</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>APT Result</td>
+                                        <td class="text-success font-medium">Negative</td>
+                                        <td class="text-error font-medium">Positive</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Fat Content</td>
+                                        <td>3.5% - 4.0%</td>
+                                        <td class="text-base-content/60">Price adjusted</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Titratable Acidity</td>
+                                        <td>0.14% - 0.18%</td>
+                                        <td class="text-error font-medium">>= 0.25%</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Specific Gravity</td>
+                                        <td>>= 1.025</td>
+                                        <td class="text-error font-medium">&lt; 1.025</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Temperature</td>
+                                        <td>4°C (chilled)</td>
+                                        <td class="text-base-content/60">-</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Sediment</td>
+                                        <td>Grade 1</td>
+                                        <td class="text-base-content/60">Grade 2/3 deduction</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div class="mt-4 p-3 bg-primary/10 rounded-lg">
+                            <p class="text-sm"><strong>Base Price:</strong> ₱25.00 + ₱5.00 incentive = <span class="text-primary font-bold">₱30.00/L</span></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Filters Card -->
+            <div class="card bg-base-100 border border-base-300 mb-4">
+                <div class="card-body p-4">
+                    <div class="flex flex-wrap gap-3 items-end">
+                        <div class="form-control w-full sm:w-auto">
+                            <label class="label py-1">
+                                <span class="label-text text-xs">Date</span>
+                            </label>
+                            <input type="date" class="input input-bordered input-sm w-full sm:w-40" id="filterDate">
+                        </div>
+                        <div class="form-control w-full sm:w-auto">
+                            <label class="label py-1">
+                                <span class="label-text text-xs">Status</span>
+                            </label>
+                            <select class="select select-bordered select-sm w-full sm:w-36" id="filterStatus">
+                                <option value="">All Status</option>
+                                <option value="accepted">Accepted</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                        </div>
+                        <div class="form-control w-full sm:w-auto flex-1">
+                            <label class="label py-1">
+                                <span class="label-text text-xs">Farmer</span>
+                            </label>
+                            <select class="select select-bordered select-sm w-full" id="filterFarmer">
+                                <option value="">All Farmers</option>
+                            </select>
+                        </div>
+                        <div class="flex gap-2">
+                            <button class="btn btn-primary btn-sm" onclick="loadTests()">
+                                <i class="fas fa-search"></i>
+                                Filter
+                            </button>
+                            <button class="btn btn-ghost btn-sm" onclick="exportResults()">
+                                <i class="fas fa-download"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Results Table -->
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body p-0">
+                    <div class="flex items-center justify-between p-4 border-b border-base-300">
+                        <h3 class="font-semibold flex items-center gap-2">
+                            <i class="fas fa-list text-primary"></i>
+                            Grading Results
+                        </h3>
+                        <span class="text-sm text-base-content/60" id="totalRecords">0 records</span>
+                    </div>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Test ID</th>
+                                    <th>Date/Time</th>
+                                    <th>Farmer</th>
+                                    <th class="text-right">Volume</th>
+                                    <th class="text-right">Fat %</th>
+                                    <th class="text-right">Acidity %</th>
+                                    <th class="text-right">SG</th>
+                                    <th>Status</th>
+                                    <th class="text-right">Price/L</th>
+                                    <th class="text-right">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody id="testsTable">
+                                <tr>
+                                    <td colspan="10" class="text-center py-8 text-base-content/40">
+                                        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                                        <p>Loading...</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="p-4 border-t border-base-300">
+                        <div class="join" id="pagination"></div>
+                    </div>
+                </div>
+            </div>
+            
+        </main>
+    </div>
+    
+    <!-- View Test Modal -->
+    <dialog id="viewTestModal" class="modal">
+        <div class="modal-box max-w-2xl">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">X</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-flask text-primary"></i>
+                Test Details - <span id="viewTestId">-</span>
+            </h3>
+            
+            <div class="space-y-4">
+                <!-- Header Info -->
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-base-content/60 text-sm">Farmer</p>
+                        <h4 class="font-semibold text-lg" id="viewFarmerName">-</h4>
+                        <span class="badge" id="viewFarmerType">-</span>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-base-content/60 text-sm">Grade</p>
+                        <span class="badge badge-lg text-lg px-4 py-3" id="viewGrade">-</span>
+                    </div>
+                </div>
+                
+                <!-- Volume/Price Summary -->
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="bg-base-200 rounded-xl p-3 text-center">
+                        <p class="text-base-content/60 text-xs">Volume</p>
+                        <p class="font-bold text-lg" id="viewVolume">-</p>
+                    </div>
+                    <div class="bg-base-200 rounded-xl p-3 text-center">
+                        <p class="text-base-content/60 text-xs">Unit Price</p>
+                        <p class="font-bold text-lg" id="viewUnitPrice">-</p>
+                    </div>
+                    <div class="bg-primary/10 rounded-xl p-3 text-center border-2 border-primary">
+                        <p class="text-base-content/60 text-xs">Total Price</p>
+                        <p class="font-bold text-lg text-primary" id="viewTotalPrice">-</p>
+                    </div>
+                </div>
+                
+                <!-- Primary Parameters -->
+                <div>
+                    <h5 class="font-semibold mb-2">Primary Test Parameters</h5>
+                    <div class="grid grid-cols-3 gap-2">
+                        <div class="bg-base-200 rounded-lg p-2 text-center">
+                            <p class="text-base-content/60 text-xs">Fat %</p>
+                            <p class="font-medium" id="viewFat">-</p>
+                        </div>
+                        <div class="bg-base-200 rounded-lg p-2 text-center">
+                            <p class="text-base-content/60 text-xs">Acidity %</p>
+                            <p class="font-medium" id="viewAcidity">-</p>
+                        </div>
+                        <div class="bg-base-200 rounded-lg p-2 text-center">
+                            <p class="text-base-content/60 text-xs">Specific Gravity</p>
+                            <p class="font-medium" id="viewDensity">-</p>
+                        </div>
+                        <div class="bg-base-200 rounded-lg p-2 text-center">
+                            <p class="text-base-content/60 text-xs">Temperature</p>
+                            <p class="font-medium" id="viewTemp">-</p>
+                        </div>
+                        <div class="bg-base-200 rounded-lg p-2 text-center">
+                            <p class="text-base-content/60 text-xs">Sediment</p>
+                            <p class="font-medium" id="viewSediment">-</p>
+                        </div>
+                        <div class="bg-base-200 rounded-lg p-2 text-center">
+                            <p class="text-base-content/60 text-xs">APT Result</p>
+                            <p class="font-medium" id="viewApt">-</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Price Breakdown -->
+                <div>
+                    <h5 class="font-semibold mb-2">Price Breakdown (ANNEX B)</h5>
+                    <div class="grid grid-cols-4 gap-2">
+                        <div class="bg-base-200 rounded-lg p-2 text-center">
+                            <p class="text-base-content/60 text-xs">Base Price</p>
+                            <p class="font-medium" id="viewBasePrice">₱30.00</p>
+                        </div>
+                        <div class="bg-base-200 rounded-lg p-2 text-center">
+                            <p class="text-base-content/60 text-xs">Fat Adj</p>
+                            <p class="font-medium" id="viewFatAdj">-</p>
+                        </div>
+                        <div class="bg-base-200 rounded-lg p-2 text-center">
+                            <p class="text-base-content/60 text-xs">Acidity Ded</p>
+                            <p class="font-medium" id="viewAcidityDed">-</p>
+                        </div>
+                        <div class="bg-base-200 rounded-lg p-2 text-center">
+                            <p class="text-base-content/60 text-xs">Sediment Ded</p>
+                            <p class="font-medium" id="viewSedimentDed">-</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Remarks -->
+                <div id="viewRemarks" class="hidden">
+                    <p class="text-base-content/60 text-sm mb-1">Remarks</p>
+                    <div class="bg-base-200 rounded-lg p-3" id="viewRemarksText"></div>
+                </div>
+            </div>
+            
+            <div class="modal-action">
+                <form method="dialog">
+                    <button class="btn">Close</button>
+                </form>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+    
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/qc/farmers.service.js"></script>
+    <script src="../../js/qc/milk_grading.service.js"></script>
+    
+    <script>
+        // Toggle sidebar
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+        
+        // Theme toggle
+        document.getElementById('themeToggle')?.addEventListener('change', function() {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'forest' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'forest' : 'emerald');
+        });
+        
+        // Show toast
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type];
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.remove(); }, 3000);
+        }
+        
+        function showNotification(title, message, type) {
+            showToast(`${title}: ${message}`, type);
+        }
+        
+        // Format helpers
+        function formatCurrency(amount) {
+            if (amount === null || amount === undefined) return '-';
+            return '₱' + parseFloat(amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        
+        function formatDateTime(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        }
+        
+        // State
+        let currentPage = 1;
+        const limit = 20;
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../login.html';
+                return;
+            }
+            
+            AuthService.requireRole(['qc_officer', 'general_manager']);
+            
+            const user = AuthService.getCurrentUser();
+            if (user) {
+                document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
+                document.getElementById('userInitials').textContent = (user.first_name[0] + user.last_name[0]).toUpperCase();
+            }
+            
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'forest') {
+                document.getElementById('themeToggle').checked = true;
+                document.documentElement.setAttribute('data-theme', 'forest');
+            }
+            
+            document.getElementById('filterDate').value = new Date().toISOString().split('T')[0];
+            
+            loadFarmersDropdown();
+            loadTests();
+        });
+        
+        async function loadFarmersDropdown() {
+            try {
+                const response = await FarmersService.getAll({ limit: 500 });
+                if (response.success) {
+                    const select = document.getElementById('filterFarmer');
+                    response.data.forEach(f => {
+                        const option = document.createElement('option');
+                        option.value = f.id;
+                        option.textContent = `${f.farmer_code} - ${f.first_name} ${f.last_name}`;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to load farmers:', error);
+            }
+        }
+        
+        async function loadTests() {
+            const table = document.getElementById('testsTable');
+            table.innerHTML = '<tr><td colspan="10" class="text-center py-8 text-base-content/40"><i class="fas fa-spinner fa-spin text-2xl"></i><p>Loading...</p></td></tr>';
+            
+            try {
+                const params = {
+                    page: currentPage,
+                    limit: limit,
+                    date_from: document.getElementById('filterDate').value,
+                    date_to: document.getElementById('filterDate').value,
+                    status: document.getElementById('filterStatus').value,
+                    farmer_id: document.getElementById('filterFarmer').value
+                };
+                
+                const response = await MilkGradingService.getAll(params);
+                
+                if (response.success) {
+                    document.getElementById('totalRecords').textContent = `${response.pagination.total} records`;
+                    updateStats(response.data);
+                    
+                    if (response.data.length > 0) {
+                        table.innerHTML = response.data.map(t => `
+                            <tr class="hover cursor-pointer" onclick="viewTest(${t.id})">
+                                <td><code class="text-xs bg-base-200 px-2 py-1 rounded">${t.test_code || 'QC-' + String(t.id).padStart(5, '0')}</code></td>
+                                <td class="text-sm">${formatDateTime(t.test_datetime)}</td>
+                                <td>
+                                    <div class="font-medium text-sm">${t.farmer_first_name || ''} ${t.farmer_last_name || ''}</div>
+                                    <div class="text-xs text-base-content/60">${t.farmer_code || ''}</div>
+                                </td>
+                                <td class="text-right">${parseFloat(t.volume_liters || 0).toLocaleString()} L</td>
+                                <td class="text-right ${getFatClass(t.fat_percentage)}">${t.fat_percentage || '-'}%</td>
+                                <td class="text-right ${getAcidityClass(t.titratable_acidity)}">${t.titratable_acidity || '-'}%</td>
+                                <td class="text-right ${getDensityClass(t.density)}">${t.density || '-'}</td>
+                                <td><span class="badge ${t.is_accepted == 1 ? 'badge-success' : 'badge-error'} badge-sm">${t.is_accepted == 1 ? 'Accepted' : 'Rejected'}</span></td>
+                                <td class="text-right font-medium">${formatCurrency(t.final_price_per_liter || 0)}</td>
+                                <td class="text-right font-bold text-primary">${formatCurrency(t.total_amount || 0)}</td>
+                            </tr>
+                        `).join('');
+                    } else {
+                        table.innerHTML = '<tr><td colspan="10" class="text-center py-8 text-base-content/40"><i class="fas fa-inbox text-2xl mb-2"></i><p>No test records found</p></td></tr>';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load tests:', error);
+                table.innerHTML = '<tr><td colspan="10" class="text-center py-8 text-error">Failed to load tests</td></tr>';
+            }
+        }
+        
+        function updateStats(tests) {
+            const total = tests.length;
+            const accepted = tests.filter(t => t.is_accepted == 1).length;
+            const rejected = tests.filter(t => t.is_accepted == 0).length;
+            
+            const acceptedTests = tests.filter(t => t.is_accepted == 1 && t.final_price_per_liter);
+            const avgPrice = acceptedTests.length
+                ? (acceptedTests.reduce((sum, t) => sum + parseFloat(t.final_price_per_liter || 0), 0) / acceptedTests.length).toFixed(2)
+                : '-';
+            
+            document.getElementById('totalTests').textContent = total;
+            document.getElementById('acceptedTests').textContent = accepted;
+            document.getElementById('rejectedTests').textContent = rejected;
+            document.getElementById('avgPrice').textContent = avgPrice !== '-' ? '₱' + avgPrice : '-';
+            
+            // Quality metrics distribution
+            let fatBonus = 0, standard = 0, fatDeduct = 0, acidityDeduct = 0, rejectedCount = rejected;
+            
+            tests.forEach(t => {
+                if (t.is_accepted == 0) return;
+                const fat = parseFloat(t.fat_percentage) || 0;
+                const acidity = parseFloat(t.titratable_acidity) || 0;
+                
+                if (fat > 4.0) fatBonus++;
+                else if (fat >= 3.5 && fat <= 4.0) standard++;
+                else if (fat < 3.5) fatDeduct++;
+                
+                if (acidity > 0.18 && acidity < 0.25) acidityDeduct++;
+            });
+            
+            const maxCount = Math.max(fatBonus, standard, fatDeduct, acidityDeduct, rejectedCount, 1);
+            
+            document.getElementById('fatBonusCount').textContent = fatBonus;
+            document.getElementById('fatBonusBar').style.width = (fatBonus / maxCount * 100) + '%';
+            document.getElementById('standardCount').textContent = standard;
+            document.getElementById('standardBar').style.width = (standard / maxCount * 100) + '%';
+            document.getElementById('fatDeductCount').textContent = fatDeduct;
+            document.getElementById('fatDeductBar').style.width = (fatDeduct / maxCount * 100) + '%';
+            document.getElementById('acidityDeductCount').textContent = acidityDeduct;
+            document.getElementById('acidityDeductBar').style.width = (acidityDeduct / maxCount * 100) + '%';
+            document.getElementById('rejectedCount').textContent = rejectedCount;
+            document.getElementById('rejectedBar').style.width = (rejectedCount / maxCount * 100) + '%';
+        }
+        
+        function getFatClass(fat) {
+            if (!fat && fat !== 0) return '';
+            fat = parseFloat(fat);
+            if (fat >= 3.5 && fat <= 4.0) return 'text-success';
+            if (fat > 4.0) return 'text-info';
+            return 'text-warning';
+        }
+        
+        function getAcidityClass(acidity) {
+            if (!acidity && acidity !== 0) return '';
+            acidity = parseFloat(acidity);
+            if (acidity >= 0.14 && acidity <= 0.18) return 'text-success';
+            if (acidity >= 0.25) return 'text-error';
+            return 'text-warning';
+        }
+        
+        function getDensityClass(density) {
+            if (!density && density !== 0) return '';
+            density = parseFloat(density);
+            if (density >= 1.025) return 'text-success';
+            return 'text-error';
+        }
+        
+        function viewTest(id) {
+            document.getElementById('viewTestModal').showModal();
+            showToast('Test details view - detailed fetch needed', 'info');
+        }
+        
+        function exportResults() {
+            showToast('Export functionality coming soon', 'info');
+        }
+    </script>
+</body>
+</html>

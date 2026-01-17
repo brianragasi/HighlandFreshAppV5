@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Requisitions - Warehouse Raw | Highland Fresh</title>
+    
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Fonts & Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .bento-card { @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <!-- Mobile Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-warehouse text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60">Warehouse Raw</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-th-large w-5 text-center text-base-content/60"></i><span>Dashboard</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="milk_storage.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-tint w-5 text-center text-base-content/60"></i><span>Milk Storage</span></a></li>
+                    <li><a href="ingredients.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-box-open w-5 text-center text-base-content/60"></i><span>Ingredients</span></a></li>
+                    <li><a href="mro.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-tools w-5 text-center text-base-content/60"></i><span>MRO Supplies</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Operations</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="requisitions.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content"><i class="fas fa-clipboard-check w-5 text-center"></i><span>Requisitions</span><span class="badge badge-sm" id="pendingReqsBadge">0</span></a></li>
+                </ul>
+            </div>
+        </nav>
+        
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder"><div class="w-10 rounded-xl bg-primary text-primary-content"><span class="text-sm font-semibold" id="userInitials">WR</span></div></div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Warehouse Staff</p>
+                    <p class="text-xs text-base-content/60">Warehouse Raw</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square" onclick="AuthService.logout()"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold">Requisition Fulfillment</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <button class="btn btn-ghost btn-sm" onclick="loadRequisitions()">
+                    <i class="fas fa-sync-alt"></i> <span class="hidden sm:inline">Refresh</span>
+                </button>
+            </div>
+        </header>
+        
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+            
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center">
+                                <i class="fas fa-hourglass-half text-warning"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="pendingCount">0</p>
+                                <p class="text-xs text-base-content/60">Pending</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-error/10 flex items-center justify-center">
+                                <i class="fas fa-exclamation-circle text-error"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="urgentCount">0</p>
+                                <p class="text-xs text-base-content/60">Urgent</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-info/10 flex items-center justify-center">
+                                <i class="fas fa-tasks text-info"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="partialCount">0</p>
+                                <p class="text-xs text-base-content/60">Partial</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center">
+                                <i class="fas fa-check-circle text-success"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="fulfilledToday">0</p>
+                                <p class="text-xs text-base-content/60">Fulfilled Today</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Filters Card -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body p-4">
+                    <!-- Status Filter Tabs -->
+                    <div class="flex flex-wrap gap-2 mb-4" id="statusTabs">
+                        <button class="btn btn-warning btn-sm gap-2" data-status="pending">
+                            <i class="fas fa-hourglass-half"></i> Pending
+                            <span class="badge badge-sm" id="pendingTabCount">0</span>
+                        </button>
+                        <button class="btn btn-ghost btn-sm gap-2" data-status="partial">
+                            <i class="fas fa-tasks"></i> Partial
+                            <span class="badge badge-sm" id="partialTabCount">0</span>
+                        </button>
+                        <button class="btn btn-ghost btn-sm gap-2" data-status="fulfilled">
+                            <i class="fas fa-check-circle"></i> Fulfilled
+                            <span class="badge badge-sm" id="fulfilledTabCount">0</span>
+                        </button>
+                        <button class="btn btn-ghost btn-sm gap-2" data-status="all">
+                            <i class="fas fa-list"></i> All
+                        </button>
+                    </div>
+                    
+                    <!-- Search and Filters -->
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <div class="form-control">
+                            <label class="input input-bordered input-sm flex items-center gap-2">
+                                <i class="fas fa-search text-base-content/40"></i>
+                                <input type="text" id="searchInput" class="grow" placeholder="Search requisition code..." />
+                            </label>
+                        </div>
+                        <select class="select select-bordered select-sm" id="departmentFilter">
+                            <option value="">All Departments</option>
+                            <option value="production">Production</option>
+                            <option value="maintenance">Maintenance</option>
+                            <option value="quality">Quality Control</option>
+                        </select>
+                        <select class="select select-bordered select-sm" id="priorityFilter">
+                            <option value="">All Priorities</option>
+                            <option value="urgent">Urgent</option>
+                            <option value="high">High</option>
+                            <option value="normal">Normal</option>
+                            <option value="low">Low</option>
+                        </select>
+                        <button class="btn btn-ghost btn-sm" onclick="loadRequisitions()">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Requisitions List -->
+            <div id="requisitionsList" class="space-y-4">
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body items-center justify-center py-12">
+                        <span class="loading loading-spinner loading-lg text-primary"></span>
+                        <p class="text-base-content/60 mt-2">Loading requisitions...</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Fulfill Modal -->
+    <dialog id="fulfillModal" class="modal">
+        <div class="modal-box max-w-3xl max-h-[90vh]">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">X</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4" id="fulfillModalTitle">Fulfill Requisition</h3>
+            <div id="fulfillModalBody" class="py-4 overflow-y-auto max-h-[60vh]">
+                <div class="flex flex-col items-center justify-center py-8">
+                    <span class="loading loading-spinner loading-lg text-primary"></span>
+                </div>
+            </div>
+            <div class="modal-action" id="fulfillModalFooter">
+                <button class="btn btn-ghost" onclick="document.getElementById('fulfillModal').close()">Cancel</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Reject Item Modal -->
+    <dialog id="rejectModal" class="modal">
+        <div class="modal-box max-w-md">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">X</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-times-circle text-error"></i> Reject Item
+            </h3>
+            <form id="rejectForm" onsubmit="submitReject(event)">
+                <input type="hidden" id="rejectRequisitionId">
+                <input type="hidden" id="rejectItemId">
+                <div class="alert alert-warning mb-4">
+                    <span>You are about to reject: <strong id="rejectItemName">-</strong></span>
+                </div>
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">Reason for Rejection <span class="text-error">*</span></span></label>
+                    <select class="select select-bordered w-full" id="rejectReason" required>
+                        <option value="">Select reason...</option>
+                        <option value="Out of stock">Out of stock</option>
+                        <option value="Item not available">Item not available</option>
+                        <option value="Insufficient quantity">Insufficient quantity</option>
+                        <option value="Item discontinued">Item discontinued</option>
+                        <option value="other">Other (specify)</option>
+                    </select>
+                </div>
+                <div class="form-control mb-4 hidden" id="rejectOtherReasonGroup">
+                    <label class="label"><span class="label-text">Specify Reason</span></label>
+                    <textarea class="textarea textarea-bordered" id="rejectOtherReason" rows="2"></textarea>
+                </div>
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('rejectModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-error"><i class="fas fa-times"></i> Reject Item</button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-bottom z-50"></div>
+    
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../../js/config/api.js"></script>
+    <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/warehouse/raw.service.js"></script>
+    <script>
+        // Sidebar toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+        
+        // Global state
+        let requisitions = [];
+        let currentFilter = {
+            status: 'pending',
+            search: '',
+            department: '',
+            priority: ''
+        };
+        let currentRequisition = null;
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../../login.html';
+                return;
+            }
+            
+            const user = AuthService.getCurrentUser();
+            document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
+            document.getElementById('userInitials').textContent = (user.first_name[0] + user.last_name[0]).toUpperCase();
+            
+            // Load data
+            await loadRequisitions();
+            
+            // Setup event listeners
+            setupEventListeners();
+        });
+        
+        function setupEventListeners() {
+            // Status tabs
+            document.querySelectorAll('#statusTabs button').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('#statusTabs button').forEach(b => {
+                        b.classList.remove('btn-warning', 'btn-info', 'btn-success', 'btn-primary');
+                        b.classList.add('btn-ghost');
+                    });
+                    
+                    const status = btn.dataset.status;
+                    btn.classList.remove('btn-ghost');
+                    if (status === 'pending') btn.classList.add('btn-warning');
+                    else if (status === 'partial') btn.classList.add('btn-info');
+                    else if (status === 'fulfilled') btn.classList.add('btn-success');
+                    else btn.classList.add('btn-primary');
+                    
+                    currentFilter.status = status;
+                    renderRequisitions();
+                });
+            });
+            
+            // Search input
+            document.getElementById('searchInput').addEventListener('input', debounce(() => {
+                currentFilter.search = document.getElementById('searchInput').value;
+                renderRequisitions();
+            }, 300));
+            
+            // Department filter
+            document.getElementById('departmentFilter').addEventListener('change', () => {
+                currentFilter.department = document.getElementById('departmentFilter').value;
+                renderRequisitions();
+            });
+            
+            // Priority filter
+            document.getElementById('priorityFilter').addEventListener('change', () => {
+                currentFilter.priority = document.getElementById('priorityFilter').value;
+                renderRequisitions();
+            });
+            
+            // Reject reason change
+            document.getElementById('rejectReason').addEventListener('change', (e) => {
+                document.getElementById('rejectOtherReasonGroup').classList.toggle('hidden', e.target.value !== 'other');
+            });
+        }
+        
+        async function loadRequisitions() {
+            try {
+                const response = await WarehouseRawService.getRequisitions();
+                if (response.success) {
+                    requisitions = response.data.requisitions || response.data;
+                    updateStats();
+                    renderRequisitions();
+                }
+            } catch (error) {
+                console.error('Failed to load requisitions:', error);
+                showToast('Failed to load requisitions', 'error');
+            }
+        }
+        
+        function updateStats() {
+            const pending = requisitions.filter(r => r.status === 'pending' || r.status === 'approved').length;
+            const urgent = requisitions.filter(r => r.priority === 'urgent' && (r.status === 'pending' || r.status === 'approved')).length;
+            const partial = requisitions.filter(r => r.status === 'partial').length;
+            const today = new Date().toISOString().split('T')[0];
+            const fulfilled = requisitions.filter(r => r.status === 'fulfilled' && r.fulfilled_date && r.fulfilled_date.startsWith(today)).length;
+            
+            document.getElementById('pendingCount').textContent = pending;
+            document.getElementById('urgentCount').textContent = urgent;
+            document.getElementById('partialCount').textContent = partial;
+            document.getElementById('fulfilledToday').textContent = fulfilled;
+            document.getElementById('pendingReqsBadge').textContent = pending;
+            
+            // Update tab counts
+            document.getElementById('pendingTabCount').textContent = pending;
+            document.getElementById('partialTabCount').textContent = partial;
+            document.getElementById('fulfilledTabCount').textContent = requisitions.filter(r => r.status === 'fulfilled').length;
+        }
+        
+        function renderRequisitions() {
+            const container = document.getElementById('requisitionsList');
+            let filtered = [...requisitions];
+            
+            // Apply filters
+            if (currentFilter.status !== 'all') {
+                if (currentFilter.status === 'pending') {
+                    filtered = filtered.filter(r => r.status === 'pending' || r.status === 'approved');
+                } else {
+                    filtered = filtered.filter(r => r.status === currentFilter.status);
+                }
+            }
+            
+            if (currentFilter.search) {
+                const search = currentFilter.search.toLowerCase();
+                filtered = filtered.filter(r => 
+                    r.requisition_code.toLowerCase().includes(search)
+                );
+            }
+            
+            if (currentFilter.department) {
+                filtered = filtered.filter(r => 
+                    r.department && r.department.toLowerCase() === currentFilter.department
+                );
+            }
+            
+            if (currentFilter.priority) {
+                filtered = filtered.filter(r => r.priority === currentFilter.priority);
+            }
+            
+            // Sort: urgent first, then by needed_by_date, then by created_at
+            filtered.sort((a, b) => {
+                const priorityOrder = { urgent: 0, high: 1, normal: 2, low: 3 };
+                if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
+                    return priorityOrder[a.priority] - priorityOrder[b.priority];
+                }
+                if (a.needed_by_date && b.needed_by_date) {
+                    return new Date(a.needed_by_date) - new Date(b.needed_by_date);
+                }
+                return new Date(b.created_at) - new Date(a.created_at);
+            });
+            
+            if (filtered.length === 0) {
+                container.innerHTML = `
+                    <div class="card bg-base-100 border border-base-300">
+                        <div class="card-body items-center justify-center py-12">
+                            <i class="fas fa-clipboard-check fa-3x text-base-content/20 mb-4"></i>
+                            <h4 class="font-semibold text-lg">No requisitions found</h4>
+                            <p class="text-base-content/60">
+                                ${currentFilter.status === 'pending' ? 'All pending requisitions have been fulfilled!' : 'Try adjusting your filters'}
+                            </p>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = filtered.map(req => {
+                const priorityBadges = {
+                    'urgent': 'badge-error',
+                    'high': 'badge-warning',
+                    'normal': 'badge-info',
+                    'low': 'badge-ghost'
+                };
+                
+                const statusBadges = {
+                    'pending': 'badge-warning',
+                    'approved': 'badge-warning',
+                    'partial': 'badge-info',
+                    'fulfilled': 'badge-success',
+                    'cancelled': 'badge-ghost'
+                };
+                
+                // Calculate needed by status
+                let neededByHtml = '';
+                if (req.needed_by_date) {
+                    const days = daysUntil(req.needed_by_date);
+                    let badgeClass = 'badge-ghost';
+                    let neededByText = formatDate(req.needed_by_date);
+                    
+                    if (days < 0) {
+                        badgeClass = 'badge-error';
+                        neededByText = `OVERDUE (${Math.abs(days)}d)`;
+                    } else if (days === 0) {
+                        badgeClass = 'badge-warning';
+                        neededByText = 'TODAY';
+                    } else if (days <= 2) {
+                        badgeClass = 'badge-info';
+                        neededByText = days === 1 ? 'Tomorrow' : `In ${days} days`;
+                    }
+                    
+                    neededByHtml = `<span class="badge ${badgeClass} badge-sm gap-1"><i class="fas fa-clock"></i> ${neededByText}</span>`;
+                }
+                
+                // Item summary
+                const totalItems = req.total_items || req.items?.length || 0;
+                const fulfilledItems = req.fulfilled_items || 0;
+                
+                const canFulfill = req.status === 'pending' || req.status === 'approved' || req.status === 'partial';
+                
+                return `
+                    <div class="card bg-base-100 border border-base-300 hover:shadow-md transition-shadow">
+                        <div class="card-body p-4">
+                            <!-- Header -->
+                            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="font-bold text-lg">${req.requisition_code}</span>
+                                    <span class="badge ${priorityBadges[req.priority]} badge-sm">
+                                        ${req.priority === 'urgent' ? '<i class="fas fa-exclamation mr-1"></i>' : ''}
+                                        ${req.priority.toUpperCase()}
+                                    </span>
+                                    <span class="badge ${statusBadges[req.status]} badge-sm badge-outline">
+                                        ${req.status.toUpperCase()}
+                                    </span>
+                                </div>
+                                <div>
+                                    ${neededByHtml}
+                                </div>
+                            </div>
+                            
+                            <!-- Details Grid -->
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
+                                <div>
+                                    <p class="text-xs text-base-content/60">Requested By</p>
+                                    <p class="font-semibold">${req.first_name} ${req.last_name}</p>
+                                    <p class="text-sm text-base-content/60">${req.department || 'N/A'}</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-base-content/60">Items</p>
+                                    <p class="font-semibold">${fulfilledItems} / ${totalItems} fulfilled</p>
+                                    <p class="text-sm text-base-content/60">${totalItems - fulfilledItems} remaining</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-base-content/60">Requested Date</p>
+                                    <p class="font-semibold">${formatDate(req.created_at)}</p>
+                                </div>
+                            </div>
+                            
+                            ${req.notes ? `<p class="text-sm text-base-content/60 mb-3"><i class="fas fa-comment mr-1"></i>${req.notes}</p>` : ''}
+                            
+                            <!-- Footer -->
+                            <div class="flex items-center justify-between pt-3 border-t border-base-300">
+                                <span class="text-sm text-base-content/60">${req.type || 'General'} Requisition</span>
+                                <div class="flex gap-2">
+                                    <button class="btn btn-ghost btn-sm" onclick="viewRequisition(${req.id})">
+                                        <i class="fas fa-eye"></i> View
+                                    </button>
+                                    ${canFulfill ? `
+                                        <button class="btn btn-primary btn-sm" onclick="openFulfillModal(${req.id})">
+                                            <i class="fas fa-check"></i> Fulfill
+                                        </button>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        async function viewRequisition(id) {
+            await openFulfillModal(id, true);
+        }
+        
+        async function openFulfillModal(id, viewOnly = false) {
+            document.getElementById('fulfillModal').showModal();
+            document.getElementById('fulfillModalBody').innerHTML = `
+                <div class="flex flex-col items-center justify-center py-8">
+                    <span class="loading loading-spinner loading-lg text-primary"></span>
+                </div>
+            `;
+            
+            try {
+                const response = await WarehouseRawService.getRequisition(id);
+                if (response.success) {
+                    currentRequisition = response.data;
+                    renderFulfillModal(viewOnly);
+                }
+            } catch (error) {
+                console.error('Failed to load requisition:', error);
+                showToast('Failed to load requisition details', 'error');
+                document.getElementById('fulfillModal').close();
+            }
+        }
+        
+        function renderFulfillModal(viewOnly = false) {
+            const req = currentRequisition;
+            const items = req.items || [];
+            
+            const priorityBadges = {
+                'urgent': 'badge-error',
+                'high': 'badge-warning',
+                'normal': 'badge-info',
+                'low': 'badge-ghost'
+            };
+            
+            document.getElementById('fulfillModalTitle').innerHTML = `
+                ${viewOnly ? '<i class="fas fa-eye text-info"></i>' : '<i class="fas fa-clipboard-check text-primary"></i>'}
+                ${req.requisition_code}
+                <span class="badge ${priorityBadges[req.priority]} badge-sm ml-2">${req.priority.toUpperCase()}</span>
+            `;
+            
+            let itemsHtml = '';
+            if (items.length === 0) {
+                itemsHtml = '<p class="text-base-content/60 text-center py-4">No items in this requisition</p>';
+            } else {
+                itemsHtml = items.map((item, index) => {
+                    const requested = parseFloat(item.quantity_requested);
+                    const issued = parseFloat(item.quantity_issued || 0);
+                    const remaining = requested - issued;
+                    const available = parseFloat(item.available_stock || 0);
+                    
+                    let rowClass = '';
+                    let statusBadge = '';
+                    if (item.status === 'fulfilled') {
+                        rowClass = 'bg-success/10 border-l-4 border-success';
+                        statusBadge = '<span class="badge badge-success badge-sm">Completed</span>';
+                    } else if (item.status === 'partial') {
+                        rowClass = 'bg-info/10 border-l-4 border-info';
+                        statusBadge = '<span class="badge badge-info badge-sm">Partial</span>';
+                    } else if (item.status === 'cancelled' || item.status === 'rejected') {
+                        rowClass = 'bg-base-200 border-l-4 border-base-content/20 opacity-60';
+                        statusBadge = '<span class="badge badge-ghost badge-sm">Rejected</span>';
+                    } else {
+                        rowClass = 'bg-base-200';
+                        statusBadge = '<span class="badge badge-warning badge-sm">Pending</span>';
+                    }
+                    
+                    const canFulfill = !viewOnly && remaining > 0 && item.status !== 'cancelled' && item.status !== 'rejected';
+                    const stockWarning = available < remaining && canFulfill ? 
+                        `<p class="text-xs text-error mt-1"><i class="fas fa-exclamation-triangle mr-1"></i>Only ${available} available</p>` : '';
+                    
+                    return `
+                        <div class="p-3 rounded-lg mb-2 ${rowClass}" data-item-id="${item.id}">
+                            <div class="flex flex-wrap items-center gap-3">
+                                <div class="flex-1 min-w-[200px]">
+                                    <p class="font-semibold">${item.item_name || item.name}</p>
+                                    <p class="text-sm text-base-content/60">${item.item_code || ''} - ${item.item_type || 'Item'}</p>
+                                    ${stockWarning}
+                                </div>
+                                <div class="text-center min-w-[80px]">
+                                    <p class="text-xs text-base-content/60">Requested</p>
+                                    <p class="font-bold">${requested} ${item.unit_of_measure || ''}</p>
+                                </div>
+                                <div class="text-center min-w-[80px]">
+                                    <p class="text-xs text-base-content/60">Issued</p>
+                                    <p class="font-bold ${issued > 0 ? 'text-success' : ''}">${issued}</p>
+                                </div>
+                                ${canFulfill ? `
+                                    <div class="text-center min-w-[100px]">
+                                        <p class="text-xs text-base-content/60">Issue Now</p>
+                                        <input type="number" class="input input-bordered input-sm w-20 text-center" 
+                                               id="fulfill_${item.id}" 
+                                               value="${Math.min(remaining, available)}"
+                                               min="0" max="${Math.min(remaining, available)}"
+                                               step="0.01">
+                                    </div>
+                                    <div>
+                                        <button class="btn btn-ghost btn-sm btn-square text-error" onclick="openRejectModal(${req.id}, ${item.id}, '${item.item_name || item.name}')" title="Reject">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                ` : `
+                                    <div class="min-w-[120px] text-right">
+                                        ${statusBadge}
+                                        ${item.status === 'cancelled' || item.status === 'rejected' ? `<p class="text-xs text-base-content/60 mt-1">${item.rejection_reason || ''}</p>` : ''}
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+            
+            document.getElementById('fulfillModalBody').innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div>
+                        <p class="text-xs text-base-content/60">Requested By</p>
+                        <p class="font-semibold">${req.first_name} ${req.last_name}</p>
+                        <p class="text-sm text-base-content/60">${req.department || 'N/A'}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-base-content/60">Needed By</p>
+                        <p class="font-semibold">${req.needed_by_date ? formatDate(req.needed_by_date) : 'Not specified'}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-base-content/60">Status</p>
+                        <p class="font-semibold">${req.status.toUpperCase()}</p>
+                    </div>
+                </div>
+                ${req.notes ? `
+                    <div class="alert alert-info mb-4">
+                        <i class="fas fa-comment"></i>
+                        <span><strong>Notes:</strong> ${req.notes}</span>
+                    </div>
+                ` : ''}
+                
+                <div class="divider"></div>
+                <h4 class="font-semibold mb-3"><i class="fas fa-list mr-2"></i>Requisition Items</h4>
+                <div class="max-h-80 overflow-y-auto">
+                    ${itemsHtml}
+                </div>
+            `;
+            
+            const canFulfillAny = !viewOnly && items.some(item => 
+                parseFloat(item.quantity_requested) > parseFloat(item.quantity_issued || 0) &&
+                item.status !== 'cancelled' && item.status !== 'rejected'
+            );
+            
+            document.getElementById('fulfillModalFooter').innerHTML = `
+                <button class="btn btn-ghost" onclick="document.getElementById('fulfillModal').close()">Close</button>
+                ${canFulfillAny ? `
+                    <button class="btn btn-primary" onclick="submitFulfillment()">
+                        <i class="fas fa-check"></i> Fulfill Selected Items
+                    </button>
+                ` : ''}
+            `;
+        }
+        
+        async function submitFulfillment() {
+            const items = currentRequisition.items || [];
+            const issuedQuantities = {};
+            let hasItems = false;
+            
+            items.forEach(item => {
+                const input = document.getElementById(`fulfill_${item.id}`);
+                if (input) {
+                    const qty = parseFloat(input.value) || 0;
+                    if (qty > 0) {
+                        issuedQuantities[item.id] = qty;
+                        hasItems = true;
+                    }
+                }
+            });
+            
+            if (!hasItems) {
+                showToast('Please enter quantities to fulfill', 'warning');
+                return;
+            }
+            
+            try {
+                const response = await WarehouseRawService.fulfillRequisition(currentRequisition.id, issuedQuantities);
+                if (response.success) {
+                    showToast('Requisition items fulfilled successfully', 'success');
+                    document.getElementById('fulfillModal').close();
+                    loadRequisitions();
+                } else {
+                    showToast(response.error || 'Failed to fulfill requisition', 'error');
+                }
+            } catch (error) {
+                console.error('Fulfill error:', error);
+                showToast('Failed to fulfill requisition', 'error');
+            }
+        }
+        
+        function openRejectModal(requisitionId, itemId, itemName) {
+            document.getElementById('rejectRequisitionId').value = requisitionId;
+            document.getElementById('rejectItemId').value = itemId;
+            document.getElementById('rejectItemName').textContent = itemName;
+            document.getElementById('rejectForm').reset();
+            document.getElementById('rejectOtherReasonGroup').classList.add('hidden');
+            document.getElementById('rejectModal').showModal();
+        }
+        
+        async function submitReject(e) {
+            e.preventDefault();
+            
+            const requisitionId = document.getElementById('rejectRequisitionId').value;
+            const itemId = document.getElementById('rejectItemId').value;
+            let reason = document.getElementById('rejectReason').value;
+            
+            if (reason === 'other') {
+                reason = document.getElementById('rejectOtherReason').value;
+            }
+            
+            if (!reason) {
+                showToast('Please provide a reason for rejection', 'error');
+                return;
+            }
+            
+            try {
+                const response = await WarehouseRawService.cancelRequisitionItem(requisitionId, itemId, reason);
+                if (response.success) {
+                    showToast('Item rejected successfully', 'success');
+                    document.getElementById('rejectModal').close();
+                    // Refresh the fulfill modal
+                    await openFulfillModal(requisitionId);
+                    loadRequisitions();
+                } else {
+                    showToast(response.error || 'Failed to reject item', 'error');
+                }
+            } catch (error) {
+                console.error('Reject error:', error);
+                showToast('Failed to reject item', 'error');
+            }
+        }
+        
+        // Utility functions
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+        
+        function daysUntil(dateStr) {
+            const date = new Date(dateStr);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            date.setHours(0, 0, 0, 0);
+            return Math.ceil((date - today) / (1000 * 60 * 60 * 24));
+        }
+        
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+        
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = {
+                success: 'alert-success',
+                error: 'alert-error',
+                warning: 'alert-warning',
+                info: 'alert-info'
+            }[type] || 'alert-info';
+            
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

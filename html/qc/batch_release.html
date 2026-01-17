@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batch Release - Highland Fresh System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <div class="user-avatar" style="width:40px;height:40px;font-size:1.25rem;">
+                        <i class="fas fa-cow"></i>
+                    </div>
+                    <div>
+                        <div class="sidebar-logo-text">Highland Fresh</div>
+                        <div class="sidebar-logo-subtitle">Quality Control</div>
+                    </div>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <div class="nav-section">
+                    <div class="nav-section-title">Main Menu</div>
+                    <a href="dashboard.html" class="nav-link">
+                        <i class="fas fa-th-large"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">Inbound Milk</div>
+                    <a href="milk_receiving.html" class="nav-link">
+                        <i class="fas fa-truck-loading"></i>
+                        <span>Milk Receiving</span>
+                    </a>
+                    <a href="milk_grading.html" class="nav-link">
+                        <i class="fas fa-flask"></i>
+                        <span>Milk Grading</span>
+                    </a>
+                    <a href="farmers.html" class="nav-link">
+                        <i class="fas fa-users"></i>
+                        <span>Farmers</span>
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">Production QC</div>
+                    <a href="batch_release.html" class="nav-link active">
+                        <i class="fas fa-check-double"></i>
+                        <span>Batch Release</span>
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">Inventory QC</div>
+                    <a href="expiry_management.html" class="nav-link">
+                        <i class="fas fa-calendar-times"></i>
+                        <span>Expiry Management</span>
+                    </a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <h1 class="header-title">Batch Release</h1>
+                    <div class="header-breadcrumb">
+                        <a href="dashboard.html">Dashboard</a>
+                        <i class="fas fa-chevron-right" style="font-size: 0.6rem;"></i>
+                        <span>Batch Release</span>
+                    </div>
+                </div>
+
+                <div class="header-right">
+                    <button class="header-icon-btn" title="Logout" onclick="AuthService.logout()">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Page Content -->
+            <div class="page-content">
+                <!-- Stats -->
+                <div class="grid-4 mb-4">
+                    <div class="stat-card">
+                        <div class="stat-card-icon warning">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="stat-card-value" id="pendingCount">0</div>
+                        <div class="stat-card-label">Pending Verification</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card-icon success">
+                            <i class="fas fa-check"></i>
+                        </div>
+                        <div class="stat-card-value" id="releasedToday">0</div>
+                        <div class="stat-card-label">Released Today</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card-icon danger">
+                            <i class="fas fa-times"></i>
+                        </div>
+                        <div class="stat-card-value" id="rejectedToday">0</div>
+                        <div class="stat-card-label">Rejected Today</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card-icon primary">
+                            <i class="fas fa-boxes"></i>
+                        </div>
+                        <div class="stat-card-value" id="totalBatches">0</div>
+                        <div class="stat-card-label">Total Batches</div>
+                    </div>
+                </div>
+
+                <!-- Tabs -->
+                <div class="card mb-4">
+                    <div class="card-body p-0">
+                        <div class="tab-nav">
+                            <button class="tab-btn active" data-tab="pending" onclick="switchTab('pending')">
+                                <i class="fas fa-clock"></i>
+                                Pending Verification
+                                <span class="badge badge-warning badge-sm" id="pendingBadge">0</span>
+                            </button>
+                            <button class="tab-btn" data-tab="released" onclick="switchTab('released')">
+                                <i class="fas fa-check-circle"></i>
+                                Released
+                            </button>
+                            <button class="tab-btn" data-tab="rejected" onclick="switchTab('rejected')">
+                                <i class="fas fa-times-circle"></i>
+                                Rejected
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pending Batches -->
+                <div id="pendingSection" class="tab-content active">
+                    <div class="grid-2" id="pendingBatches">
+                        <!-- Pending batch cards will load here -->
+                    </div>
+                </div>
+
+                <!-- Released Batches -->
+                <div id="releasedSection" class="tab-content" style="display: none;">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-check-circle text-success"></i>
+                                Released Batches
+                            </h3>
+                            <div class="d-flex gap-2">
+                                <input type="date" class="form-control" id="releasedDateFilter" style="width: auto;">
+                                <button class="btn btn-secondary btn-sm" onclick="loadReleasedBatches()">
+                                    <i class="fas fa-search"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-container">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Batch #</th>
+                                            <th>Product</th>
+                                            <th>Quantity</th>
+                                            <th>Produced</th>
+                                            <th>Released</th>
+                                            <th>Verified By</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="releasedTable">
+                                        <tr>
+                                            <td colspan="7" class="text-center text-muted p-4">Loading...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Rejected Batches -->
+                <div id="rejectedSection" class="tab-content" style="display: none;">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-times-circle text-danger"></i>
+                                Rejected Batches
+                            </h3>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-container">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Batch #</th>
+                                            <th>Product</th>
+                                            <th>Quantity</th>
+                                            <th>Rejected On</th>
+                                            <th>Reason</th>
+                                            <th>Rejected By</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="rejectedTable">
+                                        <tr>
+                                            <td colspan="6" class="text-center text-muted p-4">Loading...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Verification Modal -->
+    <div class="modal-overlay" id="verifyModal">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h3 class="modal-title">
+                    <i class="fas fa-clipboard-check text-primary"></i>
+                    Batch Verification - <span id="verifyBatchNumber">-</span>
+                </h3>
+                <button class="modal-close" onclick="closeModal('verifyModal')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form id="verifyForm" onsubmit="submitVerification(event)">
+                <input type="hidden" id="verifyBatchId">
+                <div class="modal-body">
+                    <!-- Batch Info -->
+                    <div class="grid-3 mb-4">
+                        <div style="background: var(--gray-50); padding: 1rem; border-radius: var(--border-radius);">
+                            <div class="text-muted mb-1">Product</div>
+                            <div class="font-bold" id="verifyProduct">-</div>
+                        </div>
+                        <div style="background: var(--gray-50); padding: 1rem; border-radius: var(--border-radius);">
+                            <div class="text-muted mb-1">Quantity</div>
+                            <div class="font-bold" id="verifyQuantity">-</div>
+                        </div>
+                        <div style="background: var(--gray-50); padding: 1rem; border-radius: var(--border-radius);">
+                            <div class="text-muted mb-1">Produced</div>
+                            <div class="font-bold" id="verifyProduced">-</div>
+                        </div>
+                    </div>
+
+                    <!-- CCP Logs -->
+                    <h5 class="mb-3">Critical Control Points (CCP)</h5>
+                    <div class="ccp-section mb-4">
+                        <table class="table table-compact">
+                            <thead>
+                                <tr>
+                                    <th>Control Point</th>
+                                    <th>Value</th>
+                                    <th>Standard</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ccpTable">
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted">Loading CCP data...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <hr>
+
+                    <!-- Verification Form -->
+                    <h5 class="mb-3">Verification Checklist</h5>
+                    <div class="checklist mb-4">
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="checkCCP" required>
+                            <span>All CCP parameters within acceptable range</span>
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="checkAppearance" required>
+                            <span>Product appearance is acceptable</span>
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="checkPackaging" required>
+                            <span>Packaging integrity verified</span>
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="checkLabeling" required>
+                            <span>Labels are correct and legible</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Verification Decision</label>
+                        <div class="d-flex gap-3">
+                            <label class="radio-item">
+                                <input type="radio" name="verifyDecision" value="released" checked
+                                    onchange="toggleRejectReason()">
+                                <span class="text-success font-medium">
+                                    <i class="fas fa-check-circle"></i> Release for Sale
+                                </span>
+                            </label>
+                            <label class="radio-item">
+                                <input type="radio" name="verifyDecision" value="rejected"
+                                    onchange="toggleRejectReason()">
+                                <span class="text-danger font-medium">
+                                    <i class="fas fa-times-circle"></i> Reject Batch
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-group" id="rejectReasonGroup" style="display: none;">
+                        <label class="form-label required">Rejection Reason</label>
+                        <textarea class="form-control" id="rejectReason" rows="3"
+                            placeholder="Describe the reason for rejection..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Additional Notes</label>
+                        <textarea class="form-control" id="verifyNotes" rows="2"
+                            placeholder="Any additional observations..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('verifyModal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="submitVerifyBtn">
+                        <i class="fas fa-check-double"></i>
+                        Submit Verification
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- View Batch Modal -->
+    <div class="modal-overlay" id="viewBatchModal">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h3 class="modal-title">
+                    <i class="fas fa-box text-primary"></i>
+                    Batch Details - <span id="viewBatchNumber">-</span>
+                </h3>
+                <button class="modal-close" onclick="closeModal('viewBatchModal')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="grid-2 mb-4">
+                    <div>
+                        <h4 id="viewProductName">-</h4>
+                        <span class="badge" id="viewBatchStatus">-</span>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-muted">Quantity Produced</div>
+                        <div class="font-bold" style="font-size: 1.5rem;" id="viewBatchQuantity">-</div>
+                    </div>
+                </div>
+
+                <div class="grid-3 mb-4">
+                    <div style="background: var(--gray-50); padding: 1rem; border-radius: var(--border-radius);">
+                        <div class="text-muted mb-1">Production Date</div>
+                        <div id="viewProdDate">-</div>
+                    </div>
+                    <div style="background: var(--gray-50); padding: 1rem; border-radius: var(--border-radius);">
+                        <div class="text-muted mb-1">Expiry Date</div>
+                        <div id="viewExpDate">-</div>
+                    </div>
+                    <div style="background: var(--gray-50); padding: 1rem; border-radius: var(--border-radius);">
+                        <div class="text-muted mb-1">Produced By</div>
+                        <div id="viewProducedBy">-</div>
+                    </div>
+                </div>
+
+                <h5 class="mb-3">CCP Records</h5>
+                <div class="table-container mb-4">
+                    <table class="table table-compact">
+                        <thead>
+                            <tr>
+                                <th>Control Point</th>
+                                <th>Value</th>
+                                <th>Recorded At</th>
+                                <th>Recorded By</th>
+                            </tr>
+                        </thead>
+                        <tbody id="viewCCPTable">
+                            <tr>
+                                <td colspan="4" class="text-center text-muted">-</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="viewVerificationSection" style="display: none;">
+                    <h5 class="mb-3">Verification Details</h5>
+                    <div style="background: var(--gray-50); padding: 1rem; border-radius: var(--border-radius);">
+                        <div class="d-flex justify-between mb-2">
+                            <span class="text-muted">Verified By:</span>
+                            <span id="viewVerifiedBy">-</span>
+                        </div>
+                        <div class="d-flex justify-between mb-2">
+                            <span class="text-muted">Verified At:</span>
+                            <span id="viewVerifiedAt">-</span>
+                        </div>
+                        <div id="viewVerifyNotes" style="display: none;">
+                            <div class="text-muted mb-1">Notes:</div>
+                            <div id="viewVerifyNotesText">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('viewBatchModal')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/qc/batch_release.service.js"></script>
+    <script>
+        // Require QC role
+        AuthService.requireRole(['qc_officer', 'general_manager']);
+
+        let currentBatchId = null;
+
+        // Set default date filter
+        document.getElementById('releasedDateFilter').value = new Date().toISOString().split('T')[0];
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+
+            document.querySelectorAll('.tab-content').forEach(section => {
+                section.style.display = 'none';
+                section.classList.remove('active');
+            });
+            document.getElementById(`${tab}Section`).style.display = 'block';
+            document.getElementById(`${tab}Section`).classList.add('active');
+
+            if (tab === 'released') loadReleasedBatches();
+            if (tab === 'rejected') loadRejectedBatches();
+        }
+
+        async function loadPendingBatches() {
+            const container = document.getElementById('pendingBatches');
+            container.innerHTML = '<div class="col-span-2 text-center p-4 text-muted"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
+
+            try {
+                const response = await BatchReleaseService.getPending();
+
+                if (response.success) {
+                    const batches = response.data || [];
+                    document.getElementById('pendingBadge').textContent = batches.length;
+                    document.getElementById('pendingCount').textContent = batches.length;
+
+                    if (batches.length > 0) {
+                        container.innerHTML = batches.map(b => `
+                            <div class="card batch-card">
+                                <div class="card-body">
+                                    <div class="d-flex justify-between align-start mb-3">
+                                        <div>
+                                            <code class="font-medium" style="font-size: 1.1rem;">${b.batch_code}</code>
+                                            <h4 class="mt-1">${b.product_name || b.product_type || 'Unknown Product'}</h4>
+                                            <small class="text-muted">${b.product_variant || b.recipe_variant || ''}</small>
+                                        </div>
+                                        <span class="badge badge-warning">${b.qc_status || 'Pending'}</span>
+                                    </div>
+                                    
+                                    <div class="grid-3 mb-3">
+                                        <div>
+                                            <div class="text-muted" style="font-size: 0.75rem;">Raw Milk</div>
+                                            <div class="font-medium">${b.raw_milk_liters?.toLocaleString() || '-'} L</div>
+                                        </div>
+                                        <div>
+                                            <div class="text-muted" style="font-size: 0.75rem;">Produced</div>
+                                            <div class="font-medium">${b.manufacturing_date ? formatDate(b.manufacturing_date) : '-'}</div>
+                                        </div>
+                                        <div>
+                                            <div class="text-muted" style="font-size: 0.75rem;">Expires</div>
+                                            <div class="font-medium">${b.expiry_date ? formatDate(b.expiry_date) : '-'}</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="ccp-preview mb-3">
+                                        <div class="text-muted mb-1" style="font-size: 0.75rem;">CCP Status</div>
+                                        <div class="d-flex gap-2">
+                                            <span class="badge ${getCCPBadge(b.pasteurization_temp, 72)}">
+                                                <i class="fas fa-fire"></i> ${b.pasteurization_temp || '-'}°C
+                                            </span>
+                                            <span class="badge ${getCCPBadge(b.cooling_temp, 6, true)}">
+                                                <i class="fas fa-snowflake"></i> ${b.cooling_temp || '-'}°C
+                                            </span>
+                                        </div>
+                                    </div>
+                                    
+                                    <button class="btn btn-primary w-100" onclick="openVerifyModal(${b.id})">
+                                        <i class="fas fa-clipboard-check"></i>
+                                        Verify & Release
+                                    </button>
+                                </div>
+                            </div>
+                        `).join('');
+                    } else {
+                        container.innerHTML = `
+                            <div class="col-span-2 text-center p-4">
+                                <i class="fas fa-check-circle text-success" style="font-size: 3rem;"></i>
+                                <h4 class="mt-3">All Caught Up!</h4>
+                                <p class="text-muted">No batches pending verification</p>
+                            </div>
+                        `;
+                    }
+                } else {
+                    // Handle API error response
+                    console.error('API returned error:', response.message);
+                    container.innerHTML = `
+                        <div class="col-span-2 text-center p-4">
+                            <i class="fas fa-exclamation-circle text-warning" style="font-size: 2rem;"></i>
+                            <h4 class="mt-3">Could Not Load Batches</h4>
+                            <p class="text-muted">${response.message || 'An error occurred. Please try refreshing the page.'}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Failed to load pending batches:', error);
+                container.innerHTML = '<div class="col-span-2 text-center p-4 text-danger">Failed to load batches</div>';
+            }
+        }
+
+        async function loadReleasedBatches() {
+            const table = document.getElementById('releasedTable');
+            table.innerHTML = '<tr><td colspan="7" class="text-center text-muted p-4"><i class="fas fa-spinner fa-spin"></i> Loading...</td></tr>';
+
+            try {
+                const date = document.getElementById('releasedDateFilter').value;
+                const response = await BatchReleaseService.getAll({ status: 'released', date: date });
+
+                if (response.success) {
+                    const batches = response.data || [];
+                    document.getElementById('releasedToday').textContent = batches.length;
+
+                    if (batches.length > 0) {
+                        table.innerHTML = batches.map(b => `
+                            <tr>
+                                <td><code class="font-medium">${b.batch_code}</code></td>
+                                <td>${b.product_name || b.product_type || '-'}</td>
+                                <td>${b.raw_milk_liters?.toLocaleString() || '-'} L</td>
+                                <td>${b.manufacturing_date ? formatDate(b.manufacturing_date) : '-'}</td>
+                                <td>${b.qc_released_at ? formatDateTime(b.qc_released_at) : '-'}</td>
+                                <td>${b.released_by_first ? (b.released_by_first + ' ' + (b.released_by_last || '')) : '-'}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-secondary" onclick="viewBatch(${b.id})">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('');
+                    } else {
+                        table.innerHTML = '<tr><td colspan="7" class="text-center text-muted p-4">No released batches found</td></tr>';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load released batches:', error);
+                table.innerHTML = '<tr><td colspan="7" class="text-center text-danger p-4">Failed to load batches</td></tr>';
+            }
+        }
+
+        async function loadRejectedBatches() {
+            const table = document.getElementById('rejectedTable');
+            table.innerHTML = '<tr><td colspan="6" class="text-center text-muted p-4"><i class="fas fa-spinner fa-spin"></i> Loading...</td></tr>';
+
+            try {
+                const response = await BatchReleaseService.getAll({ status: 'rejected' });
+
+                if (response.success) {
+                    const batches = response.data || [];
+                    document.getElementById('rejectedToday').textContent = batches.length;
+
+                    if (batches.length > 0) {
+                        table.innerHTML = batches.map(b => `
+                            <tr>
+                                <td><code class="font-medium">${b.batch_code}</code></td>
+                                <td>${b.product_name || b.product_type || '-'}</td>
+                                <td>${b.raw_milk_liters?.toLocaleString() || '-'} L</td>
+                                <td>${b.updated_at ? formatDateTime(b.updated_at) : '-'}</td>
+                                <td>
+                                    <span class="text-danger" style="max-width: 200px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${b.qc_notes || '-'}">
+                                        ${b.qc_notes || '-'}
+                                    </span>
+                                </td>
+                                <td>${b.created_by_first ? (b.created_by_first + ' ' + (b.created_by_last || '')) : '-'}</td>
+                            </tr>
+                        `).join('');
+                    } else {
+                        table.innerHTML = '<tr><td colspan="6" class="text-center text-muted p-4">No rejected batches found</td></tr>';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load rejected batches:', error);
+                table.innerHTML = '<tr><td colspan="6" class="text-center text-danger p-4">Failed to load batches</td></tr>';
+            }
+        }
+
+        async function loadStats() {
+            try {
+                const response = await BatchReleaseService.getStats();
+                if (response.success && response.data) {
+                    document.getElementById('totalBatches').textContent = response.data.total || 0;
+                    document.getElementById('pendingCount').textContent = response.data.pending || 0;
+                    document.getElementById('pendingBadge').textContent = response.data.pending || 0;
+                    document.getElementById('releasedToday').textContent = response.data.released || 0;
+                }
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+            }
+        }
+
+        function getCCPBadge(value, threshold, isMax = false) {
+            if (!value && value !== 0) return 'badge-secondary';
+            if (isMax) {
+                return value <= threshold ? 'badge-success' : 'badge-danger';
+            }
+            return value >= threshold ? 'badge-success' : 'badge-danger';
+        }
+
+        async function openVerifyModal(batchId) {
+            currentBatchId = batchId;
+
+            try {
+                const response = await BatchReleaseService.getById(batchId);
+
+                if (response.success) {
+                    const b = response.data;
+
+                    document.getElementById('verifyBatchId').value = b.id;
+                    document.getElementById('verifyBatchNumber').textContent = b.batch_code;
+                    document.getElementById('verifyProduct').textContent = b.product_name || b.product_type || '-';
+                    document.getElementById('verifyQuantity').textContent = `${b.raw_milk_liters?.toLocaleString() || '-'} L (Expected: ${b.expected_yield || '-'} units)`;
+                    document.getElementById('verifyProduced').textContent = b.manufacturing_date ? formatDate(b.manufacturing_date) : '-';
+
+                    // Show CCP parameters from batch
+                    const ccpTable = document.getElementById('ccpTable');
+                    ccpTable.innerHTML = `
+                        <tr>
+                            <td class="font-medium">Pasteurization Temperature</td>
+                            <td>${b.pasteurization_temp || '-'}°C</td>
+                            <td>Min: 72°C</td>
+                            <td>${getCCPStatusBadgeSimple(b.pasteurization_temp, 72, false)}</td>
+                        </tr>
+                        <tr>
+                            <td class="font-medium">Cooling Temperature</td>
+                            <td>${b.cooling_temp || '-'}°C</td>
+                            <td>Max: 6°C</td>
+                            <td>${getCCPStatusBadgeSimple(b.cooling_temp, 6, true)}</td>
+                        </tr>
+                    `;
+
+                    // Reset form
+                    document.getElementById('verifyForm').reset();
+                    document.getElementById('rejectReasonGroup').style.display = 'none';
+                    document.querySelector('[name="verifyDecision"][value="released"]').checked = true;
+
+                    openModal('verifyModal');
+                }
+            } catch (error) {
+                console.error('Error loading batch:', error);
+                showNotification('Error', 'Failed to load batch details', 'error');
+            }
+        }
+
+        function getCCPStatusBadge(log) {
+            const value = parseFloat(log.recorded_value);
+            const min = parseFloat(log.min_value);
+            const max = parseFloat(log.max_value);
+
+            if (isNaN(value)) return '<span class="badge badge-secondary">No Data</span>';
+
+            if (!isNaN(min) && value < min) {
+                return '<span class="badge badge-danger">Below Min</span>';
+            }
+            if (!isNaN(max) && value > max) {
+                return '<span class="badge badge-danger">Above Max</span>';
+            }
+            return '<span class="badge badge-success">Pass</span>';
+        }
+
+        function getCCPStatusBadgeSimple(value, threshold, isMax) {
+            if (!value && value !== 0) return '<span class="badge badge-secondary">No Data</span>';
+
+            if (isMax) {
+                return value <= threshold
+                    ? '<span class="badge badge-success">Pass</span>'
+                    : '<span class="badge badge-danger">Fail</span>';
+            }
+            return value >= threshold
+                ? '<span class="badge badge-success">Pass</span>'
+                : '<span class="badge badge-danger">Fail</span>';
+        }
+
+        function toggleRejectReason() {
+            const isRejected = document.querySelector('[name="verifyDecision"]:checked').value === 'rejected';
+            document.getElementById('rejectReasonGroup').style.display = isRejected ? 'block' : 'none';
+            document.getElementById('rejectReason').required = isRejected;
+        }
+
+        async function submitVerification(e) {
+            e.preventDefault();
+
+            const btn = document.getElementById('submitVerifyBtn');
+            btn.disabled = true;
+
+            const decision = document.querySelector('[name="verifyDecision"]:checked').value;
+
+            try {
+                const data = {
+                    batch_id: document.getElementById('verifyBatchId').value,
+                    status: decision,
+                    notes: document.getElementById('verifyNotes').value
+                };
+
+                if (decision === 'rejected') {
+                    data.rejection_reason = document.getElementById('rejectReason').value;
+                }
+
+                const response = await BatchReleaseService.verify(data.batch_id, data);
+
+                if (response.success) {
+                    showNotification('Success', decision === 'released' ? 'Batch released successfully' : 'Batch rejected', 'success');
+                    closeModal('verifyModal');
+                    loadPendingBatches();
+                    loadStats();
+                }
+            } catch (error) {
+                showNotification('Error', error.message || 'Failed to submit verification', 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function viewBatch(batchId) {
+            try {
+                const response = await BatchReleaseService.getById(batchId);
+
+                if (response.success) {
+                    const b = response.data;
+
+                    document.getElementById('viewBatchNumber').textContent = b.batch_number;
+                    document.getElementById('viewProductName').textContent = b.product_name || '-';
+                    document.getElementById('viewBatchQuantity').textContent = `${b.quantity_produced?.toLocaleString() || '-'} ${b.unit || ''}`;
+
+                    // Status badge
+                    const statusBadges = {
+                        'released': '<span class="badge badge-success">Released</span>',
+                        'rejected': '<span class="badge badge-danger">Rejected</span>',
+                        'pending_qc': '<span class="badge badge-warning">Pending</span>'
+                    };
+                    document.getElementById('viewBatchStatus').innerHTML = statusBadges[b.status] || '-';
+
+                    document.getElementById('viewProdDate').textContent = b.production_date ? formatDate(b.production_date) : '-';
+                    document.getElementById('viewExpDate').textContent = b.expiry_date ? formatDate(b.expiry_date) : '-';
+                    document.getElementById('viewProducedBy').textContent = b.produced_by_name || '-';
+
+                    // CCP Table
+                    const ccpLogs = b.ccp_logs || [];
+                    const ccpTable = document.getElementById('viewCCPTable');
+
+                    if (ccpLogs.length > 0) {
+                        ccpTable.innerHTML = ccpLogs.map(log => `
+                            <tr>
+                                <td>${log.control_point_name || '-'}</td>
+                                <td>${log.recorded_value}${log.unit ? ' ' + log.unit : ''}</td>
+                                <td>${log.recorded_at ? formatDateTime(log.recorded_at) : '-'}</td>
+                                <td>${log.recorded_by_name || '-'}</td>
+                            </tr>
+                        `).join('');
+                    } else {
+                        ccpTable.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No CCP logs recorded</td></tr>';
+                    }
+
+                    // Verification section
+                    if (b.status === 'released' || b.status === 'rejected') {
+                        document.getElementById('viewVerificationSection').style.display = 'block';
+                        document.getElementById('viewVerifiedBy').textContent = b.verified_by_name || '-';
+                        document.getElementById('viewVerifiedAt').textContent = b.released_at ? formatDateTime(b.released_at) : '-';
+
+                        if (b.notes) {
+                            document.getElementById('viewVerifyNotes').style.display = 'block';
+                            document.getElementById('viewVerifyNotesText').textContent = b.notes;
+                        } else {
+                            document.getElementById('viewVerifyNotes').style.display = 'none';
+                        }
+                    } else {
+                        document.getElementById('viewVerificationSection').style.display = 'none';
+                    }
+
+                    openModal('viewBatchModal');
+                }
+            } catch (error) {
+                showNotification('Error', 'Failed to load batch details', 'error');
+            }
+        }
+
+        // Modal functions
+        function openModal(id) {
+            document.getElementById(id).classList.add('active');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+
+        // Utility functions
+        function formatDateTime(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-PH', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleDateString('en-PH', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
+        }
+
+        function formatTime(timeStr) {
+            if (!timeStr) return '-';
+            const [hours, minutes] = timeStr.split(':');
+            const h = parseInt(hours);
+            const ampm = h >= 12 ? 'PM' : 'AM';
+            const hour12 = h % 12 || 12;
+            return `${hour12}:${minutes} ${ampm}`;
+        }
+
+        function formatCurrency(amount) {
+            if (amount === null || amount === undefined) return '-';
+            return '₱' + parseFloat(amount).toLocaleString('en-PH', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        function showNotification(title, message, type = 'info') {
+            console.log(`[${type.toUpperCase()}] ${title}: ${message}`);
+
+            let container = document.getElementById('toastContainer');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'toastContainer';
+                container.className = 'toast-container';
+                container.style.cssText = 'position: fixed; top: 1rem; right: 1rem; z-index: 9999;';
+                document.body.appendChild(container);
+            }
+
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.style.cssText = 'padding: 1rem; margin-bottom: 0.5rem; border-radius: 0.5rem; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 0.5rem;';
+
+            const colors = { success: '#22c55e', error: '#ef4444', warning: '#f59e0b', info: '#3b82f6' };
+            toast.style.borderLeft = `4px solid ${colors[type] || colors.info}`;
+
+            toast.innerHTML = `
+                <div>
+                    <div style="font-weight: 600;">${title}</div>
+                    <div style="font-size: 0.875rem; color: #64748b;">${message}</div>
+                </div>
+            `;
+
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Initial load
+        loadPendingBatches();
+        loadStats();
+    </script>
+
+    <style>
+        .tab-nav {
+            display: flex;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        .tab-btn {
+            padding: 1rem 1.5rem;
+            background: none;
+            border: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--gray-600);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all var(--transition-fast);
+        }
+
+        .tab-btn:hover {
+            color: var(--primary-600);
+            background: var(--gray-50);
+        }
+
+        .tab-btn.active {
+            color: var(--primary-600);
+            border-bottom-color: var(--primary-600);
+        }
+
+        .batch-card {
+            transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+        }
+
+        .batch-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .checkbox-item,
+        .radio-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.5rem 0;
+            cursor: pointer;
+        }
+
+        .checkbox-item input,
+        .radio-item input {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--primary-600);
+        }
+
+        .checklist {
+            background: var(--gray-50);
+            padding: 1rem;
+            border-radius: var(--border-radius);
+        }
+
+        .ccp-section {
+            background: var(--gray-50);
+            padding: 1rem;
+            border-radius: var(--border-radius);
+        }
+
+        .badge-sm {
+            font-size: 0.7rem;
+            padding: 0.2rem 0.5rem;
+        }
+
+        .col-span-2 {
+            grid-column: span 2;
+        }
+    </style>
+</body>
+
+</html>

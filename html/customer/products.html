@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Products - Customer Portal | Highland Fresh</title>
+    
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .product-card { @apply transition-all duration-200 hover:-translate-y-1 hover:shadow-lg; }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-cow text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Customer Portal</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <!-- Main Menu -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Shop -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Shop</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="products.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-boxes w-5 text-center"></i>
+                            <span class="flex-1">Products</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="cart.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-shopping-cart w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Shopping Cart</span>
+                            <span class="badge badge-sm badge-primary" id="sidebarCartBadge">0</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Orders -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">My Orders</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="orders.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-receipt w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Order History</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+        
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">CS</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Customer</p>
+                    <p class="text-xs text-base-content/60 truncate">Customer Portal</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a href="dashboard.html"><i class="fas fa-user-cog w-4"></i> Profile</a></li>
+                        <li class="border-t border-base-300 mt-1 pt-1">
+                            <a onclick="CustomerService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold text-base-content">Products</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <!-- Search -->
+                <div class="form-control">
+                    <label class="input input-bordered input-sm flex items-center gap-2 w-48 md:w-64">
+                        <i class="fas fa-search text-base-content/40"></i>
+                        <input type="text" placeholder="Search products..." class="grow" id="searchInput" />
+                    </label>
+                </div>
+                
+                <!-- Cart -->
+                <a href="cart.html" class="btn btn-ghost btn-circle">
+                    <div class="indicator">
+                        <i class="fas fa-shopping-cart text-lg"></i>
+                        <span class="indicator-item badge badge-primary badge-xs" id="cartBadge">0</span>
+                    </div>
+                </a>
+            </div>
+        </header>
+        
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+            
+            <!-- Filters -->
+            <div class="flex flex-col md:flex-row gap-4 mb-6">
+                <!-- Category Filter -->
+                <div class="flex-1">
+                    <div class="flex flex-wrap gap-2" id="categoryFilters">
+                        <button class="btn btn-sm btn-primary" data-category="" onclick="filterByCategory('')">
+                            All Products
+                        </button>
+                        <!-- Categories will be loaded dynamically -->
+                    </div>
+                </div>
+                
+                <!-- Sort -->
+                <div class="flex items-center gap-2">
+                    <span class="text-sm text-base-content/60">Sort by:</span>
+                    <select class="select select-bordered select-sm" id="sortSelect" onchange="sortProducts()">
+                        <option value="name_asc">Name (A-Z)</option>
+                        <option value="name_desc">Name (Z-A)</option>
+                        <option value="price_asc">Price (Low to High)</option>
+                        <option value="price_desc">Price (High to Low)</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Products Grid -->
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4" id="productsGrid">
+                <!-- Loading skeleton -->
+                <div class="animate-pulse">
+                    <div class="h-48 bg-base-300 rounded-xl"></div>
+                    <div class="h-4 bg-base-300 rounded mt-2"></div>
+                    <div class="h-4 bg-base-300 rounded mt-1 w-2/3"></div>
+                </div>
+                <div class="animate-pulse">
+                    <div class="h-48 bg-base-300 rounded-xl"></div>
+                    <div class="h-4 bg-base-300 rounded mt-2"></div>
+                    <div class="h-4 bg-base-300 rounded mt-1 w-2/3"></div>
+                </div>
+                <div class="animate-pulse">
+                    <div class="h-48 bg-base-300 rounded-xl"></div>
+                    <div class="h-4 bg-base-300 rounded mt-2"></div>
+                    <div class="h-4 bg-base-300 rounded mt-1 w-2/3"></div>
+                </div>
+                <div class="animate-pulse">
+                    <div class="h-48 bg-base-300 rounded-xl"></div>
+                    <div class="h-4 bg-base-300 rounded mt-2"></div>
+                    <div class="h-4 bg-base-300 rounded mt-1 w-2/3"></div>
+                </div>
+            </div>
+            
+            <!-- Load More -->
+            <div class="text-center mt-8" id="loadMoreContainer" style="display: none;">
+                <button class="btn btn-outline btn-primary" onclick="loadMoreProducts()" id="loadMoreBtn">
+                    <i class="fas fa-spinner fa-spin mr-2 hidden" id="loadMoreSpinner"></i>
+                    Load More Products
+                </button>
+            </div>
+            
+            <!-- Empty State -->
+            <div id="emptyState" class="hidden text-center py-12">
+                <i class="fas fa-box-open text-6xl text-base-content/20 mb-4"></i>
+                <h3 class="text-xl font-semibold mb-2">No products found</h3>
+                <p class="text-base-content/60">Try adjusting your search or filter.</p>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Product Detail Modal -->
+    <dialog id="productModal" class="modal">
+        <div class="modal-box max-w-2xl">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            
+            <div class="flex flex-col md:flex-row gap-6">
+                <!-- Product Image -->
+                <div class="w-full md:w-1/2">
+                    <div class="aspect-square bg-base-200 rounded-xl flex items-center justify-center overflow-hidden" id="modalProductImage">
+                        <i class="fas fa-box text-6xl text-base-content/20"></i>
+                    </div>
+                </div>
+                
+                <!-- Product Info -->
+                <div class="w-full md:w-1/2">
+                    <span class="badge badge-ghost mb-2" id="modalProductCategory">Category</span>
+                    <h3 class="text-2xl font-bold mb-2" id="modalProductName">Product Name</h3>
+                    <p class="text-base-content/60 mb-4" id="modalProductDescription">Product description goes here.</p>
+                    
+                    <div class="flex items-center gap-2 mb-4">
+                        <span class="text-3xl font-bold text-primary" id="modalProductPrice">₱0.00</span>
+                        <span class="text-base-content/60" id="modalProductUnit">per unit</span>
+                    </div>
+                    
+                    <div class="flex items-center gap-2 mb-4">
+                        <span class="badge badge-success" id="modalStockBadge">
+                            <i class="fas fa-check mr-1"></i> In Stock
+                        </span>
+                    </div>
+                    
+                    <!-- Quantity -->
+                    <div class="form-control mb-4">
+                        <label class="label"><span class="label-text">Quantity</span></label>
+                        <div class="flex items-center gap-2">
+                            <button class="btn btn-outline btn-square" onclick="decrementQuantity()">
+                                <i class="fas fa-minus"></i>
+                            </button>
+                            <input type="number" id="modalQuantity" class="input input-bordered w-20 text-center" value="1" min="1" />
+                            <button class="btn btn-outline btn-square" onclick="incrementQuantity()">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Add to Cart -->
+                    <button class="btn btn-primary btn-block" onclick="addToCartFromModal()">
+                        <i class="fas fa-shopping-cart mr-2"></i>
+                        Add to Cart
+                    </button>
+                </div>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
+    
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="/HighlandFreshAppV4/js/config/api.js"></script>
+    <script src="/HighlandFreshAppV4/js/customer/customer.api.js"></script>
+    <script src="/HighlandFreshAppV4/js/customer/customer.service.js"></script>
+    
+    <script>
+        // State
+        let allProducts = [];
+        let filteredProducts = [];
+        let currentCategory = '';
+        let currentOffset = 0;
+        let hasMore = false;
+        let selectedProduct = null;
+        const LIMIT = 20;
+        
+        // Check authentication (optional for product browsing)
+        const customer = CustomerService.getCurrentCustomer();
+        if (customer) {
+            document.getElementById('sidebarUserName').textContent = customer.name || 'Customer';
+            document.getElementById('userInitials').textContent = (customer.name || 'CS').substring(0, 2).toUpperCase();
+        }
+        
+        // Toggle sidebar
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+        
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', async () => {
+            CustomerService.updateCartBadge();
+            updateSidebarCartBadge();
+            
+            // Check for URL params
+            const urlParams = new URLSearchParams(window.location.search);
+            const searchQuery = urlParams.get('search');
+            const productId = urlParams.get('id');
+            
+            if (searchQuery) {
+                document.getElementById('searchInput').value = searchQuery;
+            }
+            
+            await loadCategories();
+            await loadProducts(searchQuery);
+            
+            if (productId) {
+                await showProductDetail(productId);
+            }
+        });
+        
+        async function loadCategories() {
+            try {
+                const response = await CustomerService.getCategories();
+                
+                if (response.success && response.data) {
+                    const container = document.getElementById('categoryFilters');
+                    
+                    response.data.forEach(cat => {
+                        const btn = document.createElement('button');
+                        btn.className = 'btn btn-sm btn-ghost';
+                        btn.dataset.category = cat.category;
+                        btn.textContent = `${cat.category} (${cat.product_count})`;
+                        btn.onclick = () => filterByCategory(cat.category);
+                        container.appendChild(btn);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading categories:', error);
+            }
+        }
+        
+        async function loadProducts(search = null) {
+            const grid = document.getElementById('productsGrid');
+            
+            // Show loading
+            grid.innerHTML = Array(8).fill().map(() => `
+                <div class="animate-pulse">
+                    <div class="h-48 bg-base-300 rounded-xl"></div>
+                    <div class="h-4 bg-base-300 rounded mt-2"></div>
+                    <div class="h-4 bg-base-300 rounded mt-1 w-2/3"></div>
+                </div>
+            `).join('');
+            
+            try {
+                const params = {
+                    limit: LIMIT,
+                    offset: 0
+                };
+                
+                if (currentCategory) {
+                    params.category = currentCategory;
+                }
+                
+                if (search) {
+                    params.search = search;
+                }
+                
+                const response = await CustomerService.getProducts(params);
+                
+                if (response.success) {
+                    allProducts = response.data.products || [];
+                    filteredProducts = [...allProducts];
+                    hasMore = response.data.pagination?.has_more || false;
+                    currentOffset = LIMIT;
+                    
+                    renderProducts();
+                    
+                    document.getElementById('loadMoreContainer').style.display = hasMore ? 'block' : 'none';
+                }
+            } catch (error) {
+                console.error('Error loading products:', error);
+                grid.innerHTML = `
+                    <div class="col-span-full text-center py-12 text-error">
+                        <i class="fas fa-exclamation-circle text-4xl mb-2"></i>
+                        <p>Error loading products. Please try again.</p>
+                    </div>
+                `;
+            }
+        }
+        
+        async function loadMoreProducts() {
+            const spinner = document.getElementById('loadMoreSpinner');
+            const btn = document.getElementById('loadMoreBtn');
+            
+            spinner.classList.remove('hidden');
+            btn.disabled = true;
+            
+            try {
+                const params = {
+                    limit: LIMIT,
+                    offset: currentOffset
+                };
+                
+                if (currentCategory) {
+                    params.category = currentCategory;
+                }
+                
+                const search = document.getElementById('searchInput').value;
+                if (search) {
+                    params.search = search;
+                }
+                
+                const response = await CustomerService.getProducts(params);
+                
+                if (response.success) {
+                    const newProducts = response.data.products || [];
+                    allProducts = [...allProducts, ...newProducts];
+                    filteredProducts = [...allProducts];
+                    hasMore = response.data.pagination?.has_more || false;
+                    currentOffset += LIMIT;
+                    
+                    renderProducts();
+                    
+                    document.getElementById('loadMoreContainer').style.display = hasMore ? 'block' : 'none';
+                }
+            } catch (error) {
+                console.error('Error loading more products:', error);
+            } finally {
+                spinner.classList.add('hidden');
+                btn.disabled = false;
+            }
+        }
+        
+        function renderProducts() {
+            const grid = document.getElementById('productsGrid');
+            const emptyState = document.getElementById('emptyState');
+            
+            if (filteredProducts.length === 0) {
+                grid.innerHTML = '';
+                emptyState.classList.remove('hidden');
+                return;
+            }
+            
+            emptyState.classList.add('hidden');
+            
+            grid.innerHTML = filteredProducts.map(product => `
+                <div class="product-card card bg-base-100 border border-base-300 cursor-pointer" onclick="showProductDetail(${product.id})">
+                    <figure class="h-40 bg-base-200 relative">
+                        ${product.image_url 
+                            ? `<img src="${product.image_url}" alt="${escapeHtml(product.name)}" class="w-full h-full object-cover" />`
+                            : `<i class="fas fa-box text-4xl text-base-content/20"></i>`
+                        }
+                        ${product.stock_available <= 0 
+                            ? `<div class="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                <span class="badge badge-error">Out of Stock</span>
+                               </div>`
+                            : ''
+                        }
+                    </figure>
+                    <div class="card-body p-3">
+                        <span class="text-xs text-base-content/60">${product.category || 'Dairy'}</span>
+                        <h4 class="font-medium text-sm truncate" title="${escapeHtml(product.name)}">${product.name}</h4>
+                        <div class="flex items-center justify-between mt-2">
+                            <span class="text-primary font-bold">${CustomerService.formatCurrency(product.price)}</span>
+                            <button onclick="event.stopPropagation(); quickAddToCart(${JSON.stringify(product).replace(/"/g, '&quot;')})" 
+                                    class="btn btn-primary btn-xs btn-circle ${product.stock_available <= 0 ? 'btn-disabled' : ''}">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function filterByCategory(category) {
+            currentCategory = category;
+            currentOffset = 0;
+            
+            // Update button states
+            document.querySelectorAll('#categoryFilters button').forEach(btn => {
+                if (btn.dataset.category === category) {
+                    btn.classList.remove('btn-ghost');
+                    btn.classList.add('btn-primary');
+                } else {
+                    btn.classList.remove('btn-primary');
+                    btn.classList.add('btn-ghost');
+                }
+            });
+            
+            loadProducts(document.getElementById('searchInput').value);
+        }
+        
+        function sortProducts() {
+            const sortBy = document.getElementById('sortSelect').value;
+            
+            filteredProducts.sort((a, b) => {
+                switch (sortBy) {
+                    case 'name_asc':
+                        return a.name.localeCompare(b.name);
+                    case 'name_desc':
+                        return b.name.localeCompare(a.name);
+                    case 'price_asc':
+                        return a.price - b.price;
+                    case 'price_desc':
+                        return b.price - a.price;
+                    default:
+                        return 0;
+                }
+            });
+            
+            renderProducts();
+        }
+        
+        async function showProductDetail(productId) {
+            try {
+                const response = await CustomerService.getProduct(productId);
+                
+                if (response.success) {
+                    selectedProduct = response.data;
+                    
+                    // Update modal content
+                    document.getElementById('modalProductCategory').textContent = selectedProduct.category || 'Dairy';
+                    document.getElementById('modalProductName').textContent = selectedProduct.name;
+                    document.getElementById('modalProductDescription').textContent = selectedProduct.description || 'Fresh dairy product from Highland Fresh.';
+                    document.getElementById('modalProductPrice').textContent = CustomerService.formatCurrency(selectedProduct.price);
+                    document.getElementById('modalProductUnit').textContent = `per ${selectedProduct.unit || 'unit'}`;
+                    document.getElementById('modalQuantity').value = 1;
+                    
+                    // Image
+                    const imageContainer = document.getElementById('modalProductImage');
+                    if (selectedProduct.image_url) {
+                        imageContainer.innerHTML = `<img src="${selectedProduct.image_url}" alt="${escapeHtml(selectedProduct.name)}" class="w-full h-full object-cover" />`;
+                    } else {
+                        imageContainer.innerHTML = `<i class="fas fa-box text-6xl text-base-content/20"></i>`;
+                    }
+                    
+                    // Stock status
+                    const stockBadge = document.getElementById('modalStockBadge');
+                    if (selectedProduct.stock_available > 0) {
+                        stockBadge.className = 'badge badge-success';
+                        stockBadge.innerHTML = `<i class="fas fa-check mr-1"></i> In Stock (${selectedProduct.stock_available} available)`;
+                    } else {
+                        stockBadge.className = 'badge badge-error';
+                        stockBadge.innerHTML = `<i class="fas fa-times mr-1"></i> Out of Stock`;
+                    }
+                    
+                    document.getElementById('productModal').showModal();
+                }
+            } catch (error) {
+                console.error('Error loading product details:', error);
+                showToast('Error loading product details', 'error');
+            }
+        }
+        
+        function incrementQuantity() {
+            const input = document.getElementById('modalQuantity');
+            input.value = parseInt(input.value) + 1;
+        }
+        
+        function decrementQuantity() {
+            const input = document.getElementById('modalQuantity');
+            if (parseInt(input.value) > 1) {
+                input.value = parseInt(input.value) - 1;
+            }
+        }
+        
+        function addToCartFromModal() {
+            if (!selectedProduct) return;
+            
+            if (selectedProduct.stock_available <= 0) {
+                showToast('This product is out of stock', 'error');
+                return;
+            }
+            
+            const quantity = parseInt(document.getElementById('modalQuantity').value) || 1;
+            
+            CustomerService.addToCart({
+                id: selectedProduct.id,
+                product_code: selectedProduct.product_code,
+                name: selectedProduct.name,
+                price: selectedProduct.price,
+                unit: selectedProduct.unit,
+                image_url: selectedProduct.image_url
+            }, quantity);
+            
+            updateCartBadges();
+            showToast(`${quantity}x ${selectedProduct.name} added to cart`);
+            document.getElementById('productModal').close();
+        }
+        
+        function quickAddToCart(product) {
+            if (product.stock_available <= 0) {
+                showToast('This product is out of stock', 'error');
+                return;
+            }
+            
+            CustomerService.addToCart({
+                id: product.id,
+                product_code: product.product_code,
+                name: product.name,
+                price: product.price,
+                unit: product.unit,
+                image_url: product.image_url
+            }, 1);
+            
+            updateCartBadges();
+            showToast(`${product.name} added to cart`);
+        }
+        
+        function updateCartBadges() {
+            const totals = CustomerService.getCartTotals();
+            document.getElementById('cartBadge').textContent = totals.itemCount;
+            document.getElementById('sidebarCartBadge').textContent = totals.itemCount;
+        }
+        
+        function updateSidebarCartBadge() {
+            const totals = CustomerService.getCartTotals();
+            document.getElementById('sidebarCartBadge').textContent = totals.itemCount;
+        }
+        
+        // Search functionality
+        let searchTimeout;
+        document.getElementById('searchInput').addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                currentOffset = 0;
+                loadProducts(this.value);
+            }, 300);
+        });
+        
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `alert alert-${type} fixed bottom-4 right-4 w-auto max-w-sm z-50 shadow-lg`;
+            toast.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>
+                <span>${message}</span>
+            `;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        function escapeHtml(str) {
+            if (!str) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

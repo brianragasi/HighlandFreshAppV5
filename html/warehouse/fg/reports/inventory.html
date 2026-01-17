@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Report - Warehouse FG | Highland Fresh</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } }
+        }
+    </script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        @media print {
+            .no-print { display: none !important; }
+            .lg\\:ml-72 { margin-left: 0 !important; }
+        }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col no-print">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-secondary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-boxes-stacked text-secondary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Warehouse - Finished Goods</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="../dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-th-large w-5 text-center text-base-content/60"></i><span>Dashboard</span>
+                    </a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="../inventory.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-boxes w-5 text-center text-base-content/60"></i><span>FG Inventory</span>
+                    </a></li>
+                    <li><a href="../chillers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-temperature-low w-5 text-center text-base-content/60"></i><span>Chiller Storage</span>
+                    </a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Operations</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="../receiving.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-truck-loading w-5 text-center text-base-content/60"></i><span>Receive from Production</span>
+                    </a></li>
+                    <li><a href="../delivery_receipts.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-file-invoice w-5 text-center text-base-content/60"></i><span>Delivery Receipts</span>
+                    </a></li>
+                    <li><a href="../dispatch.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-truck w-5 text-center text-base-content/60"></i><span>Dispatch</span>
+                    </a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Customers</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="../customers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-users w-5 text-center text-base-content/60"></i><span>Customer List</span>
+                    </a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="inventory.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-secondary text-secondary-content">
+                        <i class="fas fa-chart-bar w-5 text-center"></i><span>Inventory Report</span>
+                    </a></li>
+                    <li><a href="dispatch.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-shipping-fast w-5 text-center text-base-content/60"></i><span>Dispatch Report</span>
+                    </a></li>
+                </ul>
+            </div>
+        </nav>
+        
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-secondary text-secondary-content">
+                        <span class="text-sm font-semibold" id="userInitials">FG</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Warehouse Staff</p>
+                    <p class="text-xs text-base-content/60 truncate">Finished Goods</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square"><i class="fas fa-ellipsis-v"></i></label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6 no-print">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button>
+            </div>
+            <div class="flex-1">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-chart-bar text-secondary"></i>
+                    <span class="font-semibold">Inventory Report</span>
+                </div>
+            </div>
+            <div class="flex-none gap-2">
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+        
+        <main class="flex-1 p-4 lg:p-6">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                <div>
+                    <h1 class="text-2xl font-bold text-base-content">Inventory Report</h1>
+                    <p class="text-base-content/60">Generate and export FG inventory reports</p>
+                </div>
+            </div>
+
+            <!-- Report Filters -->
+            <div class="card bg-base-100 shadow-sm mb-6 no-print">
+                <div class="card-body p-4">
+                    <h3 class="font-semibold mb-4 flex items-center gap-2">
+                        <i class="fas fa-filter text-secondary"></i>
+                        Report Filters
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div class="form-control">
+                            <label class="label"><span class="label-text">Report Date</span></label>
+                            <input type="date" id="reportDate" class="input input-bordered input-sm">
+                        </div>
+                        <div class="form-control">
+                            <label class="label"><span class="label-text">Product Category</span></label>
+                            <select id="filterCategory" class="select select-bordered select-sm">
+                                <option value="">All Categories</option>
+                                <option value="pasteurized">Pasteurized Milk</option>
+                                <option value="flavored">Flavored Milk</option>
+                                <option value="cheese">Cheese</option>
+                                <option value="butter">Butter</option>
+                                <option value="yogurt">Yogurt</option>
+                            </select>
+                        </div>
+                        <div class="form-control">
+                            <label class="label"><span class="label-text">Chiller Location</span></label>
+                            <select id="filterChiller" class="select select-bordered select-sm">
+                                <option value="">All Chillers</option>
+                            </select>
+                        </div>
+                        <div class="form-control">
+                            <label class="label"><span class="label-text">Stock Status</span></label>
+                            <select id="filterStatus" class="select select-bordered select-sm">
+                                <option value="">All Status</option>
+                                <option value="normal">Normal</option>
+                                <option value="low">Low Stock</option>
+                                <option value="expired">Expired/Near Expiry</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap gap-2 mt-4">
+                        <button onclick="generateReport()" class="btn btn-secondary btn-sm">
+                            <i class="fas fa-chart-bar"></i> Generate Report
+                        </button>
+                        <button onclick="exportReport('pdf')" class="btn btn-outline btn-sm">
+                            <i class="fas fa-file-pdf"></i> Export PDF
+                        </button>
+                        <button onclick="exportReport('excel')" class="btn btn-outline btn-success btn-sm">
+                            <i class="fas fa-file-excel"></i> Export Excel
+                        </button>
+                        <button onclick="printReport()" class="btn btn-outline btn-sm">
+                            <i class="fas fa-print"></i> Print
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Report Summary -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="card bg-base-100 shadow-sm">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-secondary/10 flex items-center justify-center">
+                                <i class="fas fa-boxes text-secondary"></i>
+                            </div>
+                            <div>
+                                <p class="text-xs text-base-content/60">Total SKUs</p>
+                                <p class="text-xl font-bold" id="totalSKUs">0</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card bg-base-100 shadow-sm">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-info/10 flex items-center justify-center">
+                                <i class="fas fa-layer-group text-info"></i>
+                            </div>
+                            <div>
+                                <p class="text-xs text-base-content/60">Total Units</p>
+                                <p class="text-xl font-bold" id="totalUnits">0</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card bg-base-100 shadow-sm">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
+                                <i class="fas fa-peso-sign text-success"></i>
+                            </div>
+                            <div>
+                                <p class="text-xs text-base-content/60">Total Value</p>
+                                <p class="text-xl font-bold" id="totalValue">₱0</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card bg-base-100 shadow-sm">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center">
+                                <i class="fas fa-exclamation-triangle text-warning"></i>
+                            </div>
+                            <div>
+                                <p class="text-xs text-base-content/60">Near Expiry</p>
+                                <p class="text-xl font-bold" id="nearExpiry">0</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Report Table -->
+            <div class="card bg-base-100 shadow-sm" id="reportCard">
+                <div class="card-body p-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-semibold flex items-center gap-2">
+                            <i class="fas fa-table text-secondary"></i>
+                            Inventory Report - <span id="reportDateLabel"></span>
+                        </h3>
+                    </div>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="table table-zebra table-sm" id="reportTable">
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th>SKU</th>
+                                    <th>Category</th>
+                                    <th>Batch Code</th>
+                                    <th>Chiller</th>
+                                    <th>Quantity</th>
+                                    <th>Unit Price</th>
+                                    <th>Total Value</th>
+                                    <th>Expiry Date</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="reportBody">
+                                <tr>
+                                    <td colspan="10" class="text-center py-8 text-base-content/60">
+                                        <i class="fas fa-chart-bar fa-3x mb-4 opacity-30"></i>
+                                        <p>Select filters and generate report</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                            <tfoot id="reportFooter" class="hidden">
+                                <tr class="font-bold bg-base-200">
+                                    <td colspan="5">TOTAL</td>
+                                    <td id="footerQuantity"></td>
+                                    <td></td>
+                                    <td id="footerValue"></td>
+                                    <td colspan="2"></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- By Category Summary -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6" id="categorySummary" style="display:none;">
+                <div class="card bg-base-100 shadow-sm">
+                    <div class="card-body p-4">
+                        <h3 class="font-semibold flex items-center gap-2 mb-4">
+                            <i class="fas fa-chart-pie text-secondary"></i>
+                            By Category
+                        </h3>
+                        <div id="categoryBreakdown">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+                <div class="card bg-base-100 shadow-sm">
+                    <div class="card-body p-4">
+                        <h3 class="font-semibold flex items-center gap-2 mb-4">
+                            <i class="fas fa-snowflake text-info"></i>
+                            By Chiller
+                        </h3>
+                        <div id="chillerBreakdown">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../../../js/config/api.js"></script>
+    <script src="../../../../js/config/auth.js"></script>
+    <script src="../../../../js/warehouse/fg.service.js"></script>
+    <script>
+        let reportData = [];
+
+        // Sidebar toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+
+        // Theme toggle
+        document.getElementById('themeToggle')?.addEventListener('change', function() {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+        });
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await requireAuth(['warehouse_fg', 'general_manager']);
+            
+            // Set default date to today
+            document.getElementById('reportDate').value = new Date().toISOString().split('T')[0];
+            
+            // Load chillers for filter
+            loadChillers();
+        });
+
+        async function loadChillers() {
+            try {
+                const response = await FGService.getChillers();
+                if (response.success) {
+                    const select = document.getElementById('filterChiller');
+                    response.data.forEach(chiller => {
+                        const option = document.createElement('option');
+                        option.value = chiller.id;
+                        option.textContent = chiller.name;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading chillers:', error);
+            }
+        }
+
+        async function generateReport() {
+            const reportDate = document.getElementById('reportDate').value;
+            const category = document.getElementById('filterCategory').value;
+            const chillerId = document.getElementById('filterChiller').value;
+            const status = document.getElementById('filterStatus').value;
+
+            document.getElementById('reportDateLabel').textContent = formatDate(reportDate);
+
+            try {
+                showLoading();
+                
+                // Get inventory data with filters
+                const params = {};
+                if (chillerId) params.chiller_id = chillerId;
+                
+                const response = await FGService.getInventory(params);
+                
+                if (response.success) {
+                    let data = response.data;
+                    
+                    // Apply client-side filters
+                    if (category) {
+                        data = data.filter(item => item.category === category);
+                    }
+                    
+                    if (status) {
+                        const today = new Date();
+                        data = data.filter(item => {
+                            const expiry = new Date(item.expiry_date);
+                            const daysUntilExpiry = Math.floor((expiry - today) / (1000 * 60 * 60 * 24));
+                            
+                            if (status === 'expired') return daysUntilExpiry <= 7;
+                            if (status === 'low') return item.quantity <= (item.reorder_level || 10);
+                            if (status === 'normal') return daysUntilExpiry > 7 && item.quantity > (item.reorder_level || 10);
+                            return true;
+                        });
+                    }
+                    
+                    reportData = data;
+                    renderReport(data);
+                    updateSummary(data);
+                    document.getElementById('categorySummary').style.display = 'grid';
+                }
+            } catch (error) {
+                showToast('Error generating report', 'error');
+                console.error('Error:', error);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function renderReport(data) {
+            const tbody = document.getElementById('reportBody');
+            const footer = document.getElementById('reportFooter');
+            
+            if (data.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="10" class="text-center py-8 text-gray-500">
+                            No inventory data found for selected filters
+                        </td>
+                    </tr>`;
+                footer.classList.add('hidden');
+                return;
+            }
+            
+            let totalQuantity = 0;
+            let totalValue = 0;
+            
+            tbody.innerHTML = data.map(item => {
+                const unitPrice = item.unit_price || 0;
+                const value = item.quantity * unitPrice;
+                totalQuantity += item.quantity;
+                totalValue += value;
+                
+                const today = new Date();
+                const expiry = new Date(item.expiry_date);
+                const daysUntilExpiry = Math.floor((expiry - today) / (1000 * 60 * 60 * 24));
+                
+                let statusBadge = '';
+                if (daysUntilExpiry < 0) {
+                    statusBadge = '<span class="badge badge-error">Expired</span>';
+                } else if (daysUntilExpiry <= 3) {
+                    statusBadge = '<span class="badge badge-error">Critical</span>';
+                } else if (daysUntilExpiry <= 7) {
+                    statusBadge = '<span class="badge badge-warning">Near Expiry</span>';
+                } else {
+                    statusBadge = '<span class="badge badge-success">Good</span>';
+                }
+                
+                return `
+                    <tr>
+                        <td class="font-medium">${item.product_name || 'N/A'}</td>
+                        <td><code class="text-xs bg-base-200 px-1.5 py-0.5 rounded">${item.product_sku || item.sku || 'N/A'}</code></td>
+                        <td>${item.category || 'N/A'}</td>
+                        <td><code class="text-xs bg-base-200 px-1.5 py-0.5 rounded">${item.batch_code}</code></td>
+                        <td>${item.chiller_name || 'Unassigned'}</td>
+                        <td class="font-bold">${item.quantity}</td>
+                        <td>₱${formatNumber(unitPrice)}</td>
+                        <td class="font-bold">₱${formatNumber(value)}</td>
+                        <td>${formatDate(item.expiry_date)}</td>
+                        <td>${statusBadge}</td>
+                    </tr>`;
+            }).join('');
+            
+            document.getElementById('footerQuantity').textContent = formatNumber(totalQuantity);
+            document.getElementById('footerValue').textContent = '₱' + formatNumber(totalValue);
+            footer.classList.remove('hidden');
+        }
+
+        function updateSummary(data) {
+            const uniqueProducts = new Set(data.map(item => item.product_id));
+            const totalUnits = data.reduce((sum, item) => sum + item.quantity, 0);
+            const totalValue = data.reduce((sum, item) => sum + (item.quantity * (item.unit_price || 0)), 0);
+            
+            const today = new Date();
+            const nearExpiry = data.filter(item => {
+                const expiry = new Date(item.expiry_date);
+                const days = Math.floor((expiry - today) / (1000 * 60 * 60 * 24));
+                return days >= 0 && days <= 7;
+            }).length;
+            
+            document.getElementById('totalSKUs').textContent = uniqueProducts.size;
+            document.getElementById('totalUnits').textContent = formatNumber(totalUnits);
+            document.getElementById('totalValue').textContent = '₱' + formatNumber(totalValue);
+            document.getElementById('nearExpiry').textContent = nearExpiry;
+            
+            // Category breakdown
+            const byCategory = {};
+            data.forEach(item => {
+                const cat = item.category || 'Uncategorized';
+                if (!byCategory[cat]) byCategory[cat] = { count: 0, value: 0 };
+                byCategory[cat].count += item.quantity;
+                byCategory[cat].value += item.quantity * (item.unit_price || 0);
+            });
+            
+            document.getElementById('categoryBreakdown').innerHTML = Object.entries(byCategory)
+                .map(([cat, data]) => `
+                    <div class="flex justify-between items-center py-2 border-b">
+                        <span class="font-medium">${cat}</span>
+                        <div class="text-right">
+                            <span class="badge badge-secondary">${formatNumber(data.count)} units</span>
+                            <span class="text-sm text-gray-500 ml-2">₱${formatNumber(data.value)}</span>
+                        </div>
+                    </div>
+                `).join('');
+            
+            // Chiller breakdown
+            const byChiller = {};
+            data.forEach(item => {
+                const chiller = item.chiller_name || 'Unassigned';
+                if (!byChiller[chiller]) byChiller[chiller] = { count: 0, items: 0 };
+                byChiller[chiller].count += item.quantity;
+                byChiller[chiller].items++;
+            });
+            
+            document.getElementById('chillerBreakdown').innerHTML = Object.entries(byChiller)
+                .map(([chiller, data]) => `
+                    <div class="flex justify-between items-center py-2 border-b">
+                        <span class="font-medium">${chiller}</span>
+                        <div class="text-right">
+                            <span class="badge badge-info">${formatNumber(data.count)} units</span>
+                            <span class="text-sm text-gray-500 ml-2">${data.items} batches</span>
+                        </div>
+                    </div>
+                `).join('');
+        }
+
+        function exportReport(format) {
+            if (reportData.length === 0) {
+                showToast('Generate report first', 'warning');
+                return;
+            }
+            showToast(`Exporting ${format.toUpperCase()}...`, 'info');
+            // TODO: Implement actual export
+        }
+
+        function printReport() {
+            window.print();
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return 'N/A';
+            return new Date(dateStr).toLocaleDateString('en-PH', {
+                year: 'numeric', month: 'short', day: 'numeric'
+            });
+        }
+
+        function formatNumber(num) {
+            return (num || 0).toLocaleString('en-PH');
+        }
+
+        function showLoading() {
+            document.getElementById('reportBody').innerHTML = `
+                <tr><td colspan="10" class="text-center py-8">
+                    <span class="loading loading-spinner loading-lg"></span>
+                    <p>Generating report...</p>
+                </td></tr>`;
+        }
+
+        function hideLoading() {}
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = {
+                'success': 'alert-success',
+                'error': 'alert-error',
+                'warning': 'alert-warning',
+                'info': 'alert-info'
+            }[type] || 'alert-info';
+
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        function logout() {
+            AuthService.logout();
+        }
+    </script>
+</body>
+</html>
