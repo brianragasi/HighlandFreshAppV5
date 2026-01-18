@@ -109,9 +109,7 @@ function handleGet($db, $currentUser) {
             $batches = $db->prepare("
                 SELECT 
                     tmb.*,
-                    rmi.tank_id as qc_tank_id,
-                    qmt.grade,
-                    qmt.fat_percentage,
+                    rmi.tank_number as qc_tank_id,
                     md.delivery_code,
                     f.farmer_code,
                     CONCAT(f.first_name, ' ', f.last_name) as farmer_name,
@@ -119,8 +117,7 @@ function handleGet($db, $currentUser) {
                     u.last_name as received_by_last
                 FROM tank_milk_batches tmb
                 JOIN raw_milk_inventory rmi ON tmb.raw_milk_inventory_id = rmi.id
-                JOIN qc_milk_tests qmt ON rmi.qc_test_id = qmt.id
-                JOIN milk_deliveries md ON qmt.delivery_id = md.id
+                JOIN milk_deliveries md ON rmi.delivery_id = md.id
                 JOIN farmers f ON md.farmer_id = f.id
                 JOIN users u ON tmb.received_by = u.id
                 WHERE tmb.tank_id = ?
@@ -164,13 +161,9 @@ function handleGet($db, $currentUser) {
                     tmb.remaining_liters,
                     tmb.received_date,
                     tmb.expiry_date,
-                    qmt.grade,
-                    qmt.fat_percentage,
                     DATEDIFF(tmb.expiry_date, CURDATE()) as days_until_expiry
                 FROM tank_milk_batches tmb
                 JOIN storage_tanks st ON tmb.tank_id = st.id
-                JOIN raw_milk_inventory rmi ON tmb.raw_milk_inventory_id = rmi.id
-                JOIN qc_milk_tests qmt ON rmi.qc_test_id = qmt.id
                 WHERE tmb.status IN ('available', 'partially_used')
                 AND tmb.remaining_liters > 0
                 ORDER BY tmb.expiry_date ASC, tmb.received_date ASC, tmb.id ASC
@@ -192,19 +185,17 @@ function handleGet($db, $currentUser) {
             $stmt = $db->prepare("
                 SELECT 
                     rmi.id,
-                    rmi.tank_id as qc_tank_id,
+                    rmi.tank_number as qc_tank_id,
                     rmi.volume_liters,
                     rmi.received_date,
-                    rmi.expiry_date,
-                    qmt.grade,
-                    qmt.fat_percentage,
-                    qmt.test_code,
+                    DATE_ADD(rmi.received_date, INTERVAL 3 DAY) as expiry_date,
                     md.delivery_code,
+                    md.grade,
+                    md.fat_percentage,
                     f.farmer_code,
                     CONCAT(f.first_name, ' ', f.last_name) as farmer_name
                 FROM raw_milk_inventory rmi
-                JOIN qc_milk_tests qmt ON rmi.qc_test_id = qmt.id
-                JOIN milk_deliveries md ON qmt.delivery_id = md.id
+                JOIN milk_deliveries md ON rmi.delivery_id = md.id
                 JOIN farmers f ON md.farmer_id = f.id
                 WHERE rmi.status = 'available'
                 AND NOT EXISTS (
@@ -267,9 +258,8 @@ function handlePost($db, $currentUser) {
                 
                 // Verify raw milk inventory exists and hasn't been stored yet
                 $rawMilk = $db->prepare("
-                    SELECT rmi.*, qmt.grade, qmt.fat_percentage
+                    SELECT rmi.*
                     FROM raw_milk_inventory rmi
-                    JOIN qc_milk_tests qmt ON rmi.qc_test_id = qmt.id
                     WHERE rmi.id = ? AND rmi.status = 'available'
                 ");
                 $rawMilk->execute([$rawMilkInventoryId]);
@@ -295,6 +285,9 @@ function handlePost($db, $currentUser) {
                         ($tankData['capacity_liters'] - $tankData['current_volume']) . 'L');
                 }
                 
+                // Calculate expiry date (3 days from received date)
+                $expiryDate = date('Y-m-d', strtotime($rawMilkData['received_date'] . ' +3 days'));
+                
                 // Create tank milk batch
                 $stmt = $db->prepare("
                     INSERT INTO tank_milk_batches 
@@ -308,7 +301,7 @@ function handlePost($db, $currentUser) {
                     $rawMilkData['volume_liters'],
                     $rawMilkData['volume_liters'],
                     date('Y-m-d'),
-                    $rawMilkData['expiry_date'],
+                    $expiryDate,
                     $currentUser['id']
                 ]);
                 $batchId = $db->lastInsertId();

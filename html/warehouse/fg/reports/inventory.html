@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en" data-theme="emerald">
 <head>
     <meta charset="UTF-8">
@@ -39,8 +39,8 @@
     <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col no-print">
         <div class="p-4 border-b border-base-300">
             <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-secondary/10 rounded-xl flex items-center justify-center">
-                    <i class="fas fa-boxes-stacked text-secondary text-lg"></i>
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-boxes-stacked text-primary text-lg"></i>
                 </div>
                 <div class="flex-1 min-w-0">
                     <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
@@ -97,7 +97,7 @@
             <div>
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
                 <ul class="menu menu-sm p-0 gap-1">
-                    <li><a href="inventory.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-secondary text-secondary-content">
+                    <li><a href="inventory.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
                         <i class="fas fa-chart-bar w-5 text-center"></i><span>Inventory Report</span>
                     </a></li>
                     <li><a href="dispatch.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
@@ -110,7 +110,7 @@
         <div class="p-4 border-t border-base-300">
             <div class="flex items-center gap-3">
                 <div class="avatar placeholder">
-                    <div class="w-10 rounded-xl bg-secondary text-secondary-content">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
                         <span class="text-sm font-semibold" id="userInitials">FG</span>
                     </div>
                 </div>
@@ -136,7 +136,7 @@
             </div>
             <div class="flex-1">
                 <div class="flex items-center gap-2">
-                    <i class="fas fa-chart-bar text-secondary"></i>
+                    <i class="fas fa-chart-bar text-primary"></i>
                     <span class="font-semibold">Inventory Report</span>
                 </div>
             </div>
@@ -161,7 +161,7 @@
             <div class="card bg-base-100 shadow-sm mb-6 no-print">
                 <div class="card-body p-4">
                     <h3 class="font-semibold mb-4 flex items-center gap-2">
-                        <i class="fas fa-filter text-secondary"></i>
+                        <i class="fas fa-filter text-primary"></i>
                         Report Filters
                     </h3>
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -197,7 +197,7 @@
                         </div>
                     </div>
                     <div class="flex flex-wrap gap-2 mt-4">
-                        <button onclick="generateReport()" class="btn btn-secondary btn-sm">
+                        <button onclick="generateReport()" class="btn btn-primary btn-sm">
                             <i class="fas fa-chart-bar"></i> Generate Report
                         </button>
                         <button onclick="exportReport('pdf')" class="btn btn-outline btn-sm">
@@ -218,8 +218,8 @@
                 <div class="card bg-base-100 shadow-sm">
                     <div class="card-body p-4">
                         <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 rounded-lg bg-secondary/10 flex items-center justify-center">
-                                <i class="fas fa-boxes text-secondary"></i>
+                            <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                                <i class="fas fa-boxes text-primary"></i>
                             </div>
                             <div>
                                 <p class="text-xs text-base-content/60">Total SKUs</p>
@@ -249,7 +249,7 @@
                             </div>
                             <div>
                                 <p class="text-xs text-base-content/60">Total Value</p>
-                                <p class="text-xl font-bold" id="totalValue">₱0</p>
+                                <p class="text-xl font-bold" id="totalValue">â‚±0</p>
                             </div>
                         </div>
                     </div>
@@ -274,7 +274,7 @@
                 <div class="card-body p-4">
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="font-semibold flex items-center gap-2">
-                            <i class="fas fa-table text-secondary"></i>
+                            <i class="fas fa-table text-primary"></i>
                             Inventory Report - <span id="reportDateLabel"></span>
                         </h3>
                     </div>
@@ -322,7 +322,7 @@
                 <div class="card bg-base-100 shadow-sm">
                     <div class="card-body p-4">
                         <h3 class="font-semibold flex items-center gap-2 mb-4">
-                            <i class="fas fa-chart-pie text-secondary"></i>
+                            <i class="fas fa-chart-pie text-primary"></i>
                             By Category
                         </h3>
                         <div id="categoryBreakdown">
@@ -369,7 +369,16 @@
         });
 
         document.addEventListener('DOMContentLoaded', async () => {
-            await requireAuth(['warehouse_fg', 'general_manager']);
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../../../login.html';
+                return;
+            }
+            
+            const user = AuthService.getCurrentUser();
+            if (user) {
+                document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
+                document.getElementById('userInitials').textContent = `${user.first_name[0]}${user.last_name[0]}`;
+            }
             
             // Set default date to today
             document.getElementById('reportDate').value = new Date().toISOString().split('T')[0];
@@ -380,8 +389,8 @@
 
         async function loadChillers() {
             try {
-                const response = await FGService.getChillers();
-                if (response.success) {
+                const response = await WarehouseFGService.getChillers();
+                if (response.data) {
                     const select = document.getElementById('filterChiller');
                     response.data.forEach(chiller => {
                         const option = document.createElement('option');
@@ -410,9 +419,9 @@
                 const params = {};
                 if (chillerId) params.chiller_id = chillerId;
                 
-                const response = await FGService.getInventory(params);
+                const response = await WarehouseFGService.getInventory(params);
                 
-                if (response.success) {
+                if (response.data) {
                     let data = response.data;
                     
                     // Apply client-side filters
@@ -493,15 +502,15 @@
                         <td><code class="text-xs bg-base-200 px-1.5 py-0.5 rounded">${item.batch_code}</code></td>
                         <td>${item.chiller_name || 'Unassigned'}</td>
                         <td class="font-bold">${item.quantity}</td>
-                        <td>₱${formatNumber(unitPrice)}</td>
-                        <td class="font-bold">₱${formatNumber(value)}</td>
+                        <td>â‚±${formatNumber(unitPrice)}</td>
+                        <td class="font-bold">â‚±${formatNumber(value)}</td>
                         <td>${formatDate(item.expiry_date)}</td>
                         <td>${statusBadge}</td>
                     </tr>`;
             }).join('');
             
             document.getElementById('footerQuantity').textContent = formatNumber(totalQuantity);
-            document.getElementById('footerValue').textContent = '₱' + formatNumber(totalValue);
+            document.getElementById('footerValue').textContent = 'â‚±' + formatNumber(totalValue);
             footer.classList.remove('hidden');
         }
 
@@ -519,7 +528,7 @@
             
             document.getElementById('totalSKUs').textContent = uniqueProducts.size;
             document.getElementById('totalUnits').textContent = formatNumber(totalUnits);
-            document.getElementById('totalValue').textContent = '₱' + formatNumber(totalValue);
+            document.getElementById('totalValue').textContent = 'â‚±' + formatNumber(totalValue);
             document.getElementById('nearExpiry').textContent = nearExpiry;
             
             // Category breakdown
@@ -536,8 +545,8 @@
                     <div class="flex justify-between items-center py-2 border-b">
                         <span class="font-medium">${cat}</span>
                         <div class="text-right">
-                            <span class="badge badge-secondary">${formatNumber(data.count)} units</span>
-                            <span class="text-sm text-gray-500 ml-2">₱${formatNumber(data.value)}</span>
+                            <span class="badge badge-primary">${formatNumber(data.count)} units</span>
+                            <span class="text-sm text-gray-500 ml-2">â‚±${formatNumber(data.value)}</span>
                         </div>
                     </div>
                 `).join('');
@@ -619,3 +628,10 @@
     </script>
 </body>
 </html>
+
+
+
+
+
+
+
