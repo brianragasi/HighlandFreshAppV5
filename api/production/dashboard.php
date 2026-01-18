@@ -153,6 +153,43 @@ try {
     $storedMilk->execute();
     $storedStats = $storedMilk->fetch();
     
+    // Get tank-based milk inventory (what warehouse actually has - for reference only)
+    $tankMilk = $db->prepare("
+        SELECT COALESCE(SUM(current_volume), 0) as total_liters, COUNT(*) as tank_count
+        FROM storage_tanks
+        WHERE current_volume > 0
+    ");
+    $tankMilk->execute();
+    $tankStats = $tankMilk->fetch();
+    
+    // Get milk ISSUED TO PRODUCTION through fulfilled requisitions
+    // This is what production actually has available to use
+    // Milk issued = requisition items fulfilled for raw_milk type
+    // Minus milk already used in production runs
+    $productionMilk = $db->prepare("
+        SELECT 
+            COALESCE(SUM(ri.issued_quantity), 0) as total_issued,
+            COUNT(DISTINCT ri.id) as issued_batches
+        FROM requisition_items ri
+        JOIN ingredient_requisitions ir ON ri.requisition_id = ir.id
+        WHERE ri.item_type = 'raw_milk'
+          AND ri.issued_quantity > 0
+          AND ir.department = 'production'
+    ");
+    $productionMilk->execute();
+    $prodMilkStats = $productionMilk->fetch();
+    
+    // Get milk already used in production runs
+    $usedMilk = $db->prepare("
+        SELECT COALESCE(SUM(milk_liters_allocated), 0) as total_used
+        FROM production_run_milk_usage
+    ");
+    $usedMilk->execute();
+    $usedStats = $usedMilk->fetch();
+    
+    // Production's available milk = issued - used
+    $productionAvailableMilk = max(0, ($prodMilkStats['total_issued'] ?? 0) - ($usedStats['total_used'] ?? 0));
+    
     Response::success([
         'today' => [
             'date' => $today,
@@ -166,9 +203,13 @@ try {
         'pending_requisitions' => (int) $reqStats['count'],
         'ccp_alerts' => (int) $ccpStats['count'],
         'active_recipes' => (int) $recipeStats['count'],
-        // Available milk for production (QC-approved, within 2-day freshness, minus already allocated)
-        'available_milk' => (float) ($milkStats['total_liters'] ?? 0),
-        'available_milk_sources' => (int) ($milkStats['source_count'] ?? 0),
+        // Production's available milk (issued via requisitions minus used in runs)
+        'available_milk' => (float) $productionAvailableMilk,
+        'available_milk_sources' => (int) ($prodMilkStats['issued_batches'] ?? 0),
+        // Warehouse tank inventory (for reference - production must requisition to get this)
+        'warehouse_tank_milk' => (float) ($tankStats['total_liters'] ?? 0),
+        // Legacy: delivery-based allocation tracking
+        'delivery_based_milk' => (float) ($milkStats['total_liters'] ?? 0),
         // Total stored raw milk (for informational purposes - may be older than 2 days)
         'stored_milk' => (float) ($storedStats['total_liters'] ?? 0),
         'recent_runs' => $recentRunsList

@@ -288,6 +288,57 @@
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
     
+    <!-- Approve Confirmation Modal -->
+    <dialog id="approveModal" class="modal">
+        <div class="modal-box max-w-md">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-check-circle text-success"></i> Approve Requisition
+            </h3>
+            <input type="hidden" id="approveRequisitionId">
+            <div class="py-4">
+                <p class="text-base-content/80">Are you sure you want to approve requisition <strong id="approveRequisitionCode">-</strong>?</p>
+                <p class="text-sm text-base-content/60 mt-2">Once approved, warehouse staff can fulfill this requisition.</p>
+            </div>
+            <div class="modal-action">
+                <button type="button" class="btn btn-ghost" onclick="document.getElementById('approveModal').close()">Cancel</button>
+                <button type="button" class="btn btn-success" onclick="confirmApprove()">
+                    <i class="fas fa-check"></i> Approve
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Reject Requisition Modal -->
+    <dialog id="rejectRequisitionModal" class="modal">
+        <div class="modal-box max-w-md">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-times-circle text-error"></i> Reject Requisition
+            </h3>
+            <input type="hidden" id="rejectRequisitionModalId">
+            <div class="alert alert-warning mb-4">
+                <span>You are about to reject requisition: <strong id="rejectRequisitionModalCode">-</strong></span>
+            </div>
+            <div class="form-control mb-4">
+                <label class="label"><span class="label-text">Reason for Rejection</span></label>
+                <textarea class="textarea textarea-bordered" id="rejectRequisitionReason" rows="3" placeholder="Enter reason for rejection..."></textarea>
+            </div>
+            <div class="modal-action">
+                <button type="button" class="btn btn-ghost" onclick="document.getElementById('rejectRequisitionModal').close()">Cancel</button>
+                <button type="button" class="btn btn-error" onclick="confirmReject()">
+                    <i class="fas fa-times"></i> Reject
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
     <!-- Toast Container -->
     <div id="toastContainer" class="toast toast-end toast-bottom z-50"></div>
     
@@ -505,14 +556,16 @@
                     neededByHtml = `<span class="badge ${badgeClass} badge-sm gap-1"><i class="fas fa-clock"></i> ${neededByText}</span>`;
                 }
                 
-                // Item summary
-                const totalItems = req.total_items || req.items?.length || 0;
-                const fulfilledItems = req.fulfilled_items || 0;
+                // Item summary - use API field names
+                const totalItems = req.item_count || req.total_items || req.items?.length || 0;
+                const fulfilledItems = req.fulfilled_count || req.fulfilled_items || 0;
+                const processedItems = req.processed_count || fulfilledItems;
                 
-                const canFulfill = req.status === 'pending' || req.status === 'approved' || req.status === 'partial';
+                const isPending = req.status === 'pending';
+                const canFulfill = req.status === 'approved' || req.status === 'partial';
                 
                 return `
-                    <div class="card bg-base-100 border border-base-300 hover:shadow-md transition-shadow">
+                    <div class="card bg-base-100 border border-base-300 hover:shadow-md transition-shadow ${isPending ? 'border-l-4 border-l-warning' : ''} ${req.status === 'partial' ? 'border-l-4 border-l-info' : ''}">
                         <div class="card-body p-4">
                             <!-- Header -->
                             <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -535,13 +588,13 @@
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
                                 <div>
                                     <p class="text-xs text-base-content/60">Requested By</p>
-                                    <p class="font-semibold">${req.first_name} ${req.last_name}</p>
+                                    <p class="font-semibold">${req.requested_by_first || ''} ${req.requested_by_last || ''}</p>
                                     <p class="text-sm text-base-content/60">${req.department || 'N/A'}</p>
                                 </div>
                                 <div>
                                     <p class="text-xs text-base-content/60">Items</p>
-                                    <p class="font-semibold">${fulfilledItems} / ${totalItems} fulfilled</p>
-                                    <p class="text-sm text-base-content/60">${totalItems - fulfilledItems} remaining</p>
+                                    <p class="font-semibold">${fulfilledItems} / ${totalItems} complete</p>
+                                    <p class="text-sm text-base-content/60">${processedItems > fulfilledItems ? `${processedItems - fulfilledItems} partial, ` : ''}${totalItems - processedItems} pending</p>
                                 </div>
                                 <div>
                                     <p class="text-xs text-base-content/60">Requested Date</p>
@@ -558,9 +611,14 @@
                                     <button class="btn btn-ghost btn-sm" onclick="viewRequisition(${req.id})">
                                         <i class="fas fa-eye"></i> View
                                     </button>
+                                    ${isPending ? `
+                                        <button class="btn btn-success btn-sm" onclick="approveRequisition(${req.id}, '${req.requisition_code}')">
+                                            <i class="fas fa-check"></i> Approve
+                                        </button>
+                                    ` : ''}
                                     ${canFulfill ? `
                                         <button class="btn btn-primary btn-sm" onclick="openFulfillModal(${req.id})">
-                                            <i class="fas fa-check"></i> Fulfill
+                                            <i class="fas fa-box"></i> Fulfill
                                         </button>
                                     ` : ''}
                                 </div>
@@ -586,7 +644,11 @@
             try {
                 const response = await WarehouseRawService.getRequisition(id);
                 if (response.success) {
-                    currentRequisition = response.data;
+                    // API returns { requisition: {...}, items: [...] }
+                    currentRequisition = {
+                        ...response.data.requisition,
+                        items: response.data.items || []
+                    };
                     renderFulfillModal(viewOnly);
                 }
             } catch (error) {
@@ -609,8 +671,8 @@
             
             document.getElementById('fulfillModalTitle').innerHTML = `
                 ${viewOnly ? '<i class="fas fa-eye text-info"></i>' : '<i class="fas fa-clipboard-check text-primary"></i>'}
-                ${req.requisition_code}
-                <span class="badge ${priorityBadges[req.priority]} badge-sm ml-2">${req.priority.toUpperCase()}</span>
+                ${req.requisition_code || 'Requisition'}
+                <span class="badge ${priorityBadges[req.priority] || 'badge-ghost'} badge-sm ml-2">${(req.priority || 'normal').toUpperCase()}</span>
             `;
             
             let itemsHtml = '';
@@ -618,8 +680,8 @@
                 itemsHtml = '<p class="text-base-content/60 text-center py-4">No items in this requisition</p>';
             } else {
                 itemsHtml = items.map((item, index) => {
-                    const requested = parseFloat(item.quantity_requested);
-                    const issued = parseFloat(item.quantity_issued || 0);
+                    const requested = parseFloat(item.requested_quantity || item.quantity_requested || 0);
+                    const issued = parseFloat(item.issued_quantity || item.quantity_issued || 0);
                     const remaining = requested - issued;
                     const available = parseFloat(item.available_stock || 0);
                     
@@ -689,7 +751,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                     <div>
                         <p class="text-xs text-base-content/60">Requested By</p>
-                        <p class="font-semibold">${req.first_name} ${req.last_name}</p>
+                        <p class="font-semibold">${req.requested_by_first || ''} ${req.requested_by_last || ''}</p>
                         <p class="text-sm text-base-content/60">${req.department || 'N/A'}</p>
                     </div>
                     <div>
@@ -698,7 +760,7 @@
                     </div>
                     <div>
                         <p class="text-xs text-base-content/60">Status</p>
-                        <p class="font-semibold">${req.status.toUpperCase()}</p>
+                        <p class="font-semibold">${(req.status || 'pending').toUpperCase()}</p>
                     </div>
                 </div>
                 ${req.notes ? `
@@ -716,18 +778,91 @@
             `;
             
             const canFulfillAny = !viewOnly && items.some(item => 
-                parseFloat(item.quantity_requested) > parseFloat(item.quantity_issued || 0) &&
+                parseFloat(item.requested_quantity || item.quantity_requested || 0) > parseFloat(item.issued_quantity || item.quantity_issued || 0) &&
                 item.status !== 'cancelled' && item.status !== 'rejected'
             );
             
+            // Check if requisition is pending and needs approval
+            const needsApproval = req.status === 'pending';
+            const canFulfill = req.status === 'approved' || req.status === 'partial';
+            
             document.getElementById('fulfillModalFooter').innerHTML = `
                 <button class="btn btn-ghost" onclick="document.getElementById('fulfillModal').close()">Close</button>
-                ${canFulfillAny ? `
+                ${needsApproval ? `
+                    <button class="btn btn-error btn-outline" onclick="rejectRequisition(${req.id}, '${req.requisition_code}')">
+                        <i class="fas fa-times"></i> Reject
+                    </button>
+                    <button class="btn btn-success" onclick="approveRequisition(${req.id}, '${req.requisition_code}')">
+                        <i class="fas fa-check"></i> Approve
+                    </button>
+                ` : ''}
+                ${canFulfill && canFulfillAny ? `
                     <button class="btn btn-primary" onclick="submitFulfillment()">
                         <i class="fas fa-check"></i> Fulfill Selected Items
                     </button>
                 ` : ''}
             `;
+        }
+        
+        function approveRequisition(id, code) {
+            document.getElementById('approveRequisitionId').value = id;
+            document.getElementById('approveRequisitionCode').textContent = code || `#${id}`;
+            document.getElementById('approveModal').showModal();
+        }
+        
+        async function confirmApprove() {
+            const id = document.getElementById('approveRequisitionId').value;
+            
+            try {
+                const response = await api.put('/warehouse/raw/requisitions.php', {
+                    action: 'approve',
+                    id: id
+                });
+                
+                if (response.success) {
+                    showToast('Requisition approved successfully', 'success');
+                    document.getElementById('approveModal').close();
+                    document.getElementById('fulfillModal').close();
+                    loadRequisitions();
+                } else {
+                    showToast(response.message || 'Failed to approve requisition', 'error');
+                }
+            } catch (error) {
+                console.error('Approve error:', error);
+                showToast('Failed to approve requisition', 'error');
+            }
+        }
+        
+        function rejectRequisition(id, code) {
+            document.getElementById('rejectRequisitionModalId').value = id;
+            document.getElementById('rejectRequisitionModalCode').textContent = code || `#${id}`;
+            document.getElementById('rejectRequisitionReason').value = '';
+            document.getElementById('rejectRequisitionModal').showModal();
+        }
+        
+        async function confirmReject() {
+            const id = document.getElementById('rejectRequisitionModalId').value;
+            const reason = document.getElementById('rejectRequisitionReason').value;
+            
+            try {
+                const response = await api.put('/warehouse/raw/requisitions.php', {
+                    action: 'reject',
+                    id: id,
+                    reason: reason
+                });
+                
+                if (response.success) {
+                    showToast('Requisition rejected', 'success');
+                    document.getElementById('rejectRequisitionModal').close();
+                    document.getElementById('fulfillModal').close();
+                    loadRequisitions();
+                } else {
+                    showToast(response.message || 'Failed to reject requisition', 'error');
+                }
+            } catch (error) {
+                console.error('Reject error:', error);
+                showToast('Failed to reject requisition', 'error');
+            }
         }
         
         async function submitFulfillment() {
@@ -752,17 +887,19 @@
             }
             
             try {
+                console.log('Fulfilling requisition:', currentRequisition.id, 'with quantities:', issuedQuantities);
                 const response = await WarehouseRawService.fulfillRequisition(currentRequisition.id, issuedQuantities);
+                console.log('Fulfill response:', response);
                 if (response.success) {
                     showToast('Requisition items fulfilled successfully', 'success');
                     document.getElementById('fulfillModal').close();
                     loadRequisitions();
                 } else {
-                    showToast(response.error || 'Failed to fulfill requisition', 'error');
+                    showToast(response.message || response.error || 'Failed to fulfill requisition', 'error');
                 }
             } catch (error) {
                 console.error('Fulfill error:', error);
-                showToast('Failed to fulfill requisition', 'error');
+                showToast(error.message || 'Failed to fulfill requisition', 'error');
             }
         }
         

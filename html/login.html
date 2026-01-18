@@ -127,6 +127,12 @@
                             <p class="text-base-content/60 mt-1">Sign in to your account</p>
                         </div>
                         
+                        <!-- Success Alert -->
+                        <div id="loginSuccess" class="alert alert-success mb-4 hidden">
+                            <i class="fas fa-check-circle"></i>
+                            <span id="successMessage">Login successful! Redirecting...</span>
+                        </div>
+                        
                         <!-- Error Alert -->
                         <div id="loginError" class="alert alert-error mb-4 hidden">
                             <i class="fas fa-exclamation-circle"></i>
@@ -246,9 +252,11 @@
             const btnText = document.getElementById('btnText');
             const btnLoading = document.getElementById('btnLoading');
             const errorDiv = document.getElementById('loginError');
+            const successDiv = document.getElementById('loginSuccess');
             
-            // Reset error
+            // Reset error and success
             errorDiv.classList.add('hidden');
+            successDiv.classList.add('hidden');
             
             // Show loading state
             btnText.classList.add('hidden');
@@ -259,12 +267,21 @@
                 const response = await AuthService.login(username, password);
                 
                 if (response.success) {
-                    redirectToRoleDashboard(response.data.user.role);
+                    // Show success message
+                    const user = response.data.user;
+                    document.getElementById('successMessage').textContent = `Welcome back, ${user.first_name}! Redirecting...`;
+                    successDiv.classList.remove('hidden');
+                    
+                    // Wait 1.5 seconds then redirect
+                    setTimeout(() => {
+                        redirectToRoleDashboard(user.role);
+                    }, 1500);
                 }
             } catch (error) {
                 document.getElementById('errorMessage').textContent = error.message || 'Invalid username or password';
                 errorDiv.classList.remove('hidden');
-            } finally {
+                
+                // Re-enable button on error
                 btnText.classList.remove('hidden');
                 btnLoading.classList.add('hidden');
                 loginBtn.disabled = false;
