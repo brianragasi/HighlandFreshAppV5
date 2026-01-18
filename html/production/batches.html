@@ -507,6 +507,12 @@
                         </div>
                     </div>
                     
+                    <!-- CCP Requirement Checker -->
+                    <div id="ccpRequirementAlert" class="alert alert-warning">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <span>Checking CCP logs...</span>
+                    </div>
+                    
                     <!-- Multi-Unit Output Entry -->
                     <div class="form-control">
                         <label class="label">
@@ -1050,7 +1056,7 @@
         
         let currentProductConversion = null;
         
-        function showCompleteModal(id, code, product, planned, productType = 'milk_bar') {
+        async function showCompleteModal(id, code, product, planned, productType = 'milk_bar') {
             document.getElementById('completeRunId').value = id;
             document.getElementById('completeRunCode').textContent = code;
             document.getElementById('completeRunProduct').textContent = product;
@@ -1075,7 +1081,88 @@
             
             calculateUnitConversion();
             
+            // Show modal first, then check CCP
             document.getElementById('completeRunModal').showModal();
+            
+            // Check CCP logs for this run
+            const ccpAlert = document.getElementById('ccpRequirementAlert');
+            ccpAlert.className = 'alert alert-warning';
+            ccpAlert.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Checking CCP logs...</span>';
+            
+            try {
+                const response = await ProductionService.getRun(id);
+                if (response.success) {
+                    const run = response.data;
+                    const ccpLogs = run.ccp_logs || [];
+                    
+                    // Get most recent log for each check type (allows re-logging to fix mistakes)
+                    const latestLogs = {};
+                    ccpLogs.forEach(log => {
+                        const existing = latestLogs[log.check_type];
+                        if (!existing || new Date(log.check_datetime) > new Date(existing.check_datetime)) {
+                            latestLogs[log.check_type] = log;
+                        }
+                    });
+                    
+                    const pastLog = latestLogs['pasteurization'];
+                    const coolLog = latestLogs['cooling'];
+                    
+                    const hasPasteurization = pastLog && pastLog.status === 'pass';
+                    const hasCooling = coolLog && coolLog.status === 'pass';
+                    const pastFailed = pastLog && pastLog.status === 'fail';
+                    const coolFailed = coolLog && coolLog.status === 'fail';
+                    
+                    if (!pastLog || !coolLog) {
+                        const missing = [];
+                        if (!pastLog) missing.push('Pasteurization (75°C)');
+                        if (!coolLog) missing.push('Cooling (4°C)');
+                        
+                        ccpAlert.className = 'alert alert-error';
+                        ccpAlert.innerHTML = `
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <div>
+                                <div class="font-bold">CCP Logs Required Before Completing</div>
+                                <div class="text-sm">Missing: ${missing.join(', ')}</div>
+                                <a href="ccp_logging.html?run_id=${id}" class="btn btn-sm btn-error mt-2">
+                                    <i class="fas fa-clipboard-check"></i> Log CCP Now
+                                </a>
+                            </div>
+                        `;
+                    } else if (pastFailed || coolFailed) {
+                        const failed = [];
+                        if (pastFailed) failed.push('Pasteurization');
+                        if (coolFailed) failed.push('Cooling');
+                        
+                        ccpAlert.className = 'alert alert-error';
+                        ccpAlert.innerHTML = `
+                            <i class="fas fa-times-circle"></i>
+                            <div>
+                                <div class="font-bold">Failed CCP Checks Detected</div>
+                                <div class="text-sm">${failed.join(' and ')} check(s) failed. Re-log with correct reading to fix.</div>
+                                <a href="ccp_logging.html?run_id=${id}" class="btn btn-sm btn-error mt-2">
+                                    <i class="fas fa-redo"></i> Re-log CCP
+                                </a>
+                            </div>
+                        `;
+                    } else {
+                        ccpAlert.className = 'alert alert-success';
+                        ccpAlert.innerHTML = `
+                            <i class="fas fa-check-circle"></i>
+                            <div>
+                                <div class="font-bold">CCP Requirements Met ✓</div>
+                                <div class="text-sm">All required CCP checks have been logged and passed.</div>
+                            </div>
+                        `;
+                    }
+                }
+            } catch (error) {
+                console.error('Error checking CCP:', error);
+                ccpAlert.className = 'alert alert-warning';
+                ccpAlert.innerHTML = `
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>Could not verify CCP logs. The system will validate on submission.</span>
+                `;
+            }
         }
         
         function calculateUnitConversion() {
@@ -1140,7 +1227,22 @@
                 }
             } catch (error) {
                 console.error('Complete run error:', error);
-                const message = error.message || 'Failed to complete run. Make sure the run has been started first.';
+                let message = error.message || 'Failed to complete run. Make sure the run has been started first.';
+                
+                // Check for CCP validation errors
+                if (error.errors && error.errors.ccp_logs) {
+                    message = 'CCP Logs Required: ' + error.errors.ccp_logs;
+                    // Show which CCPs are needed
+                    if (error.errors.required_ccps) {
+                        message += '\n\nRequired CCPs: ' + error.errors.required_ccps.join(', ');
+                    }
+                    if (error.errors.logged_ccps && error.errors.logged_ccps.length > 0) {
+                        message += '\nLogged CCPs: ' + error.errors.logged_ccps.join(', ');
+                    } else {
+                        message += '\nLogged CCPs: None';
+                    }
+                }
+                
                 showToast(message, 'error');
             }
         }

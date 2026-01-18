@@ -370,9 +370,7 @@
                                 <tr class="bg-base-200">
                                     <th>Batch Code</th>
                                     <th>Product</th>
-                                    <th class="text-right">Boxes</th>
-                                    <th class="text-right">Pieces</th>
-                                    <th class="text-right">Total Pcs</th>
+                                    <th class="text-right">Quantity</th>
                                     <th>Production Date</th>
                                     <th>Expiry Date</th>
                                     <th>QC Status</th>
@@ -381,7 +379,7 @@
                             </thead>
                             <tbody id="pendingBatchesTable">
                                 <tr>
-                                    <td colspan="9" class="text-center py-8">
+                                    <td colspan="7" class="text-center py-8">
                                         <span class="loading loading-spinner loading-md"></span>
                                         <p class="text-base-content/60 mt-2">Loading pending batches...</p>
                                     </td>
@@ -593,9 +591,9 @@
                 chillers = response.data || [];
                 const select = document.getElementById('receiveChiller');
                 select.innerHTML = '<option value="">Select chiller...</option>';
-                chillers.filter(c => c.status === 'active').forEach(c => {
-                    const available = c.capacity - (c.current_stock || 0);
-                    select.innerHTML += `<option value="${c.id}">${c.name} (${available} available)</option>`;
+                chillers.filter(c => c.status === 'available' || c.is_active === 1).forEach(c => {
+                    const available = c.capacity - (c.current_count || 0);
+                    select.innerHTML += `<option value="${c.id}">${c.chiller_name || c.name} (${available} available)</option>`;
                 });
             } catch (error) {
                 console.error('Failed to load chillers:', error);
@@ -631,7 +629,7 @@
             const tbody = document.getElementById('pendingBatchesTable');
 
             if (!pendingBatches || pendingBatches.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="9" class="text-center py-8">
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8">
                     <i class="fas fa-check-circle text-success text-4xl mb-2"></i>
                     <p class="text-base-content/60">All batches have been received</p>
                 </td></tr>`;
@@ -639,10 +637,8 @@
             }
 
             tbody.innerHTML = pendingBatches.map(batch => {
-                const piecesPerBox = parseInt(batch.pieces_per_box) || 1;
-                const quantityBoxes = parseInt(batch.quantity_boxes) || 0;
-                const quantityPieces = parseInt(batch.quantity_pieces) || parseInt(batch.total_pieces) || parseInt(batch.actual_yield) || 0;
-                const totalPieces = quantityBoxes > 0 ? (quantityBoxes * piecesPerBox) + quantityPieces : quantityPieces;
+                // Get quantity from actual_yield or expected_yield
+                const quantity = parseInt(batch.total_pieces) || parseInt(batch.actual_yield) || parseInt(batch.expected_yield) || 0;
 
                 // Format product name nicely
                 let productName = batch.product_name || batch.product_type || 'Unknown';
@@ -652,15 +648,12 @@
                 <tr class="pending-row hover">
                     <td>
                         <code class="font-mono text-sm bg-base-200 px-2 py-1 rounded">${batch.batch_code || batch.batch_number}</code>
-                        ${piecesPerBox > 1 ? `<div class="text-xs text-info mt-1"><i class="fas fa-box"></i> 1 Box = ${piecesPerBox} pcs</div>` : ''}
                     </td>
                     <td>
                         <div class="font-medium">${productName}</div>
                         <div class="text-xs text-base-content/60">${batch.variant || batch.product_variant || ''}</div>
                     </td>
-                    <td class="text-right font-medium">${quantityBoxes > 0 ? quantityBoxes : '-'}</td>
-                    <td class="text-right">${totalPieces > 0 ? totalPieces : '-'}</td>
-                    <td class="text-right font-bold text-primary">${totalPieces.toLocaleString()}</td>
+                    <td class="text-right font-bold text-primary">${quantity.toLocaleString()} pcs</td>
                     <td>${batch.production_date ? new Date(batch.production_date).toLocaleDateString() : 'N/A'}</td>
                     <td>${batch.expiry_date ? new Date(batch.expiry_date).toLocaleDateString() : 'N/A'}</td>
                     <td><span class="badge badge-success badge-sm gap-1"><i class="fas fa-check"></i> QC Passed</span></td>

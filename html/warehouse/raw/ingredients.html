@@ -302,7 +302,9 @@
 
                 <div class="form-control mb-3">
                     <label class="label"><span class="label-text">Supplier</span></label>
-                    <input type="text" class="input input-bordered" id="receiveSupplier" placeholder="Supplier name">
+                    <select class="select select-bordered" id="receiveSupplier">
+                        <option value="">Select supplier...</option>
+                    </select>
                 </div>
 
                 <div class="form-control mb-4">
@@ -476,9 +478,22 @@
                 document.getElementById('stockFilter').value = 'low';
             }
 
-            await Promise.all([loadCategories(), loadIngredients()]);
+            await Promise.all([loadCategories(), loadIngredients(), loadSuppliers()]);
             setupEventListeners();
         });
+        
+        async function loadSuppliers() {
+            try {
+                const response = await api.get('/warehouse/raw/suppliers.php?action=list');
+                const suppliers = response?.data || [];
+                const select = document.getElementById('receiveSupplier');
+                
+                select.innerHTML = '<option value="">Select supplier...</option>' + 
+                    suppliers.map(s => `<option value="${s.id}">${s.supplier_name}</option>`).join('');
+            } catch (error) {
+                console.error('Failed to load suppliers:', error);
+            }
+        }
 
         function setupEventListeners() {
             document.getElementById('searchInput').addEventListener('input', debounce(() => {

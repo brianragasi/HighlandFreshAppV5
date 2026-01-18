@@ -302,7 +302,7 @@ function handlePost($db, $currentUser) {
                     $rawMilkData['volume_liters'],
                     date('Y-m-d'),
                     $expiryDate,
-                    $currentUser['id']
+                    $currentUser['user_id']
                 ]);
                 $batchId = $db->lastInsertId();
                 
@@ -340,12 +340,12 @@ function handlePost($db, $currentUser) {
                     $rawMilkData['volume_liters'],
                     $rawMilkInventoryId,
                     $tankData['tank_code'],
-                    $currentUser['id'],
+                    $currentUser['user_id'],
                     $notes ?? 'Received from QC approved inventory'
                 ]);
                 
                 // Log audit
-                logAudit($currentUser['id'], 'receive_milk', 'tank_milk_batches', $batchId, null, [
+                logAudit($currentUser['user_id'], 'receive_milk', 'tank_milk_batches', $batchId, null, [
                     'tank_id' => $tankId,
                     'raw_milk_inventory_id' => $rawMilkInventoryId,
                     'volume_liters' => $rawMilkData['volume_liters']
@@ -556,7 +556,7 @@ function handlePut($db, $currentUser) {
                         $issueFromBatch,
                         $requisitionId,
                         $batch['tank_code'],
-                        $currentUser['id']
+                        $currentUser['user_id']
                     ]);
                     
                     $issuedBatches[] = [
@@ -668,7 +668,7 @@ function handlePut($db, $currentUser) {
                             $transferAmount,
                             $batch['received_date'],
                             $batch['expiry_date'],
-                            $currentUser['id']
+                            $currentUser['user_id']
                         ]);
                     }
                     
@@ -703,7 +703,7 @@ function handlePut($db, $currentUser) {
                     VALUES (?, 'transfer', 'raw_milk', 0, ?, 'L', ?, ?, ?, 'Tank transfer')
                 ");
                 $stmt->execute([
-                    $txCode, $liters, $fromTankData['tank_code'], $toTankData['tank_code'], $currentUser['id']
+                    $txCode, $liters, $fromTankData['tank_code'], $toTankData['tank_code'], $currentUser['user_id']
                 ]);
                 
                 $db->commit();

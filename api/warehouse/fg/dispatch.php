@@ -85,28 +85,28 @@ function handleGet($db, $action) {
                 Response::error('Barcode required', 400);
             }
             
-            // Look up inventory by batch_code (barcode)
+            // Look up inventory by barcode or batch_code
             $stmt = $db->prepare("
                 SELECT 
                     fgi.*,
                     p.product_name,
                     p.variant,
-                    p.size_value,
-                    p.size_unit,
-                    p.sku as product_sku,
-                    cl.name as chiller_name,
-                    pb.batch_number,
-                    pb.manufacture_date,
-                    pb.expiry_date
+                    p.unit_size as size_value,
+                    p.unit_measure as size_unit,
+                    p.product_code as product_sku,
+                    cl.chiller_name,
+                    pb.batch_code,
+                    pb.manufacturing_date,
+                    pb.expiry_date as batch_expiry_date
                 FROM finished_goods_inventory fgi
                 LEFT JOIN products p ON fgi.product_id = p.id
                 LEFT JOIN chiller_locations cl ON fgi.chiller_id = cl.id
                 LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
-                WHERE fgi.batch_code = ? OR pb.batch_number = ?
-                AND fgi.quantity > 0
+                WHERE (fgi.barcode = ? OR pb.barcode = ? OR pb.batch_code = ?)
+                AND fgi.quantity_available > 0
                 LIMIT 1
             ");
-            $stmt->execute([$barcode, $barcode]);
+            $stmt->execute([$barcode, $barcode, $barcode]);
             $item = $stmt->fetch();
             
             if (!$item) {

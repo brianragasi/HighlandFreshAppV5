@@ -267,10 +267,20 @@ function handlePost($db, $currentUser) {
             $ingredientId = getParam('ingredient_id');
             $quantity = getParam('quantity');
             $unitCost = getParam('unit_cost');
-            $supplierName = getParam('supplier_name');
-            $supplierBatchNo = getParam('supplier_batch_no');
+            $supplierId = getParam('supplier');  // Can be ID or name
+            $supplierBatchNo = getParam('supplier_batch_no') ?? getParam('batch_number');
             $expiryDate = getParam('expiry_date');
+            $manufactureDate = getParam('manufacture_date');
             $notes = getParam('notes');
+            
+            // Resolve supplier name from ID if numeric
+            $supplierName = $supplierId;
+            if ($supplierId && is_numeric($supplierId)) {
+                $supplierStmt = $db->prepare("SELECT supplier_name FROM suppliers WHERE id = ?");
+                $supplierStmt->execute([$supplierId]);
+                $supplierData = $supplierStmt->fetch();
+                $supplierName = $supplierData ? $supplierData['supplier_name'] : null;
+            }
             
             if (!$ingredientId || !$quantity || $quantity <= 0) {
                 Response::error('Ingredient ID and valid quantity are required', 400);
@@ -307,7 +317,7 @@ function handlePost($db, $currentUser) {
                     $supplierName,
                     $supplierBatchNo,
                     $expiryDate,
-                    $currentUser['id'],
+                    $currentUser['user_id'],
                     $notes
                 ]);
                 $batchId = $db->lastInsertId();
@@ -337,12 +347,12 @@ function handlePost($db, $currentUser) {
                     $quantity,
                     $ingredientData['unit_of_measure'],
                     $ingredientData['storage_location'],
-                    $currentUser['id'],
+                    $currentUser['user_id'],
                     "Received from supplier: " . ($supplierName ?? 'Unknown')
                 ]);
                 
                 // Log audit
-                logAudit($currentUser['id'], 'receive_ingredient', 'ingredient_batches', $batchId, null, [
+                logAudit($currentUser['user_id'], 'receive_ingredient', 'ingredient_batches', $batchId, null, [
                     'ingredient_id' => $ingredientId,
                     'quantity' => $quantity,
                     'supplier' => $supplierName
@@ -499,7 +509,7 @@ function handlePut($db, $currentUser) {
                         $ingredientData['unit_of_measure'],
                         $requisitionId,
                         $ingredientData['storage_location'],
-                        $currentUser['id'],
+                        $currentUser['user_id'],
                         $reason
                     ]);
                     
@@ -583,12 +593,12 @@ function handlePut($db, $currentUser) {
                     $ingredientId,
                     $difference,
                     $ingredientData['unit_of_measure'],
-                    $currentUser['id'],
+                    $currentUser['user_id'],
                     "Stock adjustment: $reason (Old: $oldQuantity, New: $newQuantity)"
                 ]);
                 
                 // Log audit
-                logAudit($currentUser['id'], 'adjust_stock', 'ingredients', $ingredientId, 
+                logAudit($currentUser['user_id'], 'adjust_stock', 'ingredients', $ingredientId, 
                     ['current_stock' => $oldQuantity], 
                     ['current_stock' => $newQuantity, 'reason' => $reason]
                 );
@@ -712,7 +722,7 @@ function handlePut($db, $currentUser) {
                     $batchId,
                     $disposedQuantity,
                     $batchData['unit_of_measure'],
-                    $currentUser['id'],
+                    $currentUser['user_id'],
                     $reason
                 ]);
                 

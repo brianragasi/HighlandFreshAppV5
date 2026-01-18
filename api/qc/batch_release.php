@@ -108,10 +108,12 @@ try {
             $stmt = $db->prepare("
                 SELECT pb.*,
                        mr.product_name, mr.product_type as recipe_type, mr.variant as recipe_variant,
-                       u.first_name as created_by_first, u.last_name as created_by_last
+                       u.first_name as created_by_first, u.last_name as created_by_last,
+                       u2.first_name as released_by_first, u2.last_name as released_by_last
                 FROM production_batches pb
                 LEFT JOIN master_recipes mr ON pb.recipe_id = mr.id
                 LEFT JOIN users u ON pb.created_by = u.id
+                LEFT JOIN users u2 ON pb.released_by = u2.id
                 {$where}
                 ORDER BY pb.manufacturing_date DESC, pb.created_at DESC
                 LIMIT ? OFFSET ?
@@ -190,7 +192,8 @@ try {
                         organoleptic_appearance = ?,
                         organoleptic_smell = ?,
                         qc_notes = ?,
-                        barcode = COALESCE(?, barcode)
+                        barcode = COALESCE(?, barcode),
+                        fg_received = 0
                     WHERE id = ?
                 ");
                 $updateStmt->execute([
@@ -206,32 +209,9 @@ try {
                     $batchId
                 ]);
                 
-                // If released and has actual_yield, add to finished goods
-                if ($action === 'release' && $batch['actual_yield']) {
-                    // Check if already in finished goods
-                    $fgCheck = $db->prepare("SELECT id FROM finished_goods_inventory WHERE batch_id = ?");
-                    $fgCheck->execute([$batchId]);
-                    
-                    if (!$fgCheck->fetch()) {
-                        $fgStmt = $db->prepare("
-                            INSERT INTO finished_goods_inventory (
-                                batch_id, product_type, product_variant,
-                                quantity, quantity_available,
-                                manufacturing_date, expiry_date, barcode, status
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'available')
-                        ");
-                        $fgStmt->execute([
-                            $batchId,
-                            $batch['product_type'],
-                            $batch['product_variant'],
-                            $batch['actual_yield'],
-                            $batch['actual_yield'],
-                            $batch['manufacturing_date'],
-                            $batch['expiry_date'],
-                            $barcode ?: $batch['barcode']
-                        ]);
-                    }
-                }
+                // Note: fg_received is explicitly set to 0 when QC releases a batch.
+                // The FG Warehouse team will set fg_received = 1 when they physically 
+                // receive the batch into a specific chiller via the FG receiving page.
                 
                 $db->commit();
                 

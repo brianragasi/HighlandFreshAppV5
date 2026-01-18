@@ -67,13 +67,14 @@ try {
     // === RECEIVING STATISTICS ===
     
     // Pending batches from production (QC released but not yet received)
+    // Uses NOT EXISTS for reliable checking even if fg_received column is NULL
     $pendingReceiving = $db->prepare("
         SELECT COUNT(*) as count
         FROM production_batches pb
-        LEFT JOIN fg_receiving fr ON fr.batch_id = pb.id
         WHERE pb.qc_status = 'released'
-        AND pb.fg_received = 0
-        AND fr.id IS NULL
+        AND (pb.fg_received IS NULL OR pb.fg_received = 0)
+        AND NOT EXISTS (SELECT 1 FROM fg_receiving fr WHERE fr.batch_id = pb.id)
+        AND NOT EXISTS (SELECT 1 FROM finished_goods_inventory fgi WHERE fgi.batch_id = pb.id)
     ");
     $pendingReceiving->execute();
     $pendingData = $pendingReceiving->fetch();
