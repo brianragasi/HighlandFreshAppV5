@@ -117,7 +117,7 @@ try {
         SELECT 
             COUNT(*) as count,
             SUM(CASE WHEN priority = 'urgent' THEN 1 ELSE 0 END) as urgent,
-            SUM(CASE WHEN priority = 'high' THEN 1 ELSE 0 END) as high_priority
+            SUM(CASE WHEN priority = 'high' THEN 1 ELSE 0 END) as `high_priority`
         FROM ingredient_requisitions
         WHERE status = 'approved'
     ");
@@ -221,15 +221,14 @@ try {
     $pendingMilk = $db->prepare("
         SELECT 
             rmi.id,
-            rmi.tank_id as qc_tank_id,
+            rmi.tank_number as qc_tank_id,
             rmi.volume_liters,
             rmi.received_date,
-            rmi.expiry_date,
+            DATE_ADD(rmi.received_date, INTERVAL 3 DAY) as expiry_date,
             f.farmer_code,
             CONCAT(f.first_name, ' ', f.last_name) as farmer_name
         FROM raw_milk_inventory rmi
-        JOIN qc_milk_tests qmt ON rmi.qc_test_id = qmt.id
-        JOIN milk_deliveries md ON qmt.delivery_id = md.id
+        JOIN milk_deliveries md ON rmi.delivery_id = md.id
         JOIN farmers f ON md.farmer_id = f.id
         WHERE rmi.status = 'available'
         AND NOT EXISTS (

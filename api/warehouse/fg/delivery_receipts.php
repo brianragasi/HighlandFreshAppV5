@@ -114,8 +114,8 @@ function handleGet($db, $action) {
             // Get line items
             $itemsStmt = $db->prepare("
                 SELECT dri.*,
-                       p.name as product_name,
-                       p.sku as product_sku
+                       p.product_name,
+                       p.product_code as product_sku
                 FROM delivery_receipt_items dri
                 LEFT JOIN products p ON dri.product_id = p.id
                 WHERE dri.dr_id = ?

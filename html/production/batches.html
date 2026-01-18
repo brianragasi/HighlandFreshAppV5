@@ -1,476 +1,506 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="emerald">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Production Batches - Highland Fresh System</title>
+    <title>Production Batches - Production | Highland Fresh</title>
+    
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <!-- Inter Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
     <style>
-        /* Pulse animation for Start button */
-        @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
-            70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
-        }
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         
-        /* Clickable row hover */
-        tr[style*="cursor: pointer"]:hover {
-            background: #f0f9ff !important;
-        }
-        
-        /* Big action button hover */
-        .card[onclick]:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-            transition: all 0.2s ease;
-        }
-        
-        /* Stat card hover */
-        .stat-card[style*="cursor"]:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            transition: all 0.2s ease;
-        }
+        /* Status badges */
+        .status-planned { @apply bg-slate-100 text-slate-700 border-slate-200; }
+        .status-in-progress { @apply bg-blue-100 text-blue-700 border-blue-200; }
+        .status-pasteurization { @apply bg-amber-100 text-amber-700 border-amber-200; }
+        .status-processing { @apply bg-cyan-100 text-cyan-700 border-cyan-200; }
+        .status-cooling { @apply bg-sky-100 text-sky-700 border-sky-200; }
+        .status-packaging { @apply bg-indigo-100 text-indigo-700 border-indigo-200; }
+        .status-completed { @apply bg-emerald-100 text-emerald-700 border-emerald-200; }
+        .status-cancelled { @apply bg-red-100 text-red-700 border-red-200; }
     </style>
 </head>
-<body>
-    <div class="app-container">
-        <!-- Sidebar -->
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <div class="sidebar-logo">
-                    <div class="user-avatar" style="width:40px;height:40px;font-size:1.25rem;">
-                        <i class="fas fa-industry"></i>
+<body class="bg-base-200 min-h-screen">
+    
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-industry text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Production</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <!-- Main Menu -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Production -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Production</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="batches.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-box w-5 text-center"></i>
+                            <span class="flex-1">Batches</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="recipes.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-book w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Recipes</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="requisitions.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-clipboard-list w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Requisitions</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Quality -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Quality</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="ccp_logging.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-thermometer-half w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">CCP Logging</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="byproducts.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-recycle w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Byproducts</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+        
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">PS</span>
                     </div>
-                    <div>
-                        <div class="sidebar-logo-text">Highland Fresh</div>
-                        <div class="sidebar-logo-subtitle">Production</div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Production Staff</p>
+                    <p class="text-xs text-base-content/60 truncate">Production</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a><i class="fas fa-user-cog w-4"></i> Profile</a></li>
+                        <li><a><i class="fas fa-cog w-4"></i> Settings</a></li>
+                        <li class="border-t border-base-300 mt-1 pt-1">
+                            <a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <div>
+                    <h1 class="text-lg lg:text-xl font-bold text-base-content">Production Batches</h1>
+                    <div class="text-sm breadcrumbs py-0">
+                        <ul class="text-xs">
+                            <li><a href="dashboard.html">Dashboard</a></li>
+                            <li>Production Batches</li>
+                        </ul>
                     </div>
                 </div>
             </div>
-            
-            <nav class="sidebar-nav">
-                <div class="nav-section">
-                    <div class="nav-section-title">Main Menu</div>
-                    <a href="dashboard.html" class="nav-link">
-                        <i class="fas fa-th-large"></i>
-                        <span>Dashboard</span>
-                    </a>
-                </div>
+            <div class="flex-none flex items-center gap-2">
+                <button class="btn btn-primary btn-sm" onclick="showNewRunModal()">
+                    <i class="fas fa-plus"></i>
+                    <span class="hidden sm:inline">New Run</span>
+                </button>
                 
-                <div class="nav-section">
-                    <div class="nav-section-title">Production</div>
-                    <a href="batches.html" class="nav-link active">
-                        <i class="fas fa-box"></i>
-                        <span>Production Batches</span>
-                    </a>
-                    <a href="recipes.html" class="nav-link">
-                        <i class="fas fa-book"></i>
-                        <span>Recipes</span>
-                    </a>
-                    <a href="ccp_logging.html" class="nav-link">
-                        <i class="fas fa-thermometer-half"></i>
-                        <span>CCP Logging</span>
-                    </a>
-                </div>
-                
-                <div class="nav-section">
-                    <div class="nav-section-title">Materials</div>
-                    <a href="requisitions.html" class="nav-link">
-                        <i class="fas fa-clipboard-list"></i>
-                        <span>Requisitions</span>
-                    </a>
-                    <a href="byproducts.html" class="nav-link">
-                        <i class="fas fa-recycle"></i>
-                        <span>Byproducts</span>
-                    </a>
-                </div>
-            </nav>
-        </aside>
+                <!-- Theme toggle -->
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
         
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Header -->
-            <header class="header">
-                <div class="header-left">
-                    <button class="header-icon-btn d-none" id="sidebarToggle">
-                        <i class="fas fa-bars"></i>
-                    </button>
-                    <h1 class="header-title">Production Batches</h1>
-                </div>
-                
-                <div class="header-right">
-                    <button class="header-icon-btn" title="Logout" onclick="AuthService.logout()">
-                        <i class="fas fa-sign-out-alt"></i>
-                    </button>
-                </div>
-            </header>
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
             
-            <!-- Page Content -->
-            <div class="page-content">
-                <!-- Quick Start Guide -->
-                <div class="card mb-4" style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border: 2px solid var(--primary); border-left: 6px solid var(--primary);">
-                    <div class="card-body">
-                        <div class="d-flex align-center gap-3 mb-3">
-                            <div style="width: 50px; height: 50px; background: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 1.5rem;">
-                                <i class="fas fa-lightbulb"></i>
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                <div class="card bg-base-100 border border-base-300 cursor-pointer hover:shadow-md transition-shadow" onclick="document.getElementById('statusFilter').value='in_progress';loadRuns();">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                                <i class="fas fa-play-circle text-primary text-xl"></i>
                             </div>
                             <div>
-                                <h3 class="mb-0 text-primary">📋 How Production Works</h3>
-                                <p class="text-muted mb-0">Follow these simple steps to manage production</p>
-                            </div>
-                            <button class="btn btn-sm btn-outline ml-auto" onclick="this.closest('.card').style.display='none'" title="Hide this guide">
-                                <i class="fas fa-times"></i> Hide
-                            </button>
-                        </div>
-                        <div class="d-flex flex-wrap gap-4">
-                            <div class="d-flex align-center gap-2" style="flex: 1; min-width: 200px;">
-                                <div style="width: 36px; height: 36px; background: var(--warning); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">1</div>
-                                <div>
-                                    <strong>Create New Run</strong>
-                                    <div class="text-sm text-muted">Click the big green button below</div>
-                                </div>
-                            </div>
-                            <div class="d-flex align-center gap-2" style="flex: 1; min-width: 200px;">
-                                <div style="width: 36px; height: 36px; background: var(--info); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">2</div>
-                                <div>
-                                    <strong>Start Production</strong>
-                                    <div class="text-sm text-muted">Click ▶️ Play to begin</div>
-                                </div>
-                            </div>
-                            <div class="d-flex align-center gap-2" style="flex: 1; min-width: 200px;">
-                                <div style="width: 36px; height: 36px; background: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">3</div>
-                                <div>
-                                    <strong>Log CCP Checks</strong>
-                                    <div class="text-sm text-muted">Record temperatures</div>
-                                </div>
-                            </div>
-                            <div class="d-flex align-center gap-2" style="flex: 1; min-width: 200px;">
-                                <div style="width: 36px; height: 36px; background: var(--success); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">4</div>
-                                <div>
-                                    <strong>Complete Run</strong>
-                                    <div class="text-sm text-muted">Click ✅ when done</div>
-                                </div>
+                                <div class="text-2xl font-bold" id="statInProgress">0</div>
+                                <div class="text-xs text-base-content/60">In Progress</div>
                             </div>
                         </div>
                     </div>
                 </div>
-                
-                <!-- Big Action Button -->
-                <div class="card mb-4" style="background: linear-gradient(135deg, var(--success) 0%, #059669 100%); cursor: pointer;" onclick="showNewRunModal()">
-                    <div class="card-body text-center p-4">
-                        <i class="fas fa-plus-circle fa-3x text-white mb-2"></i>
-                        <h2 class="text-white mb-1">➕ Start New Production Run</h2>
-                        <p class="text-white mb-0" style="opacity: 0.9;">Click here to create a new batch of products</p>
-                    </div>
-                </div>
-                
-                <!-- Stats Cards -->
-                <div class="grid-4 mb-4">
-                    <div class="stat-card" style="cursor: pointer;" onclick="document.getElementById('statusFilter').value='in_progress';loadRuns();" title="Click to show only In Progress runs">
-                        <div class="stat-card-icon primary">
-                            <i class="fas fa-play-circle"></i>
-                        </div>
-                        <div class="stat-card-value" id="statInProgress">0</div>
-                        <div class="stat-card-label">🔄 Currently Running</div>
-                    </div>
-                    <div class="stat-card" style="cursor: pointer;" onclick="document.getElementById('statusFilter').value='completed';loadRuns();" title="Click to show only Completed runs">
-                        <div class="stat-card-icon success">
-                            <i class="fas fa-check-circle"></i>
-                        </div>
-                        <div class="stat-card-value" id="statCompleted">0</div>
-                        <div class="stat-card-label">✅ Done Today</div>
-                    </div>
-                    <div class="stat-card" style="cursor: pointer;" onclick="document.getElementById('statusFilter').value='planned';loadRuns();" title="Click to show only Planned runs">
-                        <div class="stat-card-icon warning">
-                            <i class="fas fa-clock"></i>
-                        </div>
-                        <div class="stat-card-value" id="statPlanned">0</div>
-                        <div class="stat-card-label">📋 Waiting to Start</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-card-icon info">
-                            <i class="fas fa-percentage"></i>
-                        </div>
-                        <div class="stat-card-value" id="statAvgYield">-</div>
-                        <div class="stat-card-label">📊 Average Yield</div>
-                    </div>
-                </div>
-                
-                <!-- Filters Section -->
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h3 class="card-title">
-                            <i class="fas fa-search"></i>
-                            🔍 Find Production Runs
-                        </h3>
-                        <span class="text-muted text-sm">Use filters below to find specific batches</span>
-                    </div>
-                    <div class="card-body">
-                        <div class="d-flex flex-wrap gap-3 align-center">
-                            <div class="form-group mb-0" style="min-width: 150px;">
-                                <label class="form-label text-sm mb-1">Status</label>
-                                <select id="statusFilter" class="form-control" onchange="loadRuns()">
-                                    <option value="">All Status</option>
-                                    <option value="planned">📋 Planned</option>
-                                    <option value="in_progress">🔄 In Progress</option>
-                                    <option value="pasteurization">🔥 Pasteurization</option>
-                                    <option value="processing">⚙️ Processing</option>
-                                    <option value="cooling">❄️ Cooling</option>
-                                    <option value="packaging">📦 Packaging</option>
-                                    <option value="completed">✅ Completed</option>
-                                    <option value="cancelled">❌ Cancelled</option>
-                                </select>
+                <div class="card bg-base-100 border border-base-300 cursor-pointer hover:shadow-md transition-shadow" onclick="document.getElementById('statusFilter').value='completed';loadRuns();">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-success/10 flex items-center justify-center">
+                                <i class="fas fa-check-circle text-success text-xl"></i>
                             </div>
-                            
-                            <div class="form-group mb-0" style="min-width: 150px;">
-                                <label class="form-label text-sm mb-1">Product Type</label>
-                                <select id="productTypeFilter" class="form-control" onchange="loadRuns()">
-                                    <option value="">All Products</option>
-                                    <option value="bottled_milk">🥛 Bottled Milk</option>
-                                    <option value="cheese">🧀 Cheese</option>
-                                    <option value="butter">🧈 Butter</option>
-                                    <option value="yogurt">🥣 Yogurt</option>
-                                    <option value="milk_bar">🍦 Milk Bar</option>
-                                </select>
-                            </div>
-                            
-                            <div class="form-group mb-0" style="min-width: 140px;">
-                                <label class="form-label text-sm mb-1">📅 From Date</label>
-                                <input type="date" id="dateFrom" class="form-control" onchange="loadRuns()">
-                            </div>
-                            
-                            <div class="form-group mb-0" style="min-width: 140px;">
-                                <label class="form-label text-sm mb-1">📅 To Date</label>
-                                <input type="date" id="dateTo" class="form-control" onchange="loadRuns()">
-                            </div>
-                            
-                            <div class="form-group mb-0" style="align-self: flex-end;">
-                                <button class="btn btn-outline" onclick="resetFilters()" title="Clear all filters and show everything">
-                                    <i class="fas fa-redo"></i> Show All
-                                </button>
+                            <div>
+                                <div class="text-2xl font-bold" id="statCompleted">0</div>
+                                <div class="text-xs text-base-content/60">Completed Today</div>
                             </div>
                         </div>
                     </div>
                 </div>
-                
-                <!-- Action Legend -->
-                <div class="card mb-4" style="background: #fffbeb; border: 1px solid #fbbf24;">
-                    <div class="card-body py-2">
-                        <div class="d-flex flex-wrap gap-4 align-center justify-center">
-                            <span class="text-sm"><strong>🎮 Button Guide:</strong></span>
-                            <span class="text-sm">👁️ <strong>View</strong> = See details</span>
-                            <span class="text-sm">▶️ <strong>Play</strong> = Start production</span>
-                            <span class="text-sm">✅ <strong>Check</strong> = Mark as complete</span>
-                            <span class="text-sm">❌ <strong>X</strong> = Cancel run</span>
+                <div class="card bg-base-100 border border-base-300 cursor-pointer hover:shadow-md transition-shadow" onclick="document.getElementById('statusFilter').value='planned';loadRuns();">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center">
+                                <i class="fas fa-clock text-warning text-xl"></i>
+                            </div>
+                            <div>
+                                <div class="text-2xl font-bold" id="statPlanned">0</div>
+                                <div class="text-xs text-base-content/60">Planned</div>
+                            </div>
                         </div>
                     </div>
                 </div>
-                
-                <!-- Runs List -->
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title">
-                            <i class="fas fa-list"></i>
-                            📋 All Production Runs
-                        </h3>
-                        <span class="text-muted" id="totalRecords">0 records</span>
-                    </div>
-                    <div class="card-body p-0">
-                        <!-- Table Help Text -->
-                        <div style="background: #f8fafc; padding: 0.75rem 1rem; border-bottom: 1px solid var(--gray-200);">
-                            <span class="text-sm text-muted">💡 <strong>Tip:</strong> Click any row's action buttons on the right to manage that production run</span>
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-info/10 flex items-center justify-center">
+                                <i class="fas fa-percentage text-info text-xl"></i>
+                            </div>
+                            <div>
+                                <div class="text-2xl font-bold" id="statAvgYield">-</div>
+                                <div class="text-xs text-base-content/60">Average Yield</div>
+                            </div>
                         </div>
-                        <div class="table-container">
-                            <table class="table">
-                                <thead>
-                                    <tr>
-                                        <th>🏷️ Run Code</th>
-                                        <th>🥛 Product</th>
-                                        <th>📊 Status</th>
-                                        <th class="text-right">🎯 Target</th>
-                                        <th class="text-right">✅ Actual</th>
-                                        <th class="text-right">🥛 Milk Used</th>
-                                        <th>🕐 Started</th>
-                                        <th class="text-center">🎮 Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="runsTable">
-                                    <tr>
-                                        <td colspan="8" class="text-center text-muted p-4">
-                                            <i class="fas fa-spinner fa-spin"></i> Loading...
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                    <div class="card-footer">
-                        <div class="pagination" id="pagination"></div>
                     </div>
                 </div>
             </div>
+            
+            <!-- Filters Card -->
+            <div class="card bg-base-100 border border-base-300 mb-4">
+                <div class="card-body p-4">
+                    <div class="flex flex-wrap gap-3 items-end">
+                        <div class="form-control w-full sm:w-auto">
+                            <label class="label py-1">
+                                <span class="label-text text-xs">Status</span>
+                            </label>
+                            <select class="select select-bordered select-sm w-full sm:w-40" id="statusFilter" onchange="loadRuns()">
+                                <option value="">All Status</option>
+                                <option value="planned">Planned</option>
+                                <option value="in_progress">In Progress</option>
+                                <option value="pasteurization">Pasteurization</option>
+                                <option value="processing">Processing</option>
+                                <option value="cooling">Cooling</option>
+                                <option value="packaging">Packaging</option>
+                                <option value="completed">Completed</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
+                        </div>
+                        <div class="form-control w-full sm:w-auto">
+                            <label class="label py-1">
+                                <span class="label-text text-xs">Product Type</span>
+                            </label>
+                            <select class="select select-bordered select-sm w-full sm:w-40" id="productTypeFilter" onchange="loadRuns()">
+                                <option value="">All Products</option>
+                                <option value="bottled_milk">Bottled Milk</option>
+                                <option value="cheese">Cheese</option>
+                                <option value="butter">Butter</option>
+                                <option value="yogurt">Yogurt</option>
+                                <option value="milk_bar">Milk Bar</option>
+                            </select>
+                        </div>
+                        <div class="form-control w-full sm:w-auto">
+                            <label class="label py-1">
+                                <span class="label-text text-xs">From Date</span>
+                            </label>
+                            <input type="date" class="input input-bordered input-sm w-full sm:w-36" id="dateFrom" onchange="loadRuns()">
+                        </div>
+                        <div class="form-control w-full sm:w-auto">
+                            <label class="label py-1">
+                                <span class="label-text text-xs">To Date</span>
+                            </label>
+                            <input type="date" class="input input-bordered input-sm w-full sm:w-36" id="dateTo" onchange="loadRuns()">
+                        </div>
+                        <div class="flex gap-2">
+                            <button class="btn btn-primary btn-sm" onclick="loadRuns()">
+                                <i class="fas fa-search"></i>
+                                Filter
+                            </button>
+                            <button class="btn btn-ghost btn-sm" onclick="resetFilters()">
+                                <i class="fas fa-redo"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Runs Table Card -->
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body p-0">
+                    <div class="flex items-center justify-between p-4 border-b border-base-300">
+                        <h3 class="font-semibold flex items-center gap-2">
+                            <i class="fas fa-list text-primary"></i>
+                            Production Runs
+                        </h3>
+                        <span class="text-sm text-base-content/60" id="totalRecords">0 records</span>
+                    </div>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Run Code</th>
+                                    <th>Product</th>
+                                    <th>Status</th>
+                                    <th class="text-right">Target</th>
+                                    <th class="text-right">Actual</th>
+                                    <th class="text-right">Milk Used</th>
+                                    <th>Started</th>
+                                    <th class="text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="runsTable">
+                                <tr>
+                                    <td colspan="8" class="text-center py-8 text-base-content/40">
+                                        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                                        <p>Loading...</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Pagination -->
+                    <div class="p-4 border-t border-base-300">
+                        <div class="join" id="pagination"></div>
+                    </div>
+                </div>
+            </div>
+            
         </main>
     </div>
     
     <!-- New Run Modal -->
-    <div class="modal-overlay" id="newRunModal">
-        <div class="modal modal-lg">
-            <div class="modal-header" style="background: linear-gradient(135deg, var(--success) 0%, #059669 100%); color: white;">
-                <h3 class="modal-title">
-                    <i class="fas fa-plus-circle"></i>
-                    ➕ Create New Production Run
-                </h3>
-                <button class="modal-close" onclick="closeModal('newRunModal')" style="color: white;">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
+    <dialog id="newRunModal" class="modal">
+        <div class="modal-box max-w-xl">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-plus-circle text-primary"></i>
+                Create New Production Run
+            </h3>
+            
             <form id="newRunForm" onsubmit="createRun(event)">
-                <div class="modal-body">
-                    <!-- 🥛 MILK AVAILABILITY CHECK - Critical for proper flow -->
-                    <div id="milkAvailabilitySection" style="margin-bottom: 1.5rem;">
-                        <div id="milkCheckLoading" style="background: #f1f5f9; padding: 1rem; border-radius: 8px; text-align: center;">
+                <div class="space-y-4">
+                    <!-- Milk Availability Check -->
+                    <div id="milkAvailabilitySection">
+                        <div id="milkCheckLoading" class="bg-base-200 p-4 rounded-xl text-center">
                             <i class="fas fa-spinner fa-spin"></i> Checking available milk from QC...
                         </div>
-                        <div id="milkCheckResult" style="display: none;"></div>
+                        <div id="milkCheckResult" class="hidden"></div>
                     </div>
                     
                     <!-- Step indicator -->
-                    <div style="background: #f0f9ff; padding: 1rem; border-radius: var(--border-radius); margin-bottom: 1.5rem; border: 1px solid var(--primary-100);">
-                        <div class="text-sm text-muted mb-2">📝 <strong>Fill in the details below to start a new production batch</strong></div>
-                        <div class="text-xs text-muted">Fields marked with <span class="text-danger">*</span> are required</div>
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        <span class="text-sm">Fill in the details below to start a new production batch</span>
                     </div>
                     
-                    <div class="form-group">
-                        <label class="form-label required">
-                            <i class="fas fa-book text-primary"></i>
-                            Step 1: Select What to Make
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Select Recipe <span class="text-error">*</span></span>
                         </label>
-                        <select id="recipeSelect" class="form-control" required onchange="updateRecipeDetails()" style="font-size: 1rem; padding: 0.75rem;">
-                            <option value="">👆 Click here to choose a recipe...</option>
+                        <select class="select select-bordered w-full" id="recipeSelect" required onchange="updateRecipeDetails()">
+                            <option value="">Select a recipe...</option>
                         </select>
-                        <div class="form-text">Choose the product recipe from the dropdown list above</div>
                     </div>
                     
-                    <div id="recipeDetails" style="display: none;">
-                        <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); padding: 1rem; border-radius: var(--border-radius); margin-bottom: 1rem; border: 2px solid var(--success);">
-                            <div class="font-semibold text-success mb-1">✅ Recipe Selected:</div>
-                            <div class="font-semibold" id="selectedRecipeName" style="font-size: 1.1rem;"></div>
-                            <div class="text-sm mt-2" style="color: var(--gray-600);">
-                                <span style="background: white; padding: 0.25rem 0.5rem; border-radius: 4px; margin-right: 0.5rem;">
-                                    📦 <span id="selectedRecipeYield"></span>
-                                </span>
-                                <span style="background: white; padding: 0.25rem 0.5rem; border-radius: 4px;">
-                                    🥛 <span id="selectedRecipeMilk"></span> milk needed
-                                </span>
+                    <div id="recipeDetails" class="hidden">
+                        <div class="alert alert-success">
+                            <div class="w-full">
+                                <div class="font-semibold mb-1"><i class="fas fa-check-circle mr-1"></i> Recipe Selected:</div>
+                                <div class="font-bold text-lg" id="selectedRecipeName"></div>
+                                <div class="flex flex-wrap gap-2 mt-2">
+                                    <span class="badge badge-ghost"><i class="fas fa-box mr-1"></i> <span id="selectedRecipeYield"></span></span>
+                                    <span class="badge badge-ghost"><i class="fas fa-tint mr-1"></i> <span id="selectedRecipeMilk"></span> milk needed</span>
+                                </div>
                             </div>
                         </div>
-                        <!-- Milk requirement check -->
-                        <div id="milkRequirementCheck" style="display: none;"></div>
+                        <div id="milkRequirementCheck" class="hidden mt-2"></div>
                     </div>
                     
-                    <div class="form-group">
-                        <label class="form-label required">
-                            <i class="fas fa-calculator text-primary"></i>
-                            Step 2: How Many to Make?
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Planned Quantity <span class="text-error">*</span></span>
                         </label>
-                        <div class="d-flex gap-2 align-center">
-                            <input type="number" id="plannedQuantity" class="form-control" 
-                                   required min="1" placeholder="Enter a number (e.g., 100)" 
-                                   style="flex: 1; font-size: 1.1rem; padding: 0.75rem;"
-                                   onchange="checkMilkRequirement()">
-                            <span id="yieldUnit" class="text-muted font-semibold" style="min-width: 60px;">units</span>
+                        <div class="join w-full">
+                            <input type="number" class="input input-bordered join-item flex-1" id="plannedQuantity" required min="1" placeholder="Enter quantity" onchange="checkMilkRequirement()">
+                            <span class="btn join-item no-animation" id="yieldUnit">units</span>
                         </div>
-                        <div class="form-text">Enter how many products you want to produce</div>
                     </div>
                     
-                    <div class="form-group">
-                        <label class="form-label">
-                            <i class="fas fa-tint text-info"></i>
-                            Step 3: Milk Amount (Optional Override)
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Milk Amount (Optional Override)</span>
                         </label>
-                        <input type="number" id="milkLiters" class="form-control" step="0.1" 
-                               placeholder="Leave empty to auto-calculate" onchange="checkMilkRequirement()">
-                        <div class="form-text">💡 Leave empty to use recipe default. Only change if you have a specific amount.</div>
+                        <input type="number" class="input input-bordered w-full" id="milkLiters" step="0.1" placeholder="Leave empty to auto-calculate" onchange="checkMilkRequirement()">
+                        <label class="label">
+                            <span class="label-text-alt text-base-content/60">Leave empty to use recipe default</span>
+                        </label>
                     </div>
                     
-                    <div class="form-group">
-                        <label class="form-label">
-                            <i class="fas fa-sticky-note text-muted"></i>
-                            Step 4: Any Notes? (Optional)
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Notes</span>
                         </label>
-                        <textarea id="runNotes" class="form-control" rows="2" 
-                                  placeholder="Add any special instructions or notes here..."></textarea>
+                        <textarea class="textarea textarea-bordered w-full" id="runNotes" rows="2" placeholder="Optional notes..."></textarea>
                     </div>
                 </div>
-                <div class="modal-footer" style="background: #f8fafc;">
-                    <button type="button" class="btn btn-secondary btn-lg" onclick="closeModal('newRunModal')">
-                        <i class="fas fa-times"></i> Cancel
-                    </button>
-                    <button type="submit" class="btn btn-success btn-lg">
-                        <i class="fas fa-play"></i> Create & Start Production
+                
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('newRunModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-play"></i>
+                        Create Run
                     </button>
                 </div>
             </form>
         </div>
-    </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
     
     <!-- Run Details Modal -->
-    <div class="modal-overlay" id="runDetailsModal">
-        <div class="modal modal-lg">
-            <div class="modal-header">
-                <h3 class="modal-title">
-                    <i class="fas fa-info-circle text-primary"></i>
-                    Production Run Details
-                </h3>
-                <button class="modal-close" onclick="closeModal('runDetailsModal')">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="modal-body" id="runDetailsContent">
-                <div class="text-center p-4">
-                    <i class="fas fa-spinner fa-spin fa-2x text-primary"></i>
-                    <p class="mt-2 text-muted">Loading run details...</p>
+    <dialog id="runDetailsModal" class="modal">
+        <div class="modal-box max-w-3xl max-h-[90vh]">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-info-circle text-primary"></i>
+                Production Run Details
+            </h3>
+            
+            <div id="runDetailsContent" class="overflow-y-auto">
+                <div class="text-center py-8 text-base-content/40">
+                    <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                    <p>Loading run details...</p>
                 </div>
             </div>
-            <div class="modal-footer" id="runDetailsFooter">
+            
+            <div class="modal-action" id="runDetailsFooter">
+                <button class="btn btn-ghost" onclick="document.getElementById('runDetailsModal').close()">Close</button>
             </div>
         </div>
-    </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
     
     <!-- Complete Run Modal -->
-    <div class="modal-overlay" id="completeRunModal">
-        <div class="modal">
-            <div class="modal-header" style="background: linear-gradient(135deg, var(--success) 0%, #059669 100%); color: white;">
-                <h3 class="modal-title">
-                    <i class="fas fa-check-circle"></i>
-                    Complete Production Run
-                </h3>
-                <button class="modal-close" onclick="closeModal('completeRunModal')" style="color: white;">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
+    <dialog id="completeRunModal" class="modal">
+        <div class="modal-box max-w-lg">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-check-circle text-success"></i>
+                Complete Production Run
+            </h3>
+            
             <form id="completeRunForm" onsubmit="completeRun(event)">
-                <div class="modal-body">
-                    <input type="hidden" id="completeRunId">
-                    <input type="hidden" id="completeRunProductType">
-                    
+                <input type="hidden" id="completeRunId">
+                <input type="hidden" id="completeRunProductType">
+                
+                <div class="space-y-4">
                     <!-- Run Summary Card -->
-                    <div style="background: linear-gradient(135deg, var(--primary-50) 0%, #dbeafe 100%); padding: 1.25rem; border-radius: var(--border-radius); margin-bottom: 1.5rem; border: 1px solid var(--primary-100);">
-                        <div class="d-flex gap-3">
-                            <div style="width: 50px; height: 50px; background: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white;">
+                    <div class="bg-gradient-to-r from-primary/10 to-primary/5 p-4 rounded-xl border border-primary/20">
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 h-12 bg-primary rounded-full flex items-center justify-center text-primary-content">
                                 <i class="fas fa-industry"></i>
                             </div>
-                            <div style="flex: 1;">
-                                <div class="font-semibold text-lg" id="completeRunCode"></div>
-                                <div class="text-sm text-muted" id="completeRunProduct"></div>
+                            <div class="flex-1">
+                                <div class="font-bold text-lg" id="completeRunCode"></div>
+                                <div class="text-sm text-base-content/60" id="completeRunProduct"></div>
                                 <div class="mt-2">
                                     <span class="badge badge-primary">
-                                        <i class="fas fa-bullseye"></i> Planned: <span id="completeRunPlanned"></span>
+                                        <i class="fas fa-bullseye mr-1"></i> Planned: <span id="completeRunPlanned"></span>
                                     </span>
                                 </div>
                             </div>
@@ -478,33 +508,27 @@
                     </div>
                     
                     <!-- Multi-Unit Output Entry -->
-                    <div class="form-group">
-                        <label class="form-label required">
-                            <i class="fas fa-calculator text-success"></i>
-                            Batch Output
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Batch Output <span class="text-error">*</span></span>
                         </label>
-                        <div style="display: flex; gap: 0;">
-                            <input type="number" id="actualQuantity" class="form-control" required min="0"
-                                   placeholder="Enter quantity" 
-                                   oninput="calculateUnitConversion()"
-                                   style="border-top-right-radius: 0; border-bottom-right-radius: 0; flex: 1;">
-                            <select id="outputUnit" class="form-control" 
-                                    onchange="calculateUnitConversion()"
-                                    style="border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; width: auto; min-width: 130px;">
+                        <div class="join w-full">
+                            <input type="number" class="input input-bordered join-item flex-1" id="actualQuantity" required min="0" placeholder="Enter quantity" oninput="calculateUnitConversion()">
+                            <select class="select select-bordered join-item" id="outputUnit" onchange="calculateUnitConversion()">
                                 <option value="pieces">Pieces</option>
                                 <option value="boxes">Boxes</option>
                             </select>
                         </div>
                         
                         <!-- Automatic Conversion Display -->
-                        <div id="unitConversionResult" style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); padding: 1rem; border-radius: 8px; margin-top: 0.75rem; border: 1px solid #86efac; display: none;">
-                            <div class="d-flex align-center gap-2">
-                                <i class="fas fa-exchange-alt text-success"></i>
+                        <div id="unitConversionResult" class="alert alert-success mt-3 hidden">
+                            <div class="flex items-center gap-2">
+                                <i class="fas fa-exchange-alt"></i>
                                 <div>
-                                    <div class="font-semibold text-success">
+                                    <div class="font-semibold">
                                         Converts to: <span id="boxCount">0</span> <span id="secondaryUnitLabel">Boxes</span> + <span id="pieceCount">0</span> <span id="primaryUnitLabel">Pieces</span>
                                     </div>
-                                    <div class="text-sm text-muted mt-1">
+                                    <div class="text-sm opacity-70 mt-1">
                                         <i class="fas fa-cubes"></i> Total: <span id="totalPiecesDisplay">0</span> <span id="totalUnitLabel">pieces</span>
                                     </div>
                                 </div>
@@ -512,36 +536,37 @@
                         </div>
                         
                         <!-- Conversion Rate Info -->
-                        <div id="conversionRateInfo" class="form-text mt-2" style="background: #f8fafc; padding: 0.5rem; border-radius: 4px;">
+                        <div id="conversionRateInfo" class="bg-base-200 p-2 rounded-lg mt-2 text-sm">
                             <i class="fas fa-info-circle text-info"></i>
                             <span id="conversionRateText">1 Box = 50 Pieces</span>
                         </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label class="form-label">
-                            <i class="fas fa-comment-alt text-warning"></i>
-                            Variance Reason
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Variance Reason</span>
                         </label>
-                        <textarea id="varianceReason" class="form-control" rows="3" 
-                                  placeholder="Explain any variance from planned quantity..."></textarea>
-                        <div class="form-text">Required if actual differs from planned</div>
+                        <textarea class="textarea textarea-bordered w-full" id="varianceReason" rows="3" placeholder="Explain any variance from planned quantity..."></textarea>
+                        <label class="label">
+                            <span class="label-text-alt text-base-content/60">Required if actual differs from planned</span>
+                        </label>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('completeRunModal')">
-                        <i class="fas fa-times"></i> Cancel
-                    </button>
-                    <button type="submit" class="btn btn-success">
-                        <i class="fas fa-check"></i> Complete Run
+                
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('completeRunModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-check"></i>
+                        Complete Run
                     </button>
                 </div>
             </form>
         </div>
-    </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
     
     <!-- Toast Container -->
-    <div id="toastContainer" class="toast-container"></div>
+    <div class="toast toast-end z-50" id="toastContainer"></div>
     
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
@@ -549,6 +574,39 @@
     <script src="../../js/config/auth.js"></script>
     <script src="../../js/production/production.service.js"></script>
     <script>
+        // Sidebar toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+        
+        // Toast notification
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
+            const icon = type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle';
+            
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `
+                <i class="fas ${icon}"></i>
+                <span>${message}</span>
+            `;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'transition-opacity');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+        
+        // Theme toggle
+        document.getElementById('themeToggle').addEventListener('change', function() {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+        });
+        
         let recipes = [];
         let currentPage = 1;
         
@@ -582,7 +640,6 @@
             try {
                 const today = new Date().toISOString().split('T')[0];
                 
-                // Fetch multiple stats in parallel
                 const [inProgressRes, completedRes, plannedRes, allRes] = await Promise.all([
                     ProductionService.getRuns({ status: 'in_progress', limit: 1 }),
                     ProductionService.getRuns({ status: 'completed', date_from: today, date_to: today, limit: 100 }),
@@ -590,12 +647,10 @@
                     ProductionService.getRuns({ status: 'completed', limit: 100 })
                 ]);
                 
-                // Update stat cards
                 document.getElementById('statInProgress').textContent = inProgressRes.pagination?.total || 0;
                 document.getElementById('statCompleted').textContent = completedRes.pagination?.total || 0;
                 document.getElementById('statPlanned').textContent = plannedRes.pagination?.total || 0;
                 
-                // Calculate average yield
                 let totalYield = 0;
                 let yieldCount = 0;
                 if (allRes.data) {
@@ -638,27 +693,30 @@
             }
         }
         
+        // Available milk data from QC
+        let availableMilkData = null;
+        let selectedRecipeData = null;
+        
         function updateRecipeDetails() {
             const recipeId = document.getElementById('recipeSelect').value;
             const detailsDiv = document.getElementById('recipeDetails');
             
             if (!recipeId) {
-                detailsDiv.style.display = 'none';
+                detailsDiv.classList.add('hidden');
                 selectedRecipeData = null;
-                document.getElementById('milkRequirementCheck').style.display = 'none';
+                document.getElementById('milkRequirementCheck').classList.add('hidden');
                 return;
             }
             
             const recipe = recipes.find(r => r.id == recipeId);
             if (recipe) {
-                selectedRecipeData = recipe; // Store for milk calculation
+                selectedRecipeData = recipe;
                 document.getElementById('selectedRecipeName').textContent = `${recipe.product_name} ${recipe.variant || ''}`;
                 document.getElementById('selectedRecipeYield').textContent = `${recipe.expected_yield} ${recipe.yield_unit} per batch`;
                 document.getElementById('selectedRecipeMilk').textContent = `${recipe.base_milk_liters}L`;
                 document.getElementById('yieldUnit').textContent = recipe.yield_unit || 'units';
-                detailsDiv.style.display = 'block';
+                detailsDiv.classList.remove('hidden');
                 
-                // Check milk requirement
                 checkMilkRequirement();
             }
         }
@@ -680,7 +738,6 @@
                     renderRuns(response.data);
                     renderPagination(response.pagination);
                     
-                    // Update total records count
                     const total = response.pagination?.total || response.data.length;
                     document.getElementById('totalRecords').textContent = `${total} record${total !== 1 ? 's' : ''}`;
                 }
@@ -696,62 +753,55 @@
             if (!runs.length) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="8" class="text-center p-5">
-                            <div style="max-width: 400px; margin: 0 auto;">
-                                <div style="width: 80px; height: 80px; background: #f3f4f6; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem;">
-                                    <i class="fas fa-box-open fa-2x text-muted"></i>
-                                </div>
-                                <h3 class="mb-2">No Production Runs Yet</h3>
-                                <p class="text-muted mb-3">You haven't created any production batches. Click the button below to get started!</p>
-                                <button class="btn btn-success btn-lg" onclick="showNewRunModal()" style="padding: 1rem 2rem;">
-                                    <i class="fas fa-plus-circle"></i> Create Your First Production Run
-                                </button>
-                            </div>
+                        <td colspan="8" class="text-center py-8 text-base-content/40">
+                            <i class="fas fa-box-open text-4xl mb-2"></i>
+                            <p>No production runs found</p>
                         </td>
                     </tr>`;
                 return;
             }
             
             const statusConfig = {
-                'planned': { color: 'secondary', icon: 'fa-clipboard-list', emoji: '📋', label: 'Waiting to Start' },
-                'in_progress': { color: 'primary', icon: 'fa-play-circle', emoji: '🔄', label: 'Running Now' },
-                'pasteurization': { color: 'warning', icon: 'fa-fire', emoji: '🔥', label: 'Pasteurizing' },
-                'processing': { color: 'info', icon: 'fa-cogs', emoji: '⚙️', label: 'Processing' },
-                'cooling': { color: 'info', icon: 'fa-snowflake', emoji: '❄️', label: 'Cooling' },
-                'packaging': { color: 'info', icon: 'fa-box', emoji: '📦', label: 'Packaging' },
-                'completed': { color: 'success', icon: 'fa-check-circle', emoji: '✅', label: 'Done!' },
-                'cancelled': { color: 'danger', icon: 'fa-times-circle', emoji: '❌', label: 'Cancelled' }
+                'planned': { class: 'badge-ghost', icon: 'fa-clipboard-list', label: 'Planned' },
+                'in_progress': { class: 'badge-primary', icon: 'fa-play-circle', label: 'In Progress' },
+                'pasteurization': { class: 'badge-warning', icon: 'fa-fire', label: 'Pasteurization' },
+                'processing': { class: 'badge-info', icon: 'fa-cogs', label: 'Processing' },
+                'cooling': { class: 'badge-info', icon: 'fa-snowflake', label: 'Cooling' },
+                'packaging': { class: 'badge-secondary', icon: 'fa-box', label: 'Packaging' },
+                'completed': { class: 'badge-success', icon: 'fa-check-circle', label: 'Completed' },
+                'cancelled': { class: 'badge-error', icon: 'fa-times-circle', label: 'Cancelled' }
             };
             
             tbody.innerHTML = runs.map(run => {
-                const config = statusConfig[run.status] || { color: 'secondary', icon: 'fa-question', emoji: '❓', label: 'Unknown' };
+                const config = statusConfig[run.status] || { class: 'badge-ghost', icon: 'fa-question', label: 'Unknown' };
                 const yieldPercent = run.actual_quantity && run.planned_quantity 
                     ? Math.round((run.actual_quantity / run.planned_quantity) * 100) 
                     : null;
                 
                 return `
-                <tr style="cursor: pointer;" onclick="viewRunDetails(${run.id})">
+                <tr class="hover">
                     <td>
-                        <span class="font-mono font-semibold text-primary" style="font-size: 1rem;">${run.run_code}</span>
+                        <code class="text-sm font-semibold bg-base-200 px-2 py-1 rounded">${run.run_code}</code>
                     </td>
                     <td>
                         <div class="font-medium">${run.product_name}</div>
-                        ${run.variant ? `<div class="text-muted text-sm">${run.variant}</div>` : ''}
+                        ${run.variant ? `<div class="text-xs text-base-content/60">${run.variant}</div>` : ''}
                     </td>
                     <td>
-                        <span class="badge badge-${config.color}" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
-                            ${config.emoji} ${config.label}
+                        <span class="badge ${config.class} gap-1">
+                            <i class="fas ${config.icon}"></i>
+                            ${config.label}
                         </span>
                     </td>
-                    <td class="text-right font-medium" style="font-size: 1rem;">${run.planned_quantity.toLocaleString()}</td>
-                    <td class="text-right" style="font-size: 1rem;">
+                    <td class="text-right font-medium">${run.planned_quantity.toLocaleString()}</td>
+                    <td class="text-right">
                         ${run.actual_quantity 
-                            ? `<span class="${yieldPercent >= 95 ? 'text-success' : yieldPercent >= 85 ? 'text-warning' : 'text-danger'} font-semibold">${formatOutputDisplay(run)}</span>` 
-                            : '<span class="text-muted">—</span>'}
+                            ? `<span class="${yieldPercent >= 95 ? 'text-success' : yieldPercent >= 85 ? 'text-warning' : 'text-error'} font-semibold">${formatOutputDisplay(run)}</span>` 
+                            : '<span class="text-base-content/40">-</span>'}
                     </td>
-                    <td class="text-right">${run.milk_liters_used ? run.milk_liters_used.toLocaleString() + ' L' : '<span class="text-muted">—</span>'}</td>
-                    <td class="text-muted">${run.start_datetime ? formatDate(run.start_datetime) : '—'}</td>
-                    <td class="text-center" onclick="event.stopPropagation();">
+                    <td class="text-right">${run.milk_liters_used ? run.milk_liters_used.toLocaleString() + ' L' : '<span class="text-base-content/40">-</span>'}</td>
+                    <td class="text-base-content/60">${run.start_datetime ? formatDate(run.start_datetime) : '-'}</td>
+                    <td>
                         ${getActionButtons(run)}
                     </td>
                 </tr>
@@ -759,37 +809,29 @@
         }
         
         function getActionButtons(run) {
-            let buttons = '<div class="d-flex gap-1 justify-center flex-wrap">';
+            let buttons = '<div class="flex gap-1 justify-center">';
             
-            // View button - always shown
-            buttons += `<button class="btn btn-sm btn-outline" onclick="viewRunDetails(${run.id})" title="Click to see full details" style="min-width: 70px;">
-                👁️ View
+            // View button
+            buttons += `<button class="btn btn-ghost btn-xs btn-square" onclick="viewRunDetails(${run.id})" title="View Details">
+                <i class="fas fa-eye"></i>
             </button>`;
             
             if (run.status === 'planned') {
-                buttons += `<button class="btn btn-sm btn-primary" onclick="startRun(${run.id})" title="Click to begin production" style="min-width: 70px; background: var(--primary); animation: pulse 2s infinite;">
-                    ▶️ Start
+                buttons += `<button class="btn btn-primary btn-xs btn-square" onclick="startRun(${run.id})" title="Start Production">
+                    <i class="fas fa-play"></i>
                 </button>`;
             }
             
             if (['in_progress', 'pasteurization', 'processing', 'cooling', 'packaging'].includes(run.status)) {
-                buttons += `<button class="btn btn-sm btn-success" onclick="showCompleteModal(${run.id}, '${run.run_code}', '${run.product_name}', ${run.planned_quantity}, '${run.product_type || 'milk_bar'}')" title="Click when production is finished" style="min-width: 70px;">
-                    ✅ Done
+                buttons += `<button class="btn btn-success btn-xs btn-square" onclick="showCompleteModal(${run.id}, '${run.run_code}', '${run.product_name}', ${run.planned_quantity}, '${run.product_type || 'milk_bar'}')" title="Complete Run">
+                    <i class="fas fa-check"></i>
                 </button>`;
             }
             
             if (run.status !== 'completed' && run.status !== 'cancelled') {
-                buttons += `<button class="btn btn-sm btn-outline-danger" onclick="cancelRun(${run.id})" title="Click to cancel this run" style="min-width: 50px;">
-                    ❌
+                buttons += `<button class="btn btn-error btn-xs btn-square" onclick="cancelRun(${run.id})" title="Cancel Run">
+                    <i class="fas fa-times"></i>
                 </button>`;
-            }
-            
-            if (run.status === 'completed') {
-                buttons += `<span class="badge badge-success" style="padding: 0.5rem;">✅ Completed</span>`;
-            }
-            
-            if (run.status === 'cancelled') {
-                buttons += `<span class="badge badge-danger" style="padding: 0.5rem;">❌ Cancelled</span>`;
             }
             
             buttons += '</div>';
@@ -797,21 +839,18 @@
         }
         
         function renderPagination(pagination) {
+            const container = document.getElementById('pagination');
             if (!pagination || pagination.total_pages <= 1) {
-                document.getElementById('pagination').style.display = 'none';
+                container.innerHTML = '';
                 return;
             }
             
-            const container = document.getElementById('pagination');
-            container.style.display = 'flex';
             container.innerHTML = `
-                <button class="btn btn-sm btn-outline" ${pagination.page <= 1 ? 'disabled' : ''} 
-                        onclick="goToPage(${pagination.page - 1})">
+                <button class="join-item btn btn-sm" ${pagination.page <= 1 ? 'disabled' : ''} onclick="goToPage(${pagination.page - 1})">
                     <i class="fas fa-chevron-left"></i>
                 </button>
-                <span class="mx-3">Page ${pagination.page} of ${pagination.total_pages}</span>
-                <button class="btn btn-sm btn-outline" ${pagination.page >= pagination.total_pages ? 'disabled' : ''} 
-                        onclick="goToPage(${pagination.page + 1})">
+                <button class="join-item btn btn-sm">Page ${pagination.page} of ${pagination.total_pages}</button>
+                <button class="join-item btn btn-sm" ${pagination.page >= pagination.total_pages ? 'disabled' : ''} onclick="goToPage(${pagination.page + 1})">
                     <i class="fas fa-chevron-right"></i>
                 </button>
             `;
@@ -822,18 +861,13 @@
             loadRuns();
         }
         
-        // Available milk data from QC
-        let availableMilkData = null;
-        let selectedRecipeData = null;
-        
         async function showNewRunModal() {
             document.getElementById('newRunForm').reset();
-            document.getElementById('recipeDetails').style.display = 'none';
-            document.getElementById('milkCheckLoading').style.display = 'block';
-            document.getElementById('milkCheckResult').style.display = 'none';
-            document.getElementById('newRunModal').classList.add('active');
+            document.getElementById('recipeDetails').classList.add('hidden');
+            document.getElementById('milkCheckLoading').classList.remove('hidden');
+            document.getElementById('milkCheckResult').classList.add('hidden');
+            document.getElementById('newRunModal').showModal();
             
-            // Load available milk from QC
             await loadAvailableMilk();
         }
         
@@ -846,34 +880,32 @@
                     const totalLiters = availableMilkData.total_available_liters || 0;
                     const sources = availableMilkData.milk_sources || [];
                     
-                    document.getElementById('milkCheckLoading').style.display = 'none';
+                    document.getElementById('milkCheckLoading').classList.add('hidden');
                     const resultDiv = document.getElementById('milkCheckResult');
-                    resultDiv.style.display = 'block';
+                    resultDiv.classList.remove('hidden');
                     
                     if (totalLiters > 0) {
                         resultDiv.innerHTML = `
-                            <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); padding: 1rem; border-radius: 8px; border: 2px solid #22c55e;">
-                                <div style="display: flex; align-items: center; gap: 1rem;">
-                                    <div style="font-size: 2rem;">🥛</div>
-                                    <div style="flex: 1;">
-                                        <div style="font-weight: 600; color: #166534; font-size: 1.1rem;">
-                                            ✅ QC-Approved Milk Available: ${totalLiters.toLocaleString()}L
+                            <div class="alert alert-success">
+                                <div class="flex items-start gap-3 w-full">
+                                    <span class="text-2xl"><i class="fas fa-tint text-primary"></i></span>
+                                    <div class="flex-1">
+                                        <div class="font-semibold">
+                                            <i class="fas fa-check-circle mr-1"></i> QC-Approved Milk Available: ${totalLiters.toLocaleString()}L
                                         </div>
-                                        <div style="color: #15803d; font-size: 0.875rem; margin-top: 0.25rem;">
+                                        <div class="text-sm opacity-80 mt-1">
                                             From ${sources.length} delivery${sources.length !== 1 ? 's' : ''} in the last 2 days
                                         </div>
                                     </div>
                                 </div>
                                 ${sources.length > 0 ? `
-                                    <details style="margin-top: 0.75rem;">
-                                        <summary style="cursor: pointer; color: #166534; font-size: 0.875rem;">
-                                            📋 View milk source details
-                                        </summary>
-                                        <div style="margin-top: 0.5rem; background: white; border-radius: 6px; padding: 0.5rem; font-size: 0.8rem;">
+                                    <details class="mt-2 w-full">
+                                        <summary class="cursor-pointer text-sm"><i class="fas fa-clipboard-list mr-1"></i> View milk source details</summary>
+                                        <div class="mt-2 bg-base-100 rounded-lg p-2 text-xs">
                                             ${sources.map(s => `
-                                                <div style="padding: 0.5rem; border-bottom: 1px solid #e5e7eb;">
+                                                <div class="p-2 border-b border-base-300 last:border-0">
                                                     <strong>${s.delivery_code}</strong> - ${parseFloat(s.remaining_liters).toFixed(1)}L available
-                                                    <br><span style="color: #64748b;">Farmer: ${s.farmer_name || 'Unknown'} | Fat: ${s.fat_percentage}% | Date: ${s.delivery_date}</span>
+                                                    <br><span class="opacity-70">Farmer: ${s.farmer_name || 'Unknown'} | Fat: ${s.fat_percentage}% | Date: ${s.delivery_date}</span>
                                                 </div>
                                             `).join('')}
                                         </div>
@@ -883,34 +915,32 @@
                         `;
                     } else {
                         resultDiv.innerHTML = `
-                            <div style="background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%); padding: 1rem; border-radius: 8px; border: 2px solid #ef4444;">
-                                <div style="display: flex; align-items: center; gap: 1rem;">
-                                    <div style="font-size: 2rem;">⚠️</div>
+                            <div class="alert alert-error">
+                                <div class="flex items-start gap-3 w-full">
+                                    <span class="text-2xl"><i class="fas fa-exclamation-triangle text-error"></i></span>
                                     <div>
-                                        <div style="font-weight: 600; color: #dc2626; font-size: 1.1rem;">
-                                            No QC-Approved Milk Available
-                                        </div>
-                                        <div style="color: #b91c1c; font-size: 0.875rem; margin-top: 0.25rem;">
+                                        <div class="font-semibold">No QC-Approved Milk Available</div>
+                                        <div class="text-sm opacity-80 mt-1">
                                             You cannot start production until milk deliveries are tested and approved by QC.
                                         </div>
-                                        <div style="color: #64748b; font-size: 0.8rem; margin-top: 0.5rem;">
-                                            📞 Contact the QC team to check if there are deliveries waiting to be graded.
+                                        <div class="text-xs opacity-60 mt-2">
+                                            <i class="fas fa-phone mr-1"></i> Contact the QC team to check if there are deliveries waiting to be graded.
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         `;
-                        // Disable the submit button
                         document.querySelector('#newRunForm button[type="submit"]').disabled = true;
                     }
                 }
             } catch (error) {
                 console.error('Error loading available milk:', error);
-                document.getElementById('milkCheckLoading').style.display = 'none';
-                document.getElementById('milkCheckResult').style.display = 'block';
+                document.getElementById('milkCheckLoading').classList.add('hidden');
+                document.getElementById('milkCheckResult').classList.remove('hidden');
                 document.getElementById('milkCheckResult').innerHTML = `
-                    <div style="background: #fef3c7; padding: 1rem; border-radius: 8px; border: 1px solid #fbbf24;">
-                        <span style="color: #92400e;">⚠️ Could not check milk availability. You may proceed, but the system will validate again on submission.</span>
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span>Could not check milk availability. You may proceed, but the system will validate again on submission.</span>
                     </div>
                 `;
             }
@@ -922,7 +952,6 @@
             const plannedQty = parseInt(document.getElementById('plannedQuantity').value) || 0;
             const customMilk = parseFloat(document.getElementById('milkLiters').value) || 0;
             
-            // Calculate required milk (use custom if provided, else calculate from recipe)
             const baseMilk = selectedRecipeData.base_milk_liters || 0;
             const baseYield = selectedRecipeData.expected_yield || 1;
             const requiredMilk = customMilk > 0 ? customMilk : (baseMilk / baseYield) * plannedQty;
@@ -931,26 +960,30 @@
             const checkDiv = document.getElementById('milkRequirementCheck');
             
             if (requiredMilk > 0) {
-                checkDiv.style.display = 'block';
+                checkDiv.classList.remove('hidden');
                 
                 if (requiredMilk <= availableLiters) {
                     checkDiv.innerHTML = `
-                        <div style="background: #ecfdf5; padding: 0.75rem; border-radius: 6px; border: 1px solid #86efac; margin-top: 0.5rem;">
-                            <span style="color: #166534;">✅ Milk OK: Need ${requiredMilk.toFixed(1)}L, Have ${availableLiters.toFixed(1)}L available</span>
+                        <div class="alert alert-success py-2">
+                            <i class="fas fa-check-circle"></i>
+                            <span>Milk OK: Need ${requiredMilk.toFixed(1)}L, Have ${availableLiters.toFixed(1)}L available</span>
                         </div>
                     `;
                     document.querySelector('#newRunForm button[type="submit"]').disabled = false;
                 } else {
                     checkDiv.innerHTML = `
-                        <div style="background: #fef2f2; padding: 0.75rem; border-radius: 6px; border: 1px solid #fca5a5; margin-top: 0.5rem;">
-                            <span style="color: #dc2626;">❌ Not enough milk: Need ${requiredMilk.toFixed(1)}L, Only ${availableLiters.toFixed(1)}L available</span>
-                            <br><small style="color: #b91c1c;">Reduce quantity or wait for more QC-approved milk.</small>
+                        <div class="alert alert-error py-2">
+                            <i class="fas fa-times-circle"></i>
+                            <div>
+                                <div>Not enough milk: Need ${requiredMilk.toFixed(1)}L, Only ${availableLiters.toFixed(1)}L available</div>
+                                <div class="text-xs opacity-80">Reduce quantity or wait for more QC-approved milk.</div>
+                            </div>
                         </div>
                     `;
                     document.querySelector('#newRunForm button[type="submit"]').disabled = true;
                 }
             } else {
-                checkDiv.style.display = 'none';
+                checkDiv.classList.add('hidden');
             }
         }
         
@@ -969,7 +1002,7 @@
                 
                 if (response.success) {
                     showToast('Production run created with QC-approved milk!', 'success');
-                    closeModal('newRunModal');
+                    document.getElementById('newRunModal').close();
                     loadRuns();
                 } else {
                     showToast(response.message || 'Failed to create run', 'error');
@@ -977,14 +1010,10 @@
             } catch (error) {
                 console.error('Error creating run:', error);
                 
-                // Handle validation errors (422) - check for milk source issues
                 if (error.type === 'validation' && error.errors) {
-                    // Check for milk-related errors
                     if (error.errors.milk_source) {
-                        // Show a big, clear error for milk issues
-                        showMilkError(error.errors.milk_source);
+                        showToast(error.errors.milk_source, 'error');
                     } else {
-                        // Show other validation errors
                         const errorMessages = Object.values(error.errors).join('\n');
                         showToast(errorMessages || 'Validation failed', 'error');
                     }
@@ -1030,27 +1059,23 @@
             document.getElementById('actualQuantity').value = planned;
             document.getElementById('varianceReason').value = '';
             
-            // Set up unit conversion based on product type
             currentProductConversion = unitConversions[productType] || unitConversions['milk_bar'];
             
-            // Update unit selector options
             const unitSelect = document.getElementById('outputUnit');
             unitSelect.innerHTML = `
                 <option value="pieces">${currentProductConversion.primary}</option>
                 <option value="boxes">${currentProductConversion.secondary}</option>
             `;
             
-            // Update labels
             document.getElementById('secondaryUnitLabel').textContent = currentProductConversion.secondary;
             document.getElementById('primaryUnitLabel').textContent = currentProductConversion.primary;
             document.getElementById('totalUnitLabel').textContent = currentProductConversion.primary.toLowerCase();
             document.getElementById('conversionRateText').textContent = 
                 `1 ${currentProductConversion.secondary.slice(0, -1)} = ${currentProductConversion.conversion} ${currentProductConversion.primary}`;
             
-            // Calculate initial conversion
             calculateUnitConversion();
             
-            document.getElementById('completeRunModal').classList.add('active');
+            document.getElementById('completeRunModal').showModal();
         }
         
         function calculateUnitConversion() {
@@ -1059,28 +1084,25 @@
             const resultDiv = document.getElementById('unitConversionResult');
             
             if (!currentProductConversion || quantity <= 0) {
-                resultDiv.style.display = 'none';
+                resultDiv.classList.add('hidden');
                 return;
             }
             
             const conversionFactor = currentProductConversion.conversion;
             let totalPieces = quantity;
             
-            // If entered in boxes/crates/cases, convert to pieces
             if (unit === 'boxes') {
                 totalPieces = quantity * conversionFactor;
             }
             
-            // Calculate breakdown
             const secondaryCount = Math.floor(totalPieces / conversionFactor);
             const remainingPrimary = totalPieces % conversionFactor;
             
-            // Update display
             document.getElementById('boxCount').textContent = secondaryCount.toLocaleString();
             document.getElementById('pieceCount').textContent = remainingPrimary.toLocaleString();
             document.getElementById('totalPiecesDisplay').textContent = totalPieces.toLocaleString();
             
-            resultDiv.style.display = 'block';
+            resultDiv.classList.remove('hidden');
         }
         
         async function completeRun(event) {
@@ -1097,7 +1119,6 @@
                     return;
                 }
                 
-                // Use updated API call with output_unit
                 const response = await api.put('/production/runs.php', {
                     id: id,
                     action: 'complete',
@@ -1107,13 +1128,12 @@
                 });
                 
                 if (response.success) {
-                    // Show breakdown in success message if available
                     let successMsg = 'Production run completed!';
                     if (response.data && response.data.output_breakdown) {
                         successMsg = `Completed: ${response.data.output_breakdown.display}`;
                     }
                     showToast(successMsg, 'success');
-                    closeModal('completeRunModal');
+                    document.getElementById('completeRunModal').close();
                     loadRuns();
                 } else {
                     showToast(response.message || 'Failed to complete run', 'error');
@@ -1148,7 +1168,7 @@
                 if (response.success) {
                     const run = response.data;
                     renderRunDetails(run);
-                    document.getElementById('runDetailsModal').classList.add('active');
+                    document.getElementById('runDetailsModal').showModal();
                 }
             } catch (error) {
                 showToast('Failed to load run details', 'error');
@@ -1156,109 +1176,132 @@
         }
         
         function renderRunDetails(run) {
-            const statusColors = {
-                'planned': 'secondary',
-                'in_progress': 'primary',
-                'pasteurization': 'warning',
-                'processing': 'info',
-                'cooling': 'info',
-                'packaging': 'info',
-                'completed': 'success',
-                'cancelled': 'danger'
+            const statusConfig = {
+                'planned': 'badge-ghost',
+                'in_progress': 'badge-primary',
+                'pasteurization': 'badge-warning',
+                'processing': 'badge-info',
+                'cooling': 'badge-info',
+                'packaging': 'badge-secondary',
+                'completed': 'badge-success',
+                'cancelled': 'badge-error'
             };
             
             document.getElementById('runDetailsContent').innerHTML = `
-                <div class="grid-2 mb-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
-                        <h4 class="mb-2">Run Information</h4>
-                        <table class="table table-sm">
-                            <tr><td class="text-secondary">Run Code</td><td class="font-mono font-semibold">${run.run_code}</td></tr>
-                            <tr><td class="text-secondary">Status</td><td><span class="badge badge-${statusColors[run.status]}">${run.status.replace('_', ' ')}</span></td></tr>
-                            <tr><td class="text-secondary">Product</td><td>${run.product_name} ${run.variant || ''}</td></tr>
-                            <tr><td class="text-secondary">Recipe Code</td><td>${run.recipe_code}</td></tr>
-                            <tr><td class="text-secondary">Product Type</td><td>${run.product_type}</td></tr>
-                        </table>
+                        <h4 class="font-semibold mb-2 flex items-center gap-2">
+                            <i class="fas fa-info-circle text-primary"></i>
+                            Run Information
+                        </h4>
+                        <div class="bg-base-200 rounded-xl p-3 space-y-2 text-sm">
+                            <div class="flex justify-between"><span class="text-base-content/60">Run Code</span><code class="font-semibold">${run.run_code}</code></div>
+                            <div class="flex justify-between"><span class="text-base-content/60">Status</span><span class="badge ${statusConfig[run.status]}">${run.status.replace('_', ' ')}</span></div>
+                            <div class="flex justify-between"><span class="text-base-content/60">Product</span><span>${run.product_name} ${run.variant || ''}</span></div>
+                            <div class="flex justify-between"><span class="text-base-content/60">Recipe Code</span><span>${run.recipe_code}</span></div>
+                            <div class="flex justify-between"><span class="text-base-content/60">Product Type</span><span>${run.product_type}</span></div>
+                        </div>
                     </div>
                     <div>
-                        <h4 class="mb-2">Quantities</h4>
-                        <table class="table table-sm">
-                            <tr><td class="text-secondary">Planned</td><td>${run.planned_quantity} ${run.yield_unit}</td></tr>
-                            <tr><td class="text-secondary">Actual Output</td><td>${formatOutputDisplayFull(run)}</td></tr>
-                            <tr><td class="text-secondary">Variance</td><td>${run.yield_variance !== null ? run.yield_variance : '-'}</td></tr>
-                            <tr><td class="text-secondary">Milk Used</td><td>${run.milk_liters_used || '-'} L</td></tr>
-                        </table>
+                        <h4 class="font-semibold mb-2 flex items-center gap-2">
+                            <i class="fas fa-calculator text-primary"></i>
+                            Quantities
+                        </h4>
+                        <div class="bg-base-200 rounded-xl p-3 space-y-2 text-sm">
+                            <div class="flex justify-between"><span class="text-base-content/60">Planned</span><span>${run.planned_quantity} ${run.yield_unit}</span></div>
+                            <div class="flex justify-between"><span class="text-base-content/60">Actual Output</span><span>${formatOutputDisplayFull(run)}</span></div>
+                            <div class="flex justify-between"><span class="text-base-content/60">Variance</span><span>${run.yield_variance !== null ? run.yield_variance : '-'}</span></div>
+                            <div class="flex justify-between"><span class="text-base-content/60">Milk Used</span><span>${run.milk_liters_used || '-'} L</span></div>
+                        </div>
                     </div>
                 </div>
                 
-                <div class="grid-2 mb-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
-                        <h4 class="mb-2">Timeline</h4>
-                        <table class="table table-sm">
-                            <tr><td class="text-secondary">Created</td><td>${formatDate(run.created_at)}</td></tr>
-                            <tr><td class="text-secondary">Started</td><td>${run.start_datetime ? formatDate(run.start_datetime) : '-'}</td></tr>
-                            <tr><td class="text-secondary">Completed</td><td>${run.end_datetime ? formatDate(run.end_datetime) : '-'}</td></tr>
-                            <tr><td class="text-secondary">Started By</td><td>${run.started_by_first ? run.started_by_first + ' ' + run.started_by_last : '-'}</td></tr>
-                            <tr><td class="text-secondary">Completed By</td><td>${run.completed_by_first ? run.completed_by_first + ' ' + run.completed_by_last : '-'}</td></tr>
-                        </table>
+                        <h4 class="font-semibold mb-2 flex items-center gap-2">
+                            <i class="fas fa-clock text-primary"></i>
+                            Timeline
+                        </h4>
+                        <div class="bg-base-200 rounded-xl p-3 space-y-2 text-sm">
+                            <div class="flex justify-between"><span class="text-base-content/60">Created</span><span>${formatDate(run.created_at)}</span></div>
+                            <div class="flex justify-between"><span class="text-base-content/60">Started</span><span>${run.start_datetime ? formatDate(run.start_datetime) : '-'}</span></div>
+                            <div class="flex justify-between"><span class="text-base-content/60">Completed</span><span>${run.end_datetime ? formatDate(run.end_datetime) : '-'}</span></div>
+                            <div class="flex justify-between"><span class="text-base-content/60">Started By</span><span>${run.started_by_first ? run.started_by_first + ' ' + run.started_by_last : '-'}</span></div>
+                            <div class="flex justify-between"><span class="text-base-content/60">Completed By</span><span>${run.completed_by_first ? run.completed_by_first + ' ' + run.completed_by_last : '-'}</span></div>
+                        </div>
                     </div>
                     <div>
-                        <h4 class="mb-2">CCP Requirements</h4>
-                        <table class="table table-sm">
-                            <tr><td class="text-secondary">Pasteurization Temp</td><td>${run.pasteurization_temp}°C</td></tr>
-                            <tr><td class="text-secondary">Pasteurization Time</td><td>${run.pasteurization_time_mins} mins</td></tr>
-                            <tr><td class="text-secondary">Cooling Temp</td><td>≤${run.cooling_temp}°C</td></tr>
-                        </table>
+                        <h4 class="font-semibold mb-2 flex items-center gap-2">
+                            <i class="fas fa-thermometer-half text-primary"></i>
+                            CCP Requirements
+                        </h4>
+                        <div class="bg-base-200 rounded-xl p-3 space-y-2 text-sm">
+                            <div class="flex justify-between"><span class="text-base-content/60">Pasteurization Temp</span><span>${run.pasteurization_temp}°C</span></div>
+                            <div class="flex justify-between"><span class="text-base-content/60">Pasteurization Time</span><span>${run.pasteurization_time_mins} mins</span></div>
+                            <div class="flex justify-between"><span class="text-base-content/60">Cooling Temp</span><span>≤${run.cooling_temp}°C</span></div>
+                        </div>
                     </div>
                 </div>
                 
                 ${run.ccp_logs && run.ccp_logs.length ? `
                 <div class="mb-4">
-                    <h4 class="mb-2">CCP Logs</h4>
-                    <table class="table table-sm">
-                        <thead>
-                            <tr>
-                                <th>Type</th>
-                                <th>Temperature</th>
-                                <th>Target</th>
-                                <th>Status</th>
-                                <th>Time</th>
-                                <th>Verified By</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${run.ccp_logs.map(log => `
+                    <h4 class="font-semibold mb-2 flex items-center gap-2">
+                        <i class="fas fa-list-check text-primary"></i>
+                        CCP Logs
+                    </h4>
+                    <div class="overflow-x-auto bg-base-200 rounded-xl">
+                        <table class="table table-sm">
+                            <thead>
                                 <tr>
-                                    <td>${log.check_type}</td>
-                                    <td>${log.temperature}°C</td>
-                                    <td>${log.target_temp}°C (±${log.temp_tolerance})</td>
-                                    <td><span class="badge badge-${log.status === 'pass' ? 'success' : 'danger'}">${log.status}</span></td>
-                                    <td>${formatDate(log.check_datetime)}</td>
-                                    <td>${log.first_name ? log.first_name + ' ' + log.last_name : '-'}</td>
+                                    <th>Type</th>
+                                    <th>Temperature</th>
+                                    <th>Target</th>
+                                    <th>Status</th>
+                                    <th>Time</th>
+                                    <th>Verified By</th>
                                 </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                ${run.ccp_logs.map(log => `
+                                    <tr>
+                                        <td>${log.check_type}</td>
+                                        <td>${log.temperature}°C</td>
+                                        <td>${log.target_temp}°C (±${log.temp_tolerance})</td>
+                                        <td><span class="badge ${log.status === 'pass' ? 'badge-success' : 'badge-error'}">${log.status}</span></td>
+                                        <td>${formatDate(log.check_datetime)}</td>
+                                        <td>${log.first_name ? log.first_name + ' ' + log.last_name : '-'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
                 ` : ''}
                 
                 ${run.notes ? `
                 <div class="mb-4">
-                    <h4 class="mb-2">Notes</h4>
-                    <p class="text-secondary">${run.notes}</p>
+                    <h4 class="font-semibold mb-2 flex items-center gap-2">
+                        <i class="fas fa-sticky-note text-primary"></i>
+                        Notes
+                    </h4>
+                    <div class="bg-base-200 rounded-xl p-3 text-sm">${run.notes}</div>
                 </div>
                 ` : ''}
                 
                 ${run.variance_reason ? `
                 <div class="mb-4">
-                    <h4 class="mb-2">Variance Reason</h4>
-                    <p class="text-secondary">${run.variance_reason}</p>
+                    <h4 class="font-semibold mb-2 flex items-center gap-2">
+                        <i class="fas fa-exclamation-triangle text-warning"></i>
+                        Variance Reason
+                    </h4>
+                    <div class="bg-base-200 rounded-xl p-3 text-sm">${run.variance_reason}</div>
                 </div>
                 ` : ''}
             `;
             
             // Footer actions
             const footer = document.getElementById('runDetailsFooter');
-            let actions = '<button class="btn btn-outline" onclick="closeModal(\'runDetailsModal\')">Close</button>';
+            let actions = '<button class="btn btn-ghost" onclick="document.getElementById(\'runDetailsModal\').close()">Close</button>';
             
             if (['in_progress', 'pasteurization', 'processing', 'cooling', 'packaging'].includes(run.status)) {
                 actions += `<a href="ccp_logging.html?run_id=${run.id}" class="btn btn-primary">Log CCP Check</a>`;
@@ -1272,11 +1315,9 @@
             return new Date(dateStr).toLocaleString();
         }
         
-        // Format output display with multi-unit breakdown
         function formatOutputDisplay(run) {
             if (!run.actual_quantity) return '—';
             
-            // If we have output_breakdown data, show breakdown
             if (run.output_breakdown) {
                 try {
                     const breakdown = typeof run.output_breakdown === 'string' 
@@ -1298,15 +1339,12 @@
                 }
             }
             
-            // Default: just show the number
             return run.actual_quantity.toLocaleString();
         }
         
-        // Format output for details view with full display
         function formatOutputDisplayFull(run) {
             if (!run.actual_quantity) return '-';
             
-            // If we have output_breakdown data, show full breakdown
             if (run.output_breakdown) {
                 try {
                     const breakdown = typeof run.output_breakdown === 'string' 
@@ -1320,35 +1358,14 @@
                         const primUnit = breakdown.primary_unit || 'pieces';
                         const total = breakdown.total_pieces || run.actual_quantity;
                         
-                        return `${secondary} ${secUnit} + ${remaining} ${primUnit}<br><small class="text-muted">(${total.toLocaleString()} total ${primUnit})</small>`;
+                        return `${secondary} ${secUnit} + ${remaining} ${primUnit} <span class="text-xs text-base-content/60">(${total.toLocaleString()} total)</span>`;
                     }
                 } catch (e) {
                     console.error('Error parsing output_breakdown:', e);
                 }
             }
             
-            // Default: just show the number
             return `${run.actual_quantity} ${run.yield_unit || 'units'}`;
-        }
-        
-        function closeModal(modalId) {
-            document.getElementById(modalId).classList.remove('active');
-        }
-        
-        function showToast(message, type = 'info') {
-            const container = document.getElementById('toastContainer');
-            const toast = document.createElement('div');
-            toast.className = `toast toast-${type}`;
-            toast.innerHTML = `
-                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
-                <span>${message}</span>
-            `;
-            container.appendChild(toast);
-            
-            setTimeout(() => {
-                toast.classList.add('toast-hide');
-                setTimeout(() => toast.remove(), 300);
-            }, 3000);
         }
     </script>
 </body>

@@ -1,263 +1,371 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="emerald">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Requisitions - Highland Fresh System</title>
+    <title>Requisitions - Production | Highland Fresh</title>
+    
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <!-- Inter Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
     <style>
-        /* Pulse animation for action buttons */
-        @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
-            70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
-        }
-        .stat-card[style*="cursor"]:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            transition: all 0.2s ease;
-        }
-        .card[onclick]:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-            transition: all 0.2s ease;
-        }
+        body { font-family: 'Inter', sans-serif; }
+        .bento-card { @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .stat-value { font-variant-numeric: tabular-nums; }
+        .stat-card { @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg cursor-pointer; }
     </style>
 </head>
-<body>
-    <div class="app-container">
-        <!-- Sidebar -->
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <div class="sidebar-logo">
-                    <div class="user-avatar" style="width:40px;height:40px;font-size:1.25rem;">
-                        <i class="fas fa-industry"></i>
+<body class="bg-base-200 min-h-screen">
+    
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-industry text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Production</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <!-- Main Menu -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Production -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Production</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="batches.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-box w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Production Batches</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="recipes.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-book w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Recipes</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="ccp_logging.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-thermometer-half w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">CCP Logging</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Materials -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Materials</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="requisitions.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-clipboard-list w-5 text-center"></i>
+                            <span class="flex-1">Requisitions</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="byproducts.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-recycle w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Byproducts</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+        
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">PS</span>
                     </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Production Staff</p>
+                    <p class="text-xs text-base-content/60 truncate">Production</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a><i class="fas fa-user-cog w-4"></i> Profile</a></li>
+                        <li><a><i class="fas fa-cog w-4"></i> Settings</a></li>
+                        <li class="border-t border-base-300 mt-1 pt-1">
+                            <a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <div>
+                    <h1 class="text-lg lg:text-xl font-bold text-base-content">Ingredient Requisitions</h1>
+                    <div class="text-sm breadcrumbs p-0 hidden sm:block">
+                        <ul class="text-base-content/60">
+                            <li><a href="dashboard.html" class="hover:text-primary">Dashboard</a></li>
+                            <li>Requisitions</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <!-- Theme toggle -->
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+        
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+            
+            <!-- What is a Requisition - Info Alert -->
+            <div class="alert bg-info/10 border-l-4 border-info mb-6">
+                <div class="flex items-start gap-4">
+                    <div class="bg-info text-info-content p-3 rounded-xl text-xl"><i class="fas fa-clipboard-list"></i></div>
                     <div>
-                        <div class="sidebar-logo-text">Highland Fresh</div>
-                        <div class="sidebar-logo-subtitle">Production</div>
+                        <h3 class="font-bold text-info">What is a Requisition?</h3>
+                        <p class="text-sm text-base-content/70 mt-1">
+                            <strong>A requisition is a request for ingredients/materials</strong> needed for production. 
+                            When you need items from the warehouse, create a requisition so the warehouse team knows what to prepare for you.
+                        </p>
+                        <div class="flex flex-wrap gap-4 mt-2 text-sm text-base-content/60">
+                            <span><strong>Example:</strong> Need 100L raw milk? Create a requisition</span>
+                            <span><strong>Example:</strong> Need salt for cheese? Create a requisition</span>
+                        </div>
                     </div>
                 </div>
             </div>
             
-            <nav class="sidebar-nav">
-                <div class="nav-section">
-                    <div class="nav-section-title">Main Menu</div>
-                    <a href="dashboard.html" class="nav-link">
-                        <i class="fas fa-th-large"></i>
-                        <span>Dashboard</span>
-                    </a>
+            <!-- Big Action Button - Request Ingredients -->
+            <div onclick="showNewRequisitionModal()" class="card bg-gradient-to-br from-primary/10 to-primary/5 border-2 border-dashed border-primary cursor-pointer hover:shadow-lg hover:-translate-y-1 transition-all duration-300 mb-6">
+                <div class="card-body items-center text-center py-8">
+                    <div class="text-5xl mb-2 text-primary"><i class="fas fa-clipboard-list"></i></div>
+                    <h2 class="card-title text-primary text-xl">Request Ingredients</h2>
+                    <p class="text-base-content/60">Click here to create a new requisition for materials you need</p>
+                    <div class="mt-4">
+                        <span class="btn btn-primary">
+                            <i class="fas fa-plus"></i> New Requisition
+                        </span>
+                    </div>
                 </div>
-                
-                <div class="nav-section">
-                    <div class="nav-section-title">Production</div>
-                    <a href="batches.html" class="nav-link">
-                        <i class="fas fa-box"></i>
-                        <span>Production Batches</span>
-                    </a>
-                    <a href="recipes.html" class="nav-link">
-                        <i class="fas fa-book"></i>
-                        <span>Recipes</span>
-                    </a>
-                    <a href="ccp_logging.html" class="nav-link">
-                        <i class="fas fa-thermometer-half"></i>
-                        <span>CCP Logging</span>
-                    </a>
-                </div>
-                
-                <div class="nav-section">
-                    <div class="nav-section-title">Materials</div>
-                    <a href="requisitions.html" class="nav-link active">
-                        <i class="fas fa-clipboard-list"></i>
-                        <span>Requisitions</span>
-                    </a>
-                    <a href="byproducts.html" class="nav-link">
-                        <i class="fas fa-recycle"></i>
-                        <span>Byproducts</span>
-                    </a>
-                </div>
-            </nav>
-        </aside>
-        
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Header -->
-            <header class="header">
-                <div class="header-left">
-                    <h1 class="header-title">Ingredient Requisitions</h1>
-                </div>
-                
-                <div class="header-right">
-                    <button class="header-icon-btn" title="Logout" onclick="AuthService.logout()">
-                        <i class="fas fa-sign-out-alt"></i>
-                    </button>
-                </div>
-            </header>
+            </div>
             
-            <!-- Page Content -->
-            <div class="page-content">
-                <!-- 📋 WHAT IS A REQUISITION? - Explainer for new users -->
-                <div class="card mb-4" style="border-left: 4px solid #3b82f6; background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);">
-                    <div class="card-body">
-                        <div style="display: flex; align-items: flex-start; gap: 1rem;">
-                            <div style="background: #3b82f6; color: white; padding: 0.75rem; border-radius: 12px; font-size: 1.5rem;">
-                                📋
+            <!-- Stats Grid -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <!-- Pending -->
+                <div class="stat-card card bg-base-100 shadow-sm" onclick="filterByStatus('pending')" title="Click to see pending requisitions">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 bg-warning/20 text-warning rounded-xl flex items-center justify-center">
+                                <i class="fas fa-hourglass-half text-xl"></i>
                             </div>
                             <div>
-                                <h4 style="margin: 0 0 0.5rem 0; color: #1e40af;">What is a Requisition? 🤔</h4>
-                                <p style="margin: 0; color: #64748b;">
-                                    <strong>A requisition is a request for ingredients/materials</strong> needed for production. 
-                                    When you need items from the warehouse, create a requisition so the warehouse team knows what to prepare for you.
-                                </p>
-                                <div style="margin-top: 0.75rem; display: flex; gap: 1.5rem; flex-wrap: wrap;">
-                                    <span style="color: #64748b;"><strong>📦 Example:</strong> Need 100L raw milk? → Create a requisition</span>
-                                    <span style="color: #64748b;"><strong>🧂 Example:</strong> Need salt for cheese? → Create a requisition</span>
-                                </div>
+                                <div class="text-2xl font-bold stat-value" id="statPending">0</div>
+                                <div class="text-sm text-base-content/60">Pending</div>
                             </div>
                         </div>
                     </div>
                 </div>
                 
-                <!-- 🆕 BIG ACTION BUTTON - Request Ingredients -->
-                <div class="card mb-4" onclick="showNewRequisitionModal()" style="cursor: pointer; border: 2px dashed #3b82f6; background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%); transition: all 0.2s ease;">
-                    <div class="card-body text-center" style="padding: 2rem;">
-                        <div style="font-size: 3rem; margin-bottom: 0.5rem;">📝</div>
-                        <h3 style="margin: 0 0 0.5rem 0; color: #1e40af;">Request Ingredients</h3>
-                        <p style="margin: 0; color: #64748b;">Click here to create a new requisition for materials you need</p>
-                        <div style="margin-top: 1rem;">
-                            <span class="badge" style="background: #3b82f6; color: white; padding: 0.5rem 1rem; font-size: 1rem;">
-                                <i class="fas fa-plus"></i> New Requisition
-                            </span>
+                <!-- Approved -->
+                <div class="stat-card card bg-base-100 shadow-sm" onclick="filterByStatus('approved')" title="Click to see approved requisitions">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 bg-info/20 text-info rounded-xl flex items-center justify-center">
+                                <i class="fas fa-thumbs-up text-xl"></i>
+                            </div>
+                            <div>
+                                <div class="text-2xl font-bold stat-value" id="statApproved">0</div>
+                                <div class="text-sm text-base-content/60">Approved</div>
+                            </div>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Stat Cards - CLICKABLE to filter -->
-                <div class="stats-grid mb-4">
-                    <div class="stat-card" onclick="filterByStatus('pending')" style="cursor: pointer;" title="Click to see pending requisitions">
-                        <div class="stat-icon" style="background: linear-gradient(135deg, var(--warning) 0%, #f59e0b 100%);">
-                            <i class="fas fa-hourglass-half"></i>
-                        </div>
-                        <div class="stat-content">
-                            <div class="stat-value" id="statPending">0</div>
-                            <div class="stat-label">⏳ Pending</div>
-                        </div>
-                    </div>
-                    <div class="stat-card" onclick="filterByStatus('approved')" style="cursor: pointer;" title="Click to see approved requisitions">
-                        <div class="stat-icon" style="background: linear-gradient(135deg, var(--info) 0%, #0891b2 100%);">
-                            <i class="fas fa-thumbs-up"></i>
-                        </div>
-                        <div class="stat-content">
-                            <div class="stat-value" id="statApproved">0</div>
-                            <div class="stat-label">👍 Approved</div>
-                        </div>
-                    </div>
-                    <div class="stat-card" onclick="filterByStatus('fulfilled')" style="cursor: pointer;" title="Click to see fulfilled requisitions">
-                        <div class="stat-icon" style="background: linear-gradient(135deg, var(--success) 0%, #059669 100%);">
-                            <i class="fas fa-check-double"></i>
-                        </div>
-                        <div class="stat-content">
-                            <div class="stat-value" id="statFulfilled">0</div>
-                            <div class="stat-label">✅ Fulfilled</div>
-                        </div>
-                    </div>
-                    <div class="stat-card" onclick="filterByPriority('urgent')" style="cursor: pointer;" title="Click to see urgent requisitions">
-                        <div class="stat-icon" style="background: linear-gradient(135deg, var(--danger) 0%, #dc2626 100%);">
-                            <i class="fas fa-exclamation-triangle"></i>
-                        </div>
-                        <div class="stat-content">
-                            <div class="stat-value" id="statUrgent">0</div>
-                            <div class="stat-label">🔴 Urgent</div>
+                <!-- Fulfilled -->
+                <div class="stat-card card bg-base-100 shadow-sm" onclick="filterByStatus('fulfilled')" title="Click to see fulfilled requisitions">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 bg-success/20 text-success rounded-xl flex items-center justify-center">
+                                <i class="fas fa-check-double text-xl"></i>
+                            </div>
+                            <div>
+                                <div class="text-2xl font-bold stat-value" id="statFulfilled">0</div>
+                                <div class="text-sm text-base-content/60">Fulfilled</div>
+                            </div>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Filters & Actions -->
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h3 class="card-title">
-                            <i class="fas fa-filter"></i>
-                            🔍 Filter Requisitions
+                <!-- Urgent -->
+                <div class="stat-card card bg-base-100 shadow-sm" onclick="filterByPriority('urgent')" title="Click to see urgent requisitions">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 bg-error/20 text-error rounded-xl flex items-center justify-center">
+                                <i class="fas fa-exclamation-triangle text-xl"></i>
+                            </div>
+                            <div>
+                                <div class="text-2xl font-bold stat-value" id="statUrgent">0</div>
+                                <div class="text-sm text-base-content/60">Urgent</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Filters Card -->
+            <div class="card bg-base-100 shadow-sm mb-6">
+                <div class="card-body">
+                    <h3 class="card-title text-base">
+                        <i class="fas fa-filter text-primary"></i>
+                        Filter Requisitions
+                    </h3>
+                    <p class="text-sm text-base-content/60 mb-4">Use these filters to find specific requisitions quickly:</p>
+                    <div class="flex flex-wrap gap-4 items-end">
+                        <div class="form-control w-full sm:w-48">
+                            <label class="label py-1">
+                                <span class="label-text text-sm">Status</span>
+                            </label>
+                            <select id="statusFilter" class="select select-bordered select-sm" onchange="loadRequisitions()">
+                                <option value="">All Status</option>
+                                <option value="pending">Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="fulfilled">Fulfilled</option>
+                                <option value="rejected">Rejected</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-control w-full sm:w-48">
+                            <label class="label py-1">
+                                <span class="label-text text-sm">Priority</span>
+                            </label>
+                            <select id="priorityFilter" class="select select-bordered select-sm" onchange="loadRequisitions()">
+                                <option value="">All Priority</option>
+                                <option value="urgent">Urgent</option>
+                                <option value="high">High</option>
+                                <option value="normal">Normal</option>
+                                <option value="low">Low</option>
+                            </select>
+                        </div>
+                        
+                        <button class="btn btn-ghost btn-sm" onclick="resetFilters()">
+                            <i class="fas fa-redo"></i> Reset
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Requisitions Table Card -->
+            <div class="card bg-base-100 shadow-sm">
+                <div class="card-body p-0">
+                    <div class="flex items-center justify-between p-4 border-b border-base-300">
+                        <h3 class="card-title text-base">
+                            <i class="fas fa-list text-primary"></i>
+                            Your Requisition Records
                         </h3>
+                        <span class="text-sm text-base-content/60" id="totalRecords">0 records</span>
                     </div>
-                    <div class="card-body">
-                        <p style="color: #64748b; margin-bottom: 1rem;">Use these filters to find specific requisitions quickly:</p>
-                        <div class="d-flex flex-wrap gap-3 align-center">
-                            <div class="form-group mb-0" style="min-width: 150px;">
-                                <label class="form-label text-sm mb-1">Status</label>
-                                <select id="statusFilter" class="form-control" onchange="loadRequisitions()">
-                                    <option value="">All Status</option>
-                                    <option value="pending">⏳ Pending</option>
-                                    <option value="approved">👍 Approved</option>
-                                    <option value="fulfilled">✅ Fulfilled</option>
-                                    <option value="rejected">❌ Rejected</option>
-                                    <option value="cancelled">🚫 Cancelled</option>
-                                </select>
-                            </div>
-                            
-                            <div class="form-group mb-0" style="min-width: 150px;">
-                                <label class="form-label text-sm mb-1">Priority</label>
-                                <select id="priorityFilter" class="form-control" onchange="loadRequisitions()">
-                                    <option value="">All Priority</option>
-                                    <option value="urgent">🔴 Urgent</option>
-                                    <option value="high">🟠 High</option>
-                                    <option value="normal">🟢 Normal</option>
-                                    <option value="low">⚪ Low</option>
-                                </select>
-                            </div>
-                            
-                            <div class="form-group mb-0" style="align-self: flex-end;">
-                                <button class="btn btn-outline" onclick="resetFilters()">
-                                    <i class="fas fa-redo"></i> Reset
-                                </button>
-                            </div>
-                        </div>
+                    
+                    <div class="bg-base-200/50 px-4 py-2 text-sm text-base-content/60 border-b border-base-300">
+                        <i class="fas fa-lightbulb mr-1"></i> <strong>Tip:</strong> Click on any row to view full details. Use the view button to see items requested.
                     </div>
-                </div>
-                
-                <!-- Requisitions List -->
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title">
-                            <i class="fas fa-list"></i>
-                            📋 Your Requisition Records
-                        </h3>
-                        <span class="text-muted" id="totalRecords">0 records</span>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="table table-zebra">
+                            <thead>
+                                <tr>
+                                    <th>Requisition Code</th>
+                                    <th>Production Run</th>
+                                    <th>Priority</th>
+                                    <th>Items</th>
+                                    <th>Status</th>
+                                    <th>Requested By</th>
+                                    <th>Date</th>
+                                    <th class="text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="requisitionsTable">
+                                <tr>
+                                    <td colspan="8" class="text-center py-8">
+                                        <span class="loading loading-spinner loading-md text-primary"></span>
+                                        <p class="mt-2 text-base-content/60">Loading...</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
-                    <div class="card-body p-0">
-                        <p style="padding: 0.75rem 1rem; background: #f1f5f9; margin: 0; color: #64748b; font-size: 0.875rem;">
-                            💡 <strong>Tip:</strong> Click on any row to view full details. Use the 👁️ button to see items requested.
-                        </p>
-                        <div class="table-container">
-                            <table class="table">
-                                <thead>
-                                    <tr>
-                                        <th>📝 Requisition Code</th>
-                                        <th>🏭 Production Run</th>
-                                        <th>🚩 Priority</th>
-                                        <th>📦 Items</th>
-                                        <th>📊 Status</th>
-                                        <th>👤 Requested By</th>
-                                        <th>📅 Date</th>
-                                        <th class="text-center">⚡ Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="requisitionsTable">
-                                    <tr>
-                                        <td colspan="8" class="text-center p-4">
-                                            <i class="fas fa-spinner fa-spin"></i> Loading...
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                    <div class="card-footer">
-                        <div id="pagination" class="pagination" style="display: none;"></div>
+                    
+                    <div class="p-4 border-t border-base-300">
+                        <div id="pagination" class="join hidden"></div>
                     </div>
                 </div>
             </div>
@@ -265,174 +373,212 @@
     </div>
     
     <!-- New Requisition Modal -->
-    <div class="modal-overlay" id="newRequisitionModal">
-        <div class="modal modal-lg">
-            <div class="modal-header" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white;">
-                <h3 class="modal-title">
+    <dialog id="newRequisitionModal" class="modal">
+        <div class="modal-box max-w-3xl">
+            <div class="bg-gradient-to-r from-primary to-primary/80 text-primary-content -mx-6 -mt-6 px-6 py-4 mb-6 flex items-center justify-between">
+                <h3 class="text-lg font-bold flex items-center gap-2">
                     <i class="fas fa-clipboard-list"></i>
-                    📝 New Ingredient Requisition
+                    New Ingredient Requisition
                 </h3>
-                <button class="modal-close" onclick="closeModal('newRequisitionModal')" style="color: white;">
-                    <i class="fas fa-times"></i>
-                </button>
+                <form method="dialog">
+                    <button class="btn btn-ghost btn-sm btn-circle text-primary-content">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </form>
             </div>
+            
             <form id="newRequisitionForm" onsubmit="createRequisition(event)">
-                <div class="modal-body">
-                    <!-- Step Guide -->
-                    <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem;">
-                        <h5 style="margin: 0 0 0.5rem 0; color: #166534;">📋 How to create a requisition:</h5>
-                        <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; color: #15803d; font-size: 0.875rem;">
-                            <span>1️⃣ Select priority level</span>
-                            <span>2️⃣ Add items you need</span>
-                            <span>3️⃣ Click Submit</span>
+                <!-- Step Guide -->
+                <div class="alert alert-success mb-6">
+                    <div>
+                        <h5 class="font-bold">How to create a requisition:</h5>
+                        <div class="flex flex-wrap gap-4 text-sm mt-1">
+                            <span>1. Select priority level</span>
+                            <span>2. Add items you need</span>
+                            <span>3. Click Submit</span>
                         </div>
                     </div>
-                    
-                    <h5 style="color: #374151; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e5e7eb;">
-                        <span style="background: #3b82f6; color: white; padding: 0.25rem 0.5rem; border-radius: 50%; margin-right: 0.5rem; font-size: 0.75rem;">1</span>
+                </div>
+                
+                <!-- Section 1: Basic Information -->
+                <div class="mb-6">
+                    <h4 class="font-semibold text-base-content mb-4 pb-2 border-b-2 border-base-300 flex items-center gap-2">
+                        <span class="w-6 h-6 bg-primary text-primary-content rounded-full text-xs flex items-center justify-center">1</span>
                         Basic Information
-                    </h5>
+                    </h4>
                     
-                    <div class="d-flex gap-3 mb-3">
-                        <div class="form-group" style="flex: 1;">
-                            <label class="form-label">
-                                <i class="fas fa-industry text-primary"></i>
-                                Production Run (Optional)
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text flex items-center gap-2">
+                                    <i class="fas fa-industry text-primary"></i>
+                                    Production Run (Optional)
+                                </span>
                             </label>
-                            <select id="runSelect" class="form-control">
+                            <select id="runSelect" class="select select-bordered w-full">
                                 <option value="">No specific run - General request</option>
                             </select>
-                            <div class="form-text">💡 Link to a production run if this is for a specific batch</div>
+                            <label class="label">
+                                <span class="label-text-alt text-base-content/60">Link to a production run if this is for a specific batch</span>
+                            </label>
                         </div>
                         
-                        <div class="form-group" style="flex: 1;">
-                            <label class="form-label required">
-                                <i class="fas fa-flag text-warning"></i>
-                                How Urgent? ⚡
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text flex items-center gap-2">
+                                    <i class="fas fa-flag text-warning"></i>
+                                    How Urgent? <span class="text-error">*</span>
+                                </span>
                             </label>
-                            <select id="priority" class="form-control" required style="font-size: 1rem;">
-                                <option value="low">⚪ Low - Can wait a few days</option>
-                                <option value="normal" selected>🟢 Normal - Regular timing</option>
-                                <option value="high">🟠 High - Need it soon</option>
-                                <option value="urgent">🔴 URGENT - Need it NOW!</option>
+                            <select id="priority" class="select select-bordered w-full" required>
+                                <option value="low">Low - Can wait a few days</option>
+                                <option value="normal" selected>Normal - Regular timing</option>
+                                <option value="high">High - Need it soon</option>
+                                <option value="urgent">URGENT - Need it NOW!</option>
                             </select>
                         </div>
                     </div>
                     
-                    <div class="d-flex gap-3 mb-3">
-                        <div class="form-group" style="flex: 1;">
-                            <label class="form-label">
-                                <i class="fas fa-calendar-alt text-info"></i>
-                                When do you need it? 📅
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text flex items-center gap-2">
+                                    <i class="fas fa-calendar-alt text-info"></i>
+                                    When do you need it?
+                                </span>
                             </label>
-                            <input type="datetime-local" id="neededBy" class="form-control">
-                            <div class="form-text">💡 Leave blank if no specific deadline</div>
+                            <input type="datetime-local" id="neededBy" class="input input-bordered w-full">
+                            <label class="label">
+                                <span class="label-text-alt text-base-content/60">Leave blank if no specific deadline</span>
+                            </label>
                         </div>
                         
-                        <div class="form-group" style="flex: 1;">
-                            <label class="form-label">
-                                <i class="fas fa-bullseye text-success"></i>
-                                What is this for? 🎯
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text flex items-center gap-2">
+                                    <i class="fas fa-bullseye text-success"></i>
+                                    What is this for?
+                                </span>
                             </label>
-                            <input type="text" id="purpose" class="form-control" placeholder="e.g., Making Chocolate Milk today">
-                            <div class="form-text">💡 Helps warehouse understand your needs</div>
+                            <input type="text" id="purpose" class="input input-bordered w-full" placeholder="e.g., Making Chocolate Milk today">
+                            <label class="label">
+                                <span class="label-text-alt text-base-content/60">Helps warehouse understand your needs</span>
+                            </label>
                         </div>
                     </div>
+                </div>
+                
+                <div class="divider"></div>
+                
+                <!-- Section 2: Items -->
+                <div class="mb-6">
+                    <h4 class="font-semibold text-base-content mb-4 pb-2 border-b-2 border-base-300 flex items-center gap-2">
+                        <span class="w-6 h-6 bg-primary text-primary-content rounded-full text-xs flex items-center justify-center">2</span>
+                        What Items Do You Need?
+                    </h4>
                     
-                    <hr class="my-3">
-                    
-                    <h5 style="color: #374151; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e5e7eb;">
-                        <span style="background: #3b82f6; color: white; padding: 0.25rem 0.5rem; border-radius: 50%; margin-right: 0.5rem; font-size: 0.75rem;">2</span>
-                        What Items Do You Need? 📦
-                    </h5>
-                    
-                    <div style="background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; padding: 0.75rem; margin-bottom: 1rem;">
-                        <span style="color: #92400e; font-size: 0.875rem;">
-                            <strong>💡 How to add items:</strong> Type the item name, quantity, and select the unit. Click "➕ Add More" if you need multiple items.
-                        </span>
+                    <div class="alert alert-warning mb-4">
+                        <i class="fas fa-lightbulb"></i>
+                        <span class="text-sm"><strong>How to add items:</strong> Type the item name, quantity, and select the unit. Click "➕ Add More" if you need multiple items.</span>
                     </div>
                     
-                    <div class="d-flex justify-between align-center mb-3">
-                        <h4 class="mb-0">
+                    <div class="flex items-center justify-between mb-3">
+                        <h5 class="font-medium flex items-center gap-2">
                             <i class="fas fa-boxes text-primary"></i>
                             Items List
-                        </h4>
-                        <button type="button" class="btn btn-outline btn-sm" onclick="addItem()" style="background: #dbeafe;">
-                            <i class="fas fa-plus"></i> ➕ Add More Items
+                        </h5>
+                        <button type="button" class="btn btn-outline btn-primary btn-sm" onclick="addItem()">
+                            <i class="fas fa-plus"></i> Add More Items
                         </button>
                     </div>
                     
-                    <div id="itemsContainer">
-                        <div class="item-row mb-2" style="display: flex; gap: 0.5rem; align-items: start; padding: 0.75rem; background: #f8fafc; border-radius: 8px;">
-                            <div style="flex: 2;">
-                                <small style="color: #64748b; display: block; margin-bottom: 0.25rem;">Item Name *</small>
-                                <input type="text" class="form-control item-name" placeholder="e.g., Raw Milk, Sugar, Salt..." required>
-                            </div>
-                            <div style="flex: 1;">
-                                <small style="color: #64748b; display: block; margin-bottom: 0.25rem;">Quantity *</small>
-                                <input type="number" class="form-control item-qty" placeholder="100" required min="1" step="0.01">
-                            </div>
-                            <div style="flex: 1;">
-                                <small style="color: #64748b; display: block; margin-bottom: 0.25rem;">Unit</small>
-                                <select class="form-control item-unit">
-                                    <option value="liters">Liters (L)</option>
-                                    <option value="kg">Kilograms (kg)</option>
-                                    <option value="grams">Grams (g)</option>
-                                    <option value="ml">Milliliters (mL)</option>
-                                    <option value="units">Units</option>
-                                    <option value="pieces">Pieces</option>
-                                </select>
-                            </div>
-                            <div style="flex: 1.5;">
-                                <small style="color: #64748b; display: block; margin-bottom: 0.25rem;">Notes</small>
-                                <input type="text" class="form-control item-notes" placeholder="Optional notes...">
-                            </div>
-                            <div style="padding-top: 1.25rem;">
-                                <button type="button" class="btn btn-outline btn-danger" onclick="removeItem(this)" title="Remove this item">
-                                    <i class="fas fa-trash"></i>
-                                </button>
+                    <div id="itemsContainer" class="space-y-3">
+                        <div class="item-row bg-base-200 rounded-lg p-3">
+                            <div class="grid grid-cols-12 gap-2 items-end">
+                                <div class="col-span-12 sm:col-span-4">
+                                    <label class="label py-0"><span class="label-text text-xs text-base-content/60">Item Name *</span></label>
+                                    <input type="text" class="input input-bordered input-sm w-full item-name" placeholder="e.g., Raw Milk, Sugar, Salt..." required>
+                                </div>
+                                <div class="col-span-4 sm:col-span-2">
+                                    <label class="label py-0"><span class="label-text text-xs text-base-content/60">Quantity *</span></label>
+                                    <input type="number" class="input input-bordered input-sm w-full item-qty" placeholder="100" required min="1" step="0.01">
+                                </div>
+                                <div class="col-span-4 sm:col-span-2">
+                                    <label class="label py-0"><span class="label-text text-xs text-base-content/60">Unit</span></label>
+                                    <select class="select select-bordered select-sm w-full item-unit">
+                                        <option value="liters">Liters (L)</option>
+                                        <option value="kg">Kilograms (kg)</option>
+                                        <option value="grams">Grams (g)</option>
+                                        <option value="ml">Milliliters (mL)</option>
+                                        <option value="units">Units</option>
+                                        <option value="pieces">Pieces</option>
+                                    </select>
+                                </div>
+                                <div class="col-span-3 sm:col-span-3">
+                                    <label class="label py-0"><span class="label-text text-xs text-base-content/60">Notes</span></label>
+                                    <input type="text" class="input input-bordered input-sm w-full item-notes" placeholder="Optional notes...">
+                                </div>
+                                <div class="col-span-1">
+                                    <button type="button" class="btn btn-ghost btn-sm text-error" onclick="removeItem(this)" title="Remove this item">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer" style="background: #f8fafc;">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('newRequisitionModal')">
-                        ❌ Cancel
+                
+                <!-- Modal Footer -->
+                <div class="modal-action bg-base-200 -mx-6 -mb-6 px-6 py-4 rounded-b-2xl">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('newRequisitionModal').close()">
+                        Cancel
                     </button>
-                    <button type="submit" class="btn btn-primary" style="padding: 0.75rem 2rem; font-size: 1rem;">
-                        <i class="fas fa-paper-plane"></i> ✅ Submit Requisition
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-paper-plane"></i> Submit Requisition
                     </button>
                 </div>
             </form>
         </div>
-    </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
     
     <!-- View Requisition Modal -->
-    <div class="modal-overlay" id="viewRequisitionModal">
-        <div class="modal modal-lg">
-            <div class="modal-header">
-                <h3 class="modal-title">
+    <dialog id="viewRequisitionModal" class="modal">
+        <div class="modal-box max-w-3xl">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold flex items-center gap-2">
                     <i class="fas fa-clipboard-check text-primary"></i>
                     Requisition Details
                 </h3>
-                <button class="modal-close" onclick="closeModal('viewRequisitionModal')">
-                    <i class="fas fa-times"></i>
-                </button>
+                <form method="dialog">
+                    <button class="btn btn-ghost btn-sm btn-circle">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </form>
             </div>
-            <div class="modal-body" id="requisitionDetailsContent">
-                <div class="text-center p-4">
-                    <i class="fas fa-spinner fa-spin fa-2x text-primary"></i>
-                    <p class="mt-2 text-muted">Loading details...</p>
+            
+            <div id="requisitionDetailsContent">
+                <div class="flex flex-col items-center py-8">
+                    <span class="loading loading-spinner loading-lg text-primary"></span>
+                    <p class="mt-2 text-base-content/60">Loading details...</p>
                 </div>
             </div>
-            <div class="modal-footer" id="requisitionDetailsFooter">
-                <button class="btn btn-secondary" onclick="closeModal('viewRequisitionModal')">Close</button>
+            
+            <div class="modal-action" id="requisitionDetailsFooter">
+                <form method="dialog">
+                    <button class="btn">Close</button>
+                </form>
             </div>
         </div>
-    </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
     
     <!-- Toast Container -->
-    <div id="toastContainer" class="toast-container"></div>
+    <div id="toastContainer" class="toast toast-end toast-bottom z-50"></div>
     
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
@@ -443,6 +589,19 @@
         let currentPage = 1;
         let currentUser = null;
         
+        // Sidebar toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+        
+        // Theme toggle
+        document.getElementById('themeToggle')?.addEventListener('change', function() {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+        });
+        
         document.addEventListener('DOMContentLoaded', async () => {
             if (!AuthService.isAuthenticated()) {
                 window.location.href = '../login.html';
@@ -450,6 +609,14 @@
             }
             
             currentUser = AuthService.getCurrentUser();
+            
+            // Update user info in sidebar
+            if (currentUser) {
+                const initials = (currentUser.first_name?.[0] || '') + (currentUser.last_name?.[0] || '');
+                document.getElementById('userInitials').textContent = initials.toUpperCase() || 'PS';
+                document.getElementById('sidebarUserName').textContent = 
+                    (currentUser.first_name || '') + ' ' + (currentUser.last_name || '') || 'Production Staff';
+            }
             
             await loadRuns();
             loadStats();
@@ -556,11 +723,11 @@
             if (!requisitions.length) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="8" class="text-center p-4">
-                            <div class="text-muted">
-                                <i class="fas fa-clipboard-list fa-2x mb-2"></i>
-                                <p>No requisitions found</p>
-                                <button class="btn btn-primary btn-sm mt-2" onclick="showNewRequisitionModal()">
+                        <td colspan="8" class="text-center py-8">
+                            <div class="text-base-content/60">
+                                <i class="fas fa-clipboard-list text-4xl mb-3 block"></i>
+                                <p class="mb-3">No requisitions found</p>
+                                <button class="btn btn-primary btn-sm" onclick="showNewRequisitionModal()">
                                     <i class="fas fa-plus"></i> New Requisition
                                 </button>
                             </div>
@@ -570,63 +737,63 @@
             }
             
             const statusConfig = {
-                'pending': { color: 'warning', icon: 'fa-hourglass-half' },
-                'approved': { color: 'info', icon: 'fa-thumbs-up' },
-                'fulfilled': { color: 'success', icon: 'fa-check-double' },
-                'partially_fulfilled': { color: 'primary', icon: 'fa-tasks' },
-                'rejected': { color: 'danger', icon: 'fa-times-circle' },
-                'cancelled': { color: 'secondary', icon: 'fa-ban' }
+                'pending': { badge: 'badge-warning', icon: 'fa-hourglass-half' },
+                'approved': { badge: 'badge-info', icon: 'fa-thumbs-up' },
+                'fulfilled': { badge: 'badge-success', icon: 'fa-check-double' },
+                'partially_fulfilled': { badge: 'badge-primary', icon: 'fa-tasks' },
+                'rejected': { badge: 'badge-error', icon: 'fa-times-circle' },
+                'cancelled': { badge: 'badge-ghost', icon: 'fa-ban' }
             };
             
             const priorityConfig = {
-                'low': { color: 'secondary', icon: '⚪' },
-                'normal': { color: 'primary', icon: '🟢' },
-                'high': { color: 'warning', icon: '🟠' },
-                'urgent': { color: 'danger', icon: '🔴' }
+                'low': { badge: 'badge-ghost', icon: '' },
+                'normal': { badge: 'badge-primary', icon: '' },
+                'high': { badge: 'badge-warning', icon: '' },
+                'urgent': { badge: 'badge-error', icon: '' }
             };
             
             tbody.innerHTML = requisitions.map(req => {
-                const statusCfg = statusConfig[req.status] || { color: 'secondary', icon: 'fa-question' };
-                const priorityCfg = priorityConfig[req.priority] || { color: 'secondary', icon: '⚪' };
+                const statusCfg = statusConfig[req.status] || { badge: 'badge-ghost', icon: 'fa-question' };
+                const priorityCfg = priorityConfig[req.priority] || { badge: 'badge-ghost', icon: '' };
                 
                 return `
-                <tr>
+                <tr class="hover">
                     <td>
                         <span class="font-mono text-primary font-semibold">${req.requisition_code}</span>
                     </td>
-                    <td>${req.run_code ? `<span class="font-mono">${req.run_code}</span>` : '<span class="text-muted">-</span>'}</td>
+                    <td>${req.run_code ? `<span class="font-mono text-sm">${req.run_code}</span>` : '<span class="text-base-content/40">-</span>'}</td>
                     <td>
-                        <span class="badge badge-${priorityCfg.color}">
+                        <span class="badge ${priorityCfg.badge} badge-sm">
                             ${priorityCfg.icon} ${req.priority}
                         </span>
                     </td>
                     <td>
                         <span class="font-semibold">${req.total_items}</span>
-                        <span class="text-muted">items</span>
+                        <span class="text-base-content/60 text-sm">items</span>
                     </td>
                     <td>
-                        <span class="badge badge-${statusCfg.color}">
-                            <i class="fas ${statusCfg.icon} mr-1"></i>
+                        <span class="badge ${statusCfg.badge} badge-sm gap-1">
+                            <i class="fas ${statusCfg.icon}"></i>
                             ${req.status.replace('_', ' ')}
                         </span>
                     </td>
-                    <td>${req.requested_by_first ? req.requested_by_first + ' ' + req.requested_by_last : '-'}</td>
-                    <td class="text-muted">${formatDate(req.created_at)}</td>
+                    <td class="text-sm">${req.requested_by_first ? req.requested_by_first + ' ' + req.requested_by_last : '-'}</td>
+                    <td class="text-base-content/60 text-sm">${formatDate(req.created_at)}</td>
                     <td class="text-center">
-                        <div class="btn-group">
-                            <button class="btn btn-sm btn-outline" onclick="viewRequisition(${req.id})" title="View">
+                        <div class="join">
+                            <button class="btn btn-ghost btn-xs join-item" onclick="viewRequisition(${req.id})" title="View">
                                 <i class="fas fa-eye"></i>
                             </button>
                             ${req.status === 'pending' && (currentUser.role === 'general_manager') ? `
-                                <button class="btn btn-sm btn-success" onclick="approveRequisition(${req.id})" title="Approve">
+                                <button class="btn btn-success btn-xs join-item" onclick="approveRequisition(${req.id})" title="Approve">
                                     <i class="fas fa-check"></i>
                                 </button>
-                                <button class="btn btn-sm btn-danger" onclick="rejectRequisition(${req.id})" title="Reject">
+                                <button class="btn btn-error btn-xs join-item" onclick="rejectRequisition(${req.id})" title="Reject">
                                     <i class="fas fa-times"></i>
                                 </button>
                             ` : ''}
                             ${req.status === 'pending' ? `
-                                <button class="btn btn-sm btn-outline text-danger" onclick="cancelRequisition(${req.id})" title="Cancel">
+                                <button class="btn btn-ghost btn-xs join-item text-error" onclick="cancelRequisition(${req.id})" title="Cancel">
                                     <i class="fas fa-ban"></i>
                                 </button>
                             ` : ''}
@@ -638,19 +805,19 @@
         
         function renderPagination(pagination) {
             if (!pagination || pagination.total_pages <= 1) {
-                document.getElementById('pagination').style.display = 'none';
+                document.getElementById('pagination').classList.add('hidden');
                 return;
             }
             
             const container = document.getElementById('pagination');
-            container.style.display = 'flex';
+            container.classList.remove('hidden');
             container.innerHTML = `
-                <button class="btn btn-sm btn-outline" ${pagination.page <= 1 ? 'disabled' : ''} 
+                <button class="join-item btn btn-sm" ${pagination.page <= 1 ? 'disabled' : ''} 
                         onclick="goToPage(${pagination.page - 1})">
                     <i class="fas fa-chevron-left"></i>
                 </button>
-                <span class="mx-3">Page ${pagination.page} of ${pagination.total_pages}</span>
-                <button class="btn btn-sm btn-outline" ${pagination.page >= pagination.total_pages ? 'disabled' : ''} 
+                <button class="join-item btn btn-sm">Page ${pagination.page} of ${pagination.total_pages}</button>
+                <button class="join-item btn btn-sm" ${pagination.page >= pagination.total_pages ? 'disabled' : ''} 
                         onclick="goToPage(${pagination.page + 1})">
                     <i class="fas fa-chevron-right"></i>
                 </button>
@@ -665,46 +832,77 @@
         function showNewRequisitionModal() {
             document.getElementById('newRequisitionForm').reset();
             document.getElementById('itemsContainer').innerHTML = `
-                <div class="item-row mb-2" style="display: flex; gap: 0.5rem; align-items: start;">
-                    <input type="text" class="form-input item-name" placeholder="Item name *" required style="flex: 2;">
-                    <input type="number" class="form-input item-qty" placeholder="Qty *" required min="1" step="0.01" style="flex: 1;">
-                    <select class="form-select item-unit" style="flex: 1;">
-                        <option value="units">Units</option>
-                        <option value="kg">Kg</option>
-                        <option value="liters">Liters</option>
-                        <option value="grams">Grams</option>
-                        <option value="ml">mL</option>
-                        <option value="pieces">Pieces</option>
-                    </select>
-                    <input type="text" class="form-input item-notes" placeholder="Notes" style="flex: 1.5;">
-                    <button type="button" class="btn btn-outline btn-danger" onclick="removeItem(this)" style="padding: 0.5rem;">
-                        <i class="fas fa-trash"></i>
-                    </button>
+                <div class="item-row bg-base-200 rounded-lg p-3">
+                    <div class="grid grid-cols-12 gap-2 items-end">
+                        <div class="col-span-12 sm:col-span-4">
+                            <label class="label py-0"><span class="label-text text-xs text-base-content/60">Item Name *</span></label>
+                            <input type="text" class="input input-bordered input-sm w-full item-name" placeholder="e.g., Raw Milk, Sugar, Salt..." required>
+                        </div>
+                        <div class="col-span-4 sm:col-span-2">
+                            <label class="label py-0"><span class="label-text text-xs text-base-content/60">Quantity *</span></label>
+                            <input type="number" class="input input-bordered input-sm w-full item-qty" placeholder="100" required min="1" step="0.01">
+                        </div>
+                        <div class="col-span-4 sm:col-span-2">
+                            <label class="label py-0"><span class="label-text text-xs text-base-content/60">Unit</span></label>
+                            <select class="select select-bordered select-sm w-full item-unit">
+                                <option value="liters">Liters (L)</option>
+                                <option value="kg">Kilograms (kg)</option>
+                                <option value="grams">Grams (g)</option>
+                                <option value="ml">Milliliters (mL)</option>
+                                <option value="units">Units</option>
+                                <option value="pieces">Pieces</option>
+                            </select>
+                        </div>
+                        <div class="col-span-3 sm:col-span-3">
+                            <label class="label py-0"><span class="label-text text-xs text-base-content/60">Notes</span></label>
+                            <input type="text" class="input input-bordered input-sm w-full item-notes" placeholder="Optional notes...">
+                        </div>
+                        <div class="col-span-1">
+                            <button type="button" class="btn btn-ghost btn-sm text-error" onclick="removeItem(this)" title="Remove this item">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             `;
-            document.getElementById('newRequisitionModal').classList.add('active');
+            document.getElementById('newRequisitionModal').showModal();
         }
         
         function addItem() {
             const container = document.getElementById('itemsContainer');
             const row = document.createElement('div');
-            row.className = 'item-row mb-2';
-            row.style.cssText = 'display: flex; gap: 0.5rem; align-items: start;';
+            row.className = 'item-row bg-base-200 rounded-lg p-3';
             row.innerHTML = `
-                <input type="text" class="form-input item-name" placeholder="Item name *" required style="flex: 2;">
-                <input type="number" class="form-input item-qty" placeholder="Qty *" required min="1" step="0.01" style="flex: 1;">
-                <select class="form-select item-unit" style="flex: 1;">
-                    <option value="units">Units</option>
-                    <option value="kg">Kg</option>
-                    <option value="liters">Liters</option>
-                    <option value="grams">Grams</option>
-                    <option value="ml">mL</option>
-                    <option value="pieces">Pieces</option>
-                </select>
-                <input type="text" class="form-input item-notes" placeholder="Notes" style="flex: 1.5;">
-                <button type="button" class="btn btn-outline btn-danger" onclick="removeItem(this)" style="padding: 0.5rem;">
-                    <i class="fas fa-trash"></i>
-                </button>
+                <div class="grid grid-cols-12 gap-2 items-end">
+                    <div class="col-span-12 sm:col-span-4">
+                        <label class="label py-0"><span class="label-text text-xs text-base-content/60">Item Name *</span></label>
+                        <input type="text" class="input input-bordered input-sm w-full item-name" placeholder="e.g., Raw Milk, Sugar, Salt..." required>
+                    </div>
+                    <div class="col-span-4 sm:col-span-2">
+                        <label class="label py-0"><span class="label-text text-xs text-base-content/60">Quantity *</span></label>
+                        <input type="number" class="input input-bordered input-sm w-full item-qty" placeholder="100" required min="1" step="0.01">
+                    </div>
+                    <div class="col-span-4 sm:col-span-2">
+                        <label class="label py-0"><span class="label-text text-xs text-base-content/60">Unit</span></label>
+                        <select class="select select-bordered select-sm w-full item-unit">
+                            <option value="liters">Liters (L)</option>
+                            <option value="kg">Kilograms (kg)</option>
+                            <option value="grams">Grams (g)</option>
+                            <option value="ml">Milliliters (mL)</option>
+                            <option value="units">Units</option>
+                            <option value="pieces">Pieces</option>
+                        </select>
+                    </div>
+                    <div class="col-span-3 sm:col-span-3">
+                        <label class="label py-0"><span class="label-text text-xs text-base-content/60">Notes</span></label>
+                        <input type="text" class="input input-bordered input-sm w-full item-notes" placeholder="Optional notes...">
+                    </div>
+                    <div class="col-span-1">
+                        <button type="button" class="btn btn-ghost btn-sm text-error" onclick="removeItem(this)" title="Remove this item">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
             `;
             container.appendChild(row);
         }
@@ -757,8 +955,9 @@
                 
                 if (response.success) {
                     showToast('Requisition submitted successfully - Awaiting GM approval', 'success');
-                    closeModal('newRequisitionModal');
+                    document.getElementById('newRequisitionModal').close();
                     loadRequisitions();
+                    loadStats();
                 } else {
                     showToast(response.message || 'Failed to create requisition', 'error');
                 }
@@ -774,7 +973,7 @@
                 
                 if (response.success) {
                     renderRequisitionDetails(response.data);
-                    document.getElementById('viewRequisitionModal').classList.add('active');
+                    document.getElementById('viewRequisitionModal').showModal();
                 }
             } catch (error) {
                 showToast('Failed to load requisition details', 'error');
@@ -782,63 +981,76 @@
         }
         
         function renderRequisitionDetails(req) {
-            const statusColors = {
-                'pending': 'warning',
-                'approved': 'info',
-                'fulfilled': 'success',
-                'rejected': 'danger',
-                'cancelled': 'secondary'
+            const statusBadges = {
+                'pending': 'badge-warning',
+                'approved': 'badge-info',
+                'fulfilled': 'badge-success',
+                'rejected': 'badge-error',
+                'cancelled': 'badge-ghost'
             };
             
             document.getElementById('requisitionDetailsContent').innerHTML = `
-                <div class="grid-2 mb-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                     <div>
-                        <h4 class="mb-2">Requisition Info</h4>
-                        <table class="table table-sm">
-                            <tr><td class="text-secondary">Code</td><td class="font-mono font-semibold">${req.requisition_code}</td></tr>
-                            <tr><td class="text-secondary">Status</td><td><span class="badge badge-${statusColors[req.status]}">${req.status}</span></td></tr>
-                            <tr><td class="text-secondary">Priority</td><td>${req.priority}</td></tr>
-                            <tr><td class="text-secondary">Purpose</td><td>${req.purpose || '-'}</td></tr>
-                            <tr><td class="text-secondary">Needed By</td><td>${req.needed_by ? formatDate(req.needed_by) : '-'}</td></tr>
-                        </table>
+                        <h4 class="font-semibold mb-3 text-base-content/80">Requisition Info</h4>
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm">
+                                <tbody>
+                                    <tr><td class="text-base-content/60 w-32">Code</td><td class="font-mono font-semibold">${req.requisition_code}</td></tr>
+                                    <tr><td class="text-base-content/60">Status</td><td><span class="badge ${statusBadges[req.status] || 'badge-ghost'}">${req.status}</span></td></tr>
+                                    <tr><td class="text-base-content/60">Priority</td><td>${req.priority}</td></tr>
+                                    <tr><td class="text-base-content/60">Purpose</td><td>${req.purpose || '-'}</td></tr>
+                                    <tr><td class="text-base-content/60">Needed By</td><td>${req.needed_by ? formatDate(req.needed_by) : '-'}</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                     <div>
-                        <h4 class="mb-2">Tracking</h4>
-                        <table class="table table-sm">
-                            <tr><td class="text-secondary">Requested By</td><td>${req.requested_by_first ? req.requested_by_first + ' ' + req.requested_by_last : '-'}</td></tr>
-                            <tr><td class="text-secondary">Created</td><td>${formatDate(req.created_at)}</td></tr>
-                            <tr><td class="text-secondary">Approved By</td><td>${req.approved_by_first ? req.approved_by_first + ' ' + req.approved_by_last : '-'}</td></tr>
-                            <tr><td class="text-secondary">Approved At</td><td>${req.approved_at ? formatDate(req.approved_at) : '-'}</td></tr>
-                            <tr><td class="text-secondary">Fulfilled By</td><td>${req.fulfilled_by_first ? req.fulfilled_by_first + ' ' + req.fulfilled_by_last : '-'}</td></tr>
-                        </table>
+                        <h4 class="font-semibold mb-3 text-base-content/80">Tracking</h4>
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm">
+                                <tbody>
+                                    <tr><td class="text-base-content/60 w-32">Requested By</td><td>${req.requested_by_first ? req.requested_by_first + ' ' + req.requested_by_last : '-'}</td></tr>
+                                    <tr><td class="text-base-content/60">Created</td><td>${formatDate(req.created_at)}</td></tr>
+                                    <tr><td class="text-base-content/60">Approved By</td><td>${req.approved_by_first ? req.approved_by_first + ' ' + req.approved_by_last : '-'}</td></tr>
+                                    <tr><td class="text-base-content/60">Approved At</td><td>${req.approved_at ? formatDate(req.approved_at) : '-'}</td></tr>
+                                    <tr><td class="text-base-content/60">Fulfilled By</td><td>${req.fulfilled_by_first ? req.fulfilled_by_first + ' ' + req.fulfilled_by_last : '-'}</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
                 
-                <h4 class="mb-2">Items (${req.items?.length || 0})</h4>
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Item</th>
-                            <th class="text-right">Quantity</th>
-                            <th>Unit</th>
-                            <th>Notes</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${(req.items || []).map(item => `
+                <h4 class="font-semibold mb-3 text-base-content/80">Items (${req.items?.length || 0})</h4>
+                <div class="overflow-x-auto">
+                    <table class="table table-zebra">
+                        <thead>
                             <tr>
-                                <td>${item.item_name}</td>
-                                <td class="text-right font-semibold">${item.quantity}</td>
-                                <td>${item.unit}</td>
-                                <td class="text-secondary">${item.notes || '-'}</td>
+                                <th>Item</th>
+                                <th class="text-right">Quantity</th>
+                                <th>Unit</th>
+                                <th>Notes</th>
                             </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            ${(req.items || []).map(item => `
+                                <tr>
+                                    <td>${item.item_name}</td>
+                                    <td class="text-right font-semibold">${item.quantity}</td>
+                                    <td>${item.unit}</td>
+                                    <td class="text-base-content/60">${item.notes || '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
                 
                 ${req.rejection_reason ? `
-                <div class="alert alert-danger mt-3">
-                    <strong>Rejection Reason:</strong> ${req.rejection_reason}
+                <div class="alert alert-error mt-4">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <div>
+                        <strong>Rejection Reason:</strong> ${req.rejection_reason}
+                    </div>
                 </div>
                 ` : ''}
             `;
@@ -852,6 +1064,7 @@
                 if (response.success) {
                     showToast('Requisition approved', 'success');
                     loadRequisitions();
+                    loadStats();
                 } else {
                     showToast(response.message || 'Failed to approve', 'error');
                 }
@@ -869,6 +1082,7 @@
                 if (response.success) {
                     showToast('Requisition rejected', 'success');
                     loadRequisitions();
+                    loadStats();
                 } else {
                     showToast(response.message || 'Failed to reject', 'error');
                 }
@@ -885,6 +1099,7 @@
                 if (response.success) {
                     showToast('Requisition cancelled', 'success');
                     loadRequisitions();
+                    loadStats();
                 } else {
                     showToast(response.message || 'Failed to cancel', 'error');
                 }
@@ -898,22 +1113,33 @@
             return new Date(dateStr).toLocaleString();
         }
         
-        function closeModal(modalId) {
-            document.getElementById(modalId).classList.remove('active');
-        }
-        
         function showToast(message, type = 'info') {
             const container = document.getElementById('toastContainer');
+            const alertClass = {
+                'success': 'alert-success',
+                'error': 'alert-error',
+                'warning': 'alert-warning',
+                'info': 'alert-info'
+            }[type] || 'alert-info';
+            
+            const iconClass = {
+                'success': 'fa-check-circle',
+                'error': 'fa-exclamation-circle',
+                'warning': 'fa-exclamation-triangle',
+                'info': 'fa-info-circle'
+            }[type] || 'fa-info-circle';
+            
             const toast = document.createElement('div');
-            toast.className = `toast toast-${type}`;
+            toast.className = `alert ${alertClass} shadow-lg`;
             toast.innerHTML = `
-                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : type === 'warning' ? 'exclamation-triangle' : 'info-circle'}"></i>
+                <i class="fas ${iconClass}"></i>
                 <span>${message}</span>
             `;
             container.appendChild(toast);
             
             setTimeout(() => {
-                toast.classList.add('toast-hide');
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s ease';
                 setTimeout(() => toast.remove(), 300);
             }, 3000);
         }

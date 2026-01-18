@@ -76,10 +76,10 @@ function handleGet($db, $action) {
             $invStmt = $db->prepare("
                 SELECT 
                     fg.*,
-                    p.name as product_name,
+                    p.product_name,
                     p.variant,
-                    p.size_value,
-                    p.size_unit
+                    p.unit_size,
+                    p.unit_measure
                 FROM finished_goods_inventory fg
                 JOIN products p ON fg.product_id = p.id
                 WHERE fg.chiller_id = ? AND fg.status = 'available'

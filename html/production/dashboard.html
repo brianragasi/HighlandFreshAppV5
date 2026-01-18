@@ -1,301 +1,393 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="emerald">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Production Dashboard - Highland Fresh System</title>
+    <title>Dashboard - Production | Highland Fresh</title>
+    
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <!-- Inter Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
     <style>
-        /* Quick action cards */
-        .quick-action {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 1.5rem;
-            border-radius: 12px;
-            text-decoration: none;
-            transition: all 0.2s ease;
-            text-align: center;
-        }
-        .quick-action:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-        }
-        .quick-action-icon {
-            font-size: 2.5rem;
-            margin-bottom: 0.75rem;
-        }
-        .quick-action-title {
-            font-weight: 600;
-            font-size: 1rem;
-            margin-bottom: 0.25rem;
-        }
-        .quick-action-desc {
-            font-size: 0.75rem;
-            opacity: 0.8;
-        }
+        body { font-family: 'Inter', sans-serif; }
+        .bento-card { @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .stat-value { font-variant-numeric: tabular-nums; }
         
-        /* Stat card hover */
-        .stat-card[onclick] {
-            cursor: pointer;
-        }
-        .stat-card[onclick]:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
+        /* Quick action cards */
+        .quick-action-card { @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg cursor-pointer; }
     </style>
 </head>
-<body>
-    <div class="app-container">
-        <!-- Sidebar -->
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <div class="sidebar-logo">
-                    <div class="user-avatar" style="width:40px;height:40px;font-size:1.25rem;">
-                        <i class="fas fa-industry"></i>
+<body class="bg-base-200 min-h-screen">
+    
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-industry text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Production</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <!-- Main Menu -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-th-large w-5 text-center"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Production -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Production</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="batches.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-box w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Production Batches</span>
+                            <span class="badge badge-sm badge-warning" id="activeRunsBadge">0</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="recipes.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-book w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Recipes</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="ccp_logging.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-thermometer-half w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">CCP Logging</span>
+                            <span class="badge badge-sm badge-error" id="ccpAlertsBadge">0</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Materials -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Materials</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="requisitions.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-clipboard-list w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Requisitions</span>
+                            <span class="badge badge-sm badge-warning" id="pendingReqsBadge">0</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="byproducts.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-recycle w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Byproducts</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Reports -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="reports/daily.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-chart-bar w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Daily Output</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="reports/yield.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-chart-pie w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Yield Analysis</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+        
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">PS</span>
                     </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Production Staff</p>
+                    <p class="text-xs text-base-content/60 truncate">Production</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a><i class="fas fa-user-cog w-4"></i> Profile</a></li>
+                        <li><a><i class="fas fa-cog w-4"></i> Settings</a></li>
+                        <li class="border-t border-base-300 mt-1 pt-1">
+                            <a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold text-base-content">Production Dashboard</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <!-- Search -->
+                <div class="hidden md:block">
+                    <label class="input input-bordered input-sm flex items-center gap-2 w-64">
+                        <i class="fas fa-search text-base-content/40"></i>
+                        <input type="text" placeholder="Search..." class="grow" />
+                        <kbd class="kbd kbd-sm">Ctrl+K</kbd>
+                    </label>
+                </div>
+                
+                <!-- Notifications -->
+                <div class="dropdown dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-circle">
+                        <div class="indicator">
+                            <i class="fas fa-bell text-lg"></i>
+                            <span class="indicator-item badge badge-primary badge-xs" id="notificationCount">0</span>
+                        </div>
+                    </label>
+                    <div tabindex="0" class="dropdown-content bg-base-100 rounded-box shadow-lg border border-base-300 w-80 mt-3">
+                        <div class="p-4 border-b border-base-300">
+                            <h3 class="font-semibold">Notifications</h3>
+                        </div>
+                        <ul class="menu menu-sm p-2 max-h-64 overflow-y-auto">
+                            <li class="text-center py-4 text-base-content/60">No new notifications</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <!-- Theme toggle -->
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+        
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+            
+            <!-- Welcome Banner -->
+            <div class="bg-gradient-to-r from-primary to-primary/80 rounded-2xl p-6 mb-6 text-primary-content">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div>
-                        <div class="sidebar-logo-text">Highland Fresh</div>
-                        <div class="sidebar-logo-subtitle">Production</div>
+                        <h2 class="text-2xl font-bold mb-1">Good <span id="greeting">Morning</span>, <span id="welcomeName">Production Staff</span>!</h2>
+                        <p class="text-primary-content/80">Here's today's production overview. Click on any card to take action!</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <a href="batches.html?action=new" class="btn btn-sm bg-white/20 border-white/30 text-white hover:bg-white/30">
+                            <i class="fas fa-play"></i> Start Production
+                        </a>
+                        <a href="ccp_logging.html" class="btn btn-sm bg-white/20 border-white/30 text-white hover:bg-white/30">
+                            <i class="fas fa-thermometer-half"></i> Log CCP
+                        </a>
                     </div>
                 </div>
             </div>
             
-            <nav class="sidebar-nav">
-                <div class="nav-section">
-                    <div class="nav-section-title">Main Menu</div>
-                    <a href="dashboard.html" class="nav-link active">
-                        <i class="fas fa-th-large"></i>
-                        <span>Dashboard</span>
-                    </a>
+            <!-- Milk Warning Alert (hidden by default) -->
+            <div id="milkWarning" class="alert alert-error mb-6 hidden">
+                <i class="fas fa-exclamation-triangle text-xl"></i>
+                <div>
+                    <h3 class="font-bold">No QC-Approved Milk Available!</h3>
+                    <p class="text-sm">You cannot start new production runs until milk deliveries are tested and approved by QC. Contact the QC team to check if there are deliveries waiting to be graded.</p>
                 </div>
-                
-                <div class="nav-section">
-                    <div class="nav-section-title">Production</div>
-                    <a href="batches.html" class="nav-link">
-                        <i class="fas fa-box"></i>
-                        <span>Production Batches</span>
-                        <span class="nav-badge" id="activeRuns">0</span>
-                    </a>
-                    <a href="recipes.html" class="nav-link">
-                        <i class="fas fa-book"></i>
-                        <span>Recipes</span>
-                    </a>
-                    <a href="ccp_logging.html" class="nav-link">
-                        <i class="fas fa-thermometer-half"></i>
-                        <span>CCP Logging</span>
-                    </a>
-                </div>
-                
-                <div class="nav-section">
-                    <div class="nav-section-title">Materials</div>
-                    <a href="requisitions.html" class="nav-link">
-                        <i class="fas fa-clipboard-list"></i>
-                        <span>Requisitions</span>
-                        <span class="nav-badge" id="pendingReqs">0</span>
-                    </a>
-                    <a href="byproducts.html" class="nav-link">
-                        <i class="fas fa-recycle"></i>
-                        <span>Byproducts</span>
-                    </a>
-                </div>
-                
-                <div class="nav-section">
-                    <div class="nav-section-title">Reports</div>
-                    <a href="reports/daily.html" class="nav-link">
-                        <i class="fas fa-chart-bar"></i>
-                        <span>Daily Output</span>
-                    </a>
-                    <a href="reports/yield.html" class="nav-link">
-                        <i class="fas fa-chart-pie"></i>
-                        <span>Yield Analysis</span>
-                    </a>
-                </div>
-            </nav>
-        </aside>
-        
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Header -->
-            <header class="header">
-                <div class="header-left">
-                    <button class="header-icon-btn d-none" id="sidebarToggle">
-                        <i class="fas fa-bars"></i>
-                    </button>
-                    <h1 class="header-title">Production Dashboard</h1>
-                </div>
-                
-                <div class="header-right">
-                    <button class="header-icon-btn" title="Notifications">
-                        <i class="fas fa-bell"></i>
-                        <span class="badge" id="notificationCount">0</span>
-                    </button>
-                    
-                    <div class="user-dropdown">
-                        <button class="user-dropdown-toggle" id="userDropdownToggle">
-                            <div class="user-avatar" id="userAvatar">PS</div>
-                            <div class="user-info">
-                                <div class="user-name" id="userName">Production Staff</div>
-                                <div class="user-role" id="userRole">Production</div>
-                            </div>
-                            <i class="fas fa-chevron-down" style="color: var(--text-muted); font-size: 0.75rem;"></i>
-                        </button>
-                    </div>
-                    
-                    <button class="header-icon-btn" title="Logout" onclick="AuthService.logout()">
-                        <i class="fas fa-sign-out-alt"></i>
-                    </button>
-                </div>
-            </header>
+            </div>
             
-            <!-- Page Content -->
-            <div class="page-content">
-                <!-- Welcome Message -->
-                <div class="mb-4">
-                    <h2 style="margin-bottom: 0.25rem;">👋 Good <span id="greeting">Morning</span>, <span id="welcomeName">Production Staff</span>!</h2>
-                    <p class="text-secondary">Here's today's production overview. Click on any card to take action!</p>
-                </div>
-                
-                <!-- 🚀 QUICK ACTIONS - Big clickable cards for main tasks -->
-                <div class="card mb-4" style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border: none;">
-                    <div class="card-header" style="border-bottom: none; background: transparent;">
-                        <h3 class="card-title">🚀 Quick Actions - What do you want to do?</h3>
-                    </div>
-                    <div class="card-body" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
-                        <a href="batches.html?action=new" class="quick-action" style="background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white;">
-                            <div class="quick-action-icon">▶️</div>
-                            <div class="quick-action-title">Start Production</div>
-                            <div class="quick-action-desc">Begin a new production run</div>
-                        </a>
-                        
-                        <a href="ccp_logging.html" class="quick-action" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white;">
-                            <div class="quick-action-icon">🌡️</div>
-                            <div class="quick-action-title">Log Temperature</div>
-                            <div class="quick-action-desc">Record CCP checks</div>
-                        </a>
-                        
-                        <a href="requisitions.html?action=new" class="quick-action" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white;">
-                            <div class="quick-action-icon">📋</div>
-                            <div class="quick-action-title">Request Items</div>
-                            <div class="quick-action-desc">Create requisition</div>
-                        </a>
-                        
-                        <a href="byproducts.html" class="quick-action" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;">
-                            <div class="quick-action-icon">♻️</div>
-                            <div class="quick-action-title">Record Byproduct</div>
-                            <div class="quick-action-desc">Log leftover products</div>
-                        </a>
-                    </div>
-                </div>
-                
-                <!-- Stats Cards - Now clickable -->
-                <div class="grid-4 mb-4">
-                    <div class="stat-card" onclick="window.location='batches.html?status=in_progress'" title="Click to see running batches">
-                        <div class="stat-card-icon primary">
-                            <i class="fas fa-play-circle"></i>
-                        </div>
-                        <div class="stat-card-value" id="runsInProgress">0</div>
-                        <div class="stat-card-label">🔄 Runs In Progress</div>
-                    </div>
-                    
-                    <div class="stat-card" onclick="window.location='batches.html?status=completed'" title="Click to see completed batches">
-                        <div class="stat-card-icon success">
-                            <i class="fas fa-check-circle"></i>
-                        </div>
-                        <div class="stat-card-value" id="runsCompleted">0</div>
-                        <div class="stat-card-label">✅ Completed Today</div>
-                    </div>
-                    
-                    <div class="stat-card" title="Available raw milk for production">
-                        <div class="stat-card-icon info">
-                            <i class="fas fa-tint"></i>
-                        </div>
-                        <div class="stat-card-value" id="availableMilk">0</div>
-                        <div class="stat-card-label">🥛 Available Milk (L)</div>
-                    </div>
-                    
-                    <div class="stat-card" onclick="window.location='ccp_logging.html'" title="Click to check CCP logs" style="border-color: #fbbf24;">
-                        <div class="stat-card-icon warning">
-                            <i class="fas fa-exclamation-triangle"></i>
-                        </div>
-                        <div class="stat-card-value" id="ccpAlerts">0</div>
-                        <div class="stat-card-label">⚠️ CCP Alerts</div>
-                    </div>
-                </div>
-                
-                <div class="grid-2 mb-4">
-                    <!-- This Week's Production -->
-                    <div class="card">
-                        <div class="card-header">
-                            <h3 class="card-title">📊 This Week's Production</h3>
-                        </div>
-                        <div class="card-body">
-                            <div class="table-container">
-                                <table class="table">
-                                    <thead>
-                                        <tr>
-                                            <th>📦 Product Type</th>
-                                            <th class="text-right">📏 Quantity</th>
-                                            <th class="text-right">📐 Unit</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="weekProductionTable">
-                                        <tr>
-                                            <td colspan="3" class="text-center">
-                                                <i class="fas fa-spinner fa-spin"></i> Loading...
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
+            <!-- Quick Actions -->
+            <div class="card bg-gradient-to-br from-base-100 to-base-200 border border-base-300 mb-6">
+                <div class="card-body">
+                    <h3 class="card-title text-base mb-4">
+                        <i class="fas fa-bolt text-primary"></i>
+                        Quick Actions
+                    </h3>
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <a href="batches.html?action=new" class="quick-action-card card bg-primary text-primary-content">
+                            <div class="card-body items-center text-center p-4">
+                                <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center mb-2">
+                                    <i class="fas fa-play text-2xl"></i>
+                                </div>
+                                <p class="font-semibold">Start Production</p>
+                                <p class="text-xs opacity-80">Begin a new production run</p>
                             </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Pending Requisitions -->
-                    <div class="card">
-                        <div class="card-header">
-                            <h3 class="card-title">⏳ Pending Requisitions</h3>
-                            <a href="requisitions.html" class="btn btn-outline btn-sm">View All →</a>
-                        </div>
-                        <div class="card-body">
-                            <div id="pendingReqsList">
-                                <p class="text-secondary text-center"><i class="fas fa-spinner fa-spin"></i> Loading...</p>
+                        </a>
+                        
+                        <a href="ccp_logging.html" class="quick-action-card card bg-error text-error-content">
+                            <div class="card-body items-center text-center p-4">
+                                <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center mb-2">
+                                    <i class="fas fa-thermometer-half text-2xl"></i>
+                                </div>
+                                <p class="font-semibold">Log Temperature</p>
+                                <p class="text-xs opacity-80">Record CCP checks</p>
                             </div>
+                        </a>
+                        
+                        <a href="requisitions.html?action=new" class="quick-action-card card bg-info text-info-content">
+                            <div class="card-body items-center text-center p-4">
+                                <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center mb-2">
+                                    <i class="fas fa-clipboard-list text-2xl"></i>
+                                </div>
+                                <p class="font-semibold">Request Items</p>
+                                <p class="text-xs opacity-80">Create requisition</p>
+                            </div>
+                        </a>
+                        
+                        <a href="byproducts.html" class="quick-action-card card bg-secondary text-secondary-content">
+                            <div class="card-body items-center text-center p-4">
+                                <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center mb-2">
+                                    <i class="fas fa-recycle text-2xl"></i>
+                                </div>
+                                <p class="font-semibold">Record Byproduct</p>
+                                <p class="text-xs opacity-80">Log leftover products</p>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Bento Grid Stats -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <!-- Runs In Progress -->
+                <a href="batches.html?status=in_progress" class="bento-card card bg-base-100 border border-base-300 cursor-pointer">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                                <i class="fas fa-play-circle text-blue-500"></i>
+                            </div>
+                            <span class="badge badge-ghost badge-sm">Active</span>
                         </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="runsInProgress">0</p>
+                        <p class="text-sm text-base-content/60">Runs In Progress</p>
+                    </div>
+                </a>
+                
+                <!-- Completed Today -->
+                <a href="batches.html?status=completed" class="bento-card card bg-base-100 border border-base-300 cursor-pointer">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                                <i class="fas fa-check-circle text-emerald-500"></i>
+                            </div>
+                            <span class="badge badge-success badge-sm">Today</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="runsCompleted">0</p>
+                        <p class="text-sm text-base-content/60">Completed Today</p>
+                    </div>
+                </a>
+                
+                <!-- Available Milk -->
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-cyan-500/10 flex items-center justify-center">
+                                <i class="fas fa-tint text-cyan-500"></i>
+                            </div>
+                            <span class="badge badge-info badge-sm">Liters</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="availableMilk">0</p>
+                        <p class="text-sm text-base-content/60">Available Milk (L)</p>
                     </div>
                 </div>
                 
-                <!-- Recent Production Runs -->
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title">🏭 Recent Production Runs</h3>
-                        <a href="batches.html" class="btn btn-outline btn-sm">View All →</a>
+                <!-- CCP Alerts -->
+                <a href="ccp_logging.html" class="bento-card card bg-base-100 border border-base-300 cursor-pointer">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                                <i class="fas fa-exclamation-triangle text-amber-500"></i>
+                            </div>
+                            <span class="badge badge-warning badge-sm">Alert</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="ccpAlerts">0</p>
+                        <p class="text-sm text-base-content/60">CCP Alerts</p>
                     </div>
-                    <div class="card-body p-0">
-                        <p style="padding: 0.75rem 1rem; background: #f1f5f9; margin: 0; color: #64748b; font-size: 0.875rem;">
-                            💡 <strong>Tip:</strong> Click on any row to see full details of the production run
-                        </p>
-                        <div class="table-container">
-                            <table class="table">
+                </a>
+            </div>
+            
+            <!-- Two Column Layout -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- This Week's Production -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body">
+                        <h3 class="card-title text-base">
+                            <i class="fas fa-chart-bar text-primary"></i>
+                            This Week's Production
+                        </h3>
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm">
                                 <thead>
                                     <tr>
-                                        <th>📝 Run Code</th>
-                                        <th>🥛 Product</th>
-                                        <th>📊 Status</th>
-                                        <th class="text-right">🎯 Planned</th>
-                                        <th class="text-right">✅ Actual</th>
-                                        <th>📅 Started</th>
-                                        <th class="text-center">⚡ Actions</th>
+                                        <th>Product Type</th>
+                                        <th class="text-right">Quantity</th>
+                                        <th class="text-right">Unit</th>
                                     </tr>
                                 </thead>
-                                <tbody id="recentRunsTable">
+                                <tbody id="weekProductionTable">
                                     <tr>
-                                        <td colspan="7" class="text-center">
-                                            <i class="fas fa-spinner fa-spin"></i> Loading...
+                                        <td colspan="3" class="text-center py-4">
+                                            <span class="loading loading-spinner loading-sm"></span> Loading...
                                         </td>
                                     </tr>
                                 </tbody>
@@ -303,12 +395,78 @@
                         </div>
                     </div>
                 </div>
+                
+                <!-- Pending Requisitions -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="card-title text-base">
+                                <i class="fas fa-clipboard-list text-primary"></i>
+                                Pending Requisitions
+                            </h3>
+                            <a href="requisitions.html" class="btn btn-ghost btn-sm">
+                                View All <i class="fas fa-arrow-right ml-1"></i>
+                            </a>
+                        </div>
+                        <div id="pendingReqsList" class="space-y-2">
+                            <div class="flex items-center justify-center py-4">
+                                <span class="loading loading-spinner loading-sm"></span>
+                                <span class="ml-2">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
+            
+            <!-- Recent Production Runs -->
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="card-title text-base">
+                            <i class="fas fa-industry text-primary"></i>
+                            Recent Production Runs
+                        </h3>
+                        <a href="batches.html" class="btn btn-ghost btn-sm">
+                            View All <i class="fas fa-arrow-right ml-1"></i>
+                        </a>
+                    </div>
+                    
+                    <!-- Tip Alert -->
+                    <div class="alert alert-info py-2 mb-4">
+                        <i class="fas fa-lightbulb"></i>
+                        <span class="text-sm"><strong>Tip:</strong> Click on any row to see full details of the production run</span>
+                    </div>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Run Code</th>
+                                    <th>Product</th>
+                                    <th>Status</th>
+                                    <th class="text-right">Planned</th>
+                                    <th class="text-right">Actual</th>
+                                    <th>Started</th>
+                                    <th class="text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recentRunsTable">
+                                <tr>
+                                    <td colspan="7" class="text-center py-4">
+                                        <span class="loading loading-spinner loading-sm"></span> Loading...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
         </main>
     </div>
     
     <!-- Toast Container -->
-    <div id="toastContainer" class="toast-container"></div>
+    <div class="toast toast-end" id="toastContainer"></div>
     
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
@@ -316,6 +474,27 @@
     <script src="../../js/config/auth.js"></script>
     <script src="../../js/production/production.service.js"></script>
     <script>
+        // Sidebar Toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+        
+        // Theme Toggle
+        document.getElementById('themeToggle').addEventListener('change', function() {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+        
+        // Load saved theme
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('themeToggle').checked = true;
+        }
+        
         // Check authentication
         document.addEventListener('DOMContentLoaded', async () => {
             // Require authentication
@@ -327,9 +506,9 @@
             const user = AuthService.getCurrentUser();
             
             // Update user display
-            document.getElementById('userName').textContent = `${user.first_name} ${user.last_name}`;
+            document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
             document.getElementById('welcomeName').textContent = user.first_name;
-            document.getElementById('userAvatar').textContent = (user.first_name[0] + user.last_name[0]).toUpperCase();
+            document.getElementById('userInitials').textContent = (user.first_name[0] + user.last_name[0]).toUpperCase();
             
             // Set greeting
             const hour = new Date().getHours();
@@ -358,12 +537,13 @@
                     
                     // Show warning if no milk available
                     if (availableMilk <= 0) {
-                        showMilkWarning();
+                        document.getElementById('milkWarning').classList.remove('hidden');
                     }
                     
                     // Update sidebar badges
-                    document.getElementById('activeRuns').textContent = data.today_stats?.in_progress || 0;
-                    document.getElementById('pendingReqs').textContent = data.pending_requisitions || 0;
+                    document.getElementById('activeRunsBadge').textContent = data.today_stats?.in_progress || 0;
+                    document.getElementById('pendingReqsBadge').textContent = data.pending_requisitions || 0;
+                    document.getElementById('ccpAlertsBadge').textContent = data.ccp_alerts || 0;
                     
                     // Render week production
                     renderWeekProduction(data.week_production || []);
@@ -380,37 +560,11 @@
             }
         }
         
-        function showMilkWarning() {
-            // Insert warning after quick actions
-            const quickActions = document.querySelector('.card.mb-4[style*="linear-gradient"]');
-            if (quickActions && !document.getElementById('milkWarning')) {
-                const warning = document.createElement('div');
-                warning.id = 'milkWarning';
-                warning.className = 'card mb-4';
-                warning.style.cssText = 'background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%); border: 2px solid #ef4444;';
-                warning.innerHTML = `
-                    <div class="card-body" style="display: flex; align-items: center; gap: 1rem;">
-                        <div style="font-size: 2.5rem;">⚠️</div>
-                        <div style="flex: 1;">
-                            <h4 style="margin: 0 0 0.25rem 0; color: #dc2626;">No QC-Approved Milk Available!</h4>
-                            <p style="margin: 0; color: #b91c1c;">
-                                You cannot start new production runs until milk deliveries are tested and approved by QC.
-                            </p>
-                            <div style="margin-top: 0.5rem; font-size: 0.875rem; color: #64748b;">
-                                💡 <strong>What to do:</strong> Contact the QC team to check if there are deliveries waiting to be graded.
-                            </div>
-                        </div>
-                    </div>
-                `;
-                quickActions.parentNode.insertBefore(warning, quickActions.nextSibling);
-            }
-        }
-        
         function renderWeekProduction(production) {
             const tbody = document.getElementById('weekProductionTable');
             
             if (!production.length) {
-                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-secondary">No production this week</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-base-content/60 py-4">No production this week</td></tr>';
                 return;
             }
             
@@ -422,45 +576,42 @@
                 'milk_bar': 'Milk Bar'
             };
             
+            const typeColors = {
+                'bottled_milk': 'badge-primary',
+                'cheese': 'badge-warning',
+                'butter': 'badge-info',
+                'yogurt': 'badge-success',
+                'milk_bar': 'badge-secondary'
+            };
+            
             tbody.innerHTML = production.map(item => `
                 <tr>
                     <td>
-                        <span class="badge badge-${getProductTypeColor(item.product_type)}">
+                        <span class="badge ${typeColors[item.product_type] || 'badge-ghost'}">
                             ${productTypes[item.product_type] || item.product_type}
                         </span>
                     </td>
                     <td class="text-right font-semibold">${parseFloat(item.total_quantity).toLocaleString()}</td>
-                    <td class="text-right text-secondary">${item.yield_unit || 'units'}</td>
+                    <td class="text-right text-base-content/60">${item.yield_unit || 'units'}</td>
                 </tr>
             `).join('');
-        }
-        
-        function getProductTypeColor(type) {
-            const colors = {
-                'bottled_milk': 'primary',
-                'cheese': 'warning',
-                'butter': 'info',
-                'yogurt': 'success',
-                'milk_bar': 'secondary'
-            };
-            return colors[type] || 'secondary';
         }
         
         function renderPendingRequisitions(requisitions) {
             const container = document.getElementById('pendingReqsList');
             
             if (!requisitions || !requisitions.length) {
-                container.innerHTML = '<p class="text-secondary text-center">No pending requisitions</p>';
+                container.innerHTML = '<p class="text-center text-base-content/60 py-4">No pending requisitions</p>';
                 return;
             }
             
             container.innerHTML = requisitions.slice(0, 5).map(req => `
-                <div class="list-item" style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
+                <div class="flex items-center justify-between p-3 bg-base-200 rounded-xl">
                     <div>
-                        <div class="font-semibold">${req.requisition_code}</div>
-                        <div class="text-secondary text-sm">${req.total_items} items • ${req.priority} priority</div>
+                        <p class="font-semibold text-sm">${req.requisition_code}</p>
+                        <p class="text-xs text-base-content/60">${req.total_items} items • ${req.priority} priority</p>
                     </div>
-                    <span class="badge badge-${req.status === 'pending' ? 'warning' : 'info'}">${req.status}</span>
+                    <span class="badge ${req.status === 'pending' ? 'badge-warning' : 'badge-info'}">${req.status}</span>
                 </div>
             `).join('');
         }
@@ -469,38 +620,40 @@
             const tbody = document.getElementById('recentRunsTable');
             
             if (!runs.length) {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-secondary">No recent runs</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-base-content/60 py-4">No recent runs</td></tr>';
                 return;
             }
             
             const statusColors = {
-                'planned': 'secondary',
-                'in_progress': 'primary',
-                'pasteurization': 'warning',
-                'processing': 'info',
-                'cooling': 'info',
-                'packaging': 'info',
-                'completed': 'success',
-                'cancelled': 'danger'
+                'planned': 'badge-ghost',
+                'in_progress': 'badge-primary',
+                'pasteurization': 'badge-warning',
+                'processing': 'badge-info',
+                'cooling': 'badge-info',
+                'packaging': 'badge-info',
+                'completed': 'badge-success',
+                'cancelled': 'badge-error'
             };
             
             tbody.innerHTML = runs.map(run => `
-                <tr>
+                <tr class="hover cursor-pointer" onclick="window.location='batches.html?id=${run.id}'">
                     <td><span class="font-mono font-semibold">${run.run_code}</span></td>
                     <td>
                         <div>${run.product_name}</div>
-                        <div class="text-secondary text-sm">${run.variant || ''}</div>
+                        <div class="text-xs text-base-content/60">${run.variant || ''}</div>
                     </td>
                     <td>
-                        <span class="badge badge-${statusColors[run.status] || 'secondary'}">
+                        <span class="badge ${statusColors[run.status] || 'badge-ghost'}">
                             ${run.status.replace('_', ' ')}
                         </span>
                     </td>
                     <td class="text-right">${run.planned_quantity} ${run.yield_unit || ''}</td>
                     <td class="text-right">${run.actual_quantity ? run.actual_quantity + ' ' + (run.yield_unit || '') : '-'}</td>
-                    <td class="text-secondary">${run.start_datetime ? new Date(run.start_datetime).toLocaleString() : 'Not started'}</td>
+                    <td class="text-base-content/60">${run.start_datetime ? new Date(run.start_datetime).toLocaleString() : 'Not started'}</td>
                     <td class="text-center">
-                        <a href="batches.html?id=${run.id}" class="btn btn-sm btn-outline">View</a>
+                        <a href="batches.html?id=${run.id}" class="btn btn-ghost btn-xs">
+                            <i class="fas fa-eye"></i> View
+                        </a>
                     </td>
                 </tr>
             `).join('');
@@ -508,17 +661,19 @@
         
         function showToast(message, type = 'info') {
             const container = document.getElementById('toastContainer');
+            const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
+            const icon = type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle';
+            
             const toast = document.createElement('div');
-            toast.className = `toast toast-${type}`;
+            toast.className = `alert ${alertClass} shadow-lg`;
             toast.innerHTML = `
-                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+                <i class="fas ${icon}"></i>
                 <span>${message}</span>
             `;
             container.appendChild(toast);
             
             setTimeout(() => {
-                toast.classList.add('toast-hide');
-                setTimeout(() => toast.remove(), 300);
+                toast.remove();
             }, 3000);
         }
     </script>

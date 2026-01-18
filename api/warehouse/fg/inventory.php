@@ -52,7 +52,7 @@ try {
 function getProductUnitConfig($db, $productId) {
     // First try product_units table
     $stmt = $db->prepare("
-        SELECT pu.*, p.name as product_name
+        SELECT pu.*, p.product_name
         FROM product_units pu
         JOIN products p ON pu.product_id = p.id
         WHERE pu.product_id = ? AND pu.is_active = 1
@@ -231,7 +231,7 @@ function openBox($db, $inventoryId, $boxesToOpen, $userId, $reason = 'partial_sa
 function releaseMultiUnit($db, $inventoryId, $releasedBoxes, $releasedPieces, $userId, $reason = 'dispatch', $referenceType = null, $referenceId = null) {
     // Get current inventory with product info
     $stmt = $db->prepare("
-        SELECT fg.*, p.pieces_per_box, p.base_unit, p.box_unit, p.name as product_name
+        SELECT fg.*, p.pieces_per_box, p.base_unit, p.box_unit, p.product_name
         FROM finished_goods_inventory fg
         JOIN products p ON fg.product_id = p.id
         WHERE fg.id = ?
@@ -399,10 +399,10 @@ function handleGet($db, $action) {
             $sql = "
                 SELECT 
                     fg.*,
-                    p.name as product_name,
+                    p.product_name,
                     p.variant,
-                    p.size_value,
-                    p.size_unit,
+                    p.unit_size as size_value,
+                    p.unit_measure as size_unit,
                     p.category,
                     COALESCE(p.base_unit, 'piece') as base_unit,
                     COALESCE(p.box_unit, 'box') as box_unit,
@@ -471,10 +471,10 @@ function handleGet($db, $action) {
             $stmt = $db->prepare("
                 SELECT 
                     fg.*,
-                    p.name as product_name,
+                    p.product_name,
                     p.variant,
-                    p.size_value,
-                    p.size_unit,
+                    p.unit_size,
+                    p.unit_measure,
                     COALESCE(p.base_unit, 'piece') as base_unit,
                     COALESCE(p.box_unit, 'box') as box_unit,
                     COALESCE(p.pieces_per_box, 1) as pieces_per_box,
@@ -529,10 +529,10 @@ function handleGet($db, $action) {
             $stmt = $db->prepare("
                 SELECT 
                     fg.*,
-                    p.name as product_name,
+                    p.product_name,
                     p.variant,
-                    p.size_value,
-                    p.size_unit,
+                    p.unit_size,
+                    p.unit_measure,
                     COALESCE(p.base_unit, 'piece') as base_unit,
                     COALESCE(p.box_unit, 'box') as box_unit,
                     COALESCE(p.pieces_per_box, 1) as pieces_per_box,
@@ -570,7 +570,7 @@ function handleGet($db, $action) {
             $sql = "
                 SELECT 
                     fg.*,
-                    p.name as product_name,
+                    p.product_name,
                     p.variant,
                     COALESCE(p.base_unit, 'piece') as base_unit,
                     COALESCE(p.box_unit, 'box') as box_unit,
@@ -660,7 +660,7 @@ function handleGet($db, $action) {
             $sql = "
                 SELECT 
                     p.id as product_id,
-                    p.name as product_name,
+                    p.product_name,
                     p.variant,
                     COALESCE(p.base_unit, 'piece') as base_unit,
                     COALESCE(p.box_unit, 'box') as box_unit,
@@ -683,7 +683,7 @@ function handleGet($db, $action) {
                 $params[] = $productId;
             }
             
-            $sql .= " GROUP BY p.id ORDER BY p.name";
+            $sql .= " GROUP BY p.id ORDER BY p.product_name";
             
             $stmt = $db->prepare($sql);
             $stmt->execute($params);
@@ -704,6 +704,135 @@ function handleGet($db, $action) {
             }
             
             Response::success($summary, 'Inventory summary retrieved');
+            break;
+            
+        case 'pending_batches':
+            // Get QC-released batches not yet received into FG warehouse
+            $stmt = $db->prepare("
+                SELECT 
+                    pb.id,
+                    pb.batch_code,
+                    pb.product_type,
+                    pb.product_variant,
+                    CONCAT(pb.product_type, COALESCE(CONCAT(' - ', pb.product_variant), '')) as product_name,
+                    pb.product_variant as variant,
+                    pb.expected_yield as quantity_produced,
+                    pb.actual_yield,
+                    COALESCE(pb.actual_yield, pb.expected_yield, 0) as total_pieces,
+                    0 as quantity_boxes,
+                    COALESCE(pb.actual_yield, pb.expected_yield, 0) as quantity_pieces,
+                    1 as pieces_per_box,
+                    'pcs' as unit,
+                    pb.manufacturing_date as production_date,
+                    pb.expiry_date,
+                    pb.qc_status as status,
+                    pb.qc_released_at as qc_release_date,
+                    pb.released_by
+                FROM production_batches pb
+                LEFT JOIN fg_receiving fr ON pb.id = fr.batch_id
+                WHERE pb.qc_status = 'released'
+                AND pb.fg_received = 0
+                AND fr.id IS NULL
+                ORDER BY pb.qc_released_at ASC
+            ");
+            $stmt->execute();
+            $pendingBatches = $stmt->fetchAll();
+            
+            Response::success([
+                'batches' => $pendingBatches,
+                'count' => count($pendingBatches)
+            ], 'Pending batches retrieved');
+            break;
+            
+        case 'transactions':
+            // Get inventory transaction history
+            $type = getParam('type');
+            $productId = getParam('product_id');
+            $limit = getParam('limit', 50);
+            $fromDate = getParam('from_date');
+            $toDate = getParam('to_date');
+            
+            $sql = "
+                SELECT 
+                    t.*,
+                    fg.product_name,
+                    fg.batch_id,
+                    u.first_name,
+                    u.last_name,
+                    c.chiller_code as from_chiller,
+                    c2.chiller_code as to_chiller
+                FROM fg_inventory_transactions t
+                LEFT JOIN finished_goods_inventory fg ON t.inventory_id = fg.id
+                LEFT JOIN users u ON t.performed_by = u.id
+                LEFT JOIN chiller_locations c ON t.from_chiller_id = c.id
+                LEFT JOIN chiller_locations c2 ON t.to_chiller_id = c2.id
+                WHERE 1=1
+            ";
+            
+            $params = [];
+            
+            if ($type) {
+                $sql .= " AND t.transaction_type = ?";
+                $params[] = $type;
+            }
+            
+            if ($productId) {
+                $sql .= " AND t.product_id = ?";
+                $params[] = $productId;
+            }
+            
+            if ($fromDate) {
+                $sql .= " AND DATE(t.created_at) >= ?";
+                $params[] = $fromDate;
+            }
+            
+            if ($toDate) {
+                $sql .= " AND DATE(t.created_at) <= ?";
+                $params[] = $toDate;
+            }
+            
+            $sql .= " ORDER BY t.created_at DESC LIMIT " . intval($limit);
+            
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
+            $transactions = $stmt->fetchAll();
+            
+            Response::success([
+                'transactions' => $transactions,
+                'count' => count($transactions)
+            ], 'Transactions retrieved');
+            break;
+            
+        case 'transaction_detail':
+            $id = getParam('id');
+            if (!$id) {
+                Response::error('Transaction ID required', 400);
+            }
+            
+            $stmt = $db->prepare("
+                SELECT 
+                    t.*,
+                    fg.product_name,
+                    fg.batch_id,
+                    u.first_name,
+                    u.last_name,
+                    c.chiller_code as from_chiller,
+                    c2.chiller_code as to_chiller
+                FROM fg_inventory_transactions t
+                LEFT JOIN finished_goods_inventory fg ON t.inventory_id = fg.id
+                LEFT JOIN users u ON t.performed_by = u.id
+                LEFT JOIN chiller_locations c ON t.from_chiller_id = c.id
+                LEFT JOIN chiller_locations c2 ON t.to_chiller_id = c2.id
+                WHERE t.id = ?
+            ");
+            $stmt->execute([$id]);
+            $transaction = $stmt->fetch();
+            
+            if (!$transaction) {
+                Response::error('Transaction not found', 404);
+            }
+            
+            Response::success($transaction, 'Transaction details retrieved');
             break;
             
         default:

@@ -1,297 +1,449 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="emerald">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Expiry Management - Highland Fresh System</title>
+    <title>Expiry Management - Quality Control | Highland Fresh</title>
+    
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <!-- Inter Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        
+        /* Expiry status badges */
+        .expiry-expired { @apply border-l-4 border-error bg-error/5; }
+        .expiry-critical { @apply border-l-4 border-error; }
+        .expiry-warning { @apply border-l-4 border-warning; }
+        
+        /* Grade badges */
+        .grade-a { @apply bg-emerald-100 text-emerald-700 border-emerald-200; }
+        .grade-b { @apply bg-blue-100 text-blue-700 border-blue-200; }
+        .grade-c { @apply bg-amber-100 text-amber-700 border-amber-200; }
+        .grade-d { @apply bg-orange-100 text-orange-700 border-orange-200; }
+    </style>
 </head>
-<body>
-    <div class="app-container">
-        <!-- Sidebar -->
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <div class="sidebar-logo">
-                    <div class="user-avatar" style="width:40px;height:40px;font-size:1.25rem;">
-                        <i class="fas fa-cow"></i>
+<body class="bg-base-200 min-h-screen">
+    
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-flask text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Quality Control</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <!-- Main Menu -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Inbound Milk -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inbound Milk</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="milk_receiving.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-truck-loading w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Milk Receiving</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="milk_grading.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-flask w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Milk Grading</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="farmers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-users w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Farmers</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Production QC -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Production QC</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="batch_release.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-check-double w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Batch Release</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Inventory QC -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory QC</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="expiry_management.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-calendar-times w-5 text-center"></i>
+                            <span class="flex-1">Expiry Management</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+        
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">QC</span>
                     </div>
-                    <div>
-                        <div class="sidebar-logo-text">Highland Fresh</div>
-                        <div class="sidebar-logo-subtitle">Quality Control</div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">QC Officer</p>
+                    <p class="text-xs text-base-content/60 truncate">Quality Control</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a><i class="fas fa-user-cog w-4"></i> Profile</a></li>
+                        <li><a><i class="fas fa-cog w-4"></i> Settings</a></li>
+                        <li class="border-t border-base-300 mt-1 pt-1">
+                            <a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <div>
+                    <h1 class="text-lg lg:text-xl font-bold text-base-content">Expiry Management</h1>
+                    <div class="text-sm breadcrumbs py-0">
+                        <ul class="text-xs">
+                            <li><a href="dashboard.html">Dashboard</a></li>
+                            <li>Expiry Management</li>
+                        </ul>
                     </div>
                 </div>
             </div>
-            
-            <nav class="sidebar-nav">
-                <div class="nav-section">
-                    <div class="nav-section-title">Main Menu</div>
-                    <a href="dashboard.html" class="nav-link">
-                        <i class="fas fa-th-large"></i>
-                        <span>Dashboard</span>
-                    </a>
-                </div>
-                
-                <div class="nav-section">
-                    <div class="nav-section-title">Inbound Milk</div>
-                    <a href="milk_receiving.html" class="nav-link">
-                        <i class="fas fa-truck-loading"></i>
-                        <span>Milk Receiving</span>
-                    </a>
-                    <a href="milk_grading.html" class="nav-link">
-                        <i class="fas fa-flask"></i>
-                        <span>Milk Grading</span>
-                    </a>
-                    <a href="farmers.html" class="nav-link">
-                        <i class="fas fa-users"></i>
-                        <span>Farmers</span>
-                    </a>
-                </div>
-                
-                <div class="nav-section">
-                    <div class="nav-section-title">Production QC</div>
-                    <a href="batch_release.html" class="nav-link">
-                        <i class="fas fa-check-double"></i>
-                        <span>Batch Release</span>
-                    </a>
-                </div>
-                
-                <div class="nav-section">
-                    <div class="nav-section-title">Inventory QC</div>
-                    <a href="expiry_management.html" class="nav-link active">
-                        <i class="fas fa-calendar-times"></i>
-                        <span>Expiry Management</span>
-                    </a>
-                </div>
-            </nav>
-        </aside>
+            <div class="flex-none flex items-center gap-2">
+                <!-- Theme toggle -->
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
         
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Header -->
-            <header class="header">
-                <div class="header-left">
-                    <h1 class="header-title">Expiry Management</h1>
-                    <div class="header-breadcrumb">
-                        <a href="dashboard.html">Dashboard</a>
-                        <i class="fas fa-chevron-right" style="font-size: 0.6rem;"></i>
-                        <span>Expiry Management</span>
-                    </div>
-                </div>
-                
-                <div class="header-right">
-                    <button class="header-icon-btn" title="Logout" onclick="AuthService.logout()">
-                        <i class="fas fa-sign-out-alt"></i>
-                    </button>
-                </div>
-            </header>
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
             
-            <!-- Page Content -->
-            <div class="page-content">
-                <!-- Alert Banner -->
-                <div class="alert alert-warning mb-4" id="expiryAlert" style="display: none;">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    <div>
-                        <strong>Attention Required!</strong>
-                        <span id="expiryAlertText">There are products expiring soon that need your attention.</span>
-                    </div>
+            <!-- Alert Banner -->
+            <div id="expiryAlert" class="alert alert-warning mb-4 hidden">
+                <i class="fas fa-exclamation-triangle text-xl"></i>
+                <div>
+                    <h3 class="font-bold">Attention Required!</h3>
+                    <p class="text-sm" id="expiryAlertText">There are products expiring soon that need your attention.</p>
                 </div>
-                
-                <!-- Stats -->
-                <div class="grid-4 mb-4">
-                    <div class="stat-card stat-card-danger">
-                        <div class="stat-card-icon danger">
-                            <i class="fas fa-skull-crossbones"></i>
-                        </div>
-                        <div class="stat-card-value" id="expiredCount">0</div>
-                        <div class="stat-card-label">Expired Items</div>
-                    </div>
-                    <div class="stat-card stat-card-warning">
-                        <div class="stat-card-icon warning">
-                            <i class="fas fa-exclamation-circle"></i>
-                        </div>
-                        <div class="stat-card-value" id="criticalCount">0</div>
-                        <div class="stat-card-label">Critical (1-2 days)</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-card-icon info">
-                            <i class="fas fa-clock"></i>
-                        </div>
-                        <div class="stat-card-value" id="warningCount">0</div>
-                        <div class="stat-card-label">Warning (3-7 days)</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-card-icon success">
-                            <i class="fas fa-exchange-alt"></i>
-                        </div>
-                        <div class="stat-card-value" id="transformedCount">0</div>
-                        <div class="stat-card-label">Transformed to Yogurt</div>
-                    </div>
-                </div>
-                
-                <!-- Tabs -->
-                <div class="card mb-4">
-                    <div class="card-body p-0">
-                        <div class="tab-nav">
-                            <button class="tab-btn active" data-tab="expiring" onclick="switchTab('expiring')">
-                                <i class="fas fa-hourglass-half"></i>
-                                Expiring Soon
-                                <span class="badge badge-danger badge-sm" id="expiringBadge">0</span>
-                            </button>
-                            <button class="tab-btn" data-tab="raw-milk" onclick="switchTab('raw-milk')">
-                                <i class="fas fa-tint"></i>
-                                Raw Milk Inventory
-                            </button>
-                            <button class="tab-btn" data-tab="transformations" onclick="switchTab('transformations')">
-                                <i class="fas fa-blender"></i>
-                                Yogurt Transformations
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Expiring Products Section -->
-                <div id="expiringSection" class="tab-content active">
-                    <div class="grid-2" id="expiringProducts">
-                        <!-- Expiring product cards -->
-                    </div>
-                </div>
-                
-                <!-- Raw Milk Inventory Section -->
-                <div id="raw-milkSection" class="tab-content" style="display: none;">
-                    <div class="card">
-                        <div class="card-header">
-                            <h3 class="card-title">
-                                <i class="fas fa-tint text-primary"></i>
-                                Raw Milk Inventory (FIFO)
-                            </h3>
-                            <span class="text-muted">Oldest stock should be used first</span>
-                        </div>
-                        <div class="card-body p-0">
-                            <div class="table-container">
-                                <table class="table">
-                                    <thead>
-                                        <tr>
-                                            <th>Received Date</th>
-                                            <th>Farmer</th>
-                                            <th>Grade</th>
-                                            <th>Original Volume</th>
-                                            <th>Remaining</th>
-                                            <th>Expiry</th>
-                                            <th>Days Left</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="rawMilkTable">
-                                        <tr>
-                                            <td colspan="8" class="text-center text-muted p-4">Loading...</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
+            </div>
+            
+            <!-- Stats Grid -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <!-- Expired Items -->
+                <div class="card bg-base-100 border border-base-300 border-l-4 border-l-error">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-error/10 flex items-center justify-center">
+                                <i class="fas fa-skull-crossbones text-error text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="expiredCount">0</p>
+                                <p class="text-xs text-base-content/60">Expired Items</p>
                             </div>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Transformations Section -->
-                <div id="transformationsSection" class="tab-content" style="display: none;">
-                    <div class="card">
-                        <div class="card-header">
-                            <h3 class="card-title">
+                <!-- Critical -->
+                <div class="card bg-base-100 border border-base-300 border-l-4 border-l-warning">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center">
+                                <i class="fas fa-exclamation-circle text-warning text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="criticalCount">0</p>
+                                <p class="text-xs text-base-content/60">Critical (1-2 days)</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Warning -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-info/10 flex items-center justify-center">
+                                <i class="fas fa-clock text-info text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="warningCount">0</p>
+                                <p class="text-xs text-base-content/60">Warning (3-7 days)</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Transformed -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-success/10 flex items-center justify-center">
+                                <i class="fas fa-exchange-alt text-success text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold" id="transformedCount">0</p>
+                                <p class="text-xs text-base-content/60">Transformed to Yogurt</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Tabs -->
+            <div class="tabs tabs-boxed bg-base-100 p-1 mb-4 border border-base-300">
+                <button class="tab tab-lg flex-1 gap-2 tab-active" data-tab="expiring" onclick="switchTab('expiring')">
+                    <i class="fas fa-hourglass-half"></i>
+                    <span class="hidden sm:inline">Expiring Soon</span>
+                    <span class="badge badge-error badge-sm" id="expiringBadge">0</span>
+                </button>
+                <button class="tab tab-lg flex-1 gap-2" data-tab="raw-milk" onclick="switchTab('raw-milk')">
+                    <i class="fas fa-tint"></i>
+                    <span class="hidden sm:inline">Raw Milk Inventory</span>
+                </button>
+                <button class="tab tab-lg flex-1 gap-2" data-tab="transformations" onclick="switchTab('transformations')">
+                    <i class="fas fa-blender"></i>
+                    <span class="hidden sm:inline">Yogurt Transformations</span>
+                </button>
+            </div>
+            
+            <!-- Expiring Products Section -->
+            <div id="expiringSection" class="tab-content">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="expiringProducts">
+                    <!-- Expiring product cards will be loaded here -->
+                </div>
+            </div>
+            
+            <!-- Raw Milk Inventory Section -->
+            <div id="raw-milkSection" class="tab-content hidden">
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-0">
+                        <div class="flex items-center justify-between p-4 border-b border-base-300">
+                            <h3 class="font-semibold flex items-center gap-2">
+                                <i class="fas fa-tint text-primary"></i>
+                                Raw Milk Inventory (FIFO)
+                            </h3>
+                            <span class="text-sm text-base-content/60">Oldest stock should be used first</span>
+                        </div>
+                        
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Received Date</th>
+                                        <th>Farmer</th>
+                                        <th>Grade</th>
+                                        <th class="text-right">Original Volume</th>
+                                        <th class="text-right">Remaining</th>
+                                        <th>Expiry</th>
+                                        <th>Days Left</th>
+                                        <th class="text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="rawMilkTable">
+                                    <tr>
+                                        <td colspan="8" class="text-center py-8 text-base-content/40">
+                                            <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                                            <p>Loading...</p>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Transformations Section -->
+            <div id="transformationsSection" class="tab-content hidden">
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-0">
+                        <div class="flex items-center justify-between p-4 border-b border-base-300">
+                            <h3 class="font-semibold flex items-center gap-2">
                                 <i class="fas fa-blender text-primary"></i>
                                 Yogurt Transformation History
                             </h3>
                         </div>
-                        <div class="card-body p-0">
-                            <div class="table-container">
-                                <table class="table">
-                                    <thead>
-                                        <tr>
-                                            <th>Date</th>
-                                            <th>Source Product</th>
-                                            <th>Input Qty</th>
-                                            <th>Output Product</th>
-                                            <th>Output Qty</th>
-                                            <th>Reason</th>
-                                            <th>Processed By</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="transformationsTable">
-                                        <tr>
-                                            <td colspan="7" class="text-center text-muted p-4">Loading...</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
+                        
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Source Product</th>
+                                        <th class="text-right">Input Qty</th>
+                                        <th>Output Product</th>
+                                        <th class="text-right">Output Qty</th>
+                                        <th>Reason</th>
+                                        <th>Processed By</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="transformationsTable">
+                                    <tr>
+                                        <td colspan="7" class="text-center py-8 text-base-content/40">
+                                            <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                                            <p>Loading...</p>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
             </div>
+            
         </main>
     </div>
     
     <!-- Transform to Yogurt Modal -->
-    <div class="modal-overlay" id="transformModal">
-        <div class="modal">
-            <div class="modal-header">
-                <h3 class="modal-title">
-                    <i class="fas fa-blender text-primary"></i>
-                    Transform to Yogurt
-                </h3>
-                <button class="modal-close" onclick="closeModal('transformModal')">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
+    <dialog id="transformModal" class="modal">
+        <div class="modal-box max-w-lg">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-blender text-primary"></i>
+                Transform to Yogurt
+            </h3>
+            
             <form id="transformForm" onsubmit="submitTransformation(event)">
                 <input type="hidden" id="transformSourceId">
                 <input type="hidden" id="transformSourceType">
-                <div class="modal-body">
+                
+                <div class="space-y-4">
                     <!-- Source Info -->
-                    <div class="info-box mb-4" style="background: var(--warning-50); border: 1px solid var(--warning-200); padding: 1rem; border-radius: var(--border-radius);">
-                        <h5 class="mb-2">
+                    <div class="bg-warning/10 border border-warning/30 rounded-xl p-4">
+                        <h5 class="font-semibold text-sm flex items-center gap-2 mb-3">
                             <i class="fas fa-info-circle text-warning"></i>
                             Near-Expiry Product
                         </h5>
-                        <div class="grid-2">
+                        <div class="grid grid-cols-2 gap-3">
                             <div>
-                                <div class="text-muted" style="font-size: 0.75rem;">Product</div>
-                                <div class="font-medium" id="transformSourceProduct">-</div>
+                                <p class="text-xs text-base-content/60">Product</p>
+                                <p class="font-medium text-sm" id="transformSourceProduct">-</p>
                             </div>
                             <div>
-                                <div class="text-muted" style="font-size: 0.75rem;">Available Qty</div>
-                                <div class="font-medium" id="transformSourceQty">-</div>
+                                <p class="text-xs text-base-content/60">Available Qty</p>
+                                <p class="font-medium text-sm" id="transformSourceQty">-</p>
                             </div>
                             <div>
-                                <div class="text-muted" style="font-size: 0.75rem;">Batch #</div>
-                                <div class="font-medium" id="transformSourceBatch">-</div>
+                                <p class="text-xs text-base-content/60">Batch #</p>
+                                <p class="font-medium text-sm" id="transformSourceBatch">-</p>
                             </div>
                             <div>
-                                <div class="text-muted" style="font-size: 0.75rem;">Expires</div>
-                                <div class="font-medium text-danger" id="transformSourceExpiry">-</div>
+                                <p class="text-xs text-base-content/60">Expires</p>
+                                <p class="font-medium text-sm text-error" id="transformSourceExpiry">-</p>
                             </div>
                         </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label class="form-label required">Quantity to Transform</label>
-                        <input type="number" class="form-control" id="transformQuantity" min="1" step="0.01" required>
-                        <small class="text-muted">Enter the quantity in liters to transform into yogurt</small>
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Quantity to Transform <span class="text-error">*</span></span>
+                        </label>
+                        <input type="number" class="input input-bordered w-full" id="transformQuantity" min="1" step="0.01" required>
+                        <label class="label">
+                            <span class="label-text-alt text-base-content/60">Enter the quantity in liters to transform into yogurt</span>
+                        </label>
                     </div>
                     
-                    <div class="form-group">
-                        <label class="form-label required">Output Product</label>
-                        <select class="form-control" id="transformOutput" required>
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Output Product <span class="text-error">*</span></span>
+                        </label>
+                        <select class="select select-bordered w-full" id="transformOutput" required>
                             <option value="">Select yogurt product...</option>
-                            <!-- Will be populated dynamically -->
                         </select>
                     </div>
                     
-                    <div class="form-group">
-                        <label class="form-label required">Reason for Transformation</label>
-                        <select class="form-control" id="transformReason" required>
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Reason for Transformation <span class="text-error">*</span></span>
+                        </label>
+                        <select class="select select-bordered w-full" id="transformReason" required>
                             <option value="near_expiry">Near Expiry</option>
                             <option value="quality_downgrade">Quality Downgrade</option>
                             <option value="production_requirement">Production Requirement</option>
@@ -299,27 +451,30 @@
                         </select>
                     </div>
                     
-                    <div class="form-group">
-                        <label class="form-label">Notes</label>
-                        <textarea class="form-control" id="transformNotes" rows="2" placeholder="Additional notes..."></textarea>
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Notes</span>
+                        </label>
+                        <textarea class="textarea textarea-bordered w-full" id="transformNotes" rows="2" placeholder="Additional notes..."></textarea>
                     </div>
                     
                     <!-- Yield Preview -->
-                    <div class="yield-preview" style="background: var(--primary-50); border: 1px solid var(--primary-200); padding: 1rem; border-radius: var(--border-radius);">
-                        <div class="d-flex justify-between align-center">
+                    <div class="bg-primary/10 border border-primary/30 rounded-xl p-4">
+                        <div class="flex justify-between items-center">
                             <div>
-                                <div class="text-muted" style="font-size: 0.75rem;">Estimated Yogurt Output</div>
-                                <div class="font-bold text-primary" style="font-size: 1.25rem;" id="yieldPreview">- L</div>
+                                <p class="text-xs text-base-content/60">Estimated Yogurt Output</p>
+                                <p class="text-2xl font-bold text-primary" id="yieldPreview">- L</p>
                             </div>
-                            <div class="text-muted" style="font-size: 0.75rem;">
+                            <div class="text-xs text-base-content/60 flex items-center gap-1">
                                 <i class="fas fa-info-circle"></i>
                                 ~90% yield rate
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('transformModal')">Cancel</button>
+                
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('transformModal').close()">Cancel</button>
                     <button type="submit" class="btn btn-primary" id="submitTransformBtn">
                         <i class="fas fa-blender"></i>
                         Process Transformation
@@ -327,46 +482,49 @@
                 </div>
             </form>
         </div>
-    </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
     
     <!-- Dispose Modal -->
-    <div class="modal-overlay" id="disposeModal">
-        <div class="modal">
-            <div class="modal-header">
-                <h3 class="modal-title">
-                    <i class="fas fa-trash text-danger"></i>
-                    Dispose Product
-                </h3>
-                <button class="modal-close" onclick="closeModal('disposeModal')">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
+    <dialog id="disposeModal" class="modal">
+        <div class="modal-box max-w-lg">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-trash text-error"></i>
+                Dispose Product
+            </h3>
+            
             <form id="disposeForm" onsubmit="submitDisposal(event)">
                 <input type="hidden" id="disposeSourceId">
                 <input type="hidden" id="disposeSourceType">
-                <div class="modal-body">
-                    <div class="alert alert-danger mb-4">
+                
+                <div class="space-y-4">
+                    <div class="alert alert-error">
                         <i class="fas fa-exclamation-triangle"></i>
                         <div>
-                            <strong>Warning!</strong>
-                            This action cannot be undone. The product will be removed from inventory.
+                            <h4 class="font-bold">Warning!</h4>
+                            <p class="text-sm">This action cannot be undone. The product will be removed from inventory.</p>
                         </div>
                     </div>
                     
-                    <div class="grid-2 mb-4">
-                        <div style="background: var(--gray-50); padding: 1rem; border-radius: var(--border-radius);">
-                            <div class="text-muted" style="font-size: 0.75rem;">Product</div>
-                            <div class="font-medium" id="disposeProduct">-</div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-base-200 rounded-xl p-3">
+                            <p class="text-xs text-base-content/60">Product</p>
+                            <p class="font-medium text-sm" id="disposeProduct">-</p>
                         </div>
-                        <div style="background: var(--gray-50); padding: 1rem; border-radius: var(--border-radius);">
-                            <div class="text-muted" style="font-size: 0.75rem;">Quantity</div>
-                            <div class="font-medium" id="disposeQty">-</div>
+                        <div class="bg-base-200 rounded-xl p-3">
+                            <p class="text-xs text-base-content/60">Quantity</p>
+                            <p class="font-medium text-sm" id="disposeQty">-</p>
                         </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label class="form-label required">Disposal Reason</label>
-                        <select class="form-control" id="disposeReason" required>
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Disposal Reason <span class="text-error">*</span></span>
+                        </label>
+                        <select class="select select-bordered w-full" id="disposeReason" required>
                             <option value="expired">Expired</option>
                             <option value="spoiled">Spoiled/Contaminated</option>
                             <option value="damaged">Packaging Damaged</option>
@@ -374,52 +532,140 @@
                         </select>
                     </div>
                     
-                    <div class="form-group">
-                        <label class="form-label required">Confirmation</label>
-                        <p class="text-muted mb-2">Type "DISPOSE" to confirm:</p>
-                        <input type="text" class="form-control" id="disposeConfirm" required pattern="DISPOSE">
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Confirmation <span class="text-error">*</span></span>
+                        </label>
+                        <p class="text-sm text-base-content/60 mb-2">Type "DISPOSE" to confirm:</p>
+                        <input type="text" class="input input-bordered w-full" id="disposeConfirm" required pattern="DISPOSE">
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('disposeModal')">Cancel</button>
-                    <button type="submit" class="btn btn-danger" id="submitDisposeBtn">
+                
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('disposeModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-error" id="submitDisposeBtn">
                         <i class="fas fa-trash"></i>
                         Confirm Disposal
                     </button>
                 </div>
             </form>
         </div>
-    </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
     
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+    
+    <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js"></script>
     <script src="../../js/qc/expiry.service.js"></script>
+    
     <script>
-        // Require QC role
-        AuthService.requireRole(['qc_officer', 'general_manager']);
+        // Toggle sidebar
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
         
+        // Theme toggle
+        document.getElementById('themeToggle')?.addEventListener('change', function() {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'forest' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'forest' : 'emerald');
+        });
+        
+        // Show toast notification
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type];
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.remove(); }, 3000);
+        }
+        
+        // Alias for backwards compatibility
+        function showNotification(title, message, type) {
+            showToast(`${title}: ${message}`, type);
+        }
+        
+        // Format helpers
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+        
+        function formatDateTime(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleString('en-PH', { 
+                month: 'short', day: 'numeric', year: 'numeric',
+                hour: 'numeric', minute: '2-digit', hour12: true 
+            });
+        }
+        
+        // State
         let currentSourceData = null;
         let yogurtProducts = [];
         
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Check authentication
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../login.html';
+                return;
+            }
+            
+            if (!AuthService.requireRole(['qc_officer', 'general_manager'])) {
+                return;
+            }
+            
+            // Set user info
+            const user = AuthService.getCurrentUser();
+            if (user) {
+                document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
+                document.getElementById('userInitials').textContent = (user.first_name[0] + user.last_name[0]).toUpperCase();
+            }
+            
+            // Load saved theme
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'forest') {
+                document.getElementById('themeToggle').checked = true;
+                document.documentElement.setAttribute('data-theme', 'forest');
+            }
+            
+            // Load data
+            loadExpiringProducts();
+            loadYogurtProducts();
+        });
+        
         function switchTab(tab) {
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-            document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+            // Update tab buttons
+            document.querySelectorAll('.tabs .tab').forEach(btn => btn.classList.remove('tab-active'));
+            document.querySelector(`[data-tab="${tab}"]`).classList.add('tab-active');
             
+            // Update tab content
             document.querySelectorAll('.tab-content').forEach(section => {
-                section.style.display = 'none';
-                section.classList.remove('active');
+                section.classList.add('hidden');
             });
-            document.getElementById(`${tab}Section`).style.display = 'block';
-            document.getElementById(`${tab}Section`).classList.add('active');
+            document.getElementById(`${tab}Section`).classList.remove('hidden');
             
+            // Load data for tab
             if (tab === 'raw-milk') loadRawMilkInventory();
             if (tab === 'transformations') loadTransformations();
         }
         
         async function loadExpiringProducts() {
             const container = document.getElementById('expiringProducts');
-            container.innerHTML = '<div class="col-span-2 text-center p-4 text-muted"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
+            container.innerHTML = `
+                <div class="col-span-2 text-center py-8 text-base-content/40">
+                    <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                    <p>Loading...</p>
+                </div>
+            `;
             
             try {
                 const response = await ExpiryService.getExpiring({ days: 7 });
@@ -445,7 +691,7 @@
                     
                     // Show alert if needed
                     if (expired.length > 0 || critical.length > 0) {
-                        document.getElementById('expiryAlert').style.display = 'flex';
+                        document.getElementById('expiryAlert').classList.remove('hidden');
                         document.getElementById('expiryAlertText').textContent = 
                             `${expired.length} expired items and ${critical.length} critical items need immediate attention!`;
                     }
@@ -456,41 +702,41 @@
                             const urgency = getUrgencyClass(daysLeft);
                             
                             return `
-                                <div class="card expiry-card ${urgency.cardClass}">
-                                    <div class="card-body">
-                                        <div class="d-flex justify-between align-start mb-3">
+                                <div class="card bg-base-100 border border-base-300 ${urgency.cardClass}">
+                                    <div class="card-body p-4">
+                                        <div class="flex justify-between items-start mb-3">
                                             <div>
-                                                <span class="badge ${urgency.badgeClass}">${urgency.label}</span>
-                                                <h4 class="mt-2">${p.product_name || p.type || 'Unknown'}</h4>
-                                                <small class="text-muted">${p.batch_number || '-'}</small>
+                                                <span class="badge ${urgency.badgeClass} badge-sm">${urgency.label}</span>
+                                                <h4 class="font-semibold mt-2">${p.product_name || p.type || 'Unknown'}</h4>
+                                                <p class="text-xs text-base-content/60">${p.batch_number || '-'}</p>
                                             </div>
                                             <div class="text-right">
-                                                <div class="expiry-countdown ${urgency.textClass}">
+                                                <div class="text-2xl font-bold ${urgency.textClass}">
                                                     ${daysLeft < 0 ? 'EXPIRED' : daysLeft + ' days'}
                                                 </div>
-                                                <small class="text-muted">${formatDate(p.expiry_date)}</small>
+                                                <p class="text-xs text-base-content/60">${formatDate(p.expiry_date)}</p>
                                             </div>
                                         </div>
                                         
-                                        <div class="grid-2 mb-3">
-                                            <div>
-                                                <div class="text-muted" style="font-size: 0.75rem;">Available Qty</div>
-                                                <div class="font-medium">${(p.remaining_liters || p.quantity_remaining || 0).toLocaleString()} ${p.unit || 'L'}</div>
+                                        <div class="grid grid-cols-2 gap-3 mb-4">
+                                            <div class="bg-base-200 rounded-lg p-2">
+                                                <p class="text-xs text-base-content/60">Available Qty</p>
+                                                <p class="font-semibold text-sm">${(p.remaining_liters || p.quantity_remaining || 0).toLocaleString()} ${p.unit || 'L'}</p>
                                             </div>
-                                            <div>
-                                                <div class="text-muted" style="font-size: 0.75rem;">Location</div>
-                                                <div class="font-medium">${p.location || 'Warehouse'}</div>
+                                            <div class="bg-base-200 rounded-lg p-2">
+                                                <p class="text-xs text-base-content/60">Location</p>
+                                                <p class="font-semibold text-sm">${p.location || 'Warehouse'}</p>
                                             </div>
                                         </div>
                                         
-                                        <div class="d-flex gap-2">
+                                        <div class="flex gap-2">
                                             ${p.can_transform ? `
-                                                <button class="btn btn-primary flex-1" onclick="openTransformModal('${p.type || 'finished_goods'}', ${p.id})">
+                                                <button class="btn btn-primary btn-sm flex-1" onclick="openTransformModal('${p.type || 'finished_goods'}', ${p.id})">
                                                     <i class="fas fa-blender"></i>
                                                     Transform to Yogurt
                                                 </button>
                                             ` : ''}
-                                            <button class="btn ${daysLeft < 0 ? 'btn-danger' : 'btn-outline btn-outline-danger'}" onclick="openDisposeModal('${p.type || 'finished_goods'}', ${p.id})">
+                                            <button class="btn ${daysLeft < 0 ? 'btn-error' : 'btn-outline btn-error'} btn-sm" onclick="openDisposeModal('${p.type || 'finished_goods'}', ${p.id})">
                                                 <i class="fas fa-trash"></i>
                                                 ${daysLeft < 0 ? 'Dispose' : ''}
                                             </button>
@@ -501,23 +747,30 @@
                         }).join('');
                     } else {
                         container.innerHTML = `
-                            <div class="col-span-2 text-center p-4">
-                                <i class="fas fa-check-circle text-success" style="font-size: 3rem;"></i>
-                                <h4 class="mt-3">All Clear!</h4>
-                                <p class="text-muted">No products expiring in the next 7 days</p>
+                            <div class="col-span-2 text-center py-12">
+                                <i class="fas fa-check-circle text-success text-5xl mb-4"></i>
+                                <h4 class="font-semibold text-lg">All Clear!</h4>
+                                <p class="text-base-content/60">No products expiring in the next 7 days</p>
                             </div>
                         `;
                     }
                 }
             } catch (error) {
                 console.error('Failed to load expiring products:', error);
-                container.innerHTML = '<div class="col-span-2 text-center p-4 text-danger">Failed to load expiring products</div>';
+                container.innerHTML = '<div class="col-span-2 text-center py-8 text-error">Failed to load expiring products</div>';
             }
         }
         
         async function loadRawMilkInventory() {
             const table = document.getElementById('rawMilkTable');
-            table.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-4"><i class="fas fa-spinner fa-spin"></i> Loading...</td></tr>';
+            table.innerHTML = `
+                <tr>
+                    <td colspan="8" class="text-center py-8 text-base-content/40">
+                        <i class="fas fa-spinner fa-spin text-2xl"></i>
+                        <p>Loading...</p>
+                    </td>
+                </tr>
+            `;
             
             try {
                 const response = await ExpiryService.getRawMilkInventory();
@@ -534,27 +787,27 @@
                                 <tr>
                                     <td>${formatDate(item.received_date)}</td>
                                     <td>
-                                        <div class="font-medium">${item.farmer_name || '-'}</div>
-                                        <small class="text-muted">${item.farmer_code || ''}</small>
+                                        <div class="font-medium text-sm">${item.farmer_name || '-'}</div>
+                                        <div class="text-xs text-base-content/60">${item.farmer_code || ''}</div>
                                     </td>
-                                    <td><span class="badge badge-${getGradeBadgeClass(item.grade)}">${item.grade || '-'}</span></td>
-                                    <td>${(item.original_liters || 0).toLocaleString()} L</td>
-                                    <td class="font-medium">${(item.remaining_liters || 0).toLocaleString()} L</td>
+                                    <td><span class="badge ${getGradeBadgeClass(item.grade)} badge-sm">${item.grade || '-'}</span></td>
+                                    <td class="text-right">${(item.original_liters || 0).toLocaleString()} L</td>
+                                    <td class="text-right font-semibold">${(item.remaining_liters || 0).toLocaleString()} L</td>
                                     <td>${formatDate(item.expiry_date)}</td>
                                     <td>
-                                        <span class="${urgency.textClass} font-medium">
+                                        <span class="font-semibold ${urgency.textClass}">
                                             ${daysLeft < 0 ? 'EXPIRED' : daysLeft + ' days'}
                                         </span>
                                     </td>
-                                    <td>
-                                        <div class="table-actions">
+                                    <td class="text-center">
+                                        <div class="flex justify-center gap-1">
                                             ${daysLeft <= 2 && daysLeft >= 0 ? `
-                                                <button class="btn btn-sm btn-primary" onclick="openTransformModal('raw_milk', ${item.id})" title="Transform">
+                                                <button class="btn btn-primary btn-xs" onclick="openTransformModal('raw_milk', ${item.id})" title="Transform">
                                                     <i class="fas fa-blender"></i>
                                                 </button>
                                             ` : ''}
                                             ${daysLeft < 0 ? `
-                                                <button class="btn btn-sm btn-danger" onclick="openDisposeModal('raw_milk', ${item.id})" title="Dispose">
+                                                <button class="btn btn-error btn-xs" onclick="openDisposeModal('raw_milk', ${item.id})" title="Dispose">
                                                     <i class="fas fa-trash"></i>
                                                 </button>
                                             ` : ''}
@@ -564,18 +817,25 @@
                             `;
                         }).join('');
                     } else {
-                        table.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-4">No raw milk in inventory</td></tr>';
+                        table.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-base-content/40">No raw milk in inventory</td></tr>';
                     }
                 }
             } catch (error) {
                 console.error('Failed to load raw milk inventory:', error);
-                table.innerHTML = '<tr><td colspan="8" class="text-center text-danger p-4">Failed to load inventory</td></tr>';
+                table.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-error">Failed to load inventory</td></tr>';
             }
         }
         
         async function loadTransformations() {
             const table = document.getElementById('transformationsTable');
-            table.innerHTML = '<tr><td colspan="7" class="text-center text-muted p-4"><i class="fas fa-spinner fa-spin"></i> Loading...</td></tr>';
+            table.innerHTML = `
+                <tr>
+                    <td colspan="7" class="text-center py-8 text-base-content/40">
+                        <i class="fas fa-spinner fa-spin text-2xl"></i>
+                        <p>Loading...</p>
+                    </td>
+                </tr>
+            `;
             
             try {
                 const response = await ExpiryService.getTransformations();
@@ -589,20 +849,20 @@
                             <tr>
                                 <td>${formatDateTime(t.transformed_at)}</td>
                                 <td>${t.source_product_name || '-'}</td>
-                                <td>${(t.input_quantity || 0).toLocaleString()} ${t.input_unit || 'L'}</td>
+                                <td class="text-right">${(t.input_quantity || 0).toLocaleString()} ${t.input_unit || 'L'}</td>
                                 <td>${t.output_product_name || 'Yogurt'}</td>
-                                <td>${(t.output_quantity || 0).toLocaleString()} ${t.output_unit || 'L'}</td>
-                                <td><span class="badge badge-secondary">${formatReason(t.reason)}</span></td>
+                                <td class="text-right">${(t.output_quantity || 0).toLocaleString()} ${t.output_unit || 'L'}</td>
+                                <td><span class="badge badge-ghost badge-sm">${formatReason(t.reason)}</span></td>
                                 <td>${t.processed_by_name || '-'}</td>
                             </tr>
                         `).join('');
                     } else {
-                        table.innerHTML = '<tr><td colspan="7" class="text-center text-muted p-4">No transformation records found</td></tr>';
+                        table.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-base-content/40">No transformation records found</td></tr>';
                     }
                 }
             } catch (error) {
                 console.error('Failed to load transformations:', error);
-                table.innerHTML = '<tr><td colspan="7" class="text-center text-danger p-4">Failed to load transformations</td></tr>';
+                table.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-error">Failed to load transformations</td></tr>';
             }
         }
         
@@ -634,15 +894,15 @@
             if (daysLeft < 0) {
                 return {
                     cardClass: 'expiry-expired',
-                    badgeClass: 'badge-danger',
-                    textClass: 'text-danger',
+                    badgeClass: 'badge-error',
+                    textClass: 'text-error',
                     label: 'EXPIRED'
                 };
             } else if (daysLeft <= 2) {
                 return {
                     cardClass: 'expiry-critical',
-                    badgeClass: 'badge-danger',
-                    textClass: 'text-danger',
+                    badgeClass: 'badge-error',
+                    textClass: 'text-error',
                     label: 'CRITICAL'
                 };
             } else if (daysLeft <= 7) {
@@ -656,14 +916,14 @@
             return {
                 cardClass: '',
                 badgeClass: 'badge-info',
-                textClass: 'text-muted',
+                textClass: 'text-base-content/60',
                 label: 'OK'
             };
         }
         
         function getGradeBadgeClass(grade) {
-            const classes = { 'A': 'success', 'B': 'info', 'C': 'warning', 'D': 'secondary' };
-            return classes[grade] || 'secondary';
+            const classes = { 'A': 'badge-success', 'B': 'badge-info', 'C': 'badge-warning', 'D': 'badge-ghost' };
+            return classes[grade] || 'badge-ghost';
         }
         
         function formatReason(reason) {
@@ -702,10 +962,10 @@
                     document.getElementById('transformQuantity').value = '';
                     document.getElementById('yieldPreview').textContent = '- L';
                     
-                    openModal('transformModal');
+                    document.getElementById('transformModal').showModal();
                 }
             } catch (error) {
-                showNotification('Error', 'Failed to load product details', 'error');
+                showToast('Failed to load product details', 'error');
             }
         }
         
@@ -715,7 +975,7 @@
             document.getElementById('disposeProduct').textContent = currentSourceData?.product?.product_name || 'Product';
             document.getElementById('disposeQty').textContent = currentSourceData?.product?.remaining_liters?.toLocaleString() + ' L' || '-';
             document.getElementById('disposeConfirm').value = '';
-            openModal('disposeModal');
+            document.getElementById('disposeModal').showModal();
         }
         
         // Update yield preview
@@ -730,6 +990,7 @@
             
             const btn = document.getElementById('submitTransformBtn');
             btn.disabled = true;
+            btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Processing...';
             
             try {
                 const data = {
@@ -744,15 +1005,16 @@
                 const response = await ExpiryService.transform(data);
                 
                 if (response.success) {
-                    showNotification('Success', 'Transformation processed successfully', 'success');
-                    closeModal('transformModal');
+                    showToast('Transformation processed successfully', 'success');
+                    document.getElementById('transformModal').close();
                     loadExpiringProducts();
                     loadTransformations();
                 }
             } catch (error) {
-                showNotification('Error', error.message || 'Failed to process transformation', 'error');
+                showToast(error.message || 'Failed to process transformation', 'error');
             } finally {
                 btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-blender"></i> Process Transformation';
             }
         }
         
@@ -761,6 +1023,7 @@
             
             const btn = document.getElementById('submitDisposeBtn');
             btn.disabled = true;
+            btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Processing...';
             
             try {
                 const data = {
@@ -772,130 +1035,17 @@
                 const response = await ExpiryService.dispose(data);
                 
                 if (response.success) {
-                    showNotification('Success', 'Product disposed successfully', 'success');
-                    closeModal('disposeModal');
+                    showToast('Product disposed successfully', 'success');
+                    document.getElementById('disposeModal').close();
                     loadExpiringProducts();
                 }
             } catch (error) {
-                showNotification('Error', error.message || 'Failed to dispose product', 'error');
+                showToast(error.message || 'Failed to dispose product', 'error');
             } finally {
                 btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-trash"></i> Confirm Disposal';
             }
         }
-        
-        // Modal functions
-        function openModal(id) {
-            document.getElementById(id).classList.add('active');
-        }
-        
-        function closeModal(id) {
-            document.getElementById(id).classList.remove('active');
-        }
-        
-        // Initial load
-        loadExpiringProducts();
-        loadYogurtProducts();
     </script>
-    
-    <style>
-        .tab-nav {
-            display: flex;
-            border-bottom: 1px solid var(--gray-200);
-        }
-        
-        .tab-btn {
-            padding: 1rem 1.5rem;
-            background: none;
-            border: none;
-            font-size: 0.875rem;
-            font-weight: 500;
-            color: var(--gray-600);
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            transition: all var(--transition-fast);
-        }
-        
-        .tab-btn:hover {
-            color: var(--primary-600);
-            background: var(--gray-50);
-        }
-        
-        .tab-btn.active {
-            color: var(--primary-600);
-            border-bottom-color: var(--primary-600);
-        }
-        
-        .badge-sm {
-            font-size: 0.7rem;
-            padding: 0.2rem 0.5rem;
-        }
-        
-        .col-span-2 {
-            grid-column: span 2;
-        }
-        
-        .expiry-card {
-            transition: transform var(--transition-fast), box-shadow var(--transition-fast);
-        }
-        
-        .expiry-card:hover {
-            transform: translateY(-2px);
-            box-shadow: var(--shadow-lg);
-        }
-        
-        .expiry-expired {
-            border-left: 4px solid var(--danger-500);
-            background: var(--danger-50);
-        }
-        
-        .expiry-critical {
-            border-left: 4px solid var(--danger-500);
-        }
-        
-        .expiry-warning {
-            border-left: 4px solid var(--warning-500);
-        }
-        
-        .expiry-countdown {
-            font-size: 1.5rem;
-            font-weight: 700;
-        }
-        
-        .stat-card-danger {
-            border-left: 4px solid var(--danger-500);
-        }
-        
-        .stat-card-warning {
-            border-left: 4px solid var(--warning-500);
-        }
-        
-        .alert {
-            display: flex;
-            align-items: flex-start;
-            gap: 0.75rem;
-            padding: 1rem;
-            border-radius: var(--border-radius);
-        }
-        
-        .alert-warning {
-            background: var(--warning-50);
-            border: 1px solid var(--warning-200);
-            color: var(--warning-700);
-        }
-        
-        .alert-danger {
-            background: var(--danger-50);
-            border: 1px solid var(--danger-200);
-            color: var(--danger-700);
-        }
-        
-        .alert i {
-            font-size: 1.25rem;
-            margin-top: 0.125rem;
-        }
-    </style>
 </body>
 </html>

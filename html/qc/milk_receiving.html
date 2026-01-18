@@ -261,6 +261,7 @@
                                     <th>Farmer</th>
                                     <th>Date/Time</th>
                                     <th class="text-right">Volume (L)</th>
+                                    <th>APT</th>
                                     <th>Status</th>
                                     <th>Grade</th>
                                     <th class="text-right">Amount</th>
@@ -269,7 +270,7 @@
                             </thead>
                             <tbody id="deliveriesTable">
                                 <tr>
-                                    <td colspan="8" class="text-center py-8 text-base-content/40">
+                                    <td colspan="9" class="text-center py-8 text-base-content/40">
                                         <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
                                         <p>Loading...</p>
                                     </td>
@@ -746,14 +747,15 @@
                                     <div class="text-xs text-base-content/60">${formatTime(d.delivery_time)}</div>
                                 </td>
                                 <td class="text-right font-semibold">${parseFloat(d.volume_liters).toLocaleString()} L</td>
+                                <td><span class="badge ${d.apt_result === 'positive' ? 'badge-error' : 'badge-success'} badge-sm">${d.apt_result === 'positive' ? 'Positive' : 'Negative'}</span></td>
                                 <td><span class="badge ${getStatusBadgeClass(d.status)} badge-sm">${formatStatus(d.status)}</span></td>
                                 <td>${d.grade ? `<span class="badge ${getGradeBadgeClass(d.grade)} badge-sm font-bold">${d.grade}</span>` : '<span class="text-base-content/40">-</span>'}</td>
                                 <td class="text-right font-semibold">${d.total_amount ? formatCurrency(d.total_amount) : '-'}</td>
                                 <td class="text-center">
                                     <div class="flex justify-center gap-1">
                                         ${d.status === 'pending_test' ? `
-                                            <button class="btn btn-success btn-xs" onclick="openGradeModal(${d.id}, '${d.delivery_code}', '${d.farmer_first_name} ${d.farmer_last_name}', ${d.volume_liters}, ${d.membership_type === 'member' ? 40 : 38})" title="Grade Milk">
-                                                <i class="fas fa-flask"></i>
+                                            <button class="btn ${d.apt_result === 'positive' ? 'btn-warning' : 'btn-success'} btn-xs" onclick="openGradeModal(${d.id}, '${d.delivery_code}', '${d.farmer_first_name} ${d.farmer_last_name}', ${d.volume_liters}, ${d.membership_type === 'member' ? 40 : 38}, '${d.apt_result || 'negative'}')" title="${d.apt_result === 'positive' ? 'APT Positive - Will be rejected' : 'Grade Milk'}">
+                                                <i class="fas fa-flask"></i>${d.apt_result === 'positive' ? ' <i class="fas fa-exclamation-triangle"></i>' : ''}
                                             </button>
                                         ` : ''}
                                         <button class="btn btn-ghost btn-xs" onclick="viewDelivery(${d.id})" title="View">
@@ -764,14 +766,14 @@
                             </tr>
                         `).join('');
                     } else {
-                        table.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-base-content/40"><i class="fas fa-inbox text-2xl mb-2"></i><p>No deliveries found</p></td></tr>';
+                        table.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-base-content/40"><i class="fas fa-inbox text-2xl mb-2"></i><p>No deliveries found</p></td></tr>';
                     }
                     
                     renderPagination(response.pagination);
                 }
             } catch (error) {
                 console.error('Failed to load deliveries:', error);
-                table.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-error">Failed to load deliveries</td></tr>';
+                table.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-error">Failed to load deliveries</td></tr>';
             }
         }
         
@@ -863,16 +865,46 @@
             }
         }
         
+        // Store current delivery's APT result for preview calculation
+        let currentDeliveryApt = 'negative';
+        
         // Open grade modal
-        function openGradeModal(deliveryId, deliveryCode, farmerName, volume, basePrice) {
+        function openGradeModal(deliveryId, deliveryCode, farmerName, volume, basePrice, aptResult = 'negative') {
             document.getElementById('gradeMilkForm').reset();
             document.getElementById('gradeDeliveryId').value = deliveryId;
             document.getElementById('gradeDeliveryCode').textContent = deliveryCode;
             document.getElementById('gradeFarmerName').textContent = farmerName;
             document.getElementById('gradeVolume').textContent = volume.toLocaleString() + ' L';
             document.getElementById('gradeBasePrice').textContent = formatCurrency(basePrice) + '/L';
-            document.getElementById('previewGrade').textContent = '-';
-            document.getElementById('previewGrade').className = 'badge badge-lg badge-ghost';
+            
+            // Store APT result for preview calculation
+            currentDeliveryApt = aptResult;
+            
+            // Show/hide APT warning
+            const aptWarning = document.getElementById('aptWarning');
+            if (aptResult === 'positive') {
+                if (aptWarning) {
+                    aptWarning.classList.remove('hidden');
+                } else {
+                    // Create warning element if doesn't exist
+                    const warningHtml = `<div id="aptWarning" class="alert alert-error mb-4">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <div>
+                            <h4 class="font-bold">APT Test Positive</h4>
+                            <p class="text-sm">This delivery will be automatically REJECTED regardless of other test results.</p>
+                        </div>
+                    </div>`;
+                    document.getElementById('gradeMilkForm').insertAdjacentHTML('afterbegin', warningHtml);
+                }
+                // Set preview immediately to rejected
+                document.getElementById('previewGrade').textContent = 'REJECTED';
+                document.getElementById('previewGrade').className = 'badge badge-lg badge-error';
+            } else {
+                if (aptWarning) aptWarning.classList.add('hidden');
+                document.getElementById('previewGrade').textContent = '-';
+                document.getElementById('previewGrade').className = 'badge badge-lg badge-ghost';
+            }
+            
             document.getElementById('previewTotal').textContent = '₱0.00';
             document.getElementById('priceBreakdown').classList.add('hidden');
             document.getElementById('gradeMilkModal').showModal();
@@ -893,8 +925,18 @@
             const badge = document.getElementById('previewGrade');
             const breakdown = document.getElementById('priceBreakdown');
             
+            // Check rejection conditions - INCLUDING APT RESULT
+            // APT positive = automatic rejection regardless of other test values
+            if (currentDeliveryApt === 'positive') {
+                badge.textContent = 'REJECTED (APT+)';
+                badge.className = 'badge badge-lg badge-error';
+                document.getElementById('previewTotal').textContent = '₱0.00';
+                breakdown.classList.add('hidden');
+                return;
+            }
+            
             if (fat > 0 && acidity > 0) {
-                // Check rejection conditions
+                // Check other rejection conditions
                 if (acidity >= 0.25 || (density > 0 && density < 1.025)) {
                     badge.textContent = 'REJECTED';
                     badge.className = 'badge badge-lg badge-error';

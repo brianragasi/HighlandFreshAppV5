@@ -71,7 +71,8 @@ try {
         SELECT COUNT(*) as count
         FROM production_batches pb
         LEFT JOIN fg_receiving fr ON fr.batch_id = pb.id
-        WHERE pb.status = 'completed'
+        WHERE pb.qc_status = 'released'
+        AND pb.fg_received = 0
         AND fr.id IS NULL
     ");
     $pendingReceiving->execute();
@@ -99,7 +100,7 @@ try {
     
     // Released today
     $releasedToday = $db->prepare("
-        SELECT COUNT(*) as dr_count, COALESCE(SUM(total_quantity), 0) as units
+        SELECT COUNT(*) as dr_count, COALESCE(SUM(total_items), 0) as units
         FROM delivery_receipts
         WHERE DATE(dispatched_at) = CURDATE()
         AND status IN ('dispatched', 'delivered')

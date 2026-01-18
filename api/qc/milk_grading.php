@@ -90,6 +90,38 @@ function calculateSedimentDeduction($sedimentGrade) {
     }
 }
 
+/**
+ * Calculate milk quality grade (A, B, C, D) based on test parameters
+ * 
+ * Grade A: fat >= 4.0%, acidity <= 0.16%, sediment grade 1
+ * Grade B: fat >= 3.5%, acidity <= 0.18%, sediment grade 1-2
+ * Grade C: fat >= 3.0%, acidity <= 0.20%, sediment grade 1-2
+ * Grade D: Everything else that passes
+ */
+function calculateMilkGrade($fatPercentage, $titratableAcidity, $sedimentGrade) {
+    $fat = floatval($fatPercentage);
+    $acidity = floatval($titratableAcidity);
+    $sediment = intval($sedimentGrade);
+    
+    // Grade A: Premium quality
+    if ($fat >= 4.0 && $acidity <= 0.16 && $sediment == 1) {
+        return 'A';
+    }
+    
+    // Grade B: Good quality
+    if ($fat >= 3.5 && $acidity <= 0.18 && $sediment <= 2) {
+        return 'B';
+    }
+    
+    // Grade C: Standard quality
+    if ($fat >= 3.0 && $acidity <= 0.20 && $sediment <= 2) {
+        return 'C';
+    }
+    
+    // Grade D: Everything else that passes acceptance criteria
+    return 'D';
+}
+
 try {
     $db = Database::getInstance()->getConnection();
     
@@ -288,12 +320,16 @@ try {
                 
                 $finalPricePerLiter = STANDARD_PRICE + $fatAdjustment - $acidityDeduction - $sedimentDeduction;
                 $totalAmount = floatval($delivery['volume_liters']) * $finalPricePerLiter;
+                
+                // Calculate milk quality grade (A, B, C, D)
+                $milkGrade = calculateMilkGrade($fatPercentage, $titratableAcidity, $sedimentGrade);
             } else {
                 $fatAdjustment = 0;
                 $acidityDeduction = 0;
                 $sedimentDeduction = 0;
                 $finalPricePerLiter = 0;
                 $totalAmount = 0;
+                $milkGrade = null; // No grade for rejected milk
             }
             
             // Generate test code
@@ -314,8 +350,8 @@ try {
                         salts_percentage, total_solids_percentage, added_water_percentage,
                         freezing_point, sample_temperature,
                         base_price_per_liter, fat_adjustment, acidity_deduction, sediment_deduction,
-                        final_price_per_liter, total_amount, is_accepted, rejection_reason, notes
-                    ) VALUES (?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        final_price_per_liter, total_amount, is_accepted, grade, rejection_reason, notes
+                    ) VALUES (?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
                     $testCode, 
@@ -341,6 +377,7 @@ try {
                     $finalPricePerLiter, 
                     $totalAmount, 
                     $isAccepted ? 1 : 0,
+                    $milkGrade,
                     $rejectionReason, 
                     $notes
                 ]);
@@ -362,7 +399,7 @@ try {
                 ");
                 $updateStmt->execute([
                     $deliveryStatus, 
-                    $isAccepted ? 'Accepted' : 'Rejected',
+                    $milkGrade, // Actual quality grade (A, B, C, D) or null if rejected
                     $acceptedLiters,
                     $finalPricePerLiter,
                     $totalAmount,
@@ -375,14 +412,25 @@ try {
                     // Check if raw_milk_inventory table exists
                     $tableCheck = $db->query("SHOW TABLES LIKE 'raw_milk_inventory'");
                     if ($tableCheck->rowCount() > 0) {
-                        // Calculate expiry date (raw milk expires in 2 days)
-                        $expiryDate = date('Y-m-d', strtotime('+2 days'));
+                        // Get table columns to determine structure
+                        $colCheck = $db->query("SHOW COLUMNS FROM raw_milk_inventory LIKE 'tank_id'");
                         
-                        $invStmt = $db->prepare("
-                            INSERT INTO raw_milk_inventory (tank_id, qc_test_id, volume_liters, status, received_date, expiry_date)
-                            VALUES ('TANK-01', ?, ?, 'available', CURDATE(), ?)
-                        ");
-                        $invStmt->execute([$testId, $delivery['volume_liters'], $expiryDate]);
+                        if ($colCheck->rowCount() > 0) {
+                            // New schema with tank_id and qc_test_id
+                            $expiryDate = date('Y-m-d', strtotime('+2 days'));
+                            $invStmt = $db->prepare("
+                                INSERT INTO raw_milk_inventory (tank_id, qc_test_id, volume_liters, status, received_date, expiry_date)
+                                VALUES ('TANK-01', ?, ?, 'available', CURDATE(), ?)
+                            ");
+                            $invStmt->execute([$testId, $delivery['volume_liters'], $expiryDate]);
+                        } else {
+                            // Legacy schema with tank_number and delivery_id
+                            $invStmt = $db->prepare("
+                                INSERT INTO raw_milk_inventory (tank_number, delivery_id, volume_liters, status, received_date)
+                                VALUES (1, ?, ?, 'available', CURDATE())
+                            ");
+                            $invStmt->execute([$deliveryId, $delivery['volume_liters']]);
+                        }
                     }
                 }
                 

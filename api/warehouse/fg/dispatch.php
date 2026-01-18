@@ -47,7 +47,7 @@ function handleGet($db, $action) {
                 SELECT 
                     dl.*,
                     fgi.batch_code,
-                    p.name as product_name,
+                    p.product_name,
                     dr.dr_number,
                     u.first_name as released_by_name
                 FROM fg_dispatch_log dl
@@ -89,7 +89,7 @@ function handleGet($db, $action) {
             $stmt = $db->prepare("
                 SELECT 
                     fgi.*,
-                    p.name as product_name,
+                    p.product_name,
                     p.variant,
                     p.size_value,
                     p.size_unit,
@@ -177,7 +177,7 @@ function handleGet($db, $action) {
                 SELECT 
                     dl.*,
                     fgi.batch_code,
-                    p.name as product_name
+                    p.product_name
                 FROM fg_dispatch_log dl
                 LEFT JOIN finished_goods_inventory fgi ON dl.inventory_id = fgi.id
                 LEFT JOIN products p ON fgi.product_id = p.id

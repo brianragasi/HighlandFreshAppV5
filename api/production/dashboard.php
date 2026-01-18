@@ -97,15 +97,61 @@ try {
     $recentRuns->execute();
     $recentRunsList = $recentRuns->fetchAll();
     
-    // Milk available for production (from raw_milk_inventory with status='available')
+    // Ensure milk usage tracking table exists
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS production_run_milk_usage (
+            id INT(11) NOT NULL AUTO_INCREMENT,
+            run_id INT(11) NOT NULL,
+            delivery_id INT(11) NOT NULL,
+            milk_liters_allocated DECIMAL(10,2) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            INDEX idx_run (run_id),
+            INDEX idx_delivery (delivery_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+    
+    // Available milk for production (ACTUAL QC-approved milk from recent deliveries minus allocated)
+    // This matches what production/runs.php uses for validation!
     $availableMilk = $db->prepare("
         SELECT 
-            COALESCE(SUM(volume_liters), 0) as total_liters
-        FROM raw_milk_inventory
-        WHERE status = 'available'
+            COALESCE(SUM(remaining_liters), 0) as total_liters,
+            COUNT(*) as source_count
+        FROM (
+            SELECT 
+                md.id,
+                COALESCE(
+                    CASE 
+                        WHEN md.accepted_liters > 0 THEN md.accepted_liters 
+                        ELSE md.volume_liters 
+                    END - (
+                        SELECT COALESCE(SUM(pru.milk_liters_allocated), 0)
+                        FROM production_run_milk_usage pru
+                        WHERE pru.delivery_id = md.id
+                    ), 
+                    CASE 
+                        WHEN md.accepted_liters > 0 THEN md.accepted_liters 
+                        ELSE md.volume_liters 
+                    END
+                ) as remaining_liters
+            FROM milk_deliveries md
+            JOIN qc_milk_tests qmt ON qmt.delivery_id = md.id
+            WHERE md.status = 'accepted'
+              AND DATE(md.delivery_date) >= DATE_SUB(CURDATE(), INTERVAL 2 DAY)
+            HAVING remaining_liters > 0
+        ) as available
     ");
     $availableMilk->execute();
     $milkStats = $availableMilk->fetch();
+    
+    // Also get raw_milk_inventory for total stored milk (for informational purposes)
+    $storedMilk = $db->prepare("
+        SELECT COALESCE(SUM(volume_liters), 0) as total_liters
+        FROM raw_milk_inventory
+        WHERE status = 'available'
+    ");
+    $storedMilk->execute();
+    $storedStats = $storedMilk->fetch();
     
     Response::success([
         'today' => [
@@ -120,7 +166,11 @@ try {
         'pending_requisitions' => (int) $reqStats['count'],
         'ccp_alerts' => (int) $ccpStats['count'],
         'active_recipes' => (int) $recipeStats['count'],
+        // Available milk for production (QC-approved, within 2-day freshness, minus already allocated)
         'available_milk' => (float) ($milkStats['total_liters'] ?? 0),
+        'available_milk_sources' => (int) ($milkStats['source_count'] ?? 0),
+        // Total stored raw milk (for informational purposes - may be older than 2 days)
+        'stored_milk' => (float) ($storedStats['total_liters'] ?? 0),
         'recent_runs' => $recentRunsList
     ], 'Dashboard data retrieved successfully');
     
