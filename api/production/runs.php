@@ -45,70 +45,57 @@ try {
             
             // Get available QC-approved milk for production
             if ($action === 'available_milk') {
-                // Ensure the milk usage table exists
-                $db->exec("
-                    CREATE TABLE IF NOT EXISTS production_run_milk_usage (
-                        id INT(11) NOT NULL AUTO_INCREMENT,
-                        run_id INT(11) NOT NULL,
-                        delivery_id INT(11) NOT NULL,
-                        milk_liters_allocated DECIMAL(10,2) NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        PRIMARY KEY (id),
-                        INDEX idx_run (run_id),
-                        INDEX idx_delivery (delivery_id)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-                ");
+                // NEW SYSTEM: Get milk issued to production via requisitions
+                // This is the proper flow per system_context:
+                // 1. Production requisitions milk
+                // 2. GM/Warehouse approves
+                // 3. Warehouse fulfills/issues milk
+                // 4. Production can now use the issued milk
                 
-                $availableMilkStmt = $db->prepare("
+                // Get milk issued to production via requisitions (with details)
+                $issuedMilkStmt = $db->prepare("
                     SELECT 
-                        md.id,
-                        md.delivery_code,
-                        md.volume_liters,
-                        md.accepted_liters,
-                        md.delivery_date,
-                        md.delivery_time,
-                        qmt.test_code,
-                        qmt.fat_percentage,
-                        qmt.titratable_acidity,
-                        qmt.specific_gravity,
-                        f.farmer_code,
-                        CONCAT(f.first_name, ' ', f.last_name) as farmer_name,
-                        -- Use volume_liters if accepted_liters is 0 or NULL
-                        COALESCE(
-                            CASE 
-                                WHEN md.accepted_liters > 0 THEN md.accepted_liters 
-                                ELSE md.volume_liters 
-                            END - (
-                                SELECT COALESCE(SUM(pru.milk_liters_allocated), 0)
-                                FROM production_run_milk_usage pru
-                                WHERE pru.delivery_id = md.id
-                            ), 
-                            CASE 
-                                WHEN md.accepted_liters > 0 THEN md.accepted_liters 
-                                ELSE md.volume_liters 
-                            END
-                        ) as remaining_liters
-                    FROM milk_deliveries md
-                    JOIN qc_milk_tests qmt ON qmt.delivery_id = md.id
-                    LEFT JOIN farmers f ON md.farmer_id = f.id
-                    WHERE md.status = 'accepted'
-                      AND DATE(md.delivery_date) >= DATE_SUB(CURDATE(), INTERVAL 2 DAY)
-                    HAVING remaining_liters > 0
-                    ORDER BY md.delivery_date ASC, md.delivery_time ASC
+                        ri.id,
+                        ir.requisition_code as delivery_code,
+                        ri.issued_quantity as remaining_liters,
+                        ri.fulfilled_at as delivery_date,
+                        'Requisition' as farmer_name,
+                        0 as fat_percentage
+                    FROM requisition_items ri
+                    JOIN ingredient_requisitions ir ON ri.requisition_id = ir.id
+                    WHERE ri.item_type = 'raw_milk'
+                      AND ri.issued_quantity > 0
+                      AND ir.department = 'production'
+                    ORDER BY ri.fulfilled_at DESC
                 ");
-                $availableMilkStmt->execute();
-                $availableMilk = $availableMilkStmt->fetchAll();
+                $issuedMilkStmt->execute();
+                $milkSources = $issuedMilkStmt->fetchAll();
                 
-                $totalAvailable = array_sum(array_column($availableMilk, 'remaining_liters'));
+                $totalIssued = array_sum(array_column($milkSources, 'remaining_liters'));
                 
+                // Get milk already used in production runs
+                $usedMilkStmt = $db->prepare("
+                    SELECT COALESCE(SUM(milk_liters_used), 0) as total_used
+                    FROM production_runs
+                    WHERE status IN ('in_progress', 'completed', 'pasteurization', 'processing', 'cooling', 'packaging')
+                ");
+                $usedMilkStmt->execute();
+                $usedStats = $usedMilkStmt->fetch();
+                
+                $availableLiters = max(0, $totalIssued - ($usedStats['total_used'] ?? 0));
+                
+                // Return in format expected by batches.html frontend
                 Response::success([
-                    'milk_sources' => $availableMilk,
-                    'total_available_liters' => $totalAvailable,
-                    'freshness_window' => '2 days',
-                    'message' => $totalAvailable > 0 
-                        ? "You have {$totalAvailable}L of QC-approved milk available for production"
-                        : "No QC-approved milk available. Please wait for deliveries to be graded."
-                ], 'Available milk retrieved successfully');
+                    'total_available_liters' => (float) $availableLiters,
+                    'milk_sources' => $milkSources,
+                    'total_issued' => (float) $totalIssued,
+                    'total_used' => (float) ($usedStats['total_used'] ?? 0),
+                    'source' => 'requisition_based',
+                    'freshness_window' => 'Via requisitions',
+                    'message' => $availableLiters > 0 
+                        ? "You have {$availableLiters}L of milk available (issued via requisitions)"
+                        : 'No milk available. Please submit a requisition to Warehouse Raw and wait for approval/fulfillment.'
+                ], 'Available milk retrieved');
             }
             
             if ($runId) {
@@ -234,7 +221,6 @@ try {
             $recipeId = getParam('recipe_id');
             $plannedQuantity = (int) getParam('planned_quantity', 0);
             $milkLitersUsed = getParam('milk_liters_used');
-            $milkSourceIds = getParam('milk_source_ids'); // Array of milk delivery IDs to use
             $notes = trim(getParam('notes', ''));
             
             // Validation
@@ -255,75 +241,37 @@ try {
             $requiredMilkLiters = $milkLitersUsed ?? $recipe['base_milk_liters'];
             
             // ====================================================
-            // CRITICAL: Validate QC-approved milk is available
+            // NEW REQUISITION-BASED SYSTEM: Validate milk issued to production
+            // Per system_context: Production must requisition milk first
             // ====================================================
             
-            // Check available QC-approved milk from recent deliveries (within 2 days for freshness)
-            $availableMilkStmt = $db->prepare("
-                SELECT 
-                    md.id,
-                    md.delivery_code,
-                    md.volume_liters,
-                    md.accepted_liters,
-                    md.delivery_date,
-                    qmt.test_code,
-                    qmt.fat_percentage,
-                    qmt.titratable_acidity,
-                    f.first_name as farmer_first,
-                    f.last_name as farmer_last,
-                    COALESCE(
-                        md.accepted_liters - (
-                            SELECT COALESCE(SUM(pru.milk_liters_allocated), 0)
-                            FROM production_run_milk_usage pru
-                            WHERE pru.delivery_id = md.id
-                        ), md.accepted_liters
-                    ) as remaining_liters
-                FROM milk_deliveries md
-                JOIN qc_milk_tests qmt ON qmt.delivery_id = md.id
-                LEFT JOIN farmers f ON md.farmer_id = f.id
-                WHERE md.status = 'accepted'
-                  AND DATE(md.delivery_date) >= DATE_SUB(CURDATE(), INTERVAL 2 DAY)
-                HAVING remaining_liters > 0
-                ORDER BY md.delivery_date ASC
+            // Get milk issued to production via requisitions
+            $issuedMilkStmt = $db->prepare("
+                SELECT COALESCE(SUM(ri.issued_quantity), 0) as total_issued
+                FROM requisition_items ri
+                JOIN ingredient_requisitions ir ON ri.requisition_id = ir.id
+                WHERE ri.item_type = 'raw_milk'
+                  AND ri.issued_quantity > 0
+                  AND ir.department = 'production'
             ");
-            $availableMilkStmt->execute();
-            $availableMilk = $availableMilkStmt->fetchAll();
+            $issuedMilkStmt->execute();
+            $issuedStats = $issuedMilkStmt->fetch();
             
-            // Calculate total available milk
-            $totalAvailableLiters = array_sum(array_column($availableMilk, 'remaining_liters'));
+            // Get milk already used in production runs
+            $usedMilkStmt = $db->prepare("
+                SELECT COALESCE(SUM(milk_liters_used), 0) as total_used
+                FROM production_runs
+                WHERE status IN ('in_progress', 'completed', 'pasteurization', 'processing', 'cooling', 'packaging')
+            ");
+            $usedMilkStmt->execute();
+            $usedStats = $usedMilkStmt->fetch();
+            
+            $totalAvailableLiters = max(0, ($issuedStats['total_issued'] ?? 0) - ($usedStats['total_used'] ?? 0));
             
             if ($totalAvailableLiters <= 0) {
-                $errors['milk_source'] = 'No QC-approved milk available. Please wait for milk deliveries to be graded and approved by QC.';
+                $errors['milk_source'] = 'No milk available. Please submit a requisition to Warehouse Raw and wait for approval/fulfillment.';
             } else if ($totalAvailableLiters < $requiredMilkLiters) {
-                $errors['milk_source'] = "Not enough milk available. Required: {$requiredMilkLiters}L, Available: {$totalAvailableLiters}L";
-            }
-            
-            // If specific milk sources provided, validate them
-            $selectedMilkSources = [];
-            if (!empty($milkSourceIds) && is_array($milkSourceIds)) {
-                $allocatedTotal = 0;
-                foreach ($milkSourceIds as $sourceId) {
-                    $source = array_filter($availableMilk, fn($m) => $m['id'] == $sourceId);
-                    if (empty($source)) {
-                        $errors['milk_source'] = "Invalid milk source ID: {$sourceId}";
-                        break;
-                    }
-                    $source = array_values($source)[0];
-                    $selectedMilkSources[] = $source;
-                    $allocatedTotal += $source['remaining_liters'];
-                }
-                
-                if (empty($errors['milk_source']) && $allocatedTotal < $requiredMilkLiters) {
-                    $errors['milk_source'] = "Selected milk sources have only {$allocatedTotal}L. Required: {$requiredMilkLiters}L";
-                }
-            } else {
-                // Auto-allocate from available milk (FIFO)
-                $remainingToAllocate = $requiredMilkLiters;
-                foreach ($availableMilk as $milk) {
-                    if ($remainingToAllocate <= 0) break;
-                    $selectedMilkSources[] = $milk;
-                    $remainingToAllocate -= $milk['remaining_liters'];
-                }
+                $errors['milk_source'] = "Not enough milk available. Required: {$requiredMilkLiters}L, Available: {$totalAvailableLiters}L. Please submit a requisition for more milk.";
             }
             
             if (!empty($errors)) {
@@ -340,10 +288,8 @@ try {
             $count = $codeStmt->fetch()['count'] + 1;
             $runCode = "PRD-{$today}-" . str_pad($count, 3, '0', STR_PAD_LEFT);
             
-            $db->beginTransaction();
-            
             try {
-                // Insert run
+                // Insert run - milk is tracked via requisitions, not individual deliveries
                 $stmt = $db->prepare("
                     INSERT INTO production_runs (
                         run_code, recipe_id, planned_quantity, milk_liters_used,
@@ -351,67 +297,31 @@ try {
                     ) VALUES (?, ?, ?, ?, ?, 'planned', ?)
                 ");
                 
-                $milkSourceInfo = array_map(function($s) {
-                    return [
-                        'delivery_id' => $s['id'],
-                        'delivery_code' => $s['delivery_code'],
-                        'test_code' => $s['test_code'],
-                        'liters_available' => $s['remaining_liters']
-                    ];
-                }, $selectedMilkSources);
+                // Record that milk came from requisition-based system
+                $milkSourceInfo = json_encode([
+                    'source' => 'requisition_based',
+                    'available_at_creation' => $totalAvailableLiters,
+                    'allocated' => $requiredMilkLiters
+                ]);
                 
                 $stmt->execute([
                     $runCode, $recipeId, $plannedQuantity, 
                     $requiredMilkLiters,
-                    json_encode($milkSourceInfo),
+                    $milkSourceInfo,
                     $notes
                 ]);
                 
                 $runId = $db->lastInsertId();
                 
-                // Record milk allocation (reserve the milk for this run)
-                // Create tracking table if it doesn't exist
-                $db->exec("
-                    CREATE TABLE IF NOT EXISTS production_run_milk_usage (
-                        id INT(11) NOT NULL AUTO_INCREMENT,
-                        run_id INT(11) NOT NULL,
-                        delivery_id INT(11) NOT NULL,
-                        milk_liters_allocated DECIMAL(10,2) NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        PRIMARY KEY (id),
-                        INDEX idx_run (run_id),
-                        INDEX idx_delivery (delivery_id)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-                ");
-                
-                // Allocate milk from each source
-                $remainingToAllocate = $requiredMilkLiters;
-                foreach ($selectedMilkSources as $source) {
-                    if ($remainingToAllocate <= 0) break;
-                    
-                    $allocateAmount = min($source['remaining_liters'], $remainingToAllocate);
-                    
-                    $allocStmt = $db->prepare("
-                        INSERT INTO production_run_milk_usage (run_id, delivery_id, milk_liters_allocated)
-                        VALUES (?, ?, ?)
-                    ");
-                    $allocStmt->execute([$runId, $source['id'], $allocateAmount]);
-                    
-                    $remainingToAllocate -= $allocateAmount;
-                }
-                
-                $db->commit();
-                
                 Response::created([
                     'id' => $runId,
                     'run_code' => $runCode,
                     'status' => 'planned',
-                    'milk_sources' => $milkSourceInfo,
-                    'milk_liters_allocated' => $requiredMilkLiters
-                ], 'Production run created successfully with QC-approved milk allocated');
+                    'milk_liters_used' => $requiredMilkLiters,
+                    'available_after' => $totalAvailableLiters - $requiredMilkLiters
+                ], 'Production run created successfully');
                 
             } catch (Exception $e) {
-                $db->rollBack();
                 throw $e;
             }
             break;
@@ -470,6 +380,76 @@ try {
                     // Complete the production run
                     if (!in_array($run['status'], ['in_progress', 'pasteurization', 'processing', 'cooling', 'packaging'])) {
                         Response::error('Run is not in progress', 400);
+                    }
+                    
+                    // =====================================================
+                    // CRITICAL: Validate CCP logs exist before completing
+                    // Per system_context/production_staff.md:
+                    // - Must have pasteurization log (75°C for 15 seconds)
+                    // - Must have at least one cooling verification (4°C)
+                    // 
+                    // NOTE: We check the MOST RECENT log for each check type
+                    // This allows staff to re-log if they made a mistake
+                    // =====================================================
+                    
+                    // Get the most recent log for each check type
+                    $ccpCheckStmt = $db->prepare("
+                        SELECT 
+                            check_type,
+                            temperature,
+                            pressure_psi,
+                            hold_time_secs,
+                            status,
+                            check_datetime
+                        FROM production_ccp_logs pcl1
+                        WHERE run_id = ?
+                          AND check_datetime = (
+                              SELECT MAX(check_datetime) 
+                              FROM production_ccp_logs pcl2 
+                              WHERE pcl2.run_id = pcl1.run_id 
+                                AND pcl2.check_type = pcl1.check_type
+                          )
+                        ORDER BY check_type
+                    ");
+                    $ccpCheckStmt->execute([$runId]);
+                    $ccpLogs = $ccpCheckStmt->fetchAll();
+                    
+                    $hasPasteurization = false;
+                    $hasCooling = false;
+                    $failedCCPs = [];
+                    
+                    foreach ($ccpLogs as $log) {
+                        if ($log['check_type'] === 'pasteurization') {
+                            $hasPasteurization = true;
+                            if ($log['status'] === 'fail') {
+                                $failedCCPs[] = 'pasteurization';
+                            }
+                        }
+                        if ($log['check_type'] === 'cooling') {
+                            $hasCooling = true;
+                            if ($log['status'] === 'fail') {
+                                $failedCCPs[] = 'cooling';
+                            }
+                        }
+                    }
+                    
+                    $ccpErrors = [];
+                    if (!$hasPasteurization) {
+                        $ccpErrors[] = 'Pasteurization CCP log is required (75°C for 15 seconds)';
+                    }
+                    if (!$hasCooling) {
+                        $ccpErrors[] = 'Cooling verification CCP log is required (4°C)';
+                    }
+                    if (!empty($failedCCPs)) {
+                        $ccpErrors[] = 'The most recent ' . implode(' and ', $failedCCPs) . ' CCP check(s) failed. Please log a correct reading.';
+                    }
+                    
+                    if (!empty($ccpErrors)) {
+                        Response::validationError([
+                            'ccp_logs' => implode('; ', $ccpErrors),
+                            'required_ccps' => ['pasteurization', 'cooling'],
+                            'logged_ccps' => array_column($ccpLogs, 'check_type')
+                        ], 'CCP validation failed - Food safety requirements not met');
                     }
                     
                     $actualQuantity = (int) getParam('actual_quantity', 0);

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * Highland Fresh System - Warehouse Raw Requisitions API
  * 
@@ -59,6 +59,8 @@ function handleGet($db, $currentUser) {
                     uf.last_name as fulfilled_by_last,
                     (SELECT COUNT(*) FROM requisition_items ri WHERE ri.requisition_id = ir.id) as item_count,
                     (SELECT COUNT(*) FROM requisition_items ri 
+                     WHERE ri.requisition_id = ir.id AND ri.status IN ('fulfilled', 'partial')) as processed_count,
+                    (SELECT COUNT(*) FROM requisition_items ri 
                      WHERE ri.requisition_id = ir.id AND ri.status = 'fulfilled') as fulfilled_count
                 FROM ingredient_requisitions ir
                 JOIN users u ON ir.requested_by = u.id
@@ -68,14 +70,15 @@ function handleGet($db, $currentUser) {
             ";
             $params = [];
             
-            // Warehouse sees approved requisitions by default
+            // Warehouse sees pending, approved and fulfilled requisitions
+            // Pending shown so warehouse can prepare, but only approved can be fulfilled
             if (!$status) {
                 if (in_array($currentUser['role'], ['warehouse_raw', 'general_manager'])) {
-                    $sql .= " AND ir.status IN ('approved', 'fulfilled')";
+                    $sql .= " AND ir.status IN ('pending', 'approved', 'partial', 'fulfilled')";
                 } else {
                     // Requesters see their own requisitions
                     $sql .= " AND ir.requested_by = ?";
-                    $params[] = $currentUser['id'];
+                    $params[] = $currentUser['user_id'];
                 }
             } else {
                 $sql .= " AND ir.status = ?";
@@ -148,8 +151,9 @@ function handleGet($db, $currentUser) {
                     CASE ri.item_type
                         WHEN 'ingredient' THEN (SELECT current_stock FROM ingredients WHERE id = ri.item_id)
                         WHEN 'mro' THEN (SELECT current_stock FROM mro_items WHERE id = ri.item_id)
-                        ELSE NULL
-                    END as current_stock
+                        WHEN 'raw_milk' THEN (SELECT COALESCE(SUM(current_volume), 0) FROM storage_tanks WHERE is_active = 1)
+                        ELSE 0
+                    END as available_stock
                 FROM requisition_items ri
                 LEFT JOIN users uf ON ri.fulfilled_by = uf.id
                 WHERE ri.requisition_id = ?
@@ -203,6 +207,92 @@ function handlePut($db, $currentUser) {
     }
     
     switch ($action) {
+        case 'approve':
+            // Approve a pending requisition
+            // Only GM or warehouse_raw (supervisor) can approve
+            if (!in_array($currentUser['role'], ['warehouse_raw', 'general_manager', 'admin'])) {
+                Response::error('Not authorized to approve requisitions', 403);
+            }
+            
+            try {
+                // Get requisition
+                $requisition = $db->prepare("
+                    SELECT * FROM ingredient_requisitions WHERE id = ? AND status = 'pending'
+                ");
+                $requisition->execute([$id]);
+                $reqData = $requisition->fetch();
+                
+                if (!$reqData) {
+                    Response::error('Requisition not found or not pending', 404);
+                }
+                
+                // Update requisition status to approved
+                $stmt = $db->prepare("
+                    UPDATE ingredient_requisitions 
+                    SET status = 'approved',
+                        approved_by = ?,
+                        approved_at = NOW(),
+                        updated_at = NOW()
+                    WHERE id = ?
+                ");
+                $stmt->execute([$currentUser['user_id'], $id]);
+                
+                logAudit($currentUser['user_id'], 'approve_requisition', 'ingredient_requisitions', $id, 
+                    null, ['status' => 'approved']);
+                
+                Response::success([
+                    'id' => $id,
+                    'status' => 'approved'
+                ], 'Requisition approved successfully');
+                
+            } catch (Exception $e) {
+                Response::error('Failed to approve requisition: ' . $e->getMessage(), 500);
+            }
+            break;
+            
+        case 'reject':
+            // Reject a pending requisition
+            if (!in_array($currentUser['role'], ['warehouse_raw', 'general_manager', 'admin'])) {
+                Response::error('Not authorized to reject requisitions', 403);
+            }
+            
+            $reason = getParam('reason', '');
+            
+            try {
+                // Get requisition
+                $requisition = $db->prepare("
+                    SELECT * FROM ingredient_requisitions WHERE id = ? AND status = 'pending'
+                ");
+                $requisition->execute([$id]);
+                $reqData = $requisition->fetch();
+                
+                if (!$reqData) {
+                    Response::error('Requisition not found or not pending', 404);
+                }
+                
+                // Update requisition status to rejected
+                $stmt = $db->prepare("
+                    UPDATE ingredient_requisitions 
+                    SET status = 'rejected',
+                        notes = CONCAT(COALESCE(notes, ''), '\nRejected: ', ?),
+                        updated_at = NOW()
+                    WHERE id = ?
+                ");
+                $stmt->execute([$reason, $id]);
+                
+                logAudit($currentUser['user_id'], 'reject_requisition', 'ingredient_requisitions', $id, 
+                    null, ['status' => 'rejected', 'reason' => $reason]);
+                
+                Response::success([
+                    'id' => $id,
+                    'status' => 'rejected'
+                ], 'Requisition rejected');
+                
+            } catch (Exception $e) {
+                Response::error('Failed to reject requisition: ' . $e->getMessage(), 500);
+            }
+            break;
+            
         case 'fulfill':
             // Fulfill entire requisition
             $db->beginTransaction();
@@ -271,22 +361,41 @@ function handlePut($db, $currentUser) {
                             updated_at = NOW()
                         WHERE id = ?
                     ");
-                    $stmt->execute([$issuedQty, $issuedQty, $currentUser['id'], $item['id']]);
+                    $stmt->execute([$issuedQty, $issuedQty, $currentUser['user_id'], $item['id']]);
+                }
+                
+                // Check if all items are fulfilled to determine requisition status
+                $checkItems = $db->prepare("
+                    SELECT 
+                        COUNT(*) as total_items,
+                        SUM(CASE WHEN status = 'fulfilled' THEN 1 ELSE 0 END) as fulfilled_items,
+                        SUM(CASE WHEN status IN ('partial', 'fulfilled') THEN 1 ELSE 0 END) as processed_items
+                    FROM requisition_items WHERE requisition_id = ?
+                ");
+                $checkItems->execute([$id]);
+                $itemCounts = $checkItems->fetch();
+                
+                // Determine requisition status based on item statuses
+                $newReqStatus = 'approved'; // Default
+                if ($itemCounts['fulfilled_items'] == $itemCounts['total_items']) {
+                    $newReqStatus = 'fulfilled'; // All items fully fulfilled
+                } elseif ($itemCounts['processed_items'] > 0) {
+                    $newReqStatus = 'partial'; // Some items processed but not all complete
                 }
                 
                 // Update requisition status
                 $stmt = $db->prepare("
                     UPDATE ingredient_requisitions 
-                    SET status = 'fulfilled',
+                    SET status = ?,
                         fulfilled_by = ?,
                         fulfilled_at = NOW(),
                         updated_at = NOW()
                     WHERE id = ?
                 ");
-                $stmt->execute([$currentUser['id'], $id]);
+                $stmt->execute([$newReqStatus, $currentUser['user_id'], $id]);
                 
                 // Log audit
-                logAudit($currentUser['id'], 'fulfill_requisition', 'ingredient_requisitions', $id, 
+                logAudit($currentUser['user_id'], 'fulfill_requisition', 'ingredient_requisitions', $id, 
                     ['status' => 'approved'], 
                     ['status' => 'fulfilled']
                 );
@@ -354,26 +463,35 @@ function handlePut($db, $currentUser) {
                         updated_at = NOW()
                     WHERE id = ?
                 ");
-                $stmt->execute([$issuedQuantity, $newStatus, $currentUser['id'], $itemId]);
+                $stmt->execute([$issuedQuantity, $newStatus, $currentUser['user_id'], $itemId]);
                 
                 // Check if all items are fulfilled
                 $checkAll = $db->prepare("
-                    SELECT COUNT(*) as pending 
+                    SELECT 
+                        COUNT(*) as total_items,
+                        SUM(CASE WHEN status = 'fulfilled' THEN 1 ELSE 0 END) as fulfilled_items,
+                        SUM(CASE WHEN status IN ('partial', 'fulfilled') THEN 1 ELSE 0 END) as processed_items
                     FROM requisition_items 
-                    WHERE requisition_id = ? AND status NOT IN ('fulfilled', 'cancelled')
+                    WHERE requisition_id = ?
                 ");
                 $checkAll->execute([$id]);
-                $pending = $checkAll->fetch();
+                $itemCounts = $checkAll->fetch();
                 
-                if ($pending['pending'] == 0) {
-                    // All items fulfilled, update requisition
-                    $stmt = $db->prepare("
-                        UPDATE ingredient_requisitions 
-                        SET status = 'fulfilled', fulfilled_by = ?, fulfilled_at = NOW(), updated_at = NOW()
-                        WHERE id = ?
-                    ");
-                    $stmt->execute([$currentUser['id'], $id]);
+                // Determine requisition status based on item statuses
+                $newReqStatus = 'approved'; // Default - still being processed
+                if ($itemCounts['fulfilled_items'] == $itemCounts['total_items']) {
+                    $newReqStatus = 'fulfilled'; // All items fully fulfilled
+                } elseif ($itemCounts['processed_items'] > 0) {
+                    $newReqStatus = 'partial'; // Some items processed but not all complete
                 }
+                
+                // Update requisition status
+                $stmt = $db->prepare("
+                    UPDATE ingredient_requisitions 
+                    SET status = ?, fulfilled_by = ?, fulfilled_at = NOW(), updated_at = NOW()
+                    WHERE id = ?
+                ");
+                $stmt->execute([$newReqStatus, $currentUser['user_id'], $id]);
                 
                 $db->commit();
                 
@@ -477,7 +595,7 @@ function issueMilk($db, $liters, $requisitionId, $currentUser) {
             $issueFromBatch,
             $requisitionId,
             $batch['tank_code'],
-            $currentUser['id']
+            $currentUser['user_id']
         ]);
         
         $issued[] = [
@@ -495,9 +613,18 @@ function issueMilk($db, $liters, $requisitionId, $currentUser) {
  * Issue ingredient (FIFO)
  */
 function issueIngredient($db, $ingredientId, $quantity, $requisitionId, $currentUser) {
+    // Validate ingredient ID
+    if (!$ingredientId || $ingredientId <= 0) {
+        throw new Exception("Invalid ingredient ID");
+    }
+    
     $ingredient = $db->prepare("SELECT * FROM ingredients WHERE id = ?");
     $ingredient->execute([$ingredientId]);
     $ingredientData = $ingredient->fetch();
+    
+    if (!$ingredientData) {
+        throw new Exception("Ingredient not found (ID: {$ingredientId})");
+    }
     
     // Get available batches
     $batches = $db->prepare("
@@ -551,7 +678,7 @@ function issueIngredient($db, $ingredientId, $quantity, $requisitionId, $current
             $ingredientData['unit_of_measure'],
             $requisitionId,
             $ingredientData['storage_location'],
-            $currentUser['id']
+            $currentUser['user_id']
         ]);
         
         $issued[] = [
@@ -631,7 +758,7 @@ function issueMRO($db, $mroItemId, $quantity, $requisitionId, $currentUser) {
             $itemData['unit_of_measure'],
             $requisitionId,
             $itemData['storage_location'],
-            $currentUser['id']
+            $currentUser['user_id']
         ]);
         
         $issued[] = [
@@ -650,3 +777,4 @@ function issueMRO($db, $mroItemId, $quantity, $requisitionId, $currentUser) {
     
     return ['total_quantity' => $quantity, 'from_batches' => $issued];
 }
+

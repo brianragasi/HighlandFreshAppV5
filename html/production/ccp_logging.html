@@ -289,6 +289,19 @@
                                             <span class="text-sm opacity-80" id="runInfoDetails"></span>
                                         </div>
                                     </div>
+                                    
+                                    <!-- CCP Status for this Run -->
+                                    <div id="runCcpStatus" class="mt-2 bg-base-200 rounded-lg p-3">
+                                        <div class="text-sm font-semibold mb-2">
+                                            <i class="fas fa-clipboard-check mr-1"></i> CCP Status for this Run:
+                                        </div>
+                                        <div class="grid grid-cols-2 gap-2 text-sm" id="runCcpChecklist">
+                                            <div class="flex items-center gap-2">
+                                                <i class="fas fa-spinner fa-spin text-xs"></i>
+                                                <span>Loading...</span>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                                 
                                 <!-- Step 2: Check Type - Compact Grid -->
@@ -711,7 +724,7 @@
             `}).join('');
         }
         
-        function updateRunInfo() {
+        async function updateRunInfo() {
             const runId = document.getElementById('runSelect').value;
             const infoDiv = document.getElementById('runInfo');
             
@@ -726,6 +739,105 @@
                 document.getElementById('runInfoDetails').textContent = 
                     `Run Code: ${run.run_code} • Status: ${run.status} • Planned: ${run.planned_quantity} ${run.yield_unit}`;
                 infoDiv.classList.remove('hidden');
+                
+                // Load CCP logs for this run
+                await loadRunCcpStatus(runId);
+            }
+        }
+        
+        async function loadRunCcpStatus(runId) {
+            const checklist = document.getElementById('runCcpChecklist');
+            checklist.innerHTML = '<div class="flex items-center gap-2 col-span-2"><i class="fas fa-spinner fa-spin text-xs"></i><span>Loading...</span></div>';
+            
+            try {
+                const response = await ProductionService.getRun(runId);
+                if (response.success) {
+                    const ccpLogs = response.data.ccp_logs || [];
+                    
+                    // Get most recent log for each check type
+                    const latestLogs = {};
+                    ccpLogs.forEach(log => {
+                        const existing = latestLogs[log.check_type];
+                        if (!existing || new Date(log.check_datetime) > new Date(existing.check_datetime)) {
+                            latestLogs[log.check_type] = log;
+                        }
+                    });
+                    
+                    // Check required CCPs based on most recent logs
+                    const pastLog = latestLogs['pasteurization'];
+                    const coolLog = latestLogs['cooling'];
+                    const homoLog = latestLogs['homogenization'];
+                    const chillLog = latestLogs['chilling'];
+                    
+                    const hasPasteurization = pastLog && pastLog.status === 'pass';
+                    const hasCooling = coolLog && coolLog.status === 'pass';
+                    const hasHomogenization = !!homoLog;
+                    const hasChilling = !!chillLog;
+                    
+                    // Check if any required CCP failed (most recent)
+                    const pastFailed = pastLog && pastLog.status === 'fail';
+                    const coolFailed = coolLog && coolLog.status === 'fail';
+                    
+                    checklist.innerHTML = `
+                        <div class="flex items-center gap-2 ${hasPasteurization ? 'text-success' : pastFailed ? 'text-error' : 'text-warning'}">
+                            <i class="fas fa-${hasPasteurization ? 'check-circle' : pastFailed ? 'times-circle' : 'exclamation-circle'}"></i>
+                            <span>Pasteurization (75°C) 
+                                <span class="badge badge-xs ${hasPasteurization ? 'badge-success' : pastFailed ? 'badge-error' : 'badge-warning'}">
+                                    ${hasPasteurization ? 'Pass' : pastFailed ? 'Failed - Re-log!' : 'Required'}
+                                </span>
+                            </span>
+                        </div>
+                        <div class="flex items-center gap-2 ${hasCooling ? 'text-success' : coolFailed ? 'text-error' : 'text-warning'}">
+                            <i class="fas fa-${hasCooling ? 'check-circle' : coolFailed ? 'times-circle' : 'exclamation-circle'}"></i>
+                            <span>Cooling (4°C) 
+                                <span class="badge badge-xs ${hasCooling ? 'badge-success' : coolFailed ? 'badge-error' : 'badge-warning'}">
+                                    ${hasCooling ? 'Pass' : coolFailed ? 'Failed - Re-log!' : 'Required'}
+                                </span>
+                            </span>
+                        </div>
+                        <div class="flex items-center gap-2 ${hasHomogenization ? 'text-success' : 'text-base-content/50'}">
+                            <i class="fas fa-${hasHomogenization ? 'check-circle' : 'circle'}"></i>
+                            <span>Homogenization <span class="badge badge-xs ${hasHomogenization ? 'badge-success' : 'badge-ghost'}">${hasHomogenization ? 'Done' : 'Optional'}</span></span>
+                        </div>
+                        <div class="flex items-center gap-2 ${hasChilling ? 'text-success' : 'text-base-content/50'}">
+                            <i class="fas fa-${hasChilling ? 'check-circle' : 'circle'}"></i>
+                            <span>Chilling <span class="badge badge-xs ${hasChilling ? 'badge-success' : 'badge-ghost'}">${hasChilling ? 'Done' : 'Optional'}</span></span>
+                        </div>
+                    `;
+                    
+                    // Show completion readiness
+                    if (hasPasteurization && hasCooling) {
+                        checklist.innerHTML += `
+                            <div class="col-span-2 mt-2">
+                                <div class="alert alert-success py-2">
+                                    <i class="fas fa-check-circle"></i>
+                                    <span class="text-sm">Ready to complete this production run!</span>
+                                </div>
+                            </div>
+                        `;
+                    } else if (pastFailed || coolFailed) {
+                        checklist.innerHTML += `
+                            <div class="col-span-2 mt-2">
+                                <div class="alert alert-error py-2">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                    <span class="text-sm">Failed CCP detected! Please re-log with correct reading.</span>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        checklist.innerHTML += `
+                            <div class="col-span-2 mt-2">
+                                <div class="alert alert-warning py-2">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                    <span class="text-sm">Log required CCPs before completing run</span>
+                                </div>
+                            </div>
+                        `;
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading CCP status:', error);
+                checklist.innerHTML = '<div class="text-sm text-error col-span-2">Failed to load CCP status</div>';
             }
         }
         
@@ -864,15 +976,31 @@
                         showToast('⚠ CCP Check FAILED - Out of range!', 'error');
                     }
                     
-                    // Reset form
-                    document.getElementById('ccpForm').reset();
-                    document.getElementById('runInfo').classList.add('hidden');
+                    // Remember selected run for better UX
+                    const selectedRunId = document.getElementById('runSelect').value;
+                    
+                    // Reset only the input fields, NOT the run selection
+                    document.getElementById('tempInput').value = '';
+                    document.getElementById('pressureInput').value = '';
+                    document.getElementById('holdTime').value = '';
+                    document.getElementById('ccpNotes').value = '';
+                    
+                    // Uncheck radio buttons
+                    document.querySelectorAll('input[name="checkType"]').forEach(r => r.checked = false);
+                    
+                    // Reset display elements
                     document.getElementById('targetIndicator').classList.add('hidden');
                     document.getElementById('holdTimeGroup').classList.add('hidden');
                     document.getElementById('pressureGroup').classList.add('hidden');
                     document.getElementById('tempSection').classList.remove('hidden');
                     document.getElementById('tempDisplay').textContent = '--°C';
                     document.getElementById('tempDisplay').className = 'temp-display bg-base-200 rounded-xl mb-4 text-primary';
+                    
+                    // Keep run info visible and selected
+                    document.getElementById('runSelect').value = selectedRunId;
+                    
+                    // Refresh the CCP status checklist to show the new log
+                    await loadRunCcpStatus(selectedRunId);
                     
                     loadRecentLogs();
                 } else {

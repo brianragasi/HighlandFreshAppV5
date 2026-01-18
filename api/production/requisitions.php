@@ -176,13 +176,25 @@ try {
                 // Insert items
                 $itemStmt = $db->prepare("
                     INSERT INTO requisition_items (
-                        requisition_id, item_name, quantity, unit, notes
-                    ) VALUES (?, ?, ?, ?, ?)
+                        requisition_id, item_type, item_id, item_name, requested_quantity, unit_of_measure, notes
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 ");
                 
                 foreach ($items as $item) {
+                    // Determine item_type based on item name or explicit type
+                    $itemType = $item['item_type'] ?? 'ingredient';
+                    $itemId = $item['item_id'] ?? 0;
+                    
+                    // If item_name contains 'milk' (case-insensitive) and no explicit type, assume raw_milk
+                    if (!isset($item['item_type']) && stripos($item['item_name'], 'milk') !== false && stripos($item['item_name'], 'powder') === false) {
+                        $itemType = 'raw_milk';
+                        $itemId = 0; // Raw milk doesn't have a specific item_id - it comes from tanks
+                    }
+                    
                     $itemStmt->execute([
                         $requisitionId,
+                        $itemType,
+                        $itemId,
                         $item['item_name'],
                         $item['quantity'],
                         $item['unit'] ?? 'units',
