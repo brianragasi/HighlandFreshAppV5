@@ -41,13 +41,20 @@ if (typeof axios !== 'undefined') {
         }
     });
 
-    // Request interceptor - add auth token
+    // Request interceptor - add auth token and handle method override for nginx
     api.interceptors.request.use(
         (config) => {
             const token = localStorage.getItem('highland_token');
             if (token) {
                 config.headers.Authorization = `Bearer ${token}`;
             }
+            
+            // Convert PUT/DELETE to POST with X-HTTP-Method-Override for nginx compatibility
+            if (config.method === 'put' || config.method === 'delete') {
+                config.headers['X-HTTP-Method-Override'] = config.method.toUpperCase();
+                config.method = 'post';
+            }
+            
             return config;
         },
         (error) => {
