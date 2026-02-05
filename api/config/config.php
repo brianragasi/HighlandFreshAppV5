@@ -12,12 +12,29 @@ if (!defined('HIGHLAND_FRESH')) {
     exit('Direct access not allowed');
 }
 
+// Detect Azure environment
+$isAzure = getenv('WEBSITE_SITE_NAME') !== false;
+
 // Database Configuration
-define('DB_HOST', 'localhost');
-define('DB_NAME', 'highland_fresh');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+if ($isAzure) {
+    // Azure MySQL Configuration
+    define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
+    define('DB_NAME', getenv('DB_NAME') ?: 'highland_fresh');
+    define('DB_USER', getenv('DB_USERNAME') ?: 'root');
+    define('DB_PASS', getenv('DB_PASSWORD') ?: '');
+    define('DB_PORT', getenv('DB_PORT') ?: 3306);
+    define('DB_SSL_CERT', '/home/site/wwwroot/api/config/DigiCertGlobalRootCA.crt.pem');
+} else {
+    // Local Development Configuration
+    define('DB_HOST', 'localhost');
+    define('DB_NAME', 'highland_fresh');
+    define('DB_USER', 'root');
+    define('DB_PASS', '');
+    define('DB_PORT', 3306);
+    define('DB_SSL_CERT', null);
+}
 define('DB_CHARSET', 'utf8mb4');
+define('IS_AZURE', $isAzure);
 
 // Application Settings
 define('APP_NAME', 'Highland Fresh System');
