@@ -39,5 +39,33 @@ The Cashier also manages small-scale internal accounts.
 The Cashier handles the retail sale of the "Other" products mentioned by Ma'am.
 *   **Miscellaneous Inventory:** Selling items like **Alcohol, CMT, Jelly, or Powders** that are kept in the store, ensuring these non-dairy items are also tracked in the inventory.
 
+### 8. Multi-Unit Sales Entry (Box vs. Piece)
+The Cashier must support piece-level sales for walk-in customers and small retailers (sari-sari stores).
+
+#### Retail (Tingi) Sales
+*   **Piece-Level Entry:** Walk-in customers often buy individual pieces, not full boxes.
+    *   Example: Customer buys 3 pieces of Milk Bar, not 1 box.
+*   **Unit Toggle in POS:**
+    ```
+    Product: Milk Bar
+    Qty: [ 3 ]  Unit: [ Pieces ▼ ]
+    Price: ₱36.00 (3 × ₱12 retail)
+    ```
+*   **Box Sales:** Larger walk-in orders can be entered as boxes for speed.
+
+#### Inventory Deduction
+*   **Automatic Conversion:** Selling 3 pieces triggers the system to:
+    1.  Check if loose pieces are available.
+    2.  If not, "open" a box digitally and deduct from it.
+*   **Real-Time Update:** Inventory reflects exact piece count after every sale.
+
+#### Receipt Display
+*   **Clear Unit Display:** Receipt shows:
+    ```
+    Milk Bar (3 pcs)     ₱36.00
+    Fresh Milk 200ml (1 box - 24 pcs)  ₱312.00
+    ```
+*   **No Confusion:** Customers see exactly what they purchased in appropriate units.
+
 ### Summary
 In the Highland Fresh system, the **Cashier’s function is "Revenue Integrity."** They ensure that every peso—whether from a walk-in bottle of milk, a staff meal, or a million-peso supermarket check—is recorded accurately, categorized by payment type, and reconciled before the daily 5:00 PM cut-off.
