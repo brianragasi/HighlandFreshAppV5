@@ -1,10 +1,12 @@
 <?php
 /**
- * Highland Fresh System - Milk Deliveries API
+ * Highland Fresh System - Milk Receiving API
+ * 
+ * UPDATED: Uses milk_receiving table (revised schema)
  * 
  * Endpoints:
- * GET  - List all milk deliveries
- * POST - Record new milk delivery
+ * GET  - List all milk receiving records
+ * POST - Record new milk receiving
  * 
  * @package HighlandFresh
  * @version 4.0
@@ -12,16 +14,17 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 
-// Require QC role
-$currentUser = Auth::requireRole(['qc_officer', 'general_manager']);
+// Require QC or Warehouse Raw role
+$currentUser = Auth::requireRole(['qc_officer', 'general_manager', 'warehouse_raw']);
 
 try {
     $db = Database::getInstance()->getConnection();
     
     switch ($requestMethod) {
         case 'GET':
-            // List deliveries
+            // List receiving records
             $farmerId = getParam('farmer_id');
+            $milkTypeId = getParam('milk_type_id');
             $status = getParam('status');
             $dateFrom = getParam('date_from');
             $dateTo = getParam('date_to');
@@ -33,64 +36,82 @@ try {
             $params = [];
             
             if ($farmerId) {
-                $where .= " AND md.farmer_id = ?";
+                $where .= " AND mr.farmer_id = ?";
                 $params[] = $farmerId;
             }
             
-            if ($status && in_array($status, ['pending_test', 'accepted', 'rejected', 'partial'])) {
-                $where .= " AND md.status = ?";
+            if ($milkTypeId) {
+                $where .= " AND mr.milk_type_id = ?";
+                $params[] = $milkTypeId;
+            }
+            
+            if ($status && in_array($status, ['pending_qc', 'in_testing', 'accepted', 'rejected', 'partial'])) {
+                $where .= " AND mr.status = ?";
                 $params[] = $status;
             }
             
             if ($dateFrom) {
-                $where .= " AND md.delivery_date >= ?";
+                $where .= " AND mr.receiving_date >= ?";
                 $params[] = $dateFrom;
             }
             
             if ($dateTo) {
-                $where .= " AND md.delivery_date <= ?";
+                $where .= " AND mr.receiving_date <= ?";
                 $params[] = $dateTo;
             }
             
             // Get total count
             $countStmt = $db->prepare("
                 SELECT COUNT(*) as total 
-                FROM milk_deliveries md 
+                FROM milk_receiving mr 
                 {$where}
             ");
             $countStmt->execute($params);
             $total = $countStmt->fetch()['total'];
             
-            // Get deliveries with farmer info
+            // Get receiving records with farmer info and QC test results
             $stmt = $db->prepare("
-                SELECT md.*, 
-                       f.farmer_code, f.first_name as farmer_first_name, f.last_name as farmer_last_name,
+                SELECT mr.*, 
+                       mr.receiving_code as delivery_code,
+                       mr.receiving_date as delivery_date,
+                       mr.receiving_time as delivery_time,
+                       f.farmer_code, 
+                       COALESCE(f.first_name, '') as farmer_first_name,
+                       COALESCE(f.last_name, '') as farmer_last_name,
+                       CONCAT(COALESCE(f.first_name, ''), ' ', COALESCE(f.last_name, '')) as farmer_name,
                        f.membership_type,
+                       mt.type_code as milk_type_code, mt.type_name as milk_type_name,
                        u.first_name as receiver_first_name, u.last_name as receiver_last_name,
-                       qmt.test_code, qmt.grade, qmt.fat_percentage, qmt.final_price_per_liter, qmt.total_amount
-                FROM milk_deliveries md
-                LEFT JOIN farmers f ON md.farmer_id = f.id
-                LEFT JOIN users u ON md.received_by = u.id
-                LEFT JOIN qc_milk_tests qmt ON md.id = qmt.delivery_id
+                       qmt.test_code, qmt.grade, qmt.fat_percentage, qmt.titratable_acidity,
+                       qmt.final_price_per_liter, qmt.total_amount
+                FROM milk_receiving mr
+                LEFT JOIN farmers f ON mr.farmer_id = f.id
+                LEFT JOIN milk_types mt ON mr.milk_type_id = mt.id
+                LEFT JOIN users u ON mr.received_by = u.id
+                LEFT JOIN qc_milk_tests qmt ON mr.id = qmt.receiving_id
                 {$where}
-                ORDER BY md.delivery_date DESC, md.delivery_time DESC
+                ORDER BY mr.receiving_date DESC, mr.receiving_time DESC
                 LIMIT ? OFFSET ?
             ");
             $params[] = $limit;
             $params[] = $offset;
             $stmt->execute($params);
-            $deliveries = $stmt->fetchAll();
+            $records = $stmt->fetchAll();
             
-            Response::paginated($deliveries, $total, $page, $limit, 'Deliveries retrieved successfully');
+            Response::paginated($records, $total, $page, $limit, 'Receiving records retrieved successfully');
             break;
             
         case 'POST':
-            // Record new delivery
+            // Record new milk receiving
             $farmerId = getParam('farmer_id');
+            $milkTypeId = getParam('milk_type_id');
             $volumeLiters = getParam('volume_liters');
-            $deliveryDate = getParam('delivery_date', date('Y-m-d'));
-            $deliveryTime = getParam('delivery_time', date('H:i:s'));
-            $aptResult = getParam('apt_result'); // ANNEX B: Alcohol Precipitation Test
+            $receivingDate = getParam('receiving_date', date('Y-m-d'));
+            $receivingTime = getParam('receiving_time', date('H:i:s'));
+            $temperatureCelsius = getParam('temperature_celsius');
+            $transportContainer = getParam('transport_container');
+            $visualInspection = getParam('visual_inspection', 'pending');
+            $visualNotes = trim(getParam('visual_notes', ''));
             $notes = trim(getParam('notes', ''));
             
             // Validation
@@ -99,13 +120,14 @@ try {
             if (empty($volumeLiters) || $volumeLiters <= 0) {
                 $errors['volume_liters'] = 'Valid volume is required';
             }
-            if (!empty($aptResult) && !in_array($aptResult, ['positive', 'negative'])) {
-                $errors['apt_result'] = 'APT result must be positive or negative';
+            if (!empty($visualInspection) && !in_array($visualInspection, ['pass', 'fail', 'pending'])) {
+                $errors['visual_inspection'] = 'Visual inspection must be pass, fail, or pending';
             }
             
             // Check if farmer exists and is active
+            $farmer = null;
             if ($farmerId) {
-                $farmerStmt = $db->prepare("SELECT id, is_active FROM farmers WHERE id = ?");
+                $farmerStmt = $db->prepare("SELECT id, is_active, milk_type_id FROM farmers WHERE id = ?");
                 $farmerStmt->execute([$farmerId]);
                 $farmer = $farmerStmt->fetch();
                 
@@ -116,48 +138,77 @@ try {
                 }
             }
             
+            // Use farmer's milk type if not specified
+            if (empty($milkTypeId) && $farmer && $farmer['milk_type_id']) {
+                $milkTypeId = $farmer['milk_type_id'];
+            }
+            
+            // Default to COW milk (id=1) if still not set
+            if (empty($milkTypeId)) {
+                $milkTypeId = 1;
+            }
+            
             if (!empty($errors)) {
                 Response::validationError($errors);
             }
             
-            // Generate delivery code
-            $codeStmt = $db->query("SELECT MAX(CAST(SUBSTRING(delivery_code, 5) AS UNSIGNED)) as max_num FROM milk_deliveries WHERE delivery_code LIKE 'DEL-%'");
+            // Generate receiving code (RCV-YYYYMMDD-NNN)
+            $codePrefix = 'RCV-' . date('Ymd', strtotime($receivingDate)) . '-';
+            $codeStmt = $db->prepare("
+                SELECT MAX(CAST(SUBSTRING(receiving_code, 14) AS UNSIGNED)) as max_num 
+                FROM milk_receiving 
+                WHERE receiving_code LIKE ?
+            ");
+            $codeStmt->execute([$codePrefix . '%']);
             $maxNum = $codeStmt->fetch()['max_num'] ?? 0;
-            $deliveryCode = 'DEL-' . str_pad($maxNum + 1, 6, '0', STR_PAD_LEFT);
+            $receivingCode = $codePrefix . str_pad($maxNum + 1, 3, '0', STR_PAD_LEFT);
             
-            // Insert delivery
+            // Generate RMR number (sequential)
+            $rmrStmt = $db->query("SELECT MAX(CAST(rmr_number AS UNSIGNED)) as max_rmr FROM milk_receiving WHERE rmr_number REGEXP '^[0-9]+$'");
+            $maxRmr = $rmrStmt->fetch()['max_rmr'] ?? 66172;
+            $rmrNumber = $maxRmr + 1;
+            
+            // Insert receiving record
             $stmt = $db->prepare("
-                INSERT INTO milk_deliveries (delivery_code, farmer_id, delivery_date, delivery_time, 
-                                            volume_liters, received_by, status, apt_result, notes)
-                VALUES (?, ?, ?, ?, ?, ?, 'pending_test', ?, ?)
+                INSERT INTO milk_receiving (
+                    receiving_code, rmr_number, farmer_id, milk_type_id, 
+                    receiving_date, receiving_time, volume_liters,
+                    temperature_celsius, transport_container,
+                    visual_inspection, visual_notes, status, received_by, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_qc', ?, ?)
             ");
             $stmt->execute([
-                $deliveryCode, $farmerId, $deliveryDate, $deliveryTime,
-                $volumeLiters, $currentUser['user_id'], $aptResult ?: null, $notes
+                $receivingCode, $rmrNumber, $farmerId, $milkTypeId,
+                $receivingDate, $receivingTime, $volumeLiters,
+                $temperatureCelsius ?: null, $transportContainer ?: null,
+                $visualInspection, $visualNotes, $currentUser['user_id'], $notes
             ]);
             
-            $deliveryId = $db->lastInsertId();
+            $receivingId = $db->lastInsertId();
             
             // Log audit
-            logAudit($currentUser['user_id'], 'CREATE', 'milk_deliveries', $deliveryId, null, [
-                'delivery_code' => $deliveryCode,
+            logAudit($currentUser['user_id'], 'CREATE', 'milk_receiving', $receivingId, null, [
+                'receiving_code' => $receivingCode,
+                'rmr_number' => $rmrNumber,
                 'farmer_id' => $farmerId,
                 'volume_liters' => $volumeLiters
             ]);
             
-            // Get created delivery with farmer info
+            // Get created record with farmer info
             $stmt = $db->prepare("
-                SELECT md.*, 
-                       f.farmer_code, f.first_name as farmer_first_name, f.last_name as farmer_last_name,
-                       f.membership_type, f.base_price_per_liter
-                FROM milk_deliveries md
-                LEFT JOIN farmers f ON md.farmer_id = f.id
-                WHERE md.id = ?
+                SELECT mr.*, 
+                       f.farmer_code, COALESCE(f.first_name, '') as farmer_name,
+                       f.membership_type, f.base_price_per_liter,
+                       mt.type_code as milk_type_code, mt.type_name as milk_type_name
+                FROM milk_receiving mr
+                LEFT JOIN farmers f ON mr.farmer_id = f.id
+                LEFT JOIN milk_types mt ON mr.milk_type_id = mt.id
+                WHERE mr.id = ?
             ");
-            $stmt->execute([$deliveryId]);
-            $delivery = $stmt->fetch();
+            $stmt->execute([$receivingId]);
+            $record = $stmt->fetch();
             
-            Response::success($delivery, 'Delivery recorded successfully', 201);
+            Response::success($record, 'Milk receiving recorded successfully', 201);
             break;
             
         default:
@@ -166,5 +217,5 @@ try {
     
 } catch (Exception $e) {
     error_log("Deliveries API error: " . $e->getMessage());
-    Response::error('An error occurred', 500);
+    Response::error('An error occurred: ' . $e->getMessage(), 500);
 }

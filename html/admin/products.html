@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Products Management | Highland Fresh Admin</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } }
+        }
+    </script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Axios -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-cogs text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Admin Panel</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-th-large w-5 text-center text-base-content/60"></i><span class="flex-1">Dashboard</span>
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Supply Chain</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="farmers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-tractor w-5 text-center text-base-content/60"></i><span class="flex-1">Farmers</span>
+                    </a></li>
+                    <li><a href="customers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-store w-5 text-center text-base-content/60"></i><span class="flex-1">Customers</span>
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Product Catalog</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="products.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                        <i class="fas fa-box w-5 text-center"></i><span class="flex-1">Products</span>
+                    </a></li>
+                    <li><a href="recipes.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-clipboard-list w-5 text-center text-base-content/60"></i><span class="flex-1">Recipes</span>
+                    </a></li>
+                    <li><a href="ingredients.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-seedling w-5 text-center text-base-content/60"></i><span class="flex-1">Ingredients</span>
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Infrastructure</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="storage.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-warehouse w-5 text-center text-base-content/60"></i><span class="flex-1">Storage & Tanks</span>
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Quality Control</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="qc-standards.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-clipboard-check w-5 text-center text-base-content/60"></i><span class="flex-1">QC Standards</span>
+                    </a></li>
+                </ul>
+            </div>
+        </nav>
+        
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">GM</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">General Manager</p>
+                    <p class="text-xs text-base-content/60 truncate">Administrator</p>
+                </div>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button>
+            </div>
+            <div class="flex-1">
+                <div class="breadcrumbs text-sm">
+                    <ul><li><a href="dashboard.html">Admin</a></li><li class="font-semibold">Products</li></ul>
+                </div>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+        
+        <main class="flex-1 p-4 lg:p-6">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+                <div>
+                    <h1 class="text-2xl font-bold text-base-content">Product Catalog</h1>
+                    <p class="text-base-content/60">Manage finished goods products</p>
+                </div>
+                <button class="btn btn-primary" onclick="openAddModal()">
+                    <i class="fas fa-plus mr-2"></i>Add Product
+                </button>
+            </div>
+            
+            <!-- Stats -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-boxes text-primary text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-2xl font-bold" id="statTotal">0</p>
+                            <p class="text-xs text-base-content/60">Total Products</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 bg-success/10 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-check-circle text-success text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-2xl font-bold" id="statActive">0</p>
+                            <p class="text-xs text-base-content/60">Active</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 bg-warning/10 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-exclamation-triangle text-warning text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-2xl font-bold" id="statLowStock">0</p>
+                            <p class="text-xs text-base-content/60">Low Stock</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 bg-info/10 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-layer-group text-info text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-2xl font-bold" id="statCategories">0</p>
+                            <p class="text-xs text-base-content/60">Categories</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Filters -->
+            <div class="bg-base-100 rounded-2xl border border-base-300 p-4 mb-6">
+                <div class="flex flex-col md:flex-row gap-4">
+                    <div class="flex-1">
+                        <label class="input input-bordered flex items-center gap-2">
+                            <i class="fas fa-search text-base-content/40"></i>
+                            <input type="text" id="searchInput" placeholder="Search products..." class="grow" onkeyup="filterData()"/>
+                        </label>
+                    </div>
+                    <select id="categoryFilter" class="select select-bordered w-full md:w-48" onchange="filterData()">
+                        <option value="">All Categories</option>
+                        <option value="pasteurized_milk">Pasteurized Milk</option>
+                        <option value="flavored_milk">Flavored Milk</option>
+                        <option value="yogurt">Yogurt</option>
+                        <option value="cheese">Cheese</option>
+                        <option value="butter">Butter</option>
+                        <option value="cream">Cream</option>
+                    </select>
+                    <select id="statusFilter" class="select select-bordered w-full md:w-40" onchange="filterData()">
+                        <option value="">All Status</option>
+                        <option value="1">Active</option>
+                        <option value="0">Inactive</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Products Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" id="productsGrid">
+                <div class="col-span-full text-center py-12">
+                    <span class="loading loading-spinner loading-lg text-primary"></span>
+                    <p class="mt-2 text-base-content/60">Loading products...</p>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Add/Edit Modal -->
+    <dialog id="formModal" class="modal">
+        <div class="modal-box w-11/12 max-w-2xl">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-4" id="modalTitle">Add New Product</h3>
+            
+            <form id="dataForm" onsubmit="saveData(event)">
+                <input type="hidden" id="recordId" value="">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-control md:col-span-2">
+                        <label class="label"><span class="label-text">Product Name <span class="text-error">*</span></span></label>
+                        <input type="text" id="product_name" class="input input-bordered" required />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Product Code <span class="text-error">*</span></span></label>
+                        <input type="text" id="product_code" class="input input-bordered" required placeholder="e.g., PM-COW-1L" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Category <span class="text-error">*</span></span></label>
+                        <select id="category" class="select select-bordered" required>
+                            <option value="pasteurized_milk">Pasteurized Milk</option>
+                            <option value="flavored_milk">Flavored Milk</option>
+                            <option value="yogurt">Yogurt</option>
+                            <option value="cheese">Cheese</option>
+                            <option value="butter">Butter</option>
+                            <option value="cream">Cream</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Variant</span></label>
+                        <input type="text" id="variant" class="input input-bordered" placeholder="e.g., Chocolate, Plain" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Milk Type</span></label>
+                        <select id="milk_type_id" class="select select-bordered">
+                            <option value="">-- Select Milk Type --</option>
+                            <option value="1">Cow Milk</option>
+                            <option value="2">Goat Milk</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Unit Size</span></label>
+                        <input type="number" id="unit_size" class="input input-bordered" step="0.01" placeholder="e.g., 1000" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Unit Measure</span></label>
+                        <select id="unit_measure" class="select select-bordered">
+                            <option value="ml">Milliliters (ml)</option>
+                            <option value="L">Liters (L)</option>
+                            <option value="g">Grams (g)</option>
+                            <option value="kg">Kilograms (kg)</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Base Unit</span></label>
+                        <select id="base_unit" class="select select-bordered">
+                            <option value="piece">Piece</option>
+                            <option value="bottle">Bottle</option>
+                            <option value="pack">Pack</option>
+                            <option value="tub">Tub</option>
+                            <option value="jar">Jar</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Box Unit</span></label>
+                        <select id="box_unit" class="select select-bordered">
+                            <option value="box">Box</option>
+                            <option value="case">Case</option>
+                            <option value="crate">Crate</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Pieces Per Box</span></label>
+                        <input type="number" id="pieces_per_box" class="input input-bordered" value="1" min="1" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Shelf Life (days)</span></label>
+                        <input type="number" id="shelf_life_days" class="input input-bordered" value="7" min="1" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Storage Temp Min (°C)</span></label>
+                        <input type="number" id="storage_temp_min" class="input input-bordered" value="2" step="0.1" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Storage Temp Max (°C)</span></label>
+                        <input type="number" id="storage_temp_max" class="input input-bordered" value="6" step="0.1" />
+                    </div>
+                    <div class="form-control md:col-span-2">
+                        <label class="label"><span class="label-text">Description</span></label>
+                        <textarea id="description" class="textarea textarea-bordered" rows="2"></textarea>
+                    </div>
+                    <div class="form-control md:col-span-2">
+                        <label class="label cursor-pointer justify-start gap-4">
+                            <input type="checkbox" id="is_active" class="toggle toggle-primary" checked />
+                            <span class="label-text">Active Product</span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('formModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveBtn">
+                        <i class="fas fa-save mr-2"></i>Save Product
+                    </button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Delete Confirmation -->
+    <dialog id="deleteModal" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg text-error"><i class="fas fa-exclamation-triangle mr-2"></i>Confirm Delete</h3>
+            <p class="py-4">Are you sure you want to delete <strong id="deleteName"></strong>?</p>
+            <div class="modal-action">
+                <button class="btn btn-ghost" onclick="document.getElementById('deleteModal').close()">Cancel</button>
+                <button class="btn btn-error" onclick="confirmDelete()">
+                    <i class="fas fa-trash mr-2"></i>Delete
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <div id="toastContainer" class="toast toast-end"></div>
+    
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/admin/admin.service.js"></script>
+    
+    <script>
+        let allData = [];
+        let filteredData = [];
+        let recordToDelete = null;
+        
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('-translate-x-full');
+            document.getElementById('sidebarBackdrop').classList.toggle('hidden');
+        }
+        
+        document.getElementById('themeToggle').addEventListener('change', function() {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+        
+        const savedTheme = localStorage.getItem('theme') || 'emerald';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        document.getElementById('themeToggle').checked = savedTheme === 'dark';
+        
+        function formatCurrency(amount) {
+            return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        }
+        
+        function getCategoryLabel(category) {
+            const labels = {
+                'pasteurized_milk': 'Pasteurized Milk',
+                'flavored_milk': 'Flavored Milk',
+                'yogurt': 'Yogurt',
+                'cheese': 'Cheese',
+                'butter': 'Butter',
+                'cream': 'Cream'
+            };
+            return labels[category] || category;
+        }
+        
+        function getCategoryIcon(category) {
+            const icons = {
+                'pasteurized_milk': 'fa-bottle-water',
+                'flavored_milk': 'fa-mug-hot',
+                'yogurt': 'fa-jar',
+                'cheese': 'fa-cheese',
+                'butter': 'fa-cube',
+                'cream': 'fa-fill-drip'
+            };
+            return icons[category] || 'fa-box';
+        }
+        
+        async function loadData() {
+            try {
+                const response = await AdminService.getProducts();
+                if (response.success) {
+                    allData = response.data?.products || response.data || [];
+                    filteredData = [...allData];
+                    updateStats();
+                    renderGrid();
+                }
+            } catch (error) {
+                console.error('Error loading data:', error);
+                showToast('Failed to load products', 'error');
+            }
+        }
+        
+        function updateStats() {
+            document.getElementById('statTotal').textContent = allData.length;
+            document.getElementById('statActive').textContent = allData.filter(p => p.is_active == 1).length;
+            // Low stock stat removed - no stock_quantity in products table
+            document.getElementById('statLowStock').textContent = 0;
+            
+            const categories = [...new Set(allData.map(p => p.category))];
+            document.getElementById('statCategories').textContent = categories.length;
+        }
+        
+        function filterData() {
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const category = document.getElementById('categoryFilter').value;
+            const status = document.getElementById('statusFilter').value;
+            
+            filteredData = allData.filter(item => {
+                const matchSearch = !search || 
+                    item.product_name?.toLowerCase().includes(search) ||
+                    item.product_code?.toLowerCase().includes(search) ||
+                    item.variant?.toLowerCase().includes(search);
+                const matchCategory = !category || item.category === category;
+                const matchStatus = status === '' || String(item.is_active) === status;
+                return matchSearch && matchCategory && matchStatus;
+            });
+            
+            renderGrid();
+        }
+        
+        function renderGrid() {
+            const grid = document.getElementById('productsGrid');
+            
+            if (filteredData.length === 0) {
+                grid.innerHTML = `<div class="col-span-full text-center py-12">
+                    <i class="fas fa-box-open text-4xl text-base-content/20 mb-4"></i>
+                    <p class="text-base-content/60">No products found</p>
+                </div>`;
+                return;
+            }
+            
+            grid.innerHTML = filteredData.map(item => {
+                return `
+                <div class="bg-base-100 rounded-2xl border border-base-300 overflow-hidden hover:shadow-lg transition-shadow">
+                    <div class="p-4">
+                        <div class="flex items-start justify-between mb-3">
+                            <div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
+                                <i class="fas ${getCategoryIcon(item.category)} text-primary text-xl"></i>
+                            </div>
+                            <div class="flex gap-1">
+                                ${item.is_active == 1 ? 
+                                    '<span class="badge badge-success badge-sm">Active</span>' : 
+                                    '<span class="badge badge-error badge-sm">Inactive</span>'
+                                }
+                            </div>
+                        </div>
+                        
+                        <h3 class="font-semibold text-base-content mb-1 line-clamp-1">${item.product_name}</h3>
+                        <p class="text-xs text-base-content/60 mb-1">Code: ${item.product_code}</p>
+                        ${item.variant ? `<p class="text-xs text-base-content/60 mb-3">Variant: ${item.variant}</p>` : '<div class="mb-3"></div>'}
+                        
+                        <div class="flex items-center justify-between text-sm mb-2">
+                            <span class="text-base-content/60">Category</span>
+                            <span class="badge badge-ghost badge-sm">${getCategoryLabel(item.category)}</span>
+                        </div>
+                        
+                        <div class="flex items-center justify-between text-sm mb-2">
+                            <span class="text-base-content/60">Size</span>
+                            <span>${item.unit_size || '-'} ${item.unit_measure || ''}</span>
+                        </div>
+                        
+                        <div class="flex items-center justify-between text-sm mb-2">
+                            <span class="text-base-content/60">Milk Type</span>
+                            <span>${item.milk_type_name || 'Not specified'}</span>
+                        </div>
+                        
+                        <div class="flex items-center justify-between text-sm mb-4">
+                            <span class="text-base-content/60">Shelf Life</span>
+                            <span>${item.shelf_life_days || 7} days</span>
+                        </div>
+                        
+                        <div class="flex gap-2">
+                            <button class="btn btn-sm btn-ghost flex-1" onclick="editRecord(${item.id})">
+                                <i class="fas fa-edit"></i> Edit
+                            </button>
+                            <button class="btn btn-sm btn-ghost text-error" onclick="deleteRecord(${item.id}, '${item.product_name}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `}).join('');
+        }
+        
+        function openAddModal() {
+            document.getElementById('modalTitle').textContent = 'Add New Product';
+            document.getElementById('dataForm').reset();
+            document.getElementById('recordId').value = '';
+            document.getElementById('is_active').checked = true;
+            document.getElementById('formModal').showModal();
+        }
+        
+        async function editRecord(id) {
+            try {
+                const response = await AdminService.getProduct(id);
+                if (response.success) {
+                    const data = response.data;
+                    document.getElementById('modalTitle').textContent = 'Edit Product';
+                    document.getElementById('recordId').value = data.id;
+                    document.getElementById('product_name').value = data.product_name || '';
+                    document.getElementById('product_code').value = data.product_code || '';
+                    document.getElementById('category').value = data.category || 'pasteurized_milk';
+                    document.getElementById('variant').value = data.variant || '';
+                    document.getElementById('milk_type_id').value = data.milk_type_id || '';
+                    document.getElementById('unit_size').value = data.unit_size || '';
+                    document.getElementById('unit_measure').value = data.unit_measure || 'ml';
+                    document.getElementById('base_unit').value = data.base_unit || 'piece';
+                    document.getElementById('box_unit').value = data.box_unit || 'box';
+                    document.getElementById('pieces_per_box').value = data.pieces_per_box || 1;
+                    document.getElementById('shelf_life_days').value = data.shelf_life_days || 7;
+                    document.getElementById('storage_temp_min').value = data.storage_temp_min || 2;
+                    document.getElementById('storage_temp_max').value = data.storage_temp_max || 6;
+                    document.getElementById('description').value = data.description || '';
+                    document.getElementById('is_active').checked = data.is_active == 1;
+                    document.getElementById('formModal').showModal();
+                }
+            } catch (error) {
+                console.error('Error loading record:', error);
+                showToast('Failed to load product details', 'error');
+            }
+        }
+        
+        async function saveData(event) {
+            event.preventDefault();
+            
+            const recordId = document.getElementById('recordId').value;
+            const formData = {
+                product_name: document.getElementById('product_name').value,
+                product_code: document.getElementById('product_code').value,
+                category: document.getElementById('category').value,
+                variant: document.getElementById('variant').value || null,
+                milk_type_id: document.getElementById('milk_type_id').value || null,
+                unit_size: document.getElementById('unit_size').value || null,
+                unit_measure: document.getElementById('unit_measure').value,
+                base_unit: document.getElementById('base_unit').value,
+                box_unit: document.getElementById('box_unit').value,
+                pieces_per_box: document.getElementById('pieces_per_box').value || 1,
+                shelf_life_days: document.getElementById('shelf_life_days').value || 7,
+                storage_temp_min: document.getElementById('storage_temp_min').value || 2,
+                storage_temp_max: document.getElementById('storage_temp_max').value || 6,
+                description: document.getElementById('description').value,
+                is_active: document.getElementById('is_active').checked ? 1 : 0
+            };
+            
+            try {
+                const saveBtn = document.getElementById('saveBtn');
+                saveBtn.classList.add('loading');
+                saveBtn.disabled = true;
+                
+                let response;
+                if (recordId) {
+                    response = await AdminService.updateProduct(recordId, formData);
+                } else {
+                    response = await AdminService.createProduct(formData);
+                }
+                
+                if (response.success) {
+                    showToast(recordId ? 'Product updated successfully' : 'Product created successfully', 'success');
+                    document.getElementById('formModal').close();
+                    loadData();
+                } else {
+                    showToast(response.message || 'Failed to save product', 'error');
+                }
+            } catch (error) {
+                console.error('Error saving:', error);
+                showToast('Failed to save product', 'error');
+            } finally {
+                const saveBtn = document.getElementById('saveBtn');
+                saveBtn.classList.remove('loading');
+                saveBtn.disabled = false;
+            }
+        }
+        
+        function deleteRecord(id, name) {
+            recordToDelete = id;
+            document.getElementById('deleteName').textContent = name;
+            document.getElementById('deleteModal').showModal();
+        }
+        
+        async function confirmDelete() {
+            if (!recordToDelete) return;
+            
+            try {
+                const response = await AdminService.deleteProduct(recordToDelete);
+                if (response.success) {
+                    showToast('Product deleted/deactivated successfully', 'success');
+                    document.getElementById('deleteModal').close();
+                    loadData();
+                } else {
+                    showToast(response.message || 'Failed to delete product', 'error');
+                }
+            } catch (error) {
+                console.error('Error deleting:', error);
+                showToast('Failed to delete product', 'error');
+            }
+            recordToDelete = null;
+        }
+        
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = { 'success': 'alert-success', 'error': 'alert-error', 'warning': 'alert-warning', 'info': 'alert-info' }[type] || 'alert-info';
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const user = await AuthService.getCurrentUser();
+                if (user) {
+                    document.getElementById('sidebarUserName').textContent = user.full_name;
+                    document.getElementById('userInitials').textContent = user.full_name.split(' ').map(n => n[0]).join('').substring(0, 2);
+                }
+                await loadData();
+            } catch (error) { console.error('Init error:', error); }
+        });
+    </script>
+</body>
+</html>

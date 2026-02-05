@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Users Management | Highland Fresh Admin</title>
+    
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Axios -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-cogs text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Admin Panel</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <!-- Main Menu -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- User Management -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">User Management</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="users.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-users-cog w-5 text-center"></i>
+                            <span class="flex-1">Users & Accounts</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Supply Chain -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Supply Chain</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="farmers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-tractor w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Farmers</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="suppliers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-truck w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Suppliers</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="customers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-store w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Customers</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Product Catalog -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Product Catalog</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="products.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-box w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Products</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="recipes.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-clipboard-list w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Recipes</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="ingredients.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-seedling w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Ingredients</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Infrastructure -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Infrastructure</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="storage.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-warehouse w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Storage & Tanks</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="chillers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-snowflake w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Chillers</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Quality Control -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Quality Control</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="qc-standards.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-clipboard-check w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">QC Standards</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="grading-standards.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-medal w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Grading Standards</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+        
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">GM</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">General Manager</p>
+                    <p class="text-xs text-base-content/60 truncate">Administrator</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <div class="breadcrumbs text-sm">
+                    <ul>
+                        <li><a href="dashboard.html">Admin</a></li>
+                        <li class="font-semibold">Users & Accounts</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+        
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+            
+            <!-- Page Header -->
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+                <div>
+                    <h1 class="text-2xl font-bold text-base-content">Users & Accounts</h1>
+                    <p class="text-base-content/60">Manage user accounts, roles, and permissions</p>
+                </div>
+                <button class="btn btn-primary" onclick="openAddUserModal()">
+                    <i class="fas fa-plus mr-2"></i>
+                    Add User
+                </button>
+            </div>
+            
+            <!-- Filters & Search -->
+            <div class="bg-base-100 rounded-2xl border border-base-300 p-4 mb-6">
+                <div class="flex flex-col md:flex-row gap-4">
+                    <div class="flex-1">
+                        <label class="input input-bordered flex items-center gap-2">
+                            <i class="fas fa-search text-base-content/40"></i>
+                            <input type="text" id="searchInput" placeholder="Search users..." class="grow" onkeyup="filterUsers()"/>
+                        </label>
+                    </div>
+                    <select id="roleFilter" class="select select-bordered w-full md:w-48" onchange="filterUsers()">
+                        <option value="">All Roles</option>
+                        <option value="general_manager">General Manager</option>
+                        <option value="qc_officer">QC Officer</option>
+                        <option value="production_staff">Production Staff</option>
+                        <option value="warehouse_raw">Warehouse (Raw)</option>
+                        <option value="warehouse_fg">Warehouse (FG)</option>
+                        <option value="sales_custodian">Sales Custodian</option>
+                        <option value="cashier">Cashier</option>
+                        <option value="purchaser">Purchaser</option>
+                        <option value="finance_officer">Finance Officer</option>
+                        <option value="bookkeeper">Bookkeeper</option>
+                        <option value="maintenance_head">Maintenance Head</option>
+                    </select>
+                    <select id="statusFilter" class="select select-bordered w-full md:w-40" onchange="filterUsers()">
+                        <option value="">All Status</option>
+                        <option value="1">Active</option>
+                        <option value="0">Inactive</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Users Table -->
+            <div class="bg-base-100 rounded-2xl border border-base-300 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="table">
+                        <thead class="bg-base-200">
+                            <tr>
+                                <th>User</th>
+                                <th>Username</th>
+                                <th>Role</th>
+                                <th>Email</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th class="text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                            <tr>
+                                <td colspan="7" class="text-center py-12">
+                                    <span class="loading loading-spinner loading-lg text-primary"></span>
+                                    <p class="mt-2 text-base-content/60">Loading users...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Pagination -->
+                <div class="flex items-center justify-between p-4 border-t border-base-300">
+                    <div class="text-sm text-base-content/60">
+                        Showing <span id="showingStart">0</span> to <span id="showingEnd">0</span> of <span id="totalRecords">0</span> users
+                    </div>
+                    <div class="join" id="pagination"></div>
+                </div>
+            </div>
+            
+        </main>
+    </div>
+    
+    <!-- Add/Edit User Modal -->
+    <dialog id="userModal" class="modal">
+        <div class="modal-box w-11/12 max-w-2xl">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-4" id="modalTitle">Add New User</h3>
+            
+            <form id="userForm" onsubmit="saveUser(event)">
+                <input type="hidden" id="userId" value="">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- First Name -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">First Name <span class="text-error">*</span></span>
+                        </label>
+                        <input type="text" id="firstName" class="input input-bordered" required />
+                    </div>
+                    
+                    <!-- Last Name -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Last Name <span class="text-error">*</span></span>
+                        </label>
+                        <input type="text" id="lastName" class="input input-bordered" required />
+                    </div>
+                    
+                    <!-- Username -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Username <span class="text-error">*</span></span>
+                        </label>
+                        <input type="text" id="username" class="input input-bordered" required />
+                    </div>
+                    
+                    <!-- Email -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Email</span>
+                        </label>
+                        <input type="email" id="email" class="input input-bordered" />
+                    </div>
+                    
+                    <!-- Employee ID -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Employee ID</span>
+                        </label>
+                        <input type="text" id="employeeId" class="input input-bordered" />
+                    </div>
+                    
+                    <!-- Role -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Role <span class="text-error">*</span></span>
+                        </label>
+                        <select id="role" class="select select-bordered" required>
+                            <option value="">Select Role</option>
+                            <option value="general_manager">General Manager</option>
+                            <option value="qc_officer">QC Officer</option>
+                            <option value="production_staff">Production Staff</option>
+                            <option value="warehouse_raw">Warehouse (Raw Materials)</option>
+                            <option value="warehouse_fg">Warehouse (Finished Goods)</option>
+                            <option value="sales_custodian">Sales Custodian</option>
+                            <option value="cashier">Cashier</option>
+                            <option value="purchaser">Purchaser</option>
+                            <option value="finance_officer">Finance Officer</option>
+                            <option value="bookkeeper">Bookkeeper</option>
+                            <option value="maintenance_head">Maintenance Head</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Password -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Password <span class="text-error" id="passwordRequired">*</span></span>
+                        </label>
+                        <input type="password" id="password" class="input input-bordered" />
+                        <label class="label">
+                            <span class="label-text-alt text-base-content/60" id="passwordHint">Minimum 6 characters</span>
+                        </label>
+                    </div>
+                    
+                    <!-- Confirm Password -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Confirm Password <span class="text-error" id="confirmRequired">*</span></span>
+                        </label>
+                        <input type="password" id="confirmPassword" class="input input-bordered" />
+                    </div>
+                </div>
+                
+                <!-- Active Status -->
+                <div class="form-control mt-4">
+                    <label class="label cursor-pointer justify-start gap-4">
+                        <input type="checkbox" id="isActive" class="toggle toggle-primary" checked />
+                        <span class="label-text">Active Account</span>
+                    </label>
+                </div>
+                
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('userModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveBtn">
+                        <i class="fas fa-save mr-2"></i>
+                        Save User
+                    </button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
+    
+    <!-- Delete Confirmation Modal -->
+    <dialog id="deleteModal" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg text-error">
+                <i class="fas fa-exclamation-triangle mr-2"></i>
+                Confirm Deactivation
+            </h3>
+            <p class="py-4">Are you sure you want to deactivate the user <strong id="deleteUserName"></strong>? They will no longer be able to log in.</p>
+            <div class="modal-action">
+                <button class="btn btn-ghost" onclick="document.getElementById('deleteModal').close()">Cancel</button>
+                <button class="btn btn-error" id="confirmDeleteBtn" onclick="confirmDelete()">
+                    <i class="fas fa-user-slash mr-2"></i>
+                    Deactivate
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
+    
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end"></div>
+    
+    <!-- Scripts -->
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/admin/admin.service.js"></script>
+    
+    <script>
+        let allUsers = [];
+        let filteredUsers = [];
+        let currentPage = 1;
+        const pageSize = 10;
+        let userToDelete = null;
+        
+        // Sidebar toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+        
+        // Theme toggle
+        document.getElementById('themeToggle').addEventListener('change', function() {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+        
+        // Load saved theme
+        const savedTheme = localStorage.getItem('theme') || 'emerald';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        document.getElementById('themeToggle').checked = savedTheme === 'dark';
+        
+        // Format role for display
+        function formatRole(role) {
+            const roles = {
+                'general_manager': 'General Manager',
+                'qc_officer': 'QC Officer',
+                'production_staff': 'Production Staff',
+                'warehouse_raw': 'Warehouse (Raw)',
+                'warehouse_fg': 'Warehouse (FG)',
+                'sales_custodian': 'Sales Custodian',
+                'cashier': 'Cashier',
+                'purchaser': 'Purchaser',
+                'finance_officer': 'Finance Officer',
+                'bookkeeper': 'Bookkeeper',
+                'maintenance_head': 'Maintenance Head'
+            };
+            return roles[role] || role;
+        }
+        
+        // Get role badge class
+        function getRoleBadgeClass(role) {
+            const classes = {
+                'general_manager': 'badge-primary',
+                'qc_officer': 'badge-secondary',
+                'production_staff': 'badge-accent',
+                'warehouse_raw': 'badge-info',
+                'warehouse_fg': 'badge-info',
+                'sales_custodian': 'badge-warning',
+                'cashier': 'badge-success',
+                'purchaser': 'badge-neutral',
+                'finance_officer': 'badge-error',
+                'bookkeeper': 'badge-ghost',
+                'maintenance_head': 'badge-neutral'
+            };
+            return classes[role] || 'badge-ghost';
+        }
+        
+        // Load users
+        async function loadUsers() {
+            try {
+                const response = await AdminService.getUsers();
+                if (response.success) {
+                    allUsers = response.data || [];
+                    filteredUsers = [...allUsers];
+                    renderUsers();
+                }
+            } catch (error) {
+                console.error('Error loading users:', error);
+                showToast('Failed to load users', 'error');
+            }
+        }
+        
+        // Filter users
+        function filterUsers() {
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const role = document.getElementById('roleFilter').value;
+            const status = document.getElementById('statusFilter').value;
+            
+            filteredUsers = allUsers.filter(user => {
+                const matchSearch = !search || 
+                    user.full_name?.toLowerCase().includes(search) ||
+                    user.username?.toLowerCase().includes(search) ||
+                    user.email?.toLowerCase().includes(search);
+                const matchRole = !role || user.role === role;
+                const matchStatus = status === '' || String(user.is_active) === status;
+                
+                return matchSearch && matchRole && matchStatus;
+            });
+            
+            currentPage = 1;
+            renderUsers();
+        }
+        
+        // Render users table
+        function renderUsers() {
+            const tbody = document.getElementById('usersTableBody');
+            const start = (currentPage - 1) * pageSize;
+            const end = start + pageSize;
+            const pageUsers = filteredUsers.slice(start, end);
+            
+            if (pageUsers.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="text-center py-12">
+                            <i class="fas fa-users text-4xl text-base-content/20 mb-4"></i>
+                            <p class="text-base-content/60">No users found</p>
+                        </td>
+                    </tr>
+                `;
+            } else {
+                tbody.innerHTML = pageUsers.map(user => `
+                    <tr class="hover">
+                        <td>
+                            <div class="flex items-center gap-3">
+                                <div class="avatar placeholder">
+                                    <div class="w-10 rounded-full bg-primary/10 text-primary">
+                                        <span>${(user.full_name || 'U').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="font-semibold">${user.full_name || '-'}</div>
+                                    <div class="text-xs text-base-content/60">${user.employee_id || 'No Employee ID'}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="font-mono text-sm">${user.username}</td>
+                        <td>
+                            <span class="badge ${getRoleBadgeClass(user.role)} badge-sm">${formatRole(user.role)}</span>
+                        </td>
+                        <td class="text-sm">${user.email || '-'}</td>
+                        <td>
+                            ${user.is_active ? 
+                                '<span class="badge badge-success badge-sm gap-1"><i class="fas fa-check-circle"></i> Active</span>' : 
+                                '<span class="badge badge-error badge-sm gap-1"><i class="fas fa-times-circle"></i> Inactive</span>'
+                            }
+                        </td>
+                        <td class="text-sm text-base-content/60">${new Date(user.created_at).toLocaleDateString()}</td>
+                        <td>
+                            <div class="flex items-center justify-center gap-1">
+                                <button class="btn btn-ghost btn-sm btn-square" onclick="editUser(${user.id})" title="Edit">
+                                    <i class="fas fa-edit text-primary"></i>
+                                </button>
+                                <button class="btn btn-ghost btn-sm btn-square" onclick="resetPassword(${user.id})" title="Reset Password">
+                                    <i class="fas fa-key text-warning"></i>
+                                </button>
+                                ${user.is_active ? `
+                                    <button class="btn btn-ghost btn-sm btn-square" onclick="deleteUser(${user.id}, '${user.full_name}')" title="Deactivate">
+                                        <i class="fas fa-user-slash text-error"></i>
+                                    </button>
+                                ` : `
+                                    <button class="btn btn-ghost btn-sm btn-square" onclick="activateUser(${user.id})" title="Activate">
+                                        <i class="fas fa-user-check text-success"></i>
+                                    </button>
+                                `}
+                            </div>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+            
+            // Update pagination info
+            document.getElementById('showingStart').textContent = filteredUsers.length === 0 ? 0 : start + 1;
+            document.getElementById('showingEnd').textContent = Math.min(end, filteredUsers.length);
+            document.getElementById('totalRecords').textContent = filteredUsers.length;
+            
+            // Render pagination
+            renderPagination();
+        }
+        
+        // Render pagination
+        function renderPagination() {
+            const totalPages = Math.ceil(filteredUsers.length / pageSize);
+            const pagination = document.getElementById('pagination');
+            
+            if (totalPages <= 1) {
+                pagination.innerHTML = '';
+                return;
+            }
+            
+            let html = '';
+            
+            // Previous button
+            html += `<button class="join-item btn btn-sm ${currentPage === 1 ? 'btn-disabled' : ''}" onclick="goToPage(${currentPage - 1})">
+                <i class="fas fa-chevron-left"></i>
+            </button>`;
+            
+            // Page numbers
+            for (let i = 1; i <= totalPages; i++) {
+                if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
+                    html += `<button class="join-item btn btn-sm ${currentPage === i ? 'btn-active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+                } else if (i === currentPage - 2 || i === currentPage + 2) {
+                    html += `<button class="join-item btn btn-sm btn-disabled">...</button>`;
+                }
+            }
+            
+            // Next button
+            html += `<button class="join-item btn btn-sm ${currentPage === totalPages ? 'btn-disabled' : ''}" onclick="goToPage(${currentPage + 1})">
+                <i class="fas fa-chevron-right"></i>
+            </button>`;
+            
+            pagination.innerHTML = html;
+        }
+        
+        // Go to page
+        function goToPage(page) {
+            const totalPages = Math.ceil(filteredUsers.length / pageSize);
+            if (page >= 1 && page <= totalPages) {
+                currentPage = page;
+                renderUsers();
+            }
+        }
+        
+        // Open add user modal
+        function openAddUserModal() {
+            document.getElementById('modalTitle').textContent = 'Add New User';
+            document.getElementById('userForm').reset();
+            document.getElementById('userId').value = '';
+            document.getElementById('isActive').checked = true;
+            document.getElementById('password').required = true;
+            document.getElementById('confirmPassword').required = true;
+            document.getElementById('passwordRequired').style.display = 'inline';
+            document.getElementById('confirmRequired').style.display = 'inline';
+            document.getElementById('passwordHint').textContent = 'Minimum 6 characters';
+            document.getElementById('userModal').showModal();
+        }
+        
+        // Edit user
+        async function editUser(id) {
+            try {
+                const response = await AdminService.getUser(id);
+                if (response.success) {
+                    const user = response.data;
+                    document.getElementById('modalTitle').textContent = 'Edit User';
+                    document.getElementById('userId').value = user.id;
+                    document.getElementById('firstName').value = user.first_name || '';
+                    document.getElementById('lastName').value = user.last_name || '';
+                    document.getElementById('username').value = user.username;
+                    document.getElementById('email').value = user.email || '';
+                    document.getElementById('employeeId').value = user.employee_id || '';
+                    document.getElementById('role').value = user.role;
+                    document.getElementById('isActive').checked = user.is_active == 1;
+                    document.getElementById('password').value = '';
+                    document.getElementById('confirmPassword').value = '';
+                    document.getElementById('password').required = false;
+                    document.getElementById('confirmPassword').required = false;
+                    document.getElementById('passwordRequired').style.display = 'none';
+                    document.getElementById('confirmRequired').style.display = 'none';
+                    document.getElementById('passwordHint').textContent = 'Leave blank to keep current password';
+                    document.getElementById('userModal').showModal();
+                }
+            } catch (error) {
+                console.error('Error loading user:', error);
+                showToast('Failed to load user details', 'error');
+            }
+        }
+        
+        // Save user
+        async function saveUser(event) {
+            event.preventDefault();
+            
+            const password = document.getElementById('password').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            
+            if (password && password !== confirmPassword) {
+                showToast('Passwords do not match', 'error');
+                return;
+            }
+            
+            if (password && password.length < 6) {
+                showToast('Password must be at least 6 characters', 'error');
+                return;
+            }
+            
+            const userId = document.getElementById('userId').value;
+            const userData = {
+                first_name: document.getElementById('firstName').value,
+                last_name: document.getElementById('lastName').value,
+                full_name: `${document.getElementById('firstName').value} ${document.getElementById('lastName').value}`.trim(),
+                username: document.getElementById('username').value,
+                email: document.getElementById('email').value,
+                employee_id: document.getElementById('employeeId').value,
+                role: document.getElementById('role').value,
+                is_active: document.getElementById('isActive').checked ? 1 : 0
+            };
+            
+            if (password) {
+                userData.password = password;
+            }
+            
+            try {
+                const saveBtn = document.getElementById('saveBtn');
+                saveBtn.classList.add('loading');
+                saveBtn.disabled = true;
+                
+                let response;
+                if (userId) {
+                    response = await AdminService.updateUser(userId, userData);
+                } else {
+                    response = await AdminService.createUser(userData);
+                }
+                
+                if (response.success) {
+                    showToast(userId ? 'User updated successfully' : 'User created successfully', 'success');
+                    document.getElementById('userModal').close();
+                    loadUsers();
+                } else {
+                    showToast(response.message || 'Failed to save user', 'error');
+                }
+            } catch (error) {
+                console.error('Error saving user:', error);
+                showToast('Failed to save user', 'error');
+            } finally {
+                const saveBtn = document.getElementById('saveBtn');
+                saveBtn.classList.remove('loading');
+                saveBtn.disabled = false;
+            }
+        }
+        
+        // Delete user (deactivate)
+        function deleteUser(id, name) {
+            userToDelete = id;
+            document.getElementById('deleteUserName').textContent = name;
+            document.getElementById('deleteModal').showModal();
+        }
+        
+        // Confirm delete
+        async function confirmDelete() {
+            if (!userToDelete) return;
+            
+            try {
+                const response = await AdminService.updateUser(userToDelete, { is_active: 0 });
+                if (response.success) {
+                    showToast('User deactivated successfully', 'success');
+                    document.getElementById('deleteModal').close();
+                    loadUsers();
+                } else {
+                    showToast(response.message || 'Failed to deactivate user', 'error');
+                }
+            } catch (error) {
+                console.error('Error deactivating user:', error);
+                showToast('Failed to deactivate user', 'error');
+            }
+            
+            userToDelete = null;
+        }
+        
+        // Activate user
+        async function activateUser(id) {
+            try {
+                const response = await AdminService.updateUser(id, { is_active: 1 });
+                if (response.success) {
+                    showToast('User activated successfully', 'success');
+                    loadUsers();
+                } else {
+                    showToast(response.message || 'Failed to activate user', 'error');
+                }
+            } catch (error) {
+                console.error('Error activating user:', error);
+                showToast('Failed to activate user', 'error');
+            }
+        }
+        
+        // Reset password
+        async function resetPassword(id) {
+            const newPassword = prompt('Enter new password (minimum 6 characters):');
+            if (!newPassword) return;
+            
+            if (newPassword.length < 6) {
+                showToast('Password must be at least 6 characters', 'error');
+                return;
+            }
+            
+            try {
+                const response = await AdminService.updateUser(id, { password: newPassword });
+                if (response.success) {
+                    showToast('Password reset successfully', 'success');
+                } else {
+                    showToast(response.message || 'Failed to reset password', 'error');
+                }
+            } catch (error) {
+                console.error('Error resetting password:', error);
+                showToast('Failed to reset password', 'error');
+            }
+        }
+        
+        // Show toast
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = {
+                'success': 'alert-success',
+                'error': 'alert-error',
+                'warning': 'alert-warning',
+                'info': 'alert-info'
+            }[type] || 'alert-info';
+            
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const user = await AuthService.getCurrentUser();
+                if (user) {
+                    document.getElementById('sidebarUserName').textContent = user.full_name;
+                    document.getElementById('userInitials').textContent = user.full_name.split(' ').map(n => n[0]).join('').substring(0, 2);
+                }
+                
+                await loadUsers();
+            } catch (error) {
+                console.error('Init error:', error);
+            }
+        });
+    </script>
+</body>
+</html>

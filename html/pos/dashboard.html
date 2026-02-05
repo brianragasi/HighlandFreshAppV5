@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Cashier POS | Highland Fresh</title>
+
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .bento-card {
+            @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: oklch(var(--b2));
+            border-radius: 3px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: oklch(var(--bc) / 0.2);
+            border-radius: 3px;
+        }
+
+        .sidebar-transition {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .stat-value {
+            font-variant-numeric: tabular-nums;
+        }
+
+        .cutoff-warning {
+            animation: pulse-warning 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-warning {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-cash-register text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Cashier / POS</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <!-- Main Menu -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-th-large w-5 text-center"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Sales -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Sales</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="sale.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-bolt w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Quick Sale (POS)</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="history.html?type=sales"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-receipt w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Transaction History</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Collections -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Collections</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="collect.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-hand-holding-dollar w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Collect Payment</span>
+                            <span class="badge badge-sm badge-warning" id="pendingCollectionsBadge">0</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="history.html?type=collections"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-clock-rotate-left w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Collection History</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Reports -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="reports/daily_summary.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-chart-pie w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Daily Summary</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="reports/cash_position.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-wallet w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Cash Position</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">CA</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Cashier</p>
+                    <p class="text-xs text-base-content/60 truncate">Point of Sale</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0"
+                        class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a><i class="fas fa-user-cog w-4"></i> Profile</a></li>
+                        <li><a><i class="fas fa-cog w-4"></i> Settings</a></li>
+                        <li class="border-t border-base-300 mt-1 pt-1">
+                            <a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i>
+                                Logout</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold text-base-content">Cashier Dashboard</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <!-- Current Time -->
+                <div class="hidden md:flex items-center gap-2 px-3 py-1.5 bg-base-200 rounded-lg">
+                    <i class="fas fa-clock text-base-content/60"></i>
+                    <span id="currentTime" class="font-mono text-sm">--:--:--</span>
+                </div>
+
+                <!-- Theme toggle -->
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- 5PM Cutoff Banner -->
+            <div id="cutoffBanner" class="hidden mb-6">
+                <div class="alert alert-warning cutoff-warning">
+                    <i class="fas fa-exclamation-triangle text-xl"></i>
+                    <div>
+                        <h3 class="font-bold">Daily Cut-off Reminder</h3>
+                        <div class="text-sm" id="cutoffMessage">All transactions must be reconciled by 5:00 PM</div>
+                    </div>
+                    <div>
+                        <span class="countdown font-mono text-2xl" id="cutoffCountdown">
+                            <span style="--value:0;"></span>h
+                            <span style="--value:0;"></span>m
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Welcome Banner -->
+            <div class="bg-gradient-to-r from-primary to-primary/80 rounded-2xl p-6 mb-6 text-primary-content">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div>
+                        <h2 class="text-2xl font-bold mb-1">Welcome, <span id="welcomeName">Cashier</span>!</h2>
+                        <p class="text-primary-content/80">Today's date: <span id="todayDate">--</span></p>
+                    </div>
+                    <div class="flex gap-2">
+                        <a href="sale.html" class="btn btn-lg bg-white/20 border-white/30 text-white hover:bg-white/30">
+                            <i class="fas fa-bolt"></i> New Sale
+                        </a>
+                        <a href="collect.html" class="btn btn-lg bg-white/20 border-white/30 text-white hover:bg-white/30">
+                            <i class="fas fa-hand-holding-dollar"></i> Collect Payment
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bento Grid Stats -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <!-- Today's Cash Sales -->
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                                <i class="fas fa-peso-sign text-emerald-500"></i>
+                            </div>
+                            <span class="badge badge-success badge-sm">Today</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="todayCashSales">₱0.00</p>
+                        <p class="text-sm text-base-content/60">Cash Sales</p>
+                    </div>
+                </div>
+
+                <!-- Today's Collections -->
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                                <i class="fas fa-hand-holding-dollar text-blue-500"></i>
+                            </div>
+                            <span class="badge badge-info badge-sm">Today</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="todayCollections">₱0.00</p>
+                        <p class="text-sm text-base-content/60">Collections</p>
+                    </div>
+                </div>
+
+                <!-- Pending Collections -->
+                <a href="collect.html" class="bento-card card bg-base-100 border border-base-300 cursor-pointer">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                                <i class="fas fa-clock text-amber-500"></i>
+                            </div>
+                            <span class="badge badge-warning badge-sm">Pending</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="pendingCollections">₱0.00</p>
+                        <p class="text-sm text-base-content/60">Outstanding AR</p>
+                    </div>
+                </a>
+
+                <!-- Cash on Hand -->
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center">
+                                <i class="fas fa-wallet text-violet-500"></i>
+                            </div>
+                            <span class="badge badge-ghost badge-sm">Current</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="cashOnHand">₱0.00</p>
+                        <p class="text-sm text-base-content/60">Cash on Hand</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+                <!-- Recent Transactions -->
+                <div class="lg:col-span-2">
+                    <div class="card bg-base-100 border border-base-300">
+                        <div class="card-body">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="card-title text-lg">
+                                    <i class="fas fa-receipt text-primary mr-2"></i>
+                                    Recent Transactions
+                                </h3>
+                                <a href="history.html" class="btn btn-ghost btn-sm">View All</a>
+                            </div>
+
+                            <div class="overflow-x-auto">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Code</th>
+                                            <th>Type</th>
+                                            <th>Customer</th>
+                                            <th>Amount</th>
+                                            <th>Payment</th>
+                                            <th>Time</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="recentTransactionsTable">
+                                        <tr>
+                                            <td colspan="6" class="text-center py-8 text-base-content/60">
+                                                <i class="fas fa-receipt text-4xl mb-2 opacity-30"></i>
+                                                <p>No transactions yet today</p>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Actions & Payment Summary -->
+                <div class="space-y-6">
+                    <!-- Quick Actions -->
+                    <div class="card bg-base-100 border border-base-300">
+                        <div class="card-body">
+                            <h3 class="card-title text-lg mb-4">
+                                <i class="fas fa-bolt text-warning mr-2"></i>
+                                Quick Actions
+                            </h3>
+
+                            <div class="space-y-3">
+                                <a href="sale.html" class="btn btn-primary btn-block justify-start gap-3">
+                                    <i class="fas fa-cart-shopping w-5"></i>
+                                    <span>New Cash Sale</span>
+                                </a>
+                                <a href="collect.html" class="btn btn-info btn-block justify-start gap-3">
+                                    <i class="fas fa-hand-holding-dollar w-5"></i>
+                                    <span>Collect Payment (DR)</span>
+                                </a>
+                                <a href="history.html" class="btn btn-outline btn-block justify-start gap-3">
+                                    <i class="fas fa-print w-5"></i>
+                                    <span>Reprint Receipt</span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Payment Method Summary -->
+                    <div class="card bg-base-100 border border-base-300">
+                        <div class="card-body">
+                            <h3 class="card-title text-lg mb-4">
+                                <i class="fas fa-chart-pie text-info mr-2"></i>
+                                Today's Breakdown
+                            </h3>
+
+                            <div class="space-y-3" id="paymentBreakdown">
+                                <div class="flex items-center justify-between p-3 bg-base-200 rounded-lg">
+                                    <div class="flex items-center gap-2">
+                                        <i class="fas fa-money-bill-wave text-success"></i>
+                                        <span>Cash</span>
+                                    </div>
+                                    <span class="font-semibold" id="breakdownCash">₱0.00</span>
+                                </div>
+                                <div class="flex items-center justify-between p-3 bg-base-200 rounded-lg">
+                                    <div class="flex items-center gap-2">
+                                        <i class="fas fa-mobile-screen text-blue-500"></i>
+                                        <span>GCash</span>
+                                    </div>
+                                    <span class="font-semibold" id="breakdownGcash">₱0.00</span>
+                                </div>
+                                <div class="flex items-center justify-between p-3 bg-base-200 rounded-lg">
+                                    <div class="flex items-center gap-2">
+                                        <i class="fas fa-building-columns text-violet-500"></i>
+                                        <span>Bank Transfer</span>
+                                    </div>
+                                    <span class="font-semibold" id="breakdownBank">₱0.00</span>
+                                </div>
+                                <div class="flex items-center justify-between p-3 bg-base-200 rounded-lg">
+                                    <div class="flex items-center gap-2">
+                                        <i class="fas fa-money-check text-amber-500"></i>
+                                        <span>Check</span>
+                                    </div>
+                                    <span class="font-semibold" id="breakdownCheck">₱0.00</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
+            <div>
+                <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/pos/pos.service.js"></script>
+
+    <script>
+        // Sidebar toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+
+        // Theme toggle
+        document.getElementById('themeToggle').addEventListener('change', function () {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+
+        // Load saved theme
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('themeToggle').checked = true;
+        }
+
+        // Format currency
+        function formatCurrency(amount) {
+            return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        // Update current time
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('currentTime').textContent = now.toLocaleTimeString('en-US', {
+                hour12: false
+            });
+
+            // Check 5PM cutoff
+            const cutoffHour = 17; // 5 PM
+            const currentHour = now.getHours();
+            const currentMinutes = now.getMinutes();
+
+            if (currentHour >= 14 && currentHour < cutoffHour) { // Show warning from 2PM
+                document.getElementById('cutoffBanner').classList.remove('hidden');
+                const hoursLeft = cutoffHour - currentHour - 1;
+                const minutesLeft = 60 - currentMinutes;
+                document.getElementById('cutoffCountdown').innerHTML = `
+                    <span style="--value:${hoursLeft};"></span>h
+                    <span style="--value:${minutesLeft};"></span>m
+                `;
+            } else if (currentHour >= cutoffHour) {
+                document.getElementById('cutoffBanner').classList.remove('hidden');
+                document.getElementById('cutoffBanner').querySelector('.alert').classList.remove('alert-warning');
+                document.getElementById('cutoffBanner').querySelector('.alert').classList.add('alert-error');
+                document.getElementById('cutoffMessage').textContent = 'Cut-off time has passed! Please reconcile immediately.';
+                document.getElementById('cutoffCountdown').innerHTML = '<span class="text-error font-bold">OVERDUE</span>';
+            }
+        }
+
+        // Toast notification
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `alert alert-${type} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            document.getElementById('toastContainer').appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', async function () {
+            // Check authentication
+            if (typeof AuthService !== 'undefined' && !AuthService.isAuthenticated()) {
+                window.location.href = '../login.html';
+                return;
+            }
+
+            // Load user info
+            if (typeof AuthService !== 'undefined') {
+                const user = AuthService.getCurrentUser();
+                if (user) {
+                    document.getElementById('welcomeName').textContent = user.first_name || 'Cashier';
+                    document.getElementById('sidebarUserName').textContent = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Cashier';
+                    document.getElementById('userInitials').textContent = getInitials(user.first_name, user.last_name);
+                }
+            }
+
+            // Set today's date
+            const today = new Date();
+            document.getElementById('todayDate').textContent = today.toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+
+            // Start time updates
+            updateTime();
+            setInterval(updateTime, 1000);
+
+            // Load dashboard data
+            await loadDashboardData();
+        });
+
+        function getInitials(firstName, lastName) {
+            const f = firstName ? firstName.charAt(0).toUpperCase() : '';
+            const l = lastName ? lastName.charAt(0).toUpperCase() : '';
+            return f + l || 'CA';
+        }
+
+        async function loadDashboardData() {
+            try {
+                // Load all dashboard data in parallel
+                const [summaryRes, recentRes, pendingRes, cashRes] = await Promise.all([
+                    POSService.getDashboardSummary().catch(e => null),
+                    POSService.getRecentTransactions(10).catch(e => null),
+                    POSService.getPendingCollections().catch(e => null),
+                    POSService.getCashPosition().catch(e => null)
+                ]);
+
+                // Process summary data
+                if (summaryRes?.data) {
+                    const data = summaryRes.data;
+                    document.getElementById('todayCashSales').textContent = formatCurrency(data.sales?.total_sales || 0);
+                    document.getElementById('todayCollections').textContent = formatCurrency(data.collections?.total_collected || 0);
+                    document.getElementById('pendingCollections').textContent = formatCurrency(data.receivables?.total_outstanding || 0);
+                    
+                    // Update payment breakdown
+                    if (data.sales?.by_payment_method) {
+                        const pm = data.sales.by_payment_method;
+                        document.getElementById('breakdownCash').textContent = formatCurrency(pm.cash || 0);
+                        document.getElementById('breakdownGcash').textContent = formatCurrency(pm.gcash || 0);
+                        document.getElementById('breakdownBank').textContent = formatCurrency(pm.bank_transfer || 0);
+                        document.getElementById('breakdownCheck').textContent = formatCurrency(pm.check || 0);
+                    }
+                }
+
+                // Process cash position
+                if (cashRes?.data || summaryRes?.data?.cash_position) {
+                    const cashData = cashRes?.data || summaryRes?.data?.cash_position;
+                    document.getElementById('cashOnHand').textContent = formatCurrency(cashData.expected_cash || cashData.cash_on_hand || 0);
+                }
+
+                // Process pending collections count
+                if (pendingRes?.data) {
+                    const pendingCount = pendingRes.data.count || pendingRes.data.total_pending || 0;
+                    document.getElementById('pendingCollectionsBadge').textContent = pendingCount;
+                }
+
+                // Process recent transactions
+                if (recentRes?.data?.transactions) {
+                    const transactions = recentRes.data.transactions.map(tx => ({
+                        code: tx.reference_code || tx.transaction_code || tx.or_number || 'N/A',
+                        type: tx.record_type || (tx.or_number ? 'collection' : 'sale'),
+                        customer: tx.customer_name || 'Walk-in Customer',
+                        amount: parseFloat(tx.amount || tx.total_amount || tx.amount_collected || 0),
+                        payment_method: getPaymentMethodLabel(tx.payment_method),
+                        time: tx.transaction_time ? new Date(tx.transaction_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : 'N/A'
+                    }));
+                    renderRecentTransactions(transactions);
+                } else {
+                    // Show empty state
+                    renderRecentTransactions([]);
+                }
+
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+                // Show empty states instead of error toast for production-ready UI
+                renderRecentTransactions([]);
+            }
+        }
+
+        function getPaymentMethodLabel(method) {
+            const labels = {
+                'cash': 'Cash',
+                'gcash': 'GCash',
+                'bank_transfer': 'Bank Transfer',
+                'check': 'Check'
+            };
+            return labels[method] || method || 'Cash';
+        }
+
+        function renderRecentTransactions(transactions) {
+            const tbody = document.getElementById('recentTransactionsTable');
+
+            if (!transactions || transactions.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center py-8 text-base-content/60">
+                            <i class="fas fa-receipt text-4xl mb-2 opacity-30"></i>
+                            <p>No transactions yet today</p>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = transactions.map(tx => {
+                const typeIcon = tx.type === 'sale' ? 'fa-cart-shopping text-success' : 'fa-hand-holding-dollar text-info';
+                const typeBadge = tx.type === 'sale' ? 'badge-success' : 'badge-info';
+                const typeLabel = tx.type === 'sale' ? 'Sale' : 'Collection';
+
+                return `
+                    <tr class="hover cursor-pointer" onclick="viewTransaction('${tx.code}')">
+                        <td class="font-mono text-sm">${tx.code}</td>
+                        <td><span class="badge ${typeBadge} badge-sm">${typeLabel}</span></td>
+                        <td>${tx.customer}</td>
+                        <td class="font-semibold">${formatCurrency(tx.amount)}</td>
+                        <td>
+                            <span class="badge badge-ghost badge-sm">
+                                <i class="fas ${getPaymentIcon(tx.payment_method)} mr-1"></i>
+                                ${tx.payment_method}
+                            </span>
+                        </td>
+                        <td class="text-base-content/60">${tx.time}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function getPaymentIcon(method) {
+            const icons = {
+                'Cash': 'fa-money-bill-wave',
+                'GCash': 'fa-mobile-screen',
+                'Bank Transfer': 'fa-building-columns',
+                'Check': 'fa-money-check'
+            };
+            return icons[method] || 'fa-credit-card';
+        }
+
+        function viewTransaction(code) {
+            window.location.href = `history.html?view=${code}`;
+        }
+    </script>
+</body>
+
+</html>

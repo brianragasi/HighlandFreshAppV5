@@ -83,3 +83,29 @@ function logAudit($userId, $action, $tableName, $recordId, $oldValues = null, $n
         error_log("Audit log error: " . $e->getMessage());
     }
 }
+
+// Helper function to send success response (wraps Response::success)
+function sendSuccess($data = null, $message = 'Success', $code = 200) {
+    Response::success($data, $message, $code);
+}
+
+// Helper function to send error response (wraps Response::error)
+function sendError($message = 'Error', $code = 400, $errors = null) {
+    Response::error($message, $code, $errors);
+}
+
+// Helper function to send validation error (wraps Response::validationError)
+function sendValidationError($errors) {
+    Response::validationError($errors);
+}
+
+// Legacy compatibility functions
+function requireAuth($roles = []) {
+    return Auth::requireRole($roles);
+}
+
+function jsonResponse($data, $code = 200) {
+    http_response_code($code);
+    echo json_encode($data);
+    exit;
+}

@@ -1,13 +1,19 @@
 <?php
 /**
  * Highland Fresh System - Warehouse Raw Ingredients API
- * 
+ *
+ * REVISED: Updated for new schema (Feb 2026)
+ * - Updated transaction types: po_receive, production_issue, physical_adjust, dispose
+ * - Added QC status handling for ingredient batches (quarantine flow)
+ * - Added po_id reference when receiving batches
+ * - Added supplier_id reference
+ *
  * Manages ingredients inventory (sugar, powder, flavors, rennet, salt, packaging)
- * 
+ *
  * GET    - List ingredients, get details, check stock
  * POST   - Receive new ingredient batch
  * PUT    - Issue ingredients, adjust stock
- * 
+ *
  * @package HighlandFresh
  * @version 4.0
  */
@@ -245,6 +251,82 @@ function handleGet($db, $currentUser) {
             ], 'Stock check completed');
             break;
             
+        case 'reorder_alerts':
+            // Get all items below reorder threshold (for Reorder Alert Report)
+            $includeOk = getParam('include_ok') === '1';
+            
+            $sql = "
+                SELECT 
+                    'ingredient' AS item_type,
+                    i.id AS item_id,
+                    i.ingredient_code AS item_code,
+                    i.ingredient_name AS item_name,
+                    ic.category_name,
+                    i.unit_of_measure,
+                    i.current_stock,
+                    i.minimum_stock,
+                    COALESCE(i.minimum_stock * 1.5, i.minimum_stock) AS reorder_point,
+                    COALESCE(i.lead_time_days, 7) AS lead_time_days,
+                    i.unit_cost,
+                    CASE 
+                        WHEN i.current_stock <= 0 THEN 'OUT_OF_STOCK'
+                        WHEN i.current_stock <= i.minimum_stock THEN 'CRITICAL'
+                        WHEN i.current_stock <= (i.minimum_stock * 1.5) THEN 'LOW'
+                        ELSE 'OK'
+                    END AS stock_status,
+                    CASE 
+                        WHEN i.current_stock <= 0 THEN 0
+                        ELSE ROUND((i.current_stock / NULLIF(i.minimum_stock, 0)) * 100, 1)
+                    END AS stock_percentage,
+                    GREATEST(0, (i.minimum_stock * 1.5) - i.current_stock) AS qty_to_reorder
+                FROM ingredients i
+                LEFT JOIN ingredient_categories ic ON i.category_id = ic.id
+                WHERE i.is_active = 1
+            ";
+            
+            if (!$includeOk) {
+                $sql .= " AND i.current_stock <= (i.minimum_stock * 1.5)";
+            }
+            
+            $sql .= " ORDER BY 
+                CASE 
+                    WHEN i.current_stock <= 0 THEN 1
+                    WHEN i.current_stock <= i.minimum_stock THEN 2
+                    WHEN i.current_stock <= (i.minimum_stock * 1.5) THEN 3
+                    ELSE 4
+                END,
+                i.ingredient_name ASC
+            ";
+            
+            $stmt = $db->prepare($sql);
+            $stmt->execute();
+            $alerts = $stmt->fetchAll();
+            
+            // Summary counts
+            $summary = [
+                'out_of_stock' => 0,
+                'critical' => 0,
+                'low' => 0,
+                'ok' => 0,
+                'total_alerts' => 0
+            ];
+            
+            foreach ($alerts as $alert) {
+                $status = strtolower($alert['stock_status']);
+                if (isset($summary[$status])) {
+                    $summary[$status]++;
+                }
+                if ($status !== 'ok') {
+                    $summary['total_alerts']++;
+                }
+            }
+            
+            Response::success([
+                'alerts' => $alerts,
+                'summary' => $summary
+            ], 'Reorder alerts retrieved successfully');
+            break;
+            
         default:
             Response::error('Invalid action', 400);
     }
@@ -301,20 +383,26 @@ function handlePost($db, $currentUser) {
                 // Generate batch code
                 $batchCode = generateCode('IB');
                 
-                // Create batch record
+                // Get supplier_id and po_id if provided
+                $supplierIdNum = is_numeric($supplierId) ? $supplierId : null;
+                $poId = getParam('po_id');
+
+                // Create batch record (status = quarantine until QC approves - revised schema)
                 $stmt = $db->prepare("
-                    INSERT INTO ingredient_batches 
-                    (batch_code, ingredient_id, quantity, remaining_quantity, unit_cost,
-                     supplier_name, supplier_batch_no, received_date, expiry_date, received_by, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?)
+                    INSERT INTO ingredient_batches
+                    (batch_code, ingredient_id, po_id, quantity, remaining_quantity, unit_cost,
+                     supplier_id, supplier_batch_no, received_date, expiry_date,
+                     qc_status, status, received_by, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, 'pending', 'quarantine', ?, ?)
                 ");
                 $stmt->execute([
                     $batchCode,
                     $ingredientId,
+                    $poId,
                     $quantity,
                     $quantity,
                     $unitCost,
-                    $supplierName,
+                    $supplierIdNum,
                     $supplierBatchNo,
                     $expiryDate,
                     $currentUser['user_id'],
@@ -338,7 +426,7 @@ function handlePost($db, $currentUser) {
                     INSERT INTO inventory_transactions 
                     (transaction_code, transaction_type, item_type, item_id, batch_id,
                      quantity, unit_of_measure, reference_type, to_location, performed_by, reason)
-                    VALUES (?, 'receive', 'ingredient', ?, ?, ?, ?, 'purchase', ?, ?, ?)
+                    VALUES (?, 'po_receive', 'ingredient', ?, ?, ?, ?, 'purchase_order', ?, ?, ?)
                 ");
                 $stmt->execute([
                     $txCode,
@@ -499,7 +587,7 @@ function handlePut($db, $currentUser) {
                         (transaction_code, transaction_type, item_type, item_id, batch_id,
                          quantity, unit_of_measure, reference_type, reference_id,
                          from_location, performed_by, reason)
-                        VALUES (?, 'issue', 'ingredient', ?, ?, ?, ?, 'requisition', ?, ?, ?, ?)
+                        VALUES (?, 'production_issue', 'ingredient', ?, ?, ?, ?, 'requisition', ?, ?, ?, ?)
                     ");
                     $stmt->execute([
                         $txCode,
@@ -586,7 +674,7 @@ function handlePut($db, $currentUser) {
                     INSERT INTO inventory_transactions 
                     (transaction_code, transaction_type, item_type, item_id,
                      quantity, unit_of_measure, performed_by, reason)
-                    VALUES (?, 'adjust', 'ingredient', ?, ?, ?, ?, ?)
+                    VALUES (?, 'physical_adjust', 'ingredient', ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
                     $txCode,
@@ -737,6 +825,75 @@ function handlePut($db, $currentUser) {
                 $db->rollBack();
                 Response::error($e->getMessage(), 400);
             }
+            break;
+            
+        case 'update_settings':
+            // Update ingredient settings (min stock, lead time, reorder point)
+            $ingredientId = getParam('ingredient_id');
+            $minimumStock = getParam('minimum_stock');
+            $leadTimeDays = getParam('lead_time_days');
+            $reorderPoint = getParam('reorder_point');
+            
+            if (!$ingredientId) {
+                Response::error('Ingredient ID is required', 400);
+            }
+            
+            // Verify ingredient exists
+            $checkStmt = $db->prepare("SELECT * FROM ingredients WHERE id = ?");
+            $checkStmt->execute([$ingredientId]);
+            $ingredient = $checkStmt->fetch();
+            
+            if (!$ingredient) {
+                Response::notFound('Ingredient not found');
+            }
+            
+            // Build dynamic update query
+            $updates = [];
+            $params = [];
+            
+            if ($minimumStock !== null && $minimumStock !== '') {
+                $updates[] = "minimum_stock = ?";
+                $params[] = floatval($minimumStock);
+            }
+            
+            if ($leadTimeDays !== null && $leadTimeDays !== '') {
+                $updates[] = "lead_time_days = ?";
+                $params[] = intval($leadTimeDays);
+            }
+            
+            if ($reorderPoint !== null && $reorderPoint !== '') {
+                $updates[] = "reorder_point = ?";
+                $params[] = floatval($reorderPoint);
+            }
+            
+            if (empty($updates)) {
+                Response::error('No settings provided to update', 400);
+            }
+            
+            $params[] = $ingredientId;
+            
+            $sql = "UPDATE ingredients SET " . implode(', ', $updates) . ", updated_at = NOW() WHERE id = ?";
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
+            
+            // Log the update
+            logAudit($currentUser['user_id'], 'UPDATE_SETTINGS', 'ingredients', $ingredientId, null, [
+                'minimum_stock' => $minimumStock,
+                'lead_time_days' => $leadTimeDays,
+                'reorder_point' => $reorderPoint
+            ]);
+            
+            // Get updated ingredient
+            $stmt = $db->prepare("SELECT * FROM ingredients WHERE id = ?");
+            $stmt->execute([$ingredientId]);
+            $updated = $stmt->fetch();
+            
+            Response::success([
+                'id' => $ingredientId,
+                'minimum_stock' => $updated['minimum_stock'],
+                'lead_time_days' => $updated['lead_time_days'],
+                'reorder_point' => $updated['reorder_point']
+            ], 'Ingredient settings updated successfully');
             break;
             
         default:

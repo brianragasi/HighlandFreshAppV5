@@ -246,19 +246,24 @@ function handlePost($db, $action, $currentUser) {
                 ");
                 $updateStmt->execute([$quantity, $inventoryId]);
                 
+                // Generate dispatch code
+                $dispatchCode = 'DSP-' . date('Ymd') . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
+                
                 // Log the dispatch
                 $logStmt = $db->prepare("
                     INSERT INTO fg_dispatch_log 
-                    (inventory_id, dr_id, quantity, barcode_scanned, released_by, released_at, fifo_override)
-                    VALUES (?, ?, ?, ?, ?, NOW(), ?)
+                    (dispatch_code, inventory_id, product_id, batch_code, dr_id, quantity_released, released_by, released_at, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)
                 ");
                 $logStmt->execute([
+                    $dispatchCode,
                     $inventoryId,
+                    $inventory['product_id'],
+                    $inventory['batch_code'] ?? null,
                     $drId,
                     $quantity,
-                    $barcode,
-                    $currentUser['id'],
-                    $data['fifo_override'] ?? 0
+                    $currentUser['user_id'],
+                    $data['notes'] ?? null
                 ]);
                 
                 // Log transaction
@@ -267,21 +272,21 @@ function handlePost($db, $action, $currentUser) {
                     (inventory_id, transaction_type, quantity, reference_type, reference_id, created_by)
                     VALUES (?, 'dispatch', ?, 'delivery_receipt', ?, ?)
                 ");
-                $txnStmt->execute([$inventoryId, -$quantity, $drId, $currentUser['id']]);
+                $txnStmt->execute([$inventoryId, -$quantity, $drId, $currentUser['user_id']]);
                 
                 // If DR provided, add to DR items
                 if ($drId) {
                     $driStmt = $db->prepare("
                         INSERT INTO delivery_receipt_items 
-                        (dr_id, product_id, batch_code, quantity, inventory_id)
+                        (delivery_receipt_id, product_id, batch_id, quantity_ordered, quantity_packed)
                         VALUES (?, ?, ?, ?, ?)
                     ");
                     $driStmt->execute([
                         $drId,
                         $inventory['product_id'],
-                        $inventory['batch_code'],
+                        $inventory['batch_id'] ?? null,
                         $quantity,
-                        $inventoryId
+                        $quantity
                     ]);
                 }
                 
@@ -340,7 +345,7 @@ function handlePost($db, $action, $currentUser) {
                         (inventory_id, dr_id, quantity, barcode_scanned, released_by, released_at)
                         VALUES (?, ?, ?, ?, ?, NOW())
                     ");
-                    $logStmt->execute([$inventoryId, $drId, $quantity, $barcode, $currentUser['id']]);
+                    $logStmt->execute([$inventoryId, $drId, $quantity, $barcode, $currentUser['user_id']]);
                     
                     // Log transaction
                     $txnStmt = $db->prepare("
@@ -348,7 +353,7 @@ function handlePost($db, $action, $currentUser) {
                         (inventory_id, transaction_type, quantity, reference_type, reference_id, created_by)
                         VALUES (?, 'dispatch', ?, 'delivery_receipt', ?, ?)
                     ");
-                    $txnStmt->execute([$inventoryId, -$quantity, $drId, $currentUser['id']]);
+                    $txnStmt->execute([$inventoryId, -$quantity, $drId, $currentUser['user_id']]);
                     
                     // Add to DR items
                     if ($drId) {

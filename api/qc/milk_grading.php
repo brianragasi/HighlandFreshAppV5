@@ -3,9 +3,11 @@
  * Highland Fresh System - Milk Grading API (QC Test)
  * ANNEX B Pricing Implementation
  * 
+ * UPDATED: Uses milk_receiving and receiving_id (revised schema)
+ * 
  * Endpoints:
  * GET  - List all QC tests / Get single test
- * POST - Create new QC test (Grade milk delivery)
+ * POST - Create new QC test (Grade milk receiving)
  * 
  * Pricing Structure (ANNEX B):
  * - Base Price: ₱25.00 + Incentive ₱5.00 = ₱30.00/L
@@ -130,15 +132,19 @@ try {
             $testId = getParam('id');
             
             if ($testId) {
-                // Get single test
+                // Get single test (using milk_receiving and receiving_id - revised schema)
                 $stmt = $db->prepare("
                     SELECT qmt.*, 
-                           md.delivery_code, md.volume_liters, md.delivery_date,
-                           f.farmer_code, f.first_name as farmer_first_name, f.last_name as farmer_last_name,
+                           mr.receiving_code, mr.volume_liters, mr.receiving_date,
+                           mr.rmr_number, mr.visual_inspection as apt_result,
+                           f.farmer_code, 
+                           COALESCE(CONCAT(f.first_name, ' ', COALESCE(f.last_name, '')), f.first_name, '') as farmer_name,
+                           f.first_name as farmer_first_name, COALESCE(f.last_name, '') as farmer_last_name,
+                           f.membership_type,
                            u.first_name as tester_first_name, u.last_name as tester_last_name
                     FROM qc_milk_tests qmt
-                    LEFT JOIN milk_deliveries md ON qmt.delivery_id = md.id
-                    LEFT JOIN farmers f ON md.farmer_id = f.id
+                    LEFT JOIN milk_receiving mr ON qmt.receiving_id = mr.id
+                    LEFT JOIN farmers f ON mr.farmer_id = f.id
                     LEFT JOIN users u ON qmt.tested_by = u.id
                     WHERE qmt.id = ?
                 ");
@@ -152,8 +158,8 @@ try {
                 Response::success($test, 'Test retrieved successfully');
             }
             
-            // List tests
-            $deliveryId = getParam('delivery_id');
+            // List tests (using milk_receiving - revised schema)
+            $receivingId = getParam('receiving_id');
             $farmerId = getParam('farmer_id');
             $status = getParam('status'); // 'accepted' or 'rejected'
             $dateFrom = getParam('date_from');
@@ -165,13 +171,13 @@ try {
             $where = "WHERE 1=1";
             $params = [];
             
-            if ($deliveryId) {
-                $where .= " AND qmt.delivery_id = ?";
-                $params[] = $deliveryId;
+            if ($receivingId) {
+                $where .= " AND qmt.receiving_id = ?";
+                $params[] = $receivingId;
             }
             
             if ($farmerId) {
-                $where .= " AND md.farmer_id = ?";
+                $where .= " AND mr.farmer_id = ?";
                 $params[] = $farmerId;
             }
             
@@ -191,25 +197,28 @@ try {
                 $params[] = $dateTo;
             }
             
-            // Get total count
+            // Get total count (using milk_receiving - revised schema)
             $countStmt = $db->prepare("
                 SELECT COUNT(*) as total 
                 FROM qc_milk_tests qmt 
-                LEFT JOIN milk_deliveries md ON qmt.delivery_id = md.id
+                LEFT JOIN milk_receiving mr ON qmt.receiving_id = mr.id
                 {$where}
             ");
             $countStmt->execute($params);
             $total = $countStmt->fetch()['total'];
             
-            // Get tests
+            // Get tests (using milk_receiving - revised schema)
             $stmt = $db->prepare("
                 SELECT qmt.*, 
-                       md.delivery_code, md.volume_liters, md.delivery_date,
-                       f.farmer_code, f.first_name as farmer_first_name, f.last_name as farmer_last_name,
+                       mr.receiving_code, mr.volume_liters, mr.receiving_date, mr.rmr_number,
+                       f.farmer_code, 
+                       COALESCE(f.first_name, '') as farmer_first_name,
+                       COALESCE(f.last_name, '') as farmer_last_name,
+                       CONCAT(COALESCE(f.first_name, ''), ' ', COALESCE(f.last_name, '')) as farmer_name,
                        u.first_name as tester_first_name, u.last_name as tester_last_name
                 FROM qc_milk_tests qmt
-                LEFT JOIN milk_deliveries md ON qmt.delivery_id = md.id
-                LEFT JOIN farmers f ON md.farmer_id = f.id
+                LEFT JOIN milk_receiving mr ON qmt.receiving_id = mr.id
+                LEFT JOIN farmers f ON mr.farmer_id = f.id
                 LEFT JOIN users u ON qmt.tested_by = u.id
                 {$where}
                 ORDER BY qmt.test_datetime DESC
@@ -225,7 +234,8 @@ try {
             
         case 'POST':
             // Create QC test (Grade milk) with ANNEX B pricing
-            $deliveryId = getParam('delivery_id');
+            // Updated: Uses receiving_id (revised schema)
+            $receivingId = getParam('receiving_id');
             
             // Primary test parameters
             $fatPercentage = getParam('fat_percentage');
@@ -246,9 +256,9 @@ try {
             
             $notes = trim(getParam('notes', ''));
             
-            // Validation
+            // Validation (updated for receiving_id - revised schema)
             $errors = [];
-            if (empty($deliveryId)) $errors['delivery_id'] = 'Delivery is required';
+            if (empty($receivingId)) $errors['receiving_id'] = 'Receiving record is required';
             if (!isset($fatPercentage) || $fatPercentage < 0) {
                 $errors['fat_percentage'] = 'Valid fat percentage is required';
             }
@@ -265,22 +275,22 @@ try {
                 $errors['density'] = 'Invalid specific gravity';
             }
             
-            // Check delivery exists and is pending
-            $delivery = null;
-            if ($deliveryId) {
-                $deliveryStmt = $db->prepare("
-                    SELECT md.*, f.membership_type, f.base_price_per_liter, md.apt_result
-                    FROM milk_deliveries md
-                    LEFT JOIN farmers f ON md.farmer_id = f.id
-                    WHERE md.id = ?
+            // Check receiving exists and is pending (using milk_receiving - revised schema)
+            $receiving = null;
+            if ($receivingId) {
+                $receivingStmt = $db->prepare("
+                    SELECT mr.*, f.membership_type, f.base_price_per_liter, mr.milk_type_id
+                    FROM milk_receiving mr
+                    LEFT JOIN farmers f ON mr.farmer_id = f.id
+                    WHERE mr.id = ?
                 ");
-                $deliveryStmt->execute([$deliveryId]);
-                $delivery = $deliveryStmt->fetch();
+                $receivingStmt->execute([$receivingId]);
+                $receiving = $receivingStmt->fetch();
                 
-                if (!$delivery) {
-                    $errors['delivery_id'] = 'Delivery not found';
-                } elseif ($delivery['status'] !== 'pending_test') {
-                    $errors['delivery_id'] = 'Delivery has already been tested';
+                if (!$receiving) {
+                    $errors['receiving_id'] = 'Receiving record not found';
+                } elseif (!in_array($receiving['status'], ['pending_qc', 'in_testing'])) {
+                    $errors['receiving_id'] = 'Receiving record has already been tested';
                 }
             }
             
@@ -292,10 +302,10 @@ try {
             $isAccepted = true;
             $rejectionReasons = [];
             
-            // 1. APT Test - Positive = Reject
-            if (isset($delivery['apt_result']) && $delivery['apt_result'] === 'positive') {
+            // 1. Visual inspection failed = Reject
+            if (isset($receiving['visual_inspection']) && $receiving['visual_inspection'] === 'fail') {
                 $isAccepted = false;
-                $rejectionReasons[] = 'APT test positive';
+                $rejectionReasons[] = 'Visual inspection failed';
             }
             
             // 2. Titratable Acidity >= 0.25% = Reject
@@ -312,14 +322,14 @@ try {
             
             $rejectionReason = !empty($rejectionReasons) ? implode('; ', $rejectionReasons) : null;
             
-            // Calculate pricing (ANNEX B)
+            // Calculate pricing (ANNEX B) - use receiving data
             if ($isAccepted) {
                 $fatAdjustment = calculateFatAdjustment($fatPercentage);
                 $acidityDeduction = calculateAcidityDeduction($titratableAcidity);
                 $sedimentDeduction = calculateSedimentDeduction($sedimentGrade);
                 
                 $finalPricePerLiter = STANDARD_PRICE + $fatAdjustment - $acidityDeduction - $sedimentDeduction;
-                $totalAmount = floatval($delivery['volume_liters']) * $finalPricePerLiter;
+                $totalAmount = floatval($receiving['volume_liters']) * $finalPricePerLiter;
                 
                 // Calculate milk quality grade (A, B, C, D)
                 $milkGrade = calculateMilkGrade($fatPercentage, $titratableAcidity, $sedimentGrade);
@@ -341,21 +351,21 @@ try {
             $db->beginTransaction();
             
             try {
-                // Insert test
+                // Insert test (using receiving_id and milk_type_id - revised schema)
                 $stmt = $db->prepare("
                     INSERT INTO qc_milk_tests (
-                        test_code, delivery_id, tested_by, test_datetime,
+                        test_code, receiving_id, milk_type_id, tested_by, test_datetime,
                         fat_percentage, titratable_acidity, temperature_celsius, sediment_grade,
-                        density, protein_percentage, lactose_percentage, snf_percentage,
-                        salts_percentage, total_solids_percentage, added_water_percentage,
-                        freezing_point, sample_temperature,
+                        specific_gravity, protein_percentage, lactose_percentage, snf_percentage,
+                        total_solids_percentage, added_water_percentage, freezing_point,
                         base_price_per_liter, fat_adjustment, acidity_deduction, sediment_deduction,
                         final_price_per_liter, total_amount, is_accepted, grade, rejection_reason, notes
-                    ) VALUES (?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
                     $testCode, 
-                    $deliveryId, 
+                    $receivingId, 
+                    $receiving['milk_type_id'],
                     $currentUser['user_id'],
                     $fatPercentage, 
                     $titratableAcidity, 
@@ -365,11 +375,9 @@ try {
                     $proteinPercentage ?: null, 
                     $lactosePercentage ?: null, 
                     $snfPercentage ?: null,
-                    $saltsPercentage ?: null,
                     $totalSolidsPercentage ?: null,
                     $addedWaterPercentage ?: null,
                     $freezingPoint ?: null,
-                    $sampleTemperature ?: null,
                     STANDARD_PRICE, 
                     $fatAdjustment, 
                     $acidityDeduction,
@@ -384,77 +392,70 @@ try {
                 
                 $testId = $db->lastInsertId();
                 
-                // Update delivery status
-                $deliveryStatus = $isAccepted ? 'accepted' : 'rejected';
-                $acceptedLiters = $isAccepted ? $delivery['volume_liters'] : 0;
+                // Update receiving status (using milk_receiving - revised schema)
+                $receivingStatus = $isAccepted ? 'accepted' : 'rejected';
+                $acceptedLiters = $isAccepted ? $receiving['volume_liters'] : 0;
                 $updateStmt = $db->prepare("
-                    UPDATE milk_deliveries 
+                    UPDATE milk_receiving 
                     SET status = ?, 
-                        grade = ?,
                         accepted_liters = ?,
-                        unit_price = ?,
-                        total_amount = ?,
-                        rejection_reason = ?
+                        rejected_liters = ?
                     WHERE id = ?
                 ");
                 $updateStmt->execute([
-                    $deliveryStatus, 
-                    $milkGrade, // Actual quality grade (A, B, C, D) or null if rejected
+                    $receivingStatus, 
                     $acceptedLiters,
-                    $finalPricePerLiter,
-                    $totalAmount,
-                    $rejectionReason, 
-                    $deliveryId
+                    $isAccepted ? 0 : $receiving['volume_liters'],
+                    $receivingId
                 ]);
                 
-                // If accepted, add to raw milk inventory
+                // If accepted, add to raw milk inventory (using revised schema)
                 if ($isAccepted) {
-                    // Check if raw_milk_inventory table exists
-                    $tableCheck = $db->query("SHOW TABLES LIKE 'raw_milk_inventory'");
-                    if ($tableCheck->rowCount() > 0) {
-                        // Get table columns to determine structure
-                        $colCheck = $db->query("SHOW COLUMNS FROM raw_milk_inventory LIKE 'tank_id'");
-                        
-                        if ($colCheck->rowCount() > 0) {
-                            // New schema with tank_id and qc_test_id
-                            $expiryDate = date('Y-m-d', strtotime('+2 days'));
-                            $invStmt = $db->prepare("
-                                INSERT INTO raw_milk_inventory (tank_id, qc_test_id, volume_liters, status, received_date, expiry_date)
-                                VALUES ('TANK-01', ?, ?, 'available', CURDATE(), ?)
-                            ");
-                            $invStmt->execute([$testId, $delivery['volume_liters'], $expiryDate]);
-                        } else {
-                            // Legacy schema with tank_number and delivery_id
-                            $invStmt = $db->prepare("
-                                INSERT INTO raw_milk_inventory (tank_number, delivery_id, volume_liters, status, received_date)
-                                VALUES (1, ?, ?, 'available', CURDATE())
-                            ");
-                            $invStmt->execute([$deliveryId, $delivery['volume_liters']]);
-                        }
-                    }
+                    $batchCode = 'RAW-' . date('Ymd') . '-' . str_pad(rand(1, 999), 3, '0', STR_PAD_LEFT);
+                    $expiryDate = date('Y-m-d', strtotime('+2 days'));
+                    $invStmt = $db->prepare("
+                        INSERT INTO raw_milk_inventory (
+                            batch_code, receiving_id, qc_test_id, milk_type_id, tank_id,
+                            volume_liters, remaining_liters, received_date, expiry_date,
+                            fat_percentage, grade, unit_cost, status, qc_status, received_by
+                        ) VALUES (?, ?, ?, ?, NULL, ?, ?, CURDATE(), ?, ?, ?, ?, 'available', 'approved', ?)
+                    ");
+                    $invStmt->execute([
+                        $batchCode,
+                        $receivingId,
+                        $testId,
+                        $receiving['milk_type_id'],
+                        $receiving['volume_liters'],
+                        $receiving['volume_liters'],
+                        $expiryDate,
+                        $fatPercentage,
+                        $milkGrade,
+                        $finalPricePerLiter,
+                        $currentUser['user_id']
+                    ]);
                 }
                 
                 $db->commit();
                 
-                // Log audit if function exists
+                // Log audit
                 if (function_exists('logAudit')) {
                     logAudit($currentUser['user_id'], 'CREATE', 'qc_milk_tests', $testId, null, [
                         'test_code' => $testCode,
-                        'delivery_id' => $deliveryId,
+                        'receiving_id' => $receivingId,
                         'is_accepted' => $isAccepted,
                         'final_price_per_liter' => $finalPricePerLiter,
                         'total_amount' => $totalAmount
                     ]);
                 }
                 
-                // Get created test with all details
+                // Get created test with all details (using milk_receiving - revised schema)
                 $stmt = $db->prepare("
                     SELECT qmt.*, 
-                           md.delivery_code, md.volume_liters, md.delivery_date,
-                           f.farmer_code, f.first_name as farmer_first_name, f.last_name as farmer_last_name
+                           mr.receiving_code, mr.volume_liters, mr.receiving_date, mr.rmr_number,
+                           f.farmer_code, COALESCE(f.first_name, '') as farmer_name
                     FROM qc_milk_tests qmt
-                    LEFT JOIN milk_deliveries md ON qmt.delivery_id = md.id
-                    LEFT JOIN farmers f ON md.farmer_id = f.id
+                    LEFT JOIN milk_receiving mr ON qmt.receiving_id = mr.id
+                    LEFT JOIN farmers f ON mr.farmer_id = f.id
                     WHERE qmt.id = ?
                 ");
                 $stmt->execute([$testId]);

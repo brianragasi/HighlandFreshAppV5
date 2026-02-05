@@ -162,12 +162,12 @@ function handlePost($db, $action, $currentUser) {
             $data['email'] ?? null,
             $data['address'] ?? null,
             $data['status'] ?? 'active',
-            $currentUser['id']
+            $currentUser['user_id']
         ]);
         
         $customerId = $db->lastInsertId();
         
-        logAudit($currentUser['id'], 'CREATE', 'customers', $customerId, null, $data);
+        logAudit($currentUser['user_id'], 'CREATE', 'customers', $customerId, null, $data);
         
         Response::success(['id' => $customerId], 'Customer created', 201);
     }
@@ -217,7 +217,7 @@ function handlePut($db, $action, $currentUser) {
             $id
         ]);
         
-        logAudit($currentUser['id'], 'UPDATE', 'customers', $id, $current, $data);
+        logAudit($currentUser['user_id'], 'UPDATE', 'customers', $id, $current, $data);
         
         Response::success(null, 'Customer updated');
     }

@@ -1,9 +1,14 @@
 <?php
 /**
  * Highland Fresh System - Warehouse Raw Dashboard API
- * 
+ *
+ * REVISED: Updated for new schema (Feb 2026)
+ * - Uses milk_receiving instead of milk_deliveries
+ * - Uses raw_milk_inventory instead of tank_milk_batches
+ * - Uses material_requisitions instead of ingredient_requisitions
+ *
  * GET - Get warehouse raw dashboard statistics
- * 
+ *
  * @package HighlandFresh
  * @version 4.0
  */
@@ -19,26 +24,28 @@ if ($requestMethod !== 'GET') {
 
 try {
     $db = Database::getInstance()->getConnection();
-    
+
     $today = date('Y-m-d');
     $weekStart = date('Y-m-d', strtotime('monday this week'));
-    
+
     // === RAW MILK STATISTICS ===
-    
-    // Total milk in storage (from tank_milk_batches)
+
+    // Total milk in storage (from raw_milk_inventory - revised schema)
     $milkStats = $db->prepare("
-        SELECT 
+        SELECT
             COALESCE(SUM(remaining_liters), 0) as total_liters,
-            COUNT(DISTINCT tank_id) as tanks_with_milk
-        FROM tank_milk_batches
-        WHERE status IN ('available', 'partially_used')
+            COUNT(DISTINCT tank_id) as tanks_with_milk,
+            COUNT(*) as batch_count
+        FROM raw_milk_inventory
+        WHERE status IN ('available', 'reserved')
+        AND qc_status = 'approved'
     ");
     $milkStats->execute();
     $milkData = $milkStats->fetch();
-    
+
     // Storage tanks overview
     $tankStats = $db->prepare("
-        SELECT 
+        SELECT
             COUNT(*) as total_tanks,
             SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) as available,
             SUM(CASE WHEN status = 'in_use' THEN 1 ELSE 0 END) as in_use,
@@ -50,19 +57,19 @@ try {
     ");
     $tankStats->execute();
     $tankData = $tankStats->fetch();
-    
-    // Milk expiring soon (within 2 days)
+
+    // Milk expiring soon (within 2 days) - from raw_milk_inventory
     $expiringMilk = $db->prepare("
         SELECT COUNT(*) as count, COALESCE(SUM(remaining_liters), 0) as liters
-        FROM tank_milk_batches
-        WHERE status IN ('available', 'partially_used')
+        FROM raw_milk_inventory
+        WHERE status IN ('available', 'reserved')
         AND expiry_date <= DATE_ADD(CURDATE(), INTERVAL 2 DAY)
     ");
     $expiringMilk->execute();
     $expiringMilkData = $expiringMilk->fetch();
-    
+
     // === INGREDIENTS STATISTICS ===
-    
+
     // Low stock ingredients
     $lowStockIngredients = $db->prepare("
         SELECT COUNT(*) as count
@@ -71,27 +78,28 @@ try {
     ");
     $lowStockIngredients->execute();
     $lowStockData = $lowStockIngredients->fetch();
-    
+
     // Ingredients expiring soon (within 7 days)
     $expiringIngredients = $db->prepare("
         SELECT COUNT(DISTINCT ingredient_id) as count
         FROM ingredient_batches
         WHERE status IN ('available', 'partially_used')
+        AND qc_status = 'approved'
         AND expiry_date IS NOT NULL
         AND expiry_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
     ");
     $expiringIngredients->execute();
     $expiringIngData = $expiringIngredients->fetch();
-    
+
     // Total ingredient items
     $totalIngredients = $db->prepare("
         SELECT COUNT(*) as count FROM ingredients WHERE is_active = 1
     ");
     $totalIngredients->execute();
     $totalIngData = $totalIngredients->fetch();
-    
+
     // === MRO STATISTICS ===
-    
+
     // Low stock MRO items
     $lowStockMRO = $db->prepare("
         SELECT COUNT(*) as count
@@ -100,7 +108,7 @@ try {
     ");
     $lowStockMRO->execute();
     $lowStockMROData = $lowStockMRO->fetch();
-    
+
     // Critical MRO items low stock
     $criticalMRO = $db->prepare("
         SELECT COUNT(*) as count
@@ -109,35 +117,35 @@ try {
     ");
     $criticalMRO->execute();
     $criticalMROData = $criticalMRO->fetch();
-    
-    // === REQUISITIONS STATISTICS ===
-    
+
+    // === REQUISITIONS STATISTICS (using material_requisitions - revised schema) ===
+
     // Pending requisitions to fulfill
     $pendingRequisitions = $db->prepare("
-        SELECT 
+        SELECT
             COUNT(*) as count,
             SUM(CASE WHEN priority = 'urgent' THEN 1 ELSE 0 END) as urgent,
             SUM(CASE WHEN priority = 'high' THEN 1 ELSE 0 END) as `high_priority`
-        FROM ingredient_requisitions
+        FROM material_requisitions
         WHERE status = 'approved'
     ");
     $pendingRequisitions->execute();
     $pendingReqData = $pendingRequisitions->fetch();
-    
+
     // Today's fulfilled requisitions
     $todayFulfilled = $db->prepare("
         SELECT COUNT(*) as count
-        FROM ingredient_requisitions
+        FROM material_requisitions
         WHERE status = 'fulfilled' AND DATE(fulfilled_at) = ?
     ");
     $todayFulfilled->execute([$today]);
     $todayFulfilledData = $todayFulfilled->fetch();
-    
+
     // === RECENT ACTIVITY ===
-    
-    // Recent transactions
+
+    // Recent transactions (using revised transaction types)
     $recentTransactions = $db->prepare("
-        SELECT 
+        SELECT
             it.transaction_code,
             it.transaction_type,
             it.item_type,
@@ -146,10 +154,11 @@ try {
             it.created_at,
             u.first_name,
             u.last_name,
-            CASE 
+            CASE
                 WHEN it.item_type = 'ingredient' THEN i.ingredient_name
                 WHEN it.item_type = 'mro' THEN m.item_name
-                ELSE 'Raw Milk'
+                WHEN it.item_type = 'raw_milk' THEN 'Raw Milk'
+                ELSE it.item_type
             END as item_name
         FROM inventory_transactions it
         JOIN users u ON it.performed_by = u.id
@@ -160,39 +169,39 @@ try {
     ");
     $recentTransactions->execute();
     $recentTxList = $recentTransactions->fetchAll();
-    
-    // Pending requisitions list
+
+    // Pending requisitions list (using material_requisitions - revised schema)
     $pendingReqsList = $db->prepare("
-        SELECT 
-            ir.id,
-            ir.requisition_code,
-            ir.department,
-            ir.priority,
-            ir.needed_by_date,
-            ir.total_items,
-            ir.created_at,
+        SELECT
+            mr.id,
+            mr.requisition_code,
+            mr.department,
+            mr.priority,
+            mr.needed_by_date,
+            mr.total_items,
+            mr.created_at,
             u.first_name,
             u.last_name
-        FROM ingredient_requisitions ir
-        JOIN users u ON ir.requested_by = u.id
-        WHERE ir.status = 'approved'
-        ORDER BY 
-            CASE ir.priority 
-                WHEN 'urgent' THEN 1 
-                WHEN 'high' THEN 2 
-                WHEN 'normal' THEN 3 
-                ELSE 4 
+        FROM material_requisitions mr
+        JOIN users u ON mr.requested_by = u.id
+        WHERE mr.status = 'approved'
+        ORDER BY
+            CASE mr.priority
+                WHEN 'urgent' THEN 1
+                WHEN 'high' THEN 2
+                WHEN 'normal' THEN 3
+                ELSE 4
             END,
-            ir.needed_by_date ASC,
-            ir.created_at ASC
+            mr.needed_by_date ASC,
+            mr.created_at ASC
         LIMIT 5
     ");
     $pendingReqsList->execute();
     $pendingReqListData = $pendingReqsList->fetchAll();
-    
+
     // Low stock alerts (combined)
     $lowStockAlerts = $db->prepare("
-        SELECT 
+        SELECT
             'ingredient' as type,
             ingredient_code as code,
             ingredient_name as name,
@@ -202,7 +211,7 @@ try {
         FROM ingredients
         WHERE is_active = 1 AND current_stock <= minimum_stock
         UNION ALL
-        SELECT 
+        SELECT
             'mro' as type,
             item_code as code,
             item_name as name,
@@ -216,37 +225,58 @@ try {
     ");
     $lowStockAlerts->execute();
     $lowStockAlertList = $lowStockAlerts->fetchAll();
-    
-    // QC-Approved milk waiting for storage (from raw_milk_inventory not yet in tanks)
+
+    // Pending milk receiving (from milk_receiving - revised schema)
+    // Milk that passed QC but not yet assigned to tank
     $pendingMilk = $db->prepare("
-        SELECT 
+        SELECT
             rmi.id,
-            rmi.tank_number as qc_tank_id,
+            rmi.batch_code,
+            rmi.tank_id,
             rmi.volume_liters,
+            rmi.remaining_liters,
             rmi.received_date,
-            DATE_ADD(rmi.received_date, INTERVAL 3 DAY) as expiry_date,
+            rmi.expiry_date,
+            rmi.grade,
+            mr.receiving_code,
             f.farmer_code,
-            CONCAT(f.first_name, ' ', f.last_name) as farmer_name
+            CONCAT(COALESCE(f.first_name, ''), ' ', COALESCE(f.last_name, '')) as farmer_name,
+            mt.type_name as milk_type
         FROM raw_milk_inventory rmi
-        JOIN milk_deliveries md ON rmi.delivery_id = md.id
-        JOIN farmers f ON md.farmer_id = f.id
+        JOIN milk_receiving mr ON rmi.receiving_id = mr.id
+        JOIN farmers f ON mr.farmer_id = f.id
+        LEFT JOIN milk_types mt ON rmi.milk_type_id = mt.id
         WHERE rmi.status = 'available'
-        AND NOT EXISTS (
-            SELECT 1 FROM tank_milk_batches tmb 
-            WHERE tmb.raw_milk_inventory_id = rmi.id
-        )
+        AND rmi.tank_id IS NULL
         ORDER BY rmi.received_date ASC
         LIMIT 10
     ");
     $pendingMilk->execute();
     $pendingMilkList = $pendingMilk->fetchAll();
-    
+
+    // Milk by type summary
+    $milkByType = $db->prepare("
+        SELECT
+            mt.type_code,
+            mt.type_name,
+            COALESCE(SUM(rmi.remaining_liters), 0) as total_liters,
+            COUNT(DISTINCT rmi.id) as batch_count
+        FROM milk_types mt
+        LEFT JOIN raw_milk_inventory rmi ON mt.id = rmi.milk_type_id
+            AND rmi.status IN ('available', 'reserved')
+        GROUP BY mt.id, mt.type_code, mt.type_name
+    ");
+    $milkByType->execute();
+    $milkByTypeData = $milkByType->fetchAll();
+
     Response::success([
         'raw_milk' => [
             'total_liters' => (float) ($milkData['total_liters'] ?? 0),
             'tanks_with_milk' => (int) ($milkData['tanks_with_milk'] ?? 0),
+            'batch_count' => (int) ($milkData['batch_count'] ?? 0),
             'expiring_soon_count' => (int) ($expiringMilkData['count'] ?? 0),
-            'expiring_soon_liters' => (float) ($expiringMilkData['liters'] ?? 0)
+            'expiring_soon_liters' => (float) ($expiringMilkData['liters'] ?? 0),
+            'by_type' => $milkByTypeData
         ],
         'storage_tanks' => [
             'total' => (int) ($tankData['total_tanks'] ?? 0),
@@ -255,8 +285,8 @@ try {
             'offline' => (int) ($tankData['offline'] ?? 0),
             'total_capacity' => (float) ($tankData['total_capacity'] ?? 0),
             'current_volume' => (float) ($tankData['current_volume'] ?? 0),
-            'utilization_percent' => $tankData['total_capacity'] > 0 
-                ? round(($tankData['current_volume'] / $tankData['total_capacity']) * 100, 1) 
+            'utilization_percent' => $tankData['total_capacity'] > 0
+                ? round(($tankData['current_volume'] / $tankData['total_capacity']) * 100, 1)
                 : 0
         ],
         'ingredients' => [
@@ -279,7 +309,7 @@ try {
         'pending_milk_storage' => $pendingMilkList,
         'recent_transactions' => $recentTxList
     ], 'Dashboard data retrieved successfully');
-    
+
 } catch (Exception $e) {
     error_log("Warehouse Raw Dashboard API error: " . $e->getMessage());
     Response::error('An error occurred: ' . $e->getMessage(), 500);

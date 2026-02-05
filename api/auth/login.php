@@ -34,6 +34,7 @@ try {
     $stmt = $db->prepare("
         SELECT id, username, password, role, is_active,
                COALESCE(employee_id, '') as employee_id,
+               COALESCE(full_name, CONCAT(first_name, ' ', last_name)) as full_name,
                COALESCE(first_name, username) as first_name,
                COALESCE(last_name, '') as last_name,
                COALESCE(email, '') as email

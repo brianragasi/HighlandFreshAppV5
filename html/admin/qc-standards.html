@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QC Standards | Highland Fresh Admin</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } }
+        }
+    </script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Axios -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-cogs text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Admin Panel</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-th-large w-5 text-center text-base-content/60"></i><span class="flex-1">Dashboard</span>
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Supply Chain</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="farmers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-tractor w-5 text-center text-base-content/60"></i><span class="flex-1">Farmers</span>
+                    </a></li>
+                    <li><a href="customers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-store w-5 text-center text-base-content/60"></i><span class="flex-1">Customers</span>
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Product Catalog</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="products.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-box w-5 text-center text-base-content/60"></i><span class="flex-1">Products</span>
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Infrastructure</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="storage.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-warehouse w-5 text-center text-base-content/60"></i><span class="flex-1">Storage & Tanks</span>
+                    </a></li>
+                    <li><a href="chillers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-snowflake w-5 text-center text-base-content/60"></i><span class="flex-1">Chillers</span>
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Quality Control</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="qc-standards.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                        <i class="fas fa-clipboard-check w-5 text-center"></i><span class="flex-1">QC Standards</span>
+                    </a></li>
+                </ul>
+            </div>
+        </nav>
+        
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">GM</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">General Manager</p>
+                    <p class="text-xs text-base-content/60 truncate">Administrator</p>
+                </div>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button>
+            </div>
+            <div class="flex-1">
+                <div class="breadcrumbs text-sm">
+                    <ul><li><a href="dashboard.html">Admin</a></li><li class="font-semibold">QC Standards</li></ul>
+                </div>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+        
+        <main class="flex-1 p-4 lg:p-6">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+                <div>
+                    <h1 class="text-2xl font-bold text-base-content">QC Standards</h1>
+                    <p class="text-base-content/60">Manage quality control parameters and grading standards</p>
+                </div>
+            </div>
+            
+            <!-- Tabs -->
+            <div class="tabs tabs-boxed bg-base-100 p-1 mb-6 inline-flex">
+                <button class="tab tab-active" onclick="switchTab('grading')" id="tabGrading">Milk Grading</button>
+                <button class="tab" onclick="switchTab('parameters')" id="tabParameters">Test Parameters</button>
+                <button class="tab" onclick="switchTab('ccp')" id="tabCcp">CCP Standards</button>
+            </div>
+            
+            <!-- Milk Grading Standards -->
+            <div id="gradingSection" class="space-y-6">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-lg font-semibold">Milk Grading Standards</h2>
+                    <button class="btn btn-primary btn-sm" onclick="openGradingModal()">
+                        <i class="fas fa-plus mr-2"></i>Add Grade
+                    </button>
+                </div>
+                
+                <div class="overflow-x-auto bg-base-100 rounded-2xl border border-base-300">
+                    <table class="table">
+                        <thead class="bg-base-200">
+                            <tr>
+                                <th>Grade</th>
+                                <th>Description</th>
+                                <th>Fat Min (%)</th>
+                                <th>Fat Max (%)</th>
+                                <th>SNF Min (%)</th>
+                                <th>SNF Max (%)</th>
+                                <th>Temp Max (°C)</th>
+                                <th>Price/L</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="gradingTableBody">
+                            <tr><td colspan="9" class="text-center py-8">
+                                <span class="loading loading-spinner loading-md"></span>
+                            </td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Test Parameters -->
+            <div id="parametersSection" class="space-y-6 hidden">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-lg font-semibold">Test Parameters</h2>
+                    <button class="btn btn-primary btn-sm" onclick="openParameterModal()">
+                        <i class="fas fa-plus mr-2"></i>Add Parameter
+                    </button>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="parametersGrid">
+                    <div class="col-span-full text-center py-8">
+                        <span class="loading loading-spinner loading-md"></span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- CCP Standards -->
+            <div id="ccpSection" class="space-y-6 hidden">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-lg font-semibold">Critical Control Point (CCP) Standards</h2>
+                    <button class="btn btn-primary btn-sm" onclick="openCcpModal()">
+                        <i class="fas fa-plus mr-2"></i>Add CCP
+                    </button>
+                </div>
+                
+                <div class="overflow-x-auto bg-base-100 rounded-2xl border border-base-300">
+                    <table class="table">
+                        <thead class="bg-base-200">
+                            <tr>
+                                <th>CCP Name</th>
+                                <th>Category</th>
+                                <th>Critical Limit</th>
+                                <th>Target Value</th>
+                                <th>Monitoring Frequency</th>
+                                <th>Corrective Action</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ccpTableBody">
+                            <tr><td colspan="8" class="text-center py-8">
+                                <span class="loading loading-spinner loading-md"></span>
+                            </td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Grading Modal -->
+    <dialog id="gradingModal" class="modal">
+        <div class="modal-box w-11/12 max-w-xl">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-4" id="gradingModalTitle">Add Grade Standard</h3>
+            
+            <form id="gradingForm" onsubmit="saveGrading(event)">
+                <input type="hidden" id="gradingId" value="">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Grade Name <span class="text-error">*</span></span></label>
+                        <input type="text" id="grade_name" class="input input-bordered" required placeholder="e.g., Grade A" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Price per Liter <span class="text-error">*</span></span></label>
+                        <input type="number" id="price_per_liter" class="input input-bordered" required step="0.01" min="0" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Fat % Min</span></label>
+                        <input type="number" id="fat_min" class="input input-bordered" step="0.01" min="0" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Fat % Max</span></label>
+                        <input type="number" id="fat_max" class="input input-bordered" step="0.01" min="0" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">SNF % Min</span></label>
+                        <input type="number" id="snf_min" class="input input-bordered" step="0.01" min="0" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">SNF % Max</span></label>
+                        <input type="number" id="snf_max" class="input input-bordered" step="0.01" min="0" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Max Temperature (°C)</span></label>
+                        <input type="number" id="temperature_max" class="input input-bordered" step="0.1" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Status</span></label>
+                        <select id="grade_status" class="select select-bordered">
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </div>
+                    <div class="form-control md:col-span-2">
+                        <label class="label"><span class="label-text">Description</span></label>
+                        <textarea id="grade_description" class="textarea textarea-bordered" rows="2"></textarea>
+                    </div>
+                </div>
+                
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('gradingModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save mr-2"></i>Save
+                    </button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Parameter Modal -->
+    <dialog id="parameterModal" class="modal">
+        <div class="modal-box w-11/12 max-w-xl">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-4" id="parameterModalTitle">Add Test Parameter</h3>
+            
+            <form id="parameterForm" onsubmit="saveParameter(event)">
+                <input type="hidden" id="parameterId" value="">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-control md:col-span-2">
+                        <label class="label"><span class="label-text">Parameter Name <span class="text-error">*</span></span></label>
+                        <input type="text" id="param_name" class="input input-bordered" required placeholder="e.g., Fat Content" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Category <span class="text-error">*</span></span></label>
+                        <select id="param_category" class="select select-bordered" required>
+                            <option value="raw_milk">Raw Milk</option>
+                            <option value="pasteurized">Pasteurized</option>
+                            <option value="finished_goods">Finished Goods</option>
+                            <option value="packaging">Packaging</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Unit</span></label>
+                        <input type="text" id="param_unit" class="input input-bordered" placeholder="e.g., %, °C, CFU/ml" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Min Value</span></label>
+                        <input type="number" id="param_min" class="input input-bordered" step="any" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Max Value</span></label>
+                        <input type="number" id="param_max" class="input input-bordered" step="any" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Target Value</span></label>
+                        <input type="number" id="param_target" class="input input-bordered" step="any" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Test Method</span></label>
+                        <input type="text" id="param_method" class="input input-bordered" placeholder="e.g., Gerber Method" />
+                    </div>
+                    <div class="form-control md:col-span-2">
+                        <label class="label"><span class="label-text">Description</span></label>
+                        <textarea id="param_description" class="textarea textarea-bordered" rows="2"></textarea>
+                    </div>
+                </div>
+                
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('parameterModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save mr-2"></i>Save
+                    </button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- CCP Modal -->
+    <dialog id="ccpModal" class="modal">
+        <div class="modal-box w-11/12 max-w-2xl">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-4" id="ccpModalTitle">Add CCP Standard</h3>
+            
+            <form id="ccpForm" onsubmit="saveCcp(event)">
+                <input type="hidden" id="ccpId" value="">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-control md:col-span-2">
+                        <label class="label"><span class="label-text">CCP Name <span class="text-error">*</span></span></label>
+                        <input type="text" id="ccp_name" class="input input-bordered" required placeholder="e.g., Pasteurization Temperature" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Category <span class="text-error">*</span></span></label>
+                        <select id="ccp_category" class="select select-bordered" required>
+                            <option value="receiving">Receiving</option>
+                            <option value="storage">Storage</option>
+                            <option value="pasteurization">Pasteurization</option>
+                            <option value="cooling">Cooling</option>
+                            <option value="packaging">Packaging</option>
+                            <option value="distribution">Distribution</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Status</span></label>
+                        <select id="ccp_status" class="select select-bordered">
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Critical Limit <span class="text-error">*</span></span></label>
+                        <input type="text" id="ccp_critical" class="input input-bordered" required placeholder="e.g., ≥72°C for 15 sec" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Target Value</span></label>
+                        <input type="text" id="ccp_target" class="input input-bordered" placeholder="e.g., 75°C for 20 sec" />
+                    </div>
+                    <div class="form-control md:col-span-2">
+                        <label class="label"><span class="label-text">Monitoring Frequency</span></label>
+                        <input type="text" id="ccp_frequency" class="input input-bordered" placeholder="e.g., Every batch, Continuous" />
+                    </div>
+                    <div class="form-control md:col-span-2">
+                        <label class="label"><span class="label-text">Corrective Action</span></label>
+                        <textarea id="ccp_action" class="textarea textarea-bordered" rows="2" placeholder="Action to take when limit is exceeded"></textarea>
+                    </div>
+                    <div class="form-control md:col-span-2">
+                        <label class="label"><span class="label-text">Hazard Description</span></label>
+                        <textarea id="ccp_hazard" class="textarea textarea-bordered" rows="2" placeholder="Biological, Chemical, or Physical hazard"></textarea>
+                    </div>
+                </div>
+                
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('ccpModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save mr-2"></i>Save
+                    </button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <!-- Delete Confirmation -->
+    <dialog id="deleteModal" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg text-error"><i class="fas fa-exclamation-triangle mr-2"></i>Confirm Delete</h3>
+            <p class="py-4">Are you sure you want to delete <strong id="deleteName"></strong>?</p>
+            <div class="modal-action">
+                <button class="btn btn-ghost" onclick="document.getElementById('deleteModal').close()">Cancel</button>
+                <button class="btn btn-error" onclick="confirmDelete()">
+                    <i class="fas fa-trash mr-2"></i>Delete
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <div id="toastContainer" class="toast toast-end"></div>
+    
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/admin/admin.service.js"></script>
+    
+    <script>
+        let gradingData = [];
+        let parameterData = [];
+        let ccpData = [];
+        let deleteType = null;
+        let recordToDelete = null;
+        
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('-translate-x-full');
+            document.getElementById('sidebarBackdrop').classList.toggle('hidden');
+        }
+        
+        document.getElementById('themeToggle').addEventListener('change', function() {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+        
+        const savedTheme = localStorage.getItem('theme') || 'emerald';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        document.getElementById('themeToggle').checked = savedTheme === 'dark';
+        
+        function switchTab(tab) {
+            // Update tabs
+            document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('tab-active'));
+            document.getElementById(`tab${tab.charAt(0).toUpperCase() + tab.slice(1)}`).classList.add('tab-active');
+            
+            // Update sections
+            document.getElementById('gradingSection').classList.toggle('hidden', tab !== 'grading');
+            document.getElementById('parametersSection').classList.toggle('hidden', tab !== 'parameters');
+            document.getElementById('ccpSection').classList.toggle('hidden', tab !== 'ccp');
+        }
+        
+        // Grading Standards
+        async function loadGrading() {
+            try {
+                const response = await AdminService.getGradingStandards();
+                if (response.success) {
+                    gradingData = response.data || [];
+                    renderGrading();
+                }
+            } catch (error) {
+                console.error('Error loading grading:', error);
+            }
+        }
+        
+        function renderGrading() {
+            const tbody = document.getElementById('gradingTableBody');
+            if (gradingData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-base-content/60">No grading standards found</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = gradingData.map(item => `
+                <tr>
+                    <td><span class="badge badge-lg">${item.grade_name}</span></td>
+                    <td>${item.description || '-'}</td>
+                    <td>${item.fat_min || '-'}</td>
+                    <td>${item.fat_max || '-'}</td>
+                    <td>${item.snf_min || '-'}</td>
+                    <td>${item.snf_max || '-'}</td>
+                    <td>${item.temperature_max || '-'}</td>
+                    <td class="font-semibold">₱${parseFloat(item.price_per_liter).toFixed(2)}</td>
+                    <td>
+                        <div class="flex gap-1">
+                            <button class="btn btn-ghost btn-xs" onclick="editGrading(${item.id})"><i class="fas fa-edit"></i></button>
+                            <button class="btn btn-ghost btn-xs text-error" onclick="deleteRecord('grading', ${item.id}, '${item.grade_name}')"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
+        function openGradingModal() {
+            document.getElementById('gradingModalTitle').textContent = 'Add Grade Standard';
+            document.getElementById('gradingForm').reset();
+            document.getElementById('gradingId').value = '';
+            document.getElementById('gradingModal').showModal();
+        }
+        
+        async function editGrading(id) {
+            const item = gradingData.find(g => g.id == id);
+            if (!item) return;
+            
+            document.getElementById('gradingModalTitle').textContent = 'Edit Grade Standard';
+            document.getElementById('gradingId').value = item.id;
+            document.getElementById('grade_name').value = item.grade_name;
+            document.getElementById('price_per_liter').value = item.price_per_liter;
+            document.getElementById('fat_min').value = item.fat_min || '';
+            document.getElementById('fat_max').value = item.fat_max || '';
+            document.getElementById('snf_min').value = item.snf_min || '';
+            document.getElementById('snf_max').value = item.snf_max || '';
+            document.getElementById('temperature_max').value = item.temperature_max || '';
+            document.getElementById('grade_status').value = item.status || 'active';
+            document.getElementById('grade_description').value = item.description || '';
+            document.getElementById('gradingModal').showModal();
+        }
+        
+        async function saveGrading(event) {
+            event.preventDefault();
+            const id = document.getElementById('gradingId').value;
+            const data = {
+                grade_name: document.getElementById('grade_name').value,
+                price_per_liter: document.getElementById('price_per_liter').value,
+                fat_min: document.getElementById('fat_min').value || null,
+                fat_max: document.getElementById('fat_max').value || null,
+                snf_min: document.getElementById('snf_min').value || null,
+                snf_max: document.getElementById('snf_max').value || null,
+                temperature_max: document.getElementById('temperature_max').value || null,
+                status: document.getElementById('grade_status').value,
+                description: document.getElementById('grade_description').value
+            };
+            
+            try {
+                const response = id ? 
+                    await AdminService.updateGradingStandard(id, data) : 
+                    await AdminService.createGradingStandard(data);
+                
+                if (response.success) {
+                    showToast(id ? 'Grade updated' : 'Grade created', 'success');
+                    document.getElementById('gradingModal').close();
+                    loadGrading();
+                } else {
+                    showToast(response.message || 'Failed to save', 'error');
+                }
+            } catch (error) {
+                showToast('Error saving grade', 'error');
+            }
+        }
+        
+        // Test Parameters
+        async function loadParameters() {
+            try {
+                const response = await AdminService.getQcStandards();
+                if (response.success) {
+                    parameterData = response.data || [];
+                    renderParameters();
+                }
+            } catch (error) {
+                console.error('Error loading parameters:', error);
+            }
+        }
+        
+        function renderParameters() {
+            const grid = document.getElementById('parametersGrid');
+            if (parameterData.length === 0) {
+                grid.innerHTML = '<div class="col-span-full text-center py-8 text-base-content/60">No test parameters found</div>';
+                return;
+            }
+            
+            const categories = {
+                'raw_milk': { label: 'Raw Milk', color: 'primary' },
+                'pasteurized': { label: 'Pasteurized', color: 'secondary' },
+                'finished_goods': { label: 'Finished Goods', color: 'accent' },
+                'packaging': { label: 'Packaging', color: 'info' }
+            };
+            
+            grid.innerHTML = parameterData.map(item => {
+                const cat = categories[item.category] || { label: item.category, color: 'ghost' };
+                return `
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="flex items-start justify-between mb-3">
+                        <span class="badge badge-${cat.color} badge-sm">${cat.label}</span>
+                        <div class="dropdown dropdown-end">
+                            <label tabindex="0" class="btn btn-ghost btn-xs"><i class="fas fa-ellipsis-v"></i></label>
+                            <ul tabindex="0" class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-32 z-10">
+                                <li><a onclick="editParameter(${item.id})"><i class="fas fa-edit mr-2"></i>Edit</a></li>
+                                <li><a class="text-error" onclick="deleteRecord('parameter', ${item.id}, '${item.parameter_name}')"><i class="fas fa-trash mr-2"></i>Delete</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                    <h3 class="font-bold text-lg mb-1">${item.parameter_name}</h3>
+                    <p class="text-sm text-base-content/60 mb-3">${item.description || 'No description'}</p>
+                    <div class="space-y-1 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-base-content/60">Range</span>
+                            <span>${item.min_value || '-'} - ${item.max_value || '-'} ${item.unit || ''}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-base-content/60">Target</span>
+                            <span class="font-semibold">${item.target_value || '-'} ${item.unit || ''}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-base-content/60">Method</span>
+                            <span>${item.test_method || '-'}</span>
+                        </div>
+                    </div>
+                </div>
+            `}).join('');
+        }
+        
+        function openParameterModal() {
+            document.getElementById('parameterModalTitle').textContent = 'Add Test Parameter';
+            document.getElementById('parameterForm').reset();
+            document.getElementById('parameterId').value = '';
+            document.getElementById('parameterModal').showModal();
+        }
+        
+        async function editParameter(id) {
+            const item = parameterData.find(p => p.id == id);
+            if (!item) return;
+            
+            document.getElementById('parameterModalTitle').textContent = 'Edit Test Parameter';
+            document.getElementById('parameterId').value = item.id;
+            document.getElementById('param_name').value = item.parameter_name;
+            document.getElementById('param_category').value = item.category || 'raw_milk';
+            document.getElementById('param_unit').value = item.unit || '';
+            document.getElementById('param_min').value = item.min_value || '';
+            document.getElementById('param_max').value = item.max_value || '';
+            document.getElementById('param_target').value = item.target_value || '';
+            document.getElementById('param_method').value = item.test_method || '';
+            document.getElementById('param_description').value = item.description || '';
+            document.getElementById('parameterModal').showModal();
+        }
+        
+        async function saveParameter(event) {
+            event.preventDefault();
+            const id = document.getElementById('parameterId').value;
+            const data = {
+                parameter_name: document.getElementById('param_name').value,
+                category: document.getElementById('param_category').value,
+                unit: document.getElementById('param_unit').value,
+                min_value: document.getElementById('param_min').value || null,
+                max_value: document.getElementById('param_max').value || null,
+                target_value: document.getElementById('param_target').value || null,
+                test_method: document.getElementById('param_method').value,
+                description: document.getElementById('param_description').value
+            };
+            
+            try {
+                const response = id ? 
+                    await AdminService.updateQcStandard(id, data) : 
+                    await AdminService.createQcStandard(data);
+                
+                if (response.success) {
+                    showToast(id ? 'Parameter updated' : 'Parameter created', 'success');
+                    document.getElementById('parameterModal').close();
+                    loadParameters();
+                } else {
+                    showToast(response.message || 'Failed to save', 'error');
+                }
+            } catch (error) {
+                showToast('Error saving parameter', 'error');
+            }
+        }
+        
+        // CCP Standards
+        async function loadCcp() {
+            try {
+                const response = await AdminService.getCcpStandards();
+                if (response.success) {
+                    ccpData = response.data || [];
+                    renderCcp();
+                }
+            } catch (error) {
+                console.error('Error loading CCP:', error);
+            }
+        }
+        
+        function renderCcp() {
+            const tbody = document.getElementById('ccpTableBody');
+            if (ccpData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-base-content/60">No CCP standards found</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = ccpData.map(item => `
+                <tr>
+                    <td class="font-semibold">${item.ccp_name}</td>
+                    <td><span class="badge badge-ghost badge-sm">${item.category || '-'}</span></td>
+                    <td class="text-error font-semibold">${item.critical_limit}</td>
+                    <td>${item.target_value || '-'}</td>
+                    <td>${item.monitoring_frequency || '-'}</td>
+                    <td class="max-w-xs truncate">${item.corrective_action || '-'}</td>
+                    <td><span class="badge ${item.status === 'active' ? 'badge-success' : 'badge-warning'} badge-sm">${item.status}</span></td>
+                    <td>
+                        <div class="flex gap-1">
+                            <button class="btn btn-ghost btn-xs" onclick="editCcp(${item.id})"><i class="fas fa-edit"></i></button>
+                            <button class="btn btn-ghost btn-xs text-error" onclick="deleteRecord('ccp', ${item.id}, '${item.ccp_name}')"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
+        function openCcpModal() {
+            document.getElementById('ccpModalTitle').textContent = 'Add CCP Standard';
+            document.getElementById('ccpForm').reset();
+            document.getElementById('ccpId').value = '';
+            document.getElementById('ccpModal').showModal();
+        }
+        
+        async function editCcp(id) {
+            const item = ccpData.find(c => c.id == id);
+            if (!item) return;
+            
+            document.getElementById('ccpModalTitle').textContent = 'Edit CCP Standard';
+            document.getElementById('ccpId').value = item.id;
+            document.getElementById('ccp_name').value = item.ccp_name;
+            document.getElementById('ccp_category').value = item.category || 'pasteurization';
+            document.getElementById('ccp_status').value = item.status || 'active';
+            document.getElementById('ccp_critical').value = item.critical_limit;
+            document.getElementById('ccp_target').value = item.target_value || '';
+            document.getElementById('ccp_frequency').value = item.monitoring_frequency || '';
+            document.getElementById('ccp_action').value = item.corrective_action || '';
+            document.getElementById('ccp_hazard').value = item.hazard_description || '';
+            document.getElementById('ccpModal').showModal();
+        }
+        
+        async function saveCcp(event) {
+            event.preventDefault();
+            const id = document.getElementById('ccpId').value;
+            const data = {
+                ccp_name: document.getElementById('ccp_name').value,
+                category: document.getElementById('ccp_category').value,
+                status: document.getElementById('ccp_status').value,
+                critical_limit: document.getElementById('ccp_critical').value,
+                target_value: document.getElementById('ccp_target').value,
+                monitoring_frequency: document.getElementById('ccp_frequency').value,
+                corrective_action: document.getElementById('ccp_action').value,
+                hazard_description: document.getElementById('ccp_hazard').value
+            };
+            
+            try {
+                const response = id ? 
+                    await AdminService.updateCcpStandard(id, data) : 
+                    await AdminService.createCcpStandard(data);
+                
+                if (response.success) {
+                    showToast(id ? 'CCP updated' : 'CCP created', 'success');
+                    document.getElementById('ccpModal').close();
+                    loadCcp();
+                } else {
+                    showToast(response.message || 'Failed to save', 'error');
+                }
+            } catch (error) {
+                showToast('Error saving CCP', 'error');
+            }
+        }
+        
+        // Delete
+        function deleteRecord(type, id, name) {
+            deleteType = type;
+            recordToDelete = id;
+            document.getElementById('deleteName').textContent = name;
+            document.getElementById('deleteModal').showModal();
+        }
+        
+        async function confirmDelete() {
+            if (!recordToDelete || !deleteType) return;
+            
+            try {
+                let response;
+                switch (deleteType) {
+                    case 'grading':
+                        response = await AdminService.deleteGradingStandard(recordToDelete);
+                        if (response.success) loadGrading();
+                        break;
+                    case 'parameter':
+                        response = await AdminService.deleteQcStandard(recordToDelete);
+                        if (response.success) loadParameters();
+                        break;
+                    case 'ccp':
+                        response = await AdminService.deleteCcpStandard(recordToDelete);
+                        if (response.success) loadCcp();
+                        break;
+                }
+                
+                if (response?.success) {
+                    showToast('Deleted successfully', 'success');
+                    document.getElementById('deleteModal').close();
+                } else {
+                    showToast(response?.message || 'Failed to delete', 'error');
+                }
+            } catch (error) {
+                showToast('Error deleting', 'error');
+            }
+            
+            deleteType = null;
+            recordToDelete = null;
+        }
+        
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = { 'success': 'alert-success', 'error': 'alert-error', 'warning': 'alert-warning', 'info': 'alert-info' }[type] || 'alert-info';
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const user = await AuthService.getCurrentUser();
+                if (user) {
+                    document.getElementById('sidebarUserName').textContent = user.full_name;
+                    document.getElementById('userInitials').textContent = user.full_name.split(' ').map(n => n[0]).join('').substring(0, 2);
+                }
+                
+                // Load all data
+                await Promise.all([loadGrading(), loadParameters(), loadCcp()]);
+            } catch (error) { console.error('Init error:', error); }
+        });
+    </script>
+</body>
+</html>

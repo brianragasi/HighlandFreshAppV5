@@ -1,10 +1,70 @@
 # Finance Officer - System Context
 
-Based on the discussion, the **Finance Officer** manages the financial aspects of milk procurement and supplier payments, using the quality data from the lab to calculate accurate payment rates.
+Based on the discussion, the **Finance Officer** manages all **fund disbursements** and **payment processing** for the company. This includes supplier payments, farmer payouts, and coordination with the Cashier for collections tracking.
+
+> **CRITICAL SCOPE CLARIFICATION:**
+> The Finance Officer handles **DISBURSEMENTS**, not **ACCOUNTING**.
+> - ✅ Releases funds to suppliers
+> - ✅ Processes farmer payouts
+> - ✅ Tracks payables (what company owes)
+> - ✅ Coordinates with Cashier for collection visibility
+> - ❌ Does NOT create journal entries
+> - ❌ Does NOT maintain general ledger
+> - ❌ Does NOT generate financial statements
 
 ---
 
-## 1. Raw Milk Pricing Structure (ANNEX "B" - Agreed Rates)
+## 1. Core Responsibilities
+
+### 1.1 Fund Disbursement Management
+
+The Finance Officer is the **only role authorized to release company funds**.
+
+| Activity | Description |
+|----------|-------------|
+| **Supplier Payments** | Release payment for approved Purchase Orders |
+| **Farmer Payouts** | Weekly/bi-monthly payments based on milk quality |
+| **Utility & Operations** | Process approved operational expenses |
+| **Staggered Payments** | Manage partial payment schedules for large amounts |
+
+### 1.2 Payment Processing Workflow
+
+```
+┌─────────────────────┐
+│  Purchase Order     │
+│  (Approved by GM)   │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  Goods Received     │
+│  (Warehouse confirms)│
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  FINANCE OFFICER    │
+│  Verifies:          │
+│  • PO is approved   │
+│  • Goods received   │
+│  • Invoice matches  │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  RELEASE PAYMENT    │
+│  Record:            │
+│  • Payment method   │
+│  • Check number     │
+│  • Bank details     │
+└─────────────────────┘
+```
+
+> **Key Principle:** Finance does NOT check the quality of goods (that's Warehouse's job). Finance only verifies the paperwork is complete and approved before releasing funds.
+
+---
+
+## 2. Raw Milk Pricing Structure (ANNEX "B" - Agreed Rates)
 
 ### Base Pricing:
 | Component | Amount |
@@ -157,6 +217,188 @@ The Finance Officer generates:
 
 ---
 
+---
+
+## 10. Staggered Payments Management
+
+### The Problem
+Large suppliers or institutional purchases may have significant outstanding amounts that cannot be paid in a single transaction.
+
+### Staggered Payment Tracking
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                     STAGGERED PAYMENT EXAMPLE                           │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  Supplier: ABC Packaging Co.                                           │
+│  Total Invoice: ₱3,000,000.00                                          │
+│                                                                         │
+│  Payment Schedule:                                                      │
+│  ─────────────────────────────────────────────────────────────         │
+│  Date        │ Amount        │ Balance      │ Status                   │
+│  ─────────────────────────────────────────────────────────────         │
+│  2026-01-15  │ ₱1,000,000.00 │ ₱2,000,000.00│ Partial paid            │
+│  2026-02-15  │ ₱1,000,000.00 │ ₱1,000,000.00│ Partial paid            │
+│  2026-03-15  │ ₱1,000,000.00 │ ₱0.00        │ ✓ FULLY PAID            │
+│                                                                         │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### UI Requirements
+- Dashboard shows **Running Balance** for each supplier
+- Visual indicator when balance decreases as payments are made
+- Alert when payment is due based on agreed schedule
+
+---
+
+## 11. Coordination with Cashier (Collections Visibility)
+
+### The Question: "Who receives the payment?"
+> **Answer:** The **Cashier** receives ALL incoming payments, even for credit accounts.
+
+### Integration Flow
+
+```
+┌─────────────┐        ┌─────────────┐        ┌─────────────┐
+│   CASHIER   │        │   SYSTEM    │        │   FINANCE   │
+│   MODULE    │        │   AUTO      │        │   VIEW      │
+└──────┬──────┘        └──────┬──────┘        └──────┬──────┘
+       │                      │                      │
+       │ 1. Records           │                      │
+       │    Collection        │                      │
+       │    (OR issued)       │                      │
+       ├─────────────────────►│                      │
+       │                      │ 2. System updates:   │
+       │                      │    • AR decreases    │
+       │                      │    • Cash increases  │
+       │                      ├─────────────────────►│
+       │                      │                      │ 3. Finance sees
+       │                      │                      │    updated position
+       │                      │                      │
+```
+
+### Finance Dashboard Shows
+| Metric | Source | Updated When |
+|--------|--------|--------------|
+| **Total Receivables** | Sum of outstanding CSI | CSI created or payment received |
+| **Today's Collections** | Sum of today's OR | Collection recorded by Cashier |
+| **Daily Cash Position** | Collections - Disbursements | Any transaction |
+| **Overdue Accounts** | AR past due date | Daily calculation |
+
+### Key Rule
+> **Finance does NOT receive payments directly.** Finance only has **visibility** into collection data entered by the Cashier.
+
+---
+
+## 12. Non-Cash Payment Recording
+
+### The Problem
+Institutional customers often pay via check or bank transfer, not cash. The system must track all payment metadata.
+
+### Required Fields for Non-Cash Payments
+
+| Field | Purpose |
+|-------|---------|
+| **Payment Mode** | Cash / Check / Bank Transfer |
+| **Bank Name** | Which bank issued the check |
+| **Check Number** | For check payments |
+| **Check Owner** | Name on the check |
+| **Check Date** | Date on the check |
+| **Maturity Date** | When check can be deposited |
+
+### Check Payment Flow
+
+```
+┌─────────────────────┐
+│  Customer pays by   │
+│  POST-DATED CHECK   │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  Cashier records:   │
+│  • Check Number     │
+│  • Bank Name        │
+│  • Maturity Date    │
+│  • Amount           │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  OR issued with     │
+│  "CHECK RECEIVED"   │
+│  notation           │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────────────────────────┐
+│  Finance sees:                          │
+│  • Collection pending (PDC)             │
+│  • Maturity date alert                  │
+│  • Deposit reminder when date arrives   │
+└─────────────────────────────────────────┘
+```
+
+---
+
+## 13. Finance Dashboard
+
+### Dashboard Sections
+
+#### 13.1 Disbursements Overview
+| Section | Content |
+|---------|---------|
+| **Pending Payments** | Suppliers/farmers awaiting payment |
+| **Today's Disbursements** | Payments released today |
+| **Weekly Farmer Payout** | Total farmer payments this period |
+| **Overdue Payables** | Suppliers past payment terms |
+
+#### 13.2 Collections Visibility (Read-Only)
+| Section | Content |
+|---------|---------|
+| **Today's Collections** | Cash + checks received (from Cashier) |
+| **Outstanding Receivables** | Total unpaid credit sales |
+| **Aging Summary** | 0-30, 31-60, 61-90, 91+ days breakdown |
+| **PDC Reminders** | Post-dated checks maturing soon |
+
+#### 13.3 Cash Position
+| Section | Content |
+|---------|---------|
+| **Opening Balance** | Start of day cash |
+| **+ Collections** | Money received |
+| **- Disbursements** | Money released |
+| **= Closing Balance** | End of day position |
+
+---
+
+## 14. Finance Reports
+
+| Report | Content | Frequency |
+|--------|---------|-----------|
+| **Supplier Payment Summary** | Payments per supplier for period | Per request |
+| **Farmer Payout Report** | Individual farmer payments with quality breakdown | Bi-monthly |
+| **Disbursement History** | All payments released | Daily/Weekly |
+| **Outstanding Payables** | What company owes and when | Weekly |
+| **Collections Summary** | What was collected (from Cashier data) | Daily |
+| **Aging of Receivables** | Overdue accounts analysis | Weekly |
+| **Cash Position Report** | Net cash movement | Daily |
+
+---
+
 ## Summary
 
-The **Finance Officer's** primary role in the Highland Fresh system is to **accurately calculate supplier payments** based on the quality metrics provided by the QC lab. The pricing structure incentivizes suppliers to deliver high-quality milk (higher fat content, lower acidity, cleaner milk) while protecting the company from paying premium prices for substandard raw materials.
+The **Finance Officer's** primary role in the Highland Fresh system is:
+
+1. **Disbursements:** Release funds for approved purchases and farmer payouts
+2. **Payables Management:** Track what the company owes and manage payment schedules
+3. **Collections Coordination:** Visibility into receivables (data entered by Cashier)
+4. **Cash Position Awareness:** Monitor daily cash flow
+5. **Farmer Payouts:** Calculate and process milk supplier payments based on QC data
+
+### What Finance Does NOT Do
+- ❌ Receive payments directly (Cashier's job)
+- ❌ Create journal entries (use external accounting software)
+- ❌ Maintain general ledger (use external accounting software)
+- ❌ Generate financial statements (use external accounting software)
+- ❌ Check quality of received goods (Warehouse's job)

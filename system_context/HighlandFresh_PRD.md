@@ -5,13 +5,42 @@ No detail has been left out—from the $81^\circ C$ pasteurization requirement t
 ---
 
 # Product Requirements Document (PRD): Highland Fresh System
-**Project:** Integrated POS, Inventory, QC, Production, and Accounting System  
-**Version:** 4.0 (Final Comprehensive Version)
+**Project:** Integrated POS, Inventory, QC, and Production Operations System  
+**Version:** 6.0 (Revised per Scope Clarification - February 2026)
 
 ---
 
 ## 1. Executive Summary
-Highland Fresh requires a unified digital ecosystem to manage a highly complex dairy production lifecycle. The system must prevent inventory "leakage," ensure $100\%$ food safety compliance, automate complex farmer payouts based on milk quality, and provide a "hands-free" accounting experience (the "Hagsa" logic) where data flows automatically from the plant floor to the financial statements.
+Highland Fresh requires a unified digital ecosystem to manage a highly complex dairy production lifecycle. The system must prevent inventory "leakage," ensure $100\%$ food safety compliance, automate complex farmer payouts based on milk quality, and provide accurate operational reports for management decision-making.
+
+### 1.0.1 CRITICAL SCOPE DEFINITION
+> **This is an OPERATIONS SYSTEM (Inventory/Production), NOT an Accounting System.**
+> 
+> The system's job is to **count physical items**, not balance financial ledgers.
+> 
+> **Explicitly EXCLUDED from Scope:**
+> - **Bookkeeping/Accounting System** (use external software like QuickBooks, Xero, or similar)
+> - Journal Entries & General Ledger
+> - Trial Balance
+> - Income Statements
+> - Balance Sheets
+> - Cash Flow Statements
+> - Statement of Equity
+> - Payroll Processing
+> - Full double-entry accounting
+> - Tax computation and filing
+
+### 1.0.2 System Modules (In Scope)
+| Module | Primary Users | Core Functions |
+|--------|--------------|----------------|
+| **Sales** | Cashier, Sales Custodian | POS, Collections, Institutional Sales, Aging Tracking |
+| **Warehouse (Raw)** | Warehouse Raw Staff | Ingredients, Packaging, MRO, Raw Milk Storage |
+| **Warehouse (Finished Goods)** | Warehouse FG Staff | Chillers, Dispatch, Delivery Receipts, FIFO Enforcement |
+| **Production** | Production Staff | Batch Execution, Recipe Consumption, CCP Logging |
+| **Quality Control** | QC Officer | Milk Grading, Batch Release, Expiry Management |
+| **Purchasing** | Purchaser | Supplier Management, Price Trends, Purchase Orders |
+| **Finance (Disbursements)** | Finance Officer | Fund Disbursements, Payment Processing, Payables Tracking |
+| **General Manager** | GM | Approvals, Dashboards, Master Recipe Ownership |
 
 ### 1.1 Statement of Problems
 The current operations at Highland Fresh suffer from:
@@ -36,9 +65,27 @@ The current operations at Highland Fresh suffer from:
 | **Sales Custodian** | Account Manager | Supermarket/Institutional POs; Credit Aging Management; Feeding Programs. |
 | **Cashier** | POS / Collection User | Walk-in Sales; Debt Collection via DR Search; 5 PM Reconciliation. |
 | **Purchaser** | Procurement User | Sourcing; Price Trend Monitoring; Purchase Request Slips (PRS). |
-| **Finance Officer** | Treasury Manager | Farmer Payout Execution; Staggered Supplier Payments; Bank/Check Metadata. |
-| **Bookkeeper** | Auditor / Analyst | Verification of Automated Journals; Generation of 4 Financial Statements. |
+| **Finance Officer** | Disbursement Manager | Fund Disbursements; Payment Processing; Payables Tracking; Farmer Payout Execution. |
 | **Maintenance Head** | Internal Requester | Spare part requisitions; Machine health logging. |
+
+### 2.0.1 Finance Officer Role Clarification
+> **The Finance Officer handles DISBURSEMENTS, not ACCOUNTING.**
+
+**Finance Officer DOES:**
+- Process fund disbursements to suppliers
+- Execute farmer payout processing
+- Track accounts payable (what the company owes)
+- Coordinate with Cashier for collections tracking
+- Record payment metadata (check numbers, bank details, maturity dates)
+- Manage staggered payment schedules for large supplier debts
+
+**Finance Officer does NOT:**
+- Create journal entries
+- Maintain general ledger
+- Generate financial statements (Income Statement, Balance Sheet, etc.)
+- Perform bookkeeping/accounting tasks
+
+> **Note:** All accounting functions (journal entries, ledgers, financial statements) are handled in external accounting software (e.g., QuickBooks).
 
 ### 2.1 Scope Clarification: External Parties (OUT OF SCOPE)
 The following entities are **OUTSIDE the system scope** and do NOT have system UI access:
@@ -61,9 +108,22 @@ The following entities are **OUTSIDE the system scope** and do NOT have system U
 *   **Pricing Engine:** Automatically calculate price based on Membership status (₱40 vs ₱38) and Quality Incentives/Deductions.
 *   **Rejection Protocol:** A "Reject" action must document the reason and block the volume from entering the inventory.
 
+### 3.1.1 The "Milk Tank" Logic (Pre-Tank QC)
+> **Critical Rule:** QC must happen BEFORE milk enters the main storage tank.
+> 
+> **Rationale:** You cannot mix untested milk with good milk. If the new batch is bad, it spoils the entire tank.
+
+*   **Process Flow:**
+    1. Supplier arrives with fresh milk
+    2. **Test Sample FIRST** (before any tank loading)
+    3. If Pass → Load to Tank
+    4. If Fail → **Reject immediately** (milk never enters tank)
+*   **Perishability Constraint:** Fresh milk has a ~3 hour window during transport before quality risk increases.
+*   **Supplier Tracking:** Even though milk physically mixes in the tank, the system **must digitally record** which supplier delivered which batch for traceability.
+
 ### 3.2 The "Batch Release" Safety Lock
 *   A batch **cannot** be moved to "Finished Goods" or made "Visible" to Sales until QC checks:
-    1.  **Pasteurization Verified:** Must confirm log shows $81^\circ C+$.
+    1.  **Pasteurization Verified:** Must confirm log shows $75^\circ C$ for 15 seconds (HTST method).
     2.  **CCP Check:** Confirmation that cooling reached $\le 4^\circ C$ within the safety window.
     3.  **Organoleptic Test:** Manual pass for Taste and Appearance.
 *   **Barcode Generation:** Upon release, the system generates a unique barcode containing the Batch ID, Mfg Date, and Expiry Date.
@@ -92,6 +152,14 @@ The system must maintain four distinct, non-overlapping inventory categories:
 2.  **Ingredients & Packaging:** Flavorings, Sugar, Bottles, Caps, Film.
 3.  **MRO (Maintenance, Repair, Operations):** Bolts, Spare parts, Machine oil, Tools.
 4.  **Finished Goods:** The "Chillers" containing products ready for sale.
+
+### 5.1.1 Differentiating Ingredient Ordering Behavior
+The system needs two different ordering behaviors based on ingredient type:
+
+| Ingredient Type | Ordering Logic | Reason |
+|-----------------|----------------|--------|
+| **Fresh Milk** | Delivered daily or on fixed schedule | High perishability (~3 hours transport window) |
+| **Dry Ingredients** (Sugar, Bottles, etc.) | Ordered based on stock levels with reorder alerts | Longer shelf life, requires lead time planning |
 
 ### 5.2 Multi-Unit Inventory System (Box vs. Piece)
 In the Philippine sari-sari store market, retail sales happen "by piece" (tingi), not by box. The system must support **Multi-Unit Inventory** to ensure accurate tracking.
@@ -130,6 +198,26 @@ In the Philippine sari-sari store market, retail sales happen "by piece" (tingi)
 *   No item leaves the warehouse without a **Digital Requisition Slip**.
 *   **Workflow:** Requestor $\rightarrow$ GM Approval $\rightarrow$ Warehouse Release $\rightarrow$ Stock Card Auto-Update.
 *   **FIFO Enforcement:** System must force the Warehouse (FG) to pick the earliest expiry dates first.
+
+### 5.4 Reorder Points & Threshold Alerts
+> **Critical Correction:** The system must NOT wait until stock hits zero. It must trigger alerts BEFORE stock runs out.
+
+*   **Reorder Point Definition:** Each ingredient/material has a configurable threshold (e.g., "Alert when 5 sacks of sugar remain").
+*   **Lead Time Consideration:** Thresholds must account for supplier shipping time (could take days or weeks).
+*   **Alert Workflow:**
+    1. System detects stock at or below threshold
+    2. Alert sent to Purchaser and GM
+    3. Purchaser generates Purchase Order
+    4. GM approves PO
+    5. Supplier delivers
+    6. Items "Stocked In" to Raw Materials Inventory
+
+**Example Configuration:**
+| Material | Current Stock | Reorder Point | Lead Time | Status |
+|----------|---------------|---------------|-----------|--------|
+| Sugar | 3 sacks | 5 sacks | 1 week | ⚠️ BELOW THRESHOLD |
+| Bottles 200ml | 500 pcs | 200 pcs | 3 days | ✅ OK |
+| Caps | 150 pcs | 300 pcs | 5 days | ⚠️ BELOW THRESHOLD |
 
 ---
 
@@ -185,20 +273,77 @@ In the Philippine sari-sari store market, retail sales happen "by piece" (tingi)
 *   **Credit Memo:** Issue credit to customer account for valid returns.
 *   **Destruction Log:** Record disposal of expired/contaminated products.
 *   **Reprocessing:** Near-expiry returns eligible for Yogurt transformation (per Yogurt Rule).
-*   **Financial Impact:** Automatic journal entries for returns affecting Cost of Goods Sold.
+*   **Inventory Adjustment:** Returns appropriately adjust inventory counts and disposal records.
 
 ---
 
-## 8. Module 6: Finance & Bookkeeping
-### 8.1 Treasury & Cash Management
-*   **Payment Metadata:** Mandatory recording of Bank Name, Check Number, Check Owner, and Maturity Date for all non-cash payments.
-*   **Staggered Payments:** Ledger tracking for large supplier debts (e.g., "Paid 1M of 3M; 2M remaining").
-*   **Farmer Payouts:** Weekly statements based on QC-accepted liters and grading history.
+## 8. Module 6: Finance & Disbursements (Payment Management Only)
+> **Scope Reminder:** This module handles PAYMENT PROCESSING and DISBURSEMENTS only. 
+> 
+> **NOT in scope:** Journal entries, general ledger, trial balance, or financial statements. Use external accounting software (QuickBooks, Xero, etc.) for bookkeeping.
 
-### 8.2 The "Hagsa" (Automated Accounting)
-*   **Zero Re-entry:** Sales, Purchases, and Payouts must automatically populate the Sales, Purchase, Cash Receipt, and Cash Disbursement Journals.
-*   **FS Generation:** Real-time generation of the Income Statement, Balance Sheet, Cash Flow, and Statement of Equity.
+### 8.1 Disbursement & Payment Management
+*   **Payment Metadata:** Mandatory recording of Bank Name, Check Number, Check Owner, and Maturity Date for all non-cash payments.
+*   **Staggered Payments:** Tracking for large supplier debts (e.g., "Paid 1M of 3M; 2M remaining").
+*   **Farmer Payouts:** Weekly statements based on QC-accepted liters and grading history.
 *   **5 PM Cut-off:** Mandatory daily locking of transactions to ensure reconciliation.
+
+### 8.2 Payables Tracking
+*   **Supplier Payables:** Track outstanding amounts owed to suppliers.
+*   **Payment Schedule:** Manage due dates and payment terms.
+*   **Payment History:** Record of all disbursements made.
+
+### 8.3 Coordination with Cashier
+*   **Collections Tracking:** Finance Officer monitors collections reported by Cashier.
+*   **Reconciliation Support:** Daily cash position based on sales collections and disbursements.
+*   **Outstanding Receivables:** View of unpaid invoices and aging status.
+
+---
+
+## 8A. Module 6A: Disposal & Waste Tracking (The Material Balance Rule)
+
+### 8A.1 The Material Balance Principle
+> **Fundamental Rule:** Raw Materials Used **MUST ALWAYS EQUAL** Finished Goods Produced + Waste/Disposal.
+>
+> If 100 units of raw materials are consumed but only 90 finished goods are produced, the missing 10 **MUST** be recorded in a Disposal Report.
+
+```
+[Raw Materials Consumed] = [Finished Goods Produced] + [Waste/Disposed Items]
+```
+
+### 8A.2 The "Black Hole" Prevention
+*   **Problem:** Without proper tracking, failed products simply "disappear" from the system.
+*   **Solution:** The system must **explicitly track** all disposed items.
+*   **Financial Implication ("Gansi"):** Disposed items represent money spent on ingredients that generated no revenue. Without a Disposal Report, the company cannot calculate this financial loss.
+
+### 8A.3 Disposal Categories
+| Category | Description | Example |
+|----------|-------------|---------||
+| **QC Rejection (Pre-Production)** | Raw milk failed QC testing | Milk with acidity ≥0.25% |
+| **Production Failure** | Batch failed during manufacturing | Pasteurization failed, contamination |
+| **Post-Production QC Fail** | Finished goods failed final QC | Organoleptic test failure |
+| **Expired Inventory** | Products past expiry date | Near-expiry milk not transformed to yogurt |
+| **Damaged Goods** | Physical damage during storage/transport | Broken bottles, crushed packaging |
+| **Returns - Disposed** | Customer returns deemed unfit for resale | Quality complaints, contamination |
+
+### 8A.4 Disposal Workflow
+1. **Identify:** Item identified for disposal (by QC, Warehouse, or Production)
+2. **Document:** Record in Disposal Log with:
+   - Date/Time
+   - Item description and quantity
+   - Batch ID (for traceability)
+   - Disposal reason (from categories above)
+   - Authorizing officer
+3. **Approve:** GM or designated approver confirms disposal
+4. **Execute:** Physical disposal performed
+5. **Reconcile:** Disposal quantity balances the Material Balance equation
+
+### 8A.5 Disposal Report
+The system must generate Disposal/Spoilage Reports showing:
+- Total items disposed by category
+- Estimated cost of disposed materials
+- Trends over time (daily/weekly/monthly)
+- Link to original batches/suppliers for root cause analysis
 
 ---
 
@@ -247,13 +392,80 @@ In the Philippine sari-sari store market, retail sales happen "by piece" (tingi)
 
 ---
 
-## 12. System Business Rules (The "Laws" of Highland Fresh)
+## 12. System Reports (Final Report List)
+
+> **Scope Clarity:** These reports allow the owner to verify if the physical stock in the warehouse matches the numbers in the computer. They are OPERATIONAL reports, not accounting statements.
+
+### 12.1 Core Reports
+| Report | Purpose | Generated By |
+|--------|---------|-------------|
+| **Inventory Report** | Current stock levels across all warehouses | Warehouse Raw/FG |
+| **Sales Report** | Volume of goods sold by period/product/customer | Sales Custodian/Cashier |
+| **Disposal/Spoilage Report** | Volume and cost of goods wasted | QC/Warehouse |
+| **Farmer Payment Summary** | Payables based on milk quality and volume | Finance Officer |
+| **Reorder Alert Report** | Items at or below threshold levels | Purchaser |
+
+### 12.2 Operational Reports
+| Report | Purpose |
+|--------|---------|
+| **Production Report** | Batches produced, yield vs. expected |
+| **QC Report** | Milk grading results, pass/fail rates |
+| **Delivery Report** | DRs issued, items dispatched |
+| **Returns Report** | Returned items by reason and disposition |
+| **Physical vs. System Count** | Variance between actual count and system records |
+
+---
+
+## 13. System Business Rules (The "Laws" of Highland Fresh)
 1.  **Rule of One:** One-way flow from receiving to dispatch (FDA Compliance).
-2.  **The Rejection Rule:** Rejected milk is never paid for and never enters the tank.
-3.  **The Yogurt Rule:** Near-expiry milk must be transformed into Yogurt to prevent financial loss.
-4.  **The Approval Rule:** The General Manager is the only person who can approve a Purchase Order or a Warehouse Requisition.
-5.  **The 5 PM Rule:** Daily operations stop at 5:00 PM to ensure the "Cashier" and "Finance" numbers match perfectly.
-6.  **The Returns Rule:** All returned products must be recorded with Batch ID, reason, and disposition within 24 hours of receipt.
-7.  **The Real-Time Rule:** All sales transactions must reflect in the central system immediately—no batch processing or end-of-day uploads.
-8.  **The Wholesaler Rule:** Wholesalers are external partners, not employees. Their downstream sales are outside system scope, but their purchases and markups are tracked.
-9.  **The Piece-Level Rule:** All inventory must be tracked down to the individual piece level. Box-only tracking is prohibited as it causes immediate data inaccuracy. Every sale, whether 1 piece or 100 boxes, must be recorded precisely.
+2.  **The Rejection Rule:** Rejected milk is never paid for and **never enters the tank**.
+3.  **The Pre-Tank QC Rule:** Milk MUST be tested BEFORE entering the storage tank. Untested milk cannot mix with tested milk.
+4.  **The Yogurt Rule:** Near-expiry milk must be transformed into Yogurt to prevent financial loss.
+5.  **The Approval Rule:** The General Manager is the only person who can approve a Purchase Order or a Warehouse Requisition.
+6.  **The 5 PM Rule:** Daily operations stop at 5:00 PM to ensure the "Cashier" and "Finance" numbers match perfectly.
+7.  **The Returns Rule:** All returned products must be recorded with Batch ID, reason, and disposition within 24 hours of receipt.
+8.  **The Real-Time Rule:** All sales transactions must reflect in the central system immediately—no batch processing or end-of-day uploads.
+9.  **The Wholesaler Rule:** Wholesalers are external partners, not employees. Their downstream sales are outside system scope, but their purchases and markups are tracked.
+10. **The Piece-Level Rule:** All inventory must be tracked down to the individual piece level. Box-only tracking is prohibited.
+11. **The Material Balance Rule:** Raw Materials Used = Finished Goods + Waste. No item can "disappear" from the system.
+12. **The Threshold Rule:** System must alert for low stock BEFORE items run out, accounting for supplier lead time.
+13. **The Operations Scope Rule:** This system counts physical items and processes payments. It does NOT perform bookkeeping (no journal entries, no general ledger, no financial statements). Accounting is handled in external software.
+
+---
+
+## 14. Explicit Scope Exclusions
+
+The following functions are **explicitly OUT OF SCOPE** for this system and should be handled by dedicated external software:
+
+### 14.1 Bookkeeping & Accounting (Use QuickBooks, Xero, or similar)
+| Excluded Function | Reason |
+|-------------------|--------|
+| Journal Entries | Double-entry bookkeeping not in scope |
+| General Ledger | Ledger maintenance is accounting function |
+| Trial Balance | Financial reconciliation tool for accountants |
+| Chart of Accounts | Accounting configuration |
+
+### 14.2 Financial Statements (Generated in Accounting Software)
+| Excluded Report | Description |
+|-----------------|-------------|
+| Income Statement | Profit & Loss report |
+| Balance Sheet | Assets, Liabilities, Equity snapshot |
+| Cash Flow Statement | Cash inflows/outflows analysis |
+| Statement of Equity | Owner's equity changes |
+
+### 14.3 Payroll & HR
+| Excluded Function | Reason |
+|-------------------|--------|
+| Payroll Processing | Employee salary computation |
+| Tax Withholding | Government remittances |
+| Benefits Administration | SSS, PhilHealth, Pag-IBIG |
+| Leave Management | Employee attendance tracking |
+
+### 14.4 Tax & Compliance Reporting
+| Excluded Function | Reason |
+|-------------------|--------|
+| VAT Computation | Tax filing handled externally |
+| BIR Form Generation | Tax authority compliance |
+| Annual Tax Returns | Accountant responsibility |
+
+> **Integration Note:** This operations system provides the SOURCE DATA (sales totals, inventory values, disbursements) that can be exported or manually entered into accounting software for bookkeeping purposes.

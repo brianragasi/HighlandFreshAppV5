@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recipes Management | Highland Fresh Admin</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } }
+        }
+    </script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Axios -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-cogs text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Admin Panel</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-th-large w-5 text-center text-base-content/60"></i><span class="flex-1">Dashboard</span>
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Supply Chain</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="farmers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-tractor w-5 text-center text-base-content/60"></i><span class="flex-1">Farmers</span>
+                    </a></li>
+                    <li><a href="suppliers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-truck w-5 text-center text-base-content/60"></i><span class="flex-1">Suppliers</span>
+                    </a></li>
+                    <li><a href="customers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-store w-5 text-center text-base-content/60"></i><span class="flex-1">Customers</span>
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Product Catalog</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="products.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-box w-5 text-center text-base-content/60"></i><span class="flex-1">Products</span>
+                    </a></li>
+                    <li><a href="recipes.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                        <i class="fas fa-clipboard-list w-5 text-center"></i><span class="flex-1">Recipes</span>
+                    </a></li>
+                    <li><a href="ingredients.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-seedling w-5 text-center text-base-content/60"></i><span class="flex-1">Ingredients</span>
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Infrastructure</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="storage.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-database w-5 text-center text-base-content/60"></i><span class="flex-1">Storage Tanks</span>
+                    </a></li>
+                    <li><a href="chillers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-snowflake w-5 text-center text-base-content/60"></i><span class="flex-1">Chillers</span>
+                    </a></li>
+                </ul>
+            </div>
+        </nav>
+        
+        <div class="p-4 border-t border-base-300">
+            <a href="../login.html" class="btn btn-ghost btn-sm w-full justify-start gap-3">
+                <i class="fas fa-sign-out-alt"></i>
+                Logout
+            </a>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <main class="lg:ml-72 min-h-screen">
+        <!-- Top Bar -->
+        <header class="bg-base-100 border-b border-base-300 sticky top-0 z-30">
+            <div class="flex items-center justify-between px-4 py-3">
+                <div class="flex items-center gap-3">
+                    <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div>
+                        <h1 class="text-lg font-bold">Recipes Management</h1>
+                        <div class="text-sm breadcrumbs p-0">
+                            <ul><li><a href="dashboard.html">Admin</a></li><li>Recipes</li></ul>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-sm gap-2" onclick="openModal()">
+                    <i class="fas fa-plus"></i>
+                    Add Recipe
+                </button>
+            </div>
+        </header>
+        
+        <!-- Content -->
+        <div class="p-4 md:p-6 space-y-6">
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-clipboard-list text-primary text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm text-base-content/60">Total Recipes</p>
+                            <p class="text-2xl font-bold" id="totalCount">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 bg-success/10 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-check-circle text-success text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm text-base-content/60">Active</p>
+                            <p class="text-2xl font-bold" id="activeCount">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 bg-info/10 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-blender text-info text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm text-base-content/60">Product Types</p>
+                            <p class="text-2xl font-bold" id="typeCount">0</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Search and Filter -->
+            <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
+                <div class="flex flex-col md:flex-row gap-4">
+                    <div class="flex-1">
+                        <div class="input input-bordered flex items-center gap-2">
+                            <i class="fas fa-search text-base-content/40"></i>
+                            <input type="text" id="searchInput" placeholder="Search recipes..." class="grow border-none focus:outline-none bg-transparent" onkeyup="handleSearch(event)">
+                        </div>
+                    </div>
+                    <select id="typeFilter" class="select select-bordered w-full md:w-48" onchange="loadData()">
+                        <option value="">All Types</option>
+                        <option value="bottled_milk">Bottled Milk</option>
+                        <option value="cheese">Cheese</option>
+                        <option value="butter">Butter</option>
+                        <option value="yogurt">Yogurt</option>
+                        <option value="milk_bar">Milk Bar</option>
+                    </select>
+                    <select id="statusFilter" class="select select-bordered w-full md:w-48" onchange="loadData()">
+                        <option value="">All Status</option>
+                        <option value="1">Active</option>
+                        <option value="0">Inactive</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Data Table -->
+            <div class="bg-base-100 rounded-2xl border border-base-300 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="table table-zebra">
+                        <thead>
+                            <tr class="bg-base-200">
+                                <th>Code</th>
+                                <th>Product Name</th>
+                                <th>Type</th>
+                                <th>Milk Type</th>
+                                <th>Base Milk (L)</th>
+                                <th>Yield</th>
+                                <th>Shelf Life</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dataTable">
+                            <tr>
+                                <td colspan="9" class="text-center py-8">
+                                    <i class="fas fa-spinner fa-spin text-2xl text-base-content/40"></i>
+                                    <p class="mt-2 text-base-content/60">Loading...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Pagination -->
+                <div class="p-4 border-t border-base-300 flex justify-between items-center">
+                    <div class="text-sm text-base-content/60" id="paginationInfo">Showing 0 of 0</div>
+                    <div class="join" id="paginationButtons"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- Add/Edit Modal -->
+    <dialog id="formModal" class="modal">
+        <div class="modal-box w-11/12 max-w-3xl">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-4" id="modalTitle">Add Recipe</h3>
+            
+            <form id="dataForm" class="space-y-4">
+                <input type="hidden" id="recordId">
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Recipe Code</span></label>
+                        <input type="text" id="recipe_code" class="input input-bordered" placeholder="Auto-generated" readonly>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Product Name *</span></label>
+                        <input type="text" id="product_name" class="input input-bordered" required>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Variant</span></label>
+                        <input type="text" id="variant" class="input input-bordered" placeholder="e.g., Plain, Chocolate">
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Product Type *</span></label>
+                        <select id="product_type" class="select select-bordered" required>
+                            <option value="">Select Type</option>
+                            <option value="bottled_milk">Bottled Milk</option>
+                            <option value="cheese">Cheese</option>
+                            <option value="butter">Butter</option>
+                            <option value="yogurt">Yogurt</option>
+                            <option value="milk_bar">Milk Bar</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Milk Type *</span></label>
+                        <select id="milk_type_id" class="select select-bordered" required>
+                            <option value="">Select Milk Type</option>
+                            <option value="1">Carabao</option>
+                            <option value="2">Cow</option>
+                            <option value="3">Goat</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Shelf Life (days)</span></label>
+                        <input type="number" id="shelf_life_days" class="input input-bordered" value="7" min="1">
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Base Milk (Liters) *</span></label>
+                        <input type="number" id="base_milk_liters" class="input input-bordered" step="0.01" required>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Expected Yield *</span></label>
+                        <input type="number" id="expected_yield" class="input input-bordered" required>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Yield Unit</span></label>
+                        <select id="yield_unit" class="select select-bordered">
+                            <option value="units">Units</option>
+                            <option value="liters">Liters</option>
+                            <option value="kg">Kilograms</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Pasteurization Temp (°C)</span></label>
+                        <input type="number" id="pasteurization_temp" class="input input-bordered" step="0.01" value="81">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Pasteurization Time (mins)</span></label>
+                        <input type="number" id="pasteurization_time_mins" class="input input-bordered" value="15">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Cooling Temp (°C)</span></label>
+                        <input type="number" id="cooling_temp" class="input input-bordered" step="0.01" value="4">
+                    </div>
+                </div>
+                
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Description</span></label>
+                    <textarea id="description" class="textarea textarea-bordered" rows="2"></textarea>
+                </div>
+                
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Special Instructions</span></label>
+                    <textarea id="special_instructions" class="textarea textarea-bordered" rows="2"></textarea>
+                </div>
+                
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Status</span></label>
+                    <select id="is_active" class="select select-bordered">
+                        <option value="1">Active</option>
+                        <option value="0">Inactive</option>
+                    </select>
+                </div>
+                
+                <!-- Bill of Materials (Ingredients) Section -->
+                <div class="divider">Bill of Materials (BOM)</div>
+                
+                <div class="bg-base-200 rounded-lg p-4">
+                    <div class="flex justify-between items-center mb-3">
+                        <span class="font-semibold text-sm">Ingredients</span>
+                        <button type="button" class="btn btn-sm btn-primary gap-1" onclick="addIngredientRow()">
+                            <i class="fas fa-plus text-xs"></i> Add Ingredient
+                        </button>
+                    </div>
+                    
+                    <div id="ingredientsList" class="space-y-2">
+                        <!-- Ingredient rows will be added here -->
+                        <p class="text-base-content/60 text-sm text-center py-4" id="noIngredientsMsg">
+                            No ingredients added yet. Click "Add Ingredient" to add.
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="modal-action">
+                    <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveBtn">
+                        <span class="loading loading-spinner loading-sm hidden"></span>
+                        Save
+                    </button>
+                </div>
+            </form>
+        </div>
+    </dialog>
+    
+    <!-- Toast Container -->
+    <div class="toast toast-end" id="toastContainer"></div>
+    
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/admin/admin.service.js"></script>
+    
+    <script>
+        let currentPage = 1;
+        let searchTimeout = null;
+        let availableIngredients = []; // Store available ingredients for dropdown
+        let recipeIngredients = []; // Current recipe ingredients
+        
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+        
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        function handleSearch(event) {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                currentPage = 1;
+                loadData();
+            }, 300);
+        }
+        
+        function formatProductType(type) {
+            const types = {
+                'bottled_milk': 'Bottled Milk',
+                'cheese': 'Cheese',
+                'butter': 'Butter',
+                'yogurt': 'Yogurt',
+                'milk_bar': 'Milk Bar'
+            };
+            return types[type] || type;
+        }
+        
+        // Load available ingredients for dropdown
+        async function loadIngredients() {
+            try {
+                const response = await AdminService.getIngredients({ limit: 100 });
+                if (response.success) {
+                    availableIngredients = response.data.ingredients || [];
+                }
+            } catch (error) {
+                console.error('Error loading ingredients:', error);
+            }
+        }
+        
+        // Add ingredient row to the form
+        function addIngredientRow(ingredient = null) {
+            const container = document.getElementById('ingredientsList');
+            const noMsg = document.getElementById('noIngredientsMsg');
+            if (noMsg) noMsg.style.display = 'none';
+            
+            const rowId = 'ing_' + Date.now();
+            const row = document.createElement('div');
+            row.id = rowId;
+            row.className = 'flex flex-wrap gap-2 items-end bg-base-100 p-2 rounded-lg';
+            
+            // Map ingredients - API uses ingredient_name, unit_of_measure
+            const ingredientOptions = availableIngredients.map(i => 
+                `<option value="${i.id}" data-name="${i.ingredient_name}" data-unit="${i.unit_of_measure || 'kg'}" data-category="${i.category_name || ''}" ${ingredient && ingredient.ingredient_id == i.id ? 'selected' : ''}>${i.ingredient_name}</option>`
+            ).join('');
+            
+            row.innerHTML = `
+                <div class="form-control flex-1 min-w-[150px]">
+                    <label class="label py-0"><span class="label-text text-xs">Ingredient</span></label>
+                    <select class="select select-bordered select-sm ingredient-select" onchange="onIngredientSelect(this, '${rowId}')">
+                        <option value="">Select...</option>
+                        ${ingredientOptions}
+                    </select>
+                </div>
+                <div class="form-control w-24">
+                    <label class="label py-0"><span class="label-text text-xs">Quantity</span></label>
+                    <input type="number" step="0.001" class="input input-bordered input-sm ingredient-qty" value="${ingredient ? ingredient.quantity : ''}" placeholder="0.00">
+                </div>
+                <div class="form-control w-20">
+                    <label class="label py-0"><span class="label-text text-xs">Unit</span></label>
+                    <input type="text" class="input input-bordered input-sm ingredient-unit" value="${ingredient ? ingredient.unit : 'kg'}" placeholder="kg">
+                </div>
+                <div class="form-control flex-1 min-w-[120px]">
+                    <label class="label py-0"><span class="label-text text-xs">Notes</span></label>
+                    <input type="text" class="input input-bordered input-sm ingredient-notes" value="${ingredient ? (ingredient.notes || '') : ''}" placeholder="Optional notes">
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm text-error" onclick="removeIngredientRow('${rowId}')">
+                    <i class="fas fa-trash"></i>
+                </button>
+            `;
+            
+            container.appendChild(row);
+        }
+        
+        // Handle ingredient selection
+        function onIngredientSelect(select, rowId) {
+            const row = document.getElementById(rowId);
+            const selectedOption = select.options[select.selectedIndex];
+            const unit = selectedOption.getAttribute('data-unit') || 'kg';
+            row.querySelector('.ingredient-unit').value = unit;
+        }
+        
+        // Remove ingredient row
+        function removeIngredientRow(rowId) {
+            const row = document.getElementById(rowId);
+            if (row) row.remove();
+            
+            // Show "no ingredients" message if empty
+            const container = document.getElementById('ingredientsList');
+            if (container.querySelectorAll('.ingredient-select').length === 0) {
+                const noMsg = document.getElementById('noIngredientsMsg');
+                if (noMsg) noMsg.style.display = 'block';
+            }
+        }
+        
+        // Get ingredients from form
+        function getIngredientsFromForm() {
+            const rows = document.querySelectorAll('#ingredientsList > div[id^="ing_"]');
+            const ingredients = [];
+            
+            rows.forEach(row => {
+                const select = row.querySelector('.ingredient-select');
+                const qty = row.querySelector('.ingredient-qty');
+                const unit = row.querySelector('.ingredient-unit');
+                const notes = row.querySelector('.ingredient-notes');
+                
+                if (select.value && qty.value) {
+                    const selectedOption = select.options[select.selectedIndex];
+                    ingredients.push({
+                        ingredient_id: select.value,
+                        ingredient_name: selectedOption.getAttribute('data-name') || selectedOption.text,
+                        ingredient_category: selectedOption.getAttribute('data-category') || '',
+                        quantity: parseFloat(qty.value),
+                        unit: unit.value || 'kg',
+                        notes: notes.value || ''
+                    });
+                }
+            });
+            
+            return ingredients;
+        }
+        
+        // Populate ingredients in the form
+        function populateIngredients(ingredients) {
+            const container = document.getElementById('ingredientsList');
+            // Clear existing rows but keep the "no ingredients" message
+            container.querySelectorAll('div[id^="ing_"]').forEach(row => row.remove());
+            
+            const noMsg = document.getElementById('noIngredientsMsg');
+            
+            if (!ingredients || ingredients.length === 0) {
+                if (noMsg) noMsg.style.display = 'block';
+                return;
+            }
+            
+            if (noMsg) noMsg.style.display = 'none';
+            
+            ingredients.forEach(ing => {
+                addIngredientRow(ing);
+            });
+        }
+        
+        async function loadData() {
+            const tableBody = document.getElementById('dataTable');
+            tableBody.innerHTML = '<tr><td colspan="9" class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl"></i></td></tr>';
+            
+            try {
+                const params = {
+                    page: currentPage,
+                    limit: 20,
+                    search: document.getElementById('searchInput').value,
+                    product_type: document.getElementById('typeFilter').value,
+                    is_active: document.getElementById('statusFilter').value
+                };
+                
+                const response = await AdminService.getRecipes(params);
+                
+                if (response.success) {
+                    renderTable(response.data.recipes);
+                    renderPagination(response.data.pagination);
+                    loadStatistics();
+                } else {
+                    showToast('Failed to load data', 'error');
+                }
+            } catch (error) {
+                console.error('Error loading data:', error);
+                showToast('Error loading data', 'error');
+            }
+        }
+        
+        async function loadStatistics() {
+            try {
+                const response = await AdminService.getRecipes({ action: 'statistics' });
+                if (response.success) {
+                    document.getElementById('totalCount').textContent = response.data.total || 0;
+                    document.getElementById('activeCount').textContent = response.data.active || 0;
+                    document.getElementById('typeCount').textContent = (response.data.by_type || []).length;
+                }
+            } catch (error) {
+                console.error('Error loading statistics:', error);
+            }
+        }
+        
+        function renderTable(recipes) {
+            const tableBody = document.getElementById('dataTable');
+            
+            if (!recipes || recipes.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-base-content/60">No recipes found</td></tr>';
+                return;
+            }
+            
+            tableBody.innerHTML = recipes.map(r => `
+                <tr>
+                    <td><span class="font-mono text-sm">${r.recipe_code}</span></td>
+                    <td>
+                        <div>
+                            <span class="font-semibold">${r.product_name}</span>
+                            ${r.variant ? `<span class="text-xs text-base-content/60 block">${r.variant}</span>` : ''}
+                        </div>
+                    </td>
+                    <td><span class="badge badge-outline badge-sm">${formatProductType(r.product_type)}</span></td>
+                    <td>${r.milk_type_name || '-'}</td>
+                    <td>${r.base_milk_liters} L</td>
+                    <td>${r.expected_yield} ${r.yield_unit || 'units'}</td>
+                    <td>${r.shelf_life_days} days</td>
+                    <td>
+                        <span class="badge ${r.is_active == 1 ? 'badge-success' : 'badge-warning'} badge-sm">
+                            ${r.is_active == 1 ? 'Active' : 'Inactive'}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="flex gap-1">
+                            <button class="btn btn-ghost btn-xs" onclick="viewRecord(${r.id})" title="View Details">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-ghost btn-xs" onclick="editRecord(${r.id})" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-ghost btn-xs text-error" onclick="deleteRecord(${r.id})" title="Delete">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
+        function renderPagination(pagination) {
+            const info = document.getElementById('paginationInfo');
+            const buttons = document.getElementById('paginationButtons');
+            
+            const start = (pagination.page - 1) * pagination.limit + 1;
+            const end = Math.min(pagination.page * pagination.limit, pagination.total);
+            info.textContent = `Showing ${start}-${end} of ${pagination.total}`;
+            
+            let html = '';
+            for (let i = 1; i <= pagination.pages; i++) {
+                html += `<button class="join-item btn btn-sm ${i === pagination.page ? 'btn-active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+            }
+            buttons.innerHTML = html;
+        }
+        
+        function goToPage(page) {
+            currentPage = page;
+            loadData();
+        }
+        
+        function openModal(id = null) {
+            document.getElementById('modalTitle').textContent = id ? 'Edit Recipe' : 'Add Recipe';
+            document.getElementById('dataForm').reset();
+            document.getElementById('recordId').value = '';
+            // Clear ingredients
+            populateIngredients([]);
+            document.getElementById('formModal').showModal();
+        }
+        
+        function closeModal() {
+            document.getElementById('formModal').close();
+        }
+        
+        async function viewRecord(id) {
+            try {
+                const response = await AdminService.getRecipe(id);
+                if (response.success) {
+                    const r = response.data.recipe;
+                    const ingredientsList = (r.ingredients || [])
+                        .map(i => `• ${i.ingredient_name}: ${i.quantity} ${i.unit}${i.notes ? ' (' + i.notes + ')' : ''}`)
+                        .join('\n') || 'No ingredients defined';
+                    
+                    alert(
+                        `📋 ${r.product_name}${r.variant ? ' - ' + r.variant : ''}\n` +
+                        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                        `Recipe Code: ${r.recipe_code}\n` +
+                        `Type: ${formatProductType(r.product_type)}\n` +
+                        `Base Milk: ${r.base_milk_liters} L\n` +
+                        `Expected Yield: ${r.expected_yield} ${r.yield_unit || 'units'}\n` +
+                        `Shelf Life: ${r.shelf_life_days} days\n\n` +
+                        `🧪 BILL OF MATERIALS:\n${ingredientsList}\n\n` +
+                        `📝 Special Instructions:\n${r.special_instructions || 'None'}`
+                    );
+                }
+            } catch (error) {
+                showToast('Failed to load recipe details', 'error');
+            }
+        }
+        
+        async function editRecord(id) {
+            try {
+                const response = await AdminService.getRecipe(id);
+                if (response.success) {
+                    const r = response.data.recipe;
+                    document.getElementById('recordId').value = r.id;
+                    document.getElementById('recipe_code').value = r.recipe_code;
+                    document.getElementById('product_name').value = r.product_name;
+                    document.getElementById('variant').value = r.variant || '';
+                    document.getElementById('product_type').value = r.product_type;
+                    document.getElementById('milk_type_id').value = r.milk_type_id;
+                    document.getElementById('shelf_life_days').value = r.shelf_life_days;
+                    document.getElementById('base_milk_liters').value = r.base_milk_liters;
+                    document.getElementById('expected_yield').value = r.expected_yield;
+                    document.getElementById('yield_unit').value = r.yield_unit || 'units';
+                    document.getElementById('pasteurization_temp').value = r.pasteurization_temp;
+                    document.getElementById('pasteurization_time_mins').value = r.pasteurization_time_mins;
+                    document.getElementById('cooling_temp').value = r.cooling_temp;
+                    document.getElementById('description').value = r.description || '';
+                    document.getElementById('special_instructions').value = r.special_instructions || '';
+                    document.getElementById('is_active').value = r.is_active;
+                    
+                    // Populate ingredients
+                    populateIngredients(r.ingredients || []);
+                    
+                    document.getElementById('modalTitle').textContent = 'Edit Recipe';
+                    document.getElementById('formModal').showModal();
+                }
+            } catch (error) {
+                console.error('Error loading record:', error);
+                showToast('Failed to load recipe details', 'error');
+            }
+        }
+        
+        async function deleteRecord(id) {
+            if (!confirm('Are you sure you want to deactivate this recipe?')) return;
+            
+            try {
+                const response = await AdminService.deleteRecipe(id);
+                if (response.success) {
+                    showToast('Recipe deactivated successfully', 'success');
+                    loadData();
+                } else {
+                    showToast(response.message || 'Failed to deactivate', 'error');
+                }
+            } catch (error) {
+                console.error('Error deleting record:', error);
+                showToast('Error deactivating recipe', 'error');
+            }
+        }
+        
+        document.getElementById('dataForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const recordId = document.getElementById('recordId').value;
+            const formData = {
+                product_name: document.getElementById('product_name').value,
+                variant: document.getElementById('variant').value,
+                product_type: document.getElementById('product_type').value,
+                milk_type_id: document.getElementById('milk_type_id').value,
+                shelf_life_days: document.getElementById('shelf_life_days').value,
+                base_milk_liters: document.getElementById('base_milk_liters').value,
+                expected_yield: document.getElementById('expected_yield').value,
+                yield_unit: document.getElementById('yield_unit').value,
+                pasteurization_temp: document.getElementById('pasteurization_temp').value,
+                pasteurization_time_mins: document.getElementById('pasteurization_time_mins').value,
+                cooling_temp: document.getElementById('cooling_temp').value,
+                description: document.getElementById('description').value,
+                special_instructions: document.getElementById('special_instructions').value,
+                is_active: document.getElementById('is_active').value,
+                ingredients: getIngredientsFromForm()
+            };
+            
+            try {
+                const saveBtn = document.getElementById('saveBtn');
+                saveBtn.classList.add('loading');
+                saveBtn.disabled = true;
+                
+                let response;
+                if (recordId) {
+                    response = await AdminService.updateRecipe(recordId, formData);
+                } else {
+                    response = await AdminService.createRecipe(formData);
+                }
+                
+                if (response.success) {
+                    showToast(recordId ? 'Recipe updated successfully' : 'Recipe created successfully', 'success');
+                    closeModal();
+                    loadData();
+                } else {
+                    showToast(response.message || 'Failed to save', 'error');
+                }
+            } catch (error) {
+                console.error('Error saving:', error);
+                showToast('Error saving recipe', 'error');
+            } finally {
+                const saveBtn = document.getElementById('saveBtn');
+                saveBtn.classList.remove('loading');
+                saveBtn.disabled = false;
+            }
+        });
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadIngredients(); // Load ingredients for dropdown
+            loadData();
+        });
+    </script>
+</body>
+</html>

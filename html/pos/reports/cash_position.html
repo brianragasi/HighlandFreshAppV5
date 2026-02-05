@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cash Position - Cashier POS | Highland Fresh</title>
+
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .stat-value { font-variant-numeric: tabular-nums; }
+        @media print {
+            .no-print { display: none !important; }
+            .lg\\:ml-72 { margin-left: 0 !important; }
+            .card { break-inside: avoid; }
+        }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden no-print" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col no-print">
+
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-cash-register text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Cashier / POS</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="../dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Sales</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="../sale.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-bolt w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Quick Sale (POS)</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="../history.html?type=sales" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-receipt w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Transaction History</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Collections</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="../collect.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-hand-holding-dollar w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Collect Payment</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="../history.html?type=collections" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-clock-rotate-left w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Collection History</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="daily_summary.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-chart-pie w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Daily Summary</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="cash_position.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-wallet w-5 text-center"></i>
+                            <span class="flex-1">Cash Position</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">CA</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Cashier</p>
+                    <p class="text-xs text-base-content/60 truncate">Point of Sale</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6 no-print">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-wallet text-success"></i>
+                    <span class="font-semibold">Cash Position</span>
+                </div>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <div class="hidden md:flex items-center gap-2 px-3 py-1.5 bg-base-200 rounded-lg">
+                    <i class="fas fa-clock text-base-content/60"></i>
+                    <span id="currentTime" class="font-mono text-sm">--:--:--</span>
+                </div>
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- Current Shift Status -->
+            <div class="alert bg-gradient-to-r from-success/20 to-success/5 border-success/30 mb-6" id="shiftActiveAlert">
+                <i class="fas fa-circle text-success animate-pulse"></i>
+                <div>
+                    <h3 class="font-bold">Shift Active</h3>
+                    <div class="text-sm">Started at <span id="shiftStartTime">09:00 AM</span> · Cashier: <span id="shiftCashier">Ana Reyes</span></div>
+                </div>
+                <div class="flex gap-2">
+                    <button class="btn btn-sm btn-outline" onclick="showXReading()">
+                        <i class="fas fa-file-lines"></i> X-Reading
+                    </button>
+                    <button class="btn btn-sm btn-error" onclick="endShift()">
+                        <i class="fas fa-stop-circle"></i> End Shift
+                    </button>
+                </div>
+            </div>
+
+            <div class="alert bg-gradient-to-r from-warning/20 to-warning/5 border-warning/30 mb-6 hidden" id="shiftInactiveAlert">
+                <i class="fas fa-exclamation-triangle text-warning"></i>
+                <div>
+                    <h3 class="font-bold">No Active Shift</h3>
+                    <div class="text-sm">Start a new shift to begin processing transactions.</div>
+                </div>
+                <button class="btn btn-sm btn-success" onclick="startShift()">
+                    <i class="fas fa-play-circle"></i> Start Shift
+                </button>
+            </div>
+
+            <!-- Cash Position Summary -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <!-- Opening Cash -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-12 h-12 bg-info/10 rounded-xl flex items-center justify-center">
+                                <i class="fas fa-door-open text-info text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm text-base-content/60">Opening Cash</p>
+                                <p class="text-2xl font-bold stat-value" id="openingCash">₱0.00</p>
+                            </div>
+                        </div>
+                        <p class="text-xs text-base-content/60">
+                            <i class="fas fa-clock mr-1"></i>
+                            Started at <span id="openingTime">--:--</span>
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Cash In -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-12 h-12 bg-success/10 rounded-xl flex items-center justify-center">
+                                <i class="fas fa-arrow-down text-success text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm text-base-content/60">Total Cash In</p>
+                                <p class="text-2xl font-bold text-success stat-value" id="totalCashIn">₱0.00</p>
+                            </div>
+                        </div>
+                        <div class="text-xs text-base-content/60 space-y-1">
+                            <div class="flex justify-between">
+                                <span>Cash Sales</span>
+                                <span id="cashSalesIn">₱0.00</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Cash Collections</span>
+                                <span id="cashCollectionsIn">₱0.00</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Expected Cash -->
+                <div class="card bg-gradient-to-br from-primary to-primary/80 text-primary-content">
+                    <div class="card-body">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                                <i class="fas fa-wallet text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm opacity-80">Expected Cash</p>
+                                <p class="text-3xl font-bold stat-value" id="expectedCash">₱0.00</p>
+                            </div>
+                        </div>
+                        <div class="text-xs opacity-70">
+                            Opening + Cash In - Payouts
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cash Breakdown -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- Denomination Counter -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body">
+                        <h3 class="card-title text-lg mb-4">
+                            <i class="fas fa-coins text-warning"></i>
+                            Cash Denomination Count
+                        </h3>
+                        <p class="text-sm text-base-content/60 mb-4">
+                            Count your physical cash to verify cash on hand
+                        </p>
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr class="bg-base-200">
+                                        <th>Denomination</th>
+                                        <th class="text-center">Count</th>
+                                        <th class="text-right">Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><span class="badge badge-success">₱1,000</span></td>
+                                        <td class="text-center">
+                                            <input type="number" class="input input-bordered input-sm w-20 text-center denomination-input" 
+                                                data-value="1000" value="0" min="0" onchange="calculateDenominations()">
+                                        </td>
+                                        <td class="text-right font-semibold denom-total">₱0</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge badge-success">₱500</span></td>
+                                        <td class="text-center">
+                                            <input type="number" class="input input-bordered input-sm w-20 text-center denomination-input" 
+                                                data-value="500" value="0" min="0" onchange="calculateDenominations()">
+                                        </td>
+                                        <td class="text-right font-semibold denom-total">₱0</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge badge-info">₱200</span></td>
+                                        <td class="text-center">
+                                            <input type="number" class="input input-bordered input-sm w-20 text-center denomination-input" 
+                                                data-value="200" value="0" min="0" onchange="calculateDenominations()">
+                                        </td>
+                                        <td class="text-right font-semibold denom-total">₱0</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge badge-info">₱100</span></td>
+                                        <td class="text-center">
+                                            <input type="number" class="input input-bordered input-sm w-20 text-center denomination-input" 
+                                                data-value="100" value="0" min="0" onchange="calculateDenominations()">
+                                        </td>
+                                        <td class="text-right font-semibold denom-total">₱0</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge badge-warning">₱50</span></td>
+                                        <td class="text-center">
+                                            <input type="number" class="input input-bordered input-sm w-20 text-center denomination-input" 
+                                                data-value="50" value="0" min="0" onchange="calculateDenominations()">
+                                        </td>
+                                        <td class="text-right font-semibold denom-total">₱0</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge badge-warning">₱20</span></td>
+                                        <td class="text-center">
+                                            <input type="number" class="input input-bordered input-sm w-20 text-center denomination-input" 
+                                                data-value="20" value="0" min="0" onchange="calculateDenominations()">
+                                        </td>
+                                        <td class="text-right font-semibold denom-total">₱0</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge badge-neutral">₱10</span></td>
+                                        <td class="text-center">
+                                            <input type="number" class="input input-bordered input-sm w-20 text-center denomination-input" 
+                                                data-value="10" value="0" min="0" onchange="calculateDenominations()">
+                                        </td>
+                                        <td class="text-right font-semibold denom-total">₱0</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge badge-neutral">₱5</span></td>
+                                        <td class="text-center">
+                                            <input type="number" class="input input-bordered input-sm w-20 text-center denomination-input" 
+                                                data-value="5" value="0" min="0" onchange="calculateDenominations()">
+                                        </td>
+                                        <td class="text-right font-semibold denom-total">₱0</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge badge-ghost">₱1</span></td>
+                                        <td class="text-center">
+                                            <input type="number" class="input input-bordered input-sm w-20 text-center denomination-input" 
+                                                data-value="1" value="0" min="0" onchange="calculateDenominations()">
+                                        </td>
+                                        <td class="text-right font-semibold denom-total">₱0</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge badge-ghost">Coins (₱)</span></td>
+                                        <td class="text-center">--</td>
+                                        <td class="text-center">
+                                            <input type="number" class="input input-bordered input-sm w-24 text-right" 
+                                                id="coinsTotal" value="0" min="0" step="0.01" onchange="calculateDenominations()">
+                                        </td>
+                                    </tr>
+                                </tbody>
+                                <tfoot>
+                                    <tr class="bg-base-200 font-bold">
+                                        <td colspan="2">TOTAL COUNTED CASH</td>
+                                        <td class="text-right text-lg" id="totalCountedCash">₱0.00</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cash Variance -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body">
+                        <h3 class="card-title text-lg mb-4">
+                            <i class="fas fa-scale-balanced text-primary"></i>
+                            Cash Variance
+                        </h3>
+
+                        <div class="space-y-4">
+                            <!-- Expected vs Actual -->
+                            <div class="bg-base-200 rounded-lg p-4 space-y-3">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-base-content/60">Expected Cash</span>
+                                    <span class="font-semibold" id="varianceExpected">₱0.00</span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-base-content/60">Actual Cash Counted</span>
+                                    <span class="font-semibold" id="varianceActual">₱0.00</span>
+                                </div>
+                                <div class="divider my-1"></div>
+                                <div class="flex justify-between items-center text-lg">
+                                    <span class="font-semibold">Variance</span>
+                                    <span class="font-bold" id="varianceAmount">₱0.00</span>
+                                </div>
+                            </div>
+
+                            <!-- Variance Status -->
+                            <div class="alert alert-success" id="varianceOk">
+                                <i class="fas fa-check-circle"></i>
+                                <span>Cash is balanced!</span>
+                            </div>
+                            <div class="alert alert-warning hidden" id="varianceShort">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <div>
+                                    <h4 class="font-bold">Cash Short</h4>
+                                    <p class="text-sm">Actual cash is less than expected.</p>
+                                </div>
+                            </div>
+                            <div class="alert alert-error hidden" id="varianceOver">
+                                <i class="fas fa-exclamation-circle"></i>
+                                <div>
+                                    <h4 class="font-bold">Cash Over</h4>
+                                    <p class="text-sm">Actual cash is more than expected.</p>
+                                </div>
+                            </div>
+
+                            <!-- Recent Cash Transactions -->
+                            <div class="mt-6">
+                                <h4 class="font-semibold text-sm mb-3">Recent Cash Transactions</h4>
+                                <div class="space-y-2 max-h-48 overflow-y-auto scrollbar-thin" id="recentCashTransactions">
+                                    <!-- Will be loaded dynamically -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Today's Cash Flow -->
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="card-title text-lg">
+                            <i class="fas fa-money-bill-transfer text-info"></i>
+                            Today's Cash Flow
+                        </h3>
+                        <button class="btn btn-outline btn-sm no-print" onclick="window.print()">
+                            <i class="fas fa-print"></i> Print Report
+                        </button>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="table">
+                            <thead>
+                                <tr class="bg-base-200">
+                                    <th>Time</th>
+                                    <th>Type</th>
+                                    <th>Reference</th>
+                                    <th>Description</th>
+                                    <th class="text-right">In</th>
+                                    <th class="text-right">Out</th>
+                                    <th class="text-right">Balance</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cashFlowTable">
+                                <tr>
+                                    <td colspan="7" class="text-center py-8">
+                                        <span class="loading loading-spinner loading-md"></span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
+            <div>
+                <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Start Shift Modal -->
+    <dialog id="startShiftModal" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg mb-4">
+                <i class="fas fa-play-circle text-success mr-2"></i>
+                Start New Shift
+            </h3>
+            <form id="startShiftForm">
+                <div class="form-control mb-4">
+                    <label class="label"><span class="label-text">Opening Cash *</span></label>
+                    <input type="number" id="startOpeningCash" class="input input-bordered text-right text-xl" 
+                        step="0.01" min="0" value="5000.00" required>
+                    <label class="label">
+                        <span class="label-text-alt">Enter the physical cash in drawer</span>
+                    </label>
+                </div>
+                <div class="form-control mb-4">
+                    <label class="label"><span class="label-text">Notes (Optional)</span></label>
+                    <textarea id="startShiftNotes" class="textarea textarea-bordered" rows="2" 
+                        placeholder="Any notes about the starting cash..."></textarea>
+                </div>
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('startShiftModal').close()">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-play-circle"></i> Start Shift
+                    </button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- End Shift Modal -->
+    <dialog id="endShiftModal" class="modal">
+        <div class="modal-box max-w-2xl">
+            <h3 class="font-bold text-lg mb-4">
+                <i class="fas fa-stop-circle text-error mr-2"></i>
+                End Shift - Z-Reading
+            </h3>
+            
+            <div class="bg-base-200 rounded-lg p-4 mb-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-xs text-base-content/60">Shift Started</p>
+                        <p class="font-semibold" id="endShiftStarted">--</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-base-content/60">Duration</p>
+                        <p class="font-semibold" id="endShiftDuration">--</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-3 mb-4">
+                <div class="flex justify-between p-3 bg-base-200 rounded-lg">
+                    <span>Opening Cash</span>
+                    <span class="font-bold" id="endOpeningCash">₱0.00</span>
+                </div>
+                <div class="flex justify-between p-3 bg-success/10 rounded-lg">
+                    <span class="text-success">+ Total Cash In</span>
+                    <span class="font-bold text-success" id="endCashIn">₱0.00</span>
+                </div>
+                <div class="flex justify-between p-3 bg-error/10 rounded-lg">
+                    <span class="text-error">- Total Payouts</span>
+                    <span class="font-bold text-error" id="endPayouts">₱0.00</span>
+                </div>
+                <div class="divider my-1"></div>
+                <div class="flex justify-between p-3 bg-primary/10 rounded-lg text-lg">
+                    <span class="font-semibold">Expected Closing Cash</span>
+                    <span class="font-bold text-primary" id="endExpectedCash">₱0.00</span>
+                </div>
+            </div>
+
+            <form id="endShiftForm">
+                <div class="form-control mb-4">
+                    <label class="label"><span class="label-text">Actual Closing Cash *</span></label>
+                    <input type="number" id="endClosingCash" class="input input-bordered text-right text-xl" 
+                        step="0.01" min="0" required>
+                </div>
+                <div class="flex justify-between p-3 bg-warning/10 rounded-lg mb-4">
+                    <span>Variance</span>
+                    <span class="font-bold" id="endVariance">₱0.00</span>
+                </div>
+                <div class="form-control mb-4">
+                    <label class="label"><span class="label-text">Notes</span></label>
+                    <textarea id="endShiftNotes" class="textarea textarea-bordered" rows="2" 
+                        placeholder="Any notes about the closing..."></textarea>
+                </div>
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('endShiftModal').close()">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-error">
+                        <i class="fas fa-stop-circle"></i> End Shift &amp; Print Z-Reading
+                    </button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50 no-print"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../../js/config/api.js"></script>
+    <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/pos/pos.service.js"></script>
+
+    <script>
+        // State
+        let cashPositionData = null;
+        let shiftData = null;
+
+        // Sidebar toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+
+        // Theme toggle
+        document.getElementById('themeToggle').addEventListener('change', function () {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('themeToggle').checked = true;
+        }
+
+        // Update time
+        function updateTime() {
+            document.getElementById('currentTime').textContent = new Date().toLocaleTimeString('en-US', { hour12: false });
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // Format currency
+        function formatCurrency(amount) {
+            return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        // Toast notification
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `alert alert-${type} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            document.getElementById('toastContainer').appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        function getInitials(firstName, lastName) {
+            const f = firstName ? firstName.charAt(0).toUpperCase() : '';
+            const l = lastName ? lastName.charAt(0).toUpperCase() : '';
+            return f + l || 'CA';
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async function () {
+            if (typeof AuthService !== 'undefined') {
+                const user = AuthService.getCurrentUser();
+                if (user) {
+                    document.getElementById('sidebarUserName').textContent = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Cashier';
+                    document.getElementById('userInitials').textContent = getInitials(user.first_name, user.last_name);
+                }
+            }
+
+            // Form handlers
+            document.getElementById('startShiftForm').addEventListener('submit', handleStartShift);
+            document.getElementById('endShiftForm').addEventListener('submit', handleEndShift);
+            document.getElementById('endClosingCash').addEventListener('input', calculateEndVariance);
+
+            await loadCashPosition();
+        });
+
+        async function loadCashPosition() {
+            try {
+                const response = await POSService.getCashPosition();
+                if (response && response.data) {
+                    cashPositionData = response.data;
+                    shiftData = response.data.current_shift;
+                    renderCashPosition();
+                    return;
+                }
+            } catch (error) {
+                console.error('Error loading cash position:', error);
+            }
+
+            // Show no data state if API fails
+            document.getElementById('shiftActiveAlert').classList.add('hidden');
+            document.getElementById('shiftInactiveAlert').classList.remove('hidden');
+            document.getElementById('cashFlowTable').innerHTML = `
+                <tr>
+                    <td colspan="7" class="text-center py-8 text-base-content/60">
+                        <i class="fas fa-info-circle text-2xl mb-2"></i>
+                        <p>No shift data available. Start a shift to track cash position.</p>
+                    </td>
+                </tr>
+            `;
+        }
+
+        function renderCashPosition() {
+            if (!cashPositionData) return;
+            
+            // Shift status
+            if (shiftData && shiftData.is_active) {
+                document.getElementById('shiftActiveAlert').classList.remove('hidden');
+                document.getElementById('shiftInactiveAlert').classList.add('hidden');
+                document.getElementById('shiftStartTime').textContent = formatTime(shiftData.start_time);
+                document.getElementById('shiftCashier').textContent = shiftData.cashier_name || 'Unknown';
+            } else {
+                document.getElementById('shiftActiveAlert').classList.add('hidden');
+                document.getElementById('shiftInactiveAlert').classList.remove('hidden');
+            }
+
+            // Summary cards
+            document.getElementById('openingCash').textContent = formatCurrency(cashPositionData.opening_cash || 0);
+            document.getElementById('openingTime').textContent = formatTime(shiftData?.start_time);
+            document.getElementById('totalCashIn').textContent = formatCurrency(cashPositionData.total_cash_in || 0);
+            document.getElementById('cashSalesIn').textContent = formatCurrency(cashPositionData.cash_sales || 0);
+            document.getElementById('cashCollectionsIn').textContent = formatCurrency(cashPositionData.cash_collections || 0);
+            document.getElementById('expectedCash').textContent = formatCurrency(cashPositionData.expected_cash || 0);
+
+            // Variance display
+            document.getElementById('varianceExpected').textContent = formatCurrency(cashPositionData.expected_cash || 0);
+
+            // Cash flow table
+            renderCashFlowTable(cashPositionData.transactions);
+
+            // Recent transactions
+            renderRecentCashTransactions(cashPositionData.transactions);
+        }
+
+        function formatTime(datetime) {
+            if (!datetime) return '--:--';
+            const date = new Date(datetime);
+            return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function renderCashFlowTable(transactions) {
+            const tbody = document.getElementById('cashFlowTable');
+
+            if (!transactions || transactions.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="text-center py-8 text-base-content/60">
+                            No transactions today
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = transactions.map(tx => {
+                const isIn = tx.type !== 'payout';
+                const typeIcon = {
+                    'opening': 'fa-door-open text-info',
+                    'sale': 'fa-receipt text-success',
+                    'collection': 'fa-hand-holding-dollar text-info',
+                    'payout': 'fa-arrow-up text-error'
+                }[tx.type] || 'fa-circle';
+
+                return `
+                    <tr class="hover">
+                        <td class="font-mono text-sm">${tx.time}</td>
+                        <td>
+                            <i class="fas ${typeIcon} mr-1"></i>
+                            ${tx.type.charAt(0).toUpperCase() + tx.type.slice(1)}
+                        </td>
+                        <td class="font-mono text-sm">${tx.reference}</td>
+                        <td>${tx.description}</td>
+                        <td class="text-right ${isIn ? 'text-success font-semibold' : ''}">
+                            ${isIn ? formatCurrency(tx.amount) : ''}
+                        </td>
+                        <td class="text-right ${!isIn ? 'text-error font-semibold' : ''}">
+                            ${!isIn ? formatCurrency(tx.amount) : ''}
+                        </td>
+                        <td class="text-right font-semibold">${formatCurrency(tx.balance)}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function renderRecentCashTransactions(transactions) {
+            const container = document.getElementById('recentCashTransactions');
+            const recent = (transactions || []).slice(0, 5);
+
+            if (recent.length === 0) {
+                container.innerHTML = '<p class="text-sm text-base-content/60 text-center py-4">No transactions yet</p>';
+                return;
+            }
+
+            container.innerHTML = recent.map(tx => {
+                const isIn = tx.type !== 'payout';
+                return `
+                    <div class="flex items-center justify-between p-2 rounded-lg hover:bg-base-200">
+                        <div class="flex items-center gap-2">
+                            <span class="badge badge-sm ${isIn ? 'badge-success' : 'badge-error'}">${tx.time}</span>
+                            <span class="text-sm">${tx.description}</span>
+                        </div>
+                        <span class="font-semibold ${isIn ? 'text-success' : 'text-error'}">
+                            ${isIn ? '+' : '-'}${formatCurrency(tx.amount)}
+                        </span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function calculateDenominations() {
+            const inputs = document.querySelectorAll('.denomination-input');
+            const totals = document.querySelectorAll('.denom-total');
+            let grandTotal = 0;
+
+            inputs.forEach((input, index) => {
+                const value = parseInt(input.dataset.value);
+                const count = parseInt(input.value) || 0;
+                const total = value * count;
+                totals[index].textContent = '₱' + total.toLocaleString();
+                grandTotal += total;
+            });
+
+            // Add coins
+            const coins = parseFloat(document.getElementById('coinsTotal').value) || 0;
+            grandTotal += coins;
+
+            document.getElementById('totalCountedCash').textContent = formatCurrency(grandTotal);
+            document.getElementById('varianceActual').textContent = formatCurrency(grandTotal);
+
+            // Calculate variance
+            const expected = cashPositionData?.expected_cash || 0;
+            const variance = grandTotal - expected;
+
+            document.getElementById('varianceAmount').textContent = formatCurrency(variance);
+
+            // Update variance status
+            const okEl = document.getElementById('varianceOk');
+            const shortEl = document.getElementById('varianceShort');
+            const overEl = document.getElementById('varianceOver');
+
+            okEl.classList.add('hidden');
+            shortEl.classList.add('hidden');
+            overEl.classList.add('hidden');
+
+            if (Math.abs(variance) < 1) {
+                okEl.classList.remove('hidden');
+                document.getElementById('varianceAmount').classList.remove('text-error', 'text-warning');
+                document.getElementById('varianceAmount').classList.add('text-success');
+            } else if (variance < 0) {
+                shortEl.classList.remove('hidden');
+                document.getElementById('varianceAmount').classList.remove('text-success', 'text-warning');
+                document.getElementById('varianceAmount').classList.add('text-error');
+            } else {
+                overEl.classList.remove('hidden');
+                document.getElementById('varianceAmount').classList.remove('text-success', 'text-error');
+                document.getElementById('varianceAmount').classList.add('text-warning');
+            }
+        }
+
+        function startShift() {
+            document.getElementById('startShiftModal').showModal();
+        }
+
+        async function handleStartShift(event) {
+            event.preventDefault();
+
+            const openingCash = parseFloat(document.getElementById('startOpeningCash').value) || 0;
+            const notes = document.getElementById('startShiftNotes').value.trim();
+
+            try {
+                await POSService.startShift({ opening_cash: openingCash, notes });
+                showToast('Shift started successfully!', 'success');
+                document.getElementById('startShiftModal').close();
+                await loadCashPosition();
+            } catch (error) {
+                console.error('Error starting shift:', error);
+                showToast('Failed to start shift: ' + (error.response?.data?.message || error.message), 'error');
+            }
+        }
+
+        function endShift() {
+            if (!shiftData) return;
+
+            // Populate end shift modal
+            document.getElementById('endShiftStarted').textContent = formatTime(shiftData.start_time);
+            
+            const start = new Date(shiftData.start_time);
+            const now = new Date();
+            const hours = Math.floor((now - start) / 3600000);
+            const mins = Math.floor(((now - start) % 3600000) / 60000);
+            document.getElementById('endShiftDuration').textContent = `${hours}h ${mins}m`;
+
+            document.getElementById('endOpeningCash').textContent = formatCurrency(cashPositionData.opening_cash);
+            document.getElementById('endCashIn').textContent = formatCurrency(cashPositionData.total_cash_in);
+            document.getElementById('endPayouts').textContent = formatCurrency(cashPositionData.payouts || 0);
+            document.getElementById('endExpectedCash').textContent = formatCurrency(cashPositionData.expected_cash);
+            document.getElementById('endClosingCash').value = cashPositionData.expected_cash.toFixed(2);
+
+            calculateEndVariance();
+            document.getElementById('endShiftModal').showModal();
+        }
+
+        function calculateEndVariance() {
+            const expected = cashPositionData?.expected_cash || 0;
+            const actual = parseFloat(document.getElementById('endClosingCash').value) || 0;
+            const variance = actual - expected;
+
+            const varEl = document.getElementById('endVariance');
+            varEl.textContent = formatCurrency(variance);
+
+            if (variance >= 0) {
+                varEl.classList.remove('text-error');
+                varEl.classList.add('text-success');
+            } else {
+                varEl.classList.remove('text-success');
+                varEl.classList.add('text-error');
+            }
+        }
+
+        async function handleEndShift(event) {
+            event.preventDefault();
+
+            const closingCash = parseFloat(document.getElementById('endClosingCash').value) || 0;
+            const notes = document.getElementById('endShiftNotes').value.trim();
+
+            try {
+                await POSService.endShift({ closing_cash: closingCash, notes });
+                showToast('Shift ended. Printing Z-Reading...', 'success');
+                document.getElementById('endShiftModal').close();
+                window.print();
+                await loadCashPosition();
+            } catch (error) {
+                console.error('Error ending shift:', error);
+                showToast('Failed to end shift: ' + (error.response?.data?.message || error.message), 'error');
+            }
+        }
+
+        async function showXReading() {
+            showToast('Generating X-Reading...', 'info');
+            try {
+                await POSService.getXReading();
+            } catch (error) {
+                console.error('Error getting X-Reading:', error);
+            }
+            window.print();
+        }
+    </script>
+</body>
+
+</html>
