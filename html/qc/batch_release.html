@@ -150,6 +150,13 @@
                             <span class="flex-1">Batch Release</span>
                         </a>
                     </li>
+                    <li>
+                        <a href="print-labels.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-barcode w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Print Labels</span>
+                        </a>
+                    </li>
                 </ul>
             </div>
 
@@ -820,9 +827,14 @@
                                 <td>${b.qc_released_at ? formatDateTime(b.qc_released_at) : '-'}</td>
                                 <td>${b.released_by_first ? (b.released_by_first + ' ' + (b.released_by_last || '')) : '-'}</td>
                                 <td class="text-center">
-                                    <button class="btn btn-ghost btn-sm btn-square" onclick="viewBatch(${b.id})">
-                                        <i class="fas fa-eye"></i>
-                                    </button>
+                                    <div class="flex gap-1 justify-center">
+                                        <button class="btn btn-ghost btn-sm btn-square" onclick="viewBatch(${b.id})" title="View Details">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                        <a href="print-labels.html?batch_id=${b.id}" class="btn btn-ghost btn-sm btn-square text-primary" title="Print Labels">
+                                            <i class="fas fa-print"></i>
+                                        </a>
+                                    </div>
                                 </td>
                             </tr>
                         `).join('');
@@ -1032,6 +1044,15 @@
                     document.getElementById('verifyModal').close();
                     loadPendingBatches();
                     loadStats();
+                    
+                    // If released, offer to print labels
+                    if (decision === 'released') {
+                        setTimeout(() => {
+                            if (confirm('Batch released! Would you like to print barcode labels now?')) {
+                                window.location.href = `print-labels.html?batch_id=${data.batch_id}`;
+                            }
+                        }, 500);
+                    }
                 }
             } catch (error) {
                 showToast(error.message || 'Failed to submit verification', 'error');
@@ -1103,10 +1124,11 @@
             }
         }
 
-        // Utility functions
+
         function formatDateTime(dateStr) {
-            if (!dateStr) return '-';
+            if (!dateStr || dateStr === '0000-00-00 00:00:00' || dateStr === '0000-00-00') return '-';
             const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return '-';
             return date.toLocaleDateString('en-PH', {
                 year: 'numeric',
                 month: 'short',
@@ -1117,8 +1139,10 @@
         }
 
         function formatDate(dateStr) {
-            if (!dateStr) return '-';
-            return new Date(dateStr).toLocaleDateString('en-PH', {
+            if (!dateStr || dateStr === '0000-00-00' || dateStr === '0000-00-00 00:00:00') return '-';
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return '-';
+            return date.toLocaleDateString('en-PH', {
                 year: 'numeric',
                 month: 'short',
                 day: 'numeric'

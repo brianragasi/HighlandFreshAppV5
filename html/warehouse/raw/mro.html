@@ -780,7 +780,13 @@
             try {
                 const response = await WarehouseRawService.getMROItem(id);
                 if (response.success) {
-                    const item = response.data;
+                    const data = response.data;
+                    // Merge mro_item properties with inventory for easier access
+                    const item = {
+                        ...data.mro_item,
+                        inventory: data.inventory || [],
+                        transactions: data.transactions || []
+                    };
                     renderDetailModal(item);
                 }
             } catch (error) {
@@ -791,7 +797,7 @@
         }
 
         function renderDetailModal(item) {
-            const stock = parseFloat(item.current_stock);
+            const stock = parseFloat(item.current_stock) || 0;
             const inventory = item.inventory || [];
 
             const criticalBadge = item.is_critical == 1 ?
@@ -799,8 +805,8 @@
 
             document.getElementById('detailModalTitle').innerHTML = `
                 <i class="fas fa-tools text-primary"></i>
-                ${item.name}
-                <span class="text-base-content/60 text-sm font-normal">(${item.code})</span>
+                ${item.item_name || item.name || 'Unknown Item'}
+                <span class="text-base-content/60 text-sm font-normal">(${item.item_code || item.code || '-'})</span>
                 ${criticalBadge}
             `;
 
@@ -811,14 +817,14 @@
                 inventoryHtml = inventory.map(inv => `
                     <div class="flex items-center justify-between p-3 bg-base-200 rounded-lg mb-2">
                         <div>
-                            <p class="font-semibold">${inv.reference_number || 'No reference'}</p>
+                            <p class="font-semibold">${inv.batch_code || inv.reference_number || 'No reference'}</p>
                             <p class="text-sm text-base-content/60">
                                 Received: ${formatDate(inv.received_date)}
-                                ${inv.supplier ? ` - ${inv.supplier}` : ''}
+                                ${inv.supplier_name ? ` - ${inv.supplier_name}` : ''}
                             </p>
                         </div>
                         <div class="text-right">
-                            <p class="font-bold">${parseInt(inv.quantity_remaining).toLocaleString()} ${item.unit_of_measure}</p>
+                            <p class="font-bold">${parseInt(inv.remaining_quantity || 0).toLocaleString()} ${item.unit_of_measure || ''}</p>
                             ${inv.unit_cost ? `<p class="text-sm text-base-content/60">@ ${formatCurrency(inv.unit_cost)}</p>` : ''}
                         </div>
                     </div>
@@ -833,24 +839,24 @@
                     </div>
                     <div>
                         <p class="text-sm text-base-content/60">Unit of Measure</p>
-                        <p class="font-semibold">${item.unit_of_measure}</p>
+                        <p class="font-semibold">${item.unit_of_measure || '-'}</p>
                     </div>
                 </div>
                 <div class="grid grid-cols-3 gap-4 mb-6">
                     <div>
                         <p class="text-sm text-base-content/60">Current Stock</p>
-                        <p class="text-2xl font-bold">${parseInt(stock).toLocaleString()}</p>
+                        <p class="text-2xl font-bold">${isNaN(stock) ? 0 : stock.toLocaleString()}</p>
                     </div>
                     <div>
                         <p class="text-sm text-base-content/60">Minimum Stock</p>
-                        <p class="font-semibold">${item.minimum_stock}</p>
+                        <p class="font-semibold">${item.minimum_stock || 0}</p>
                     </div>
                     <div>
                         <p class="text-sm text-base-content/60">Reorder Point</p>
                         <p class="font-semibold">${item.reorder_point || '-'}</p>
                     </div>
                 </div>
-                ${item.location ? `<div class="mb-4"><p class="text-sm text-base-content/60">Storage Location</p><p class="font-semibold">${item.location}</p></div>` : ''}
+                ${item.storage_location ? `<div class="mb-4"><p class="text-sm text-base-content/60">Storage Location</p><p class="font-semibold">${item.storage_location}</p></div>` : ''}
                 ${item.description ? `<div class="mb-4"><p class="text-sm text-base-content/60">Description</p><p>${item.description}</p></div>` : ''}
                 
                 <div class="divider"></div>
@@ -862,10 +868,10 @@
 
             document.getElementById('detailModalFooter').innerHTML = `
                 <button class="btn btn-ghost" onclick="document.getElementById('detailModal').close()">Close</button>
-                <button class="btn btn-info btn-outline" onclick="openAdjustModal(${item.id}, '${item.name}', ${stock}, '${item.unit_of_measure}')">
+                <button class="btn btn-info btn-outline" onclick="openAdjustModal(${item.id}, '${(item.item_name || item.name || '').replace(/'/g, "\\'")}', ${stock}, '${item.unit_of_measure || ''}')">
                     <i class="fas fa-sliders-h"></i> Adjust
                 </button>
-                <button class="btn btn-warning" onclick="openIssueModal(${item.id}, '${item.name}', ${stock}, '${item.unit_of_measure}')" ${stock <= 0 ? 'disabled' : ''}>
+                <button class="btn btn-warning" onclick="openIssueModal(${item.id}, '${(item.item_name || item.name || '').replace(/'/g, "\\'")}', ${stock}, '${item.unit_of_measure || ''}')" ${stock <= 0 ? 'disabled' : ''}>
                     <i class="fas fa-arrow-up"></i> Issue
                 </button>
             `;

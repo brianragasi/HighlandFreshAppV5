@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ingredients Management | Highland Fresh Admin</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } }
+        }
+    </script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Axios -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-cogs text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Admin Panel</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-th-large w-5 text-center text-base-content/60"></i><span class="flex-1">Dashboard</span>
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Supply Chain</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="farmers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-tractor w-5 text-center text-base-content/60"></i><span class="flex-1">Farmers</span>
+                    </a></li>
+                    <li><a href="suppliers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-truck w-5 text-center text-base-content/60"></i><span class="flex-1">Suppliers</span>
+                    </a></li>
+                    <li><a href="customers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-store w-5 text-center text-base-content/60"></i><span class="flex-1">Customers</span>
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Product Catalog</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="products.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-box w-5 text-center text-base-content/60"></i><span class="flex-1">Products</span>
+                    </a></li>
+                    <li><a href="recipes.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-clipboard-list w-5 text-center text-base-content/60"></i><span class="flex-1">Recipes</span>
+                    </a></li>
+                    <li><a href="ingredients.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                        <i class="fas fa-seedling w-5 text-center"></i><span class="flex-1">Ingredients</span>
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Infrastructure</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="storage.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-database w-5 text-center text-base-content/60"></i><span class="flex-1">Storage Tanks</span>
+                    </a></li>
+                    <li><a href="chillers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-snowflake w-5 text-center text-base-content/60"></i><span class="flex-1">Chillers</span>
+                    </a></li>
+                </ul>
+            </div>
+        </nav>
+        
+        <div class="p-4 border-t border-base-300">
+            <a href="../login.html" class="btn btn-ghost btn-sm w-full justify-start gap-3">
+                <i class="fas fa-sign-out-alt"></i>
+                Logout
+            </a>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <main class="lg:ml-72 min-h-screen">
+        <!-- Top Bar -->
+        <header class="bg-base-100 border-b border-base-300 sticky top-0 z-30">
+            <div class="flex items-center justify-between px-4 py-3">
+                <div class="flex items-center gap-3">
+                    <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div>
+                        <h1 class="text-lg font-bold">Ingredients Management</h1>
+                        <div class="text-sm breadcrumbs p-0">
+                            <ul><li><a href="dashboard.html">Admin</a></li><li>Ingredients</li></ul>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-sm gap-2" onclick="openModal()">
+                    <i class="fas fa-plus"></i>
+                    Add Ingredient
+                </button>
+            </div>
+        </header>
+        
+        <!-- Content -->
+        <div class="p-4 md:p-6 space-y-6">
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-seedling text-primary text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm text-base-content/60">Total Ingredients</p>
+                            <p class="text-2xl font-bold" id="totalCount">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 bg-success/10 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-check-circle text-success text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm text-base-content/60">Active</p>
+                            <p class="text-2xl font-bold" id="activeCount">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 bg-warning/10 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-exclamation-triangle text-warning text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm text-base-content/60">Low Stock</p>
+                            <p class="text-2xl font-bold" id="lowStockCount">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 bg-info/10 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-peso-sign text-info text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm text-base-content/60">Inventory Value</p>
+                            <p class="text-2xl font-bold" id="totalValue">₱0</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Search and Filter -->
+            <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
+                <div class="flex flex-col md:flex-row gap-4">
+                    <div class="flex-1">
+                        <div class="input input-bordered flex items-center gap-2">
+                            <i class="fas fa-search text-base-content/40"></i>
+                            <input type="text" id="searchInput" placeholder="Search ingredients..." class="grow border-none focus:outline-none bg-transparent" onkeyup="handleSearch(event)">
+                        </div>
+                    </div>
+                    <select id="categoryFilter" class="select select-bordered w-full md:w-48" onchange="loadData()">
+                        <option value="">All Categories</option>
+                    </select>
+                    <select id="statusFilter" class="select select-bordered w-full md:w-48" onchange="loadData()">
+                        <option value="">All Status</option>
+                        <option value="1">Active</option>
+                        <option value="0">Inactive</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Data Table -->
+            <div class="bg-base-100 rounded-2xl border border-base-300 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="table table-zebra">
+                        <thead>
+                            <tr class="bg-base-200">
+                                <th>Code</th>
+                                <th>Ingredient Name</th>
+                                <th>Category</th>
+                                <th>Unit</th>
+                                <th>Current Stock</th>
+                                <th>Reorder Point</th>
+                                <th>Unit Cost</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dataTable">
+                            <tr>
+                                <td colspan="9" class="text-center py-8">
+                                    <i class="fas fa-spinner fa-spin text-2xl text-base-content/40"></i>
+                                    <p class="mt-2 text-base-content/60">Loading...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Pagination -->
+                <div class="p-4 border-t border-base-300 flex justify-between items-center">
+                    <div class="text-sm text-base-content/60" id="paginationInfo">Showing 0 of 0</div>
+                    <div class="join" id="paginationButtons"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- Add/Edit Modal -->
+    <dialog id="formModal" class="modal">
+        <div class="modal-box w-11/12 max-w-2xl">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-4" id="modalTitle">Add Ingredient</h3>
+            
+            <form id="dataForm" class="space-y-4">
+                <input type="hidden" id="recordId">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Ingredient Code</span></label>
+                        <input type="text" id="ingredient_code" class="input input-bordered" placeholder="Auto-generated" readonly>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Ingredient Name *</span></label>
+                        <input type="text" id="ingredient_name" class="input input-bordered" required>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Category</span></label>
+                        <select id="category_id" class="select select-bordered">
+                            <option value="">Select Category</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Unit of Measure *</span></label>
+                        <select id="unit_of_measure" class="select select-bordered" required>
+                            <option value="">Select Unit</option>
+                            <option value="kg">Kilograms (kg)</option>
+                            <option value="g">Grams (g)</option>
+                            <option value="L">Liters (L)</option>
+                            <option value="ml">Milliliters (ml)</option>
+                            <option value="pcs">Pieces (pcs)</option>
+                            <option value="pack">Pack</option>
+                            <option value="bottle">Bottle</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Minimum Stock</span></label>
+                        <input type="number" id="minimum_stock" class="input input-bordered" step="0.01" value="0">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Reorder Point</span></label>
+                        <input type="number" id="reorder_point" class="input input-bordered" step="0.01" value="0">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Lead Time (days)</span></label>
+                        <input type="number" id="lead_time_days" class="input input-bordered" value="7" min="1">
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Current Stock</span></label>
+                        <input type="number" id="current_stock" class="input input-bordered" step="0.01" value="0">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Unit Cost (₱)</span></label>
+                        <input type="number" id="unit_cost" class="input input-bordered" step="0.01">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Shelf Life (days)</span></label>
+                        <input type="number" id="shelf_life_days" class="input input-bordered" min="1">
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Storage Location</span></label>
+                        <input type="text" id="storage_location" class="input input-bordered">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Status</span></label>
+                        <select id="is_active" class="select select-bordered">
+                            <option value="1">Active</option>
+                            <option value="0">Inactive</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Storage Requirements</span></label>
+                    <textarea id="storage_requirements" class="textarea textarea-bordered" rows="2" placeholder="e.g., Keep refrigerated, avoid direct sunlight"></textarea>
+                </div>
+                
+                <div class="modal-action">
+                    <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveBtn">
+                        <span class="loading loading-spinner loading-sm hidden"></span>
+                        Save
+                    </button>
+                </div>
+            </form>
+        </div>
+    </dialog>
+    
+    <!-- Toast Container -->
+    <div class="toast toast-end" id="toastContainer"></div>
+    
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/admin/admin.service.js"></script>
+    
+    <script>
+        let currentPage = 1;
+        let searchTimeout = null;
+        let categories = [];
+        
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+        
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        function formatCurrency(amount) {
+            return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+        }
+        
+        function handleSearch(event) {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                currentPage = 1;
+                loadData();
+            }, 300);
+        }
+        
+        async function loadCategories() {
+            try {
+                const response = await AdminService.getIngredients({ action: 'categories' });
+                if (response.success) {
+                    categories = response.data.categories || [];
+                    const filterSelect = document.getElementById('categoryFilter');
+                    const formSelect = document.getElementById('category_id');
+                    
+                    categories.forEach(c => {
+                        filterSelect.innerHTML += `<option value="${c.id}">${c.category_name}</option>`;
+                        formSelect.innerHTML += `<option value="${c.id}">${c.category_name}</option>`;
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading categories:', error);
+            }
+        }
+        
+        async function loadData() {
+            const tableBody = document.getElementById('dataTable');
+            tableBody.innerHTML = '<tr><td colspan="9" class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl"></i></td></tr>';
+            
+            try {
+                const params = {
+                    page: currentPage,
+                    limit: 20,
+                    search: document.getElementById('searchInput').value,
+                    category_id: document.getElementById('categoryFilter').value,
+                    is_active: document.getElementById('statusFilter').value
+                };
+                
+                const response = await AdminService.getIngredients(params);
+                
+                if (response.success) {
+                    renderTable(response.data.ingredients);
+                    renderPagination(response.data.pagination);
+                    loadStatistics();
+                } else {
+                    showToast('Failed to load data', 'error');
+                }
+            } catch (error) {
+                console.error('Error loading data:', error);
+                showToast('Error loading data', 'error');
+            }
+        }
+        
+        async function loadStatistics() {
+            try {
+                const response = await AdminService.getIngredients({ action: 'statistics' });
+                if (response.success) {
+                    document.getElementById('totalCount').textContent = response.data.total || 0;
+                    document.getElementById('activeCount').textContent = response.data.active || 0;
+                    document.getElementById('lowStockCount').textContent = response.data.low_stock || 0;
+                    document.getElementById('totalValue').textContent = formatCurrency(response.data.total_value);
+                }
+            } catch (error) {
+                console.error('Error loading statistics:', error);
+            }
+        }
+        
+        function renderTable(ingredients) {
+            const tableBody = document.getElementById('dataTable');
+            
+            if (!ingredients || ingredients.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-base-content/60">No ingredients found</td></tr>';
+                return;
+            }
+            
+            tableBody.innerHTML = ingredients.map(i => {
+                const isLowStock = parseFloat(i.current_stock) <= parseFloat(i.reorder_point);
+                return `
+                <tr>
+                    <td><span class="font-mono text-sm">${i.ingredient_code}</span></td>
+                    <td><span class="font-semibold">${i.ingredient_name}</span></td>
+                    <td>${i.category_name || '-'}</td>
+                    <td>${i.unit_of_measure}</td>
+                    <td>
+                        <span class="${isLowStock ? 'text-warning font-semibold' : ''}">
+                            ${parseFloat(i.current_stock).toLocaleString()} ${i.unit_of_measure}
+                        </span>
+                        ${isLowStock ? '<i class="fas fa-exclamation-triangle text-warning ml-1"></i>' : ''}
+                    </td>
+                    <td>${parseFloat(i.reorder_point).toLocaleString()} ${i.unit_of_measure}</td>
+                    <td>${i.unit_cost ? formatCurrency(i.unit_cost) : '-'}</td>
+                    <td>
+                        <span class="badge ${i.is_active == 1 ? 'badge-success' : 'badge-warning'} badge-sm">
+                            ${i.is_active == 1 ? 'Active' : 'Inactive'}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="flex gap-1">
+                            <button class="btn btn-ghost btn-xs" onclick="editRecord(${i.id})">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-ghost btn-xs text-error" onclick="deleteRecord(${i.id})">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `}).join('');
+        }
+        
+        function renderPagination(pagination) {
+            const info = document.getElementById('paginationInfo');
+            const buttons = document.getElementById('paginationButtons');
+            
+            const start = (pagination.page - 1) * pagination.limit + 1;
+            const end = Math.min(pagination.page * pagination.limit, pagination.total);
+            info.textContent = `Showing ${start}-${end} of ${pagination.total}`;
+            
+            let html = '';
+            for (let i = 1; i <= pagination.pages; i++) {
+                html += `<button class="join-item btn btn-sm ${i === pagination.page ? 'btn-active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+            }
+            buttons.innerHTML = html;
+        }
+        
+        function goToPage(page) {
+            currentPage = page;
+            loadData();
+        }
+        
+        function openModal(id = null) {
+            document.getElementById('modalTitle').textContent = id ? 'Edit Ingredient' : 'Add Ingredient';
+            document.getElementById('dataForm').reset();
+            document.getElementById('recordId').value = '';
+            document.getElementById('formModal').showModal();
+        }
+        
+        function closeModal() {
+            document.getElementById('formModal').close();
+        }
+        
+        async function editRecord(id) {
+            try {
+                const response = await AdminService.getIngredient(id);
+                if (response.success) {
+                    const i = response.data.ingredient;
+                    document.getElementById('recordId').value = i.id;
+                    document.getElementById('ingredient_code').value = i.ingredient_code;
+                    document.getElementById('ingredient_name').value = i.ingredient_name;
+                    document.getElementById('category_id').value = i.category_id || '';
+                    document.getElementById('unit_of_measure').value = i.unit_of_measure;
+                    document.getElementById('minimum_stock').value = i.minimum_stock;
+                    document.getElementById('reorder_point').value = i.reorder_point;
+                    document.getElementById('lead_time_days').value = i.lead_time_days;
+                    document.getElementById('current_stock').value = i.current_stock;
+                    document.getElementById('unit_cost').value = i.unit_cost || '';
+                    document.getElementById('shelf_life_days').value = i.shelf_life_days || '';
+                    document.getElementById('storage_location').value = i.storage_location || '';
+                    document.getElementById('storage_requirements').value = i.storage_requirements || '';
+                    document.getElementById('is_active').value = i.is_active;
+                    
+                    document.getElementById('modalTitle').textContent = 'Edit Ingredient';
+                    document.getElementById('formModal').showModal();
+                }
+            } catch (error) {
+                console.error('Error loading record:', error);
+                showToast('Failed to load ingredient details', 'error');
+            }
+        }
+        
+        async function deleteRecord(id) {
+            if (!confirm('Are you sure you want to deactivate this ingredient?')) return;
+            
+            try {
+                const response = await AdminService.deleteIngredient(id);
+                if (response.success) {
+                    showToast('Ingredient deactivated successfully', 'success');
+                    loadData();
+                } else {
+                    showToast(response.message || 'Failed to deactivate', 'error');
+                }
+            } catch (error) {
+                console.error('Error deleting record:', error);
+                showToast('Error deactivating ingredient', 'error');
+            }
+        }
+        
+        document.getElementById('dataForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const recordId = document.getElementById('recordId').value;
+            const formData = {
+                ingredient_name: document.getElementById('ingredient_name').value,
+                category_id: document.getElementById('category_id').value || null,
+                unit_of_measure: document.getElementById('unit_of_measure').value,
+                minimum_stock: document.getElementById('minimum_stock').value,
+                reorder_point: document.getElementById('reorder_point').value,
+                lead_time_days: document.getElementById('lead_time_days').value,
+                current_stock: document.getElementById('current_stock').value,
+                unit_cost: document.getElementById('unit_cost').value || null,
+                shelf_life_days: document.getElementById('shelf_life_days').value || null,
+                storage_location: document.getElementById('storage_location').value,
+                storage_requirements: document.getElementById('storage_requirements').value,
+                is_active: document.getElementById('is_active').value
+            };
+            
+            try {
+                const saveBtn = document.getElementById('saveBtn');
+                saveBtn.classList.add('loading');
+                saveBtn.disabled = true;
+                
+                let response;
+                if (recordId) {
+                    response = await AdminService.updateIngredient(recordId, formData);
+                } else {
+                    response = await AdminService.createIngredient(formData);
+                }
+                
+                if (response.success) {
+                    showToast(recordId ? 'Ingredient updated successfully' : 'Ingredient created successfully', 'success');
+                    closeModal();
+                    loadData();
+                } else {
+                    showToast(response.message || 'Failed to save', 'error');
+                }
+            } catch (error) {
+                console.error('Error saving:', error);
+                showToast('Error saving ingredient', 'error');
+            } finally {
+                const saveBtn = document.getElementById('saveBtn');
+                saveBtn.classList.remove('loading');
+                saveBtn.disabled = false;
+            }
+        });
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadCategories();
+            loadData();
+        });
+    </script>
+</body>
+</html>

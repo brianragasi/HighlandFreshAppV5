@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Summary Report - Cashier POS | Highland Fresh</title>
+
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .stat-value { font-variant-numeric: tabular-nums; }
+        @media print {
+            .no-print { display: none !important; }
+            .lg\\:ml-72 { margin-left: 0 !important; }
+            .card { break-inside: avoid; }
+        }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden no-print" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col no-print">
+
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-cash-register text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Cashier / POS</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="../dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Sales</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="../sale.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-bolt w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Quick Sale (POS)</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="../history.html?type=sales" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-receipt w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Transaction History</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Collections</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="../collect.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-hand-holding-dollar w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Collect Payment</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="../history.html?type=collections" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-clock-rotate-left w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Collection History</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="daily_summary.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-chart-pie w-5 text-center"></i>
+                            <span class="flex-1">Daily Summary</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="cash_position.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-wallet w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Cash Position</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">CA</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Cashier</p>
+                    <p class="text-xs text-base-content/60 truncate">Point of Sale</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6 no-print">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-chart-pie text-primary"></i>
+                    <span class="font-semibold">Daily Summary Report</span>
+                </div>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <div class="hidden md:flex items-center gap-2 px-3 py-1.5 bg-base-200 rounded-lg">
+                    <i class="fas fa-clock text-base-content/60"></i>
+                    <span id="currentTime" class="font-mono text-sm">--:--:--</span>
+                </div>
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- Report Header -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body p-4">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div>
+                            <h2 class="text-2xl font-bold">Daily Summary Report</h2>
+                            <p class="text-base-content/60" id="reportDateDisplay">February 1, 2026</p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <input type="date" id="reportDate" class="input input-bordered" onchange="loadReport()">
+                            <button class="btn btn-outline no-print" onclick="window.print()">
+                                <i class="fas fa-print"></i> Print
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="card bg-gradient-to-br from-primary to-primary/80 text-primary-content">
+                    <div class="card-body p-4">
+                        <p class="text-sm opacity-80">Total Sales</p>
+                        <p class="text-3xl font-bold stat-value" id="totalSales">₱0.00</p>
+                        <p class="text-xs opacity-70"><span id="salesCount">0</span> transactions</p>
+                    </div>
+                </div>
+                <div class="card bg-gradient-to-br from-info to-info/80 text-info-content">
+                    <div class="card-body p-4">
+                        <p class="text-sm opacity-80">Total Collections</p>
+                        <p class="text-3xl font-bold stat-value" id="totalCollections">₱0.00</p>
+                        <p class="text-xs opacity-70"><span id="collectionsCount">0</span> collections</p>
+                    </div>
+                </div>
+                <div class="card bg-gradient-to-br from-success to-success/80 text-success-content">
+                    <div class="card-body p-4">
+                        <p class="text-sm opacity-80">Cash Received</p>
+                        <p class="text-3xl font-bold stat-value" id="totalCash">₱0.00</p>
+                        <p class="text-xs opacity-70">Sales + Collections</p>
+                    </div>
+                </div>
+                <div class="card bg-gradient-to-br from-warning to-warning/80 text-warning-content">
+                    <div class="card-body p-4">
+                        <p class="text-sm opacity-80">Non-Cash</p>
+                        <p class="text-3xl font-bold stat-value" id="totalNonCash">₱0.00</p>
+                        <p class="text-xs opacity-70">GCash, Bank, Check</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- Sales by Payment Method -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body">
+                        <h3 class="card-title text-lg mb-4">
+                            <i class="fas fa-pie-chart text-primary"></i>
+                            Sales by Payment Method
+                        </h3>
+                        <div class="h-64">
+                            <canvas id="salesPaymentChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Hourly Sales -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body">
+                        <h3 class="card-title text-lg mb-4">
+                            <i class="fas fa-chart-line text-primary"></i>
+                            Hourly Sales
+                        </h3>
+                        <div class="h-64">
+                            <canvas id="hourlySalesChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sales Breakdown -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body">
+                    <h3 class="card-title text-lg mb-4">
+                        <i class="fas fa-receipt text-primary"></i>
+                        Sales Breakdown
+                    </h3>
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr class="bg-base-200">
+                                    <th>Payment Method</th>
+                                    <th class="text-center">Transactions</th>
+                                    <th class="text-right">Amount</th>
+                                    <th class="text-right">%</th>
+                                </tr>
+                            </thead>
+                            <tbody id="salesBreakdownTable">
+                                <tr>
+                                    <td colspan="4" class="text-center py-4">
+                                        <span class="loading loading-spinner loading-md"></span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                            <tfoot>
+                                <tr class="font-bold bg-base-200">
+                                    <td>TOTAL SALES</td>
+                                    <td class="text-center" id="salesBreakdownTotalCount">0</td>
+                                    <td class="text-right" id="salesBreakdownTotalAmount">₱0.00</td>
+                                    <td class="text-right">100%</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Collections Breakdown -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body">
+                    <h3 class="card-title text-lg mb-4">
+                        <i class="fas fa-hand-holding-dollar text-info"></i>
+                        Collections Breakdown
+                    </h3>
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr class="bg-base-200">
+                                    <th>Payment Method</th>
+                                    <th class="text-center">Collections</th>
+                                    <th class="text-right">Amount</th>
+                                    <th class="text-right">%</th>
+                                </tr>
+                            </thead>
+                            <tbody id="collectionsBreakdownTable">
+                                <tr>
+                                    <td colspan="4" class="text-center py-4">
+                                        <span class="loading loading-spinner loading-md"></span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                            <tfoot>
+                                <tr class="font-bold bg-base-200">
+                                    <td>TOTAL COLLECTIONS</td>
+                                    <td class="text-center" id="collectionsBreakdownTotalCount">0</td>
+                                    <td class="text-right" id="collectionsBreakdownTotalAmount">₱0.00</td>
+                                    <td class="text-right">100%</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Top Selling Products -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body">
+                    <h3 class="card-title text-lg mb-4">
+                        <i class="fas fa-trophy text-warning"></i>
+                        Top Selling Products
+                    </h3>
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr class="bg-base-200">
+                                    <th>#</th>
+                                    <th>Product</th>
+                                    <th class="text-right">Qty Sold</th>
+                                    <th class="text-right">Revenue</th>
+                                </tr>
+                            </thead>
+                            <tbody id="topProductsTable">
+                                <tr>
+                                    <td colspan="4" class="text-center py-4">
+                                        <span class="loading loading-spinner loading-md"></span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Grand Summary -->
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body">
+                    <h3 class="card-title text-lg mb-4">
+                        <i class="fas fa-calculator text-success"></i>
+                        Grand Summary
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-base-200 rounded-lg p-4 space-y-3">
+                            <h4 class="font-semibold text-base-content/60 uppercase text-sm">Cash Transactions</h4>
+                            <div class="space-y-2">
+                                <div class="flex justify-between">
+                                    <span>Cash Sales</span>
+                                    <span class="font-semibold" id="summaryCashSales">₱0.00</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Cash Collections</span>
+                                    <span class="font-semibold" id="summaryCashCollections">₱0.00</span>
+                                </div>
+                                <div class="divider my-1"></div>
+                                <div class="flex justify-between text-lg font-bold text-success">
+                                    <span>Total Cash In</span>
+                                    <span id="summaryTotalCashIn">₱0.00</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bg-base-200 rounded-lg p-4 space-y-3">
+                            <h4 class="font-semibold text-base-content/60 uppercase text-sm">Non-Cash Transactions</h4>
+                            <div class="space-y-2">
+                                <div class="flex justify-between">
+                                    <span>GCash</span>
+                                    <span class="font-semibold" id="summaryGCash">₱0.00</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Bank Transfer</span>
+                                    <span class="font-semibold" id="summaryBank">₱0.00</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Check</span>
+                                    <span class="font-semibold" id="summaryCheck">₱0.00</span>
+                                </div>
+                                <div class="divider my-1"></div>
+                                <div class="flex justify-between text-lg font-bold text-info">
+                                    <span>Total Non-Cash</span>
+                                    <span id="summaryTotalNonCash">₱0.00</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-primary/10 rounded-lg p-4 mt-4">
+                        <div class="flex justify-between text-xl font-bold">
+                            <span>GRAND TOTAL (Sales + Collections)</span>
+                            <span class="text-primary" id="grandTotal">₱0.00</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
+            <div>
+                <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50 no-print"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../../js/config/api.js"></script>
+    <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/pos/pos.service.js"></script>
+
+    <script>
+        // State
+        let reportData = null;
+        let salesPaymentChart = null;
+        let hourlySalesChart = null;
+
+        // Sidebar toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+
+        // Theme toggle
+        document.getElementById('themeToggle').addEventListener('change', function () {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('themeToggle').checked = true;
+        }
+
+        // Update time
+        function updateTime() {
+            document.getElementById('currentTime').textContent = new Date().toLocaleTimeString('en-US', { hour12: false });
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // Format currency
+        function formatCurrency(amount) {
+            return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        // Toast notification
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `alert alert-${type} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            document.getElementById('toastContainer').appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        function getInitials(firstName, lastName) {
+            const f = firstName ? firstName.charAt(0).toUpperCase() : '';
+            const l = lastName ? lastName.charAt(0).toUpperCase() : '';
+            return f + l || 'CA';
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async function () {
+            if (typeof AuthService !== 'undefined') {
+                const user = AuthService.getCurrentUser();
+                if (user) {
+                    document.getElementById('sidebarUserName').textContent = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Cashier';
+                    document.getElementById('userInitials').textContent = getInitials(user.first_name, user.last_name);
+                }
+            }
+
+            // Set default date to today
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('reportDate').value = today;
+
+            await loadReport();
+        });
+
+        async function loadReport() {
+            const date = document.getElementById('reportDate').value;
+            
+            // Update display date
+            const displayDate = new Date(date + 'T00:00:00');
+            document.getElementById('reportDateDisplay').textContent = displayDate.toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+
+            try {
+                const response = await POSService.getDailySalesReport(date);
+                if (response && response.data) {
+                    reportData = response.data;
+                    renderReport();
+                    return;
+                }
+            } catch (error) {
+                console.error('Error loading report:', error);
+                showToast('Failed to load report: ' + (error.response?.data?.message || error.message), 'error');
+            }
+
+            // Show empty state if no data
+            reportData = {
+                sales: {
+                    total_amount: 0,
+                    count: 0,
+                    by_payment: {
+                        cash: { count: 0, amount: 0 },
+                        gcash: { count: 0, amount: 0 },
+                        bank_transfer: { count: 0, amount: 0 },
+                        check: { count: 0, amount: 0 }
+                    },
+                    hourly: Array(24).fill(0)
+                },
+                collections: {
+                    total_amount: 0,
+                    count: 0,
+                    by_payment: {
+                        cash: { count: 0, amount: 0 },
+                        gcash: { count: 0, amount: 0 },
+                        bank_transfer: { count: 0, amount: 0 },
+                        check: { count: 0, amount: 0 }
+                    }
+                },
+                top_products: []
+            };
+            renderReport();
+        }
+
+        function renderReport() {
+            if (!reportData) return;
+
+            const sales = reportData.sales || {};
+            const collections = reportData.collections || {};
+
+            // Summary cards
+            document.getElementById('totalSales').textContent = formatCurrency(sales.total_amount);
+            document.getElementById('salesCount').textContent = sales.count || 0;
+            document.getElementById('totalCollections').textContent = formatCurrency(collections.total_amount);
+            document.getElementById('collectionsCount').textContent = collections.count || 0;
+
+            // Calculate totals
+            const cashSales = sales.by_payment?.cash?.amount || 0;
+            const cashCollections = collections.by_payment?.cash?.amount || 0;
+            const totalCash = cashSales + cashCollections;
+
+            const nonCashSales = (sales.total_amount || 0) - cashSales;
+            const nonCashCollections = (collections.total_amount || 0) - cashCollections;
+            const totalNonCash = nonCashSales + nonCashCollections;
+
+            document.getElementById('totalCash').textContent = formatCurrency(totalCash);
+            document.getElementById('totalNonCash').textContent = formatCurrency(totalNonCash);
+
+            // Render charts
+            renderSalesPaymentChart(sales.by_payment);
+            renderHourlySalesChart(sales.hourly);
+
+            // Render breakdown tables
+            renderSalesBreakdown(sales);
+            renderCollectionsBreakdown(collections);
+            renderTopProducts(reportData.top_products);
+
+            // Render grand summary
+            renderGrandSummary(sales, collections);
+        }
+
+        function renderSalesPaymentChart(byPayment) {
+            const ctx = document.getElementById('salesPaymentChart').getContext('2d');
+
+            if (salesPaymentChart) {
+                salesPaymentChart.destroy();
+            }
+
+            const data = {
+                labels: ['Cash', 'GCash', 'Bank Transfer', 'Check'],
+                datasets: [{
+                    data: [
+                        byPayment?.cash?.amount || 0,
+                        byPayment?.gcash?.amount || 0,
+                        byPayment?.bank_transfer?.amount || 0,
+                        byPayment?.check?.amount || 0
+                    ],
+                    backgroundColor: ['#10B981', '#3B82F6', '#8B5CF6', '#F59E0B'],
+                    borderWidth: 0
+                }]
+            };
+
+            salesPaymentChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: data,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderHourlySalesChart(hourlyData) {
+            const ctx = document.getElementById('hourlySalesChart').getContext('2d');
+
+            if (hourlySalesChart) {
+                hourlySalesChart.destroy();
+            }
+
+            const labels = Array.from({ length: 24 }, (_, i) => `${i}:00`);
+            const data = hourlyData || Array(24).fill(0);
+
+            hourlySalesChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Sales',
+                        data: data,
+                        backgroundColor: 'rgba(16, 185, 129, 0.7)',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return '₱' + value.toLocaleString();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderSalesBreakdown(sales) {
+            const tbody = document.getElementById('salesBreakdownTable');
+            const byPayment = sales.by_payment || {};
+            const total = sales.total_amount || 0;
+
+            const methods = [
+                { key: 'cash', label: 'Cash', icon: 'fa-money-bill-wave text-success' },
+                { key: 'gcash', label: 'GCash', icon: 'fa-mobile-screen text-info' },
+                { key: 'bank_transfer', label: 'Bank Transfer', icon: 'fa-building-columns text-purple-500' },
+                { key: 'check', label: 'Check', icon: 'fa-money-check text-warning' }
+            ];
+
+            tbody.innerHTML = methods.map(m => {
+                const data = byPayment[m.key] || { count: 0, amount: 0 };
+                const pct = total > 0 ? ((data.amount / total) * 100).toFixed(1) : 0;
+                return `
+                    <tr>
+                        <td>
+                            <i class="fas ${m.icon} mr-2"></i>
+                            ${m.label}
+                        </td>
+                        <td class="text-center">${data.count}</td>
+                        <td class="text-right font-semibold">${formatCurrency(data.amount)}</td>
+                        <td class="text-right">${pct}%</td>
+                    </tr>
+                `;
+            }).join('');
+
+            document.getElementById('salesBreakdownTotalCount').textContent = sales.count || 0;
+            document.getElementById('salesBreakdownTotalAmount').textContent = formatCurrency(total);
+        }
+
+        function renderCollectionsBreakdown(collections) {
+            const tbody = document.getElementById('collectionsBreakdownTable');
+            const byPayment = collections.by_payment || {};
+            const total = collections.total_amount || 0;
+
+            const methods = [
+                { key: 'cash', label: 'Cash', icon: 'fa-money-bill-wave text-success' },
+                { key: 'gcash', label: 'GCash', icon: 'fa-mobile-screen text-info' },
+                { key: 'bank_transfer', label: 'Bank Transfer', icon: 'fa-building-columns text-purple-500' },
+                { key: 'check', label: 'Check', icon: 'fa-money-check text-warning' }
+            ];
+
+            tbody.innerHTML = methods.map(m => {
+                const data = byPayment[m.key] || { count: 0, amount: 0 };
+                const pct = total > 0 ? ((data.amount / total) * 100).toFixed(1) : 0;
+                return `
+                    <tr>
+                        <td>
+                            <i class="fas ${m.icon} mr-2"></i>
+                            ${m.label}
+                        </td>
+                        <td class="text-center">${data.count}</td>
+                        <td class="text-right font-semibold">${formatCurrency(data.amount)}</td>
+                        <td class="text-right">${pct}%</td>
+                    </tr>
+                `;
+            }).join('');
+
+            document.getElementById('collectionsBreakdownTotalCount').textContent = collections.count || 0;
+            document.getElementById('collectionsBreakdownTotalAmount').textContent = formatCurrency(total);
+        }
+
+        function renderTopProducts(products) {
+            const tbody = document.getElementById('topProductsTable');
+
+            if (!products || products.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="text-center py-4 text-base-content/60">
+                            No sales data available
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = products.map((p, i) => `
+                <tr>
+                    <td>
+                        <span class="badge ${i < 3 ? 'badge-warning' : 'badge-ghost'}">${i + 1}</span>
+                    </td>
+                    <td class="font-medium">${p.product_name}</td>
+                    <td class="text-right">${p.quantity_sold}</td>
+                    <td class="text-right font-semibold">${formatCurrency(p.revenue)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderGrandSummary(sales, collections) {
+            const salesByPayment = sales.by_payment || {};
+            const collectionsPayment = collections.by_payment || {};
+
+            // Cash
+            const cashSales = salesByPayment.cash?.amount || 0;
+            const cashCollections = collectionsPayment.cash?.amount || 0;
+            document.getElementById('summaryCashSales').textContent = formatCurrency(cashSales);
+            document.getElementById('summaryCashCollections').textContent = formatCurrency(cashCollections);
+            document.getElementById('summaryTotalCashIn').textContent = formatCurrency(cashSales + cashCollections);
+
+            // Non-cash
+            const gcash = (salesByPayment.gcash?.amount || 0) + (collectionsPayment.gcash?.amount || 0);
+            const bank = (salesByPayment.bank_transfer?.amount || 0) + (collectionsPayment.bank_transfer?.amount || 0);
+            const check = (salesByPayment.check?.amount || 0) + (collectionsPayment.check?.amount || 0);
+            
+            document.getElementById('summaryGCash').textContent = formatCurrency(gcash);
+            document.getElementById('summaryBank').textContent = formatCurrency(bank);
+            document.getElementById('summaryCheck').textContent = formatCurrency(check);
+            document.getElementById('summaryTotalNonCash').textContent = formatCurrency(gcash + bank + check);
+
+            // Grand total
+            const grandTotal = (sales.total_amount || 0) + (collections.total_amount || 0);
+            document.getElementById('grandTotal').textContent = formatCurrency(grandTotal);
+        }
+    </script>
+</body>
+
+</html>

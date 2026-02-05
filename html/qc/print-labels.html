@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Print Batch Labels - Highland Fresh</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <!-- JsBarcode for generating barcodes -->
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Print styles */
+        @media print {
+            body { background: white !important; }
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            .label-container { page-break-inside: avoid; }
+            @page { 
+                size: 4in 3in; 
+                margin: 0.25in; 
+            }
+        }
+        
+        /* Label styling */
+        .label-container {
+            width: 4in;
+            height: 3in;
+            border: 2px solid #000;
+            padding: 0.25in;
+            background: white;
+            page-break-inside: avoid;
+        }
+        
+        .barcode-svg {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen p-4">
+    
+    <!-- Controls (hidden when printing) -->
+    <div class="no-print max-w-4xl mx-auto mb-6">
+        <div class="card bg-base-100 shadow-lg">
+            <div class="card-body">
+                <div class="flex items-center justify-between mb-4">
+                    <h1 class="text-2xl font-bold">
+                        <i class="fas fa-barcode text-primary mr-2"></i>
+                        Batch Label Printing
+                    </h1>
+                    <a href="batch_release.html" class="btn btn-ghost btn-sm">
+                        <i class="fas fa-arrow-left"></i> Back to Batch Release
+                    </a>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Select Batch</span></label>
+                        <select id="batchSelect" class="select select-bordered" onchange="loadBatchDetails()">
+                            <option value="">Loading batches...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Number of Labels</span></label>
+                        <input type="number" id="labelCount" class="input input-bordered" value="1" min="1" max="100">
+                    </div>
+                    
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Label Size</span></label>
+                        <select id="labelSize" class="select select-bordered" onchange="regenerateLabels()">
+                            <option value="large">Large (4" x 3")</option>
+                            <option value="medium">Medium (3" x 2")</option>
+                            <option value="small">Small (2" x 1")</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="flex gap-2">
+                    <button class="btn btn-primary" onclick="generateLabels()">
+                        <i class="fas fa-barcode"></i> Generate Labels
+                    </button>
+                    <button class="btn btn-success" onclick="printLabels()" id="printBtn" disabled>
+                        <i class="fas fa-print"></i> Print Labels
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Batch Info Preview -->
+    <div class="no-print max-w-4xl mx-auto mb-6" id="batchInfoCard" style="display: none;">
+        <div class="card bg-base-100 shadow-lg">
+            <div class="card-body">
+                <h2 class="card-title text-lg">Batch Information</h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                        <span class="text-base-content/60">Batch Code:</span>
+                        <div class="font-bold" id="infoBatchCode">-</div>
+                    </div>
+                    <div>
+                        <span class="text-base-content/60">Barcode:</span>
+                        <div class="font-mono font-bold text-primary" id="infoBarcode">-</div>
+                    </div>
+                    <div>
+                        <span class="text-base-content/60">Product:</span>
+                        <div class="font-bold" id="infoProduct">-</div>
+                    </div>
+                    <div>
+                        <span class="text-base-content/60">Quantity:</span>
+                        <div class="font-bold" id="infoQuantity">-</div>
+                    </div>
+                    <div>
+                        <span class="text-base-content/60">Manufacturing Date:</span>
+                        <div class="font-bold" id="infoMfgDate">-</div>
+                    </div>
+                    <div>
+                        <span class="text-base-content/60">Expiry Date:</span>
+                        <div class="font-bold text-error" id="infoExpDate">-</div>
+                    </div>
+                    <div>
+                        <span class="text-base-content/60">Status:</span>
+                        <div id="infoStatus">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Labels Preview / Print Area -->
+    <div class="max-w-4xl mx-auto" id="labelsContainer">
+        <div class="no-print text-center text-base-content/40 py-12">
+            <i class="fas fa-tags text-6xl mb-4"></i>
+            <p>Select a batch and click "Generate Labels" to preview</p>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    
+    <script>
+        let currentBatch = null;
+        
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../login.html';
+                return;
+            }
+            
+            await loadReleasedBatches();
+            
+            // Check for batch_id in URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const batchId = urlParams.get('batch_id');
+            if (batchId) {
+                document.getElementById('batchSelect').value = batchId;
+                await loadBatchDetails();
+                generateLabels();
+            }
+        });
+        
+        async function loadReleasedBatches() {
+            try {
+                const response = await api.get('/qc/batch_release.php?action=list&status=released&limit=50');
+                const batches = response.data || [];
+                
+                const select = document.getElementById('batchSelect');
+                select.innerHTML = '<option value="">Select a released batch...</option>';
+                
+                batches.forEach(b => {
+                    const expiry = b.expiry_date ? new Date(b.expiry_date).toLocaleDateString() : '';
+                    select.innerHTML += `<option value="${b.id}" data-batch='${JSON.stringify(b).replace(/'/g, "&#39;")}'>${b.batch_code} - ${b.product_name || 'Unknown'} (Exp: ${expiry})</option>`;
+                });
+            } catch (error) {
+                console.error('Error loading batches:', error);
+            }
+        }
+        
+        async function loadBatchDetails() {
+            const select = document.getElementById('batchSelect');
+            const option = select.options[select.selectedIndex];
+            
+            if (!option.value) {
+                document.getElementById('batchInfoCard').style.display = 'none';
+                return;
+            }
+            
+            try {
+                // Get full batch details from API
+                const response = await api.get(`/qc/batch_release.php?action=detail&id=${option.value}`);
+                currentBatch = response.data;
+                
+                // Display batch info
+                document.getElementById('batchInfoCard').style.display = 'block';
+                document.getElementById('infoBatchCode').textContent = currentBatch.batch_code || '-';
+                document.getElementById('infoBarcode').textContent = currentBatch.barcode || 'Not Generated';
+                document.getElementById('infoProduct').textContent = currentBatch.product_name || '-';
+                document.getElementById('infoQuantity').textContent = (currentBatch.quantity_produced || currentBatch.expected_yield || '-') + ' units';
+                document.getElementById('infoMfgDate').textContent = currentBatch.manufacturing_date ? new Date(currentBatch.manufacturing_date).toLocaleDateString() : '-';
+                document.getElementById('infoExpDate').textContent = currentBatch.expiry_date ? new Date(currentBatch.expiry_date).toLocaleDateString() : '-';
+                
+                const statusBadge = currentBatch.qc_status === 'released' 
+                    ? '<span class="badge badge-success">Released</span>'
+                    : `<span class="badge">${currentBatch.qc_status}</span>`;
+                document.getElementById('infoStatus').innerHTML = statusBadge;
+                
+            } catch (error) {
+                console.error('Error loading batch details:', error);
+            }
+        }
+        
+        function generateLabels() {
+            if (!currentBatch) {
+                alert('Please select a batch first');
+                return;
+            }
+            
+            if (!currentBatch.barcode) {
+                alert('This batch does not have a barcode yet. Please ensure QC has released the batch.');
+                return;
+            }
+            
+            const count = parseInt(document.getElementById('labelCount').value) || 1;
+            const size = document.getElementById('labelSize').value;
+            
+            const container = document.getElementById('labelsContainer');
+            container.innerHTML = '';
+            
+            // Size configurations
+            const sizes = {
+                large: { width: '4in', height: '3in', barcodeHeight: 60 },
+                medium: { width: '3in', height: '2in', barcodeHeight: 45 },
+                small: { width: '2in', height: '1in', barcodeHeight: 30 }
+            };
+            const sizeConfig = sizes[size];
+            
+            for (let i = 0; i < count; i++) {
+                const label = createLabel(currentBatch, sizeConfig, i);
+                container.appendChild(label);
+            }
+            
+            // Generate all barcodes
+            document.querySelectorAll('.barcode-svg').forEach(svg => {
+                JsBarcode(svg, currentBatch.barcode, {
+                    format: "CODE128",
+                    width: 2,
+                    height: sizeConfig.barcodeHeight,
+                    displayValue: true,
+                    fontSize: size === 'small' ? 10 : 14,
+                    margin: 5
+                });
+            });
+            
+            document.getElementById('printBtn').disabled = false;
+        }
+        
+        function createLabel(batch, sizeConfig, index) {
+            const div = document.createElement('div');
+            div.className = 'label-container bg-white mb-4 mx-auto';
+            div.style.width = sizeConfig.width;
+            div.style.height = sizeConfig.height;
+            
+            const mfgDate = batch.manufacturing_date ? new Date(batch.manufacturing_date).toLocaleDateString('en-PH') : '-';
+            const expDate = batch.expiry_date ? new Date(batch.expiry_date).toLocaleDateString('en-PH') : '-';
+            
+            if (sizeConfig.width === '2in') {
+                // Small label - minimal info
+                div.innerHTML = `
+                    <div class="text-center h-full flex flex-col justify-between py-1">
+                        <div class="text-xs font-bold truncate">${batch.product_name || 'Product'}</div>
+                        <svg class="barcode-svg mx-auto"></svg>
+                        <div class="text-[8px]">EXP: ${expDate}</div>
+                    </div>
+                `;
+            } else {
+                // Medium/Large labels
+                div.innerHTML = `
+                    <div class="h-full flex flex-col">
+                        <!-- Header -->
+                        <div class="flex justify-between items-start mb-2">
+                            <div>
+                                <div class="text-lg font-bold">Highland Fresh</div>
+                                <div class="text-xs text-gray-500">Quality Dairy Products</div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-xs font-mono">${batch.batch_code}</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Product Name -->
+                        <div class="text-xl font-bold text-center mb-2">${batch.product_name || 'Dairy Product'}</div>
+                        
+                        <!-- Barcode -->
+                        <div class="flex-1 flex items-center justify-center">
+                            <svg class="barcode-svg"></svg>
+                        </div>
+                        
+                        <!-- Footer with dates -->
+                        <div class="grid grid-cols-2 gap-2 text-xs border-t pt-2 mt-2">
+                            <div>
+                                <span class="text-gray-500">MFG:</span>
+                                <span class="font-semibold">${mfgDate}</span>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-gray-500">EXP:</span>
+                                <span class="font-bold text-red-600">${expDate}</span>
+                            </div>
+                        </div>
+                        
+                        ${sizeConfig.width === '4in' ? `
+                        <div class="text-center text-[10px] text-gray-400 mt-1">
+                            Store at 4°C or below • ${batch.variant || ''}
+                        </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+            
+            return div;
+        }
+        
+        function regenerateLabels() {
+            if (currentBatch) {
+                generateLabels();
+            }
+        }
+        
+        function printLabels() {
+            window.print();
+        }
+    </script>
+</body>
+</html>

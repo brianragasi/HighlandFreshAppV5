@@ -410,7 +410,6 @@ function handleGet($db, $action) {
                     c.chiller_code,
                     c.chiller_name,
                     pb.batch_code,
-                    COALESCE(fg.barcode, pb.barcode) as barcode,
                     DATEDIFF(fg.expiry_date, CURDATE()) as days_until_expiry,
                     -- Multi-unit calculated fields
                     COALESCE(fg.quantity_boxes, 0) as quantity_boxes,
@@ -719,24 +718,25 @@ function handleGet($db, $action) {
                     pb.batch_code,
                     pb.product_type,
                     pb.product_variant,
-                    COALESCE(mr.product_name, CONCAT(pb.product_type, COALESCE(CONCAT(' - ', pb.product_variant), ''))) as product_name,
+                    COALESCE(mr.product_name, CONCAT(COALESCE(pb.product_type, 'Unknown'), COALESCE(CONCAT(' - ', pb.product_variant), ''))) as product_name,
                     COALESCE(mr.variant, pb.product_variant) as variant,
                     pb.expected_yield as quantity_produced,
                     pb.actual_yield,
                     COALESCE(pb.actual_yield, pb.expected_yield, 0) as total_pieces,
                     0 as quantity_boxes,
                     COALESCE(pb.actual_yield, pb.expected_yield, 0) as quantity_pieces,
-                    1 as pieces_per_box,
-                    'pcs' as unit,
-                    pb.manufacturing_date as production_date,
+                    COALESCE(p.pieces_per_box, 1) as pieces_per_box,
+                    COALESCE(p.base_unit, 'pcs') as unit,
+                    COALESCE(pb.manufacturing_date, pb.created_at) as production_date,
                     pb.expiry_date,
                     pb.qc_status as status,
                     COALESCE(pb.qc_released_at, pb.released_at) as qc_release_date,
                     pb.released_by,
-                    pb.recipe_id,
+                    mr.id as recipe_id,
                     pb.barcode
                 FROM production_batches pb
                 LEFT JOIN master_recipes mr ON pb.recipe_id = mr.id
+                LEFT JOIN products p ON (mr.id IS NOT NULL AND p.id = mr.id) OR p.id = pb.product_id
                 WHERE pb.qc_status = 'released'
                 AND (pb.fg_received IS NULL OR pb.fg_received = 0)
                 AND NOT EXISTS (SELECT 1 FROM fg_receiving fr WHERE fr.batch_id = pb.id)
@@ -765,19 +765,12 @@ function handleGet($db, $action) {
                     t.*,
                     fg.product_name,
                     fg.batch_id,
-                    pb.batch_code,
                     u.first_name,
                     u.last_name,
-                    CONCAT(u.first_name, ' ', u.last_name) as received_by_name,
                     c.chiller_code as from_chiller,
-                    c.chiller_name as from_chiller_name,
-                    c2.chiller_code as to_chiller,
-                    c2.chiller_name as chiller_name,
-                    COALESCE(p.pieces_per_box, 1) as pieces_per_box
+                    c2.chiller_code as to_chiller
                 FROM fg_inventory_transactions t
                 LEFT JOIN finished_goods_inventory fg ON t.inventory_id = fg.id
-                LEFT JOIN production_batches pb ON fg.batch_id = pb.id
-                LEFT JOIN products p ON fg.product_id = p.id
                 LEFT JOIN users u ON t.performed_by = u.id
                 LEFT JOIN chiller_locations c ON t.from_chiller_id = c.id
                 LEFT JOIN chiller_locations c2 ON t.to_chiller_id = c2.id
@@ -900,24 +893,15 @@ function handlePost($db, $action, $currentUser) {
                 // Create inventory record
                 $stmt = $db->prepare("
                     INSERT INTO finished_goods_inventory 
-                    (product_id, batch_id, product_name, product_type, product_variant,
-                     quantity, remaining_quantity, quantity_available, 
+                    (product_id, batch_id, quantity, quantity_available, remaining_quantity,
                      quantity_boxes, quantity_pieces, boxes_available, pieces_available,
                      manufacturing_date, expiry_date, chiller_id, status, received_by, received_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?, NOW())
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?, NOW())
                 ");
-                
-                // Get product info
-                $prodStmt = $db->prepare("SELECT product_name, category FROM products WHERE id = ?");
-                $prodStmt->execute([$data['product_id']]);
-                $prodInfo = $prodStmt->fetch();
                 
                 $stmt->execute([
                     $data['product_id'],
                     $data['batch_id'] ?? null,
-                    $prodInfo['product_name'] ?? 'Unknown Product',
-                    $prodInfo['category'] ?? 'bottled_milk',
-                    $data['variant'] ?? null,
                     $totalQuantity,
                     $totalQuantity,
                     $totalQuantity,
@@ -1029,17 +1013,20 @@ function handlePost($db, $action, $currentUser) {
             $chillerId = $data['chiller_id'];
             $notes = $data['notes'] ?? '';
             
-            // Get batch details
+            // Get batch details with QC release info
             $batchStmt = $db->prepare("
                 SELECT 
                     pb.*,
+                    pb.product_id as batch_product_id,
                     COALESCE(pb.actual_yield, pb.expected_yield, 0) as quantity,
-                    mr.id as product_id,
-                    mr.product_name,
-                    mr.product_type,
-                    mr.variant
+                    COALESCE(mr.product_id, pb.product_id) as resolved_product_id,
+                    COALESCE(mr.product_name, pb.product_type) as product_name,
+                    COALESCE(mr.product_type, pb.product_type) as product_type,
+                    mr.variant,
+                    qbr.id as qc_release_id
                 FROM production_batches pb
                 LEFT JOIN master_recipes mr ON pb.recipe_id = mr.id
+                LEFT JOIN qc_batch_release qbr ON qbr.batch_id = pb.id AND qbr.release_decision = 'approved'
                 WHERE pb.id = ? AND pb.qc_status = 'released'
             ");
             $batchStmt->execute([$batchId]);
@@ -1056,14 +1043,46 @@ function handlePost($db, $action, $currentUser) {
                 Response::error('This batch has already been received', 400);
             }
             
-            // Get or create product_id
-            $productId = $batch['product_id'];
+            // Get product_id - prefer batch's own product_id, then recipe's, then lookup
+            $productId = $batch['batch_product_id'] ?? $batch['resolved_product_id'];
             if (!$productId) {
-                // Look up by product_type in products table
-                $prodStmt = $db->prepare("SELECT id FROM products WHERE category = ? OR product_name LIKE ? LIMIT 1");
-                $prodStmt->execute([$batch['product_type'], '%' . $batch['product_type'] . '%']);
+                // Look up by product_type or product_name in products table
+                $prodStmt = $db->prepare("
+                    SELECT id FROM products 
+                    WHERE product_name = ? OR category = ? OR product_name LIKE ? 
+                    LIMIT 1
+                ");
+                $prodStmt->execute([
+                    $batch['product_name'], 
+                    $batch['product_type'], 
+                    '%' . $batch['product_type'] . '%'
+                ]);
                 $prod = $prodStmt->fetch();
-                $productId = $prod ? $prod['id'] : 1; // fallback to 1
+                if (!$prod) {
+                    Response::error('Cannot find matching product in products table for this batch. Please create the product first.', 400);
+                }
+                $productId = $prod['id'];
+            }
+            
+            // Get qc_release_id - if not already in batch, look it up
+            $qcReleaseId = $batch['qc_release_id'];
+            if (!$qcReleaseId) {
+                $qcStmt = $db->prepare("SELECT id FROM qc_batch_release WHERE batch_id = ? ORDER BY id DESC LIMIT 1");
+                $qcStmt->execute([$batchId]);
+                $qcRelease = $qcStmt->fetch();
+                $qcReleaseId = $qcRelease ? $qcRelease['id'] : null;
+            }
+            
+            // Ensure we have qc_release_id (required field)
+            if (!$qcReleaseId) {
+                // Create a placeholder QC release record
+                $insertQcStmt = $db->prepare("
+                    INSERT INTO qc_batch_release (release_code, batch_id, inspection_datetime, release_decision, inspected_by)
+                    VALUES (?, ?, NOW(), 'approved', ?)
+                ");
+                $qcCode = 'QCR-' . date('Ymd') . '-' . str_pad($batchId, 4, '0', STR_PAD_LEFT);
+                $insertQcStmt->execute([$qcCode, $batchId, $currentUser['user_id']]);
+                $qcReleaseId = $db->lastInsertId();
             }
             
             $quantity = intval($batch['quantity']);
@@ -1075,42 +1094,27 @@ function handlePost($db, $action, $currentUser) {
             $boxes = 0;
             $pieces = $quantity;
             
-            // Map production product_type to FG inventory ENUM values
-            // FG inventory allows: bottled_milk, cheese, butter, yogurt, milk_bar
-            $productTypeMapping = [
-                'pasteurized_milk' => 'bottled_milk',
-                'fresh_milk' => 'bottled_milk',
-                'flavored_milk' => 'bottled_milk',
-                'skim_milk' => 'bottled_milk',
-                'whole_milk' => 'bottled_milk',
-                'low_fat_milk' => 'bottled_milk',
-                'bottled_milk' => 'bottled_milk',
-                'cheese' => 'cheese',
-                'butter' => 'butter',
-                'yogurt' => 'yogurt',
-                'milk_bar' => 'milk_bar'
-            ];
-            $fgProductType = $productTypeMapping[strtolower($batch['product_type'] ?? '')] ?? 'bottled_milk';
-            
             $db->beginTransaction();
             
             try {
-                // Create inventory record
+                // Create inventory record with all required fields
                 $stmt = $db->prepare("
                     INSERT INTO finished_goods_inventory 
-                    (product_id, batch_id, product_name, product_type, product_variant,
-                     quantity, remaining_quantity, quantity_available, 
+                    (product_id, batch_id, qc_release_id, milk_type_id, product_name, product_type, product_variant,
+                     quantity, quantity_available, remaining_quantity,
                      quantity_boxes, quantity_pieces, boxes_available, pieces_available,
-                     manufacturing_date, expiry_date, chiller_id, barcode, status, received_by, received_at, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?, NOW(), ?)
+                     manufacturing_date, expiry_date, chiller_id, status, received_by, received_at, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?, NOW(), ?)
                 ");
                 
                 $stmt->execute([
                     $productId,
                     $batchId,
+                    $qcReleaseId,
+                    $batch['milk_type_id'],
                     $batch['product_name'] ?? 'Unknown Product',
-                    $fgProductType,
-                    $batch['variant'] ?? $batch['product_variant'] ?? null,
+                    $batch['product_type'] ?? 'bottled_milk',
+                    $batch['variant'] ?? null,
                     $quantity,
                     $quantity,
                     $quantity,
@@ -1121,7 +1125,6 @@ function handlePost($db, $action, $currentUser) {
                     $batch['manufacturing_date'],
                     $batch['expiry_date'],
                     $chillerId,
-                    $batch['barcode'] ?? null,
                     $currentUser['user_id'],
                     $notes
                 ]);

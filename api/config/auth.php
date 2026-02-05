@@ -22,9 +22,13 @@ class Auth {
     public static function generateToken($user) {
         $header = json_encode(['typ' => 'JWT', 'alg' => 'HS256']);
         
-        // Handle missing first_name/last_name gracefully
-        $firstName = $user['first_name'] ?? $user['username'] ?? 'User';
-        $lastName = $user['last_name'] ?? '';
+        // Handle missing full_name/first_name/last_name gracefully
+        $fullName = $user['full_name'] ?? null;
+        if (!$fullName) {
+            $firstName = $user['first_name'] ?? $user['username'] ?? 'User';
+            $lastName = $user['last_name'] ?? '';
+            $fullName = trim($firstName . ' ' . $lastName);
+        }
         
         $payload = json_encode([
             'iss' => APP_NAME,
@@ -33,7 +37,7 @@ class Auth {
             'user_id' => $user['id'],
             'username' => $user['username'],
             'role' => $user['role'],
-            'name' => trim($firstName . ' ' . $lastName)
+            'name' => $fullName
         ]);
         
         $base64Header = self::base64UrlEncode($header);

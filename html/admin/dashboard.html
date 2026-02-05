@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard | Highland Fresh</title>
+    
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Axios -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .bento-card { @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .stat-value { font-variant-numeric: tabular-nums; }
+        .master-card { @apply bg-base-100 rounded-2xl border border-base-300 p-6 hover:shadow-lg transition-all duration-300 cursor-pointer hover:-translate-y-1; }
+        .master-card:hover .master-icon { @apply scale-110; }
+        .master-icon { @apply transition-transform duration-300; }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-cogs text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Admin Panel</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <!-- Main Menu -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-th-large w-5 text-center"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- User Management -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">User Management</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="users.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-users-cog w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Users & Accounts</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Supply Chain -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Supply Chain</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="farmers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-tractor w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Farmers</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="suppliers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-truck w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Suppliers</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="customers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-store w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Customers</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Product Catalog -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Product Catalog</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="products.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-box w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Products</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="recipes.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-clipboard-list w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Recipes</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="ingredients.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-seedling w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Ingredients</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Infrastructure -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Infrastructure</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="storage.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-warehouse w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Storage & Tanks</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="chillers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-snowflake w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Chillers</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Sales & Orders -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Sales & Orders</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="../sales/orders.html?status=pending" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-clipboard-list w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Orders for Approval</span>
+                            <span id="pendingOrdersBadge" class="badge badge-warning badge-sm"></span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="../sales/orders.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-shopping-cart w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">All Orders</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Quality Control -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Quality Control</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="qc-standards.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-clipboard-check w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">QC Standards</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="grading-standards.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-medal w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Grading Standards</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- System -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">System</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="milk-types.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-glass-water w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Milk Types</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="audit-logs.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-history w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Audit Logs</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+        
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">GM</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">General Manager</p>
+                    <p class="text-xs text-base-content/60 truncate">Administrator</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a><i class="fas fa-user-cog w-4"></i> Profile</a></li>
+                        <li><a><i class="fas fa-cog w-4"></i> Settings</a></li>
+                        <li class="border-t border-base-300 mt-1 pt-1">
+                            <a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold text-base-content">Admin Dashboard</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <!-- Theme toggle -->
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+        
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+            
+            <!-- Welcome Banner -->
+            <div class="bg-gradient-to-r from-primary to-primary/80 rounded-2xl p-6 mb-6 text-primary-content">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div>
+                        <h2 class="text-2xl font-bold mb-1">Admin Control Panel</h2>
+                        <p class="text-primary-content/80">Manage master data, users, and system settings for Highland Fresh.</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button class="btn btn-sm bg-white/20 border-white/30 text-white hover:bg-white/30">
+                            <i class="fas fa-file-export mr-2"></i>
+                            Export Data
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Quick Stats -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="stat bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="stat-figure text-primary">
+                        <i class="fas fa-users text-2xl"></i>
+                    </div>
+                    <div class="stat-title text-xs">Active Users</div>
+                    <div class="stat-value text-2xl" id="statUsers">-</div>
+                </div>
+                <div class="stat bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="stat-figure text-success">
+                        <i class="fas fa-tractor text-2xl"></i>
+                    </div>
+                    <div class="stat-title text-xs">Farmers</div>
+                    <div class="stat-value text-2xl" id="statFarmers">-</div>
+                </div>
+                <div class="stat bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="stat-figure text-info">
+                        <i class="fas fa-box text-2xl"></i>
+                    </div>
+                    <div class="stat-title text-xs">Products</div>
+                    <div class="stat-value text-2xl" id="statProducts">-</div>
+                </div>
+                <div class="stat bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="stat-figure text-warning">
+                        <i class="fas fa-store text-2xl"></i>
+                    </div>
+                    <div class="stat-title text-xs">Customers</div>
+                    <div class="stat-value text-2xl" id="statCustomers">-</div>
+                </div>
+            </div>
+            
+            <!-- Master Files Grid -->
+            <h3 class="text-lg font-bold mb-4">Master File Management</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                
+                <!-- Users -->
+                <a href="users.html" class="master-card group">
+                    <div class="flex items-start gap-4">
+                        <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center master-icon">
+                            <i class="fas fa-users-cog text-2xl text-primary"></i>
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="font-bold text-base-content group-hover:text-primary transition-colors">Users & Accounts</h4>
+                            <p class="text-sm text-base-content/60 mb-2">Manage user accounts, roles, and permissions</p>
+                            <div class="flex items-center gap-2">
+                                <span class="badge badge-ghost badge-sm" id="badgeUsers">0 users</span>
+                                <span class="badge badge-success badge-sm" id="badgeActiveUsers">0 active</span>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right text-base-content/30 group-hover:text-primary transition-colors"></i>
+                    </div>
+                </a>
+                
+                <!-- Farmers -->
+                <a href="farmers.html" class="master-card group">
+                    <div class="flex items-start gap-4">
+                        <div class="w-14 h-14 rounded-2xl bg-success/10 flex items-center justify-center master-icon">
+                            <i class="fas fa-tractor text-2xl text-success"></i>
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="font-bold text-base-content group-hover:text-success transition-colors">Farmers</h4>
+                            <p class="text-sm text-base-content/60 mb-2">Register and manage milk suppliers</p>
+                            <div class="flex items-center gap-2">
+                                <span class="badge badge-ghost badge-sm" id="badgeFarmers">0 farmers</span>
+                                <span class="badge badge-info badge-sm" id="badgeMemberFarmers">0 members</span>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right text-base-content/30 group-hover:text-success transition-colors"></i>
+                    </div>
+                </a>
+                
+                <!-- Customers -->
+                <a href="customers.html" class="master-card group">
+                    <div class="flex items-start gap-4">
+                        <div class="w-14 h-14 rounded-2xl bg-warning/10 flex items-center justify-center master-icon">
+                            <i class="fas fa-store text-2xl text-warning"></i>
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="font-bold text-base-content group-hover:text-warning transition-colors">Customers</h4>
+                            <p class="text-sm text-base-content/60 mb-2">Manage customers and credit terms</p>
+                            <div class="flex items-center gap-2">
+                                <span class="badge badge-ghost badge-sm" id="badgeCustomers">0 customers</span>
+                                <span class="badge badge-warning badge-sm" id="badgeCreditCustomers">0 credit</span>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right text-base-content/30 group-hover:text-warning transition-colors"></i>
+                    </div>
+                </a>
+                
+                <!-- Products -->
+                <a href="products.html" class="master-card group">
+                    <div class="flex items-start gap-4">
+                        <div class="w-14 h-14 rounded-2xl bg-info/10 flex items-center justify-center master-icon">
+                            <i class="fas fa-box text-2xl text-info"></i>
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="font-bold text-base-content group-hover:text-info transition-colors">Products</h4>
+                            <p class="text-sm text-base-content/60 mb-2">Product catalog and pricing</p>
+                            <div class="flex items-center gap-2">
+                                <span class="badge badge-ghost badge-sm" id="badgeProducts">0 products</span>
+                                <span class="badge badge-info badge-sm" id="badgeActiveProducts">0 active</span>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right text-base-content/30 group-hover:text-info transition-colors"></i>
+                    </div>
+                </a>
+                
+                <!-- Recipes -->
+                <a href="recipes.html" class="master-card group">
+                    <div class="flex items-start gap-4">
+                        <div class="w-14 h-14 rounded-2xl bg-secondary/10 flex items-center justify-center master-icon">
+                            <i class="fas fa-clipboard-list text-2xl text-secondary"></i>
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="font-bold text-base-content group-hover:text-secondary transition-colors">Recipes</h4>
+                            <p class="text-sm text-base-content/60 mb-2">Production recipes and formulas</p>
+                            <div class="flex items-center gap-2">
+                                <span class="badge badge-ghost badge-sm" id="badgeRecipes">0 recipes</span>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right text-base-content/30 group-hover:text-secondary transition-colors"></i>
+                    </div>
+                </a>
+                
+                <!-- Ingredients -->
+                <a href="ingredients.html" class="master-card group">
+                    <div class="flex items-start gap-4">
+                        <div class="w-14 h-14 rounded-2xl bg-accent/10 flex items-center justify-center master-icon">
+                            <i class="fas fa-seedling text-2xl text-accent"></i>
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="font-bold text-base-content group-hover:text-accent transition-colors">Ingredients</h4>
+                            <p class="text-sm text-base-content/60 mb-2">Raw materials and additives</p>
+                            <div class="flex items-center gap-2">
+                                <span class="badge badge-ghost badge-sm" id="badgeIngredients">0 items</span>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right text-base-content/30 group-hover:text-accent transition-colors"></i>
+                    </div>
+                </a>
+                
+                <!-- Storage Tanks -->
+                <a href="storage.html" class="master-card group">
+                    <div class="flex items-start gap-4">
+                        <div class="w-14 h-14 rounded-2xl bg-neutral/10 flex items-center justify-center master-icon">
+                            <i class="fas fa-warehouse text-2xl text-neutral"></i>
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="font-bold text-base-content group-hover:text-neutral transition-colors">Storage Tanks</h4>
+                            <p class="text-sm text-base-content/60 mb-2">Milk storage infrastructure</p>
+                            <div class="flex items-center gap-2">
+                                <span class="badge badge-ghost badge-sm" id="badgeTanks">0 tanks</span>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right text-base-content/30 group-hover:text-neutral transition-colors"></i>
+                    </div>
+                </a>
+                
+                <!-- Chillers -->
+                <a href="chillers.html" class="master-card group">
+                    <div class="flex items-start gap-4">
+                        <div class="w-14 h-14 rounded-2xl bg-info/10 flex items-center justify-center master-icon">
+                            <i class="fas fa-snowflake text-2xl text-info"></i>
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="font-bold text-base-content group-hover:text-info transition-colors">Chillers</h4>
+                            <p class="text-sm text-base-content/60 mb-2">Cold storage locations</p>
+                            <div class="flex items-center gap-2">
+                                <span class="badge badge-ghost badge-sm" id="badgeChillers">0 chillers</span>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right text-base-content/30 group-hover:text-info transition-colors"></i>
+                    </div>
+                </a>
+                
+                <!-- QC Standards -->
+                <a href="qc-standards.html" class="master-card group">
+                    <div class="flex items-start gap-4">
+                        <div class="w-14 h-14 rounded-2xl bg-error/10 flex items-center justify-center master-icon">
+                            <i class="fas fa-clipboard-check text-2xl text-error"></i>
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="font-bold text-base-content group-hover:text-error transition-colors">QC Standards</h4>
+                            <p class="text-sm text-base-content/60 mb-2">Quality control parameters</p>
+                            <div class="flex items-center gap-2">
+                                <span class="badge badge-ghost badge-sm" id="badgeQCStandards">0 standards</span>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right text-base-content/30 group-hover:text-error transition-colors"></i>
+                    </div>
+                </a>
+                
+            </div>
+            
+            <!-- Recent Activity -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Recent Users -->
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-bold">Recent Users</h3>
+                        <a href="users.html" class="btn btn-ghost btn-sm">View All</a>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recentUsersTable">
+                                <tr>
+                                    <td colspan="3" class="text-center text-base-content/60 py-8">
+                                        <i class="fas fa-spinner fa-spin mr-2"></i> Loading...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- System Info -->
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-bold">System Information</h3>
+                    </div>
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between py-2 border-b border-base-200">
+                            <span class="text-base-content/60">Database</span>
+                            <span class="font-mono text-sm">highland_fresh</span>
+                        </div>
+                        <div class="flex items-center justify-between py-2 border-b border-base-200">
+                            <span class="text-base-content/60">Version</span>
+                            <span class="badge badge-primary">v4.0.0</span>
+                        </div>
+                        <div class="flex items-center justify-between py-2 border-b border-base-200">
+                            <span class="text-base-content/60">Last Schema Update</span>
+                            <span class="text-sm">Feb 3, 2026</span>
+                        </div>
+                        <div class="flex items-center justify-between py-2">
+                            <span class="text-base-content/60">API Status</span>
+                            <span class="badge badge-success gap-1">
+                                <span class="w-2 h-2 rounded-full bg-success animate-pulse"></span>
+                                Online
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+        </main>
+        
+        <!-- Footer -->
+        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
+            <div>
+                <p class="text-sm text-base-content/60">Highland Fresh Dairy Management System © 2026</p>
+            </div>
+        </footer>
+    </div>
+    
+    <!-- Scripts -->
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/admin/admin.service.js"></script>
+    
+    <script>
+        // Sidebar toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+        
+        // Theme toggle
+        document.getElementById('themeToggle').addEventListener('change', function() {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+        
+        // Load saved theme
+        const savedTheme = localStorage.getItem('theme') || 'emerald';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        document.getElementById('themeToggle').checked = savedTheme === 'dark';
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                // Check auth
+                const user = await AuthService.getCurrentUser();
+                if (user) {
+                    document.getElementById('sidebarUserName').textContent = user.full_name;
+                    document.getElementById('userInitials').textContent = user.full_name.split(' ').map(n => n[0]).join('').substring(0, 2);
+                }
+                
+                // Load dashboard stats
+                const response = await AdminService.getDashboardStats();
+                if (response && response.success && response.data) {
+                    const stats = response.data;
+                    
+                    // Update stat cards
+                    if (stats.users) {
+                        document.getElementById('statUsers').textContent = stats.users.total || 0;
+                        document.getElementById('badgeUsers').textContent = `${stats.users.total || 0} users`;
+                        document.getElementById('badgeActiveUsers').textContent = `${stats.users.active || 0} active`;
+                    }
+                    if (stats.farmers) {
+                        document.getElementById('statFarmers').textContent = stats.farmers.total || 0;
+                        document.getElementById('badgeFarmers').textContent = `${stats.farmers.total || 0} farmers`;
+                        document.getElementById('badgeMemberFarmers').textContent = `${stats.farmers.members || 0} members`;
+                    }
+                    if (stats.products) {
+                        document.getElementById('statProducts').textContent = stats.products.total || 0;
+                        document.getElementById('badgeProducts').textContent = `${stats.products.total || 0} products`;
+                        document.getElementById('badgeActiveProducts').textContent = `${stats.products.active || 0} active`;
+                    }
+                    if (stats.customers) {
+                        document.getElementById('statCustomers').textContent = stats.customers.total || 0;
+                        document.getElementById('badgeCustomers').textContent = `${stats.customers.total || 0} customers`;
+                        document.getElementById('badgeCreditCustomers').textContent = `${stats.customers.credit || 0} credit`;
+                    }
+                    // Update recipes
+                    if (stats.recipes) {
+                        document.getElementById('badgeRecipes').textContent = `${stats.recipes.total || 0} recipes`;
+                    }
+                    // Update ingredients
+                    if (stats.ingredients) {
+                        document.getElementById('badgeIngredients').textContent = `${stats.ingredients.total || 0} items`;
+                    }
+                    // Update tanks
+                    if (stats.tanks) {
+                        document.getElementById('badgeTanks').textContent = `${stats.tanks.total || 0} tanks`;
+                    }
+                    // Update chillers
+                    if (stats.chillers) {
+                        document.getElementById('badgeChillers').textContent = `${stats.chillers.total || 0} chillers`;
+                    }
+                    // Update QC Standards (count from grading standards)
+                    if (stats.qc_standards) {
+                        document.getElementById('badgeQCStandards').textContent = `${stats.qc_standards.total || 0} standards`;
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Init error:', error);
+            }
+        });
+    </script>
+</body>
+</html>

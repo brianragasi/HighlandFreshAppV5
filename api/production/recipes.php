@@ -84,7 +84,7 @@ try {
             // Get recipes
             $stmt = $db->prepare("
                 SELECT mr.id, mr.recipe_code, mr.product_name, mr.product_type, mr.variant,
-                       mr.size_ml, mr.size_grams, mr.base_milk_liters, mr.expected_yield,
+                       mr.description, mr.base_milk_liters, mr.expected_yield,
                        mr.yield_unit, mr.shelf_life_days, mr.is_active, mr.created_at,
                        (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = mr.id) as ingredient_count
                 FROM master_recipes mr
