@@ -5,8 +5,12 @@
  * @version 4.0
  */
 
+// Detect environment - Azure uses root path, localhost uses subfolder
+const isAzure = window.location.hostname.includes('azurewebsites.net');
+const APP_BASE = isAzure ? '' : '/HighlandFreshAppV4';
+
 // API Base URL
-const API_BASE_URL = '/HighlandFreshAppV4/api';
+const API_BASE_URL = APP_BASE + '/api';
 
 // ApiConfig for fetch-based services (used by admin.service.js)
 const ApiConfig = {
@@ -65,7 +69,7 @@ if (typeof axios !== 'undefined') {
                 // Unauthorized - redirect to login
                 localStorage.removeItem('highland_token');
                 localStorage.removeItem('highland_user');
-                window.location.href = '/HighlandFreshAppV4/html/login.html';
+                window.location.href = APP_BASE + '/html/login.html';
             } else if (status === 403) {
                 // Forbidden - show access denied
                 showNotification('Access Denied', 'You do not have permission to perform this action.', 'error');
