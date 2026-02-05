@@ -625,7 +625,9 @@
                 document.documentElement.setAttribute('data-theme', 'forest');
             }
             
-            document.getElementById('filterDate').value = new Date().toISOString().split('T')[0];
+            // Don't set a default date filter to show all records
+            // Users can filter by date if needed
+            document.getElementById('filterDate').value = '';
             
             loadFarmersDropdown();
             loadTests();
@@ -655,12 +657,20 @@
             try {
                 const params = {
                     page: currentPage,
-                    limit: limit,
-                    date_from: document.getElementById('filterDate').value,
-                    date_to: document.getElementById('filterDate').value,
-                    status: document.getElementById('filterStatus').value,
-                    farmer_id: document.getElementById('filterFarmer').value
+                    limit: limit
                 };
+                
+                // Only add filters if they have values
+                const dateFilter = document.getElementById('filterDate').value;
+                const statusFilter = document.getElementById('filterStatus').value;
+                const farmerFilter = document.getElementById('filterFarmer').value;
+                
+                if (dateFilter) {
+                    params.date_from = dateFilter;
+                    params.date_to = dateFilter;
+                }
+                if (statusFilter) params.status = statusFilter;
+                if (farmerFilter) params.farmer_id = farmerFilter;
                 
                 const response = await MilkGradingService.getAll(params);
                 
@@ -763,9 +773,98 @@
             return 'text-error';
         }
         
-        function viewTest(id) {
+        async function viewTest(id) {
             document.getElementById('viewTestModal').showModal();
-            showToast('Test details view - detailed fetch needed', 'info');
+            
+            // Reset modal to loading state
+            document.getElementById('viewTestId').textContent = 'Loading...';
+            document.getElementById('viewFarmerName').textContent = '-';
+            document.getElementById('viewFarmerType').textContent = '-';
+            document.getElementById('viewGrade').textContent = '-';
+            document.getElementById('viewGrade').className = 'badge badge-lg text-lg px-4 py-3';
+            document.getElementById('viewVolume').textContent = '-';
+            document.getElementById('viewUnitPrice').textContent = '-';
+            document.getElementById('viewTotalPrice').textContent = '-';
+            document.getElementById('viewFat').textContent = '-';
+            document.getElementById('viewAcidity').textContent = '-';
+            document.getElementById('viewDensity').textContent = '-';
+            document.getElementById('viewTemp').textContent = '-';
+            document.getElementById('viewSediment').textContent = '-';
+            document.getElementById('viewApt').textContent = '-';
+            document.getElementById('viewFatAdj').textContent = '-';
+            document.getElementById('viewAcidityDed').textContent = '-';
+            document.getElementById('viewSedimentDed').textContent = '-';
+            
+            try {
+                const response = await MilkGradingService.getById(id);
+                
+                if (response.success && response.data) {
+                    const t = response.data;
+                    
+                    // Test ID
+                    document.getElementById('viewTestId').textContent = t.test_code || `QC-${String(t.id).padStart(5, '0')}`;
+                    
+                    // Farmer info
+                    document.getElementById('viewFarmerName').textContent = t.farmer_name || t.farmer_first_name || '-';
+                    document.getElementById('viewFarmerType').textContent = t.membership_type === 'member' ? 'Member' : 'Non-Member';
+                    document.getElementById('viewFarmerType').className = `badge ${t.membership_type === 'member' ? 'badge-success' : 'badge-ghost'}`;
+                    
+                    // Grade
+                    const grade = t.grade || (t.is_accepted ? 'Accepted' : 'Rejected');
+                    document.getElementById('viewGrade').textContent = grade;
+                    const gradeClass = t.is_accepted == 1 ? 'badge-success' : 'badge-error';
+                    document.getElementById('viewGrade').className = `badge badge-lg text-lg px-4 py-3 ${gradeClass}`;
+                    
+                    // Volume and pricing
+                    document.getElementById('viewVolume').textContent = `${parseFloat(t.volume_liters || 0).toLocaleString()} L`;
+                    document.getElementById('viewUnitPrice').textContent = formatCurrency(t.final_price_per_liter || 0);
+                    document.getElementById('viewTotalPrice').textContent = formatCurrency(t.total_amount || 0);
+                    
+                    // Test parameters
+                    document.getElementById('viewFat').textContent = t.fat_percentage ? `${t.fat_percentage}%` : '-';
+                    document.getElementById('viewFat').className = `font-medium ${getFatClass(t.fat_percentage)}`;
+                    
+                    document.getElementById('viewAcidity').textContent = t.titratable_acidity ? `${t.titratable_acidity}%` : '-';
+                    document.getElementById('viewAcidity').className = `font-medium ${getAcidityClass(t.titratable_acidity)}`;
+                    
+                    document.getElementById('viewDensity').textContent = t.density || t.specific_gravity || '-';
+                    document.getElementById('viewDensity').className = `font-medium ${getDensityClass(t.density || t.specific_gravity)}`;
+                    
+                    document.getElementById('viewTemp').textContent = t.temperature_celsius ? `${t.temperature_celsius}°C` : '-';
+                    
+                    const sedimentLabels = { 1: 'Grade 1', 2: 'Grade 2', 3: 'Grade 3' };
+                    document.getElementById('viewSediment').textContent = sedimentLabels[t.sediment_grade] || '-';
+                    
+                    document.getElementById('viewApt').textContent = t.apt_result === 'positive' ? 'Positive' : 'Negative';
+                    document.getElementById('viewApt').className = `font-medium ${t.apt_result === 'positive' ? 'text-error' : 'text-success'}`;
+                    
+                    // Price breakdown
+                    const fatAdj = parseFloat(t.fat_adjustment || 0);
+                    document.getElementById('viewFatAdj').textContent = (fatAdj >= 0 ? '+' : '') + formatCurrency(fatAdj);
+                    document.getElementById('viewFatAdj').className = `font-medium ${fatAdj >= 0 ? 'text-success' : 'text-error'}`;
+                    
+                    const acidityDed = parseFloat(t.acidity_deduction || 0);
+                    document.getElementById('viewAcidityDed').textContent = `-${formatCurrency(acidityDed)}`;
+                    document.getElementById('viewAcidityDed').className = acidityDed > 0 ? 'font-medium text-error' : 'font-medium';
+                    
+                    const sedimentDed = parseFloat(t.sediment_deduction || 0);
+                    document.getElementById('viewSedimentDed').textContent = `-${formatCurrency(sedimentDed)}`;
+                    document.getElementById('viewSedimentDed').className = sedimentDed > 0 ? 'font-medium text-error' : 'font-medium';
+                    
+                    // Remarks
+                    if (t.notes || t.rejection_reason) {
+                        document.getElementById('viewRemarks').classList.remove('hidden');
+                        document.getElementById('viewRemarksText').textContent = t.rejection_reason || t.notes;
+                    } else {
+                        document.getElementById('viewRemarks').classList.add('hidden');
+                    }
+                } else {
+                    showToast('Failed to load test details', 'error');
+                }
+            } catch (error) {
+                console.error('Error fetching test details:', error);
+                showToast('Failed to load test details', 'error');
+            }
         }
         
         function exportResults() {

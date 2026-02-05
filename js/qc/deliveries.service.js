@@ -40,6 +40,6 @@ const DeliveriesService = {
      * Get pending deliveries (not yet tested)
      */
     async getPending() {
-        return await this.getAll({ status: 'pending_test' });
+        return await this.getAll({ status: 'pending_qc' });
     }
 };

@@ -42,10 +42,14 @@ try {
                     $stmt = $db->prepare("
                         SELECT fgi.*,
                                p.product_name, p.category, p.variant,
+                               p.unit_size, p.unit_measure,
                                pb.batch_code,
+                               pb.batch_code as batch_number,
                                DATEDIFF(fgi.expiry_date, CURDATE()) as days_until_expiry,
                                'finished_goods' as type,
                                fgi.quantity_available as remaining_liters,
+                               fgi.quantity_available,
+                               COALESCE(fgi.storage_location, 'FG Warehouse') as location,
                                CASE 
                                    WHEN p.category IN ('milk', 'pasteurized_milk', 'flavored_milk') THEN true 
                                    ELSE false 
@@ -63,20 +67,20 @@ try {
                     break;
                     
                 case 'raw_milk':
-                    // Get raw milk inventory with expiry status
+                    // Get raw milk inventory with expiry status (using milk_receiving - revised schema)
                     $id = getParam('id');
                     
                     if ($id) {
                         $stmt = $db->prepare("
                             SELECT rmi.*,
-                                   md.delivery_code, md.volume_liters as original_liters,
-                                   f.farmer_code, CONCAT(f.first_name, ' ', f.last_name) as farmer_name,
+                                   mr.receiving_code, mr.volume_liters as original_liters,
+                                   f.farmer_code, COALESCE(f.first_name, '') as farmer_name,
                                    qmt.grade, qmt.test_code,
                                    DATEDIFF(rmi.expiry_date, CURDATE()) as days_until_expiry
                             FROM raw_milk_inventory rmi
-                            LEFT JOIN milk_deliveries md ON rmi.delivery_id = md.id
-                            LEFT JOIN farmers f ON md.farmer_id = f.id
-                            LEFT JOIN qc_milk_tests qmt ON md.id = qmt.delivery_id
+                            LEFT JOIN milk_receiving mr ON rmi.receiving_id = mr.id
+                            LEFT JOIN farmers f ON mr.farmer_id = f.id
+                            LEFT JOIN qc_milk_tests qmt ON rmi.qc_test_id = qmt.id
                             WHERE rmi.id = ?
                         ");
                         $stmt->execute([$id]);
@@ -86,16 +90,16 @@ try {
                     } else {
                         $stmt = $db->query("
                             SELECT rmi.*,
-                                   md.delivery_code, md.volume_liters as original_liters, md.delivery_date as received_date,
-                                   f.farmer_code, CONCAT(f.first_name, ' ', f.last_name) as farmer_name,
+                                   mr.receiving_code, mr.volume_liters as original_liters, mr.receiving_date as received_date,
+                                   f.farmer_code, COALESCE(f.first_name, '') as farmer_name,
                                    qmt.grade, qmt.test_code,
                                    DATEDIFF(rmi.expiry_date, CURDATE()) as days_until_expiry,
                                    'raw_milk' as type
                             FROM raw_milk_inventory rmi
-                            LEFT JOIN milk_deliveries md ON rmi.delivery_id = md.id
-                            LEFT JOIN farmers f ON md.farmer_id = f.id
-                            LEFT JOIN qc_milk_tests qmt ON md.id = qmt.delivery_id
-                            WHERE rmi.status = 'available' AND rmi.volume_liters > 0
+                            LEFT JOIN milk_receiving mr ON rmi.receiving_id = mr.id
+                            LEFT JOIN farmers f ON mr.farmer_id = f.id
+                            LEFT JOIN qc_milk_tests qmt ON rmi.qc_test_id = qmt.id
+                            WHERE rmi.status = 'available' AND rmi.remaining_liters > 0
                             ORDER BY rmi.expiry_date ASC
                         ");
                         Response::success($stmt->fetchAll(), 'Raw milk inventory retrieved');
@@ -109,7 +113,7 @@ try {
                     
                     $stmt = $db->prepare("
                         SELECT fgi.*,
-                               p.product_name, p.category, p.variant, p.size_value, p.size_unit,
+                               p.product_name, p.category, p.variant, p.unit_size, p.unit_measure,
                                pb.batch_code as batch_number,
                                DATEDIFF(fgi.expiry_date, CURDATE()) as days_until_expiry,
                                fgi.quantity_available as remaining_liters

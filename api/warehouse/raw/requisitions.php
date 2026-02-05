@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Highland Fresh System - Warehouse Raw Requisitions API
  * 
@@ -62,7 +62,7 @@ function handleGet($db, $currentUser) {
                      WHERE ri.requisition_id = ir.id AND ri.status IN ('fulfilled', 'partial')) as processed_count,
                     (SELECT COUNT(*) FROM requisition_items ri 
                      WHERE ri.requisition_id = ir.id AND ri.status = 'fulfilled') as fulfilled_count
-                FROM ingredient_requisitions ir
+                FROM material_requisitions ir
                 JOIN users u ON ir.requested_by = u.id
                 LEFT JOIN users ua ON ir.approved_by = ua.id
                 LEFT JOIN users uf ON ir.fulfilled_by = uf.id
@@ -129,7 +129,7 @@ function handleGet($db, $currentUser) {
                     ua.last_name as approved_by_last,
                     uf.first_name as fulfilled_by_first,
                     uf.last_name as fulfilled_by_last
-                FROM ingredient_requisitions ir
+                FROM material_requisitions ir
                 JOIN users u ON ir.requested_by = u.id
                 LEFT JOIN users ua ON ir.approved_by = ua.id
                 LEFT JOIN users uf ON ir.fulfilled_by = uf.id
@@ -148,12 +148,21 @@ function handleGet($db, $currentUser) {
                     ri.*,
                     uf.first_name as fulfilled_by_first,
                     uf.last_name as fulfilled_by_last,
-                    CASE ri.item_type
-                        WHEN 'ingredient' THEN (SELECT current_stock FROM ingredients WHERE id = ri.item_id)
-                        WHEN 'mro' THEN (SELECT current_stock FROM mro_items WHERE id = ri.item_id)
-                        WHEN 'raw_milk' THEN (SELECT COALESCE(SUM(current_volume), 0) FROM storage_tanks WHERE is_active = 1)
+                    CASE 
+                        -- Explicit raw_milk type OR item_name matches raw milk patterns
+                        WHEN ri.item_type = 'raw_milk' OR LOWER(ri.item_name) IN ('raw', 'raw milk', 'fresh milk', 'carabao', 'cow milk', 'goat milk', 'whole milk')
+                            OR (LOWER(ri.item_name) LIKE '%milk%' AND LOWER(ri.item_name) NOT LIKE '%powder%' AND LOWER(ri.item_name) NOT LIKE '%chocolate%')
+                        THEN (SELECT COALESCE(SUM(remaining_liters), 0) FROM raw_milk_inventory WHERE status IN ('available', 'reserved') AND remaining_liters > 0)
+                        WHEN ri.item_type = 'ingredient' THEN (SELECT COALESCE(current_stock, 0) FROM ingredients WHERE id = ri.item_id)
+                        WHEN ri.item_type = 'mro' THEN (SELECT COALESCE(current_stock, 0) FROM mro_items WHERE id = ri.item_id)
                         ELSE 0
-                    END as available_stock
+                    END as available_stock,
+                    CASE 
+                        WHEN ri.item_type = 'raw_milk' OR LOWER(ri.item_name) IN ('raw', 'raw milk', 'fresh milk', 'carabao', 'cow milk', 'goat milk', 'whole milk')
+                            OR (LOWER(ri.item_name) LIKE '%milk%' AND LOWER(ri.item_name) NOT LIKE '%powder%' AND LOWER(ri.item_name) NOT LIKE '%chocolate%')
+                        THEN 'raw_milk'
+                        ELSE ri.item_type
+                    END as effective_item_type
                 FROM requisition_items ri
                 LEFT JOIN users uf ON ri.fulfilled_by = uf.id
                 WHERE ri.requisition_id = ?
@@ -176,7 +185,7 @@ function handleGet($db, $currentUser) {
                     SUM(CASE WHEN priority = 'urgent' THEN 1 ELSE 0 END) as urgent,
                     SUM(CASE WHEN priority = 'high' THEN 1 ELSE 0 END) as high,
                     SUM(CASE WHEN needed_by_date <= CURDATE() THEN 1 ELSE 0 END) as overdue
-                FROM ingredient_requisitions
+                FROM material_requisitions
                 WHERE status = 'approved'
             ");
             $stmt->execute();
@@ -217,7 +226,7 @@ function handlePut($db, $currentUser) {
             try {
                 // Get requisition
                 $requisition = $db->prepare("
-                    SELECT * FROM ingredient_requisitions WHERE id = ? AND status = 'pending'
+                    SELECT * FROM material_requisitions WHERE id = ? AND status = 'pending'
                 ");
                 $requisition->execute([$id]);
                 $reqData = $requisition->fetch();
@@ -228,7 +237,7 @@ function handlePut($db, $currentUser) {
                 
                 // Update requisition status to approved
                 $stmt = $db->prepare("
-                    UPDATE ingredient_requisitions 
+                    UPDATE material_requisitions 
                     SET status = 'approved',
                         approved_by = ?,
                         approved_at = NOW(),
@@ -237,7 +246,7 @@ function handlePut($db, $currentUser) {
                 ");
                 $stmt->execute([$currentUser['user_id'], $id]);
                 
-                logAudit($currentUser['user_id'], 'approve_requisition', 'ingredient_requisitions', $id, 
+                logAudit($currentUser['user_id'], 'approve_requisition', 'material_requisitions', $id, 
                     null, ['status' => 'approved']);
                 
                 Response::success([
@@ -261,7 +270,7 @@ function handlePut($db, $currentUser) {
             try {
                 // Get requisition
                 $requisition = $db->prepare("
-                    SELECT * FROM ingredient_requisitions WHERE id = ? AND status = 'pending'
+                    SELECT * FROM material_requisitions WHERE id = ? AND status = 'pending'
                 ");
                 $requisition->execute([$id]);
                 $reqData = $requisition->fetch();
@@ -272,7 +281,7 @@ function handlePut($db, $currentUser) {
                 
                 // Update requisition status to rejected
                 $stmt = $db->prepare("
-                    UPDATE ingredient_requisitions 
+                    UPDATE material_requisitions 
                     SET status = 'rejected',
                         notes = CONCAT(COALESCE(notes, ''), '\nRejected: ', ?),
                         updated_at = NOW()
@@ -280,7 +289,7 @@ function handlePut($db, $currentUser) {
                 ");
                 $stmt->execute([$reason, $id]);
                 
-                logAudit($currentUser['user_id'], 'reject_requisition', 'ingredient_requisitions', $id, 
+                logAudit($currentUser['user_id'], 'reject_requisition', 'material_requisitions', $id, 
                     null, ['status' => 'rejected', 'reason' => $reason]);
                 
                 Response::success([
@@ -298,15 +307,15 @@ function handlePut($db, $currentUser) {
             $db->beginTransaction();
             
             try {
-                // Get requisition
+                // Get requisition - allow approved or partially fulfilled
                 $requisition = $db->prepare("
-                    SELECT * FROM ingredient_requisitions WHERE id = ? AND status = 'approved'
+                    SELECT * FROM material_requisitions WHERE id = ? AND status IN ('approved', 'partial', 'in_progress')
                 ");
                 $requisition->execute([$id]);
                 $reqData = $requisition->fetch();
                 
                 if (!$reqData) {
-                    throw new Exception('Requisition not found or not approved');
+                    throw new Exception('Requisition not found or not in a fulfillable status');
                 }
                 
                 // Get all pending items
@@ -337,25 +346,43 @@ function handlePut($db, $currentUser) {
                         ? (float)$issuedQuantities[$item['id']] 
                         : $requestedQty;
                     
-                    if ($item['item_type'] === 'raw_milk') {
+                    // Determine effective item type - detect raw milk from item_name if not explicitly set
+                    $effectiveItemType = $item['item_type'];
+                    $itemNameLower = strtolower(trim($item['item_name'] ?? ''));
+                    $rawMilkPatterns = ['raw', 'raw milk', 'fresh milk', 'carabao', 'cow milk', 'goat milk', 'whole milk'];
+                    
+                    foreach ($rawMilkPatterns as $pattern) {
+                        if ($itemNameLower === $pattern || strpos($itemNameLower, $pattern) !== false) {
+                            $effectiveItemType = 'raw_milk';
+                            break;
+                        }
+                    }
+                    // Also check for 'milk' but exclude processed products
+                    if ($effectiveItemType !== 'raw_milk' && strpos($itemNameLower, 'milk') !== false) {
+                        if (strpos($itemNameLower, 'powder') === false && strpos($itemNameLower, 'chocolate') === false) {
+                            $effectiveItemType = 'raw_milk';
+                        }
+                    }
+                    
+                    if ($effectiveItemType === 'raw_milk') {
                         // Issue from tanks
                         $result = issueMilk($db, $issuedQty, $id, $currentUser);
                         $fulfilledItems[] = array_merge($item, ['issued' => $result]);
-                    } elseif ($item['item_type'] === 'ingredient') {
+                    } elseif ($effectiveItemType === 'ingredient') {
                         // Issue ingredient
                         $result = issueIngredient($db, $item['item_id'], $issuedQty, $id, $currentUser);
                         $fulfilledItems[] = array_merge($item, ['issued' => $result]);
-                    } elseif ($item['item_type'] === 'mro') {
+                    } elseif ($effectiveItemType === 'mro') {
                         // Issue MRO item
                         $result = issueMRO($db, $item['item_id'], $issuedQty, $id, $currentUser);
                         $fulfilledItems[] = array_merge($item, ['issued' => $result]);
                     }
                     
-                    // Update requisition item
+                    // Update requisition item - accumulate issued quantity
                     $stmt = $db->prepare("
                         UPDATE requisition_items 
-                        SET issued_quantity = ?, 
-                            status = CASE WHEN ? >= requested_quantity THEN 'fulfilled' ELSE 'partial' END,
+                        SET issued_quantity = COALESCE(issued_quantity, 0) + ?, 
+                            status = CASE WHEN (COALESCE(issued_quantity, 0) + ?) >= requested_quantity THEN 'fulfilled' ELSE 'partial' END,
                             fulfilled_by = ?,
                             fulfilled_at = NOW(),
                             updated_at = NOW()
@@ -385,7 +412,7 @@ function handlePut($db, $currentUser) {
                 
                 // Update requisition status
                 $stmt = $db->prepare("
-                    UPDATE ingredient_requisitions 
+                    UPDATE material_requisitions 
                     SET status = ?,
                         fulfilled_by = ?,
                         fulfilled_at = NOW(),
@@ -395,7 +422,7 @@ function handlePut($db, $currentUser) {
                 $stmt->execute([$newReqStatus, $currentUser['user_id'], $id]);
                 
                 // Log audit
-                logAudit($currentUser['user_id'], 'fulfill_requisition', 'ingredient_requisitions', $id, 
+                logAudit($currentUser['user_id'], 'fulfill_requisition', 'material_requisitions', $id, 
                     ['status' => 'approved'], 
                     ['status' => 'fulfilled']
                 );
@@ -429,7 +456,7 @@ function handlePut($db, $currentUser) {
                 $item = $db->prepare("
                     SELECT ri.*, ir.status as req_status
                     FROM requisition_items ri
-                    JOIN ingredient_requisitions ir ON ri.requisition_id = ir.id
+                    JOIN material_requisitions ir ON ri.requisition_id = ir.id
                     WHERE ri.id = ? AND ri.requisition_id = ?
                 ");
                 $item->execute([$itemId, $id]);
@@ -439,31 +466,53 @@ function handlePut($db, $currentUser) {
                     throw new Exception('Item not found');
                 }
                 
-                if ($itemData['req_status'] !== 'approved') {
-                    throw new Exception('Requisition is not approved');
+                // Allow fulfillment for approved, partial, or in_progress requisitions
+                if (!in_array($itemData['req_status'], ['approved', 'partial', 'in_progress'])) {
+                    throw new Exception('Requisition is not in a fulfillable status');
+                }
+                
+                // Determine effective item type - detect raw milk from item_name if not explicitly set
+                $effectiveItemType = $itemData['item_type'];
+                $itemNameLower = strtolower(trim($itemData['item_name'] ?? ''));
+                $rawMilkPatterns = ['raw', 'raw milk', 'fresh milk', 'carabao', 'cow milk', 'goat milk', 'whole milk'];
+                
+                foreach ($rawMilkPatterns as $pattern) {
+                    if ($itemNameLower === $pattern || strpos($itemNameLower, $pattern) !== false) {
+                        $effectiveItemType = 'raw_milk';
+                        break;
+                    }
+                }
+                // Also check for 'milk' but exclude processed products
+                if ($effectiveItemType !== 'raw_milk' && strpos($itemNameLower, 'milk') !== false) {
+                    if (strpos($itemNameLower, 'powder') === false && strpos($itemNameLower, 'chocolate') === false) {
+                        $effectiveItemType = 'raw_milk';
+                    }
                 }
                 
                 // Issue based on type
-                if ($itemData['item_type'] === 'raw_milk') {
+                if ($effectiveItemType === 'raw_milk') {
                     issueMilk($db, $issuedQuantity, $id, $currentUser);
-                } elseif ($itemData['item_type'] === 'ingredient') {
+                } elseif ($effectiveItemType === 'ingredient') {
                     issueIngredient($db, $itemData['item_id'], $issuedQuantity, $id, $currentUser);
-                } elseif ($itemData['item_type'] === 'mro') {
+                } elseif ($effectiveItemType === 'mro') {
                     issueMRO($db, $itemData['item_id'], $issuedQuantity, $id, $currentUser);
                 }
                 
-                // Update item
-                $newStatus = $issuedQuantity >= $itemData['requested_quantity'] ? 'fulfilled' : 'partial';
+                // Update item - calculate new total and check against requested
+                $currentIssued = floatval($itemData['issued_quantity'] ?? 0);
+                $newTotalIssued = $currentIssued + floatval($issuedQuantity);
+                $newStatus = $newTotalIssued >= floatval($itemData['requested_quantity']) ? 'fulfilled' : 'partial';
+                
                 $stmt = $db->prepare("
                     UPDATE requisition_items 
-                    SET issued_quantity = COALESCE(issued_quantity, 0) + ?, 
+                    SET issued_quantity = ?, 
                         status = ?,
                         fulfilled_by = ?,
                         fulfilled_at = NOW(),
                         updated_at = NOW()
                     WHERE id = ?
                 ");
-                $stmt->execute([$issuedQuantity, $newStatus, $currentUser['user_id'], $itemId]);
+                $stmt->execute([$newTotalIssued, $newStatus, $currentUser['user_id'], $itemId]);
                 
                 // Check if all items are fulfilled
                 $checkAll = $db->prepare("
@@ -487,7 +536,7 @@ function handlePut($db, $currentUser) {
                 
                 // Update requisition status
                 $stmt = $db->prepare("
-                    UPDATE ingredient_requisitions 
+                    UPDATE material_requisitions 
                     SET status = ?, fulfilled_by = ?, fulfilled_at = NOW(), updated_at = NOW()
                     WHERE id = ?
                 ");
@@ -533,16 +582,17 @@ function handlePut($db, $currentUser) {
 
 /**
  * Issue milk from tanks (FIFO)
+ * REVISED: Uses raw_milk_inventory instead of tank_milk_batches
  */
 function issueMilk($db, $liters, $requisitionId, $currentUser) {
-    // Get available batches (FIFO)
+    // Get available batches from raw_milk_inventory (FIFO)
     $batches = $db->prepare("
-        SELECT tmb.*, st.tank_code
-        FROM tank_milk_batches tmb
-        JOIN storage_tanks st ON tmb.tank_id = st.id
-        WHERE tmb.status IN ('available', 'partially_used')
-        AND tmb.remaining_liters > 0
-        ORDER BY tmb.expiry_date ASC, tmb.received_date ASC, tmb.id ASC
+        SELECT rmi.*, st.tank_code
+        FROM raw_milk_inventory rmi
+        LEFT JOIN storage_tanks st ON rmi.tank_id = st.id
+        WHERE rmi.status IN ('available', 'reserved')
+        AND rmi.remaining_liters > 0
+        ORDER BY rmi.expiry_date ASC, rmi.received_date ASC, rmi.id ASC
     ");
     $batches->execute();
     $batchList = $batches->fetchAll();
@@ -561,23 +611,25 @@ function issueMilk($db, $liters, $requisitionId, $currentUser) {
         
         $issueFromBatch = min($batch['remaining_liters'], $remainingToIssue);
         $newRemaining = $batch['remaining_liters'] - $issueFromBatch;
-        $newStatus = $newRemaining > 0 ? 'partially_used' : 'consumed';
+        $newStatus = $newRemaining > 0 ? 'available' : 'depleted';
         
-        // Update batch
+        // Update raw_milk_inventory batch
         $stmt = $db->prepare("
-            UPDATE tank_milk_batches 
+            UPDATE raw_milk_inventory 
             SET remaining_liters = ?, status = ?, updated_at = NOW()
             WHERE id = ?
         ");
         $stmt->execute([$newRemaining, $newStatus, $batch['id']]);
         
-        // Update tank volume
-        $stmt = $db->prepare("
-            UPDATE storage_tanks 
-            SET current_volume = current_volume - ?, updated_at = NOW()
-            WHERE id = ?
-        ");
-        $stmt->execute([$issueFromBatch, $batch['tank_id']]);
+        // Update tank volume if assigned to a tank
+        if ($batch['tank_id']) {
+            $stmt = $db->prepare("
+                UPDATE storage_tanks 
+                SET current_volume = current_volume - ?, updated_at = NOW()
+                WHERE id = ?
+            ");
+            $stmt->execute([$issueFromBatch, $batch['tank_id']]);
+        }
         
         // Create transaction
         $txCode = generateCode('TX');
@@ -590,16 +642,16 @@ function issueMilk($db, $liters, $requisitionId, $currentUser) {
         ");
         $stmt->execute([
             $txCode,
-            $batch['raw_milk_inventory_id'],
+            $batch['id'],
             $batch['id'],
             $issueFromBatch,
             $requisitionId,
-            $batch['tank_code'],
+            $batch['tank_code'] ?? 'Unassigned',
             $currentUser['user_id']
         ]);
         
         $issued[] = [
-            'tank_code' => $batch['tank_code'],
+            'tank_code' => $batch['tank_code'] ?? 'Unassigned',
             'liters' => $issueFromBatch
         ];
         

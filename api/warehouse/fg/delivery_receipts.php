@@ -49,10 +49,15 @@ function handleGet($db, $action) {
             $sql = "
                 SELECT 
                     dr.*,
+                    c.customer_type,
+                    c.name as customer_name_ref,
                     u.first_name as prepared_by_name,
                     u.last_name as prepared_by_lastname,
-                    d.first_name as dispatched_by_name
+                    d.first_name as dispatched_by_name,
+                    (SELECT COUNT(*) FROM delivery_receipt_items WHERE delivery_receipt_id = dr.id) as item_count,
+                    (SELECT COALESCE(SUM(quantity_ordered), 0) FROM delivery_receipt_items WHERE delivery_receipt_id = dr.id) as total_quantity
                 FROM delivery_receipts dr
+                LEFT JOIN customers c ON dr.customer_id = c.id
                 LEFT JOIN users u ON dr.created_by = u.id
                 LEFT JOIN users d ON dr.dispatched_by = d.id
                 WHERE 1=1
@@ -118,7 +123,7 @@ function handleGet($db, $action) {
                        p.product_code as product_sku
                 FROM delivery_receipt_items dri
                 LEFT JOIN products p ON dri.product_id = p.id
-                WHERE dri.dr_id = ?
+                WHERE dri.delivery_receipt_id = ?
             ");
             $itemsStmt->execute([$id]);
             $dr['items'] = $itemsStmt->fetchAll();
@@ -150,6 +155,107 @@ function handleGet($db, $action) {
 function handlePost($db, $action, $currentUser) {
     $data = getRequestBody();
     
+    if ($action === 'create_from_order') {
+        // Create DR from an approved sales order
+        $orderId = $data['order_id'] ?? null;
+        if (!$orderId) {
+            Response::error('Order ID required', 400);
+        }
+        
+        // Get the order
+        $orderStmt = $db->prepare("
+            SELECT o.*, c.name as customer_name, c.customer_type, c.address, c.contact_number
+            FROM sales_orders o
+            LEFT JOIN customers c ON o.customer_id = c.id
+            WHERE o.id = ?
+        ");
+        $orderStmt->execute([$orderId]);
+        $order = $orderStmt->fetch();
+        
+        if (!$order) {
+            Response::error('Order not found', 404);
+        }
+        
+        if ($order['status'] !== 'approved') {
+            Response::error('Only approved orders can be converted to delivery receipts', 400);
+        }
+        
+        // Check if DR already exists for this order
+        $existCheck = $db->prepare("SELECT id, dr_number FROM delivery_receipts WHERE order_id = ?");
+        $existCheck->execute([$orderId]);
+        $existing = $existCheck->fetch();
+        if ($existing) {
+            Response::error("DR already exists for this order: {$existing['dr_number']}", 400);
+        }
+        
+        // Get order items
+        $itemsStmt = $db->prepare("
+            SELECT oi.*, p.product_name
+            FROM sales_order_items oi
+            LEFT JOIN products p ON oi.product_id = p.id
+            WHERE oi.order_id = ?
+        ");
+        $itemsStmt->execute([$orderId]);
+        $orderItems = $itemsStmt->fetchAll();
+        
+        $db->beginTransaction();
+        
+        try {
+            // Generate DR number
+            $drNumber = 'DR-' . date('Ymd') . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
+            
+            $stmt = $db->prepare("
+                INSERT INTO delivery_receipts 
+                (dr_number, order_id, customer_id, customer_name, delivery_address, 
+                 contact_number, total_items, total_amount, status, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+            ");
+            
+            $stmt->execute([
+                $drNumber,
+                $orderId,
+                $order['customer_id'],
+                $order['customer_name'],
+                $order['delivery_address'] ?? $order['address'],
+                $order['contact_number'],
+                count($orderItems),
+                $order['total_amount'],
+                $currentUser['user_id']
+            ]);
+            
+            $drId = $db->lastInsertId();
+            
+            // Create DR items from order items
+            $itemStmt = $db->prepare("
+                INSERT INTO delivery_receipt_items 
+                (delivery_receipt_id, product_id, quantity_ordered, unit_price, total_price)
+                VALUES (?, ?, ?, ?, ?)
+            ");
+            
+            foreach ($orderItems as $item) {
+                $itemStmt->execute([
+                    $drId,
+                    $item['product_id'],
+                    $item['quantity_ordered'],
+                    $item['unit_price'],
+                    $item['line_total']
+                ]);
+            }
+            
+            // Update order status to preparing
+            $updateOrder = $db->prepare("UPDATE sales_orders SET status = 'preparing' WHERE id = ?");
+            $updateOrder->execute([$orderId]);
+            
+            $db->commit();
+            
+            Response::success(['id' => $drId, 'dr_number' => $drNumber], 'Delivery receipt created from order', 201);
+            
+        } catch (Exception $e) {
+            $db->rollBack();
+            throw $e;
+        }
+    }
+    
     if ($action === 'create') {
         $required = ['customer_type', 'customer_name'];
         foreach ($required as $field) {
@@ -178,7 +284,7 @@ function handlePost($db, $action, $currentUser) {
                 $data['sub_location'] ?? null,
                 $data['contact_number'] ?? null,
                 $data['delivery_address'] ?? null,
-                $currentUser['id'],
+                $currentUser['user_id'],
                 $data['notes'] ?? null
             ]);
             
@@ -255,7 +361,7 @@ function handlePut($db, $action, $currentUser) {
                     dispatched_by = ?
                 WHERE id = ?
             ");
-            $stmt->execute([$currentUser['id'], $id]);
+            $stmt->execute([$currentUser['user_id'], $id]);
             
             Response::success(null, 'Delivery receipt dispatched');
             break;

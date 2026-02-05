@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reorder Alerts | Highland Fresh</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.4.19/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <style>
+        .bento-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .bento-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px -8px rgba(0, 0, 0, 0.15);
+        }
+
+        .status-critical {
+            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+            border-left: 4px solid #ef4444;
+        }
+
+        .status-low {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border-left: 4px solid #f59e0b;
+        }
+
+        .status-out {
+            background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+            border-left: 4px solid #6b7280;
+        }
+
+        .pulse-alert {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.7;
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 transition-transform duration-300 flex flex-col">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-warehouse text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60">Warehouse Raw</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="dashboard.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i
+                                class="fas fa-th-large w-5 text-center text-base-content/60"></i><span>Dashboard</span></a>
+                    </li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="milk_storage.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-tint w-5 text-center text-base-content/60"></i><span>Milk
+                                Storage</span></a></li>
+                    <li><a href="ingredients.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i
+                                class="fas fa-box-open w-5 text-center text-base-content/60"></i><span>Ingredients</span></a>
+                    </li>
+                    <li><a href="mro.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-tools w-5 text-center text-base-content/60"></i><span>MRO
+                                Supplies</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="reorder_alerts.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-exclamation-triangle w-5 text-center"></i><span>Reorder Alerts</span></a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content"><span class="text-sm font-semibold"
+                            id="userInitials">WR</span></div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Warehouse Staff</p>
+                    <p class="text-xs text-base-content/60">Warehouse Raw</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square" onclick="AuthService.logout()"><i
+                        class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i
+                        class="fas fa-bars text-lg"></i></button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold"><i
+                        class="fas fa-exclamation-triangle text-warning mr-2"></i>Reorder Alerts</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <button class="btn btn-ghost btn-sm" onclick="loadAlerts()">
+                    <i class="fas fa-sync-alt"></i> <span class="hidden sm:inline">Refresh</span>
+                </button>
+                <button class="btn btn-primary btn-sm" onclick="exportReport()">
+                    <i class="fas fa-download"></i> <span class="hidden sm:inline">Export</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- Alert Banner -->
+            <div id="alertBanner" class="hidden mb-6">
+                <div class="alert alert-warning shadow-lg">
+                    <i class="fas fa-exclamation-circle text-2xl pulse-alert"></i>
+                    <div>
+                        <h3 class="font-bold">Low Stock Alert!</h3>
+                        <div class="text-sm" id="alertBannerText">You have items that need to be reordered.</div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button class="btn btn-sm" onclick="scrollToAlerts()">View All</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-error/10 flex items-center justify-center">
+                                <i class="fas fa-times-circle text-error text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-3xl font-bold text-error" id="outOfStockCount">0</p>
+                                <p class="text-xs text-base-content/60">Out of Stock</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-error/10 flex items-center justify-center">
+                                <i class="fas fa-exclamation-triangle text-error text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-3xl font-bold text-error" id="criticalCount">0</p>
+                                <p class="text-xs text-base-content/60">Critical</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center">
+                                <i class="fas fa-exclamation-circle text-warning text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-3xl font-bold text-warning" id="lowCount">0</p>
+                                <p class="text-xs text-base-content/60">Low Stock</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-success/10 flex items-center justify-center">
+                                <i class="fas fa-check-circle text-success text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-3xl font-bold text-success" id="okCount">0</p>
+                                <p class="text-xs text-base-content/60">OK</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body p-4">
+                    <div class="flex flex-wrap items-center gap-3">
+                        <label class="input input-bordered input-sm flex items-center gap-2 flex-1 min-w-48">
+                            <i class="fas fa-search text-base-content/40"></i>
+                            <input type="text" id="searchInput" placeholder="Search items..." class="grow" />
+                        </label>
+                        <select class="select select-bordered select-sm w-full md:w-48" id="statusFilter">
+                            <option value="">All Alerts</option>
+                            <option value="OUT_OF_STOCK">Out of Stock</option>
+                            <option value="CRITICAL">Critical Only</option>
+                            <option value="LOW">Low Stock</option>
+                        </select>
+                        <select class="select select-bordered select-sm w-full md:w-40" id="categoryFilter">
+                            <option value="">All Categories</option>
+                        </select>
+                        <label class="label cursor-pointer gap-2">
+                            <span class="label-text text-sm">Show OK items</span>
+                            <input type="checkbox" id="showOkItems" class="checkbox checkbox-sm checkbox-primary" />
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Alerts Table -->
+            <div class="card bg-base-100 border border-base-300" id="alertsSection">
+                <div class="card-body p-0">
+                    <div class="overflow-x-auto">
+                        <table class="table table-zebra">
+                            <thead>
+                                <tr class="bg-base-200">
+                                    <th>Status</th>
+                                    <th>Item Code</th>
+                                    <th>Item Name</th>
+                                    <th>Category</th>
+                                    <th class="text-right">Current Stock</th>
+                                    <th class="text-right">Reorder Point</th>
+                                    <th class="text-right">Qty to Order</th>
+                                    <th class="text-center">Lead Time</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="alertsTable">
+                                <tr>
+                                    <td colspan="9" class="text-center py-12">
+                                        <span class="loading loading-spinner loading-lg text-primary"></span>
+                                        <p class="text-base-content/60 mt-2">Loading reorder alerts...</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lead Time Legend -->
+            <div class="card bg-base-100 border border-base-300 mt-6">
+                <div class="card-body p-4">
+                    <h3 class="font-semibold text-sm mb-3"><i
+                            class="fas fa-info-circle text-info mr-2"></i>Understanding Reorder Alerts</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                        <div class="flex items-start gap-3">
+                            <span class="badge badge-ghost">OUT</span>
+                            <div>
+                                <p class="font-medium">Out of Stock</p>
+                                <p class="text-base-content/60">Zero inventory. Production may be impacted.</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="badge badge-error">CRITICAL</span>
+                            <div>
+                                <p class="font-medium">Critical Level</p>
+                                <p class="text-base-content/60">At or below minimum stock. Order immediately.</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="badge badge-warning">LOW</span>
+                            <div>
+                                <p class="font-medium">Low Stock</p>
+                                <p class="text-base-content/60">Below reorder point. Order soon considering lead time.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../../js/config/api.js"></script>
+    <script src="../../../js/config/auth.js"></script>
+
+    <script>
+        let allAlerts = [];
+        let filteredAlerts = [];
+        let categories = new Set();
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('-translate-x-full');
+            document.getElementById('sidebarBackdrop').classList.toggle('hidden');
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../../login.html';
+                return;
+            }
+
+            const user = AuthService.getCurrentUser();
+            document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
+            document.getElementById('userInitials').textContent = (user.first_name[0] + user.last_name[0]).toUpperCase();
+
+            await loadAlerts();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            document.getElementById('searchInput').addEventListener('input', debounce(filterAlerts, 300));
+            document.getElementById('statusFilter').addEventListener('change', filterAlerts);
+            document.getElementById('categoryFilter').addEventListener('change', filterAlerts);
+            document.getElementById('showOkItems').addEventListener('change', loadAlerts);
+        }
+
+        async function loadAlerts() {
+            const showOk = document.getElementById('showOkItems').checked;
+
+            try {
+                const response = await api.get('/warehouse/raw/ingredients.php', {
+                    params: { action: 'reorder_alerts', include_ok: showOk ? '1' : '0' }
+                });
+
+                if (response.data?.success) {
+                    allAlerts = response.data.data.alerts || [];
+                    const summary = response.data.data.summary || {};
+
+                    // Update summary cards
+                    document.getElementById('outOfStockCount').textContent = summary.out_of_stock || 0;
+                    document.getElementById('criticalCount').textContent = summary.critical || 0;
+                    document.getElementById('lowCount').textContent = summary.low || 0;
+                    document.getElementById('okCount').textContent = summary.ok || 0;
+
+                    // Show alert banner if needed
+                    const totalAlerts = (summary.out_of_stock || 0) + (summary.critical || 0) + (summary.low || 0);
+                    const banner = document.getElementById('alertBanner');
+                    if (totalAlerts > 0) {
+                        banner.classList.remove('hidden');
+                        document.getElementById('alertBannerText').textContent =
+                            `${totalAlerts} item(s) need attention. Order now to avoid production delays.`;
+                    } else {
+                        banner.classList.add('hidden');
+                    }
+
+                    // Build category filter
+                    categories.clear();
+                    allAlerts.forEach(a => { if (a.category_name) categories.add(a.category_name); });
+                    const catFilter = document.getElementById('categoryFilter');
+                    catFilter.innerHTML = '<option value="">All Categories</option>' +
+                        Array.from(categories).sort().map(c => `<option value="${c}">${c}</option>`).join('');
+
+                    filterAlerts();
+                }
+            } catch (error) {
+                console.error('Failed to load alerts:', error);
+                showToast('Failed to load reorder alerts', 'error');
+            }
+        }
+
+        function filterAlerts() {
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const status = document.getElementById('statusFilter').value;
+            const category = document.getElementById('categoryFilter').value;
+
+            filteredAlerts = allAlerts.filter(a => {
+                if (search && !a.item_name.toLowerCase().includes(search) && !a.item_code.toLowerCase().includes(search)) return false;
+                if (status && a.stock_status !== status) return false;
+                if (category && a.category_name !== category) return false;
+                return true;
+            });
+
+            renderAlerts();
+        }
+
+        function renderAlerts() {
+            const tbody = document.getElementById('alertsTable');
+
+            if (filteredAlerts.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="text-center py-12">
+                            <i class="fas fa-check-circle text-4xl text-success mb-3"></i>
+                            <h3 class="font-semibold">All Clear!</h3>
+                            <p class="text-base-content/60">No reorder alerts at this time.</p>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = filteredAlerts.map(alert => {
+                const statusBadge = getStatusBadge(alert.stock_status);
+                const rowClass = getRowClass(alert.stock_status);
+                const stock = parseFloat(alert.current_stock);
+                const reorderPt = parseFloat(alert.reorder_point);
+                const qtyToOrder = Math.max(0, reorderPt - stock);
+
+                return `
+                    <tr class="${rowClass}">
+                        <td>${statusBadge}</td>
+                        <td class="font-mono text-sm">${alert.item_code}</td>
+                        <td class="font-medium">${alert.item_name}</td>
+                        <td><span class="badge badge-ghost badge-sm">${alert.category_name || '-'}</span></td>
+                        <td class="text-right font-bold ${stock <= 0 ? 'text-error' : ''}">${stock.toLocaleString()} ${alert.unit_of_measure}</td>
+                        <td class="text-right text-base-content/70">${reorderPt.toLocaleString()} ${alert.unit_of_measure}</td>
+                        <td class="text-right">
+                            ${qtyToOrder > 0 ? `<span class="font-bold text-primary">${qtyToOrder.toLocaleString()}</span>` : '-'}
+                        </td>
+                        <td class="text-center">
+                            <span class="badge badge-outline badge-sm">${alert.lead_time_days || 7} days</span>
+                        </td>
+                        <td>
+                            <div class="flex gap-1">
+                                <a href="ingredients.html?id=${alert.item_id}" class="btn btn-ghost btn-xs" title="View Details">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <button class="btn btn-primary btn-xs" onclick="createPurchaseRequest(${alert.item_id}, '${alert.item_name}', ${qtyToOrder})" title="Create Purchase Request">
+                                    <i class="fas fa-shopping-cart"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function getStatusBadge(status) {
+            switch (status) {
+                case 'OUT_OF_STOCK': return '<span class="badge badge-ghost">OUT</span>';
+                case 'CRITICAL': return '<span class="badge badge-error">CRITICAL</span>';
+                case 'LOW': return '<span class="badge badge-warning">LOW</span>';
+                case 'OK': return '<span class="badge badge-success">OK</span>';
+                default: return '<span class="badge">' + status + '</span>';
+            }
+        }
+
+        function getRowClass(status) {
+            switch (status) {
+                case 'OUT_OF_STOCK': return 'status-out';
+                case 'CRITICAL': return 'status-critical';
+                case 'LOW': return 'status-low';
+                default: return '';
+            }
+        }
+
+        function scrollToAlerts() {
+            document.getElementById('alertsSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function createPurchaseRequest(itemId, itemName, qty) {
+            showToast(`Purchase request for ${itemName} (${qty} units) - Feature coming soon!`, 'info');
+            // TODO: Integrate with Purchaser module to create PRS
+        }
+
+        function exportReport() {
+            // Simple CSV export
+            const headers = ['Status', 'Item Code', 'Item Name', 'Category', 'Current Stock', 'Reorder Point', 'Qty to Order', 'Lead Time (days)'];
+            const rows = filteredAlerts.map(a => [
+                a.stock_status,
+                a.item_code,
+                a.item_name,
+                a.category_name || '',
+                a.current_stock,
+                a.reorder_point,
+                Math.max(0, parseFloat(a.reorder_point) - parseFloat(a.current_stock)),
+                a.lead_time_days || 7
+            ]);
+
+            let csv = headers.join(',') + '\n' + rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `reorder_alerts_${new Date().toISOString().slice(0, 10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('Report exported successfully', 'success');
+        }
+
+        // Helpers
+        function debounce(fn, wait) { let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); }; }
+        function showToast(msg, type = 'info') {
+            const c = document.getElementById('toastContainer');
+            const cls = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type];
+            const t = document.createElement('div');
+            t.className = `alert ${cls} shadow-lg`;
+            t.innerHTML = `<span>${msg}</span>`;
+            c.appendChild(t);
+            setTimeout(() => t.remove(), 3000);
+        }
+    </script>
+</body>
+
+</html>

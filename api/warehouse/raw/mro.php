@@ -253,7 +253,7 @@ function handlePost($db, $currentUser) {
                     $quantity,
                     $unitCost,
                     $supplierName,
-                    $currentUser['id'],
+                    $currentUser['user_id'],
                     $notes
                 ]);
                 $batchId = $db->lastInsertId();
@@ -283,12 +283,12 @@ function handlePost($db, $currentUser) {
                     $quantity,
                     $itemData['unit_of_measure'],
                     $itemData['storage_location'],
-                    $currentUser['id'],
+                    $currentUser['user_id'],
                     "Received from supplier: " . ($supplierName ?? 'Unknown')
                 ]);
                 
                 // Log audit
-                logAudit($currentUser['id'], 'receive_mro', 'mro_inventory', $batchId, null, [
+                logAudit($currentUser['user_id'], 'receive_mro', 'mro_inventory', $batchId, null, [
                     'mro_item_id' => $mroItemId,
                     'quantity' => $quantity,
                     'supplier' => $supplierName
@@ -445,7 +445,7 @@ function handlePut($db, $currentUser) {
                         $itemData['unit_of_measure'],
                         $requisitionId,
                         $itemData['storage_location'],
-                        $currentUser['id'],
+                        $currentUser['user_id'],
                         $reason
                     ]);
                     
@@ -529,12 +529,12 @@ function handlePut($db, $currentUser) {
                     $mroItemId,
                     $difference,
                     $itemData['unit_of_measure'],
-                    $currentUser['id'],
+                    $currentUser['user_id'],
                     "Stock adjustment: $reason (Old: $oldQuantity, New: $newQuantity)"
                 ]);
                 
                 // Log audit
-                logAudit($currentUser['id'], 'adjust_stock', 'mro_items', $mroItemId, 
+                logAudit($currentUser['user_id'], 'adjust_stock', 'mro_items', $mroItemId, 
                     ['current_stock' => $oldQuantity], 
                     ['current_stock' => $newQuantity, 'reason' => $reason]
                 );

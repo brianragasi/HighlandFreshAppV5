@@ -433,12 +433,24 @@
             try {
                 const response = await WarehouseRawService.getRequisitions();
                 if (response.success) {
-                    requisitions = response.data.requisitions || response.data;
+                    requisitions = response.data.requisitions || response.data || [];
                     updateStats();
                     renderRequisitions();
+                } else {
+                    // API returned but with error
+                    requisitions = [];
+                    updateStats();
+                    renderRequisitions();
+                    if (response.message) {
+                        console.error('API Error:', response.message);
+                    }
                 }
             } catch (error) {
                 console.error('Failed to load requisitions:', error);
+                // Show empty state instead of permanent loading
+                requisitions = [];
+                updateStats();
+                renderRequisitions();
                 showToast('Failed to load requisitions', 'error');
             }
         }
@@ -448,7 +460,7 @@
             const urgent = requisitions.filter(r => r.priority === 'urgent' && (r.status === 'pending' || r.status === 'approved')).length;
             const partial = requisitions.filter(r => r.status === 'partial').length;
             const today = new Date().toISOString().split('T')[0];
-            const fulfilled = requisitions.filter(r => r.status === 'fulfilled' && r.fulfilled_date && r.fulfilled_date.startsWith(today)).length;
+            const fulfilled = requisitions.filter(r => r.status === 'fulfilled' && r.fulfilled_at && r.fulfilled_at.startsWith(today)).length;
             
             document.getElementById('pendingCount').textContent = pending;
             document.getElementById('urgentCount').textContent = urgent;

@@ -13,7 +13,7 @@ const ProductionService = {
     // ========================================
     // Dashboard
     // ========================================
-    
+
     /**
      * Get production dashboard statistics
      */
@@ -24,7 +24,7 @@ const ProductionService = {
     // ========================================
     // Recipes
     // ========================================
-    
+
     /**
      * Get all recipes
      * @param {Object} params - Filter parameters
@@ -52,7 +52,7 @@ const ProductionService = {
     // ========================================
     // Production Runs
     // ========================================
-    
+
     /**
      * Get all production runs
      * @param {Object} params - Filter parameters
@@ -124,10 +124,18 @@ const ProductionService = {
         return await api.get(`${this.baseUrl}/runs.php`, { params: { action: 'available_milk' } });
     },
 
+    /**
+     * Get available PASTEURIZED milk for yogurt production
+     * Yogurt requires pasteurized milk, not raw milk
+     */
+    async getAvailablePasteurizedMilk() {
+        return await api.get(`${this.baseUrl}/runs.php`, { params: { action: 'available_pasteurized_milk' } });
+    },
+
     // ========================================
     // CCP Logs
     // ========================================
-    
+
     /**
      * Get CCP logs
      * @param {Object} params - Filter parameters
@@ -147,7 +155,7 @@ const ProductionService = {
     // ========================================
     // Requisitions
     // ========================================
-    
+
     /**
      * Get all requisitions
      * @param {Object} params - Filter parameters
@@ -212,7 +220,7 @@ const ProductionService = {
     // ========================================
     // Byproducts
     // ========================================
-    
+
     /**
      * Get byproducts
      * @param {Object} params - Filter parameters

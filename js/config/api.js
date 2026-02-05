@@ -8,39 +8,58 @@
 // API Base URL
 const API_BASE_URL = '/HighlandFreshAppV4/api';
 
-// Create Axios instance with default configuration
-const api = axios.create({
-    baseURL: API_BASE_URL,
-    timeout: 30000,
-    headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-    }
-});
-
-// Request interceptor - add auth token
-api.interceptors.request.use(
-    (config) => {
+// ApiConfig for fetch-based services (used by admin.service.js)
+const ApiConfig = {
+    baseUrl: API_BASE_URL,
+    getHeaders() {
+        const headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        };
         const token = localStorage.getItem('highland_token');
         if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
+            headers['Authorization'] = `Bearer ${token}`;
         }
-        return config;
-    },
-    (error) => {
-        return Promise.reject(error);
+        return headers;
     }
-);
+};
 
-// Response interceptor - handle errors
-api.interceptors.response.use(
-    (response) => {
-        return response.data;
-    },
-    (error) => {
-        if (error.response) {
-            // Server responded with error
-            const { status, data } = error.response;
+// Create Axios instance with default configuration (if axios is available)
+let api = null;
+
+if (typeof axios !== 'undefined') {
+    api = axios.create({
+        baseURL: API_BASE_URL,
+        timeout: 30000,
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        }
+    });
+
+    // Request interceptor - add auth token
+    api.interceptors.request.use(
+        (config) => {
+            const token = localStorage.getItem('highland_token');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        (error) => {
+            return Promise.reject(error);
+        }
+    );
+
+    // Response interceptor - handle errors
+    api.interceptors.response.use(
+        (response) => {
+            return response.data;
+        },
+        (error) => {
+            if (error.response) {
+                // Server responded with error
+                const { status, data } = error.response;
             
             if (status === 401) {
                 // Unauthorized - redirect to login
@@ -73,8 +92,9 @@ api.interceptors.response.use(
         }
         
         return Promise.reject(error);
-    }
-);
+        }
+    );
+}
 
 /**
  * Show notification toast

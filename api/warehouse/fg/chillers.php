@@ -44,7 +44,7 @@ function handleGet($db, $action) {
             $stmt = $db->prepare("
                 SELECT 
                     c.*,
-                    (SELECT COUNT(*) FROM finished_goods_inventory WHERE chiller_id = c.id AND status = 'available') as inventory_count
+                    COALESCE((SELECT SUM(quantity_available) FROM finished_goods_inventory WHERE chiller_id = c.id AND status = 'available'), 0) as current_count
                 FROM chiller_locations c
                 WHERE c.is_active = 1
                 ORDER BY c.chiller_code
@@ -113,6 +113,47 @@ function handleGet($db, $action) {
             Response::success($summary, 'Chiller summary retrieved');
             break;
             
+        case 'temp_logs':
+            $id = getParam('id');
+            if (!$id) {
+                Response::error('Chiller ID required', 400);
+            }
+            
+            $fromDate = getParam('from_date');
+            $toDate = getParam('to_date');
+            $limit = (int) getParam('limit', 50);
+            
+            $sql = "
+                SELECT 
+                    ctl.*,
+                    u.first_name as recorded_by_name,
+                    u.last_name as recorded_by_lastname
+                FROM chiller_temperature_logs ctl
+                LEFT JOIN users u ON ctl.recorded_by = u.id
+                WHERE ctl.chiller_id = ?
+            ";
+            $params = [$id];
+            
+            if ($fromDate) {
+                $sql .= " AND DATE(ctl.recorded_at) >= ?";
+                $params[] = $fromDate;
+            }
+            
+            if ($toDate) {
+                $sql .= " AND DATE(ctl.recorded_at) <= ?";
+                $params[] = $toDate;
+            }
+            
+            $sql .= " ORDER BY ctl.recorded_at DESC LIMIT ?";
+            $params[] = $limit;
+            
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
+            $logs = $stmt->fetchAll();
+            
+            Response::success($logs, 'Temperature logs retrieved');
+            break;
+            
         default:
             Response::error('Invalid action', 400);
     }
@@ -121,46 +162,123 @@ function handleGet($db, $action) {
 function handlePost($db, $action, $currentUser) {
     $data = getRequestBody();
     
-    if ($action === 'create') {
-        $required = ['chiller_code', 'chiller_name', 'capacity'];
-        foreach ($required as $field) {
-            if (empty($data[$field])) {
-                Response::error("$field is required", 400);
-            }
-        }
-        
-        // Check for duplicate code
-        $check = $db->prepare("SELECT id FROM chiller_locations WHERE chiller_code = ?");
-        $check->execute([$data['chiller_code']]);
-        if ($check->fetch()) {
-            Response::error('Chiller code already exists', 400);
-        }
-        
-        $stmt = $db->prepare("
-            INSERT INTO chiller_locations 
-            (chiller_code, chiller_name, capacity, temperature_celsius, min_temperature, max_temperature, location, status, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'available', ?)
-        ");
-        
-        $stmt->execute([
-            $data['chiller_code'],
-            $data['chiller_name'],
-            $data['capacity'],
-            $data['temperature_celsius'] ?? 4.0,
-            $data['min_temperature'] ?? 2.0,
-            $data['max_temperature'] ?? 8.0,
-            $data['location'] ?? null,
-            $data['notes'] ?? null
-        ]);
-        
-        $chillerId = $db->lastInsertId();
-        
-        logAudit($db, $currentUser['id'], 'create', 'chiller_locations', $chillerId, null, $data);
-        
-        Response::success(['id' => $chillerId], 'Chiller created successfully', 201);
-    }
+    // For POST requests, action might be in the body
+    $action = $data['action'] ?? $action;
     
-    Response::error('Invalid action', 400);
+    switch ($action) {
+        case 'create':
+            $required = ['chiller_code', 'chiller_name', 'capacity'];
+            foreach ($required as $field) {
+                if (empty($data[$field])) {
+                    Response::error("$field is required", 400);
+                }
+            }
+            
+            // Check for duplicate code
+            $check = $db->prepare("SELECT id FROM chiller_locations WHERE chiller_code = ?");
+            $check->execute([$data['chiller_code']]);
+            if ($check->fetch()) {
+                Response::error('Chiller code already exists', 400);
+            }
+            
+            $stmt = $db->prepare("
+                INSERT INTO chiller_locations 
+                (chiller_code, chiller_name, capacity, temperature_celsius, min_temperature, max_temperature, location, status, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'available', ?)
+            ");
+            
+            $stmt->execute([
+                $data['chiller_code'],
+                $data['chiller_name'],
+                $data['capacity'],
+                $data['temperature_celsius'] ?? 4.0,
+                $data['min_temperature'] ?? 2.0,
+                $data['max_temperature'] ?? 8.0,
+                $data['location'] ?? null,
+                $data['notes'] ?? null
+            ]);
+            
+            $chillerId = $db->lastInsertId();
+            
+            logAudit($currentUser['user_id'], 'create', 'chiller_locations', $chillerId, null, $data);
+            
+            Response::success(['id' => $chillerId], 'Chiller created successfully', 201);
+            break;
+            
+        case 'log_temp':
+            // Log temperature reading with history
+            $id = $data['id'] ?? null;
+            if (!$id) {
+                Response::error('Chiller ID required', 400);
+            }
+            
+            if (!isset($data['temperature_celsius'])) {
+                Response::error('Temperature is required', 400);
+            }
+            
+            // Verify chiller exists
+            $check = $db->prepare("SELECT * FROM chiller_locations WHERE id = ? AND is_active = 1");
+            $check->execute([$id]);
+            $chiller = $check->fetch();
+            
+            if (!$chiller) {
+                Response::error('Chiller not found', 404);
+            }
+            
+            $db->beginTransaction();
+            
+            try {
+                // Update current temperature
+                $updateStmt = $db->prepare("
+                    UPDATE chiller_locations SET
+                        temperature_celsius = ?,
+                        updated_at = NOW()
+                    WHERE id = ?
+                ");
+                $updateStmt->execute([$data['temperature_celsius'], $id]);
+                
+                // Log to temperature history table (create if not exists)
+                $logStmt = $db->prepare("
+                    INSERT INTO chiller_temperature_logs 
+                    (chiller_id, temperature_celsius, recorded_by, notes, recorded_at)
+                    VALUES (?, ?, ?, ?, NOW())
+                ");
+                $logStmt->execute([
+                    $id,
+                    $data['temperature_celsius'],
+                    $currentUser['user_id'],
+                    $data['notes'] ?? null
+                ]);
+                
+                $logId = $db->lastInsertId();
+                
+                // Check if temperature is out of range
+                $alert = null;
+                if ($data['temperature_celsius'] < $chiller['min_temperature'] || 
+                    $data['temperature_celsius'] > $chiller['max_temperature']) {
+                    $alert = [
+                        'type' => 'temperature_out_of_range',
+                        'message' => "Temperature {$data['temperature_celsius']}°C is outside range ({$chiller['min_temperature']}°C - {$chiller['max_temperature']}°C)"
+                    ];
+                }
+                
+                $db->commit();
+                
+                Response::success([
+                    'log_id' => $logId,
+                    'temperature' => $data['temperature_celsius'],
+                    'alert' => $alert
+                ], 'Temperature logged successfully', 201);
+                
+            } catch (Exception $e) {
+                $db->rollBack();
+                throw $e;
+            }
+            break;
+            
+        default:
+            Response::error('Invalid action', 400);
+    }
 }
 
 function handlePut($db, $action, $currentUser) {
@@ -208,7 +326,7 @@ function handlePut($db, $action, $currentUser) {
                 $id
             ]);
             
-            logAudit($db, $currentUser['id'], 'update', 'chiller_locations', $id, $oldData, $data);
+            logAudit($currentUser['user_id'], 'update', 'chiller_locations', $id, $oldData, $data);
             
             Response::success(null, 'Chiller updated successfully');
             break;

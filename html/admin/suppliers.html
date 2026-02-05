@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suppliers Management | Highland Fresh Admin</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } }
+        }
+    </script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Axios -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-cogs text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Admin Panel</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-th-large w-5 text-center text-base-content/60"></i><span class="flex-1">Dashboard</span>
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Supply Chain</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="farmers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-tractor w-5 text-center text-base-content/60"></i><span class="flex-1">Farmers</span>
+                    </a></li>
+                    <li><a href="suppliers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                        <i class="fas fa-truck w-5 text-center"></i><span class="flex-1">Suppliers</span>
+                    </a></li>
+                    <li><a href="customers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-store w-5 text-center text-base-content/60"></i><span class="flex-1">Customers</span>
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Product Catalog</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="products.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-box w-5 text-center text-base-content/60"></i><span class="flex-1">Products</span>
+                    </a></li>
+                    <li><a href="recipes.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-clipboard-list w-5 text-center text-base-content/60"></i><span class="flex-1">Recipes</span>
+                    </a></li>
+                    <li><a href="ingredients.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-seedling w-5 text-center text-base-content/60"></i><span class="flex-1">Ingredients</span>
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Infrastructure</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="storage.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-database w-5 text-center text-base-content/60"></i><span class="flex-1">Storage Tanks</span>
+                    </a></li>
+                    <li><a href="chillers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-snowflake w-5 text-center text-base-content/60"></i><span class="flex-1">Chillers</span>
+                    </a></li>
+                </ul>
+            </div>
+        </nav>
+        
+        <div class="p-4 border-t border-base-300">
+            <a href="../login.html" class="btn btn-ghost btn-sm w-full justify-start gap-3">
+                <i class="fas fa-sign-out-alt"></i>
+                Logout
+            </a>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <main class="lg:ml-72 min-h-screen">
+        <!-- Top Bar -->
+        <header class="bg-base-100 border-b border-base-300 sticky top-0 z-30">
+            <div class="flex items-center justify-between px-4 py-3">
+                <div class="flex items-center gap-3">
+                    <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div>
+                        <h1 class="text-lg font-bold">Suppliers Management</h1>
+                        <div class="text-sm breadcrumbs p-0">
+                            <ul><li><a href="dashboard.html">Admin</a></li><li>Suppliers</li></ul>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-sm gap-2" onclick="openModal()">
+                    <i class="fas fa-plus"></i>
+                    Add Supplier
+                </button>
+            </div>
+        </header>
+        
+        <!-- Content -->
+        <div class="p-4 md:p-6 space-y-6">
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-truck text-primary text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm text-base-content/60">Total Suppliers</p>
+                            <p class="text-2xl font-bold" id="totalCount">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 bg-success/10 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-check-circle text-success text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm text-base-content/60">Active</p>
+                            <p class="text-2xl font-bold" id="activeCount">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 bg-warning/10 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-pause-circle text-warning text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm text-base-content/60">Inactive</p>
+                            <p class="text-2xl font-bold" id="inactiveCount">0</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Search and Filter -->
+            <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
+                <div class="flex flex-col md:flex-row gap-4">
+                    <div class="flex-1">
+                        <div class="input input-bordered flex items-center gap-2">
+                            <i class="fas fa-search text-base-content/40"></i>
+                            <input type="text" id="searchInput" placeholder="Search suppliers..." class="grow border-none focus:outline-none bg-transparent" onkeyup="handleSearch(event)">
+                        </div>
+                    </div>
+                    <select id="statusFilter" class="select select-bordered w-full md:w-48" onchange="loadData()">
+                        <option value="">All Status</option>
+                        <option value="1">Active</option>
+                        <option value="0">Inactive</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Data Table -->
+            <div class="bg-base-100 rounded-2xl border border-base-300 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="table table-zebra">
+                        <thead>
+                            <tr class="bg-base-200">
+                                <th>Code</th>
+                                <th>Supplier Name</th>
+                                <th>Contact Person</th>
+                                <th>Phone</th>
+                                <th>Email</th>
+                                <th>Payment Terms</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dataTable">
+                            <tr>
+                                <td colspan="8" class="text-center py-8">
+                                    <i class="fas fa-spinner fa-spin text-2xl text-base-content/40"></i>
+                                    <p class="mt-2 text-base-content/60">Loading...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Pagination -->
+                <div class="p-4 border-t border-base-300 flex justify-between items-center">
+                    <div class="text-sm text-base-content/60" id="paginationInfo">Showing 0 of 0</div>
+                    <div class="join" id="paginationButtons"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- Add/Edit Modal -->
+    <dialog id="formModal" class="modal">
+        <div class="modal-box w-11/12 max-w-2xl">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-4" id="modalTitle">Add Supplier</h3>
+            
+            <form id="dataForm" class="space-y-4">
+                <input type="hidden" id="recordId">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Supplier Code</span></label>
+                        <input type="text" id="supplier_code" class="input input-bordered" placeholder="Auto-generated" readonly>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Supplier Name *</span></label>
+                        <input type="text" id="supplier_name" class="input input-bordered" required>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Contact Person</span></label>
+                        <input type="text" id="contact_person" class="input input-bordered">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Phone</span></label>
+                        <input type="text" id="phone" class="input input-bordered">
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Email</span></label>
+                        <input type="email" id="email" class="input input-bordered">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Payment Terms</span></label>
+                        <select id="payment_terms" class="select select-bordered">
+                            <option value="7 days">7 days</option>
+                            <option value="15 days">15 days</option>
+                            <option value="30 days" selected>30 days</option>
+                            <option value="45 days">45 days</option>
+                            <option value="60 days">60 days</option>
+                            <option value="COD">COD</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Address</span></label>
+                    <textarea id="address" class="textarea textarea-bordered" rows="2"></textarea>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Status</span></label>
+                        <select id="is_active" class="select select-bordered">
+                            <option value="1">Active</option>
+                            <option value="0">Inactive</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Notes</span></label>
+                    <textarea id="notes" class="textarea textarea-bordered" rows="2"></textarea>
+                </div>
+                
+                <div class="modal-action">
+                    <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveBtn">
+                        <span class="loading loading-spinner loading-sm hidden"></span>
+                        Save
+                    </button>
+                </div>
+            </form>
+        </div>
+    </dialog>
+    
+    <!-- Toast Container -->
+    <div class="toast toast-end" id="toastContainer"></div>
+    
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/admin/admin.service.js"></script>
+    
+    <script>
+        let currentPage = 1;
+        let searchTimeout = null;
+        
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+        
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        function handleSearch(event) {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                currentPage = 1;
+                loadData();
+            }, 300);
+        }
+        
+        async function loadData() {
+            const tableBody = document.getElementById('dataTable');
+            tableBody.innerHTML = '<tr><td colspan="8" class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl"></i></td></tr>';
+            
+            try {
+                const params = {
+                    page: currentPage,
+                    limit: 20,
+                    search: document.getElementById('searchInput').value,
+                    is_active: document.getElementById('statusFilter').value
+                };
+                
+                const response = await AdminService.getSuppliers(params);
+                
+                if (response.success) {
+                    renderTable(response.data.suppliers);
+                    renderPagination(response.data.pagination);
+                    loadStatistics();
+                } else {
+                    showToast('Failed to load data', 'error');
+                }
+            } catch (error) {
+                console.error('Error loading data:', error);
+                showToast('Error loading data', 'error');
+            }
+        }
+        
+        async function loadStatistics() {
+            try {
+                const response = await AdminService.getSuppliers({ action: 'statistics' });
+                if (response.success) {
+                    document.getElementById('totalCount').textContent = response.data.total || 0;
+                    document.getElementById('activeCount').textContent = response.data.active || 0;
+                    document.getElementById('inactiveCount').textContent = response.data.inactive || 0;
+                }
+            } catch (error) {
+                console.error('Error loading statistics:', error);
+            }
+        }
+        
+        function renderTable(suppliers) {
+            const tableBody = document.getElementById('dataTable');
+            
+            if (!suppliers || suppliers.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-base-content/60">No suppliers found</td></tr>';
+                return;
+            }
+            
+            tableBody.innerHTML = suppliers.map(s => `
+                <tr>
+                    <td><span class="font-mono text-sm">${s.supplier_code}</span></td>
+                    <td><span class="font-semibold">${s.supplier_name}</span></td>
+                    <td>${s.contact_person || '-'}</td>
+                    <td>${s.phone || '-'}</td>
+                    <td>${s.email || '-'}</td>
+                    <td>${s.payment_terms || '30 days'}</td>
+                    <td>
+                        <span class="badge ${s.is_active == 1 ? 'badge-success' : 'badge-warning'} badge-sm">
+                            ${s.is_active == 1 ? 'Active' : 'Inactive'}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="flex gap-1">
+                            <button class="btn btn-ghost btn-xs" onclick="editRecord(${s.id})">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-ghost btn-xs text-error" onclick="deleteRecord(${s.id})">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
+        function renderPagination(pagination) {
+            const info = document.getElementById('paginationInfo');
+            const buttons = document.getElementById('paginationButtons');
+            
+            const start = (pagination.page - 1) * pagination.limit + 1;
+            const end = Math.min(pagination.page * pagination.limit, pagination.total);
+            info.textContent = `Showing ${start}-${end} of ${pagination.total}`;
+            
+            let html = '';
+            for (let i = 1; i <= pagination.pages; i++) {
+                html += `<button class="join-item btn btn-sm ${i === pagination.page ? 'btn-active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+            }
+            buttons.innerHTML = html;
+        }
+        
+        function goToPage(page) {
+            currentPage = page;
+            loadData();
+        }
+        
+        function openModal(id = null) {
+            document.getElementById('modalTitle').textContent = id ? 'Edit Supplier' : 'Add Supplier';
+            document.getElementById('dataForm').reset();
+            document.getElementById('recordId').value = '';
+            document.getElementById('formModal').showModal();
+        }
+        
+        function closeModal() {
+            document.getElementById('formModal').close();
+        }
+        
+        async function editRecord(id) {
+            try {
+                const response = await AdminService.getSupplier(id);
+                if (response.success) {
+                    const s = response.data.supplier;
+                    document.getElementById('recordId').value = s.id;
+                    document.getElementById('supplier_code').value = s.supplier_code;
+                    document.getElementById('supplier_name').value = s.supplier_name;
+                    document.getElementById('contact_person').value = s.contact_person || '';
+                    document.getElementById('phone').value = s.phone || '';
+                    document.getElementById('email').value = s.email || '';
+                    document.getElementById('payment_terms').value = s.payment_terms || '30 days';
+                    document.getElementById('address').value = s.address || '';
+                    document.getElementById('is_active').value = s.is_active;
+                    document.getElementById('notes').value = s.notes || '';
+                    
+                    document.getElementById('modalTitle').textContent = 'Edit Supplier';
+                    document.getElementById('formModal').showModal();
+                }
+            } catch (error) {
+                console.error('Error loading record:', error);
+                showToast('Failed to load supplier details', 'error');
+            }
+        }
+        
+        async function deleteRecord(id) {
+            if (!confirm('Are you sure you want to deactivate this supplier?')) return;
+            
+            try {
+                const response = await AdminService.deleteSupplier(id);
+                if (response.success) {
+                    showToast('Supplier deactivated successfully', 'success');
+                    loadData();
+                } else {
+                    showToast(response.message || 'Failed to deactivate', 'error');
+                }
+            } catch (error) {
+                console.error('Error deleting record:', error);
+                showToast('Error deactivating supplier', 'error');
+            }
+        }
+        
+        document.getElementById('dataForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const recordId = document.getElementById('recordId').value;
+            const formData = {
+                supplier_name: document.getElementById('supplier_name').value,
+                contact_person: document.getElementById('contact_person').value,
+                phone: document.getElementById('phone').value,
+                email: document.getElementById('email').value,
+                payment_terms: document.getElementById('payment_terms').value,
+                address: document.getElementById('address').value,
+                is_active: document.getElementById('is_active').value,
+                notes: document.getElementById('notes').value
+            };
+            
+            try {
+                const saveBtn = document.getElementById('saveBtn');
+                saveBtn.classList.add('loading');
+                saveBtn.disabled = true;
+                
+                let response;
+                if (recordId) {
+                    response = await AdminService.updateSupplier(recordId, formData);
+                } else {
+                    response = await AdminService.createSupplier(formData);
+                }
+                
+                if (response.success) {
+                    showToast(recordId ? 'Supplier updated successfully' : 'Supplier created successfully', 'success');
+                    closeModal();
+                    loadData();
+                } else {
+                    showToast(response.message || 'Failed to save', 'error');
+                }
+            } catch (error) {
+                console.error('Error saving:', error);
+                showToast('Error saving supplier', 'error');
+            } finally {
+                const saveBtn = document.getElementById('saveBtn');
+                saveBtn.classList.remove('loading');
+                saveBtn.disabled = false;
+            }
+        });
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadData();
+        });
+    </script>
+</body>
+</html>

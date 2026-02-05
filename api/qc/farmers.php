@@ -32,34 +32,36 @@ try {
             $params = [];
             
             if (!empty($search)) {
-                $where .= " AND (farmer_code LIKE ? OR first_name LIKE ? OR last_name LIKE ? OR contact_number LIKE ?)";
+                $where .= " AND (f.farmer_code LIKE ? OR f.first_name LIKE ? OR f.last_name LIKE ? OR f.contact_number LIKE ?)";
                 $searchTerm = "%{$search}%";
                 $params = array_merge($params, [$searchTerm, $searchTerm, $searchTerm, $searchTerm]);
             }
             
             if (!empty($membership) && in_array($membership, ['member', 'non_member'])) {
-                $where .= " AND membership_type = ?";
+                $where .= " AND f.membership_type = ?";
                 $params[] = $membership;
             }
             
             if ($status !== '') {
-                $where .= " AND is_active = ?";
+                $where .= " AND f.is_active = ?";
                 $params[] = $status === 'active' ? 1 : 0;
             }
             
             // Get total count
-            $countStmt = $db->prepare("SELECT COUNT(*) as total FROM farmers {$where}");
+            $countStmt = $db->prepare("SELECT COUNT(*) as total FROM farmers f {$where}");
             $countStmt->execute($params);
             $total = $countStmt->fetch()['total'];
             
-            // Get farmers
+            // Get farmers (with milk_type_id - revised schema)
             $stmt = $db->prepare("
-                SELECT id, farmer_code, first_name, last_name, contact_number, address,
-                       membership_type, base_price_per_liter, bank_name, bank_account_number,
-                       is_active, created_at, updated_at
-                FROM farmers
+                SELECT f.id, f.farmer_code, f.first_name, f.last_name, f.contact_number, f.address,
+                       f.membership_type, f.milk_type_id, f.base_price_per_liter, f.bank_name, 
+                       f.bank_account_number, f.is_active, f.created_at, f.updated_at,
+                       mt.type_code as milk_type_code, mt.type_name as milk_type_name
+                FROM farmers f
+                LEFT JOIN milk_types mt ON f.milk_type_id = mt.id
                 {$where}
-                ORDER BY farmer_code ASC
+                ORDER BY f.farmer_code ASC
                 LIMIT ? OFFSET ?
             ");
             $params[] = $limit;
@@ -71,19 +73,19 @@ try {
             break;
             
         case 'POST':
-            // Create farmer
+            // Create farmer (with milk_type_id - revised schema)
             $firstName = trim(getParam('first_name', ''));
             $lastName = trim(getParam('last_name', ''));
             $contactNumber = trim(getParam('contact_number', ''));
             $address = trim(getParam('address', ''));
             $membershipType = getParam('membership_type', 'non_member');
+            $milkTypeId = getParam('milk_type_id', 1); // Default to COW (1)
             $bankName = trim(getParam('bank_name', ''));
             $bankAccount = trim(getParam('bank_account_number', ''));
             
             // Validation
             $errors = [];
             if (empty($firstName)) $errors['first_name'] = 'First name is required';
-            if (empty($lastName)) $errors['last_name'] = 'Last name is required';
             if (!in_array($membershipType, ['member', 'non_member'])) {
                 $errors['membership_type'] = 'Invalid membership type';
             }
@@ -93,22 +95,22 @@ try {
             }
             
             // Generate farmer code
-            $codeStmt = $db->query("SELECT MAX(CAST(SUBSTRING(farmer_code, 5) AS UNSIGNED)) as max_num FROM farmers");
+            $codeStmt = $db->query("SELECT MAX(CAST(SUBSTRING(farmer_code, 5) AS UNSIGNED)) as max_num FROM farmers WHERE farmer_code LIKE 'FRM-%'");
             $maxNum = $codeStmt->fetch()['max_num'] ?? 0;
             $farmerCode = 'FRM-' . str_pad($maxNum + 1, 3, '0', STR_PAD_LEFT);
             
             // Set base price based on membership
             $basePrice = $membershipType === 'member' ? MEMBER_PRICE : NON_MEMBER_PRICE;
             
-            // Insert farmer
+            // Insert farmer (with milk_type_id)
             $stmt = $db->prepare("
                 INSERT INTO farmers (farmer_code, first_name, last_name, contact_number, address,
-                                    membership_type, base_price_per_liter, bank_name, bank_account_number)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    membership_type, milk_type_id, base_price_per_liter, bank_name, bank_account_number)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
             $stmt->execute([
-                $farmerCode, $firstName, $lastName, $contactNumber, $address,
-                $membershipType, $basePrice, $bankName, $bankAccount
+                $farmerCode, $firstName, $lastName ?: '', $contactNumber, $address,
+                $membershipType, $milkTypeId, $basePrice, $bankName, $bankAccount
             ]);
             
             $farmerId = $db->lastInsertId();
@@ -119,8 +121,13 @@ try {
                 'name' => "$firstName $lastName"
             ]);
             
-            // Get created farmer
-            $stmt = $db->prepare("SELECT * FROM farmers WHERE id = ?");
+            // Get created farmer with milk type info
+            $stmt = $db->prepare("
+                SELECT f.*, mt.type_code as milk_type_code, mt.type_name as milk_type_name
+                FROM farmers f
+                LEFT JOIN milk_types mt ON f.milk_type_id = mt.id
+                WHERE f.id = ?
+            ");
             $stmt->execute([$farmerId]);
             $farmer = $stmt->fetch();
             

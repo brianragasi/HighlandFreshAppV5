@@ -442,6 +442,74 @@
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
 
+    <!-- Settings Modal -->
+    <dialog id="settingsModal" class="modal">
+        <div class="modal-box max-w-md">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-4"><i class="fas fa-cog text-primary"></i> Ingredient Settings</h3>
+
+            <form id="settingsForm" onsubmit="submitSettings(event)">
+                <input type="hidden" id="settingsIngredientId">
+
+                <div class="alert alert-info mb-4">
+                    <i class="fas fa-info-circle"></i>
+                    <div>
+                        <p class="font-semibold" id="settingsIngredientName">-</p>
+                        <p class="text-xs opacity-80">Configure reorder alerts and lead time</p>
+                    </div>
+                </div>
+
+                <div class="form-control mb-3">
+                    <label class="label">
+                        <span class="label-text">Minimum Stock *</span>
+                        <span class="label-text-alt text-base-content/60">Safety buffer</span>
+                    </label>
+                    <input type="number" class="input input-bordered" id="settingsMinStock" step="0.01" min="0"
+                        required>
+                    <label class="label">
+                        <span class="label-text-alt text-base-content/60">Alert triggers when stock falls below
+                            this</span>
+                    </label>
+                </div>
+
+                <div class="form-control mb-3">
+                    <label class="label">
+                        <span class="label-text">Lead Time (Days) *</span>
+                        <span class="label-text-alt text-base-content/60">Supplier delivery time</span>
+                    </label>
+                    <input type="number" class="input input-bordered" id="settingsLeadTime" step="1" min="1" max="90"
+                        required>
+                    <label class="label">
+                        <span class="label-text-alt text-base-content/60">How many days until supplier delivers after
+                            ordering</span>
+                    </label>
+                </div>
+
+                <div class="form-control mb-4">
+                    <label class="label">
+                        <span class="label-text">Reorder Point</span>
+                        <span class="label-text-alt text-base-content/60">Optional override</span>
+                    </label>
+                    <input type="number" class="input input-bordered" id="settingsReorderPoint" step="0.01" min="0"
+                        placeholder="Auto: Min Stock × 1.5">
+                    <label class="label">
+                        <span class="label-text-alt text-base-content/60">Leave blank to auto-calculate as Min Stock ×
+                            1.5</span>
+                    </label>
+                </div>
+
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost"
+                        onclick="document.getElementById('settingsModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Settings</button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
     <!-- Toast Container -->
     <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
 
@@ -481,14 +549,14 @@
             await Promise.all([loadCategories(), loadIngredients(), loadSuppliers()]);
             setupEventListeners();
         });
-        
+
         async function loadSuppliers() {
             try {
                 const response = await api.get('/warehouse/raw/suppliers.php?action=list');
                 const suppliers = response?.data || [];
                 const select = document.getElementById('receiveSupplier');
-                
-                select.innerHTML = '<option value="">Select supplier...</option>' + 
+
+                select.innerHTML = '<option value="">Select supplier...</option>' +
                     suppliers.map(s => `<option value="${s.id}">${s.supplier_name}</option>`).join('');
             } catch (error) {
                 console.error('Failed to load suppliers:', error);
@@ -732,30 +800,43 @@
 
             try {
                 const response = await WarehouseRawService.getIngredient(id);
-                if (response.success) renderDetailModal(response.data);
+                if (response.success) {
+                    // API returns {ingredient: {...}, batches: [...]}
+                    const data = response.data;
+                    const ing = data.ingredient || data;
+                    ing.batches = data.batches || [];
+                    renderDetailModal(ing);
+                }
             } catch (e) {
+                console.error('Failed to load ingredient details:', e);
                 showToast('Failed to load details', 'error');
                 document.getElementById('detailModal').close();
             }
         }
 
         function renderDetailModal(ing) {
-            const stock = parseFloat(ing.current_stock);
+            // Use correct field names from API
+            const name = ing.ingredient_name || ing.name || 'Unknown';
+            const code = ing.ingredient_code || ing.code || '-';
+            const stock = parseFloat(ing.current_stock) || 0;
+            const unit = ing.unit_of_measure || 'units';
+            const minStock = parseFloat(ing.minimum_stock) || 0;
             const batches = ing.batches || [];
 
-            document.getElementById('detailModalTitle').innerHTML = `<i class="fas fa-box-open text-primary"></i> ${ing.name} <span class="text-base-content/60 font-normal text-sm">(${ing.code})</span>`;
+            document.getElementById('detailModalTitle').innerHTML = `<i class="fas fa-box-open text-primary"></i> ${name} <span class="text-base-content/60 font-normal text-sm">(${code})</span>`;
 
             let batchesHtml = batches.length ? batches.map(b => {
                 const days = daysUntil(b.expiry_date);
                 const expClass = days < 0 ? 'badge-error' : days <= 7 ? 'badge-warning' : 'badge-ghost';
+                const remaining = parseFloat(b.remaining_quantity || b.quantity_remaining) || 0;
                 return `
                     <div class="flex items-center justify-between p-3 bg-base-200 rounded-lg mb-2">
                         <div>
-                            <p class="font-semibold text-sm">${b.batch_number || 'No batch #'}</p>
+                            <p class="font-semibold text-sm">${b.batch_code || b.batch_number || 'No batch #'}</p>
                             <p class="text-xs text-base-content/60">Rcvd: ${formatDate(b.received_date)}</p>
                         </div>
                         <div class="text-right">
-                            <p class="font-bold">${parseFloat(b.quantity_remaining).toLocaleString()} ${ing.unit_of_measure}</p>
+                            <p class="font-bold">${remaining.toLocaleString()} ${unit}</p>
                             <span class="badge ${expClass} badge-xs">${days < 0 ? 'EXPIRED' : formatDate(b.expiry_date)}</span>
                         </div>
                     </div>`;
@@ -764,21 +845,39 @@
             document.getElementById('detailModalBody').innerHTML = `
                 <div class="grid grid-cols-3 gap-4 mb-4">
                     <div><p class="text-xs text-base-content/60">Category</p><p class="font-semibold">${ing.category_name || '-'}</p></div>
-                    <div><p class="text-xs text-base-content/60">Unit</p><p class="font-semibold">${ing.unit_of_measure}</p></div>
+                    <div><p class="text-xs text-base-content/60">Unit</p><p class="font-semibold">${unit}</p></div>
                     <div><p class="text-xs text-base-content/60">Current Stock</p><p class="font-bold text-2xl">${stock.toLocaleString()}</p></div>
                 </div>
-                <div class="grid grid-cols-2 gap-4 mb-4">
-                    <div><p class="text-xs text-base-content/60">Min Stock</p><p class="font-semibold">${ing.minimum_stock}</p></div>
-                    <div><p class="text-xs text-base-content/60">Max Stock</p><p class="font-semibold">${ing.maximum_stock || '-'}</p></div>
+                <div class="grid grid-cols-4 gap-3 mb-4">
+                    <div class="bg-base-200 rounded-lg p-2">
+                        <p class="text-xs text-base-content/60">Min Stock</p>
+                        <p class="font-semibold">${minStock}</p>
+                    </div>
+                    <div class="bg-base-200 rounded-lg p-2">
+                        <p class="text-xs text-base-content/60">Max Stock</p>
+                        <p class="font-semibold">${ing.maximum_stock || '-'}</p>
+                    </div>
+                    <div class="bg-base-200 rounded-lg p-2">
+                        <p class="text-xs text-base-content/60">Lead Time</p>
+                        <p class="font-semibold">${ing.lead_time_days || 7} days</p>
+                    </div>
+                    <div class="bg-base-200 rounded-lg p-2">
+                        <p class="text-xs text-base-content/60">Reorder At</p>
+                        <p class="font-semibold">${ing.reorder_point || (minStock * 1.5).toFixed(1)}</p>
+                    </div>
                 </div>
                 <h4 class="font-semibold mb-2"><i class="fas fa-layer-group"></i> Batches (FIFO)</h4>
                 <div class="max-h-48 overflow-y-auto scrollbar-thin">${batchesHtml}</div>
             `;
 
+            // Escape the name for use in onclick
+            const escapedName = name.replace(/'/g, "\\'");
+
             document.getElementById('detailModalFooter').innerHTML = `
                 <button class="btn btn-ghost" onclick="document.getElementById('detailModal').close()">Close</button>
-                <button class="btn btn-info btn-sm" onclick="openAdjustModal(${ing.id}, '${ing.name}', ${stock}, '${ing.unit_of_measure}')"><i class="fas fa-sliders-h"></i> Adjust</button>
-                <button class="btn btn-warning btn-sm" onclick="openIssueModal(${ing.id}, '${ing.name}', ${stock}, '${ing.unit_of_measure}')" ${stock <= 0 ? 'disabled' : ''}><i class="fas fa-arrow-up"></i> Issue</button>
+                <button class="btn btn-primary btn-sm" onclick="openSettingsModal(${ing.id}, '${escapedName}', ${minStock}, ${ing.lead_time_days || 7}, ${ing.reorder_point || 'null'})"><i class="fas fa-cog"></i> Settings</button>
+                <button class="btn btn-info btn-sm" onclick="openAdjustModal(${ing.id}, '${escapedName}', ${stock}, '${unit}')"><i class="fas fa-sliders-h"></i> Adjust</button>
+                <button class="btn btn-warning btn-sm" onclick="openIssueModal(${ing.id}, '${escapedName}', ${stock}, '${unit}')" ${stock <= 0 ? 'disabled' : ''}><i class="fas fa-arrow-up"></i> Issue</button>
             `;
         }
 
@@ -837,6 +936,45 @@
                     loadIngredients();
                 } else showToast(response.error || 'Failed', 'error');
             } catch (e) { showToast('Failed to adjust', 'error'); }
+        }
+
+        function openSettingsModal(id, name, minStock, leadTime, reorderPoint) {
+            document.getElementById('settingsIngredientId').value = id;
+            document.getElementById('settingsIngredientName').textContent = name;
+            document.getElementById('settingsMinStock').value = minStock;
+            document.getElementById('settingsLeadTime').value = leadTime;
+            document.getElementById('settingsReorderPoint').value = reorderPoint === 'null' || reorderPoint === null ? '' : reorderPoint;
+            document.getElementById('detailModal').close();
+            document.getElementById('settingsModal').showModal();
+        }
+
+        async function submitSettings(e) {
+            e.preventDefault();
+            const id = document.getElementById('settingsIngredientId').value;
+            const minStock = document.getElementById('settingsMinStock').value;
+            const leadTime = document.getElementById('settingsLeadTime').value;
+            const reorderPoint = document.getElementById('settingsReorderPoint').value || null;
+
+            try {
+                const response = await api.put('/warehouse/raw/ingredients.php', {
+                    action: 'update_settings',
+                    ingredient_id: id,
+                    minimum_stock: minStock,
+                    lead_time_days: leadTime,
+                    reorder_point: reorderPoint
+                });
+
+                if (response.success) {
+                    showToast('Settings saved successfully', 'success');
+                    document.getElementById('settingsModal').close();
+                    loadIngredients();
+                } else {
+                    showToast(response.message || 'Failed to save settings', 'error');
+                }
+            } catch (e) {
+                console.error('Settings update error:', e);
+                showToast('Failed to save settings', 'error');
+            }
         }
 
         // Helpers

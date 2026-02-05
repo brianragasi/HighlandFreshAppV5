@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transaction History - Cashier POS | Highland Fresh</title>
+
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .stat-value { font-variant-numeric: tabular-nums; }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-cash-register text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Cashier / POS</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Sales</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="sale.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-bolt w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Quick Sale (POS)</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="history.html?type=sales" id="navSalesHistory"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-receipt w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Transaction History</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Collections</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="collect.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-hand-holding-dollar w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Collect Payment</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="history.html?type=collections" id="navCollectionHistory"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-clock-rotate-left w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Collection History</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="reports/daily_summary.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-chart-pie w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Daily Summary</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="reports/cash_position.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-wallet w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Cash Position</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">CA</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Cashier</p>
+                    <p class="text-xs text-base-content/60 truncate">Point of Sale</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-history text-primary"></i>
+                    <span class="font-semibold" id="pageTitle">Transaction History</span>
+                </div>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <div class="hidden md:flex items-center gap-2 px-3 py-1.5 bg-base-200 rounded-lg">
+                    <i class="fas fa-clock text-base-content/60"></i>
+                    <span id="currentTime" class="font-mono text-sm">--:--:--</span>
+                </div>
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- Tab Selection -->
+            <div class="tabs tabs-boxed bg-base-100 p-1 mb-6 w-fit">
+                <a class="tab tab-lg" id="tabSales" onclick="switchTab('sales')">
+                    <i class="fas fa-receipt mr-2"></i> Sales Transactions
+                </a>
+                <a class="tab tab-lg" id="tabCollections" onclick="switchTab('collections')">
+                    <i class="fas fa-hand-holding-dollar mr-2"></i> Collections
+                </a>
+            </div>
+
+            <!-- Filters -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body p-4">
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                        <div class="form-control">
+                            <label class="label py-0"><span class="label-text text-xs">Search</span></label>
+                            <input type="text" id="searchQuery" class="input input-bordered input-sm" 
+                                placeholder="Transaction # / Customer" onkeyup="handleSearch(event)">
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-0"><span class="label-text text-xs">From Date</span></label>
+                            <input type="date" id="dateFrom" class="input input-bordered input-sm" onchange="loadHistory()">
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-0"><span class="label-text text-xs">To Date</span></label>
+                            <input type="date" id="dateTo" class="input input-bordered input-sm" onchange="loadHistory()">
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-0"><span class="label-text text-xs">Payment Method</span></label>
+                            <select id="filterPayment" class="select select-bordered select-sm" onchange="loadHistory()">
+                                <option value="">All Methods</option>
+                                <option value="cash">Cash</option>
+                                <option value="gcash">GCash</option>
+                                <option value="bank_transfer">Bank Transfer</option>
+                                <option value="check">Check</option>
+                            </select>
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-0"><span class="label-text text-xs">&nbsp;</span></label>
+                            <div class="flex gap-2">
+                                <button class="btn btn-primary btn-sm flex-1" onclick="loadHistory()">
+                                    <i class="fas fa-search"></i> Search
+                                </button>
+                                <button class="btn btn-ghost btn-sm" onclick="clearFilters()">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Summary Stats -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <p class="text-xs text-base-content/60 uppercase">Total Transactions</p>
+                        <p class="text-2xl font-bold stat-value" id="statCount">0</p>
+                    </div>
+                </div>
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <p class="text-xs text-base-content/60 uppercase">Total Amount</p>
+                        <p class="text-2xl font-bold text-primary stat-value" id="statTotal">₱0.00</p>
+                    </div>
+                </div>
+                <div class="card bg-base-100 border border-base-300" id="statCashCard">
+                    <div class="card-body p-4">
+                        <p class="text-xs text-base-content/60 uppercase">Cash</p>
+                        <p class="text-2xl font-bold text-success stat-value" id="statCash">₱0.00</p>
+                    </div>
+                </div>
+                <div class="card bg-base-100 border border-base-300" id="statOtherCard">
+                    <div class="card-body p-4">
+                        <p class="text-xs text-base-content/60 uppercase">Other Payments</p>
+                        <p class="text-2xl font-bold text-info stat-value" id="statOther">₱0.00</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Transactions Table -->
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="card-title text-lg" id="tableTitle">
+                            <i class="fas fa-receipt text-primary mr-2"></i>
+                            Sales Transactions
+                        </h3>
+                        <button class="btn btn-outline btn-sm" onclick="exportData()">
+                            <i class="fas fa-download"></i> Export
+                        </button>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr class="bg-base-200">
+                                    <th>Transaction #</th>
+                                    <th>Date/Time</th>
+                                    <th>Customer</th>
+                                    <th>Items</th>
+                                    <th>Amount</th>
+                                    <th>Payment</th>
+                                    <th>Status</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTable">
+                                <tr>
+                                    <td colspan="8" class="text-center py-8">
+                                        <span class="loading loading-spinner loading-md"></span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    <div class="flex items-center justify-between mt-4">
+                        <p class="text-sm text-base-content/60">
+                            Showing <span id="showingFrom">0</span> to <span id="showingTo">0</span> of <span id="showingTotal">0</span> entries
+                        </p>
+                        <div class="join">
+                            <button class="join-item btn btn-sm" id="btnPrev" onclick="prevPage()" disabled>
+                                <i class="fas fa-chevron-left"></i>
+                            </button>
+                            <button class="join-item btn btn-sm" id="pageInfo">Page 1</button>
+                            <button class="join-item btn btn-sm" id="btnNext" onclick="nextPage()" disabled>
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
+            <div>
+                <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Transaction Detail Modal -->
+    <dialog id="detailModal" class="modal">
+        <div class="modal-box max-w-2xl">
+            <h3 class="font-bold text-lg mb-4">
+                <i class="fas fa-receipt text-primary mr-2"></i>
+                Transaction Details
+            </h3>
+
+            <div class="space-y-4" id="detailContent">
+                <!-- Header Info -->
+                <div class="bg-base-200 rounded-lg p-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <p class="text-xs text-base-content/60">Transaction Number</p>
+                            <p class="font-mono font-bold text-lg" id="detailNumber">--</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-base-content/60">Date & Time</p>
+                            <p class="font-semibold" id="detailDateTime">--</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-base-content/60">Customer</p>
+                            <p class="font-semibold" id="detailCustomer">--</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-base-content/60">Cashier</p>
+                            <p class="font-semibold" id="detailCashier">--</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Items Table -->
+                <div class="overflow-x-auto">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr class="bg-base-200">
+                                <th>Product</th>
+                                <th class="text-right">Qty</th>
+                                <th class="text-right">Price</th>
+                                <th class="text-right">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detailItems">
+                            <!-- Items will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Payment Summary -->
+                <div class="bg-base-200 rounded-lg p-4">
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <span class="text-base-content/60">Subtotal</span>
+                            <span id="detailSubtotal">₱0.00</span>
+                        </div>
+                        <div class="flex justify-between" id="detailDiscountRow">
+                            <span class="text-base-content/60">Discount</span>
+                            <span class="text-error" id="detailDiscount">-₱0.00</span>
+                        </div>
+                        <div class="divider my-1"></div>
+                        <div class="flex justify-between text-lg font-bold">
+                            <span>Total</span>
+                            <span class="text-primary" id="detailTotal">₱0.00</span>
+                        </div>
+                        <div class="divider my-1"></div>
+                        <div class="flex justify-between">
+                            <span class="text-base-content/60">Payment Method</span>
+                            <span id="detailPaymentMethod">--</span>
+                        </div>
+                        <div class="flex justify-between" id="detailAmountPaidRow">
+                            <span class="text-base-content/60">Amount Paid</span>
+                            <span id="detailAmountPaid">₱0.00</span>
+                        </div>
+                        <div class="flex justify-between" id="detailChangeRow">
+                            <span class="text-base-content/60">Change</span>
+                            <span class="text-success" id="detailChange">₱0.00</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-action">
+                <button class="btn btn-outline" onclick="printTransaction()">
+                    <i class="fas fa-print"></i> Print
+                </button>
+                <button class="btn btn-error btn-outline" onclick="voidTransaction()" id="btnVoid">
+                    <i class="fas fa-ban"></i> Void
+                </button>
+                <form method="dialog">
+                    <button class="btn">Close</button>
+                </form>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/pos/pos.service.js"></script>
+
+    <script>
+        // State
+        let currentTab = 'sales';
+        let historyData = [];
+        let currentPage = 1;
+        let totalPages = 1;
+        let itemsPerPage = 20;
+        let selectedTransaction = null;
+
+        // Sidebar toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+
+        // Theme toggle
+        document.getElementById('themeToggle').addEventListener('change', function () {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('themeToggle').checked = true;
+        }
+
+        // Update time
+        function updateTime() {
+            document.getElementById('currentTime').textContent = new Date().toLocaleTimeString('en-US', { hour12: false });
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // Format currency
+        function formatCurrency(amount) {
+            return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        // Toast notification
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `alert alert-${type} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            document.getElementById('toastContainer').appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        function getInitials(firstName, lastName) {
+            const f = firstName ? firstName.charAt(0).toUpperCase() : '';
+            const l = lastName ? lastName.charAt(0).toUpperCase() : '';
+            return f + l || 'CA';
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async function () {
+            if (typeof AuthService !== 'undefined') {
+                const user = AuthService.getCurrentUser();
+                if (user) {
+                    document.getElementById('sidebarUserName').textContent = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Cashier';
+                    document.getElementById('userInitials').textContent = getInitials(user.first_name, user.last_name);
+                }
+            }
+
+            // Set default date range (today)
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('dateFrom').value = today;
+            document.getElementById('dateTo').value = today;
+
+            // Check URL params for tab
+            const urlParams = new URLSearchParams(window.location.search);
+            const type = urlParams.get('type') || 'sales';
+            switchTab(type);
+        });
+
+        function switchTab(tab) {
+            currentTab = tab;
+            currentPage = 1;
+
+            // Update tabs
+            document.getElementById('tabSales').classList.toggle('tab-active', tab === 'sales');
+            document.getElementById('tabCollections').classList.toggle('tab-active', tab === 'collections');
+
+            // Update nav highlights
+            const navSales = document.getElementById('navSalesHistory');
+            const navCollections = document.getElementById('navCollectionHistory');
+            navSales.classList.toggle('bg-primary', tab === 'sales');
+            navSales.classList.toggle('text-primary-content', tab === 'sales');
+            navCollections.classList.toggle('bg-primary', tab === 'collections');
+            navCollections.classList.toggle('text-primary-content', tab === 'collections');
+
+            // Update page title
+            if (tab === 'sales') {
+                document.getElementById('pageTitle').textContent = 'Sales Transaction History';
+                document.getElementById('tableTitle').innerHTML = '<i class="fas fa-receipt text-primary mr-2"></i> Sales Transactions';
+            } else {
+                document.getElementById('pageTitle').textContent = 'Collection History';
+                document.getElementById('tableTitle').innerHTML = '<i class="fas fa-hand-holding-dollar text-info mr-2"></i> Collections';
+            }
+
+            // Update URL without reload
+            const url = new URL(window.location);
+            url.searchParams.set('type', tab);
+            window.history.replaceState({}, '', url);
+
+            loadHistory();
+        }
+
+        function handleSearch(event) {
+            if (event.key === 'Enter') {
+                loadHistory();
+            }
+        }
+
+        function clearFilters() {
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('searchQuery').value = '';
+            document.getElementById('dateFrom').value = today;
+            document.getElementById('dateTo').value = today;
+            document.getElementById('filterPayment').value = '';
+            loadHistory();
+        }
+
+        async function loadHistory() {
+            const params = {
+                from_date: document.getElementById('dateFrom').value,
+                to_date: document.getElementById('dateTo').value,
+                payment_method: document.getElementById('filterPayment').value,
+                search: document.getElementById('searchQuery').value,
+                page: currentPage,
+                limit: itemsPerPage
+            };
+
+            try {
+                let response;
+                if (currentTab === 'sales') {
+                    // For sales, don't send type parameter (it filters by transaction_type like cash/credit)
+                    response = await POSService.getTransactions(params);
+                } else {
+                    response = await POSService.getCollectionHistory(params);
+                }
+
+                if (response && response.data) {
+                    // Handle different response formats:
+                    // - sales: data is array directly or data.transactions
+                    // - collections: data.collections
+                    if (currentTab === 'sales') {
+                        historyData = Array.isArray(response.data) ? response.data : (response.data.transactions || response.data.items || []);
+                    } else {
+                        historyData = response.data.collections || response.data.items || [];
+                    }
+                    totalPages = response.pagination?.total_pages || response.data?.total_pages || 1;
+                    
+                    // Map payment_status to status for consistency
+                    historyData = historyData.map(tx => ({
+                        ...tx,
+                        status: tx.status || (tx.payment_status === 'voided' ? 'voided' : 'completed'),
+                        items_count: tx.items_count || '-',
+                        cashier_name: tx.cashier_name || `${tx.cashier_first_name || ''} ${tx.cashier_last_name || ''}`.trim() || `${tx.collected_by_first_name || ''} ${tx.collected_by_last_name || ''}`.trim()
+                    }));
+                    
+                    updateStats(response.data.summary || { total_count: response.data.count, total_amount: response.data.total_collected });
+                    renderTable();
+                    updatePagination(response.pagination?.total || response.data?.count || historyData.length);
+                } else {
+                    // No data returned
+                    historyData = [];
+                    updateStats({ total_count: 0, total_amount: 0, cash_amount: 0, other_amount: 0 });
+                    renderTable();
+                    updatePagination(0);
+                }
+            } catch (error) {
+                console.error('Error loading history:', error);
+                showToast('Failed to load history: ' + (error.response?.data?.message || error.message), 'error');
+                historyData = [];
+                updateStats({ total_count: 0, total_amount: 0, cash_amount: 0, other_amount: 0 });
+                renderTable();
+                updatePagination(0);
+            }
+        }
+
+        function updateStats(summary) {
+            document.getElementById('statCount').textContent = summary.total_count || historyData.length;
+            document.getElementById('statTotal').textContent = formatCurrency(summary.total_amount || 0);
+            document.getElementById('statCash').textContent = formatCurrency(summary.cash_amount || 0);
+            document.getElementById('statOther').textContent = formatCurrency(summary.other_amount || 0);
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('historyTable');
+
+            if (historyData.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="text-center py-8 text-base-content/60">
+                            <i class="fas fa-inbox text-4xl mb-2 opacity-30"></i>
+                            <p>No transactions found</p>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            if (currentTab === 'sales') {
+                tbody.innerHTML = historyData.map(tx => {
+                    const statusBadge = tx.status === 'completed' 
+                        ? '<span class="badge badge-success badge-sm">Completed</span>'
+                        : tx.status === 'voided'
+                            ? '<span class="badge badge-error badge-sm">Voided</span>'
+                            : '<span class="badge badge-warning badge-sm">Pending</span>';
+
+                    return `
+                        <tr class="hover cursor-pointer" onclick="viewTransaction(${tx.id}, 'sale')">
+                            <td class="font-mono text-sm">${tx.transaction_code}</td>
+                            <td>${formatDateTime(tx.created_at)}</td>
+                            <td>${tx.customer_name}</td>
+                            <td class="text-center">${tx.items_count}</td>
+                            <td class="font-semibold">${formatCurrency(tx.total_amount)}</td>
+                            <td>
+                                <span class="badge badge-ghost badge-sm">
+                                    <i class="fas ${getPaymentIcon(tx.payment_method)} mr-1"></i>
+                                    ${formatPaymentMethod(tx.payment_method)}
+                                </span>
+                            </td>
+                            <td>${statusBadge}</td>
+                            <td>
+                                <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation(); viewTransaction(${tx.id}, 'sale')">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } else {
+                tbody.innerHTML = historyData.map(col => {
+                    const statusBadge = col.status === 'completed' 
+                        ? '<span class="badge badge-success badge-sm">Completed</span>'
+                        : col.status === 'cancelled'
+                            ? '<span class="badge badge-error badge-sm">Cancelled</span>'
+                            : '<span class="badge badge-warning badge-sm">Pending</span>';
+
+                    return `
+                        <tr class="hover cursor-pointer" onclick="viewTransaction(${col.id}, 'collection')">
+                            <td class="font-mono text-sm">${col.or_number}</td>
+                            <td>${formatDateTime(col.created_at)}</td>
+                            <td>
+                                <div>
+                                    <p>${col.customer_name}</p>
+                                    <p class="text-xs text-base-content/60">${col.dr_number}</p>
+                                </div>
+                            </td>
+                            <td>--</td>
+                            <td class="font-semibold text-success">${formatCurrency(col.amount)}</td>
+                            <td>
+                                <span class="badge badge-ghost badge-sm">
+                                    <i class="fas ${getPaymentIcon(col.payment_method)} mr-1"></i>
+                                    ${formatPaymentMethod(col.payment_method)}
+                                </span>
+                            </td>
+                            <td>${statusBadge}</td>
+                            <td>
+                                <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation(); viewTransaction(${col.id}, 'collection')">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+        }
+
+        function formatDateTime(dateStr) {
+            if (!dateStr) return '--';
+            const date = new Date(dateStr);
+            return date.toLocaleString('en-US', { 
+                month: 'short', 
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function formatPaymentMethod(method) {
+            const methods = {
+                'cash': 'Cash',
+                'gcash': 'GCash',
+                'bank_transfer': 'Bank',
+                'check': 'Check'
+            };
+            return methods[method] || method;
+        }
+
+        function getPaymentIcon(method) {
+            const icons = {
+                'cash': 'fa-money-bill-wave',
+                'gcash': 'fa-mobile-screen',
+                'bank_transfer': 'fa-building-columns',
+                'check': 'fa-money-check'
+            };
+            return icons[method] || 'fa-credit-card';
+        }
+
+        function updatePagination(total) {
+            const from = total === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1;
+            const to = Math.min(currentPage * itemsPerPage, total);
+            
+            document.getElementById('showingFrom').textContent = from;
+            document.getElementById('showingTo').textContent = to;
+            document.getElementById('showingTotal').textContent = total;
+            document.getElementById('pageInfo').textContent = `Page ${currentPage}`;
+            
+            document.getElementById('btnPrev').disabled = currentPage <= 1;
+            document.getElementById('btnNext').disabled = currentPage >= totalPages;
+        }
+
+        function prevPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                loadHistory();
+            }
+        }
+
+        function nextPage() {
+            if (currentPage < totalPages) {
+                currentPage++;
+                loadHistory();
+            }
+        }
+
+        async function viewTransaction(id, type) {
+            selectedTransaction = { id, type };
+
+            try {
+                let response;
+                if (type === 'sale') {
+                    response = await POSService.getTransaction(id);
+                } else {
+                    response = await POSService.getCollectionReceipt(id);
+                }
+
+                if (response && response.data) {
+                    showTransactionDetail(response.data);
+                    return;
+                }
+            } catch (error) {
+                console.error('Error fetching details:', error);
+            }
+
+            // Show error if transaction details not found
+            showToast('Failed to load transaction details', 'error');
+        }
+
+        function showTransactionDetail(data) {
+            document.getElementById('detailNumber').textContent = data.transaction_code || data.or_number || '--';
+            document.getElementById('detailDateTime').textContent = formatDateTime(data.created_at);
+            document.getElementById('detailCustomer').textContent = data.customer_name || 'Walk-in Customer';
+            document.getElementById('detailCashier').textContent = data.cashier_name || '--';
+
+            if (data.is_collection) {
+                // Collection detail
+                document.getElementById('detailItems').innerHTML = `
+                    <tr>
+                        <td colspan="4" class="text-center text-base-content/60">
+                            <p>DR: ${data.dr_number || '--'}</p>
+                            <p class="text-success font-bold text-lg mt-2">${formatCurrency(data.total_amount)}</p>
+                        </td>
+                    </tr>
+                `;
+                document.getElementById('detailSubtotal').textContent = formatCurrency(data.total_amount);
+                document.getElementById('detailDiscountRow').classList.add('hidden');
+                document.getElementById('detailTotal').textContent = formatCurrency(data.total_amount);
+                document.getElementById('detailPaymentMethod').textContent = formatPaymentMethod(data.payment_method);
+                document.getElementById('detailAmountPaidRow').classList.add('hidden');
+                document.getElementById('detailChangeRow').classList.add('hidden');
+                document.getElementById('btnVoid').classList.add('hidden');
+            } else {
+                // Sale detail
+                const items = data.items || [];
+                document.getElementById('detailItems').innerHTML = items.map(item => `
+                    <tr>
+                        <td>${item.product_name}</td>
+                        <td class="text-right">${item.quantity}</td>
+                        <td class="text-right">${formatCurrency(item.unit_price)}</td>
+                        <td class="text-right font-semibold">${formatCurrency(item.total_price)}</td>
+                    </tr>
+                `).join('');
+
+                document.getElementById('detailSubtotal').textContent = formatCurrency(data.subtotal);
+                
+                if (data.discount_amount > 0) {
+                    document.getElementById('detailDiscountRow').classList.remove('hidden');
+                    document.getElementById('detailDiscount').textContent = '-' + formatCurrency(data.discount_amount);
+                } else {
+                    document.getElementById('detailDiscountRow').classList.add('hidden');
+                }
+
+                document.getElementById('detailTotal').textContent = formatCurrency(data.total_amount);
+                document.getElementById('detailPaymentMethod').textContent = formatPaymentMethod(data.payment_method);
+                
+                if (data.payment_method === 'cash' && data.amount_paid) {
+                    document.getElementById('detailAmountPaidRow').classList.remove('hidden');
+                    document.getElementById('detailAmountPaid').textContent = formatCurrency(data.amount_paid);
+                    document.getElementById('detailChangeRow').classList.remove('hidden');
+                    document.getElementById('detailChange').textContent = formatCurrency(data.change || 0);
+                } else {
+                    document.getElementById('detailAmountPaidRow').classList.add('hidden');
+                    document.getElementById('detailChangeRow').classList.add('hidden');
+                }
+
+                document.getElementById('btnVoid').classList.toggle('hidden', data.status === 'voided');
+            }
+
+            document.getElementById('detailModal').showModal();
+        }
+
+        function printTransaction() {
+            showToast('Printing...', 'info');
+            window.print();
+        }
+
+        async function voidTransaction() {
+            if (!selectedTransaction) return;
+            
+            const reason = prompt('Enter void reason:');
+            if (!reason || !reason.trim()) {
+                showToast('Void reason is required', 'warning');
+                return;
+            }
+
+            try {
+                await POSService.voidTransaction(selectedTransaction.id, reason);
+                showToast('Transaction voided successfully', 'success');
+                document.getElementById('detailModal').close();
+                loadHistory();
+            } catch (error) {
+                console.error('Void error:', error);
+                showToast('Failed to void transaction', 'error');
+            }
+        }
+
+        function exportData() {
+            showToast('Exporting data...', 'info');
+            // TODO: Implement CSV export
+            setTimeout(() => showToast('Export feature coming soon', 'info'), 1000);
+        }
+    </script>
+</body>
+
+</html>

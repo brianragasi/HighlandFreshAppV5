@@ -575,8 +575,8 @@
                 const select = document.getElementById('chillerFilter');
                 const transferSelect = document.getElementById('transferDestination');
                 chillers.forEach(c => {
-                    select.innerHTML += `<option value="${c.id}">${c.name}</option>`;
-                    transferSelect.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+                    select.innerHTML += `<option value="${c.id}">${c.chiller_name}</option>`;
+                    transferSelect.innerHTML += `<option value="${c.id}">${c.chiller_name}</option>`;
                 });
             } catch (error) {
                 console.error('Failed to load chillers:', error);
@@ -648,7 +648,7 @@
                         <td class="text-right">${boxDisplay}</td>
                         <td class="text-right">${pieceDisplay}</td>
                         <td class="text-right font-bold text-primary">${totalPieces.toLocaleString()}</td>
-                        <td class="text-sm">${item.manufacture_date ? new Date(item.manufacture_date).toLocaleDateString() : 'N/A'}</td>
+                        <td class="text-sm">${item.manufacturing_date ? new Date(item.manufacturing_date).toLocaleDateString() : 'N/A'}</td>
                         <td class="text-sm">${item.expiry_date ? new Date(item.expiry_date).toLocaleDateString() : 'N/A'}</td>
                         <td>${statusBadge}</td>
                         <td>
@@ -747,20 +747,26 @@
 
         // Open transfer modal
         function openTransferModal() {
+            populateTransferItemDropdown();
+            document.getElementById('transferModal').showModal();
+        }
+        
+        // Populate the transfer item dropdown
+        function populateTransferItemDropdown() {
             const select = document.getElementById('transferItem');
             select.innerHTML = '<option value="">Select inventory item...</option>';
             inventory.forEach(item => {
                 const piecesPerBox = parseInt(item.pieces_per_box) || 1;
                 const boxes = parseInt(item.quantity_boxes) || 0;
                 const pieces = parseInt(item.quantity_pieces) || 0;
-                const displayQty = boxes > 0 ? `${boxes} Boxes + ${pieces} Pieces` : `${pieces} Pieces`;
-                select.innerHTML += `<option value="${item.id}">${item.product_name} - ${item.batch_code} (${displayQty})</option>`;
+                const displayQty = boxes > 0 ? `${boxes} Boxes + ${pieces} Pcs` : `${pieces} Pcs`;
+                select.innerHTML += `<option value="${item.id}">${item.product_name} - ${item.batch_code || 'N/A'} (${displayQty})</option>`;
             });
-            document.getElementById('transferModal').showModal();
         }
 
-        // Transfer item
+        // Transfer item (from row action)
         function transferItem(id) {
+            populateTransferItemDropdown();
             document.getElementById('transferItem').value = id;
             document.getElementById('transferModal').showModal();
         }

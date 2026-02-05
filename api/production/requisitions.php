@@ -32,7 +32,7 @@ try {
                            u1.first_name as requested_by_first, u1.last_name as requested_by_last,
                            u2.first_name as approved_by_first, u2.last_name as approved_by_last,
                            u3.first_name as fulfilled_by_first, u3.last_name as fulfilled_by_last
-                    FROM ingredient_requisitions ir
+                    FROM material_requisitions ir
                     LEFT JOIN users u1 ON ir.requested_by = u1.id
                     LEFT JOIN users u2 ON ir.approved_by = u2.id
                     LEFT JOIN users u3 ON ir.fulfilled_by = u3.id
@@ -86,17 +86,17 @@ try {
             }
             
             // Get total count
-            $countStmt = $db->prepare("SELECT COUNT(*) as total FROM ingredient_requisitions ir {$where}");
+            $countStmt = $db->prepare("SELECT COUNT(*) as total FROM material_requisitions ir {$where}");
             $countStmt->execute($params);
             $total = $countStmt->fetch()['total'];
             
             // Get requisitions
             $stmt = $db->prepare("
                 SELECT ir.id, ir.requisition_code, ir.production_run_id, ir.status,
-                       ir.priority, ir.needed_by, ir.purpose, ir.total_items, ir.created_at,
+                       ir.priority, ir.needed_by_date, ir.purpose, ir.total_items, ir.created_at,
                        u1.first_name as requested_by_first, u1.last_name as requested_by_last,
                        pr.run_code
-                FROM ingredient_requisitions ir
+                FROM material_requisitions ir
                 LEFT JOIN users u1 ON ir.requested_by = u1.id
                 LEFT JOIN production_runs pr ON ir.production_run_id = pr.id
                 {$where}
@@ -148,16 +148,16 @@ try {
             try {
                 // Generate requisition code
                 $today = date('Ymd');
-                $codeStmt = $db->prepare("SELECT COUNT(*) as count FROM ingredient_requisitions WHERE requisition_code LIKE ?");
+                $codeStmt = $db->prepare("SELECT COUNT(*) as count FROM material_requisitions WHERE requisition_code LIKE ?");
                 $codeStmt->execute(["REQ-{$today}-%"]);
                 $count = $codeStmt->fetch()['count'] + 1;
                 $requisitionCode = "REQ-{$today}-" . str_pad($count, 3, '0', STR_PAD_LEFT);
                 
                 // Insert requisition
                 $stmt = $db->prepare("
-                    INSERT INTO ingredient_requisitions (
+                    INSERT INTO material_requisitions (
                         requisition_code, production_run_id, requested_by, 
-                        priority, needed_by, purpose, total_items, status
+                        priority, needed_by_date, purpose, total_items, status
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
                 ");
                 
@@ -184,9 +184,34 @@ try {
                     // Determine item_type based on item name or explicit type
                     $itemType = $item['item_type'] ?? 'ingredient';
                     $itemId = $item['item_id'] ?? 0;
+                    $itemName = strtolower(trim($item['item_name'] ?? ''));
                     
-                    // If item_name contains 'milk' (case-insensitive) and no explicit type, assume raw_milk
-                    if (!isset($item['item_type']) && stripos($item['item_name'], 'milk') !== false && stripos($item['item_name'], 'powder') === false) {
+                    // Enhanced raw milk detection - check for common terms
+                    // Matches: "raw", "raw milk", "fresh milk", "carabao", "cow milk", "goat milk", etc.
+                    $rawMilkPatterns = ['raw milk', 'raw', 'fresh milk', 'carabao', 'cow milk', 'goat milk', 'whole milk'];
+                    $isRawMilk = false;
+                    
+                    foreach ($rawMilkPatterns as $pattern) {
+                        if ($itemName === $pattern || strpos($itemName, $pattern) !== false) {
+                            $isRawMilk = true;
+                            break;
+                        }
+                    }
+                    
+                    // Also check for 'milk' but exclude 'powder', 'chocolate milk', etc. (processed products)
+                    if (!$isRawMilk && stripos($item['item_name'], 'milk') !== false) {
+                        $excludePatterns = ['powder', 'chocolate', 'flavored', 'pasteurized', 'skim'];
+                        $isExcluded = false;
+                        foreach ($excludePatterns as $exclude) {
+                            if (stripos($item['item_name'], $exclude) !== false) {
+                                $isExcluded = true;
+                                break;
+                            }
+                        }
+                        $isRawMilk = !$isExcluded;
+                    }
+                    
+                    if (!isset($item['item_type']) && $isRawMilk) {
                         $itemType = 'raw_milk';
                         $itemId = 0; // Raw milk doesn't have a specific item_id - it comes from tanks
                     }
@@ -225,7 +250,7 @@ try {
             }
             
             // Get current requisition
-            $stmt = $db->prepare("SELECT * FROM ingredient_requisitions WHERE id = ?");
+            $stmt = $db->prepare("SELECT * FROM material_requisitions WHERE id = ?");
             $stmt->execute([$reqId]);
             $requisition = $stmt->fetch();
             
@@ -247,7 +272,7 @@ try {
                     }
                     
                     $stmt = $db->prepare("
-                        UPDATE ingredient_requisitions 
+                        UPDATE material_requisitions 
                         SET status = 'approved', approved_by = ?, approved_at = NOW()
                         WHERE id = ?
                     ");
@@ -269,7 +294,7 @@ try {
                     $rejectionReason = trim(getParam('rejection_reason', ''));
                     
                     $stmt = $db->prepare("
-                        UPDATE ingredient_requisitions 
+                        UPDATE material_requisitions 
                         SET status = 'rejected', approved_by = ?, approved_at = NOW(),
                             rejection_reason = ?
                         WHERE id = ?
@@ -290,7 +315,7 @@ try {
                     }
                     
                     $stmt = $db->prepare("
-                        UPDATE ingredient_requisitions 
+                        UPDATE material_requisitions 
                         SET status = 'fulfilled', fulfilled_by = ?, fulfilled_at = NOW()
                         WHERE id = ?
                     ");
@@ -312,14 +337,14 @@ try {
                     $fulfillmentNotes = trim(getParam('fulfillment_notes', ''));
                     
                     $stmt = $db->prepare("
-                        UPDATE ingredient_requisitions 
-                        SET status = 'partially_fulfilled', fulfilled_by = ?, 
+                        UPDATE material_requisitions 
+                        SET status = 'partial', fulfilled_by = ?, 
                             fulfilled_at = NOW(), fulfillment_notes = ?
                         WHERE id = ?
                     ");
                     $stmt->execute([$currentUser['user_id'], $fulfillmentNotes, $reqId]);
                     
-                    Response::success(['status' => 'partially_fulfilled'], 'Requisition partially fulfilled');
+                    Response::success(['status' => 'partial'], 'Requisition partially fulfilled');
                     break;
                     
                 case 'cancel':
@@ -332,7 +357,7 @@ try {
                         Response::forbidden('You can only cancel your own requisitions');
                     }
                     
-                    $stmt = $db->prepare("UPDATE ingredient_requisitions SET status = 'cancelled' WHERE id = ?");
+                    $stmt = $db->prepare("UPDATE material_requisitions SET status = 'cancelled' WHERE id = ?");
                     $stmt->execute([$reqId]);
                     
                     Response::success(['status' => 'cancelled'], 'Requisition cancelled');

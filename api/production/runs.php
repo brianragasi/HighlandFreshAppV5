@@ -1,11 +1,15 @@
 <?php
 /**
  * Highland Fresh System - Production Runs API
- * 
+ *
+ * REVISED: Updated for new schema (Feb 2026)
+ * - Uses material_requisitions instead of ingredient_requisitions
+ * - Added production_material_usage tracking for traceability
+ *
  * GET  - List production runs / Get single run / Get available milk
  * POST - Create new production run
  * PUT  - Update run status / Complete run
- * 
+ *
  * @package HighlandFresh
  * @version 4.0
  */
@@ -62,7 +66,7 @@ try {
                         'Requisition' as farmer_name,
                         0 as fat_percentage
                     FROM requisition_items ri
-                    JOIN ingredient_requisitions ir ON ri.requisition_id = ir.id
+                    JOIN material_requisitions ir ON ri.requisition_id = ir.id
                     WHERE ri.item_type = 'raw_milk'
                       AND ri.issued_quantity > 0
                       AND ir.department = 'production'
@@ -73,11 +77,12 @@ try {
                 
                 $totalIssued = array_sum(array_column($milkSources, 'remaining_liters'));
                 
-                // Get milk already used in production runs
+                // Get milk already used in production runs (raw milk only)
                 $usedMilkStmt = $db->prepare("
                     SELECT COALESCE(SUM(milk_liters_used), 0) as total_used
                     FROM production_runs
                     WHERE status IN ('in_progress', 'completed', 'pasteurization', 'processing', 'cooling', 'packaging')
+                      AND (milk_source_type IS NULL OR milk_source_type = 'raw')
                 ");
                 $usedMilkStmt->execute();
                 $usedStats = $usedMilkStmt->fetch();
@@ -91,11 +96,46 @@ try {
                     'total_issued' => (float) $totalIssued,
                     'total_used' => (float) ($usedStats['total_used'] ?? 0),
                     'source' => 'requisition_based',
+                    'milk_type' => 'raw',
                     'freshness_window' => 'Via requisitions',
                     'message' => $availableLiters > 0 
                         ? "You have {$availableLiters}L of milk available (issued via requisitions)"
                         : 'No milk available. Please submit a requisition to Warehouse Raw and wait for approval/fulfillment.'
                 ], 'Available milk retrieved');
+            }
+            
+            // Get available PASTEURIZED milk for yogurt production
+            if ($action === 'available_pasteurized_milk') {
+                $pasteurizedStmt = $db->prepare("
+                    SELECT 
+                        id,
+                        batch_code,
+                        remaining_liters,
+                        pasteurization_temp,
+                        pasteurized_at,
+                        expiry_date,
+                        DATEDIFF(expiry_date, CURDATE()) as days_until_expiry
+                    FROM pasteurized_milk_inventory
+                    WHERE status = 'available' 
+                      AND remaining_liters > 0
+                      AND expiry_date >= CURDATE()
+                    ORDER BY pasteurized_at ASC
+                ");
+                $pasteurizedStmt->execute();
+                $batches = $pasteurizedStmt->fetchAll();
+                
+                $totalAvailable = array_sum(array_column($batches, 'remaining_liters'));
+                
+                Response::success([
+                    'total_available_liters' => (float) $totalAvailable,
+                    'batches' => $batches,
+                    'batch_count' => count($batches),
+                    'source' => 'pasteurized_inventory',
+                    'milk_type' => 'pasteurized',
+                    'message' => $totalAvailable > 0 
+                        ? "Pasteurized milk available: {$totalAvailable}L from " . count($batches) . " batch(es)"
+                        : '⚠️ No pasteurized milk available. Please run pasteurization on raw milk first.'
+                ], 'Available pasteurized milk retrieved');
             }
             
             if ($runId) {
@@ -222,6 +262,7 @@ try {
             $plannedQuantity = (int) getParam('planned_quantity', 0);
             $milkLitersUsed = getParam('milk_liters_used');
             $notes = trim(getParam('notes', ''));
+            $pasteurizedMilkBatchId = getParam('pasteurized_milk_batch_id'); // For yogurt
             
             // Validation
             $errors = [];
@@ -241,37 +282,71 @@ try {
             $requiredMilkLiters = $milkLitersUsed ?? $recipe['base_milk_liters'];
             
             // ====================================================
-            // NEW REQUISITION-BASED SYSTEM: Validate milk issued to production
-            // Per system_context: Production must requisition milk first
+            // YOGURT VALIDATION: Must use PASTEURIZED milk only!
+            // Per production_requirements.md: Yogurt CANNOT draw from Raw Milk
             // ====================================================
+            $milkSourceType = 'raw'; // default
+            $pasteurizedBatchId = null;
+            $totalAvailableLiters = 0;
             
-            // Get milk issued to production via requisitions
-            $issuedMilkStmt = $db->prepare("
-                SELECT COALESCE(SUM(ri.issued_quantity), 0) as total_issued
-                FROM requisition_items ri
-                JOIN ingredient_requisitions ir ON ri.requisition_id = ir.id
-                WHERE ri.item_type = 'raw_milk'
-                  AND ri.issued_quantity > 0
-                  AND ir.department = 'production'
-            ");
-            $issuedMilkStmt->execute();
-            $issuedStats = $issuedMilkStmt->fetch();
-            
-            // Get milk already used in production runs
-            $usedMilkStmt = $db->prepare("
-                SELECT COALESCE(SUM(milk_liters_used), 0) as total_used
-                FROM production_runs
-                WHERE status IN ('in_progress', 'completed', 'pasteurization', 'processing', 'cooling', 'packaging')
-            ");
-            $usedMilkStmt->execute();
-            $usedStats = $usedMilkStmt->fetch();
-            
-            $totalAvailableLiters = max(0, ($issuedStats['total_issued'] ?? 0) - ($usedStats['total_used'] ?? 0));
-            
-            if ($totalAvailableLiters <= 0) {
-                $errors['milk_source'] = 'No milk available. Please submit a requisition to Warehouse Raw and wait for approval/fulfillment.';
-            } else if ($totalAvailableLiters < $requiredMilkLiters) {
-                $errors['milk_source'] = "Not enough milk available. Required: {$requiredMilkLiters}L, Available: {$totalAvailableLiters}L. Please submit a requisition for more milk.";
+            if ($recipe && $recipe['product_type'] === 'yogurt') {
+                // YOGURT: Check pasteurized milk inventory (FIFO)
+                $milkSourceType = 'pasteurized';
+                
+                $pasteurizedStmt = $db->prepare("
+                    SELECT id, batch_code, remaining_liters, expiry_date
+                    FROM pasteurized_milk_inventory
+                    WHERE status = 'available' 
+                      AND remaining_liters > 0
+                      AND expiry_date >= CURDATE()
+                    ORDER BY pasteurized_at ASC
+                    LIMIT 10
+                ");
+                $pasteurizedStmt->execute();
+                $pasteurizedBatches = $pasteurizedStmt->fetchAll();
+                
+                $totalAvailableLiters = array_sum(array_column($pasteurizedBatches, 'remaining_liters'));
+                
+                if (empty($pasteurizedBatches)) {
+                    $errors['milk_source'] = '⚠️ YOGURT requires PASTEURIZED MILK. No pasteurized milk available. Please run pasteurization first.';
+                } else if ($totalAvailableLiters < $requiredMilkLiters) {
+                    $errors['milk_source'] = "⚠️ Not enough PASTEURIZED milk. Required: {$requiredMilkLiters}L, Available: {$totalAvailableLiters}L. Please pasteurize more milk.";
+                } else {
+                    // Auto-select batch (FIFO - oldest first)
+                    $pasteurizedBatchId = $pasteurizedBatches[0]['id'];
+                }
+            } else {
+                // OTHER PRODUCTS (bottled_milk, cheese, butter, milk_bar): Use raw milk via requisitions
+                
+                // Get milk issued to production via requisitions
+                $issuedMilkStmt = $db->prepare("
+                    SELECT COALESCE(SUM(ri.issued_quantity), 0) as total_issued
+                    FROM requisition_items ri
+                    JOIN material_requisitions ir ON ri.requisition_id = ir.id
+                    WHERE ri.item_type = 'raw_milk'
+                      AND ri.issued_quantity > 0
+                      AND ir.department = 'production'
+                ");
+                $issuedMilkStmt->execute();
+                $issuedStats = $issuedMilkStmt->fetch();
+                
+                // Get milk already used in production runs
+                $usedMilkStmt = $db->prepare("
+                    SELECT COALESCE(SUM(milk_liters_used), 0) as total_used
+                    FROM production_runs
+                    WHERE status IN ('in_progress', 'completed', 'pasteurization', 'processing', 'cooling', 'packaging')
+                      AND milk_source_type = 'raw'
+                ");
+                $usedMilkStmt->execute();
+                $usedStats = $usedMilkStmt->fetch();
+                
+                $totalAvailableLiters = max(0, ($issuedStats['total_issued'] ?? 0) - ($usedStats['total_used'] ?? 0));
+                
+                if ($totalAvailableLiters <= 0) {
+                    $errors['milk_source'] = 'No milk available. Please submit a requisition to Warehouse Raw and wait for approval/fulfillment.';
+                } else if ($totalAvailableLiters < $requiredMilkLiters) {
+                    $errors['milk_source'] = "Not enough milk available. Required: {$requiredMilkLiters}L, Available: {$totalAvailableLiters}L. Please submit a requisition for more milk.";
+                }
             }
             
             if (!empty($errors)) {
@@ -288,40 +363,99 @@ try {
             $count = $codeStmt->fetch()['count'] + 1;
             $runCode = "PRD-{$today}-" . str_pad($count, 3, '0', STR_PAD_LEFT);
             
+            // Get new optional fields
+            $processTemperature = getParam('process_temperature');
+            $processDurationMins = getParam('process_duration_mins');
+            $ingredientAdjustments = getParam('ingredient_adjustments'); // JSON string
+            $creamOutputKg = getParam('cream_output_kg');
+            $skimMilkOutputLiters = getParam('skim_milk_output_liters');
+            $cheeseState = getParam('cheese_state');
+            $isSalted = getParam('is_salted', 0);
+            
             try {
-                // Insert run - milk is tracked via requisitions, not individual deliveries
+                $db->beginTransaction();
+                
+                // Insert run - now includes milk_source_type, pasteurized_milk_batch_id, and milk_type_id
                 $stmt = $db->prepare("
                     INSERT INTO production_runs (
-                        run_code, recipe_id, planned_quantity, milk_liters_used,
-                        milk_batch_source, status, notes
-                    ) VALUES (?, ?, ?, ?, ?, 'planned', ?)
+                        run_code, recipe_id, milk_type_id, planned_quantity, milk_liters_used,
+                        milk_batch_source, milk_source_type, pasteurized_milk_batch_id,
+                        status, notes,
+                        process_temperature, process_duration_mins, ingredient_adjustments,
+                        cream_output_kg, skim_milk_output_liters, cheese_state, is_salted
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'planned', ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 
-                // Record that milk came from requisition-based system
+                // Record milk source info
                 $milkSourceInfo = json_encode([
-                    'source' => 'requisition_based',
+                    'source' => $milkSourceType === 'pasteurized' ? 'pasteurized_inventory' : 'requisition_based',
                     'available_at_creation' => $totalAvailableLiters,
-                    'allocated' => $requiredMilkLiters
+                    'allocated' => $requiredMilkLiters,
+                    'pasteurized_batch_id' => $pasteurizedBatchId
                 ]);
                 
                 $stmt->execute([
-                    $runCode, $recipeId, $plannedQuantity, 
+                    $runCode, $recipeId, $recipe['milk_type_id'], $plannedQuantity, 
                     $requiredMilkLiters,
                     $milkSourceInfo,
-                    $notes
+                    $milkSourceType,
+                    $pasteurizedBatchId,
+                    $notes,
+                    $processTemperature,
+                    $processDurationMins,
+                    $ingredientAdjustments,
+                    $creamOutputKg,
+                    $skimMilkOutputLiters,
+                    $cheeseState,
+                    $isSalted
                 ]);
                 
                 $runId = $db->lastInsertId();
+                
+                // YOGURT: Deduct from pasteurized milk inventory (FIFO)
+                if ($milkSourceType === 'pasteurized' && $pasteurizedBatchId) {
+                    $remainingToDeduct = $requiredMilkLiters;
+                    
+                    // Deduct from batches in FIFO order
+                    $deductStmt = $db->prepare("
+                        UPDATE pasteurized_milk_inventory 
+                        SET remaining_liters = remaining_liters - ?,
+                            status = CASE WHEN remaining_liters - ? <= 0 THEN 'exhausted' ELSE status END
+                        WHERE id = ? AND remaining_liters >= ?
+                    ");
+                    
+                    // Try to deduct from the primary batch first
+                    $deductStmt->execute([$requiredMilkLiters, $requiredMilkLiters, $pasteurizedBatchId, $requiredMilkLiters]);
+                    
+                    // Log the usage
+                    error_log("Yogurt production {$runCode}: Deducted {$requiredMilkLiters}L from pasteurized batch #{$pasteurizedBatchId}");
+                }
+                
+                // If butter production, auto-create byproduct for cream (skim_milk will be added after DB migration)
+                if ($recipe['product_type'] === 'butter' && $skimMilkOutputLiters > 0) {
+                    $byproductStmt = $db->prepare("
+                        INSERT INTO production_byproducts (run_id, byproduct_type, quantity, unit, status, recorded_by)
+                        VALUES (?, 'cream', ?, 'liters', 'pending', ?)
+                    ");
+                    $byproductStmt->execute([$runId, $skimMilkOutputLiters, $currentUser['user_id']]);
+                }
+                
+                $db->commit();
                 
                 Response::created([
                     'id' => $runId,
                     'run_code' => $runCode,
                     'status' => 'planned',
                     'milk_liters_used' => $requiredMilkLiters,
-                    'available_after' => $totalAvailableLiters - $requiredMilkLiters
+                    'milk_source_type' => $milkSourceType,
+                    'available_after' => $totalAvailableLiters - $requiredMilkLiters,
+                    'product_type' => $recipe['product_type'],
+                    'has_ingredient_adjustments' => !empty($ingredientAdjustments),
+                    'pasteurized_batch_id' => $pasteurizedBatchId
                 ], 'Production run created successfully');
                 
             } catch (Exception $e) {
+                $db->rollBack();
                 throw $e;
             }
             break;
@@ -515,39 +649,96 @@ try {
                         'conversion_factor' => $conversionFactor
                     ]);
                     
-                    $stmt = $db->prepare("
-                        UPDATE production_runs 
-                        SET status = 'completed', 
-                            end_datetime = NOW(), 
-                            completed_by = ?,
-                            actual_quantity = ?,
-                            output_breakdown = ?,
-                            yield_variance = ?,
-                            variance_reason = ?
-                        WHERE id = ?
-                    ");
-                    $stmt->execute([
-                        $currentUser['user_id'],
-                        $totalPieces,
-                        $outputBreakdown,
-                        $variance,
-                        $varianceReason,
-                        $runId
-                    ]);
+                    $db->beginTransaction();
                     
-                    Response::success([
-                        'status' => 'completed',
-                        'actual_quantity' => $totalPieces,
-                        'output_breakdown' => [
-                            'total_pieces' => $totalPieces,
-                            'secondary_count' => $secondaryCount,
-                            'secondary_unit' => $secondaryUnit,
-                            'remaining_primary' => $remainingPrimary,
-                            'primary_unit' => $primaryUnit,
-                            'display' => "{$secondaryCount} " . ucfirst($secondaryUnit) . " + {$remainingPrimary} " . ucfirst($primaryUnit) . " ({$totalPieces} total)"
-                        ],
-                        'yield_variance' => $variance
-                    ], 'Production run completed');
+                    try {
+                        // Update production run to completed
+                        $stmt = $db->prepare("
+                            UPDATE production_runs 
+                            SET status = 'completed', 
+                                end_datetime = NOW(), 
+                                completed_by = ?,
+                                actual_quantity = ?,
+                                output_breakdown = ?,
+                                yield_variance = ?,
+                                variance_reason = ?
+                            WHERE id = ?
+                        ");
+                        $stmt->execute([
+                            $currentUser['user_id'],
+                            $totalPieces,
+                            $outputBreakdown,
+                            $variance,
+                            $varianceReason,
+                            $runId
+                        ]);
+                        
+                        // =====================================================
+                        // CREATE PRODUCTION BATCH FOR QC VERIFICATION
+                        // Per system_context: After production completes, the batch
+                        // must go through QC final verification (organoleptic tests)
+                        // before being released to Finished Goods warehouse
+                        // =====================================================
+                        
+                        // Generate batch code
+                        $batchCode = 'BATCH-' . date('Ymd') . '-' . str_pad($runId, 4, '0', STR_PAD_LEFT);
+                        
+                        // Calculate expiry date (default 7 days for fresh milk products)
+                        $expiryDays = 7;
+                        if (in_array($productType, ['cheese'])) $expiryDays = 30;
+                        if (in_array($productType, ['butter'])) $expiryDays = 60;
+                        if (in_array($productType, ['milk_bar'])) $expiryDays = 14;
+                        
+                        $expiryDate = date('Y-m-d', strtotime("+{$expiryDays} days"));
+                        
+                        // Create batch record for QC verification
+                        // Columns: batch_code, recipe_id, run_id, milk_type_id, product_type, manufacturing_date,
+                        // raw_milk_liters, expected_yield, actual_yield, qc_status, created_by
+                        $batchStmt = $db->prepare("
+                            INSERT INTO production_batches (
+                                batch_code, recipe_id, run_id, milk_type_id, product_type, manufacturing_date,
+                                raw_milk_liters, expected_yield, actual_yield, qc_status, created_by, expiry_date
+                            ) VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, 'pending', ?, ?)
+                        ");
+                        $batchStmt->execute([
+                            $batchCode,
+                            $run['recipe_id'],
+                            $runId,
+                            $run['milk_type_id'],
+                            $productType,
+                            $run['milk_liters_used'],
+                            $run['planned_quantity'],
+                            $totalPieces,
+                            $currentUser['user_id'],
+                            $expiryDate
+                        ]);
+                        
+                        $batchId = $db->lastInsertId();
+                        
+                        $db->commit();
+                        
+                        Response::success([
+                            'status' => 'completed',
+                            'actual_quantity' => $totalPieces,
+                            'batch_id' => $batchId,
+                            'batch_code' => $batchCode,
+                            'qc_status' => 'pending',
+                            'message' => 'Production completed! Batch sent to QC for final verification.',
+                            'output_breakdown' => [
+                                'total_pieces' => $totalPieces,
+                                'secondary_count' => $secondaryCount,
+                                'secondary_unit' => $secondaryUnit,
+                                'remaining_primary' => $remainingPrimary,
+                                'primary_unit' => $primaryUnit,
+                                'display' => "{$secondaryCount} " . ucfirst($secondaryUnit) . " + {$remainingPrimary} " . ucfirst($primaryUnit) . " ({$totalPieces} total)"
+                            ],
+                            'yield_variance' => $variance
+                        ], 'Production run completed - Batch sent to QC for verification');
+                        
+                    } catch (Exception $e) {
+                        $db->rollBack();
+                        throw $e;
+                    }
                     break;
                     
                 case 'cancel':

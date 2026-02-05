@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Collect Payment - Cashier POS | Highland Fresh</title>
+
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .stat-value { font-variant-numeric: tabular-nums; }
+        .overdue { animation: pulse-error 2s ease-in-out infinite; }
+        @keyframes pulse-error { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-cash-register text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Cashier / POS</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Sales</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="sale.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-bolt w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Quick Sale (POS)</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="history.html?type=sales" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-receipt w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Transaction History</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Collections</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="collect.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-hand-holding-dollar w-5 text-center"></i>
+                            <span class="flex-1">Collect Payment</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="history.html?type=collections" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-clock-rotate-left w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Collection History</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="reports/daily_summary.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-chart-pie w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Daily Summary</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="reports/cash_position.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-wallet w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Cash Position</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">CA</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Cashier</p>
+                    <p class="text-xs text-base-content/60 truncate">Point of Sale</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-hand-holding-dollar text-info"></i>
+                    <span class="font-semibold">Collect Payment</span>
+                </div>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <div class="hidden md:flex items-center gap-2 px-3 py-1.5 bg-base-200 rounded-lg">
+                    <i class="fas fa-clock text-base-content/60"></i>
+                    <span id="currentTime" class="font-mono text-sm">--:--:--</span>
+                </div>
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- Search Section -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body p-4">
+                    <h3 class="font-bold mb-3">
+                        <i class="fas fa-search text-primary mr-2"></i>
+                        Search Delivery Receipt
+                    </h3>
+                    <div class="flex flex-col sm:flex-row gap-3">
+                        <div class="flex-1">
+                            <label class="input input-bordered flex items-center gap-2">
+                                <i class="fas fa-file-invoice text-base-content/40"></i>
+                                <input type="text" id="drSearch" placeholder="Enter DR Number (e.g., DR-20260201-0001)" 
+                                    class="grow" onkeyup="handleDRSearch(event)">
+                                <button class="btn btn-ghost btn-sm" onclick="searchDR()">
+                                    <i class="fas fa-search"></i>
+                                </button>
+                            </label>
+                        </div>
+                        <button class="btn btn-primary" onclick="searchDR()">
+                            <i class="fas fa-search"></i> Search
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats Summary -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <p class="text-xs text-base-content/60 uppercase">Total Outstanding</p>
+                        <p class="text-2xl font-bold text-error stat-value" id="totalOutstanding">₱0.00</p>
+                    </div>
+                </div>
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <p class="text-xs text-base-content/60 uppercase">Overdue</p>
+                        <p class="text-2xl font-bold text-warning stat-value" id="overdueCount">0 DRs</p>
+                    </div>
+                </div>
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <p class="text-xs text-base-content/60 uppercase">Today's Collections</p>
+                        <p class="text-2xl font-bold text-success stat-value" id="todayCollections">₱0.00</p>
+                    </div>
+                </div>
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <p class="text-xs text-base-content/60 uppercase">Pending DRs</p>
+                        <p class="text-2xl font-bold text-info stat-value" id="pendingDRs">0</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+                <!-- Outstanding Receivables List -->
+                <div class="lg:col-span-2">
+                    <div class="card bg-base-100 border border-base-300">
+                        <div class="card-body">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="card-title text-lg">
+                                    <i class="fas fa-list text-primary mr-2"></i>
+                                    Outstanding Receivables
+                                </h3>
+                                <div class="flex gap-2">
+                                    <select id="filterCustomerType" class="select select-bordered select-sm" onchange="filterOutstanding()">
+                                        <option value="">All Types</option>
+                                        <option value="supermarket">Supermarket</option>
+                                        <option value="institutional">Institutional</option>
+                                        <option value="feeding_program">Feeding Program</option>
+                                        <option value="walk_in">Walk-in</option>
+                                    </select>
+                                    <select id="filterStatus" class="select select-bordered select-sm" onchange="filterOutstanding()">
+                                        <option value="">All Status</option>
+                                        <option value="overdue">Overdue Only</option>
+                                        <option value="due_today">Due Today</option>
+                                        <option value="upcoming">Upcoming</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="overflow-x-auto">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr class="bg-base-200">
+                                            <th>DR Number</th>
+                                            <th>Customer</th>
+                                            <th>Total</th>
+                                            <th>Balance</th>
+                                            <th>Due Date</th>
+                                            <th>Status</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="outstandingTable">
+                                        <tr>
+                                            <td colspan="7" class="text-center py-8">
+                                                <span class="loading loading-spinner loading-md"></span>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Collection Form -->
+                <div>
+                    <div class="card bg-base-100 border border-base-300" id="collectionFormContainer">
+                        <div class="card-body">
+                            <h3 class="card-title text-lg mb-4">
+                                <i class="fas fa-hand-holding-dollar text-info mr-2"></i>
+                                Record Collection
+                            </h3>
+
+                            <div id="noDRSelected" class="text-center py-8 text-base-content/60">
+                                <i class="fas fa-file-invoice text-4xl mb-3 opacity-30"></i>
+                                <p>Select a Delivery Receipt to collect payment</p>
+                            </div>
+
+                            <form id="collectionForm" class="hidden space-y-4">
+                                <!-- DR Info -->
+                                <div class="bg-base-200 rounded-lg p-3">
+                                    <p class="font-mono font-bold text-lg" id="selectedDR">--</p>
+                                    <p class="text-sm text-base-content/60" id="selectedCustomer">--</p>
+                                </div>
+
+                                <!-- Balance Info -->
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div class="bg-base-200 rounded-lg p-3">
+                                        <p class="text-xs text-base-content/60">Total Amount</p>
+                                        <p class="font-bold" id="drTotalAmount">₱0.00</p>
+                                    </div>
+                                    <div class="bg-error/10 rounded-lg p-3">
+                                        <p class="text-xs text-error">Balance Due</p>
+                                        <p class="font-bold text-error" id="drBalance">₱0.00</p>
+                                    </div>
+                                </div>
+
+                                <!-- Payment Amount -->
+                                <div class="form-control">
+                                    <label class="label"><span class="label-text">Payment Amount *</span></label>
+                                    <input type="number" id="paymentAmount" class="input input-bordered text-right text-xl font-semibold" 
+                                        step="0.01" min="0.01" required oninput="validatePayment()">
+                                    <label class="label">
+                                        <span class="label-text-alt">
+                                            <button type="button" class="btn btn-ghost btn-xs" onclick="setFullPayment()">
+                                                Pay Full Balance
+                                            </button>
+                                        </span>
+                                    </label>
+                                </div>
+
+                                <!-- Payment Method -->
+                                <div class="form-control">
+                                    <label class="label"><span class="label-text">Payment Method *</span></label>
+                                    <select id="paymentMethod" class="select select-bordered" required onchange="togglePaymentFields()">
+                                        <option value="cash">Cash</option>
+                                        <option value="gcash">GCash</option>
+                                        <option value="bank_transfer">Bank Transfer</option>
+                                        <option value="check">Check</option>
+                                    </select>
+                                </div>
+
+                                <!-- Cash Fields -->
+                                <div id="cashFields" class="space-y-3">
+                                    <!-- No additional fields needed for cash -->
+                                </div>
+
+                                <!-- GCash Fields -->
+                                <div id="gcashFields" class="hidden space-y-3">
+                                    <div class="form-control">
+                                        <label class="label"><span class="label-text">Reference Number *</span></label>
+                                        <input type="text" id="gcashReference" class="input input-bordered" placeholder="GCash reference number">
+                                    </div>
+                                </div>
+
+                                <!-- Bank Transfer Fields -->
+                                <div id="bankFields" class="hidden space-y-3">
+                                    <div class="form-control">
+                                        <label class="label"><span class="label-text">Bank *</span></label>
+                                        <select id="bankName" class="select select-bordered">
+                                            <option value="">Select bank</option>
+                                            <option value="BDO">BDO</option>
+                                            <option value="BPI">BPI</option>
+                                            <option value="Metrobank">Metrobank</option>
+                                            <option value="Landbank">Landbank</option>
+                                            <option value="PNB">PNB</option>
+                                            <option value="UnionBank">UnionBank</option>
+                                            <option value="RCBC">RCBC</option>
+                                            <option value="Other">Other</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-control">
+                                        <label class="label"><span class="label-text">Reference Number *</span></label>
+                                        <input type="text" id="bankReference" class="input input-bordered" placeholder="Bank reference number">
+                                    </div>
+                                </div>
+
+                                <!-- Check Fields -->
+                                <div id="checkFields" class="hidden space-y-3">
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div class="form-control">
+                                            <label class="label"><span class="label-text">Bank *</span></label>
+                                            <select id="checkBank" class="select select-bordered select-sm">
+                                                <option value="">Select</option>
+                                                <option value="BDO">BDO</option>
+                                                <option value="BPI">BPI</option>
+                                                <option value="Metrobank">Metrobank</option>
+                                                <option value="Landbank">Landbank</option>
+                                                <option value="Other">Other</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-control">
+                                            <label class="label"><span class="label-text">Check # *</span></label>
+                                            <input type="text" id="checkNumber" class="input input-bordered input-sm">
+                                        </div>
+                                    </div>
+                                    <div class="form-control">
+                                        <label class="label"><span class="label-text">Check Date *</span></label>
+                                        <input type="date" id="checkDate" class="input input-bordered">
+                                    </div>
+                                </div>
+
+                                <!-- Notes -->
+                                <div class="form-control">
+                                    <label class="label"><span class="label-text">Notes (Optional)</span></label>
+                                    <textarea id="paymentNotes" class="textarea textarea-bordered" rows="2" placeholder="Any additional notes..."></textarea>
+                                </div>
+
+                                <!-- Submit -->
+                                <button type="submit" class="btn btn-info btn-block" id="btnRecordCollection">
+                                    <i class="fas fa-check-circle"></i>
+                                    Record Collection
+                                </button>
+
+                                <button type="button" class="btn btn-ghost btn-block" onclick="cancelCollection()">
+                                    Cancel
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
+            <div>
+                <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Success Modal -->
+    <dialog id="successModal" class="modal">
+        <div class="modal-box text-center">
+            <div class="py-4">
+                <div class="w-20 h-20 mx-auto bg-success/20 rounded-full flex items-center justify-center mb-4">
+                    <i class="fas fa-check text-success text-4xl"></i>
+                </div>
+                <h3 class="font-bold text-2xl text-success mb-2">Collection Recorded!</h3>
+                <p class="text-lg" id="successORNumber">OR-2026-0000</p>
+                <div class="divider"></div>
+                <div class="text-left bg-base-200 rounded-lg p-4 space-y-2">
+                    <div class="flex justify-between">
+                        <span class="text-base-content/60">DR Number</span>
+                        <span class="font-bold" id="successDRNumber">--</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-base-content/60">Amount Collected</span>
+                        <span class="font-bold text-success" id="successAmount">₱0.00</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-base-content/60">Payment Method</span>
+                        <span id="successMethod">--</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-base-content/60">Remaining Balance</span>
+                        <span id="successRemaining">₱0.00</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-action justify-center gap-3">
+                <button class="btn btn-outline" onclick="printOR()">
+                    <i class="fas fa-print"></i> Print OR
+                </button>
+                <button class="btn btn-primary" onclick="closeSuccessModal()">
+                    <i class="fas fa-check"></i> Done
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/pos/pos.service.js"></script>
+
+    <script>
+        // State
+        let outstandingList = [];
+        let selectedDRData = null;
+        let lastCollectionData = null;
+
+        // Sidebar toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+
+        // Theme toggle
+        document.getElementById('themeToggle').addEventListener('change', function () {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('themeToggle').checked = true;
+        }
+
+        // Update time
+        function updateTime() {
+            document.getElementById('currentTime').textContent = new Date().toLocaleTimeString('en-US', { hour12: false });
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // Format currency
+        function formatCurrency(amount) {
+            return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        // Toast notification
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `alert alert-${type} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            document.getElementById('toastContainer').appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        function getInitials(firstName, lastName) {
+            const f = firstName ? firstName.charAt(0).toUpperCase() : '';
+            const l = lastName ? lastName.charAt(0).toUpperCase() : '';
+            return f + l || 'CA';
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async function () {
+            if (typeof AuthService !== 'undefined') {
+                const user = AuthService.getCurrentUser();
+                if (user) {
+                    document.getElementById('sidebarUserName').textContent = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Cashier';
+                    document.getElementById('userInitials').textContent = getInitials(user.first_name, user.last_name);
+                }
+            }
+
+            await loadOutstanding();
+            document.getElementById('drSearch').focus();
+
+            // Form submission
+            document.getElementById('collectionForm').addEventListener('submit', handleCollectionSubmit);
+        });
+
+        // Search DR on Enter
+        function handleDRSearch(event) {
+            if (event.key === 'Enter') {
+                searchDR();
+            }
+        }
+
+        // Search for DR
+        async function searchDR() {
+            const drNumber = document.getElementById('drSearch').value.trim();
+            if (!drNumber) {
+                showToast('Please enter a DR number', 'warning');
+                return;
+            }
+
+            try {
+                const response = await POSService.searchByDR(drNumber);
+                if (response && response.data) {
+                    selectDR(response.data);
+                } else {
+                    showToast('DR not found', 'error');
+                }
+            } catch (error) {
+                console.error('Search error:', error);
+                showToast('Failed to search DR', 'error');
+            }
+        }
+
+        // Load outstanding receivables
+        async function loadOutstanding() {
+            try {
+                const response = await POSService.getOutstandingReceivables();
+                
+                if (response && response.data) {
+                    // Map API response to expected format
+                    const receivables = response.data.receivables || [];
+                    outstandingList = receivables.map(dr => ({
+                        id: dr.id,
+                        dr_number: dr.dr_number,
+                        customer_name: dr.customer_name,
+                        customer_type: dr.customer_type,
+                        total_amount: parseFloat(dr.total_amount) || 0,
+                        balance: parseFloat(dr.amount_due) || (parseFloat(dr.total_amount) - parseFloat(dr.amount_paid || 0)),
+                        due_date: dr.delivered_at || dr.created_at,
+                        days_overdue: parseInt(dr.days_outstanding) || 0
+                    }));
+                    
+                    // Calculate summary from data
+                    const totalOutstanding = outstandingList.reduce((sum, dr) => sum + dr.balance, 0);
+                    const overdueCount = outstandingList.filter(dr => dr.days_overdue > 7).length;
+                    const pendingCount = outstandingList.length;
+                    
+                    // Update stats
+                    document.getElementById('totalOutstanding').textContent = formatCurrency(response.data.total_outstanding || totalOutstanding);
+                    document.getElementById('overdueCount').textContent = `${overdueCount} DRs`;
+                    document.getElementById('todayCollections').textContent = formatCurrency(response.data.today_collections || 0);
+                    document.getElementById('pendingDRs').textContent = pendingCount;
+                    
+                    renderOutstandingTable();
+                } else {
+                    // No data returned
+                    outstandingList = [];
+                    document.getElementById('totalOutstanding').textContent = formatCurrency(0);
+                    document.getElementById('overdueCount').textContent = '0 DRs';
+                    document.getElementById('todayCollections').textContent = formatCurrency(0);
+                    document.getElementById('pendingDRs').textContent = '0';
+                    renderOutstandingTable();
+                }
+            } catch (error) {
+                console.error('Error loading outstanding:', error);
+                showToast('Failed to load outstanding receivables: ' + (error.response?.data?.message || error.message), 'error');
+                outstandingList = [];
+                document.getElementById('totalOutstanding').textContent = formatCurrency(0);
+                document.getElementById('overdueCount').textContent = '0 DRs';
+                document.getElementById('todayCollections').textContent = formatCurrency(0);
+                document.getElementById('pendingDRs').textContent = '0';
+                renderOutstandingTable();
+            }
+        }
+
+        function filterOutstanding() {
+            renderOutstandingTable();
+        }
+
+        function renderOutstandingTable() {
+            const tbody = document.getElementById('outstandingTable');
+            const typeFilter = document.getElementById('filterCustomerType').value;
+            const statusFilter = document.getElementById('filterStatus').value;
+
+            let filtered = outstandingList.filter(dr => {
+                if (typeFilter && dr.customer_type !== typeFilter) return false;
+                if (statusFilter === 'overdue' && dr.days_overdue <= 0) return false;
+                if (statusFilter === 'due_today' && dr.days_overdue !== 0) return false;
+                if (statusFilter === 'upcoming' && dr.days_overdue > 0) return false;
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="text-center py-8 text-base-content/60">
+                            <i class="fas fa-check-circle text-4xl mb-2 text-success opacity-30"></i>
+                            <p>No outstanding receivables</p>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(dr => {
+                const isOverdue = dr.days_overdue > 0;
+                const statusBadge = isOverdue
+                    ? `<span class="badge badge-error badge-sm">${dr.days_overdue}d overdue</span>`
+                    : dr.days_overdue === 0
+                        ? `<span class="badge badge-warning badge-sm">Due today</span>`
+                        : `<span class="badge badge-ghost badge-sm">Due in ${Math.abs(dr.days_overdue)}d</span>`;
+
+                return `
+                    <tr class="hover cursor-pointer ${isOverdue ? 'overdue bg-error/5' : ''}" onclick="selectDR(${JSON.stringify(dr).replace(/"/g, '&quot;')})">
+                        <td class="font-mono text-sm">${dr.dr_number}</td>
+                        <td>
+                            <div>
+                                <p class="font-medium">${dr.customer_name}</p>
+                                <p class="text-xs text-base-content/60">${formatCustomerType(dr.customer_type)}</p>
+                            </div>
+                        </td>
+                        <td class="font-semibold">${formatCurrency(dr.total_amount)}</td>
+                        <td class="font-bold ${isOverdue ? 'text-error' : 'text-warning'}">${formatCurrency(dr.balance)}</td>
+                        <td>${formatDate(dr.due_date)}</td>
+                        <td>${statusBadge}</td>
+                        <td>
+                            <button class="btn btn-info btn-xs" onclick="event.stopPropagation(); selectDR(${JSON.stringify(dr).replace(/"/g, '&quot;')})">
+                                <i class="fas fa-hand-holding-dollar"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function formatCustomerType(type) {
+            const types = {
+                'supermarket': 'Supermarket',
+                'institutional': 'Institutional',
+                'feeding_program': 'Feeding Program',
+                'walk_in': 'Walk-in'
+            };
+            return types[type] || type;
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '--';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function selectDR(dr) {
+            selectedDRData = dr;
+
+            // Show form
+            document.getElementById('noDRSelected').classList.add('hidden');
+            document.getElementById('collectionForm').classList.remove('hidden');
+
+            // Populate data
+            document.getElementById('selectedDR').textContent = dr.dr_number;
+            document.getElementById('selectedCustomer').textContent = dr.customer_name;
+            document.getElementById('drTotalAmount').textContent = formatCurrency(dr.total_amount);
+            document.getElementById('drBalance').textContent = formatCurrency(dr.balance);
+
+            // Set default payment amount to full balance
+            document.getElementById('paymentAmount').value = parseFloat(dr.balance).toFixed(2);
+            document.getElementById('paymentAmount').max = dr.balance;
+
+            // Reset form fields
+            document.getElementById('paymentMethod').value = 'cash';
+            document.getElementById('paymentNotes').value = '';
+            togglePaymentFields();
+
+            // Focus on amount
+            document.getElementById('paymentAmount').focus();
+            document.getElementById('paymentAmount').select();
+        }
+
+        function cancelCollection() {
+            selectedDRData = null;
+            document.getElementById('collectionForm').classList.add('hidden');
+            document.getElementById('noDRSelected').classList.remove('hidden');
+            document.getElementById('collectionForm').reset();
+        }
+
+        function setFullPayment() {
+            if (selectedDRData) {
+                document.getElementById('paymentAmount').value = parseFloat(selectedDRData.balance).toFixed(2);
+            }
+        }
+
+        function validatePayment() {
+            const amount = parseFloat(document.getElementById('paymentAmount').value) || 0;
+            const balance = selectedDRData ? parseFloat(selectedDRData.balance) : 0;
+            const btn = document.getElementById('btnRecordCollection');
+            
+            if (amount <= 0 || amount > balance) {
+                btn.disabled = true;
+            } else {
+                btn.disabled = false;
+            }
+        }
+
+        function togglePaymentFields() {
+            const method = document.getElementById('paymentMethod').value;
+            
+            document.getElementById('cashFields').classList.toggle('hidden', method !== 'cash');
+            document.getElementById('gcashFields').classList.toggle('hidden', method !== 'gcash');
+            document.getElementById('bankFields').classList.toggle('hidden', method !== 'bank_transfer');
+            document.getElementById('checkFields').classList.toggle('hidden', method !== 'check');
+        }
+
+        async function handleCollectionSubmit(event) {
+            event.preventDefault();
+
+            if (!selectedDRData) {
+                showToast('Please select a DR', 'warning');
+                return;
+            }
+
+            const amount = parseFloat(document.getElementById('paymentAmount').value) || 0;
+            const method = document.getElementById('paymentMethod').value;
+
+            // Validate amount
+            if (amount <= 0 || amount > selectedDRData.balance) {
+                showToast('Invalid payment amount', 'error');
+                return;
+            }
+
+            // Validate method-specific fields
+            if (method === 'gcash' && !document.getElementById('gcashReference').value.trim()) {
+                showToast('Please enter GCash reference number', 'error');
+                return;
+            }
+            if (method === 'bank_transfer' && (!document.getElementById('bankName').value || !document.getElementById('bankReference').value.trim())) {
+                showToast('Please complete bank transfer details', 'error');
+                return;
+            }
+            if (method === 'check') {
+                const checkBank = document.getElementById('checkBank').value;
+                const checkNumber = document.getElementById('checkNumber').value.trim();
+                const checkDate = document.getElementById('checkDate').value;
+                if (!checkBank || !checkNumber || !checkDate) {
+                    showToast('Please complete check details', 'error');
+                    return;
+                }
+            }
+
+            // Prepare collection data
+            const collectionData = {
+                dr_id: selectedDRData.id,
+                dr_number: selectedDRData.dr_number,
+                amount_collected: amount,
+                payment_method: method,
+                notes: document.getElementById('paymentNotes').value.trim()
+            };
+
+            // Add method-specific details
+            if (method === 'gcash') {
+                collectionData.gcash_ref = document.getElementById('gcashReference').value.trim();
+            } else if (method === 'bank_transfer') {
+                collectionData.bank_name = document.getElementById('bankName').value;
+                collectionData.bank_ref = document.getElementById('bankReference').value.trim();
+            } else if (method === 'check') {
+                collectionData.check_bank = document.getElementById('checkBank').value;
+                collectionData.check_number = document.getElementById('checkNumber').value.trim();
+                collectionData.check_date = document.getElementById('checkDate').value;
+            }
+
+            try {
+                const response = await POSService.recordCollection(collectionData);
+                console.log('Collection response:', response);
+                
+                if (response && response.success) {
+                    const result = response.data || {};
+                    lastCollectionData = {
+                        or_number: result.or_number || 'OR-UNKNOWN',
+                        dr_number: selectedDRData.dr_number,
+                        amount: amount,
+                        method: method,
+                        remaining: result.balance_after ?? (selectedDRData.balance - amount)
+                    };
+                    showSuccessModal();
+                    // Reload outstanding DRs after successful collection
+                    loadOutstanding();
+                } else {
+                    // Show actual error
+                    showToast(response?.message || 'Collection failed - unknown error', 'error');
+                    console.error('Collection failed:', response);
+                }
+            } catch (error) {
+                console.error('Collection error:', error);
+                showToast(error?.message || 'Failed to record collection. Check console for details.', 'error');
+            }
+        }
+
+        function showSuccessModal() {
+            if (!lastCollectionData) return;
+
+            document.getElementById('successORNumber').textContent = lastCollectionData.or_number;
+            document.getElementById('successDRNumber').textContent = lastCollectionData.dr_number;
+            document.getElementById('successAmount').textContent = formatCurrency(lastCollectionData.amount);
+            document.getElementById('successMethod').textContent = formatPaymentMethod(lastCollectionData.method);
+            document.getElementById('successRemaining').textContent = formatCurrency(lastCollectionData.remaining);
+
+            document.getElementById('successModal').showModal();
+        }
+
+        function formatPaymentMethod(method) {
+            const methods = {
+                'cash': 'Cash',
+                'gcash': 'GCash',
+                'bank_transfer': 'Bank Transfer',
+                'check': 'Check'
+            };
+            return methods[method] || method;
+        }
+
+        function printOR() {
+            if (!lastCollectionData) return;
+            showToast('Printing Official Receipt...', 'info');
+            window.print();
+        }
+
+        function closeSuccessModal() {
+            document.getElementById('successModal').close();
+            cancelCollection();
+            loadOutstanding();
+        }
+    </script>
+</body>
+
+</html>

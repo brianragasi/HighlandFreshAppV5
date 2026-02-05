@@ -185,7 +185,15 @@
                                     <button class="btn btn-primary join-item" onclick="scanBarcode()">
                                         <i class="fas fa-search"></i> Lookup
                                     </button>
+                                    <button class="btn btn-secondary join-item" onclick="openCameraScanner()" title="Use Phone Camera">
+                                        <i class="fas fa-camera"></i>
+                                    </button>
                                 </div>
+                                <label class="label">
+                                    <span class="label-text-alt text-base-content/50">
+                                        <i class="fas fa-mobile-alt"></i> Tap camera icon to scan with phone
+                                    </span>
+                                </label>
                             </div>
                             
                             <!-- Scan Result -->
@@ -350,9 +358,37 @@
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
     
+    <!-- Camera Scanner Modal -->
+    <dialog id="cameraScannerModal" class="modal">
+        <div class="modal-box max-w-md">
+            <h3 class="font-bold text-lg mb-4">
+                <i class="fas fa-camera mr-2"></i> Scan Barcode
+            </h3>
+            
+            <div id="cameraPreview" style="width: 100%; min-height: 250px;" class="rounded-lg overflow-hidden bg-base-200"></div>
+            
+            <div id="scanFeedback" class="mt-3 p-2 text-center hidden">
+                <i class="fas fa-check-circle text-success text-2xl"></i>
+                <p class="font-medium" id="scannedCode"></p>
+            </div>
+            
+            <p class="text-sm text-base-content/60 mt-3 text-center">
+                Position the barcode within the camera view
+            </p>
+            
+            <div class="modal-action">
+                <button type="button" class="btn" onclick="closeCameraScanner()">
+                    <i class="fas fa-times"></i> Close
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
     <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
     
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js"></script>
     <script src="../../../js/warehouse/fg.service.js"></script>
@@ -766,6 +802,90 @@
                 addToRelease();
             }
         }
+        
+        // ==================== CAMERA SCANNER ====================
+        let html5QrCode = null;
+        
+        async function openCameraScanner() {
+            const modal = document.getElementById('cameraScannerModal');
+            modal.showModal();
+            
+            // Small delay to ensure modal is visible
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            const cameraPreview = document.getElementById('cameraPreview');
+            document.getElementById('scanFeedback').classList.add('hidden');
+            
+            try {
+                html5QrCode = new Html5Qrcode("cameraPreview");
+                
+                await html5QrCode.start(
+                    { facingMode: "environment" }, // Back camera on phones
+                    {
+                        fps: 10,
+                        qrbox: { width: 250, height: 100 },
+                        aspectRatio: 1.0,
+                        formatsToSupport: [
+                            Html5QrcodeSupportedFormats.CODE_128,
+                            Html5QrcodeSupportedFormats.EAN_13,
+                            Html5QrcodeSupportedFormats.CODE_39,
+                            Html5QrcodeSupportedFormats.QR_CODE
+                        ]
+                    },
+                    onScanSuccess,
+                    onScanError
+                );
+                
+                console.log('Camera scanner started');
+            } catch (err) {
+                console.error('Failed to start camera:', err);
+                showToast('Failed to access camera. Please check permissions.', 'error');
+                closeCameraScanner();
+            }
+        }
+        
+        function onScanSuccess(decodedText, decodedResult) {
+            // Show feedback
+            document.getElementById('scanFeedback').classList.remove('hidden');
+            document.getElementById('scannedCode').textContent = decodedText;
+            
+            // Fill in the barcode input
+            document.getElementById('barcodeInput').value = decodedText;
+            
+            // Close scanner and trigger lookup
+            setTimeout(() => {
+                closeCameraScanner();
+                scanBarcode();
+            }, 500);
+        }
+        
+        function onScanError(errorMessage) {
+            // Ignore - continuous scanning will have many "not found" errors
+        }
+        
+        async function closeCameraScanner() {
+            const modal = document.getElementById('cameraScannerModal');
+            
+            if (html5QrCode) {
+                try {
+                    await html5QrCode.stop();
+                    html5QrCode.clear();
+                } catch (err) {
+                    console.log('Scanner already stopped');
+                }
+                html5QrCode = null;
+            }
+            
+            modal.close();
+        }
+        
+        // Close camera when modal backdrop is clicked
+        document.getElementById('cameraScannerModal').addEventListener('close', () => {
+            if (html5QrCode) {
+                html5QrCode.stop().catch(() => {});
+                html5QrCode = null;
+            }
+        });
     </script>
 </body>
 </html>

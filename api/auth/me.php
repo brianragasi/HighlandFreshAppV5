@@ -23,7 +23,7 @@ try {
     
     // Get user details
     $stmt = $db->prepare("
-        SELECT id, employee_id, username, first_name, last_name, email, role, created_at
+        SELECT id, employee_id, username, full_name, first_name, last_name, email, role, created_at
         FROM users
         WHERE id = ? AND is_active = 1
         LIMIT 1

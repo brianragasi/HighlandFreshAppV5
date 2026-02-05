@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quick Sale - Cashier POS | Highland Fresh</title>
+
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: oklch(var(--b2));
+            border-radius: 3px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: oklch(var(--bc) / 0.2);
+            border-radius: 3px;
+        }
+
+        .sidebar-transition {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .product-card {
+            @apply transition-all duration-200 ease-out cursor-pointer;
+        }
+
+        .product-card:hover {
+            @apply -translate-y-1 shadow-lg border-primary;
+        }
+
+        .product-card:active {
+            @apply scale-95;
+        }
+
+        .product-card.out-of-stock {
+            @apply opacity-50 cursor-not-allowed;
+        }
+
+        .cart-item {
+            @apply transition-all duration-200;
+        }
+
+        .cart-item:hover {
+            @apply bg-base-200;
+        }
+
+        .qty-btn {
+            @apply w-8 h-8 flex items-center justify-center rounded-lg font-bold transition-all;
+        }
+
+        .qty-btn:active {
+            @apply scale-90;
+        }
+
+        .total-display {
+            font-variant-numeric: tabular-nums;
+        }
+
+        .payment-tab {
+            @apply flex-1 py-3 px-4 text-center font-medium rounded-t-lg transition-all cursor-pointer border-b-2;
+        }
+
+        .payment-tab.active {
+            @apply bg-base-100 border-primary text-primary;
+        }
+
+        .payment-tab:not(.active) {
+            @apply bg-base-200 border-transparent text-base-content/60 hover:bg-base-300;
+        }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-cash-register text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Cashier / POS</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <!-- Main Menu -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Sales -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Sales</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="sale.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-bolt w-5 text-center"></i>
+                            <span class="flex-1">Quick Sale (POS)</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="history.html?type=sales"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-receipt w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Transaction History</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Collections -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Collections
+                </h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="collect.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-hand-holding-dollar w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Collect Payment</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="history.html?type=collections"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-clock-rotate-left w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Collection History</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Reports -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="reports/daily_summary.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-chart-pie w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Daily Summary</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="reports/cash_position.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-wallet w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Cash Position</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">CA</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Cashier</p>
+                    <p class="text-xs text-base-content/60 truncate">Point of Sale</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0"
+                        class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i>
+                                Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-bolt text-warning"></i>
+                    <span class="font-semibold">Quick Sale (POS)</span>
+                </div>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <div class="hidden md:flex items-center gap-2 px-3 py-1.5 bg-base-200 rounded-lg">
+                    <i class="fas fa-clock text-base-content/60"></i>
+                    <span id="currentTime" class="font-mono text-sm">--:--:--</span>
+                </div>
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <main class="flex-1 flex flex-col lg:flex-row">
+
+            <!-- Products Section (Left) -->
+            <div class="flex-1 flex flex-col p-4 lg:p-6 overflow-hidden">
+                <!-- Search & Filter -->
+                <div class="flex flex-col sm:flex-row gap-3 mb-4">
+                    <div class="flex-1">
+                        <label class="input input-bordered flex items-center gap-2">
+                            <i class="fas fa-search text-base-content/40"></i>
+                            <input type="text" id="productSearch" placeholder="Search products..." class="grow"
+                                onkeyup="filterProducts()">
+                            <kbd class="kbd kbd-sm">Enter</kbd>
+                        </label>
+                    </div>
+                    <div class="flex gap-2">
+                        <select id="categoryFilter" class="select select-bordered" onchange="filterProducts()">
+                            <option value="">All Categories</option>
+                            <option value="pasteurized_milk">Pasteurized Milk</option>
+                            <option value="flavored_milk">Flavored Milk</option>
+                            <option value="yogurt">Yogurt</option>
+                            <option value="cheese">Cheese</option>
+                            <option value="butter">Butter</option>
+                            <option value="cream">Cream</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Product Grid -->
+                <div class="flex-1 overflow-y-auto scrollbar-thin">
+                    <div id="productGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                        <!-- Products will be loaded here -->
+                        <div class="col-span-full flex items-center justify-center py-12">
+                            <span class="loading loading-spinner loading-lg text-primary"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cart Section (Right) -->
+            <div class="w-full lg:w-96 xl:w-[420px] bg-base-100 border-l border-base-300 flex flex-col">
+                <!-- Cart Header -->
+                <div class="p-4 border-b border-base-300">
+                    <div class="flex items-center justify-between">
+                        <h2 class="font-bold text-lg flex items-center gap-2">
+                            <i class="fas fa-cart-shopping text-primary"></i>
+                            Current Sale
+                        </h2>
+                        <button class="btn btn-ghost btn-sm text-error" onclick="clearCart()" id="btnClearCart"
+                            disabled>
+                            <i class="fas fa-trash"></i> Clear
+                        </button>
+                    </div>
+
+                    <!-- Customer Selection -->
+                    <div class="mt-3">
+                        <label class="input input-bordered input-sm flex items-center gap-2">
+                            <i class="fas fa-user text-base-content/40"></i>
+                            <input type="text" id="customerName" placeholder="Customer name (optional)" class="grow">
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Cart Items -->
+                <div class="flex-1 overflow-y-auto scrollbar-thin p-4" id="cartItems">
+                    <div class="text-center py-12 text-base-content/60">
+                        <i class="fas fa-cart-shopping text-5xl mb-3 opacity-30"></i>
+                        <p>Cart is empty</p>
+                        <p class="text-sm">Click on products to add them</p>
+                    </div>
+                </div>
+
+                <!-- Cart Summary & Payment -->
+                <div class="border-t border-base-300">
+                    <!-- Totals -->
+                    <div class="p-4 space-y-2">
+                        <div class="flex justify-between text-sm">
+                            <span class="text-base-content/60">Subtotal</span>
+                            <span id="subtotal">₱0.00</span>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-base-content/60">Items</span>
+                            <span id="totalItems">0</span>
+                        </div>
+                        <div class="divider my-2"></div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-lg font-semibold">Total</span>
+                            <span class="text-3xl font-bold text-primary total-display" id="grandTotal">₱0.00</span>
+                        </div>
+                    </div>
+
+                    <!-- Payment Section -->
+                    <div class="p-4 pt-0">
+                        <!-- Payment Method Tabs -->
+                        <div class="flex mb-3 bg-base-200 rounded-t-lg">
+                            <div class="payment-tab active" data-method="cash" onclick="selectPaymentMethod('cash')">
+                                <i class="fas fa-money-bill-wave"></i>
+                                <span class="hidden sm:inline ml-1">Cash</span>
+                            </div>
+                            <div class="payment-tab" data-method="gcash" onclick="selectPaymentMethod('gcash')">
+                                <i class="fas fa-mobile-screen"></i>
+                                <span class="hidden sm:inline ml-1">GCash</span>
+                            </div>
+                            <div class="payment-tab" data-method="bank" onclick="selectPaymentMethod('bank')">
+                                <i class="fas fa-building-columns"></i>
+                                <span class="hidden sm:inline ml-1">Bank</span>
+                            </div>
+                            <div class="payment-tab" data-method="check" onclick="selectPaymentMethod('check')">
+                                <i class="fas fa-money-check"></i>
+                                <span class="hidden sm:inline ml-1">Check</span>
+                            </div>
+                        </div>
+
+                        <!-- Payment Details -->
+                        <div id="paymentDetails" class="bg-base-100 rounded-b-lg border border-base-300 p-3 space-y-3">
+                            <!-- Cash Payment -->
+                            <div id="cashPayment">
+                                <label class="label py-1">
+                                    <span class="label-text">Amount Tendered</span>
+                                </label>
+                                <input type="number" id="amountTendered"
+                                    class="input input-bordered w-full text-right text-xl font-semibold"
+                                    placeholder="0.00" oninput="calculateChange()">
+                                <div class="flex justify-between items-center mt-2 p-2 bg-success/10 rounded-lg">
+                                    <span class="text-success font-medium">Change</span>
+                                    <span class="text-2xl font-bold text-success" id="changeAmount">₱0.00</span>
+                                </div>
+                            </div>
+
+                            <!-- GCash Payment -->
+                            <div id="gcashPayment" class="hidden">
+                                <label class="label py-1">
+                                    <span class="label-text">GCash Reference Number</span>
+                                </label>
+                                <input type="text" id="gcashRef" class="input input-bordered w-full"
+                                    placeholder="Enter reference number">
+                            </div>
+
+                            <!-- Bank Transfer Payment -->
+                            <div id="bankPayment" class="hidden">
+                                <label class="label py-1">
+                                    <span class="label-text">Bank</span>
+                                </label>
+                                <select id="bankName" class="select select-bordered w-full">
+                                    <option value="">Select bank</option>
+                                    <option value="BDO">BDO</option>
+                                    <option value="BPI">BPI</option>
+                                    <option value="Metrobank">Metrobank</option>
+                                    <option value="Landbank">Landbank</option>
+                                    <option value="PNB">PNB</option>
+                                    <option value="UnionBank">UnionBank</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                                <label class="label py-1 mt-2">
+                                    <span class="label-text">Reference Number</span>
+                                </label>
+                                <input type="text" id="bankRef" class="input input-bordered w-full"
+                                    placeholder="Enter reference number">
+                            </div>
+
+                            <!-- Check Payment -->
+                            <div id="checkPayment" class="hidden">
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="label py-1">
+                                            <span class="label-text">Bank</span>
+                                        </label>
+                                        <select id="checkBank" class="select select-bordered w-full select-sm">
+                                            <option value="">Select bank</option>
+                                            <option value="BDO">BDO</option>
+                                            <option value="BPI">BPI</option>
+                                            <option value="Metrobank">Metrobank</option>
+                                            <option value="Landbank">Landbank</option>
+                                            <option value="PNB">PNB</option>
+                                            <option value="Other">Other</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="label py-1">
+                                            <span class="label-text">Check Number</span>
+                                        </label>
+                                        <input type="text" id="checkNumber" class="input input-bordered w-full input-sm"
+                                            placeholder="Check #">
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-3 mt-2">
+                                    <div>
+                                        <label class="label py-1">
+                                            <span class="label-text">Check Date</span>
+                                        </label>
+                                        <input type="date" id="checkDate" class="input input-bordered w-full input-sm">
+                                    </div>
+                                    <div>
+                                        <label class="label py-1">
+                                            <span class="label-text">Account Owner</span>
+                                        </label>
+                                        <input type="text" id="checkOwner" class="input input-bordered w-full input-sm"
+                                            placeholder="Name">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Complete Sale Button -->
+                        <button id="btnCompleteSale" class="btn btn-primary btn-lg w-full mt-4" onclick="completeSale()"
+                            disabled>
+                            <i class="fas fa-check-circle"></i>
+                            Complete Sale
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Success Modal -->
+    <dialog id="successModal" class="modal">
+        <div class="modal-box text-center">
+            <div class="py-4">
+                <div class="w-20 h-20 mx-auto bg-success/20 rounded-full flex items-center justify-center mb-4">
+                    <i class="fas fa-check text-success text-4xl"></i>
+                </div>
+                <h3 class="font-bold text-2xl text-success mb-2">Sale Complete!</h3>
+                <p class="text-lg" id="successSINumber">SI-2026-0000</p>
+                <div class="divider"></div>
+                <div class="text-left bg-base-200 rounded-lg p-4 space-y-2">
+                    <div class="flex justify-between">
+                        <span class="text-base-content/60">Total</span>
+                        <span class="font-bold" id="successTotal">₱0.00</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-base-content/60">Payment</span>
+                        <span id="successPayment">Cash</span>
+                    </div>
+                    <div class="flex justify-between" id="successChangeRow">
+                        <span class="text-base-content/60">Change</span>
+                        <span class="font-bold text-success" id="successChange">₱0.00</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-action justify-center gap-3">
+                <button class="btn btn-outline" onclick="printReceipt()">
+                    <i class="fas fa-print"></i> Print Receipt
+                </button>
+                <button class="btn btn-primary" onclick="newSale()">
+                    <i class="fas fa-plus"></i> New Sale
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/pos/pos.service.js"></script>
+
+    <script>
+        // State
+        let products = [];
+        let categories = [];
+        let cart = [];
+        let currentPaymentMethod = 'cash';
+        let lastSaleData = null;
+
+        // Sidebar toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+
+        // Theme toggle
+        document.getElementById('themeToggle').addEventListener('change', function () {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('themeToggle').checked = true;
+        }
+
+        // Update time
+        function updateTime() {
+            document.getElementById('currentTime').textContent = new Date().toLocaleTimeString('en-US', { hour12: false });
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // Format currency
+        function formatCurrency(amount) {
+            return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        // Toast notification
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `alert alert-${type} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            document.getElementById('toastContainer').appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async function () {
+            if (typeof AuthService !== 'undefined') {
+                const user = AuthService.getCurrentUser();
+                if (user) {
+                    document.getElementById('sidebarUserName').textContent = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Cashier';
+                    document.getElementById('userInitials').textContent = getInitials(user.first_name, user.last_name);
+                }
+            }
+
+            await loadProducts();
+            await loadCategories();
+            document.getElementById('productSearch').focus();
+        });
+
+        function getInitials(firstName, lastName) {
+            const f = firstName ? firstName.charAt(0).toUpperCase() : '';
+            const l = lastName ? lastName.charAt(0).toUpperCase() : '';
+            return f + l || 'CA';
+        }
+
+        // Load categories
+        async function loadCategories() {
+            try {
+                const response = await POSService.getProductCategories();
+                if (response?.data) {
+                    categories = response.data;
+                    const select = document.getElementById('categoryFilter');
+                    select.innerHTML = '<option value="">All Categories</option>' +
+                        categories.map(c => `<option value="${c.category}">${c.category} (${c.in_stock_count})</option>`).join('');
+                }
+            } catch (error) {
+                console.error('Error loading categories:', error);
+            }
+        }
+
+        // Load products from real inventory
+        async function loadProducts() {
+            try {
+                const response = await POSService.getProducts({ in_stock: '1' });
+
+                if (response?.data?.products) {
+                    // Transform API response to component format
+                    products = response.data.products.map(p => ({
+                        id: p.id,
+                        name: p.product_name,
+                        variant: p.variant || `${p.unit_size || ''} ${p.unit_measure || ''}`.trim(),
+                        price: parseFloat(p.selling_price) || parseFloat(p.unit_price) || 0,
+                        stock: parseInt(p.total_pieces) || parseInt(p.stock_available) || 0,
+                        category: (p.category || 'other').toLowerCase(),
+                        image: null,
+                        expiring_soon: p.expiring_soon,
+                        days_to_expiry: p.days_to_expiry,
+                        stock_display: p.stock_display
+                    }));
+                } else {
+                    products = [];
+                }
+
+                renderProducts();
+            } catch (error) {
+                console.error('Error loading products:', error);
+                // Show empty state instead of error toast for production-ready UI
+                products = [];
+                renderProducts();
+
+                // Show empty state
+                document.getElementById('productGrid').innerHTML = `
+                    <div class="col-span-full text-center py-12 text-base-content/60">
+                        <i class="fas fa-exclamation-triangle text-4xl mb-3 text-warning"></i>
+                        <p>Unable to load products</p>
+                        <button class="btn btn-sm btn-primary mt-2" onclick="loadProducts()">
+                            <i class="fas fa-refresh"></i> Retry
+                        </button>
+                    </div>
+                `;
+            }
+        }
+
+        // Render products
+        function renderProducts() {
+            const grid = document.getElementById('productGrid');
+            const search = document.getElementById('productSearch').value.toLowerCase();
+            const category = document.getElementById('categoryFilter').value.toLowerCase();
+
+            let filtered = products.filter(p => {
+                const matchSearch = p.name.toLowerCase().includes(search) || (p.variant && p.variant.toLowerCase().includes(search));
+                const matchCategory = !category || p.category.toLowerCase() === category.toLowerCase();
+                return matchSearch && matchCategory;
+            });
+
+            if (filtered.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-full text-center py-12 text-base-content/60">
+                        <i class="fas fa-search text-4xl mb-3 opacity-30"></i>
+                        <p>No products found</p>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = filtered.map(product => {
+                const isOutOfStock = product.stock <= 0;
+                const stockClass = product.stock <= 5 ? 'text-error' : 'text-success';
+                const expiryWarning = product.expiring_soon ?
+                    `<span class="badge badge-warning badge-xs">Exp: ${product.days_to_expiry}d</span>` : '';
+
+                return `
+                    <div class="product-card card bg-base-100 border border-base-300 ${isOutOfStock ? 'out-of-stock' : ''}"
+                         onclick="${isOutOfStock ? '' : `addToCart(${product.id})`}">
+                        <div class="card-body p-3">
+                            <div class="w-full h-16 bg-base-200 rounded-lg flex items-center justify-center mb-2 relative">
+                                ${product.image
+                        ? `<img src="${product.image}" alt="${product.name}" class="h-full object-contain">`
+                        : `<i class="fas fa-${getCategoryIcon(product.category)} text-2xl text-base-content/30"></i>`
+                    }
+                                ${expiryWarning ? `<div class="absolute top-1 right-1">${expiryWarning}</div>` : ''}
+                            </div>
+                            <h3 class="font-semibold text-sm leading-tight">${product.name}</h3>
+                            <p class="text-xs text-base-content/60">${product.variant || ''}</p>
+                            <div class="flex justify-between items-end mt-2">
+                                <span class="text-lg font-bold text-primary">${formatCurrency(product.price)}</span>
+                                <span class="text-xs ${stockClass}">
+                                    ${isOutOfStock ? 'Out of stock' : `${product.stock} left`}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function getCategoryIcon(category) {
+            const icons = {
+                'pasteurized_milk': 'glass-water',
+                'flavored_milk': 'mug-hot',
+                'milk': 'glass-water',
+                'cheese': 'cheese',
+                'yogurt': 'bowl-food',
+                'butter': 'cube',
+                'cream': 'droplet',
+                'other': 'box'
+            };
+            return icons[category] || 'box';
+        }
+
+        function filterProducts() {
+            renderProducts();
+        }
+
+        // Add to cart
+        function addToCart(productId) {
+            const product = products.find(p => p.id === productId);
+            if (!product || product.stock <= 0) return;
+
+            const existingItem = cart.find(item => item.id === productId);
+            if (existingItem) {
+                if (existingItem.quantity < product.stock) {
+                    existingItem.quantity++;
+                } else {
+                    showToast('Maximum stock reached', 'warning');
+                    return;
+                }
+            } else {
+                cart.push({
+                    id: product.id,
+                    name: product.name,
+                    variant: product.variant,
+                    price: product.price,
+                    quantity: 1,
+                    maxStock: product.stock
+                });
+            }
+
+            renderCart();
+            showToast(`Added ${product.name}`, 'success');
+        }
+
+        // Render cart
+        function renderCart() {
+            const container = document.getElementById('cartItems');
+
+            if (cart.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-base-content/60">
+                        <i class="fas fa-cart-shopping text-5xl mb-3 opacity-30"></i>
+                        <p>Cart is empty</p>
+                        <p class="text-sm">Click on products to add them</p>
+                    </div>
+                `;
+                document.getElementById('btnClearCart').disabled = true;
+                document.getElementById('btnCompleteSale').disabled = true;
+                updateTotals();
+                return;
+            }
+
+            container.innerHTML = cart.map((item, index) => `
+                <div class="cart-item flex items-center gap-3 p-2 rounded-lg">
+                    <div class="flex-1 min-w-0">
+                        <p class="font-medium text-sm truncate">${item.name}</p>
+                        <p class="text-xs text-base-content/60">${item.variant} · ${formatCurrency(item.price)}</p>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <button class="qty-btn bg-base-200 hover:bg-base-300" onclick="updateQuantity(${index}, -1)">
+                            <i class="fas fa-minus text-xs"></i>
+                        </button>
+                        <span class="w-8 text-center font-semibold">${item.quantity}</span>
+                        <button class="qty-btn bg-base-200 hover:bg-base-300 ${item.quantity >= item.maxStock ? 'opacity-50' : ''}"
+                                onclick="updateQuantity(${index}, 1)" ${item.quantity >= item.maxStock ? 'disabled' : ''}>
+                            <i class="fas fa-plus text-xs"></i>
+                        </button>
+                    </div>
+                    <div class="text-right min-w-[80px]">
+                        <p class="font-bold">${formatCurrency(item.price * item.quantity)}</p>
+                    </div>
+                    <button class="btn btn-ghost btn-xs btn-square text-error" onclick="removeFromCart(${index})">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `).join('');
+
+            document.getElementById('btnClearCart').disabled = false;
+            document.getElementById('btnCompleteSale').disabled = false;
+            updateTotals();
+        }
+
+        // Update quantity
+        function updateQuantity(index, delta) {
+            const item = cart[index];
+            const newQty = item.quantity + delta;
+
+            if (newQty <= 0) {
+                removeFromCart(index);
+            } else if (newQty <= item.maxStock) {
+                item.quantity = newQty;
+                renderCart();
+            }
+        }
+
+        // Remove from cart
+        function removeFromCart(index) {
+            cart.splice(index, 1);
+            renderCart();
+        }
+
+        // Clear cart
+        function clearCart() {
+            if (cart.length === 0) return;
+            if (!confirm('Clear all items from cart?')) return;
+            cart = [];
+            renderCart();
+        }
+
+        // Update totals
+        function updateTotals() {
+            const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+            document.getElementById('subtotal').textContent = formatCurrency(subtotal);
+            document.getElementById('totalItems').textContent = totalItems;
+            document.getElementById('grandTotal').textContent = formatCurrency(subtotal);
+
+            calculateChange();
+        }
+
+        // Select payment method
+        function selectPaymentMethod(method) {
+            currentPaymentMethod = method;
+
+            // Update tabs
+            document.querySelectorAll('.payment-tab').forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.method === method);
+            });
+
+            // Show/hide payment sections
+            document.getElementById('cashPayment').classList.toggle('hidden', method !== 'cash');
+            document.getElementById('gcashPayment').classList.toggle('hidden', method !== 'gcash');
+            document.getElementById('bankPayment').classList.toggle('hidden', method !== 'bank');
+            document.getElementById('checkPayment').classList.toggle('hidden', method !== 'check');
+
+            // Focus appropriate field
+            if (method === 'cash') {
+                document.getElementById('amountTendered').focus();
+            } else if (method === 'gcash') {
+                document.getElementById('gcashRef').focus();
+            } else if (method === 'bank') {
+                document.getElementById('bankName').focus();
+            } else if (method === 'check') {
+                document.getElementById('checkBank').focus();
+            }
+        }
+
+        // Calculate change
+        function calculateChange() {
+            const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            const tendered = parseFloat(document.getElementById('amountTendered').value) || 0;
+            const change = tendered - total;
+
+            const changeEl = document.getElementById('changeAmount');
+            if (change >= 0 && tendered > 0) {
+                changeEl.textContent = formatCurrency(change);
+                changeEl.classList.remove('text-error');
+                changeEl.classList.add('text-success');
+            } else if (tendered > 0) {
+                changeEl.textContent = formatCurrency(change);
+                changeEl.classList.remove('text-success');
+                changeEl.classList.add('text-error');
+            } else {
+                changeEl.textContent = '₱0.00';
+                changeEl.classList.remove('text-error');
+                changeEl.classList.add('text-success');
+            }
+        }
+
+        // Complete sale
+        async function completeSale() {
+            if (cart.length === 0) {
+                showToast('Cart is empty', 'warning');
+                return;
+            }
+
+            const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+            // Validate payment based on method
+            if (currentPaymentMethod === 'cash') {
+                const tendered = parseFloat(document.getElementById('amountTendered').value) || 0;
+                if (tendered < total) {
+                    showToast('Insufficient amount tendered', 'error');
+                    document.getElementById('amountTendered').focus();
+                    return;
+                }
+            } else if (currentPaymentMethod === 'gcash') {
+                const ref = document.getElementById('gcashRef').value.trim();
+                if (!ref) {
+                    showToast('Please enter GCash reference number', 'error');
+                    document.getElementById('gcashRef').focus();
+                    return;
+                }
+            } else if (currentPaymentMethod === 'bank') {
+                const bank = document.getElementById('bankName').value;
+                const ref = document.getElementById('bankRef').value.trim();
+                if (!bank || !ref) {
+                    showToast('Please complete bank transfer details', 'error');
+                    return;
+                }
+            } else if (currentPaymentMethod === 'check') {
+                const bank = document.getElementById('checkBank').value;
+                const number = document.getElementById('checkNumber').value.trim();
+                const date = document.getElementById('checkDate').value;
+                if (!bank || !number || !date) {
+                    showToast('Please complete check details', 'error');
+                    return;
+                }
+            }
+
+            // Disable button and show loading
+            const btnComplete = document.getElementById('btnCompleteSale');
+            btnComplete.disabled = true;
+            btnComplete.innerHTML = '<span class="loading loading-spinner"></span> Processing...';
+
+            // Prepare sale data for API
+            const paymentMethod = currentPaymentMethod === 'bank' ? 'bank_transfer' : currentPaymentMethod;
+            const tendered = currentPaymentMethod === 'cash'
+                ? (parseFloat(document.getElementById('amountTendered').value) || total)
+                : total;
+
+            const saleData = {
+                customer_name: document.getElementById('customerName').value.trim() || 'Walk-in Customer',
+                customer_type: 'walk-in',
+                items: cart.map(item => ({
+                    product_id: item.id,
+                    quantity: item.quantity,
+                    unit_price: item.price,
+                    product_name: item.name,
+                    variant: item.variant
+                })),
+                payment_method: paymentMethod,
+                amount_paid: tendered,
+                payment_reference: getPaymentReference(),
+                notes: ''
+            };
+
+            // Add check-specific fields when payment method is check
+            if (currentPaymentMethod === 'check') {
+                saleData.check_bank = document.getElementById('checkBank').value;
+                saleData.check_number = document.getElementById('checkNumber').value.trim();
+                saleData.check_date = document.getElementById('checkDate').value;
+            }
+
+            try {
+                const response = await POSService.createSale(saleData);
+
+                if (response?.success) {
+                    const result = response.data;
+
+                    // Store last sale data
+                    lastSaleData = {
+                        transaction_id: result.transaction_id,
+                        si_number: result.transaction_code || result.si_number,
+                        total: parseFloat(result.total_amount),
+                        payment_method: currentPaymentMethod,
+                        change: parseFloat(result.change_amount) || 0
+                    };
+
+                    // Show success modal
+                    document.getElementById('successSINumber').textContent = lastSaleData.si_number;
+                    document.getElementById('successTotal').textContent = formatCurrency(lastSaleData.total);
+                    document.getElementById('successPayment').textContent = getPaymentMethodLabel(currentPaymentMethod);
+
+                    if (currentPaymentMethod === 'cash') {
+                        document.getElementById('successChangeRow').classList.remove('hidden');
+                        document.getElementById('successChange').textContent = formatCurrency(lastSaleData.change);
+                    } else {
+                        document.getElementById('successChangeRow').classList.add('hidden');
+                    }
+
+                    document.getElementById('successModal').showModal();
+
+                    // Reload products to get updated stock
+                    await loadProducts();
+                } else {
+                    throw new Error(response?.message || 'Failed to complete sale');
+                }
+            } catch (error) {
+                console.error('Sale error:', error);
+                showToast(error.message || 'Failed to complete sale', 'error');
+            } finally {
+                // Re-enable button
+                btnComplete.disabled = false;
+                btnComplete.innerHTML = '<i class="fas fa-check-circle"></i> Complete Sale';
+            }
+        }
+
+        function getPaymentReference() {
+            switch (currentPaymentMethod) {
+                case 'gcash':
+                    return document.getElementById('gcashRef').value || '';
+                case 'bank':
+                    const bank = document.getElementById('bankName').value;
+                    const ref = document.getElementById('bankRef').value;
+                    return bank && ref ? `${bank}: ${ref}` : '';
+                case 'check':
+                    const checkBank = document.getElementById('checkBank').value;
+                    const checkNum = document.getElementById('checkNumber').value;
+                    const checkDate = document.getElementById('checkDate').value;
+                    return checkBank && checkNum ? `${checkBank} #${checkNum} (${checkDate})` : '';
+                default:
+                    return '';
+            }
+        }
+
+        function getPaymentDetails() {
+            switch (currentPaymentMethod) {
+                case 'cash':
+                    return {
+                        amount_tendered: parseFloat(document.getElementById('amountTendered').value) || 0
+                    };
+                case 'gcash':
+                    return {
+                        reference_number: document.getElementById('gcashRef').value
+                    };
+                case 'bank':
+                    return {
+                        bank: document.getElementById('bankName').value,
+                        reference_number: document.getElementById('bankRef').value
+                    };
+                case 'check':
+                    return {
+                        bank: document.getElementById('checkBank').value,
+                        check_number: document.getElementById('checkNumber').value,
+                        check_date: document.getElementById('checkDate').value,
+                        account_owner: document.getElementById('checkOwner').value
+                    };
+            }
+            return {};
+        }
+
+        function getPaymentMethodLabel(method) {
+            const labels = {
+                'cash': 'Cash',
+                'gcash': 'GCash',
+                'bank': 'Bank Transfer',
+                'check': 'Check'
+            };
+            return labels[method] || method;
+        }
+
+        // Print receipt
+        function printReceipt() {
+            if (!lastSaleData) return;
+            // TODO: Implement actual receipt printing
+            showToast('Printing receipt...', 'info');
+            window.print();
+        }
+
+        // New sale
+        function newSale() {
+            document.getElementById('successModal').close();
+            cart = [];
+            currentPaymentMethod = 'cash';
+            lastSaleData = null;
+
+            // Reset form
+            document.getElementById('customerName').value = '';
+            document.getElementById('amountTendered').value = '';
+            document.getElementById('gcashRef').value = '';
+            document.getElementById('bankName').value = '';
+            document.getElementById('bankRef').value = '';
+            document.getElementById('checkBank').value = '';
+            document.getElementById('checkNumber').value = '';
+            document.getElementById('checkDate').value = '';
+            document.getElementById('checkOwner').value = '';
+
+            // Reset payment tabs
+            selectPaymentMethod('cash');
+
+            renderCart();
+            document.getElementById('productSearch').focus();
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Sales Custodian | Highland Fresh</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    
+    <script>
+        tailwind.config = {
+            theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } }
+        }
+    </script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-hand-holding-usd text-primary text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Sales Custodian</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                        <i class="fas fa-th-large w-5 text-center"></i><span>Dashboard</span>
+                    </a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Customers</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="customers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-users w-5 text-center text-base-content/60"></i><span>Customer List</span>
+                    </a></li>
+                    <li><a href="wholesalers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-truck w-5 text-center text-base-content/60"></i><span>Wholesalers</span>
+                    </a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Orders</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="orders.html?action=new" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-plus-circle w-5 text-center text-base-content/60"></i><span>New Order</span>
+                    </a></li>
+                    <li><a href="orders.html?status=pending" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-clock w-5 text-center text-base-content/60"></i><span>Pending Orders</span>
+                        <span class="badge badge-warning badge-sm" id="pendingOrdersBadge">0</span>
+                    </a></li>
+                    <li><a href="orders.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-history w-5 text-center text-base-content/60"></i><span>Order History</span>
+                    </a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Receivables</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="aging.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-chart-pie w-5 text-center text-base-content/60"></i><span>Aging Report</span>
+                    </a></li>
+                    <li><a href="collections.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-money-check-alt w-5 text-center text-base-content/60"></i><span>Collections Due</span>
+                    </a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="reports/sales.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-chart-line w-5 text-center text-base-content/60"></i><span>Sales Report</span>
+                    </a></li>
+                    <li><a href="reports/customer_performance.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-user-chart w-5 text-center text-base-content/60"></i><span>Customer Performance</span>
+                    </a></li>
+                </ul>
+            </div>
+        </nav>
+        
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">SC</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Sales Custodian</p>
+                    <p class="text-xs text-base-content/60 truncate">Sales & Receivables</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square"><i class="fas fa-ellipsis-v"></i></label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button>
+            </div>
+            <div class="flex-1">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-th-large text-primary"></i>
+                    <span class="font-semibold">Sales Dashboard</span>
+                </div>
+            </div>
+            <div class="flex-none gap-2">
+                <button class="btn btn-primary btn-sm" onclick="window.location.href='orders.html?action=new'">
+                    <i class="fas fa-plus"></i> New Order
+                </button>
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+        
+        <main class="flex-1 p-4 lg:p-6">
+            <!-- Page Header -->
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                <div>
+                    <h1 class="text-2xl font-bold text-base-content">Sales Custodian Dashboard</h1>
+                    <p class="text-base-content/60">Overview of sales, receivables, and orders</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-sm text-base-content/60">Today:</span>
+                    <span class="font-semibold" id="currentDate"></span>
+                </div>
+            </div>
+            
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="card bg-base-100 shadow-sm">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-xs text-base-content/60 uppercase tracking-wide">Today's Credit Sales</p>
+                                <p class="text-2xl font-bold text-primary mt-1" id="todaySales">₱0.00</p>
+                                <p class="text-xs text-base-content/60 mt-1"><span id="todayOrderCount">0</span> orders</p>
+                            </div>
+                            <div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
+                                <i class="fas fa-receipt text-primary text-xl"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card bg-base-100 shadow-sm">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-xs text-base-content/60 uppercase tracking-wide">Total Receivables</p>
+                                <p class="text-2xl font-bold text-info mt-1" id="totalReceivables">₱0.00</p>
+                                <p class="text-xs text-base-content/60 mt-1"><span id="receivablesCount">0</span> accounts</p>
+                            </div>
+                            <div class="w-12 h-12 bg-info/10 rounded-xl flex items-center justify-center">
+                                <i class="fas fa-file-invoice-dollar text-info text-xl"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card bg-base-100 shadow-sm">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-xs text-base-content/60 uppercase tracking-wide">Overdue Amount</p>
+                                <p class="text-2xl font-bold text-error mt-1" id="overdueAmount">₱0.00</p>
+                                <p class="text-xs text-error mt-1"><span id="overdueCount">0</span> overdue</p>
+                            </div>
+                            <div class="w-12 h-12 bg-error/10 rounded-xl flex items-center justify-center">
+                                <i class="fas fa-exclamation-triangle text-error text-xl"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card bg-base-100 shadow-sm">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-xs text-base-content/60 uppercase tracking-wide">Pending Orders</p>
+                                <p class="text-2xl font-bold text-warning mt-1" id="pendingOrders">0</p>
+                                <p class="text-xs text-base-content/60 mt-1">awaiting processing</p>
+                            </div>
+                            <div class="w-12 h-12 bg-warning/10 rounded-xl flex items-center justify-center">
+                                <i class="fas fa-hourglass-half text-warning text-xl"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Aging Summary & Order Pipeline -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- Aging Summary -->
+                <div class="card bg-base-100 shadow-sm">
+                    <div class="card-body">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="card-title text-lg">
+                                <i class="fas fa-chart-pie text-primary"></i>
+                                Aging Summary
+                            </h2>
+                            <a href="aging.html" class="btn btn-ghost btn-sm">View All</a>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="bg-success/10 rounded-xl p-4 text-center">
+                                <p class="text-xs text-base-content/60 mb-1">0-30 Days</p>
+                                <p class="text-xl font-bold text-success" id="aging030">₱0.00</p>
+                                <p class="text-xs text-success/80 mt-1"><span id="aging030Count">0</span> accounts</p>
+                            </div>
+                            <div class="bg-warning/10 rounded-xl p-4 text-center">
+                                <p class="text-xs text-base-content/60 mb-1">31-60 Days</p>
+                                <p class="text-xl font-bold text-warning" id="aging3160">₱0.00</p>
+                                <p class="text-xs text-warning/80 mt-1"><span id="aging3160Count">0</span> accounts</p>
+                            </div>
+                            <div class="bg-orange-500/10 rounded-xl p-4 text-center">
+                                <p class="text-xs text-base-content/60 mb-1">61-90 Days</p>
+                                <p class="text-xl font-bold text-orange-500" id="aging6190">₱0.00</p>
+                                <p class="text-xs text-orange-500/80 mt-1"><span id="aging6190Count">0</span> accounts</p>
+                            </div>
+                            <div class="bg-error/10 rounded-xl p-4 text-center">
+                                <p class="text-xs text-base-content/60 mb-1">91+ Days</p>
+                                <p class="text-xl font-bold text-error" id="aging91plus">₱0.00</p>
+                                <p class="text-xs text-error/80 mt-1"><span id="aging91plusCount">0</span> accounts</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Aging Progress Bar -->
+                        <div class="mt-4">
+                            <p class="text-xs text-base-content/60 mb-2">Distribution</p>
+                            <div class="flex h-4 rounded-full overflow-hidden bg-base-200">
+                                <div class="bg-success h-full" id="agingBar030" style="width: 25%"></div>
+                                <div class="bg-warning h-full" id="agingBar3160" style="width: 25%"></div>
+                                <div class="bg-orange-500 h-full" id="agingBar6190" style="width: 25%"></div>
+                                <div class="bg-error h-full" id="agingBar91plus" style="width: 25%"></div>
+                            </div>
+                            <div class="flex justify-between text-xs text-base-content/60 mt-1">
+                                <span>0-30d</span>
+                                <span>31-60d</span>
+                                <span>61-90d</span>
+                                <span>91+d</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Order Pipeline -->
+                <div class="card bg-base-100 shadow-sm">
+                    <div class="card-body">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="card-title text-lg">
+                                <i class="fas fa-tasks text-primary"></i>
+                                Order Pipeline
+                            </h2>
+                            <a href="orders.html" class="btn btn-ghost btn-sm">View All</a>
+                        </div>
+                        
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between p-3 bg-base-200 rounded-xl">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 bg-slate-400/20 rounded-lg flex items-center justify-center">
+                                        <i class="fas fa-edit text-slate-500 text-sm"></i>
+                                    </div>
+                                    <span class="font-medium">Draft</span>
+                                </div>
+                                <span class="badge badge-ghost" id="pipelineDraft">0</span>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-base-200 rounded-xl">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 bg-warning/20 rounded-lg flex items-center justify-center">
+                                        <i class="fas fa-clock text-warning text-sm"></i>
+                                    </div>
+                                    <span class="font-medium">Pending</span>
+                                </div>
+                                <span class="badge badge-warning" id="pipelinePending">0</span>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-base-200 rounded-xl">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 bg-info/20 rounded-lg flex items-center justify-center">
+                                        <i class="fas fa-check text-info text-sm"></i>
+                                    </div>
+                                    <span class="font-medium">Approved</span>
+                                </div>
+                                <span class="badge badge-info" id="pipelineApproved">0</span>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-base-200 rounded-xl">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center">
+                                        <i class="fas fa-box text-primary text-sm"></i>
+                                    </div>
+                                    <span class="font-medium">Preparing</span>
+                                </div>
+                                <span class="badge badge-primary" id="pipelinePreparing">0</span>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-base-200 rounded-xl">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 bg-success/20 rounded-lg flex items-center justify-center">
+                                        <i class="fas fa-truck text-success text-sm"></i>
+                                    </div>
+                                    <span class="font-medium">Fulfilled</span>
+                                </div>
+                                <span class="badge badge-success" id="pipelineFulfilled">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Recent Orders & Top Customers -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Recent Orders -->
+                <div class="card bg-base-100 shadow-sm">
+                    <div class="card-body">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="card-title text-lg">
+                                <i class="fas fa-clipboard-list text-primary"></i>
+                                Recent Orders
+                            </h2>
+                            <a href="orders.html" class="btn btn-ghost btn-sm">View All</a>
+                        </div>
+                        
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr class="bg-base-200">
+                                        <th>Order #</th>
+                                        <th>Customer</th>
+                                        <th>Amount</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="recentOrdersTable">
+                                    <tr>
+                                        <td colspan="4" class="text-center py-8">
+                                            <span class="loading loading-spinner loading-md"></span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Top Customers by Outstanding Balance -->
+                <div class="card bg-base-100 shadow-sm">
+                    <div class="card-body">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="card-title text-lg">
+                                <i class="fas fa-users text-primary"></i>
+                                Top Outstanding Balances
+                            </h2>
+                            <a href="aging.html" class="btn btn-ghost btn-sm">View All</a>
+                        </div>
+                        
+                        <div class="space-y-3" id="topCustomersContainer">
+                            <div class="flex items-center justify-center py-8">
+                                <span class="loading loading-spinner loading-md"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+        
+        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
+            <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+        </footer>
+    </div>
+    
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/sales/sales.service.js"></script>
+    
+    <script>
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('-translate-x-full');
+            document.getElementById('sidebarBackdrop').classList.toggle('hidden');
+        }
+        
+        document.getElementById('themeToggle').addEventListener('change', function() {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+        
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('themeToggle').checked = true;
+        }
+        
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `alert alert-${type} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            document.getElementById('toastContainer').appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-PH', { 
+                style: 'currency', 
+                currency: 'PHP' 
+            }).format(amount || 0);
+        }
+        
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleDateString('en-PH', {
+                month: 'short', day: 'numeric', year: 'numeric'
+            });
+        }
+        
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const user = AuthService.getCurrentUser();
+                if (user) {
+                    document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
+                    document.getElementById('userInitials').textContent = `${user.first_name[0]}${user.last_name[0]}`;
+                }
+                
+                document.getElementById('currentDate').textContent = new Date().toLocaleDateString('en-PH', {
+                    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+                });
+                
+                await loadDashboardData();
+            } catch (error) {
+                console.error('Init error:', error);
+                showToast('Failed to initialize dashboard', 'error');
+            }
+        });
+        
+        async function loadDashboardData() {
+            try {
+                // Load dashboard stats
+                const [statsRes, ordersRes, agingRes, topCustomersRes] = await Promise.all([
+                    SalesService.getDashboardStats(),
+                    SalesService.getRecentOrders(10),
+                    SalesService.getAgingSummary(),
+                    SalesService.getTopCustomersByBalance(5)
+                ]);
+                
+                // Update stats cards
+                const stats = statsRes.data || {};
+                document.getElementById('todaySales').textContent = formatCurrency(stats.today_credit_sales);
+                document.getElementById('todayOrderCount').textContent = stats.today_order_count || 0;
+                document.getElementById('totalReceivables').textContent = formatCurrency(stats.total_receivables);
+                document.getElementById('receivablesCount').textContent = stats.receivables_count || 0;
+                document.getElementById('overdueAmount').textContent = formatCurrency(stats.overdue_amount);
+                document.getElementById('overdueCount').textContent = stats.overdue_count || 0;
+                document.getElementById('pendingOrders').textContent = stats.pending_orders || 0;
+                document.getElementById('pendingOrdersBadge').textContent = stats.pending_orders || 0;
+                
+                // Update order pipeline
+                const pipeline = stats.pipeline || {};
+                document.getElementById('pipelineDraft').textContent = pipeline.draft || 0;
+                document.getElementById('pipelinePending').textContent = pipeline.pending || 0;
+                document.getElementById('pipelineApproved').textContent = pipeline.approved || 0;
+                document.getElementById('pipelinePreparing').textContent = pipeline.preparing || 0;
+                document.getElementById('pipelineFulfilled').textContent = pipeline.fulfilled || 0;
+                
+                // Update aging summary
+                const aging = agingRes.data || {};
+                document.getElementById('aging030').textContent = formatCurrency(aging.bucket_0_30);
+                document.getElementById('aging030Count').textContent = aging.bucket_0_30_count || 0;
+                document.getElementById('aging3160').textContent = formatCurrency(aging.bucket_31_60);
+                document.getElementById('aging3160Count').textContent = aging.bucket_31_60_count || 0;
+                document.getElementById('aging6190').textContent = formatCurrency(aging.bucket_61_90);
+                document.getElementById('aging6190Count').textContent = aging.bucket_61_90_count || 0;
+                document.getElementById('aging91plus').textContent = formatCurrency(aging.bucket_91_plus);
+                document.getElementById('aging91plusCount').textContent = aging.bucket_91_plus_count || 0;
+                
+                // Update aging bar chart
+                const totalAging = (aging.bucket_0_30 || 0) + (aging.bucket_31_60 || 0) + 
+                                   (aging.bucket_61_90 || 0) + (aging.bucket_91_plus || 0);
+                if (totalAging > 0) {
+                    document.getElementById('agingBar030').style.width = ((aging.bucket_0_30 || 0) / totalAging * 100) + '%';
+                    document.getElementById('agingBar3160').style.width = ((aging.bucket_31_60 || 0) / totalAging * 100) + '%';
+                    document.getElementById('agingBar6190').style.width = ((aging.bucket_61_90 || 0) / totalAging * 100) + '%';
+                    document.getElementById('agingBar91plus').style.width = ((aging.bucket_91_plus || 0) / totalAging * 100) + '%';
+                }
+                
+                // Render recent orders
+                renderRecentOrders(ordersRes.data || []);
+                
+                // Render top customers
+                renderTopCustomers(topCustomersRes.data || []);
+                
+            } catch (error) {
+                console.error('Failed to load dashboard data:', error);
+                showToast('Failed to load dashboard data', 'error');
+            }
+        }
+        
+        function renderRecentOrders(orders) {
+            const tbody = document.getElementById('recentOrdersTable');
+            
+            if (!orders || orders.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-8 text-base-content/60">No recent orders</td></tr>`;
+                return;
+            }
+            
+            const statusBadges = {
+                'draft': 'badge-ghost',
+                'pending': 'badge-warning',
+                'approved': 'badge-info',
+                'preparing': 'badge-primary',
+                'fulfilled': 'badge-success',
+                'cancelled': 'badge-error'
+            };
+            
+            tbody.innerHTML = orders.slice(0, 5).map(order => `
+                <tr class="hover cursor-pointer" onclick="window.location.href='orders.html?id=${order.id}'">
+                    <td class="font-mono text-sm">${order.order_number || `ORD-${order.id}`}</td>
+                    <td>
+                        <div class="font-medium text-sm">${order.customer_name || 'Unknown'}</div>
+                        <div class="text-xs text-base-content/60">${formatDate(order.created_at)}</div>
+                    </td>
+                    <td class="font-semibold">${formatCurrency(order.total_amount)}</td>
+                    <td><span class="badge ${statusBadges[order.status] || 'badge-ghost'} badge-sm">${order.status}</span></td>
+                </tr>
+            `).join('');
+        }
+        
+        function renderTopCustomers(customers) {
+            const container = document.getElementById('topCustomersContainer');
+            
+            if (!customers || customers.length === 0) {
+                container.innerHTML = `<p class="text-center py-8 text-base-content/60">No outstanding balances</p>`;
+                return;
+            }
+            
+            container.innerHTML = customers.map((c, i) => `
+                <div class="flex items-center justify-between p-3 bg-base-200 rounded-xl hover:bg-base-300 cursor-pointer"
+                     onclick="window.location.href='customers.html?id=${c.id}'">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-sm font-bold text-primary">
+                            ${i + 1}
+                        </div>
+                        <div>
+                            <p class="font-medium text-sm">${c.name}</p>
+                            <p class="text-xs text-base-content/60">${c.customer_type || 'Customer'}</p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <p class="font-bold ${c.days_overdue > 0 ? 'text-error' : ''}">${formatCurrency(c.outstanding_balance)}</p>
+                        ${c.days_overdue > 0 ? `<p class="text-xs text-error">${c.days_overdue}d overdue</p>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+    </script>
+</body>
+</html>

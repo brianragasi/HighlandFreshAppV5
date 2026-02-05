@@ -55,7 +55,7 @@ try {
     // Pending requisitions
     $pendingReqs = $db->prepare("
         SELECT COUNT(*) as count
-        FROM ingredient_requisitions
+        FROM material_requisitions
         WHERE status IN ('draft', 'pending')
     ");
     $pendingReqs->execute();
@@ -80,6 +80,7 @@ try {
     // Recent production runs
     $recentRuns = $db->prepare("
         SELECT 
+            pr.id,
             pr.run_code,
             pr.status,
             pr.planned_quantity,
@@ -97,47 +98,47 @@ try {
     $recentRuns->execute();
     $recentRunsList = $recentRuns->fetchAll();
     
-    // Ensure milk usage tracking table exists
+    // Ensure milk usage tracking table exists (REVISED: uses receiving_id instead of delivery_id)
     $db->exec("
         CREATE TABLE IF NOT EXISTS production_run_milk_usage (
             id INT(11) NOT NULL AUTO_INCREMENT,
             run_id INT(11) NOT NULL,
-            delivery_id INT(11) NOT NULL,
+            receiving_id INT(11) NOT NULL,
             milk_liters_allocated DECIMAL(10,2) NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             INDEX idx_run (run_id),
-            INDEX idx_delivery (delivery_id)
+            INDEX idx_receiving (receiving_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
     
-    // Available milk for production (ACTUAL QC-approved milk from recent deliveries minus allocated)
-    // This matches what production/runs.php uses for validation!
+    // Available milk for production (ACTUAL QC-approved milk from recent receivings minus allocated)
+    // REVISED: Uses milk_receiving instead of milk_deliveries
     $availableMilk = $db->prepare("
         SELECT 
             COALESCE(SUM(remaining_liters), 0) as total_liters,
             COUNT(*) as source_count
         FROM (
             SELECT 
-                md.id,
+                mr.id,
                 COALESCE(
                     CASE 
-                        WHEN md.accepted_liters > 0 THEN md.accepted_liters 
-                        ELSE md.volume_liters 
+                        WHEN mr.accepted_liters > 0 THEN mr.accepted_liters 
+                        ELSE mr.volume_liters 
                     END - (
                         SELECT COALESCE(SUM(pru.milk_liters_allocated), 0)
                         FROM production_run_milk_usage pru
-                        WHERE pru.delivery_id = md.id
+                        WHERE pru.receiving_id = mr.id
                     ), 
                     CASE 
-                        WHEN md.accepted_liters > 0 THEN md.accepted_liters 
-                        ELSE md.volume_liters 
+                        WHEN mr.accepted_liters > 0 THEN mr.accepted_liters 
+                        ELSE mr.volume_liters 
                     END
                 ) as remaining_liters
-            FROM milk_deliveries md
-            JOIN qc_milk_tests qmt ON qmt.delivery_id = md.id
-            WHERE md.status = 'accepted'
-              AND DATE(md.delivery_date) >= DATE_SUB(CURDATE(), INTERVAL 2 DAY)
+            FROM milk_receiving mr
+            JOIN qc_milk_tests qmt ON qmt.receiving_id = mr.id
+            WHERE mr.status = 'accepted'
+              AND DATE(mr.receiving_date) >= DATE_SUB(CURDATE(), INTERVAL 2 DAY)
             HAVING remaining_liters > 0
         ) as available
     ");
@@ -146,9 +147,9 @@ try {
     
     // Also get raw_milk_inventory for total stored milk (for informational purposes)
     $storedMilk = $db->prepare("
-        SELECT COALESCE(SUM(volume_liters), 0) as total_liters
+        SELECT COALESCE(SUM(remaining_liters), 0) as total_liters
         FROM raw_milk_inventory
-        WHERE status = 'available'
+        WHERE status = 'available' AND remaining_liters > 0
     ");
     $storedMilk->execute();
     $storedStats = $storedMilk->fetch();
@@ -171,7 +172,7 @@ try {
             COALESCE(SUM(ri.issued_quantity), 0) as total_issued,
             COUNT(DISTINCT ri.id) as issued_batches
         FROM requisition_items ri
-        JOIN ingredient_requisitions ir ON ri.requisition_id = ir.id
+        JOIN material_requisitions ir ON ri.requisition_id = ir.id
         WHERE ri.item_type = 'raw_milk'
           AND ri.issued_quantity > 0
           AND ir.department = 'production'
@@ -179,10 +180,12 @@ try {
     $productionMilk->execute();
     $prodMilkStats = $productionMilk->fetch();
     
-    // Get milk already used in production runs
+    // Get milk already used in production runs (from production_runs table directly)
     $usedMilk = $db->prepare("
-        SELECT COALESCE(SUM(milk_liters_allocated), 0) as total_used
-        FROM production_run_milk_usage
+        SELECT COALESCE(SUM(milk_liters_used), 0) as total_used
+        FROM production_runs
+        WHERE status IN ('planned', 'in_progress', 'pasteurization', 'processing', 'cooling', 'packaging', 'completed')
+          AND milk_source_type = 'raw'
     ");
     $usedMilk->execute();
     $usedStats = $usedMilk->fetch();
