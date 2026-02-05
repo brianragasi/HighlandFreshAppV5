@@ -27,7 +27,7 @@ const AuthService = {
     logout() {
         localStorage.removeItem('highland_token');
         localStorage.removeItem('highland_user');
-        window.location.href = '/HighlandFreshAppV4/html/login.html';
+        window.location.href = APP_BASE + '/html/login.html';
     },
     
     /**
@@ -71,7 +71,7 @@ const AuthService = {
      */
     requireAuth() {
         if (!this.isAuthenticated()) {
-            window.location.href = '/HighlandFreshAppV4/html/login.html';
+            window.location.href = APP_BASE + '/html/login.html';
             return false;
         }
         return true;
@@ -85,7 +85,7 @@ const AuthService = {
         
         if (!this.hasRole(roles)) {
             showNotification('Access Denied', 'You do not have permission to access this page.', 'error');
-            window.location.href = '/HighlandFreshAppV4/html/dashboard.html';
+            window.location.href = APP_BASE + '/html/dashboard.html';
             return false;
         }
         
