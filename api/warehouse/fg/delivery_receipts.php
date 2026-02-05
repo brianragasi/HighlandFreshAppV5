@@ -354,16 +354,33 @@ function handlePut($db, $action, $currentUser) {
                 Response::error('DR must be in pending or preparing status to dispatch', 400);
             }
             
-            $stmt = $db->prepare("
-                UPDATE delivery_receipts SET
-                    status = 'dispatched',
-                    dispatched_at = NOW(),
-                    dispatched_by = ?
-                WHERE id = ?
-            ");
-            $stmt->execute([$currentUser['user_id'], $id]);
-            
-            Response::success(null, 'Delivery receipt dispatched');
+            $db->beginTransaction();
+            try {
+                // Update DR status
+                $stmt = $db->prepare("
+                    UPDATE delivery_receipts SET
+                        status = 'dispatched',
+                        dispatched_at = NOW(),
+                        dispatched_by = ?
+                    WHERE id = ?
+                ");
+                $stmt->execute([$currentUser['user_id'], $id]);
+                
+                // Also update linked Sales Order if exists
+                if (!empty($current['order_id'])) {
+                    $updateOrder = $db->prepare("
+                        UPDATE sales_orders SET status = 'dispatched', updated_at = NOW()
+                        WHERE id = ? AND status IN ('approved', 'preparing', 'partially_fulfilled')
+                    ");
+                    $updateOrder->execute([$current['order_id']]);
+                }
+                
+                $db->commit();
+                Response::success(null, 'Delivery receipt dispatched');
+            } catch (Exception $e) {
+                $db->rollBack();
+                throw $e;
+            }
             break;
             
         case 'deliver':
