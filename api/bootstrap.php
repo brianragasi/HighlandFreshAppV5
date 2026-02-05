@@ -34,9 +34,23 @@ require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/config/response.php';
 require_once __DIR__ . '/config/auth.php';
 
-// Get request method and body
+// Get request method (with method override support for nginx)
 $requestMethod = $_SERVER['REQUEST_METHOD'];
+
+// Support X-HTTP-Method-Override header for PUT/DELETE via POST
+if ($requestMethod === 'POST') {
+    $override = $_SERVER['HTTP_X_HTTP_METHOD_OVERRIDE'] ?? null;
+    if ($override && in_array(strtoupper($override), ['PUT', 'DELETE', 'PATCH'])) {
+        $requestMethod = strtoupper($override);
+    }
+}
+
 $requestBody = json_decode(file_get_contents('php://input'), true) ?? [];
+
+// Also check for _method in body (alternative override)
+if (isset($requestBody['_method']) && in_array(strtoupper($requestBody['_method']), ['PUT', 'DELETE', 'PATCH'])) {
+    $requestMethod = strtoupper($requestBody['_method']);
+}
 
 // Helper function to get request parameter
 function getParam($key, $default = null) {
