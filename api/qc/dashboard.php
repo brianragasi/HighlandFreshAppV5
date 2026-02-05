@@ -8,7 +8,7 @@
  * 
  * @package HighlandFresh
  * @version 4.0
- * @deployed 2026-02-06
+ * @deployed 2026-02-06 v2 - Fixed 404 issue
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
