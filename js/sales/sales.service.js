@@ -47,7 +47,8 @@ const SalesService = {
                             pending: data.orders?.pending?.count || 0,
                             approved: data.orders?.approved?.count || 0,
                             preparing: data.orders?.preparing?.count || 0,
-                            fulfilled: data.orders?.fulfilled?.count || 0
+                            dispatched: data.orders?.dispatched?.count || 0,
+                            delivered: data.orders?.delivered?.count || 0
                         }
                     }
                 };
