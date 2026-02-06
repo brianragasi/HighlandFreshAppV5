@@ -60,7 +60,7 @@ function handleGet($db, $action) {
             }
             
             if ($search) {
-                $sql .= " AND (name LIKE ? OR contact_person LIKE ? OR phone LIKE ?)";
+                $sql .= " AND (name LIKE ? OR contact_person LIKE ? OR contact_number LIKE ?)";
                 $searchTerm = "%$search%";
                 $params[] = $searchTerm;
                 $params[] = $searchTerm;
@@ -112,7 +112,7 @@ function handleGet($db, $action) {
             }
             
             $stmt = $db->prepare("
-                SELECT id, name, customer_type, address, phone
+                SELECT id, name, customer_type, address, contact_number
                 FROM customers
                 WHERE status = 'active'
                 AND (name LIKE ? OR contact_person LIKE ?)
@@ -151,19 +151,18 @@ function handlePost($db, $action, $currentUser) {
         
         $stmt = $db->prepare("
             INSERT INTO customers 
-            (name, customer_type, contact_person, phone, email, address, status, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (name, customer_type, contact_person, contact_number, email, address, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         ");
         
         $stmt->execute([
             $data['name'],
             $data['customer_type'],
             $data['contact_person'] ?? null,
-            $data['phone'] ?? null,
+            $data['phone'] ?? $data['contact_number'] ?? null,
             $data['email'] ?? null,
             $data['address'] ?? null,
-            $data['status'] ?? 'active',
-            $currentUser['user_id']
+            $data['status'] ?? 'active'
         ]);
         
         $customerId = $db->lastInsertId();
@@ -199,7 +198,7 @@ function handlePut($db, $action, $currentUser) {
                 name = COALESCE(?, name),
                 customer_type = COALESCE(?, customer_type),
                 contact_person = COALESCE(?, contact_person),
-                phone = COALESCE(?, phone),
+                contact_number = COALESCE(?, contact_number),
                 email = COALESCE(?, email),
                 address = COALESCE(?, address),
                 status = COALESCE(?, status),
@@ -211,7 +210,7 @@ function handlePut($db, $action, $currentUser) {
             $data['name'] ?? null,
             $data['customer_type'] ?? null,
             $data['contact_person'] ?? null,
-            $data['phone'] ?? null,
+            $data['phone'] ?? $data['contact_number'] ?? null,
             $data['email'] ?? null,
             $data['address'] ?? null,
             $data['status'] ?? null,
