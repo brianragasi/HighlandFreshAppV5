@@ -686,7 +686,7 @@ function handleGet($db, $action) {
                 $params[] = $productId;
             }
             
-            $sql .= " GROUP BY p.id ORDER BY p.product_name";
+            $sql .= " GROUP BY p.id, p.product_name, p.variant, p.base_unit, p.box_unit, p.pieces_per_box ORDER BY p.product_name";
             
             $stmt = $db->prepare($sql);
             $stmt->execute($params);

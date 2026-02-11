@@ -173,7 +173,7 @@ function getPayablesSummary($db) {
         JOIN suppliers s ON po.supplier_id = s.id
         WHERE po.payment_status IN ('unpaid', 'partial')
         AND po.status != 'cancelled'
-        GROUP BY s.id
+        GROUP BY s.id, s.supplier_name, s.supplier_code, s.payment_terms
         ORDER BY total_amount DESC
     ");
     $payables = $stmt->fetchAll();
@@ -326,7 +326,7 @@ function getReceivablesAging($db) {
         JOIN fg_customers fc ON si.customer_id = fc.id
         WHERE si.payment_status IN ('unpaid', 'partial')
         AND si.status = 'active'
-        GROUP BY fc.id
+        GROUP BY fc.id, fc.customer_name
         ORDER BY total_balance DESC
         LIMIT 10
     ");

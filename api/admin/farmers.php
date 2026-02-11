@@ -425,7 +425,7 @@ function getFarmerStatistics($conn) {
     FROM farmers f
     JOIN milk_receiving mr ON f.id = mr.farmer_id
     WHERE f.is_active = 1
-    GROUP BY f.id
+    GROUP BY f.id, f.farmer_code, f.first_name, f.last_name
     ORDER BY total_liters DESC
     LIMIT 10");
     $stats['top_farmers'] = $stmt->fetchAll(PDO::FETCH_ASSOC);

@@ -260,7 +260,7 @@ function handleGet($db, $action) {
                 $params[] = $customerType;
             }
             
-            $sql .= " GROUP BY c.id HAVING total_outstanding > 0 ORDER BY total_outstanding DESC";
+            $sql .= " GROUP BY c.id, c.customer_code, c.name, c.customer_type, c.credit_limit HAVING total_outstanding > 0 ORDER BY total_outstanding DESC";
             
             $stmt = $db->prepare($sql);
             $stmt->execute($params);

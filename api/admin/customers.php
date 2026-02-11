@@ -438,7 +438,7 @@ function getCustomerStatistics($conn) {
     FROM customers c
     LEFT JOIN sales_orders so ON c.id = so.customer_id AND so.status NOT IN ('cancelled', 'rejected')
     WHERE c.status = 'active'
-    GROUP BY c.id
+    GROUP BY c.id, c.customer_code, c.name, c.customer_type
     ORDER BY total_purchases DESC
     LIMIT 10");
     $stats['top_customers'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
