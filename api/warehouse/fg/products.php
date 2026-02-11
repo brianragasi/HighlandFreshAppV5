@@ -229,7 +229,7 @@ function handleGet($db, $action) {
                 $params[] = $searchTerm;
             }
             
-            $sql .= " GROUP BY p.id HAVING available_qty > 0 OR reserved_qty > 0 ORDER BY p.product_name ASC";
+            $sql .= " GROUP BY p.id, p.product_code, p.product_name, p.category, p.variant, p.unit_size, p.unit_measure, p.base_unit, p.selling_price, p.pieces_per_box HAVING available_qty > 0 OR reserved_qty > 0 ORDER BY p.product_name ASC";
             
             $stmt = $db->prepare($sql);
             $stmt->execute($params);

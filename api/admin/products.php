@@ -474,7 +474,7 @@ function getProductStatistics($conn) {
     FROM products p
     LEFT JOIN finished_goods_inventory fgi ON p.id = fgi.product_id AND fgi.status = 'available'
     WHERE p.is_active = 1
-    GROUP BY p.id
+    GROUP BY p.id, p.product_code, p.product_name, p.category
     ORDER BY current_stock ASC
     LIMIT 20");
     $stats['inventory_summary'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -488,7 +488,7 @@ function getProductStatistics($conn) {
     FROM products p
     LEFT JOIN finished_goods_inventory fgi ON p.id = fgi.product_id AND fgi.status = 'available'
     WHERE p.is_active = 1
-    GROUP BY p.id
+    GROUP BY p.id, p.product_code, p.product_name
     HAVING current_stock < 50
     ORDER BY current_stock ASC");
     $stats['low_stock'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
