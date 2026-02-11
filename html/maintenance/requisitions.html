@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MRO Requisitions - Maintenance | Highland Fresh</title>
+
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <img src="../images/logo.jpg" alt="Highland Fresh Logo" class="w-10 h-10 rounded-xl object-cover">
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Maintenance</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Equipment</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="machines.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-cogs w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Machines</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="repairs.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-wrench w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Repairs</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="requisitions.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-clipboard-list w-5 text-center"></i>
+                            <span class="flex-1">MRO Requisitions</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="mro_inventory.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-boxes w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">MRO Inventory</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">MH</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Maintenance Head</p>
+                    <p class="text-xs text-base-content/60 truncate">Maintenance</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold text-base-content">MRO Requisitions</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <button class="btn btn-primary btn-sm" onclick="showNewRequisitionModal()">
+                    <i class="fas fa-plus"></i>
+                    <span class="hidden sm:inline">New Requisition</span>
+                </button>
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- Info Banner -->
+            <div class="alert alert-info mb-6">
+                <i class="fas fa-info-circle"></i>
+                <span>MRO requisitions require <strong>General Manager approval</strong> before Warehouse can fulfill them.</span>
+            </div>
+
+            <!-- Filters -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body p-4">
+                    <div class="flex flex-col lg:flex-row lg:items-center gap-4">
+                        <!-- Status Filter -->
+                        <select id="statusFilter" class="select select-bordered w-full lg:w-48">
+                            <option value="">All Statuses</option>
+                            <option value="pending">Pending Approval</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
+                            <option value="fulfilled">Fulfilled</option>
+                            <option value="partially_fulfilled">Partially Fulfilled</option>
+                            <option value="cancelled">Cancelled</option>
+                        </select>
+
+                        <!-- Date Range -->
+                        <input type="date" id="dateFrom" class="input input-bordered w-full lg:w-40" placeholder="From">
+                        <input type="date" id="dateTo" class="input input-bordered w-full lg:w-40" placeholder="To">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Requisitions Table -->
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body p-0">
+                    <div class="overflow-x-auto">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Requisition #</th>
+                                    <th>Machine/Repair</th>
+                                    <th>Items</th>
+                                    <th>Priority</th>
+                                    <th>Status</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="requisitionsTableBody">
+                                <tr>
+                                    <td colspan="7" class="text-center py-8">
+                                        <span class="loading loading-spinner loading-lg"></span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pagination -->
+            <div id="pagination" class="flex justify-center mt-6 hidden">
+                <div class="join">
+                    <button class="join-item btn" id="prevPage" onclick="changePage(-1)">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <button class="join-item btn" id="pageInfo">Page 1</button>
+                    <button class="join-item btn" id="nextPage" onclick="changePage(1)">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
+            <div>
+                <p>&copy; 2025 Highland Fresh Dairy Corporation. All rights reserved.</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- New Requisition Modal -->
+    <dialog id="newRequisitionModal" class="modal">
+        <div class="modal-box max-w-3xl">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-4">
+                <i class="fas fa-clipboard-list text-primary"></i>
+                New MRO Requisition
+            </h3>
+            <form id="newRequisitionForm">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Related Machine (optional)</span></label>
+                        <select id="reqMachineId" class="select select-bordered w-full">
+                            <option value="">-- None --</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Priority</span></label>
+                        <select id="reqPriority" class="select select-bordered w-full">
+                            <option value="low">Low</option>
+                            <option value="normal" selected>Normal</option>
+                            <option value="high">High</option>
+                            <option value="urgent">Urgent</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Needed By Date</span></label>
+                        <input type="date" id="reqNeededBy" class="input input-bordered">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Purpose</span></label>
+                        <input type="text" id="reqPurpose" class="input input-bordered" placeholder="e.g., Repair pasteurizer pump">
+                    </div>
+                </div>
+
+                <div class="divider">Items Requested</div>
+
+                <div id="reqItemsContainer" class="space-y-3 mb-4">
+                    <!-- Items will be added here -->
+                </div>
+
+                <button type="button" class="btn btn-outline btn-sm w-full mb-4" onclick="addRequisitionItem()">
+                    <i class="fas fa-plus"></i> Add Item
+                </button>
+
+                <div class="modal-action">
+                    <form method="dialog">
+                        <button class="btn btn-ghost">Cancel</button>
+                    </form>
+                    <button type="submit" class="btn btn-primary" id="submitReqBtn">
+                        <i class="fas fa-paper-plane"></i> Submit Requisition
+                    </button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
+
+    <!-- Requisition Detail Modal -->
+    <dialog id="requisitionDetailModal" class="modal">
+        <div class="modal-box max-w-2xl">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-4" id="reqDetailTitle">Requisition Details</h3>
+            <div id="requisitionDetailContent">
+                <!-- Dynamic content -->
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-bottom z-50"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/maintenance/maintenance.service.js"></script>
+
+    <script>
+        let currentPage = 1;
+        let totalPages = 1;
+        let machines = [];
+        let mroItems = [];
+        let reqItemCount = 0;
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+
+        // Theme toggle
+        const themeToggle = document.getElementById('themeToggle');
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            themeToggle.checked = true;
+        }
+        themeToggle.addEventListener('change', function () {
+            const theme = this.checked ? 'dark' : 'emerald';
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+        });
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async function () {
+            const user = await AuthService.getCurrentUser();
+            if (!user) {
+                window.location.href = '../login.html';
+                return;
+            }
+
+            document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
+            document.getElementById('userInitials').textContent = `${user.first_name[0]}${user.last_name[0]}`.toUpperCase();
+
+            // Setup filter listeners
+            ['statusFilter', 'dateFrom', 'dateTo'].forEach(id => {
+                document.getElementById(id).addEventListener('change', () => { currentPage = 1; loadRequisitions(); });
+            });
+
+            // Load machines and MRO items for dropdowns
+            await Promise.all([loadMachines(), loadMROItems()]);
+
+            // Check URL params
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('action') === 'new') {
+                showNewRequisitionModal();
+            }
+
+            // Setup form handler
+            document.getElementById('newRequisitionForm').addEventListener('submit', handleNewRequisition);
+
+            await loadRequisitions();
+        });
+
+        async function loadMachines() {
+            try {
+                const response = await MaintenanceService.getMachines({ limit: 100 });
+                if (response.type === 'success') {
+                    machines = response.data || [];
+                    const select = document.getElementById('reqMachineId');
+                    select.innerHTML = '<option value="">-- None --</option>' +
+                        machines.map(m => `<option value="${m.id}">${m.machine_name} (${m.machine_code})</option>`).join('');
+                }
+            } catch (error) {
+                console.error('Error loading machines:', error);
+            }
+        }
+
+        async function loadMROItems() {
+            try {
+                const response = await MaintenanceService.getMROItems({ limit: 200 });
+                if (response.type === 'success') {
+                    mroItems = response.data || [];
+                }
+            } catch (error) {
+                console.error('Error loading MRO items:', error);
+            }
+        }
+
+        async function loadRequisitions() {
+            const tbody = document.getElementById('requisitionsTableBody');
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8"><span class="loading loading-spinner loading-lg"></span></td></tr>';
+
+            try {
+                const params = {
+                    page: currentPage,
+                    limit: 20,
+                    status: document.getElementById('statusFilter').value,
+                    date_from: document.getElementById('dateFrom').value,
+                    date_to: document.getElementById('dateTo').value
+                };
+
+                const response = await MaintenanceService.getRequisitions(params);
+
+                if (response.type === 'success') {
+                    const requisitions = response.data || [];
+                    totalPages = response.pagination?.total_pages || 1;
+
+                    if (requisitions.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-base-content/60">No requisitions found</td></tr>';
+                        document.getElementById('pagination').classList.add('hidden');
+                    } else {
+                        renderRequisitions(requisitions);
+                        updatePagination();
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading requisitions:', error);
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-error">Failed to load requisitions</td></tr>';
+            }
+        }
+
+        function renderRequisitions(requisitions) {
+            const tbody = document.getElementById('requisitionsTableBody');
+
+            const statusConfig = {
+                'pending': { class: 'badge-warning', text: 'Pending Approval' },
+                'approved': { class: 'badge-info', text: 'Approved' },
+                'rejected': { class: 'badge-error', text: 'Rejected' },
+                'fulfilled': { class: 'badge-success', text: 'Fulfilled' },
+                'partially_fulfilled': { class: 'badge-warning', text: 'Partial' },
+                'cancelled': { class: 'badge-ghost', text: 'Cancelled' }
+            };
+
+            const priorityConfig = {
+                'urgent': { class: 'badge-error', text: 'Urgent' },
+                'high': { class: 'badge-warning', text: 'High' },
+                'normal': { class: 'badge-info', text: 'Normal' },
+                'low': { class: 'badge-ghost', text: 'Low' }
+            };
+
+            tbody.innerHTML = requisitions.map(req => {
+                const status = statusConfig[req.status] || { class: 'badge-ghost', text: req.status };
+                const priority = priorityConfig[req.priority] || { class: 'badge-ghost', text: req.priority };
+
+                return `
+                    <tr class="hover cursor-pointer" onclick="viewRequisition(${req.id})">
+                        <td>
+                            <span class="font-mono font-semibold text-primary">${req.requisition_code}</span>
+                        </td>
+                        <td>
+                            ${req.machine_name ? `
+                                <div>${req.machine_name}</div>
+                                <div class="text-xs text-base-content/60">${req.machine_code || ''}</div>
+                            ` : req.repair_code ? `
+                                <div class="text-xs text-base-content/60">Repair: ${req.repair_code}</div>
+                            ` : '<span class="text-base-content/60">-</span>'}
+                        </td>
+                        <td>
+                            <span class="badge badge-outline">${req.total_items} items</span>
+                        </td>
+                        <td><span class="badge ${priority.class} badge-sm">${priority.text}</span></td>
+                        <td><span class="badge ${status.class} badge-sm">${status.text}</span></td>
+                        <td>
+                            <div>${new Date(req.created_at).toLocaleDateString()}</div>
+                            <div class="text-xs text-base-content/60">${req.requested_by_first || ''} ${req.requested_by_last || ''}</div>
+                        </td>
+                        <td>
+                            <div class="dropdown dropdown-end">
+                                <label tabindex="0" class="btn btn-ghost btn-xs" onclick="event.stopPropagation()">
+                                    <i class="fas fa-ellipsis-v"></i>
+                                </label>
+                                <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-40 z-50 p-2">
+                                    <li><a onclick="event.stopPropagation(); viewRequisition(${req.id})"><i class="fas fa-eye w-4"></i> View</a></li>
+                                    ${req.status === 'pending' ? `<li><a onclick="event.stopPropagation(); cancelRequisition(${req.id})" class="text-error"><i class="fas fa-times w-4"></i> Cancel</a></li>` : ''}
+                                </ul>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function updatePagination() {
+            const pagination = document.getElementById('pagination');
+            if (totalPages <= 1) {
+                pagination.classList.add('hidden');
+                return;
+            }
+            pagination.classList.remove('hidden');
+            document.getElementById('pageInfo').textContent = `Page ${currentPage} of ${totalPages}`;
+            document.getElementById('prevPage').disabled = currentPage === 1;
+            document.getElementById('nextPage').disabled = currentPage === totalPages;
+        }
+
+        function changePage(delta) {
+            currentPage += delta;
+            loadRequisitions();
+        }
+
+        function showNewRequisitionModal() {
+            document.getElementById('newRequisitionForm').reset();
+            document.getElementById('reqItemsContainer').innerHTML = '';
+            reqItemCount = 0;
+            addRequisitionItem(); // Add first item row
+            document.getElementById('newRequisitionModal').showModal();
+        }
+
+        function addRequisitionItem() {
+            reqItemCount++;
+            const container = document.getElementById('reqItemsContainer');
+
+            const itemRow = document.createElement('div');
+            itemRow.className = 'flex gap-2 items-start p-3 bg-base-200 rounded-xl';
+            itemRow.id = `reqItem${reqItemCount}`;
+            itemRow.innerHTML = `
+                <div class="flex-1">
+                    <label class="label label-text text-xs">MRO Item *</label>
+                    <select class="select select-bordered select-sm w-full req-item-select" required>
+                        <option value="">Select item...</option>
+                        ${mroItems.map(i => `<option value="${i.id}">${i.item_name} (Stock: ${i.current_stock})</option>`).join('')}
+                    </select>
+                </div>
+                <div class="w-24">
+                    <label class="label label-text text-xs">Qty *</label>
+                    <input type="number" class="input input-bordered input-sm w-full req-item-qty" min="1" step="1" value="1" required>
+                </div>
+                <div class="w-24">
+                    <label class="label label-text text-xs">Unit</label>
+                    <input type="text" class="input input-bordered input-sm w-full req-item-unit" placeholder="pcs" value="pcs">
+                </div>
+                <div class="flex-1">
+                    <label class="label label-text text-xs">Notes</label>
+                    <input type="text" class="input input-bordered input-sm w-full req-item-notes" placeholder="Optional notes...">
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm btn-circle text-error mt-7" onclick="removeRequisitionItem('reqItem${reqItemCount}')" ${reqItemCount === 1 ? 'disabled' : ''}>
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+
+            container.appendChild(itemRow);
+        }
+
+        function removeRequisitionItem(id) {
+            document.getElementById(id).remove();
+        }
+
+        async function handleNewRequisition(e) {
+            e.preventDefault();
+
+            // Collect items
+            const itemRows = document.querySelectorAll('#reqItemsContainer > div');
+            const items = [];
+
+            itemRows.forEach(row => {
+                const mroItemId = row.querySelector('.req-item-select').value;
+                const quantity = row.querySelector('.req-item-qty').value;
+                const unit = row.querySelector('.req-item-unit').value;
+                const notes = row.querySelector('.req-item-notes').value;
+
+                if (mroItemId && quantity) {
+                    items.push({
+                        mro_item_id: mroItemId,
+                        quantity: parseFloat(quantity),
+                        unit: unit || 'pcs',
+                        notes: notes
+                    });
+                }
+            });
+
+            if (items.length === 0) {
+                showToast('Please add at least one item', 'error');
+                return;
+            }
+
+            const submitBtn = document.getElementById('submitReqBtn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Submitting...';
+
+            try {
+                const response = await MaintenanceService.createRequisition({
+                    machine_id: document.getElementById('reqMachineId').value || null,
+                    priority: document.getElementById('reqPriority').value,
+                    needed_by: document.getElementById('reqNeededBy').value || null,
+                    purpose: document.getElementById('reqPurpose').value,
+                    items: items
+                });
+
+                if (response.type === 'success') {
+                    document.getElementById('newRequisitionModal').close();
+                    showToast('Requisition submitted - Awaiting GM approval', 'success');
+                    await loadRequisitions();
+                } else {
+                    showToast(response.message || 'Failed to submit requisition', 'error');
+                }
+            } catch (error) {
+                console.error('Error creating requisition:', error);
+                showToast('Failed to submit requisition', 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit Requisition';
+            }
+        }
+
+        async function viewRequisition(id) {
+            const modal = document.getElementById('requisitionDetailModal');
+            const content = document.getElementById('requisitionDetailContent');
+            content.innerHTML = '<div class="flex justify-center py-8"><span class="loading loading-spinner loading-lg"></span></div>';
+            modal.showModal();
+
+            try {
+                const response = await MaintenanceService.getRequisition(id);
+                if (response.type === 'success') {
+                    const req = response.data;
+                    document.getElementById('reqDetailTitle').textContent = req.requisition_code;
+
+                    const statusConfig = MaintenanceService.formatRequisitionStatus(req.status);
+                    const priorityConfig = MaintenanceService.formatPriority(req.priority);
+
+                    content.innerHTML = `
+                        <div class="grid grid-cols-2 gap-4 mb-6">
+                            <div>
+                                <p class="text-sm text-base-content/60">Status</p>
+                                <span class="badge ${statusConfig.class}">${statusConfig.text}</span>
+                            </div>
+                            <div>
+                                <p class="text-sm text-base-content/60">Priority</p>
+                                <span class="badge ${priorityConfig.class}">${priorityConfig.text}</span>
+                            </div>
+                            <div>
+                                <p class="text-sm text-base-content/60">Machine</p>
+                                <p>${req.machine_name || '-'}</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-base-content/60">Needed By</p>
+                                <p>${req.needed_by_date ? new Date(req.needed_by_date).toLocaleDateString() : '-'}</p>
+                            </div>
+                            <div class="col-span-2">
+                                <p class="text-sm text-base-content/60">Purpose</p>
+                                <p>${req.purpose || '-'}</p>
+                            </div>
+                        </div>
+
+                        ${req.status === 'rejected' ? `
+                            <div class="alert alert-error mb-4">
+                                <i class="fas fa-times-circle"></i>
+                                <div>
+                                    <p class="font-semibold">Rejected</p>
+                                    <p class="text-sm">${req.rejection_reason || 'No reason provided'}</p>
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        <div class="divider">Items Requested</div>
+
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Item</th>
+                                        <th class="text-right">Requested</th>
+                                        <th class="text-right">Issued</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${(req.items || []).map(item => `
+                                        <tr>
+                                            <td>
+                                                <div>${item.item_name}</div>
+                                                <div class="text-xs text-base-content/60">${item.item_code || ''}</div>
+                                            </td>
+                                            <td class="text-right">${item.requested_quantity} ${item.unit_of_measure}</td>
+                                            <td class="text-right">${item.issued_quantity || 0} ${item.unit_of_measure}</td>
+                                            <td>
+                                                ${item.issued_quantity >= item.requested_quantity ? 
+                                                    '<span class="badge badge-success badge-sm">Complete</span>' :
+                                                    item.issued_quantity > 0 ?
+                                                    '<span class="badge badge-warning badge-sm">Partial</span>' :
+                                                    '<span class="badge badge-ghost badge-sm">Pending</span>'
+                                                }
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="divider">History</div>
+
+                        <div class="text-sm space-y-2">
+                            <p><i class="fas fa-user w-5 text-center text-base-content/60"></i> Requested by: ${req.requested_by_first || ''} ${req.requested_by_last || ''}</p>
+                            <p><i class="fas fa-clock w-5 text-center text-base-content/60"></i> Created: ${new Date(req.created_at).toLocaleString()}</p>
+                            ${req.approved_by_first ? `<p><i class="fas fa-check-circle w-5 text-center text-success"></i> Approved by: ${req.approved_by_first} ${req.approved_by_last || ''} on ${new Date(req.approved_at).toLocaleString()}</p>` : ''}
+                            ${req.fulfilled_by_first ? `<p><i class="fas fa-box w-5 text-center text-info"></i> Fulfilled by: ${req.fulfilled_by_first} ${req.fulfilled_by_last || ''} on ${new Date(req.fulfilled_at).toLocaleString()}</p>` : ''}
+                        </div>
+
+                        <div class="modal-action mt-6">
+                            ${req.status === 'pending' ? `
+                                <button class="btn btn-error btn-outline" onclick="document.getElementById('requisitionDetailModal').close(); cancelRequisition(${req.id})">
+                                    <i class="fas fa-times"></i> Cancel
+                                </button>
+                            ` : ''}
+                            <form method="dialog">
+                                <button class="btn">Close</button>
+                            </form>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading requisition:', error);
+                content.innerHTML = '<p class="text-error text-center py-8">Failed to load requisition details</p>';
+            }
+        }
+
+        async function cancelRequisition(id) {
+            if (!confirm('Are you sure you want to cancel this requisition?')) return;
+
+            try {
+                const response = await MaintenanceService.cancelRequisition(id);
+                if (response.type === 'success') {
+                    showToast('Requisition cancelled', 'success');
+                    await loadRequisitions();
+                } else {
+                    showToast(response.message || 'Failed to cancel requisition', 'error');
+                }
+            } catch (error) {
+                console.error('Error cancelling requisition:', error);
+                showToast('Failed to cancel requisition', 'error');
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
+            const icon = type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle';
+
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `<i class="fas ${icon}"></i><span>${message}</span>`;
+            container.appendChild(toast);
+
+            setTimeout(() => toast.remove(), 3000);
+        }
+    </script>
+</body>
+
+</html>

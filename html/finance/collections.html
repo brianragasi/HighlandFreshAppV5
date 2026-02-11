@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Collections - Finance | Highland Fresh</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+
+    <script>
+        tailwind.config = {
+            theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } }
+        }
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .bento-card {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .bento-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: oklch(var(--b2));
+            border-radius: 3px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: oklch(var(--bc) / 0.2);
+            border-radius: 3px;
+        }
+
+        .sidebar-transition {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .stat-value {
+            font-variant-numeric: tabular-nums;
+        }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <img src="../../images/logo.jpg" alt="Logo" class="w-10 h-10 rounded-xl object-cover">
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Finance Department</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">
+                    Disbursements</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="payables.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-file-invoice-dollar w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Supplier Payables</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="farmer_payments.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-tractor w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Farmer Payments</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Collections
+                    <span class="badge badge-ghost badge-xs ml-1">View Only</span>
+                </h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="collections.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-hand-holding-usd w-5 text-center"></i>
+                            <span class="flex-1">Collections</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">FO</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Finance Officer</p>
+                    <p class="text-xs text-base-content/60">Finance</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square"><i
+                            class="fas fa-ellipsis-v"></i></label>
+                    <ul tabindex="0"
+                        class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i>
+                                Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i
+                        class="fas fa-bars text-lg"></i></button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold text-base-content">
+                    <i class="fas fa-eye text-base-content/40 mr-2"></i>Collections
+                    <span class="badge badge-ghost badge-sm ml-2">Read-Only</span>
+                </h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <!-- Period Filter -->
+                <select id="filterPeriod" class="select select-bordered select-sm" onchange="loadCollections()">
+                    <option value="today">Today</option>
+                    <option value="week">This Week</option>
+                    <option value="month" selected>This Month</option>
+                </select>
+
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- Info Banner -->
+            <div class="alert bg-info/10 border border-info/20 mb-6">
+                <i class="fas fa-info-circle text-info"></i>
+                <div>
+                    <h3 class="font-bold text-sm">Collections Visibility</h3>
+                    <p class="text-xs text-base-content/70">This data is entered by the Cashier module. Finance has
+                        read-only access for cash position awareness.</p>
+                </div>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-2 mb-1">
+                            <div class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                                <i class="fas fa-coins text-emerald-500 text-sm"></i>
+                            </div>
+                            <span class="text-sm text-base-content/60">Total Collected</span>
+                        </div>
+                        <p class="text-2xl font-bold stat-value" id="statTotalCollected">
+                            <span class="loading loading-dots loading-sm"></span>
+                        </p>
+                    </div>
+                </div>
+
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-2 mb-1">
+                            <div class="w-8 h-8 rounded-lg bg-green-500/10 flex items-center justify-center">
+                                <i class="fas fa-money-bill-wave text-green-500 text-sm"></i>
+                            </div>
+                            <span class="text-sm text-base-content/60">Cash</span>
+                        </div>
+                        <p class="text-xl font-bold stat-value" id="statCash">₱0.00</p>
+                    </div>
+                </div>
+
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-2 mb-1">
+                            <div class="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                                <i class="fas fa-university text-blue-500 text-sm"></i>
+                            </div>
+                            <span class="text-sm text-base-content/60">Bank / GCash</span>
+                        </div>
+                        <p class="text-xl font-bold stat-value" id="statBank">₱0.00</p>
+                    </div>
+                </div>
+
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-2 mb-1">
+                            <div class="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                                <i class="fas fa-money-check text-amber-500 text-sm"></i>
+                            </div>
+                            <span class="text-sm text-base-content/60">Check</span>
+                        </div>
+                        <p class="text-xl font-bold stat-value" id="statCheck">₱0.00</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Collections Table -->
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="card-title text-lg">
+                            <i class="fas fa-receipt text-primary mr-2"></i>
+                            Collection Records
+                        </h3>
+                        <span class="badge badge-primary" id="collectionCount">0 records</span>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>OR Number</th>
+                                    <th>Customer</th>
+                                    <th>DR Number</th>
+                                    <th>Amount</th>
+                                    <th>Method</th>
+                                    <th>Balance Before</th>
+                                    <th>Balance After</th>
+                                    <th>Collected By</th>
+                                    <th>Date</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="collectionsBody">
+                                <tr>
+                                    <td colspan="10" class="text-center py-12 text-base-content/60">
+                                        <span class="loading loading-spinner loading-md"></span>
+                                        <p class="mt-2">Loading collections...</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Receivables Aging -->
+            <div class="card bg-base-100 border border-base-300 mt-6">
+                <div class="card-body">
+                    <h3 class="card-title text-lg mb-4">
+                        <i class="fas fa-chart-pie text-info mr-2"></i>
+                        Receivables Aging Summary
+                    </h3>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Aging Buckets -->
+                        <div>
+                            <h4 class="font-semibold text-sm mb-3">Aging Breakdown</h4>
+                            <div class="space-y-2" id="agingBuckets">
+                                <div class="text-center py-4 text-base-content/60">
+                                    <span class="loading loading-spinner loading-sm"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Top Debtors -->
+                        <div>
+                            <h4 class="font-semibold text-sm mb-3">Top Outstanding Accounts</h4>
+                            <div class="space-y-2 max-h-64 overflow-y-auto scrollbar-thin" id="topDebtorsList">
+                                <div class="text-center py-4 text-base-content/60">
+                                    <span class="loading loading-spinner loading-sm"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
+            <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/finance/finance.service.js"></script>
+
+    <script>
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('-translate-x-full');
+            document.getElementById('sidebarBackdrop').classList.toggle('hidden');
+        }
+
+        document.getElementById('themeToggle').addEventListener('change', function () {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('themeToggle').checked = true;
+        }
+
+        document.addEventListener('DOMContentLoaded', async function () {
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../login.html';
+                return;
+            }
+            const user = AuthService.getCurrentUser();
+            if (user) {
+                document.getElementById('sidebarUserName').textContent =
+                    `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Finance Officer';
+                document.getElementById('userInitials').textContent =
+                    (user.first_name?.[0] || '') + (user.last_name?.[0] || '') || 'FO';
+            }
+            await Promise.all([
+                loadCollections(),
+                loadReceivablesAging()
+            ]);
+        });
+
+        async function loadCollections() {
+            const period = document.getElementById('filterPeriod').value;
+
+            try {
+                const response = await FinanceService.getCollectionsSummary(period);
+                const data = response?.data;
+                if (!data) return;
+
+                const collections = data.collections || [];
+                const byMethod = data.by_method || [];
+
+                // Summary
+                let totalCollected = 0;
+                const methodTotals = { cash: 0, check: 0, bank_transfer: 0, gcash: 0 };
+                byMethod.forEach(m => {
+                    totalCollected += parseFloat(m.total || 0);
+                    if (methodTotals.hasOwnProperty(m.payment_method)) {
+                        methodTotals[m.payment_method] = parseFloat(m.total || 0);
+                    }
+                });
+
+                document.getElementById('statTotalCollected').textContent = formatCurrency(totalCollected);
+                document.getElementById('statCash').textContent = formatCurrency(methodTotals.cash);
+                document.getElementById('statBank').textContent = formatCurrency(methodTotals.bank_transfer + methodTotals.gcash);
+                document.getElementById('statCheck').textContent = formatCurrency(methodTotals.check);
+                document.getElementById('collectionCount').textContent = `${collections.length} record${collections.length !== 1 ? 's' : ''}`;
+
+                // Table
+                const tbody = document.getElementById('collectionsBody');
+                if (collections.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="10" class="text-center py-12 text-base-content/60">
+                        <i class="fas fa-inbox text-4xl mb-2"></i>
+                        <p>No collections found for this period</p></td></tr>`;
+                    return;
+                }
+
+                const methodIcons = {
+                    'cash': '<i class="fas fa-money-bill-wave text-green-500"></i> Cash',
+                    'check': '<i class="fas fa-money-check text-amber-500"></i> Check',
+                    'bank_transfer': '<i class="fas fa-university text-blue-500"></i> Bank',
+                    'gcash': '<i class="fas fa-mobile-alt text-blue-500"></i> GCash'
+                };
+
+                const statusBadges = {
+                    'confirmed': 'badge-success',
+                    'bounced': 'badge-error',
+                    'cancelled': 'badge-ghost'
+                };
+
+                tbody.innerHTML = collections.map(c => `
+                    <tr class="hover">
+                        <td><span class="font-mono font-semibold text-primary">${c.or_number}</span></td>
+                        <td class="font-medium">${c.customer_name}</td>
+                        <td class="text-sm">${c.dr_number || '-'}</td>
+                        <td class="font-bold">${formatCurrency(c.amount_collected)}</td>
+                        <td class="text-sm">${methodIcons[c.payment_method] || c.payment_method}</td>
+                        <td class="text-sm">${formatCurrency(c.balance_before)}</td>
+                        <td class="text-sm ${parseFloat(c.balance_after) === 0 ? 'text-success font-semibold' : ''}">${formatCurrency(c.balance_after)}</td>
+                        <td class="text-sm">${c.collected_by_name || '-'}</td>
+                        <td class="text-sm">${formatDateTime(c.collected_at)}</td>
+                        <td><span class="badge badge-sm ${statusBadges[c.status] || 'badge-ghost'}">${formatStatus(c.status)}</span></td>
+                    </tr>
+                `).join('');
+
+            } catch (error) {
+                console.error('Error loading collections:', error);
+                document.getElementById('collectionsBody').innerHTML = `<tr><td colspan="10" class="text-center py-8 text-error">
+                    <i class="fas fa-exclamation-circle mr-2"></i> Error loading collections</td></tr>`;
+            }
+        }
+
+        async function loadReceivablesAging() {
+            try {
+                const response = await FinanceService.getReceivablesAging();
+                const data = response?.data;
+                if (!data) return;
+
+                const buckets = data.aging || [];
+                const agingContainer = document.getElementById('agingBuckets');
+                const bucketLabels = {
+                    'current': { label: 'Current', color: 'bg-success', textColor: 'text-success' },
+                    '1-30': { label: '1–30 Days', color: 'bg-info', textColor: 'text-info' },
+                    '31-60': { label: '31–60 Days', color: 'bg-warning', textColor: 'text-warning' },
+                    '61-90': { label: '61–90 Days', color: 'bg-orange-500', textColor: 'text-orange-500' },
+                    '91+': { label: '91+ Days', color: 'bg-error', textColor: 'text-error' }
+                };
+                const totalAR = buckets.reduce((sum, b) => sum + parseFloat(b.total_balance || 0), 0);
+
+                if (buckets.length === 0) {
+                    agingContainer.innerHTML = '<div class="text-center py-4 text-base-content/60"><i class="fas fa-check-circle text-success text-2xl mb-1"></i><p class="text-sm">No outstanding receivables</p></div>';
+                } else {
+                    agingContainer.innerHTML = buckets.map(b => {
+                        const info = bucketLabels[b.aging_bucket] || { label: b.aging_bucket, color: 'bg-base-300', textColor: '' };
+                        const pct = totalAR > 0 ? (parseFloat(b.total_balance) / totalAR * 100) : 0;
+                        return `
+                            <div class="flex items-center gap-3">
+                                <div class="w-24 text-sm font-medium ${info.textColor}">${info.label}</div>
+                                <div class="flex-1 bg-base-200 rounded-full h-3 overflow-hidden">
+                                    <div class="${info.color} h-full rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+                                </div>
+                                <div class="w-28 text-right">
+                                    <span class="font-semibold text-sm">${formatCurrency(b.total_balance)}</span>
+                                    <span class="text-xs text-base-content/50 ml-1">(${b.invoice_count})</span>
+                                </div>
+                            </div>`;
+                    }).join('');
+                }
+
+                const debtors = data.top_debtors || [];
+                const debtorsContainer = document.getElementById('topDebtorsList');
+                if (debtors.length === 0) {
+                    debtorsContainer.innerHTML = '<p class="text-center py-4 text-base-content/60 text-sm">No outstanding accounts</p>';
+                } else {
+                    debtorsContainer.innerHTML = debtors.map((d, i) => `
+                        <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-base-200">
+                            <div class="w-7 h-7 rounded-full bg-base-200 flex items-center justify-center text-xs font-bold text-base-content/50">${i + 1}</div>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-medium text-sm truncate">${d.customer_name}</p>
+                                <p class="text-xs text-base-content/50">${d.invoice_count} invoice${d.invoice_count > 1 ? 's' : ''}</p>
+                            </div>
+                            <span class="font-bold text-sm">${formatCurrency(d.total_balance)}</span>
+                        </div>`).join('');
+                }
+
+            } catch (error) {
+                console.error('Error loading aging:', error);
+            }
+        }
+
+        function formatCurrency(amount) {
+            return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatDateTime(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        }
+
+        function formatStatus(status) {
+            if (!status) return '-';
+            return status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg text-sm`;
+            toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'info-circle'}"></i><span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 3000);
+        }
+    </script>
+
+</body>
+
+</html>

@@ -593,18 +593,29 @@
                     // - collections: data.collections
                     if (currentTab === 'sales') {
                         historyData = Array.isArray(response.data) ? response.data : (response.data.transactions || response.data.items || []);
+                        // Map payment_status to status for consistency
+                        historyData = historyData.map(tx => ({
+                            ...tx,
+                            status: tx.status || (tx.payment_status === 'voided' ? 'voided' : 'completed'),
+                            items_count: tx.items_count || '-',
+                            cashier_name: tx.cashier_name || `${tx.cashier_first_name || ''} ${tx.cashier_last_name || ''}`.trim()
+                        }));
                     } else {
                         historyData = response.data.collections || response.data.items || [];
+                        // Map collection fields to expected format
+                        // API returns: amount_collected, status ('confirmed'|'bounced'|'cancelled')
+                        // Frontend expects: amount, status ('completed'|'voided'|'pending')
+                        historyData = historyData.map(col => ({
+                            ...col,
+                            amount: col.amount_collected || col.amount || 0,
+                            status: col.status === 'confirmed' ? 'completed' 
+                                  : col.status === 'bounced' ? 'voided'
+                                  : col.status === 'cancelled' ? 'voided' 
+                                  : 'pending',
+                            cashier_name: `${col.collected_by_first_name || ''} ${col.collected_by_last_name || ''}`.trim()
+                        }));
                     }
                     totalPages = response.pagination?.total_pages || response.data?.total_pages || 1;
-                    
-                    // Map payment_status to status for consistency
-                    historyData = historyData.map(tx => ({
-                        ...tx,
-                        status: tx.status || (tx.payment_status === 'voided' ? 'voided' : 'completed'),
-                        items_count: tx.items_count || '-',
-                        cashier_name: tx.cashier_name || `${tx.cashier_first_name || ''} ${tx.cashier_last_name || ''}`.trim() || `${tx.collected_by_first_name || ''} ${tx.collected_by_last_name || ''}`.trim()
-                    }));
                     
                     updateStats(response.data.summary || { total_count: response.data.count, total_amount: response.data.total_collected });
                     renderTable();
@@ -682,8 +693,8 @@
                 tbody.innerHTML = historyData.map(col => {
                     const statusBadge = col.status === 'completed' 
                         ? '<span class="badge badge-success badge-sm">Completed</span>'
-                        : col.status === 'cancelled'
-                            ? '<span class="badge badge-error badge-sm">Cancelled</span>'
+                        : col.status === 'voided'
+                            ? '<span class="badge badge-error badge-sm">Voided</span>'
                             : '<span class="badge badge-warning badge-sm">Pending</span>';
 
                     return `

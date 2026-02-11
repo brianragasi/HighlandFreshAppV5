@@ -152,7 +152,7 @@ function handleGet($db, $action, $currentUser) {
                     p.category
                 FROM delivery_receipt_items dri
                 LEFT JOIN products p ON dri.product_id = p.id
-                WHERE dri.dr_id = ?
+                WHERE dri.delivery_receipt_id = ?
             ");
             $itemsStmt->execute([$dr['id']]);
             $dr['items'] = $itemsStmt->fetchAll();

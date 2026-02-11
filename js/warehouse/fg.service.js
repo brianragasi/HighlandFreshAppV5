@@ -23,7 +23,7 @@ const WarehouseFGService = {
     // ========================================
     // Dashboard
     // ========================================
-    
+
     /**
      * Get warehouse FG dashboard statistics
      */
@@ -41,7 +41,7 @@ const WarehouseFGService = {
     // ========================================
     // Chillers
     // ========================================
-    
+
     /**
      * Get all chillers
      * @param {Object} params - Filter parameters
@@ -108,8 +108,8 @@ const WarehouseFGService = {
      * @param {Object} params - Filter parameters (from_date, to_date, limit)
      */
     async getChillerTemperatureLogs(id, params = {}) {
-        return await api.get(`${this.baseUrl}/chillers.php`, { 
-            params: { action: 'temp_logs', id, ...params } 
+        return await api.get(`${this.baseUrl}/chillers.php`, {
+            params: { action: 'temp_logs', id, ...params }
         });
     },
 
@@ -148,8 +148,8 @@ const WarehouseFGService = {
      * @param {Object} params - Filter parameters (category, search, active)
      */
     async getProducts(params = {}) {
-        return await api.get(`${this.baseUrl}/products.php`, { 
-            params: { action: 'list', ...params } 
+        return await api.get(`${this.baseUrl}/products.php`, {
+            params: { action: 'list', ...params }
         });
     },
 
@@ -158,8 +158,8 @@ const WarehouseFGService = {
      * @param {number} id - Product ID
      */
     async getProduct(id) {
-        return await api.get(`${this.baseUrl}/products.php`, { 
-            params: { action: 'detail', id } 
+        return await api.get(`${this.baseUrl}/products.php`, {
+            params: { action: 'detail', id }
         });
     },
 
@@ -177,15 +177,15 @@ const WarehouseFGService = {
      * Get product categories
      */
     async getProductCategories() {
-        return await api.get(`${this.baseUrl}/products.php`, { 
-            params: { action: 'categories' } 
+        return await api.get(`${this.baseUrl}/products.php`, {
+            params: { action: 'categories' }
         });
     },
 
     // ========================================
     // Finished Goods Inventory
     // ========================================
-    
+
     /**
      * Get FG inventory list
      * @param {Object} params - Filter parameters (product_id, chiller_id, status)
@@ -207,8 +207,8 @@ const WarehouseFGService = {
      * @param {string} batchCode - Production batch code
      */
     async getInventoryByBatch(batchCode) {
-        return await api.get(`${this.baseUrl}/inventory.php`, { 
-            params: { action: 'by_batch', batch_code: batchCode } 
+        return await api.get(`${this.baseUrl}/inventory.php`, {
+            params: { action: 'by_batch', batch_code: batchCode }
         });
     },
 
@@ -246,8 +246,8 @@ const WarehouseFGService = {
      * @param {number} threshold - Stock threshold percentage (default 20)
      */
     async getLowStockAlerts(threshold = 20) {
-        return await api.get(`${this.baseUrl}/inventory.php`, { 
-            params: { action: 'low_stock', threshold } 
+        return await api.get(`${this.baseUrl}/inventory.php`, {
+            params: { action: 'low_stock', threshold }
         });
     },
 
@@ -281,8 +281,8 @@ const WarehouseFGService = {
      * Get pending batches from production (QC released, not yet received)
      */
     async getPendingBatches() {
-        return await api.get(`${this.baseUrl}/inventory.php`, { 
-            params: { action: 'pending_batches' } 
+        return await api.get(`${this.baseUrl}/inventory.php`, {
+            params: { action: 'pending_batches' }
         });
     },
 
@@ -338,8 +338,8 @@ const WarehouseFGService = {
      * @param {Object} params - Filter parameters (type, product_id, from_date, to_date)
      */
     async getInventoryTransactions(params = {}) {
-        return await api.get(`${this.baseUrl}/inventory.php`, { 
-            params: { action: 'transactions', ...params } 
+        return await api.get(`${this.baseUrl}/inventory.php`, {
+            params: { action: 'transactions', ...params }
         });
     },
 
@@ -348,15 +348,15 @@ const WarehouseFGService = {
      * @param {number} id - Transaction ID
      */
     async getInventoryTransactionDetail(id) {
-        return await api.get(`${this.baseUrl}/inventory.php`, { 
-            params: { action: 'transaction_detail', id } 
+        return await api.get(`${this.baseUrl}/inventory.php`, {
+            params: { action: 'transaction_detail', id }
         });
     },
 
     // ========================================
     // Delivery Receipts
     // ========================================
-    
+
     /**
      * Get delivery receipts list
      * @param {Object} params - Filter parameters (status, customer_id, from_date, to_date)
@@ -489,8 +489,8 @@ const WarehouseFGService = {
      * @param {number} id - DR ID
      */
     async printDeliveryReceipt(id) {
-        return await api.get(`${this.baseUrl}/delivery_receipts.php`, { 
-            params: { action: 'print', id } 
+        return await api.get(`${this.baseUrl}/delivery_receipts.php`, {
+            params: { action: 'print', id }
         });
     },
 
@@ -503,8 +503,8 @@ const WarehouseFGService = {
      * @param {Object} params - Filter parameters (customer_type, priority)
      */
     async getPendingOrders(params = {}) {
-        return await api.get(`${this.baseUrl}/orders.php`, { 
-            params: { action: 'pending', ...params } 
+        return await api.get(`${this.baseUrl}/orders.php`, {
+            params: { action: 'pending', ...params }
         });
     },
 
@@ -513,8 +513,8 @@ const WarehouseFGService = {
      * @param {number} id - Order/PO ID
      */
     async getOrder(id) {
-        return await api.get(`${this.baseUrl}/orders.php`, { 
-            params: { action: 'detail', id } 
+        return await api.get(`${this.baseUrl}/orders.php`, {
+            params: { action: 'detail', id }
         });
     },
 
@@ -522,8 +522,8 @@ const WarehouseFGService = {
      * Get pending order count
      */
     async getPendingOrderCount() {
-        return await api.get(`${this.baseUrl}/orders.php`, { 
-            params: { action: 'pending_count' } 
+        return await api.get(`${this.baseUrl}/orders.php`, {
+            params: { action: 'pending_count' }
         });
     },
 
@@ -556,7 +556,7 @@ const WarehouseFGService = {
     // ========================================
     // Customers
     // ========================================
-    
+
     /**
      * Get customers list
      * @param {Object} params - Filter parameters
@@ -608,7 +608,7 @@ const WarehouseFGService = {
     // ========================================
     // Dispatch / Release / Barcode
     // ========================================
-    
+
     /**
      * Get dispatch history
      * @param {Object} params - Filter parameters (from_date, to_date, dr_id)
@@ -630,8 +630,8 @@ const WarehouseFGService = {
      * @param {string} barcode - Product barcode (contains mfg date, expiry, batch info)
      */
     async lookupBatchByBarcode(barcode) {
-        return await api.get(`${this.baseUrl}/dispatch.php`, { 
-            params: { action: 'lookup_barcode', barcode } 
+        return await api.get(`${this.baseUrl}/dispatch.php`, {
+            params: { action: 'lookup_barcode', barcode }
         });
     },
 
@@ -641,8 +641,8 @@ const WarehouseFGService = {
      * @param {number} productId - Product ID
      */
     async checkFIFOCompliance(inventoryId, productId) {
-        return await api.get(`${this.baseUrl}/dispatch.php`, { 
-            params: { action: 'check_fifo', inventory_id: inventoryId, product_id: productId } 
+        return await api.get(`${this.baseUrl}/dispatch.php`, {
+            params: { action: 'check_fifo', inventory_id: inventoryId, product_id: productId }
         });
     },
 
@@ -677,12 +677,26 @@ const WarehouseFGService = {
     },
 
     /**
+     * Finalize picking - generates official DR number and deducts inventory
+     * Called when all items for a picking ticket (PICK-xxx) have been scanned
+     * @param {number} drId - Picking ticket ID (with status='picking')
+     * @param {Array} items - Array of {inventory_id, quantity_boxes, quantity_pieces, total_pieces}
+     */
+    async finalizePicking(drId, items) {
+        return await api.put(`${this.baseUrl}/delivery_receipts.php`, {
+            action: 'finalize_picking',
+            id: drId,
+            items
+        });
+    },
+
+    /**
      * Get release summary for a DR
      * @param {number} drId - Delivery receipt ID
      */
     async getReleaseSummary(drId) {
-        return await api.get(`${this.baseUrl}/dispatch.php`, { 
-            params: { action: 'release_summary', dr_id: drId } 
+        return await api.get(`${this.baseUrl}/dispatch.php`, {
+            params: { action: 'release_summary', dr_id: drId }
         });
     }
 };

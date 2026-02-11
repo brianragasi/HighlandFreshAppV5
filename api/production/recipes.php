@@ -125,7 +125,7 @@ try {
             // Validation
             $errors = [];
             if (empty($productName)) $errors['product_name'] = 'Product name is required';
-            if (!in_array($productType, ['bottled_milk', 'cheese', 'butter', 'yogurt', 'milk_bar'])) {
+            if (!in_array($productType, ['bottled_milk', 'cheese', 'butter', 'yogurt', 'milk_bar', 'cream', 'flavored_milk'])) {
                 $errors['product_type'] = 'Invalid product type';
             }
             if ($baseMilkLiters <= 0) $errors['base_milk_liters'] = 'Base milk liters must be greater than 0';

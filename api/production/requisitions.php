@@ -181,39 +181,33 @@ try {
                 ");
                 
                 foreach ($items as $item) {
-                    // Determine item_type based on item name or explicit type
-                    $itemType = $item['item_type'] ?? 'ingredient';
-                    $itemId = $item['item_id'] ?? 0;
+                    // Auto-detect item_type based on item name (free-text input)
                     $itemName = strtolower(trim($item['item_name'] ?? ''));
+                    $itemType = 'ingredient'; // Default
+                    $itemId = 0;
                     
-                    // Enhanced raw milk detection - check for common terms
-                    // Matches: "raw", "raw milk", "fresh milk", "carabao", "cow milk", "goat milk", etc.
-                    $rawMilkPatterns = ['raw milk', 'raw', 'fresh milk', 'carabao', 'cow milk', 'goat milk', 'whole milk'];
-                    $isRawMilk = false;
-                    
+                    // Check if this is raw milk based on name patterns
+                    $rawMilkPatterns = ['raw milk', 'fresh milk', 'carabao milk', 'cow milk', 'goat milk', 'whole milk'];
                     foreach ($rawMilkPatterns as $pattern) {
                         if ($itemName === $pattern || strpos($itemName, $pattern) !== false) {
-                            $isRawMilk = true;
+                            $itemType = 'raw_milk';
                             break;
                         }
                     }
                     
-                    // Also check for 'milk' but exclude 'powder', 'chocolate milk', etc. (processed products)
-                    if (!$isRawMilk && stripos($item['item_name'], 'milk') !== false) {
-                        $excludePatterns = ['powder', 'chocolate', 'flavored', 'pasteurized', 'skim'];
+                    // Also check for just 'milk' but exclude processed products
+                    if ($itemType !== 'raw_milk' && strpos($itemName, 'milk') !== false) {
+                        $excludePatterns = ['powder', 'chocolate', 'flavored', 'pasteurized', 'skim', 'condensed', 'evaporated'];
                         $isExcluded = false;
                         foreach ($excludePatterns as $exclude) {
-                            if (stripos($item['item_name'], $exclude) !== false) {
+                            if (strpos($itemName, $exclude) !== false) {
                                 $isExcluded = true;
                                 break;
                             }
                         }
-                        $isRawMilk = !$isExcluded;
-                    }
-                    
-                    if (!isset($item['item_type']) && $isRawMilk) {
-                        $itemType = 'raw_milk';
-                        $itemId = 0; // Raw milk doesn't have a specific item_id - it comes from tanks
+                        if (!$isExcluded) {
+                            $itemType = 'raw_milk';
+                        }
                     }
                     
                     $itemStmt->execute([

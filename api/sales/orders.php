@@ -14,13 +14,21 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 
-// Require Sales Custodian or GM role
-$currentUser = Auth::requireRole(['sales_custodian', 'general_manager']);
+// Different roles for different operations
+// GET: Warehouse FG can view orders (to see approved orders for DR creation)
+// POST/PUT: Only Sales Custodian and GM can create/modify orders
+$allowedRoles = ['sales_custodian', 'general_manager', 'warehouse_fg'];
+$currentUser = Auth::requireRole($allowedRoles);
 
 $action = getParam('action', 'list');
 
 // Valid order statuses
-$validStatuses = ['draft', 'pending', 'approved', 'preparing', 'partially_fulfilled', 'fulfilled', 'cancelled'];
+$validStatuses = ['draft', 'pending', 'approved', 'preparing', 'dispatched', 'delivered', 'partially_fulfilled', 'fulfilled', 'cancelled'];
+
+// Restrict write operations to Sales/GM only
+if (in_array($requestMethod, ['POST', 'PUT', 'DELETE']) && !in_array($currentUser['role'], ['sales_custodian', 'general_manager'])) {
+    Response::error('Only Sales Custodian or General Manager can modify orders', 403);
+}
 
 try {
     $db = Database::getInstance()->getConnection();
@@ -76,7 +84,8 @@ function handleGet($db, $action, $validStatuses) {
             $offset = ($page - 1) * $limit;
             
             $sql = "
-                SELECT o.*, c.name as customer_name, c.customer_type, c.customer_code
+                SELECT o.*, c.name as customer_name, c.customer_type, c.customer_code,
+                       (SELECT COUNT(*) FROM sales_order_items WHERE order_id = o.id) as item_count
                 FROM sales_orders o
                 LEFT JOIN customers c ON o.customer_id = c.id
                 WHERE 1=1
@@ -112,7 +121,7 @@ function handleGet($db, $action, $validStatuses) {
             }
             
             // Get total count
-            $countSql = str_replace("SELECT o.*, c.name as customer_name, c.customer_type, c.customer_code", "SELECT COUNT(*) as total", $sql);
+            $countSql = preg_replace('/SELECT .+ FROM/s', 'SELECT COUNT(*) as total FROM', $sql);
             $countStmt = $db->prepare($countSql);
             $countStmt->execute($params);
             $result = $countStmt->fetch();
@@ -698,13 +707,79 @@ function handlePut($db, $action, $currentUser, $validStatuses) {
                 'draft' => ['pending', 'cancelled'],
                 'pending' => ['approved', 'cancelled'],
                 'approved' => ['preparing', 'cancelled'],
-                'preparing' => ['partially_fulfilled', 'fulfilled', 'cancelled'],
+                'preparing' => ['dispatched', 'partially_fulfilled', 'fulfilled', 'cancelled'],
+                'dispatched' => ['delivered', 'cancelled'],
                 'partially_fulfilled' => ['fulfilled', 'cancelled']
             ];
+            
+            // Role-based restrictions for certain transitions
+            $roleRestrictedTransitions = [
+                'approved' => ['general_manager'], // Only GM can approve
+                'delivered' => ['warehouse_fg', 'general_manager'], // Only Warehouse FG can mark delivered
+            ];
+            
+            if (isset($roleRestrictedTransitions[$newStatus]) && 
+                !in_array($currentUser['role'], $roleRestrictedTransitions[$newStatus])) {
+                $errorMsg = $newStatus === 'approved' ? 'Only General Manager can approve orders' : 'Only Warehouse FG can mark orders as delivered';
+                Response::error($errorMsg, 403);
+            }
             
             if (!isset($validTransitions[$current['status']]) || 
                 !in_array($newStatus, $validTransitions[$current['status']])) {
                 Response::error("Cannot transition from {$current['status']} to {$newStatus}", 400);
+            }
+            
+            // =====================================================
+            // CRITICAL VALIDATION: Verify items were released from FG inventory
+            // before allowing "delivered" status
+            // =====================================================
+            if ($newStatus === 'delivered') {
+                // Get DR for this order
+                $drStmt = $db->prepare("SELECT id, dr_number FROM delivery_receipts WHERE order_id = ?");
+                $drStmt->execute([$id]);
+                $dr = $drStmt->fetch();
+                
+                if (!$dr) {
+                    Response::error('Cannot mark as delivered: No Delivery Receipt exists for this order. Create a DR first.', 400);
+                }
+                
+                // Get order items with their released quantities
+                $itemsStmt = $db->prepare("
+                    SELECT 
+                        oi.product_id,
+                        p.product_name,
+                        oi.quantity_ordered,
+                        COALESCE(dri.quantity_delivered, 0) as released_qty,
+                        COALESCE((
+                            SELECT SUM(dl.quantity_released) 
+                            FROM fg_dispatch_log dl 
+                            JOIN finished_goods_inventory fgi ON dl.inventory_id = fgi.id
+                            WHERE dl.dr_id = ? AND fgi.product_id = oi.product_id
+                        ), 0) as dispatch_qty
+                    FROM sales_order_items oi
+                    LEFT JOIN products p ON oi.product_id = p.id
+                    LEFT JOIN delivery_receipt_items dri ON dri.delivery_receipt_id = ? AND dri.product_id = oi.product_id
+                    WHERE oi.order_id = ?
+                ");
+                $itemsStmt->execute([$dr['id'], $dr['id'], $id]);
+                $items = $itemsStmt->fetchAll();
+                
+                $shortages = [];
+                foreach ($items as $item) {
+                    $actualReleased = max($item['released_qty'], $item['dispatch_qty']);
+                    if ($actualReleased < $item['quantity_ordered']) {
+                        $shortages[] = "{$item['product_name']}: ordered {$item['quantity_ordered']}, released {$actualReleased}";
+                    }
+                }
+                
+                if (!empty($shortages)) {
+                    Response::error(
+                        "Cannot mark as delivered: Items not fully released from FG inventory.\n" .
+                        implode("\n", $shortages) . 
+                        "\n\nPlease dispatch items via Warehouse FG first.",
+                        400
+                    );
+                }
             }
             
             $db->beginTransaction();

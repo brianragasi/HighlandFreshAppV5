@@ -197,6 +197,36 @@
                     </li>
                 </ul>
             </div>
+
+            <!-- Disposals -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Disposals</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="#pendingDisposalsSection" onclick="scrollToDisposals()"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-trash-alt w-5 text-center text-error"></i>
+                            <span class="flex-1">Pending Disposals</span>
+                            <span class="badge badge-sm badge-error" id="pendingDisposalsBadge">0</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Recalls -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Recalls</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="#pendingRecallsSection" onclick="scrollToRecalls()"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-exclamation-triangle w-5 text-center text-warning"></i>
+                            <span class="flex-1">Pending Returns</span>
+                            <span class="badge badge-sm badge-warning" id="pendingRecallsBadge">0</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
         </nav>
 
         <!-- User Section -->
@@ -477,6 +507,48 @@
 
             </div>
 
+            <!-- Pending Disposals Section -->
+            <div id="pendingDisposalsSection" class="card bg-base-100 border border-base-300 mt-6">
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="card-title text-lg">
+                            <i class="fas fa-trash-alt text-error mr-2"></i>
+                            Approved Disposals - Ready for Execution
+                        </h3>
+                        <span class="badge badge-error" id="disposalsCountBadge">0</span>
+                    </div>
+                    <p class="text-sm text-base-content/60 mb-4">These disposal requests have been approved by the General Manager. Click "Complete" to record the physical disposal.</p>
+
+                    <div id="pendingDisposalsList" class="space-y-3 max-h-96 overflow-y-auto scrollbar-thin">
+                        <div class="text-center py-8 text-base-content/40">
+                            <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                            <p>Loading disposals...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pending Recall Returns Section -->
+            <div id="pendingRecallsSection" class="card bg-base-100 border border-base-300 mt-6">
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="card-title text-lg">
+                            <i class="fas fa-exclamation-triangle text-warning mr-2"></i>
+                            Active Recalls - Log Product Returns
+                        </h3>
+                        <span class="badge badge-warning" id="recallsCountBadge">0</span>
+                    </div>
+                    <p class="text-sm text-base-content/60 mb-4">Products being recalled from customers. Click "Log Return" when products are received back at the warehouse.</p>
+
+                    <div id="pendingRecallsList" class="space-y-4 max-h-96 overflow-y-auto scrollbar-thin">
+                        <div class="text-center py-8 text-base-content/40">
+                            <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                            <p>Loading recalls...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </main>
 
         <!-- Footer -->
@@ -486,6 +558,87 @@
             </div>
         </footer>
     </div>
+
+    <!-- Complete Disposal Modal -->
+    <dialog id="completeDisposalModal" class="modal">
+        <div class="modal-box max-w-md">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-check-circle text-success"></i> Complete Disposal
+            </h3>
+            <div id="disposalDetails" class="bg-base-200 rounded-xl p-4 mb-4">
+                <!-- Details populated by JS -->
+            </div>
+            <div class="space-y-4">
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Witness Name</span></label>
+                    <input type="text" id="witnessName" class="input input-bordered w-full" placeholder="Name of witness (optional)">
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Disposal Location</span></label>
+                    <input type="text" id="disposalLocation" class="input input-bordered w-full" placeholder="Where was it disposed? (e.g., Waste Area B)">
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Execution Notes</span></label>
+                    <textarea id="executeNotes" class="textarea textarea-bordered w-full" rows="2" placeholder="Any additional notes about the disposal..."></textarea>
+                </div>
+            </div>
+            <div class="modal-action">
+                <button class="btn btn-ghost" onclick="document.getElementById('completeDisposalModal').close()">Cancel</button>
+                <button class="btn btn-success" onclick="executeDisposal()">
+                    <i class="fas fa-check"></i> Complete Disposal
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Log Recall Return Modal -->
+    <dialog id="logReturnModal" class="modal">
+        <div class="modal-box max-w-md">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-box text-info"></i> Log Product Return
+            </h3>
+            <div id="returnRecallDetails" class="bg-base-200 rounded-xl p-4 mb-4">
+                <!-- Details populated by JS -->
+            </div>
+            <div class="space-y-4">
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Location *</span></label>
+                    <select id="returnLocationId" class="select select-bordered w-full" required></select>
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Units Returned *</span></label>
+                    <input type="number" id="unitsReturned" class="input input-bordered w-full" required min="1" placeholder="Number of units">
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Condition</span></label>
+                    <select id="conditionStatus" class="select select-bordered w-full">
+                        <option value="unknown">Unknown</option>
+                        <option value="good">Good (Unopened)</option>
+                        <option value="damaged">Damaged</option>
+                        <option value="spoiled">Spoiled</option>
+                    </select>
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Notes</span></label>
+                    <textarea id="conditionNotes" class="textarea textarea-bordered w-full" rows="2" placeholder="Any notes about the returned products..."></textarea>
+                </div>
+            </div>
+            <div class="modal-action">
+                <button class="btn btn-ghost" onclick="document.getElementById('logReturnModal').close()">Cancel</button>
+                <button class="btn btn-info" onclick="submitReturn()">
+                    <i class="fas fa-box"></i> Log Return
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
 
     <!-- Toast Container -->
     <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
@@ -545,25 +698,18 @@
         }
 
         async function loadDashboardData() {
-            try {
-                // Load stats from API first
-                await loadStats();
-
-                // Load chiller data
-                await loadChillerStatus();
-
-                // Load expiring items
-                await loadExpiringItems();
-
-                // Load pending DRs
-                await loadPendingDRs();
-
-                // Load recent activity
-                await loadRecentActivity();
-
-            } catch (error) {
-                console.error('Error loading dashboard:', error);
-            }
+            // Load all sections independently so one failure doesn't block others
+            const loaders = [
+                loadStats().catch(e => console.error('Stats error:', e)),
+                loadChillerStatus().catch(e => console.error('Chiller error:', e)),
+                loadExpiringItems().catch(e => console.error('Expiring items error:', e)),
+                loadPendingDRs().catch(e => console.error('Pending DRs error:', e)),
+                loadRecentActivity().catch(e => console.error('Recent activity error:', e)),
+                loadPendingDisposals().catch(e => console.error('Disposals error:', e)),
+                loadActiveRecalls().catch(e => console.error('Recalls error:', e))
+            ];
+            
+            await Promise.all(loaders);
         }
 
         async function loadChillerStatus() {
@@ -788,6 +934,377 @@
                 'cancelled': 'error'
             };
             return colors[status] || 'ghost';
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type];
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `<span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.remove(); }, 3000);
+        }
+
+        // ==================== DISPOSAL FUNCTIONS ====================
+        const DISPOSAL_API = API_BASE_URL + '/qc/disposals.php';
+        let currentDisposalId = null;
+
+        function scrollToDisposals() {
+            document.getElementById('pendingDisposalsSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        async function loadPendingDisposals() {
+            try {
+                const response = await api.get('/qc/disposals.php', {
+                    params: { status: 'approved', source_type: 'finished_goods' }
+                });
+
+                if (response.success) {
+                    const disposals = response.data || [];
+                    renderPendingDisposals(disposals);
+                    document.getElementById('pendingDisposalsBadge').textContent = disposals.length;
+                    document.getElementById('disposalsCountBadge').textContent = disposals.length;
+                }
+            } catch (error) {
+                console.error('Error loading disposals:', error);
+                document.getElementById('pendingDisposalsList').innerHTML = `
+                    <div class="text-center py-8 text-error">
+                        <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
+                        <p>Failed to load disposals</p>
+                    </div>
+                `;
+            }
+        }
+
+        const categoryLabels = {
+            qc_failed: 'QC Failed', expired: 'Expired', near_expiry: 'Near Expiry', spoiled: 'Spoiled',
+            contaminated: 'Contaminated', damaged: 'Damaged',
+            rejected_receipt: 'Rejected', production_waste: 'Waste', other: 'Other'
+        };
+
+        const methodLabels = {
+            drain: 'Drain', incinerate: 'Incinerate', animal_feed: 'Animal Feed',
+            compost: 'Compost', special_waste: 'Special Waste', other: 'Other'
+        };
+
+        function renderPendingDisposals(disposals) {
+            const container = document.getElementById('pendingDisposalsList');
+
+            if (!disposals.length) {
+                container.innerHTML = `
+                    <div class="text-center py-8 text-success">
+                        <i class="fas fa-check-circle text-2xl mb-2"></i>
+                        <p>No pending disposals</p>
+                        <p class="text-xs text-base-content/60 mt-1">All approved disposals have been executed</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = disposals.map(d => `
+                <div class="flex flex-col md:flex-row md:items-center gap-4 p-4 bg-error/5 border border-error/20 rounded-xl">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2 mb-1">
+                            <code class="text-sm font-mono text-error">${d.disposal_code}</code>
+                            <span class="badge badge-error badge-sm">${categoryLabels[d.disposal_category] || d.disposal_category}</span>
+                        </div>
+                        <p class="font-semibold">${d.product_name || 'Finished Goods'}</p>
+                        <p class="text-sm text-base-content/60">
+                            <i class="fas fa-box mr-1"></i>${parseFloat(d.quantity).toLocaleString()} ${d.unit || 'pcs'}
+                            <span class="mx-2">•</span>
+                            <i class="fas fa-flask mr-1"></i>${methodLabels[d.disposal_method] || d.disposal_method}
+                            ${d.batch_code ? `<span class="mx-2">•</span><i class="fas fa-barcode mr-1"></i>${d.batch_code}` : ''}
+                        </p>
+                        <p class="text-xs text-base-content/50 mt-1">
+                            Approved by: ${d.approved_by_name || 'GM'} on ${formatDate(d.approved_at)}
+                        </p>
+                        ${d.disposal_reason ? `<p class="text-xs text-base-content/60 mt-1 italic">"${d.disposal_reason}"</p>` : ''}
+                    </div>
+                    <div class="flex gap-2">
+                        <button class="btn btn-success btn-sm" onclick="openCompleteModal(${d.id})">
+                            <i class="fas fa-check"></i> Complete
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function openCompleteModal(disposalId) {
+            currentDisposalId = disposalId;
+            
+            api.get('/qc/disposals.php', { params: { id: disposalId } }).then(response => {
+                if (response.success) {
+                    const d = response.data;
+                    document.getElementById('disposalDetails').innerHTML = `
+                        <div class="space-y-2">
+                            <div class="flex justify-between">
+                                <span class="text-base-content/60">Code:</span>
+                                <code class="font-mono">${d.disposal_code}</code>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-base-content/60">Product:</span>
+                                <span class="font-semibold">${d.product_name || 'Finished Goods'}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-base-content/60">Quantity:</span>
+                                <span>${parseFloat(d.quantity).toLocaleString()} ${d.unit || 'pcs'}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-base-content/60">Method:</span>
+                                <span>${methodLabels[d.disposal_method] || d.disposal_method}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-base-content/60">Value:</span>
+                                <span class="text-error font-semibold">${formatCurrency(d.total_value)}</span>
+                            </div>
+                        </div>
+                    `;
+                }
+            });
+
+            document.getElementById('witnessName').value = '';
+            document.getElementById('disposalLocation').value = '';
+            document.getElementById('executeNotes').value = '';
+            document.getElementById('completeDisposalModal').showModal();
+        }
+
+        async function executeDisposal() {
+            if (!currentDisposalId) return;
+
+            const witnessName = document.getElementById('witnessName').value.trim();
+            const disposalLocation = document.getElementById('disposalLocation').value.trim();
+            const notes = document.getElementById('executeNotes').value.trim();
+
+            try {
+                const response = await api.put(`/qc/disposals.php?id=${currentDisposalId}&action=complete`, {
+                    witness_name: witnessName,
+                    disposal_location: disposalLocation,
+                    notes: notes
+                });
+
+                if (response.success) {
+                    document.getElementById('completeDisposalModal').close();
+                    showToast('Disposal completed successfully! Inventory updated.', 'success');
+                    loadPendingDisposals();
+                    loadDashboardData(); // Refresh stats
+                } else {
+                    showToast(response.message || 'Failed to complete disposal', 'error');
+                }
+            } catch (error) {
+                console.error('Error completing disposal:', error);
+                showToast(error.message || 'Failed to complete disposal', 'error');
+            }
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount || 0);
+        }
+
+        // ==================== RECALL RETURN FUNCTIONS ====================
+        let currentRecallId = null;
+        let currentRecallLocations = [];
+
+        function scrollToRecalls() {
+            document.getElementById('pendingRecallsSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        const classLabels = {
+            class_i: { label: 'Class I', badge: 'badge-error', icon: 'skull-crossbones', desc: 'Dangerous' },
+            class_ii: { label: 'Class II', badge: 'badge-warning', icon: 'exclamation-triangle', desc: 'May Cause Harm' },
+            class_iii: { label: 'Class III', badge: 'badge-info', icon: 'info-circle', desc: 'Unlikely Harm' }
+        };
+
+        async function loadActiveRecalls() {
+            try {
+                const response = await api.get('/qc/recalls.php', {
+                    params: { action: 'active' }
+                });
+
+                if (response.success) {
+                    const recalls = response.data || [];
+                    // Filter to only show recalls that are in progress
+                    const activeRecalls = recalls.filter(r => 
+                        ['approved', 'in_progress'].includes(r.status)
+                    );
+
+                    // Get affected locations for each recall (with error handling per recall)
+                    for (const recall of activeRecalls) {
+                        try {
+                            const detailRes = await api.get('/qc/recalls.php', { params: { id: recall.id } });
+                            if (detailRes.success && detailRes.data.affected_locations) {
+                                recall.affected_locations = detailRes.data.affected_locations;
+                                recall.total_produced = detailRes.data.total_produced;
+                                recall.total_dispatched = detailRes.data.total_dispatched;
+                                recall.total_recovered = detailRes.data.total_recovered;
+                                recall.recovery_rate = detailRes.data.recovery_rate;
+                            }
+                        } catch (detailErr) {
+                            console.warn('Could not load recall details for', recall.id, detailErr);
+                        }
+                    }
+
+                    // Count pending returns (locations with remaining items)
+                    let pendingCount = activeRecalls.reduce((sum, r) => 
+                        sum + (r.affected_locations || []).filter(l => l.units_dispatched > l.units_returned).length, 0
+                    );
+
+                    renderActiveRecalls(activeRecalls);
+                    document.getElementById('pendingRecallsBadge').textContent = pendingCount;
+                    document.getElementById('recallsCountBadge').textContent = pendingCount;
+                } else {
+                    // API returned but success=false - show empty state
+                    renderActiveRecalls([]);
+                    document.getElementById('pendingRecallsBadge').textContent = '0';
+                    document.getElementById('recallsCountBadge').textContent = '0';
+                }
+            } catch (error) {
+                console.error('Error loading recalls:', error);
+                document.getElementById('pendingRecallsList').innerHTML = `
+                    <div class="text-center py-8 text-error">
+                        <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
+                        <p>Failed to load recalls</p>
+                    </div>
+                `;
+            }
+        }
+
+        function renderActiveRecalls(recalls) {
+            const container = document.getElementById('pendingRecallsList');
+
+            if (!recalls.length) {
+                container.innerHTML = `
+                    <div class="text-center py-8 text-success">
+                        <i class="fas fa-check-circle text-2xl mb-2"></i>
+                        <p>No active recalls</p>
+                        <p class="text-xs text-base-content/60 mt-1">No products currently being recalled</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = recalls.map(r => {
+                const cls = classLabels[r.recall_class] || { label: r.recall_class, badge: 'badge-ghost', icon: 'exclamation-triangle' };
+                const locationsWithPending = (r.affected_locations || []).filter(l => l.units_dispatched > l.units_returned);
+                const recoveryRate = r.recovery_rate || 0;
+                const recoveryColor = recoveryRate >= 80 ? 'success' : (recoveryRate >= 50 ? 'warning' : 'error');
+
+                return `
+                    <div class="border ${r.recall_class === 'class_i' ? 'border-error bg-error/5' : 'border-warning bg-warning/5'} rounded-xl p-4">
+                        <div class="flex flex-col md:flex-row md:items-start gap-4 mb-3">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="badge ${cls.badge} gap-1">
+                                        <i class="fas fa-${cls.icon}"></i> ${cls.label}
+                                    </span>
+                                    <code class="text-sm font-mono">${r.recall_code}</code>
+                                </div>
+                                <p class="font-semibold">${r.product_name}</p>
+                                <p class="text-sm text-base-content/60">Batch: ${r.batch_code}</p>
+                            </div>
+                            <div class="text-right">
+                                <div class="flex items-center gap-2 justify-end mb-1">
+                                    <span class="text-xs text-base-content/60">Recovery:</span>
+                                    <progress class="progress progress-${recoveryColor} w-20" value="${recoveryRate}" max="100"></progress>
+                                    <span class="font-semibold">${recoveryRate}%</span>
+                                </div>
+                                <p class="text-xs">${r.total_recovered || 0} / ${r.total_dispatched || 0} returned</p>
+                            </div>
+                        </div>
+
+                        ${locationsWithPending.length > 0 ? `
+                            <div class="divider my-2 text-xs">Locations with Pending Returns</div>
+                            <div class="space-y-2">
+                                ${locationsWithPending.map(l => `
+                                    <div class="flex items-center justify-between p-3 bg-base-100 rounded-lg border border-base-300">
+                                        <div>
+                                            <p class="font-medium">${l.location_name}</p>
+                                            <p class="text-xs text-base-content/60">
+                                                ${l.units_dispatched} dispatched • ${l.units_returned} returned • 
+                                                <span class="text-warning font-semibold">${l.units_dispatched - l.units_returned} remaining</span>
+                                            </p>
+                                        </div>
+                                        <button class="btn btn-sm btn-info" onclick="openLogReturnModal(${r.id}, ${l.id}, '${l.location_name}', ${l.units_dispatched - l.units_returned})">
+                                            <i class="fas fa-box"></i> Log Return
+                                        </button>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : `
+                            <div class="text-center py-4 text-success">
+                                <i class="fas fa-check-circle mr-2"></i>
+                                All products returned from affected locations
+                            </div>
+                        `}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function openLogReturnModal(recallId, locationId, locationName, remaining) {
+            currentRecallId = recallId;
+
+            document.getElementById('returnRecallDetails').innerHTML = `
+                <div class="space-y-2 text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-base-content/60">Location:</span>
+                        <span class="font-semibold">${locationName}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-base-content/60">Remaining:</span>
+                        <span class="font-semibold text-warning">${remaining} units</span>
+                    </div>
+                </div>
+            `;
+
+            // Populate location dropdown with just this location
+            const select = document.getElementById('returnLocationId');
+            select.innerHTML = `<option value="${locationId}">${locationName} (${remaining} remaining)</option>`;
+
+            // Reset form
+            document.getElementById('unitsReturned').value = '';
+            document.getElementById('unitsReturned').max = remaining;
+            document.getElementById('conditionStatus').value = 'unknown';
+            document.getElementById('conditionNotes').value = '';
+
+            document.getElementById('logReturnModal').showModal();
+        }
+
+        async function submitReturn() {
+            if (!currentRecallId) return;
+
+            const locationId = document.getElementById('returnLocationId').value;
+            const unitsReturned = document.getElementById('unitsReturned').value;
+            const conditionStatus = document.getElementById('conditionStatus').value;
+            const conditionNotes = document.getElementById('conditionNotes').value.trim();
+
+            if (!unitsReturned || unitsReturned <= 0) {
+                showToast('Please enter valid units returned', 'warning');
+                return;
+            }
+
+            try {
+                const response = await api.put('/qc/recalls.php', {
+                    id: currentRecallId,
+                    action: 'log_return',
+                    affected_location_id: locationId,
+                    units_returned: parseInt(unitsReturned),
+                    return_date: new Date().toISOString().split('T')[0],
+                    condition_status: conditionStatus,
+                    condition_notes: conditionNotes || null
+                });
+
+                if (response.success) {
+                    document.getElementById('logReturnModal').close();
+                    showToast('Return logged successfully!', 'success');
+                    await loadActiveRecalls();
+                } else {
+                    showToast(response.message || 'Failed to log return', 'error');
+                }
+            } catch (error) {
+                console.error('Error logging return:', error);
+                showToast(error.message || 'Failed to log return', 'error');
+            }
         }
     </script>
 </body>

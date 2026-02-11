@@ -271,11 +271,11 @@
                         <input type="text" id="customerPONumber" class="input input-bordered" placeholder="Enter customer's PO number...">
                     </div>
                     <div class="form-control" id="subAccountContainer" style="display: none;">
-                        <label class="label"><span class="label-text">School / Sub-Account</span></label>
+                        <label class="label"><span class="label-text" id="subAccountLabel">Branch / Sub-Account</span></label>
                         <select id="subAccount" class="select select-bordered">
-                            <option value="">Select school/branch...</option>
+                            <option value="">Select branch...</option>
                         </select>
-                        <label class="label"><span class="label-text-alt text-info">For Feeding Program: Select specific school</span></label>
+                        <label class="label"><span class="label-text-alt text-info" id="subAccountHint"></span></label>
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Delivery Date</span></label>
@@ -396,6 +396,7 @@
         let orderItems = [];
         let currentPage = 1;
         let searchTimeout = null;
+        let currentUserRole = null;
         
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -435,6 +436,7 @@
             try {
                 const user = AuthService.getCurrentUser();
                 if (user) {
+                    currentUserRole = user.role;
                     document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
                     document.getElementById('userInitials').textContent = `${user.first_name[0]}${user.last_name[0]}`;
                 }
@@ -527,11 +529,11 @@
                                             <li><a onclick="cancelOrder(${o.id})" class="text-error"><i class="fas fa-times w-4"></i> Cancel</a></li>
                                         ` : ''}
                                         ${o.status === 'pending' ? `
-                                            <li><a onclick="approveOrder(${o.id})" class="text-success"><i class="fas fa-check w-4"></i> Approve</a></li>
+                                            <li class="disabled"><span class="text-base-content/40"><i class="fas fa-clock w-4"></i> Awaiting GM Approval</span></li>
                                             <li><a onclick="cancelOrder(${o.id})" class="text-error"><i class="fas fa-times w-4"></i> Cancel</a></li>
-                                        ` : ''}
-                                        ${o.status === 'approved' ? `
-                                            <li><a onclick="createDeliveryReceipt(${o.id})" class="text-info"><i class="fas fa-truck w-4"></i> Create DR</a></li>
+                                        ` : ''}}
+                                        ${o.status === 'dispatched' && currentUserRole !== 'sales_custodian' ? `
+                                            <li><a onclick="markDelivered(${o.id})" class="text-success"><i class="fas fa-check-circle w-4"></i> Mark Delivered</a></li>
                                         ` : ''}
                                     </ul>
                                 </div>
@@ -588,11 +590,19 @@
                     select.innerHTML = '<option value="">No products available</option>';
                 } else {
                     select.innerHTML = '<option value="">Select product...</option>' +
-                        products.map(p => `<option value="${p.id}" 
-                            data-name="${p.product_name}" 
-                            data-price="${p.selling_price || 0}"
-                            data-available="${p.available_qty || 0}"
-                            data-pieces-per-box="${p.pieces_per_box || 1}">${p.product_name} (${p.available_qty || 0} avail) - ${formatCurrency(p.selling_price)}</option>`).join('');
+                        products.map(p => {
+                            const avail = parseInt(p.available_qty) || 0;
+                            const reserved = parseInt(p.reserved_qty) || 0;
+                            const displayText = reserved > 0 
+                                ? `${p.product_name} (${avail} avail, ${reserved} reserved)`
+                                : `${p.product_name} (${avail} avail)`;
+                            return `<option value="${p.id}" 
+                                data-name="${p.product_name}" 
+                                data-price="${p.selling_price || 0}"
+                                data-available="${avail}"
+                                data-reserved="${reserved}"
+                                data-pieces-per-box="${p.pieces_per_box || 1}">${displayText} - ${formatCurrency(p.selling_price)}</option>`;
+                        }).join('');
                 }
                 
                 // Add change handler for pieces info
@@ -630,10 +640,26 @@
                 const subAccountContainer = document.getElementById('subAccountContainer');
                 if (customerType === 'feeding_program' || customerType === 'institutional') {
                     subAccountContainer.style.display = 'block';
+                    
+                    // Dynamic label based on customer type
+                    const labelEl = document.getElementById('subAccountLabel');
+                    const hintEl = document.getElementById('subAccountHint');
+                    const selectEl = document.getElementById('subAccount');
+                    
+                    if (customerType === 'feeding_program') {
+                        labelEl.textContent = 'School / Sub-Account';
+                        hintEl.textContent = 'For Feeding Program: Select specific school';
+                        selectEl.options[0].textContent = 'Select school...';
+                    } else {
+                        labelEl.textContent = 'Branch / Location';
+                        hintEl.textContent = 'Optional: Select specific branch for delivery';
+                        selectEl.options[0].textContent = 'Select branch (optional)...';
+                    }
+                    
                     loadSubAccounts(option.value);
                 } else {
                     subAccountContainer.style.display = 'none';
-                    document.getElementById('subAccount').innerHTML = '<option value="">Select school/branch...</option>';
+                    document.getElementById('subAccount').innerHTML = '<option value="">Select branch...</option>';
                 }
             } else {
                 document.getElementById('customerCreditInfo').textContent = 'Select a customer';
@@ -943,13 +969,13 @@
                             <button class="btn btn-error" onclick="cancelOrder(${order.id}); document.getElementById('orderDetailModal').close();">
                                 <i class="fas fa-times"></i> Cancel
                             </button>
-                            <button class="btn btn-success" onclick="approveOrder(${order.id}); document.getElementById('orderDetailModal').close();">
-                                <i class="fas fa-check"></i> Approve
-                            </button>
-                        ` : ''}
-                        ${order.status === 'approved' ? `
-                            <button class="btn btn-info" onclick="createDeliveryReceipt(${order.id}); document.getElementById('orderDetailModal').close();">
-                                <i class="fas fa-truck"></i> Create Delivery Receipt
+                            <div class="alert alert-warning py-2 px-3">
+                                <i class="fas fa-clock"></i> Awaiting GM Approval
+                            </div>
+                        ` : ''}}
+                        ${order.status === 'dispatched' && currentUserRole !== 'sales_custodian' ? `
+                            <button class="btn btn-success" onclick="markDelivered(${order.id}); document.getElementById('orderDetailModal').close();">
+                                <i class="fas fa-check-circle"></i> Mark Delivered
                             </button>
                         ` : ''}
                     </div>
@@ -974,17 +1000,7 @@
             }
         }
         
-        async function approveOrder(id) {
-            if (!confirm('Approve this order?')) return;
-            try {
-                await SalesService.updateOrderStatus(id, 'approved');
-                showToast('Order approved', 'success');
-                loadOrders();
-            } catch (error) {
-                console.error('Error approving order:', error);
-                showToast('Failed to approve order', 'error');
-            }
-        }
+        // Note: approveOrder removed - Only General Manager can approve orders via Admin panel
         
         async function cancelOrder(id) {
             if (!confirm('Cancel this order?')) return;
@@ -998,19 +1014,19 @@
             }
         }
         
-        async function createDeliveryReceipt(orderId) {
-            if (!confirm('Create Delivery Receipt for this order? This will send it to Warehouse FG for dispatch.')) return;
+        async function markDelivered(id) {
+            if (!confirm('Confirm this order has been delivered to the customer?')) return;
             try {
-                const response = await api.post('/warehouse/fg/delivery_receipts.php?action=create_from_order', {
-                    order_id: orderId
-                });
-                showToast('Delivery Receipt created: ' + (response.data?.dr_number || 'Success'), 'success');
+                await SalesService.updateOrderStatus(id, 'delivered');
+                showToast('Order marked as delivered', 'success');
                 loadOrders();
             } catch (error) {
-                console.error('Error creating DR:', error);
-                showToast(error.message || 'Failed to create Delivery Receipt', 'error');
+                console.error('Error marking delivered:', error);
+                showToast('Failed to update order status', 'error');
             }
         }
+        
+        // Note: createDeliveryReceipt removed - DR creation is now handled by Warehouse FG
     </script>
 </body>
 </html>
