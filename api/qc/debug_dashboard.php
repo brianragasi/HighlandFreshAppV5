@@ -118,7 +118,7 @@ try {
         FROM farmers f
         LEFT JOIN milk_receiving mr ON f.id = mr.farmer_id AND mr.receiving_date >= ?
         LEFT JOIN qc_milk_tests qmt ON mr.id = qmt.receiving_id
-        GROUP BY f.id HAVING total_liters > 0 ORDER BY total_liters DESC LIMIT 5
+        GROUP BY f.id, f.farmer_code, f.first_name HAVING total_liters > 0 ORDER BY total_liters DESC LIMIT 5
     ");
     $stmt->execute([$weekStart]);
     $results['query5_farmers'] = 'OK';
