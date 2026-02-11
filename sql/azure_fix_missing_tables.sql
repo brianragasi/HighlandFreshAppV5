@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS `yogurt_transformations` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- ===================================
--- 2. Create disposals table
+-- 2. Create disposals table (without FK constraints for Azure compatibility)
 -- ===================================
 CREATE TABLE IF NOT EXISTS disposals (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -104,17 +104,14 @@ CREATE TABLE IF NOT EXISTS disposals (
     INDEX idx_status (status),
     INDEX idx_category (disposal_category),
     INDEX idx_date (created_at),
+    INDEX idx_product_id (product_id),
     INDEX idx_approved_by (approved_by),
     INDEX idx_initiated_by (initiated_by),
-    
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL,
-    FOREIGN KEY (initiated_by) REFERENCES users(id),
-    FOREIGN KEY (approved_by) REFERENCES users(id),
-    FOREIGN KEY (disposed_by) REFERENCES users(id)
+    INDEX idx_disposed_by (disposed_by)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ===================================
--- 3. Create disposal_items table
+-- 3. Create disposal_items table (without FK constraints for Azure compatibility)
 -- ===================================
 CREATE TABLE IF NOT EXISTS disposal_items (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -138,8 +135,7 @@ CREATE TABLE IF NOT EXISTS disposal_items (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     INDEX idx_disposal_id (disposal_id),
-    FOREIGN KEY (disposal_id) REFERENCES disposals(id) ON DELETE CASCADE,
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+    INDEX idx_product_id (product_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ===================================
