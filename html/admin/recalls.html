@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batch Recalls - Admin | Highland Fresh</title>
+
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .bento-card {
+            transition: all 0.3s ease-out;
+        }
+
+        .bento-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: oklch(var(--b2));
+            border-radius: 3px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: oklch(var(--bc) / 0.2);
+            border-radius: 3px;
+        }
+
+        .sidebar-transition {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <img src="../images/logo.jpg" alt="Highland Fresh Logo" class="w-10 h-10 rounded-xl object-cover">
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Admin Panel</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <!-- Main Menu -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- User Management -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">User
+                    Management</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="users.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-users-cog w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Users & Accounts</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Supply Chain -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Supply Chain
+                </h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="farmers.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-tractor w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Farmers</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="suppliers.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-truck w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Suppliers</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="customers.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-store w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Customers</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Product Catalog -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Product
+                    Catalog</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="products.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-box w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Products</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="recipes.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-clipboard-list w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Recipes</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="ingredients.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-seedling w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Ingredients</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Infrastructure -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Infrastructure
+                </h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="storage.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-warehouse w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Storage & Tanks</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="chillers.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-snowflake w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Chillers</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Sales & Orders -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Sales & Orders
+                </h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="orders.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-clipboard-list w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Orders for Approval</span>
+                            <span id="pendingOrdersBadge" class="badge badge-warning badge-sm"></span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Quality Control -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Quality
+                    Control</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="disposals.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-trash-alt w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Disposals</span>
+                            <span id="pendingDisposalsBadge" class="badge badge-warning badge-sm"></span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="recalls.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-exclamation-triangle w-5 text-center"></i>
+                            <span class="flex-1">Batch Recalls</span>
+                            <span id="activeRecallsBadge" class="badge badge-error badge-sm"></span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="qc-standards.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-clipboard-check w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">QC Standards</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">GM</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">General Manager</p>
+                    <p class="text-xs text-base-content/60 truncate">Administrator</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0"
+                        class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a><i class="fas fa-user-cog w-4"></i> Profile</a></li>
+                        <li><a><i class="fas fa-cog w-4"></i> Settings</a></li>
+                        <li class="border-t border-base-300 mt-1 pt-1">
+                            <a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i>
+                                Logout</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <div>
+                    <h1 class="text-lg lg:text-xl font-bold text-base-content">Batch Recalls</h1>
+                    <div class="text-sm breadcrumbs py-0">
+                        <ul class="text-xs">
+                            <li><a href="dashboard.html">Dashboard</a></li>
+                            <li>Batch Recalls</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <button class="btn btn-error btn-sm gap-2" onclick="openNewRecallModal()">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span class="hidden sm:inline">Initiate Recall</span>
+                </button>
+                <!-- Theme toggle -->
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- Urgent Alerts -->
+            <div id="urgentAlerts" class="hidden mb-4">
+                <div class="alert alert-error shadow-lg">
+                    <i class="fas fa-skull-crossbones text-2xl"></i>
+                    <div>
+                        <h3 class="font-bold">Active Class I Recall</h3>
+                        <p class="text-sm" id="urgentAlertText">Critical recall in progress - immediate action required</p>
+                    </div>
+                    <button class="btn btn-sm" onclick="viewUrgentRecall()">View Details</button>
+                </div>
+            </div>
+
+            <!-- Page Header Banner -->
+            <div class="bg-gradient-to-r from-warning to-warning/80 rounded-2xl p-6 mb-6 text-warning-content">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div>
+                        <h2 class="text-2xl font-bold mb-1">
+                            <i class="fas fa-exclamation-triangle mr-2"></i>
+                            Batch Recall Management
+                        </h2>
+                        <p class="text-warning-content/80">Monitor and manage product recalls across all distribution channels</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center">
+                                <i class="fas fa-clock text-warning"></i>
+                            </div>
+                            <span class="badge badge-warning badge-sm">Pending</span>
+                        </div>
+                        <p class="text-2xl font-bold" id="pendingApprovalCount">0</p>
+                        <p class="text-sm text-base-content/60">Pending Approval</p>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                                <i class="fas fa-sync text-primary"></i>
+                            </div>
+                            <span class="badge badge-primary badge-sm">Active</span>
+                        </div>
+                        <p class="text-2xl font-bold" id="activeCount">0</p>
+                        <p class="text-sm text-base-content/60">Active Recalls</p>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center">
+                                <i class="fas fa-check-circle text-success"></i>
+                            </div>
+                            <span class="badge badge-success badge-sm">Done</span>
+                        </div>
+                        <p class="text-2xl font-bold" id="completedCount">0</p>
+                        <p class="text-sm text-base-content/60">Completed</p>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-info/10 flex items-center justify-center">
+                                <i class="fas fa-percentage text-info"></i>
+                            </div>
+                            <span class="badge badge-info badge-sm">Rate</span>
+                        </div>
+                        <p class="text-2xl font-bold" id="avgRecoveryRate">0%</p>
+                        <p class="text-sm text-base-content/60">Avg Recovery Rate</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body p-4">
+                    <h3 class="font-semibold mb-4 flex items-center gap-2">
+                        <i class="fas fa-filter text-primary"></i>
+                        Filters
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="form-control">
+                            <label class="label"><span class="label-text font-medium">Status</span></label>
+                            <select id="filterStatus" class="select select-bordered select-sm" onchange="loadRecalls()">
+                                <option value="">All Status</option>
+                                <option value="pending_approval">Pending Approval</option>
+                                <option value="approved">Approved</option>
+                                <option value="in_progress">In Progress</option>
+                                <option value="completed">Completed</option>
+                            </select>
+                        </div>
+                        <div class="form-control">
+                            <label class="label"><span class="label-text font-medium">Classification</span></label>
+                            <select id="filterClass" class="select select-bordered select-sm" onchange="loadRecalls()">
+                                <option value="">All Classes</option>
+                                <option value="class_i">Class I - Dangerous</option>
+                                <option value="class_ii">Class II - May Cause Harm</option>
+                                <option value="class_iii">Class III - Unlikely Harm</option>
+                            </select>
+                        </div>
+                        <div class="form-control">
+                            <label class="label"><span class="label-text">&nbsp;</span></label>
+                            <button class="btn btn-ghost btn-sm" onclick="clearFilters()">
+                                <i class="fas fa-times"></i> Clear Filters
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recalls Table -->
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body p-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-semibold flex items-center gap-2">
+                            <i class="fas fa-list text-primary"></i>
+                            Recall Records
+                        </h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="table table-zebra table-sm">
+                            <thead>
+                                <tr class="bg-base-200">
+                                    <th>Recall Code</th>
+                                    <th>Product / Batch</th>
+                                    <th>Class</th>
+                                    <th class="text-center">Dispatched</th>
+                                    <th>Recovered</th>
+                                    <th>Status</th>
+                                    <th>Date</th>
+                                    <th class="text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recallsTable">
+                                <tr>
+                                    <td colspan="8" class="text-center py-8 text-base-content/60">
+                                        <i class="fas fa-spinner fa-spin text-2xl"></i>
+                                        <p class="mt-2">Loading recalls...</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
+            <div>
+                <p class="text-sm text-base-content/60">Highland Fresh Dairy Management System &copy; 2026</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- New Recall Modal -->
+    <dialog id="newRecallModal" class="modal">
+        <div class="modal-box max-w-lg">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-exclamation-triangle text-error"></i> Initiate Batch Recall
+            </h3>
+            <form id="recallForm" onsubmit="submitRecall(event)">
+                <div class="space-y-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Batch ID *</span></label>
+                        <input type="number" id="batchId" class="input input-bordered w-full" required placeholder="Enter batch ID to recall">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Recall Classification *</span></label>
+                        <select id="recallClass" class="select select-bordered w-full" required>
+                            <option value="">Select class...</option>
+                            <option value="class_i">Class I - Dangerous (could cause serious harm or death)</option>
+                            <option value="class_ii">Class II - May cause temporary health problems</option>
+                            <option value="class_iii">Class III - Unlikely to cause health problems</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Reason for Recall *</span></label>
+                        <textarea id="recallReason" class="textarea textarea-bordered w-full" rows="3" required
+                            placeholder="Describe the contamination or defect in detail..."></textarea>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Evidence Notes</span></label>
+                        <textarea id="evidenceNotes" class="textarea textarea-bordered w-full" rows="2"
+                            placeholder="Lab report references, test results, etc."></textarea>
+                    </div>
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        <span>As GM, your recall will be auto-approved and notifications sent immediately.</span>
+                    </div>
+                </div>
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('newRecallModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-error"><i class="fas fa-exclamation-triangle"></i> Initiate Recall</button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- View Recall Modal -->
+    <dialog id="viewRecallModal" class="modal">
+        <div class="modal-box max-w-2xl">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-4" id="viewRecallTitle">Recall Details</h3>
+            <div id="recallDetails" class="space-y-4"></div>
+            <div class="modal-action" id="viewRecallActions"></div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Approval Modal -->
+    <dialog id="approvalModal" class="modal">
+        <div class="modal-box max-w-lg">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-4 flex items-center gap-2">
+                <i class="fas fa-gavel text-primary"></i> GM Approval Required
+            </h3>
+            <div id="approvalDetails" class="space-y-3 mb-4"></div>
+            <div class="form-control mb-4">
+                <label class="label"><span class="label-text">Approval Notes / Rejection Reason</span></label>
+                <textarea id="approvalNotes" class="textarea textarea-bordered w-full" rows="2"></textarea>
+            </div>
+            <div class="modal-action">
+                <button class="btn btn-error gap-2" onclick="handleApproval('reject')">
+                    <i class="fas fa-times"></i> Reject
+                </button>
+                <button class="btn btn-success gap-2" onclick="handleApproval('approve')">
+                    <i class="fas fa-check"></i> Approve
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Log Return Modal -->
+    <dialog id="logReturnModal" class="modal">
+        <div class="modal-box max-w-md">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-4 flex items-center gap-2">
+                <i class="fas fa-box text-info"></i> Log Product Return
+            </h3>
+            <form id="returnForm" onsubmit="submitReturn(event)">
+                <div class="space-y-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Location *</span></label>
+                        <select id="returnLocationId" class="select select-bordered w-full" required></select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Units Returned *</span></label>
+                        <input type="number" id="unitsReturned" class="input input-bordered w-full" required min="1">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Condition</span></label>
+                        <select id="conditionStatus" class="select select-bordered w-full">
+                            <option value="unknown">Unknown</option>
+                            <option value="good">Good (Unopened)</option>
+                            <option value="damaged">Damaged</option>
+                            <option value="spoiled">Spoiled</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Notes</span></label>
+                        <textarea id="conditionNotes" class="textarea textarea-bordered w-full" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('logReturnModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-info"><i class="fas fa-box"></i> Log Return</button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/qc/recall.service.js"></script>
+
+    <script>
+        let currentRecallId = null;
+        let currentRecallData = null;
+        let userRole = '';
+
+        // Sidebar toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+
+        // Theme toggle
+        document.getElementById('themeToggle').addEventListener('change', function () {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+
+        // Load saved theme
+        const savedTheme = localStorage.getItem('theme') || 'emerald';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        document.getElementById('themeToggle').checked = savedTheme === 'dark';
+
+        function showToast(msg, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const cls = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type] || 'alert-info';
+            const t = document.createElement('div');
+            t.className = `alert ${cls} shadow-lg`;
+            t.innerHTML = `<span>${msg}</span>`;
+            container.appendChild(t);
+            setTimeout(() => t.remove(), 4000);
+        }
+
+        const classLabels = {
+            class_i: { label: 'Class I', badge: 'badge-error', icon: 'skull-crossbones', desc: 'Dangerous' },
+            class_ii: { label: 'Class II', badge: 'badge-warning', icon: 'exclamation-triangle', desc: 'May Cause Harm' },
+            class_iii: { label: 'Class III', badge: 'badge-info', icon: 'info-circle', desc: 'Unlikely Harm' }
+        };
+
+        const statusLabels = {
+            initiated: { label: 'Initiated', badge: 'badge-ghost' },
+            pending_approval: { label: 'Pending Approval', badge: 'badge-warning' },
+            approved: { label: 'Approved', badge: 'badge-info' },
+            in_progress: { label: 'In Progress', badge: 'badge-primary' },
+            completed: { label: 'Completed', badge: 'badge-success' },
+            cancelled: { label: 'Cancelled', badge: 'badge-ghost' }
+        };
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../login.html';
+                return;
+            }
+
+            const user = AuthService.getCurrentUser();
+            if (user) {
+                document.getElementById('sidebarUserName').textContent = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'General Manager';
+                const initials = ((user.first_name || '')[0] || '') + ((user.last_name || '')[0] || '');
+                document.getElementById('userInitials').textContent = initials.toUpperCase() || 'GM';
+                userRole = user.role;
+            }
+
+            loadStats();
+            loadRecalls();
+            checkUrgentRecalls();
+            loadBadgeCounts();
+        });
+
+        async function loadBadgeCounts() {
+            try {
+                const disposalRes = await api.get('/qc/disposals.php', { params: { action: 'stats' } });
+                if (disposalRes.success && disposalRes.data && disposalRes.data.summary) {
+                    const pending = disposalRes.data.summary.pending || 0;
+                    const badge = document.getElementById('pendingDisposalsBadge');
+                    if (badge) { badge.textContent = pending; badge.style.display = pending > 0 ? 'inline-flex' : 'none'; }
+                }
+            } catch (e) {}
+            try {
+                const recallRes = await api.get('/qc/recalls.php', { params: { action: 'stats' } });
+                if (recallRes.success && recallRes.data) {
+                    const active = (recallRes.data.active_recalls || 0) + (recallRes.data.pending || 0);
+                    const badge = document.getElementById('activeRecallsBadge');
+                    if (badge) { badge.textContent = active; badge.style.display = active > 0 ? 'inline-flex' : 'none'; }
+                }
+            } catch (e) {}
+        }
+
+        async function loadStats() {
+            try {
+                const res = await RecallService.getStats();
+                if (res.success) {
+                    const s = res.data.summary;
+                    document.getElementById('pendingApprovalCount').textContent = s.pending_approval || 0;
+                    document.getElementById('activeCount').textContent = s.active || 0;
+                    document.getElementById('avgRecoveryRate').textContent = (s.avg_recovery_rate || 0) + '%';
+                    const completed = res.data.by_status?.find(x => x.status === 'completed');
+                    document.getElementById('completedCount').textContent = completed?.count || 0;
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        async function checkUrgentRecalls() {
+            try {
+                const res = await RecallService.getActive();
+                if (res.success) {
+                    const urgent = res.data.find(r => r.recall_class === 'class_i');
+                    if (urgent) {
+                        document.getElementById('urgentAlerts').classList.remove('hidden');
+                        document.getElementById('urgentAlertText').textContent =
+                            `${urgent.product_name} (${urgent.batch_code}) - ${urgent.total_dispatched} units in circulation`;
+                        currentRecallId = urgent.id;
+                    }
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        function viewUrgentRecall() { if (currentRecallId) viewRecall(currentRecallId); }
+
+        async function loadRecalls() {
+            const table = document.getElementById('recallsTable');
+            table.innerHTML = '<tr><td colspan="8" class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl"></i><p class="mt-2">Loading...</p></td></tr>';
+
+            try {
+                const filters = {};
+                const status = document.getElementById('filterStatus').value;
+                const recallClass = document.getElementById('filterClass').value;
+                if (status) filters.status = status;
+                if (recallClass) filters.recall_class = recallClass;
+
+                const res = await RecallService.getList(filters);
+                if (res.success) {
+                    const items = res.data || [];
+                    if (items.length === 0) {
+                        table.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-base-content/60"><i class="fas fa-inbox text-4xl mb-2 block opacity-30"></i><p>No recalls found</p></td></tr>';
+                        return;
+                    }
+                    table.innerHTML = items.map(r => {
+                        const cls = classLabels[r.recall_class] || { label: r.recall_class, badge: 'badge-ghost', icon: 'question' };
+                        const sts = statusLabels[r.status] || { label: r.status, badge: 'badge-ghost' };
+                        const recoveryRate = r.recovery_rate || 0;
+                        const recoveryColor = recoveryRate >= 80 ? 'success' : (recoveryRate >= 50 ? 'warning' : 'error');
+                        return `
+                        <tr class="hover ${r.recall_class === 'class_i' && !['completed', 'cancelled'].includes(r.status) ? 'bg-error/5' : ''}">
+                            <td><code class="text-xs bg-base-200 px-2 py-1 rounded">${r.recall_code}</code></td>
+                            <td>
+                                <div class="font-medium text-sm">${r.product_name}</div>
+                                <div class="text-xs text-base-content/60">${r.batch_code}</div>
+                            </td>
+                            <td><span class="badge ${cls.badge} gap-1 badge-sm"><i class="fas fa-${cls.icon}"></i>${cls.label}</span></td>
+                            <td class="text-center font-semibold">${r.total_dispatched}</td>
+                            <td>
+                                <div class="flex items-center gap-2">
+                                    <progress class="progress progress-${recoveryColor} w-16" value="${recoveryRate}" max="100"></progress>
+                                    <span class="text-xs font-medium">${recoveryRate}%</span>
+                                </div>
+                            </td>
+                            <td><span class="badge ${sts.badge} badge-sm">${sts.label}</span></td>
+                            <td class="text-sm">${RecallService.formatDate(r.initiated_at)}</td>
+                            <td class="text-center">
+                                <div class="flex gap-1 justify-center">
+                                    ${getActionButtons(r)}
+                                </div>
+                            </td>
+                        </tr>`;
+                    }).join('');
+                }
+            } catch (e) {
+                console.error(e);
+                table.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-error">Failed to load recalls</td></tr>';
+            }
+        }
+
+        function getActionButtons(r) {
+            let btns = `<button class="btn btn-ghost btn-xs tooltip" data-tip="View" onclick="viewRecall(${r.id})"><i class="fas fa-eye"></i></button>`;
+            const isGM = ['general_manager', 'admin'].includes(userRole);
+
+            if (r.status === 'pending_approval' && isGM) {
+                btns += `<button class="btn btn-success btn-xs tooltip" data-tip="Approve/Reject" onclick="openApprovalModal(${r.id})"><i class="fas fa-gavel"></i></button>`;
+            }
+            if (['approved', 'in_progress'].includes(r.status)) {
+                btns += `<button class="btn btn-info btn-xs tooltip" data-tip="Log Return" onclick="openLogReturnModal(${r.id})"><i class="fas fa-box"></i></button>`;
+            }
+            if (['initiated', 'pending_approval'].includes(r.status)) {
+                btns += `<button class="btn btn-ghost btn-xs text-error tooltip" data-tip="Cancel" onclick="cancelRecall(${r.id})"><i class="fas fa-ban"></i></button>`;
+            }
+            return btns;
+        }
+
+        function clearFilters() {
+            document.getElementById('filterStatus').value = '';
+            document.getElementById('filterClass').value = '';
+            loadRecalls();
+        }
+
+        function openNewRecallModal() {
+            document.getElementById('recallForm').reset();
+            document.getElementById('newRecallModal').showModal();
+        }
+
+        async function submitRecall(e) {
+            e.preventDefault();
+            try {
+                const data = {
+                    batch_id: document.getElementById('batchId').value,
+                    recall_class: document.getElementById('recallClass').value,
+                    reason: document.getElementById('recallReason').value,
+                    evidence_notes: document.getElementById('evidenceNotes').value
+                };
+                const res = await RecallService.create(data);
+                if (res.success) {
+                    showToast('Recall initiated successfully', 'success');
+                    document.getElementById('newRecallModal').close();
+                    loadStats(); loadRecalls(); loadBadgeCounts();
+                } else { showToast(res.message || 'Error', 'error'); }
+            } catch (e) { showToast(e.message || 'Error creating recall', 'error'); }
+        }
+
+        async function viewRecall(id) {
+            try {
+                const res = await RecallService.get(id);
+                if (res.success) {
+                    currentRecallData = res.data;
+                    currentRecallId = id;
+                    const r = res.data;
+                    const cls = classLabels[r.recall_class] || {};
+                    const sts = statusLabels[r.status] || {};
+
+                    document.getElementById('viewRecallTitle').innerHTML = `
+                        <span class="badge ${cls.badge} mr-2"><i class="fas fa-${cls.icon}"></i> ${cls.label}</span>
+                        Recall: ${r.recall_code}`;
+
+                    document.getElementById('recallDetails').innerHTML = `
+                        <div class="grid grid-cols-2 gap-4">
+                            <div><label class="text-xs text-base-content/60">Product</label><p class="font-semibold">${r.product_name}</p></div>
+                            <div><label class="text-xs text-base-content/60">Batch Code</label><p class="font-mono">${r.batch_code}</p></div>
+                            <div><label class="text-xs text-base-content/60">Status</label><p><span class="badge ${sts.badge}">${sts.label}</span></p></div>
+                            <div><label class="text-xs text-base-content/60">Initiated</label><p>${RecallService.formatDateTime(r.initiated_at)}</p></div>
+                        </div>
+                        <div class="divider my-2"></div>
+                        <div><label class="text-xs text-base-content/60">Reason</label><p class="text-sm">${r.reason}</p></div>
+                        ${r.evidence_notes ? `<div><label class="text-xs text-base-content/60">Evidence</label><p class="text-sm">${r.evidence_notes}</p></div>` : ''}
+                        <div class="divider my-2"></div>
+                        <div class="stats stats-horizontal w-full">
+                            <div class="stat place-items-center py-2"><div class="stat-title text-xs">Produced</div><div class="stat-value text-lg">${r.total_produced}</div></div>
+                            <div class="stat place-items-center py-2"><div class="stat-title text-xs">Dispatched</div><div class="stat-value text-lg">${r.total_dispatched}</div></div>
+                            <div class="stat place-items-center py-2"><div class="stat-title text-xs">Recovered</div><div class="stat-value text-lg text-success">${r.total_recovered}</div></div>
+                            <div class="stat place-items-center py-2"><div class="stat-title text-xs">Recovery</div><div class="stat-value text-lg">${r.recovery_rate || 0}%</div></div>
+                        </div>
+                        ${r.affected_locations?.length ? `
+                        <div class="divider my-2"></div>
+                        <h4 class="font-semibold text-sm mb-2">Affected Locations (${r.affected_locations.length})</h4>
+                        <div class="overflow-x-auto max-h-40">
+                            <table class="table table-xs"><thead><tr><th>Location</th><th>Dispatched</th><th>Returned</th><th>Notified</th></tr></thead>
+                            <tbody>${r.affected_locations.map(l => `<tr><td>${l.location_name}</td><td>${l.units_dispatched}</td><td>${l.units_returned}</td><td>${l.notification_sent ? '<i class="fas fa-check text-success"></i>' : '<i class="fas fa-times text-error"></i>'}</td></tr>`).join('')}</tbody></table>
+                        </div>` : ''}`;
+
+                    let actions = '<button class="btn btn-ghost" onclick="document.getElementById(\'viewRecallModal\').close()">Close</button>';
+                    if (['approved', 'in_progress'].includes(r.status)) {
+                        actions = `<button class="btn btn-success gap-2" onclick="completeRecall(${id})"><i class="fas fa-check-circle"></i> Mark Complete</button>` + actions;
+                    }
+                    document.getElementById('viewRecallActions').innerHTML = actions;
+                    document.getElementById('viewRecallModal').showModal();
+                }
+            } catch (e) { showToast('Error loading recall details', 'error'); }
+        }
+
+        async function openApprovalModal(id) {
+            currentRecallId = id;
+            try {
+                const res = await RecallService.get(id);
+                if (res.success) {
+                    const r = res.data;
+                    const cls = classLabels[r.recall_class] || {};
+                    document.getElementById('approvalDetails').innerHTML = `
+                        <div class="alert ${r.recall_class === 'class_i' ? 'alert-error' : 'alert-warning'}">
+                            <i class="fas fa-${cls.icon}"></i>
+                            <div><div class="font-bold">${cls.label} - ${cls.desc}</div><div class="text-sm">${r.product_name} (${r.batch_code})</div></div>
+                        </div>
+                        <p><strong>Reason:</strong> ${r.reason}</p>
+                        <p><strong>Units Dispatched:</strong> ${r.total_dispatched}</p>`;
+                    document.getElementById('approvalNotes').value = '';
+                    document.getElementById('approvalModal').showModal();
+                }
+            } catch (e) { showToast('Error loading recall', 'error'); }
+        }
+
+        async function handleApproval(action) {
+            try {
+                const notes = document.getElementById('approvalNotes').value;
+                let res;
+                if (action === 'approve') {
+                    res = await RecallService.approve(currentRecallId, notes);
+                } else {
+                    if (!notes) { showToast('Rejection reason required', 'warning'); return; }
+                    res = await RecallService.reject(currentRecallId, notes);
+                }
+                if (res.success) {
+                    showToast(`Recall ${action === 'approve' ? 'approved' : 'rejected'}`, 'success');
+                    document.getElementById('approvalModal').close();
+                    loadStats(); loadRecalls(); loadBadgeCounts();
+                } else { showToast(res.message, 'error'); }
+            } catch (e) { showToast(e.message || 'Error', 'error'); }
+        }
+
+        async function openLogReturnModal(id) {
+            currentRecallId = id;
+            try {
+                const res = await RecallService.get(id);
+                if (res.success) {
+                    const locations = res.data.affected_locations || [];
+                    const select = document.getElementById('returnLocationId');
+                    select.innerHTML = locations.map(l =>
+                        `<option value="${l.id}">${l.location_name} (${l.units_dispatched - l.units_returned} remaining)</option>`
+                    ).join('');
+                    document.getElementById('returnForm').reset();
+                    document.getElementById('logReturnModal').showModal();
+                }
+            } catch (e) { showToast('Error', 'error'); }
+        }
+
+        async function submitReturn(e) {
+            e.preventDefault();
+            try {
+                const res = await RecallService.logReturn(currentRecallId, {
+                    affected_location_id: document.getElementById('returnLocationId').value,
+                    units_returned: document.getElementById('unitsReturned').value,
+                    condition_status: document.getElementById('conditionStatus').value,
+                    condition_notes: document.getElementById('conditionNotes').value
+                });
+                if (res.success) {
+                    showToast('Return logged successfully', 'success');
+                    document.getElementById('logReturnModal').close();
+                    loadStats(); loadRecalls();
+                } else { showToast(res.message, 'error'); }
+            } catch (e) { showToast(e.message || 'Error', 'error'); }
+        }
+
+        async function completeRecall(id) {
+            if (!confirm('Mark this recall as completed?')) return;
+            try {
+                const res = await RecallService.complete(id);
+                if (res.success) {
+                    showToast('Recall completed', 'success');
+                    document.getElementById('viewRecallModal').close();
+                    loadStats(); loadRecalls(); loadBadgeCounts();
+                }
+            } catch (e) { showToast(e.message || 'Error', 'error'); }
+        }
+
+        async function cancelRecall(id) {
+            if (!confirm('Cancel this recall?')) return;
+            try {
+                const res = await RecallService.cancel(id);
+                if (res.success) { showToast('Recall cancelled', 'success'); loadStats(); loadRecalls(); loadBadgeCounts(); }
+            } catch (e) { showToast('Error', 'error'); }
+        }
+    </script>
+</body>
+
+</html>

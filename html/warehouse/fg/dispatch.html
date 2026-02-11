@@ -166,9 +166,9 @@
                             </h2>
                             
                             <div class="form-control mb-4">
-                                <label class="label"><span class="label-text">Select Delivery Receipt</span></label>
+                                <label class="label"><span class="label-text">Select Picking Ticket</span></label>
                                 <select id="selectDR" class="select select-bordered" onchange="loadDRDetails()">
-                                    <option value="">Select pending DR...</option>
+                                    <option value="">Select picking ticket / DR...</option>
                                 </select>
                             </div>
                             
@@ -255,7 +255,7 @@
                                     <i class="fas fa-trash"></i> Clear All
                                 </button>
                                 <button class="btn btn-primary" id="btnConfirmRelease" onclick="confirmRelease()" disabled>
-                                    <i class="fas fa-truck"></i> Confirm Release
+                                    <i class="fas fa-file-invoice"></i> <span id="btnConfirmText">Generate DR</span>
                                 </button>
                             </div>
                         </div>
@@ -397,6 +397,34 @@
         let scannedItems = [];
         let currentScanResult = null;
         
+        // Helper function to get total scanned quantity for a product
+        function getScannedQtyForProduct(productId) {
+            return scannedItems
+                .filter(i => i.product_id == productId)
+                .reduce((sum, i) => sum + (i.releaseTotal || 0), 0);
+        }
+        
+        // Update DR summary to show scanned vs required progress
+        function updateDRSummaryProgress() {
+            if (!currentDR || !currentDR.items) return;
+            
+            const listEl = document.getElementById('drRequiredItemsList');
+            if (!listEl) return;
+            
+            listEl.innerHTML = `
+                <div class="font-semibold mb-2">Required Items:</div>
+                ${currentDR.items.map(i => {
+                    const scannedQty = getScannedQtyForProduct(i.product_id);
+                    const requiredQty = parseInt(i.quantity) || 0;
+                    const isComplete = scannedQty >= requiredQty;
+                    return `<div class="flex justify-between items-center ${isComplete ? 'text-success' : ''}">
+                        <span>${isComplete ? '<i class="fas fa-check-circle mr-1"></i>' : ''}${i.product_name}</span>
+                        <span class="font-mono">${scannedQty}/${requiredQty}</span>
+                    </div>`;
+                }).join('')}
+            `;
+        }
+        
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
             document.getElementById('sidebarBackdrop').classList.toggle('hidden');
@@ -430,6 +458,24 @@
                 }
                 await loadPendingDRs();
                 await loadTodayStats();
+                
+                // Check URL for pick or dr parameter (coming from delivery_receipts page)
+                const urlParams = new URLSearchParams(window.location.search);
+                const pickIdFromUrl = urlParams.get('pick') || urlParams.get('dr');
+                if (pickIdFromUrl) {
+                    const selectDR = document.getElementById('selectDR');
+                    // Try to select the picking ticket in dropdown
+                    const option = Array.from(selectDR.options).find(o => o.value == pickIdFromUrl);
+                    if (option) {
+                        selectDR.value = pickIdFromUrl;
+                        await loadDRDetails();
+                        showToast('Picking ticket loaded. Scan product barcodes to pick items.', 'success');
+                    } else {
+                        // Might not be in pending list (already completed)
+                        showToast('Picking ticket not found. It may have been completed.', 'warning');
+                    }
+                }
+                
                 document.getElementById('barcodeInput').focus();
             } catch (error) {
                 console.error('Init error:', error);
@@ -442,9 +488,10 @@
                 const response = await WarehouseFGService.getPendingDRs();
                 pendingDRs = response.data || [];
                 const select = document.getElementById('selectDR');
-                select.innerHTML = '<option value="">Select pending DR...</option>';
+                select.innerHTML = '<option value="">Select picking ticket / DR...</option>';
                 pendingDRs.forEach(dr => {
-                    select.innerHTML += `<option value="${dr.id}">${dr.dr_number} - ${dr.customer_name}</option>`;
+                    const statusLabel = dr.status === 'picking' ? '🔄 PICKING' : dr.status.toUpperCase();
+                    select.innerHTML += `<option value="${dr.id}">${dr.dr_number} - ${dr.customer_name} [${statusLabel}]</option>`;
                 });
             } catch (error) {
                 console.error('Failed to load pending DRs:', error);
@@ -466,7 +513,8 @@
             const drId = document.getElementById('selectDR').value;
             if (!drId) {
                 currentDR = null;
-                document.getElementById('drSummary').innerHTML = '<div class="text-base-content/60 text-center py-4">Select a Delivery Receipt to begin</div>';
+                document.getElementById('drSummary').innerHTML = '<div class="text-base-content/60 text-center py-4">Select a Picking Ticket to begin</div>';
+                updateButtonState();
                 return;
             }
             
@@ -474,12 +522,24 @@
                 const response = await WarehouseFGService.getDeliveryReceipt(drId);
                 currentDR = response.data;
                 
+                // Check if this is a picking ticket (status='picking') vs a regular DR
+                const isPicking = currentDR.status === 'picking';
+                const statusBadge = isPicking 
+                    ? '<span class="badge badge-warning">Picking</span>'
+                    : `<span class="badge badge-${currentDR.status === 'pending' ? 'warning' : 'info'}">${currentDR.status}</span>`;
+                
                 document.getElementById('drSummary').innerHTML = `
                     <div class="space-y-3">
                         <div class="flex justify-between items-center">
                             <span class="font-bold text-lg">${currentDR.dr_number}</span>
-                            <span class="badge badge-${currentDR.status === 'pending' ? 'warning' : 'info'}">${currentDR.status}</span>
+                            ${statusBadge}
                         </div>
+                        ${isPicking ? `
+                        <div class="alert alert-info text-sm">
+                            <i class="fas fa-info-circle"></i>
+                            <span>Scan items below. Click "Generate DR" when all items are picked.</span>
+                        </div>
+                        ` : ''}
                         <div class="divider my-2"></div>
                         <div class="text-sm space-y-1">
                             <div><i class="fas fa-user w-5 text-base-content/60"></i> ${currentDR.customer_name}</div>
@@ -488,18 +548,41 @@
                         </div>
                         ${currentDR.items && currentDR.items.length > 0 ? `
                             <div class="divider my-2"></div>
-                            <div class="text-sm">
+                            <div class="text-sm" id="drRequiredItemsList">
                                 <div class="font-semibold mb-2">Required Items:</div>
-                                ${currentDR.items.map(i => `<div class="flex justify-between"><span>${i.product_name}</span><span>${i.quantity}</span></div>`).join('')}
+                                ${currentDR.items.map(i => {
+                                    const scannedQty = getScannedQtyForProduct(i.product_id);
+                                    const requiredQty = parseInt(i.quantity) || 0;
+                                    const remaining = requiredQty - scannedQty;
+                                    const isComplete = scannedQty >= requiredQty;
+                                    return `<div class="flex justify-between items-center ${isComplete ? 'text-success' : ''}">
+                                        <span>${isComplete ? '<i class="fas fa-check-circle mr-1"></i>' : ''}${i.product_name}</span>
+                                        <span class="font-mono">${scannedQty}/${requiredQty}</span>
+                                    </div>`;
+                                }).join('')}
                             </div>
                         ` : ''}
                     </div>
                 `;
                 
+                updateButtonState();
                 document.getElementById('barcodeInput').focus();
             } catch (error) {
                 console.error('Failed to load DR:', error);
-                showToast('Failed to load DR details', 'error');
+                showToast('Failed to load picking ticket details', 'error');
+            }
+        }
+        
+        function updateButtonState() {
+            const btnText = document.getElementById('btnConfirmText');
+            const btnIcon = document.getElementById('btnConfirmRelease').querySelector('i');
+            
+            if (currentDR && currentDR.status === 'picking') {
+                btnText.textContent = 'Generate DR';
+                btnIcon.className = 'fas fa-file-invoice';
+            } else {
+                btnText.textContent = 'Confirm Release';
+                btnIcon.className = 'fas fa-truck';
             }
         }
         
@@ -517,15 +600,49 @@
                 const resultDiv = document.getElementById('scanResult');
                 const contentDiv = document.getElementById('scanResultContent');
                 
-                if (currentScanResult) {
+                // Check if this is a DR number scan
+                if (currentScanResult && currentScanResult.type === 'delivery_receipt') {
+                    const dr = currentScanResult.dr;
+                    
+                    // Try to auto-select the DR in dropdown
+                    const selectDR = document.getElementById('selectDR');
+                    const option = Array.from(selectDR.options).find(o => o.value == dr.id);
+                    if (option) {
+                        selectDR.value = dr.id;
+                        loadDRDetails();
+                        showToast(`DR ${dr.dr_number} selected. Now scan product barcodes.`, 'success');
+                    } else {
+                        showToast(`DR ${dr.dr_number} found but not in pending list (Status: ${dr.status})`, 'warning');
+                    }
+                    
+                    contentDiv.className = 'rounded-lg p-4 bg-info/10 border-2 border-info';
+                    contentDiv.innerHTML = `
+                        <div class="text-center">
+                            <i class="fas fa-file-invoice text-info text-3xl mb-2"></i>
+                            <p class="font-semibold">Delivery Receipt Detected</p>
+                            <p class="text-sm text-base-content/60 mb-2">${dr.dr_number}</p>
+                            <p class="text-sm text-base-content/60">Customer: ${dr.customer_name || 'N/A'}</p>
+                            <div class="alert alert-info mt-3 text-sm">
+                                <i class="fas fa-info-circle"></i>
+                                <span>Now scan <strong>product barcodes</strong> to add items</span>
+                            </div>
+                        </div>
+                    `;
+                    resultDiv.classList.remove('hidden');
+                    document.getElementById('barcodeInput').value = '';
+                    document.getElementById('barcodeInput').focus();
+                    return;
+                }
+                
+                if (currentScanResult && currentScanResult.type === 'inventory_item') {
                     // Check FIFO
                     const fifoCheck = await WarehouseFGService.checkFIFOCompliance(currentScanResult.id, currentScanResult.product_id);
                     const isFIFOOk = fifoCheck.data?.is_compliant !== false;
                     
-                    // Multi-unit calculations
+                    // Multi-unit calculations - use boxes_available/pieces_available
                     const piecesPerBox = parseInt(currentScanResult.pieces_per_box) || 1;
-                    const availableBoxes = parseInt(currentScanResult.quantity_boxes) || 0;
-                    const availablePieces = parseInt(currentScanResult.quantity_pieces) || 0;
+                    const availableBoxes = parseInt(currentScanResult.boxes_available) || 0;
+                    const availablePieces = parseInt(currentScanResult.pieces_available) || 0;
                     const totalAvailable = (availableBoxes * piecesPerBox) + availablePieces;
                     const availableDisplay = availableBoxes > 0 
                         ? `${availableBoxes} Boxes + ${availablePieces} Pieces (${totalAvailable} pcs)` 
@@ -587,9 +704,22 @@
         function addToRelease() {
             if (!currentScanResult) return;
             
+            // Validate that scanned product matches DR requirements
+            if (currentDR && currentDR.items && currentDR.items.length > 0) {
+                const scannedProductId = currentScanResult.product_id;
+                const matchingDRItem = currentDR.items.find(item => item.product_id == scannedProductId);
+                
+                if (!matchingDRItem) {
+                    // Product not on the DR
+                    const drProductNames = currentDR.items.map(i => i.product_name).join(', ');
+                    showToast(`This product (${currentScanResult.product_name}) is NOT on this Delivery Receipt! Required: ${drProductNames}`, 'error');
+                    return;
+                }
+            }
+            
             const piecesPerBox = parseInt(currentScanResult.pieces_per_box) || 1;
-            const availableBoxes = parseInt(currentScanResult.quantity_boxes) || 0;
-            const availablePieces = parseInt(currentScanResult.quantity_pieces) || 0;
+            const availableBoxes = parseInt(currentScanResult.boxes_available) || 0;
+            const availablePieces = parseInt(currentScanResult.pieces_available) || 0;
             const totalAvailable = (availableBoxes * piecesPerBox) + availablePieces;
             const availableDisplay = availableBoxes > 0 
                 ? `${availableBoxes} Boxes + ${availablePieces} Pieces (${totalAvailable} pcs total)` 
@@ -661,6 +791,24 @@
                 return;
             }
             
+            // Validate against DR ordered quantity
+            if (currentDR && currentDR.items) {
+                const drItem = currentDR.items.find(i => i.product_id == currentScanResult.product_id);
+                if (drItem) {
+                    const orderedQty = parseInt(drItem.quantity) || 0;
+                    // Calculate already scanned quantity for this product
+                    const alreadyScanned = scannedItems
+                        .filter(i => i.product_id == currentScanResult.product_id)
+                        .reduce((sum, i) => sum + (i.releaseTotal || 0), 0);
+                    const totalAfterAdding = alreadyScanned + totalRelease;
+                    
+                    if (totalAfterAdding > orderedQty) {
+                        showToast(`Cannot release ${totalRelease} pcs. DR only requires ${orderedQty} pcs total (already have ${alreadyScanned} pcs scanned)`, 'error');
+                        return;
+                    }
+                }
+            }
+            
             // Add to scanned items
             const existingIndex = scannedItems.findIndex(i => i.id === currentScanResult.id);
             if (existingIndex >= 0) {
@@ -697,6 +845,7 @@
                 `;
                 document.getElementById('scannedCount').textContent = '0 items';
                 document.getElementById('btnConfirmRelease').disabled = true;
+                updateDRSummaryProgress();
                 return;
             }
             
@@ -736,6 +885,9 @@
             
             document.getElementById('scannedCount').textContent = `${scannedItems.length} items (${grandTotalPieces} pcs)`;
             document.getElementById('btnConfirmRelease').disabled = false;
+            
+            // Update DR summary to show progress
+            updateDRSummaryProgress();
         }
         
         function removeScannedItem(index) {
@@ -758,11 +910,16 @@
             
             const drId = currentDR?.id;
             if (!drId) {
-                showToast('Please select a Delivery Receipt', 'warning');
+                showToast('Please select a Picking Ticket', 'warning');
                 return;
             }
             
-            if (!confirm(`Release ${scannedItems.length} items for ${currentDR.dr_number}?`)) return;
+            const isPicking = currentDR.status === 'picking';
+            const confirmMsg = isPicking 
+                ? `Generate Delivery Receipt for ${scannedItems.length} picked items?\n\nThis will:\n- Assign official DR number\n- Deduct inventory from stock`
+                : `Release ${scannedItems.length} items for ${currentDR.dr_number}?`;
+            
+            if (!confirm(confirmMsg)) return;
             
             try {
                 const items = scannedItems.map(i => ({
@@ -773,20 +930,31 @@
                     barcode: i.batch_code
                 }));
                 
-                await WarehouseFGService.bulkReleaseItems(drId, items);
-                showToast('Items released successfully!', 'success');
+                if (isPicking) {
+                    // Finalize picking - this creates DR number and deducts inventory
+                    const response = await WarehouseFGService.finalizePicking(drId, items);
+                    const drNumber = response.data?.dr_number || 'DR generated';
+                    showToast(`Delivery Receipt ${drNumber} generated successfully!`, 'success');
+                } else {
+                    // Regular release flow for already-finalized DRs
+                    await WarehouseFGService.bulkReleaseItems(drId, items);
+                    showToast('Items released successfully!', 'success');
+                }
+                
                 scannedItems = [];
                 renderScannedItems();
                 await loadPendingDRs();
                 await loadTodayStats();
                 
                 document.getElementById('selectDR').value = '';
-                document.getElementById('drSummary').innerHTML = '<div class="text-base-content/60 text-center py-4">Select a Delivery Receipt to begin</div>';
+                document.getElementById('drSummary').innerHTML = '<div class="text-base-content/60 text-center py-4">Select a Picking Ticket to begin</div>';
                 currentDR = null;
+                updateButtonState();
                 
             } catch (error) {
                 console.error('Release error:', error);
-                showToast('Failed to release items', 'error');
+                const errMsg = error.response?.data?.message || 'Failed to process';
+                showToast(errMsg, 'error');
             }
         }
         

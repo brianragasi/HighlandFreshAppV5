@@ -411,9 +411,9 @@ function handleGet($db, $action) {
                     c.chiller_name,
                     pb.batch_code,
                     DATEDIFF(fg.expiry_date, CURDATE()) as days_until_expiry,
-                    -- Multi-unit calculated fields
-                    COALESCE(fg.quantity_boxes, 0) as quantity_boxes,
-                    COALESCE(fg.quantity_pieces, 0) as quantity_pieces,
+                    -- Multi-unit calculated fields (use boxes_available/pieces_available as source of truth)
+                    COALESCE(fg.boxes_available, fg.quantity_boxes, 0) as quantity_boxes,
+                    COALESCE(fg.pieces_available, fg.quantity_pieces, 0) as quantity_pieces,
                     COALESCE(fg.boxes_available, 0) as boxes_available,
                     COALESCE(fg.pieces_available, 0) as pieces_available
                 FROM finished_goods_inventory fg
@@ -548,6 +548,7 @@ function handleGet($db, $action) {
                 WHERE fg.status = 'available'
                 AND fg.expiry_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
                 AND fg.expiry_date >= CURDATE()
+                AND (fg.quantity_available > 0 OR fg.boxes_available > 0 OR fg.pieces_available > 0)
                 ORDER BY fg.expiry_date ASC
             ");
             $stmt->execute([$days]);
@@ -765,12 +766,18 @@ function handleGet($db, $action) {
                     t.*,
                     fg.product_name,
                     fg.batch_id,
-                    u.first_name,
-                    u.last_name,
+                    pb.batch_code,
+                    t.boxes_quantity as quantity_boxes,
+                    t.pieces_quantity as quantity_pieces,
+                    COALESCE(p.pieces_per_box, 1) as pieces_per_box,
+                    COALESCE(c.chiller_name, c2.chiller_name, 'N/A') as chiller_name,
                     c.chiller_code as from_chiller,
-                    c2.chiller_code as to_chiller
+                    c2.chiller_code as to_chiller,
+                    CONCAT(u.first_name, ' ', u.last_name) as received_by_name
                 FROM fg_inventory_transactions t
                 LEFT JOIN finished_goods_inventory fg ON t.inventory_id = fg.id
+                LEFT JOIN production_batches pb ON fg.batch_id = pb.id
+                LEFT JOIN products p ON t.product_id = p.id
                 LEFT JOIN users u ON t.performed_by = u.id
                 LEFT JOIN chiller_locations c ON t.from_chiller_id = c.id
                 LEFT JOIN chiller_locations c2 ON t.to_chiller_id = c2.id

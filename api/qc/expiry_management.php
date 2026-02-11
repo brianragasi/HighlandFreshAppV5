@@ -49,7 +49,7 @@ try {
                                'finished_goods' as type,
                                fgi.quantity_available as remaining_liters,
                                fgi.quantity_available,
-                               COALESCE(fgi.storage_location, 'FG Warehouse') as location,
+                               COALESCE(fgi.chiller_location, 'FG Warehouse') as location,
                                CASE 
                                    WHEN p.category IN ('milk', 'pasteurized_milk', 'flavored_milk') THEN true 
                                    ELSE false 
@@ -99,7 +99,8 @@ try {
                             LEFT JOIN milk_receiving mr ON rmi.receiving_id = mr.id
                             LEFT JOIN farmers f ON mr.farmer_id = f.id
                             LEFT JOIN qc_milk_tests qmt ON rmi.qc_test_id = qmt.id
-                            WHERE rmi.status = 'available' AND rmi.remaining_liters > 0
+                            WHERE (rmi.status = 'available' OR rmi.status = '' OR rmi.status IS NULL) 
+                              AND rmi.remaining_liters > 0
                             ORDER BY rmi.expiry_date ASC
                         ");
                         Response::success($stmt->fetchAll(), 'Raw milk inventory retrieved');
@@ -295,7 +296,7 @@ try {
             $inventory = null;
             if ($inventoryId) {
                 $invStmt = $db->prepare("
-                    SELECT fgi.*, p.category, p.size_value, p.size_unit, p.product_name
+                    SELECT fgi.*, p.category, p.unit_size, p.unit_measure, p.product_name
                     FROM finished_goods_inventory fgi
                     LEFT JOIN products p ON fgi.product_id = p.id
                     WHERE fgi.id = ? AND fgi.status = 'available'
@@ -317,8 +318,8 @@ try {
             }
             
             // Calculate volume in liters
-            $volumeLiters = $quantity * ($inventory['size_value'] ?? 1);
-            if (($inventory['size_unit'] ?? 'ml') === 'ml') {
+            $volumeLiters = $quantity * ($inventory['unit_size'] ?? 1);
+            if (($inventory['unit_measure'] ?? 'ml') === 'ml') {
                 $volumeLiters = $volumeLiters / 1000;
             }
             
