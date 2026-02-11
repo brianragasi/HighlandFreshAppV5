@@ -261,7 +261,7 @@ function getMonthlySpending($db) {
         FROM purchase_orders
         WHERE order_date >= DATE_SUB(CURDATE(), INTERVAL ? MONTH)
         AND status != 'cancelled'
-        GROUP BY DATE_FORMAT(order_date, '%Y-%m')
+        GROUP BY DATE_FORMAT(order_date, '%Y-%m'), DATE_FORMAT(order_date, '%b %Y')
         ORDER BY month ASC
     ");
     $stmt->execute([(int) $months]);

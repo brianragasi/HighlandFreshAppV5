@@ -256,7 +256,7 @@ function getFarmerPaymentSummary($db) {
         LEFT JOIN qc_milk_tests qmt ON qmt.receiving_id = mr.id AND qmt.is_accepted = 1
         LEFT JOIN milk_types mt ON f.milk_type_id = mt.id
         WHERE f.is_active = 1
-        GROUP BY f.id
+        GROUP BY f.id, mt.type_name
         ORDER BY total_amount DESC
     ");
     $farmers = $stmt->fetchAll();

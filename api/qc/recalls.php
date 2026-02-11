@@ -503,7 +503,10 @@ function populateAffectedLocations($db, $recallId, $batchId) {
         WHERE fgi.batch_id = ?
           AND d.status IN ('dispatched', 'in_transit', 'delivered')
           AND di.quantity_dispatched > 0
-        GROUP BY d.customer_id, d.customer_name
+        GROUP BY d.customer_id, d.customer_name, d.customer_type, 
+                 d.delivery_address, d.contact_number,
+                 fc.contact_person, fc.email,
+                 d.dispatched_at, d.dr_number
     ");
     $stmt->execute([$batchId]);
     $locations = $stmt->fetchAll(PDO::FETCH_ASSOC);
