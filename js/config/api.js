@@ -6,7 +6,8 @@
  */
 
 // Detect environment - Azure uses root path, localhost uses subfolder
-const isAzure = window.location.hostname.includes('azurewebsites.net');
+const isAzure = window.location.hostname.includes('azurewebsites.net') || 
+                window.location.hostname.includes('highlandfresh.codes');
 const APP_BASE = isAzure ? '' : '/HighlandFreshAppV4';
 
 // API Base URL
