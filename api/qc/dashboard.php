@@ -8,8 +8,28 @@
  * 
  * @package HighlandFresh
  * @version 4.0
- * @deployed 2026-02-06 v3 - Force redeploy
+ * @deployed 2026-02-11 v4 - Added error logging
  */
+
+// Catch fatal errors
+register_shutdown_function(function() {
+    $error = error_get_last();
+    if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
+        http_response_code(500);
+        header('Content-Type: application/json');
+        echo json_encode([
+            'success' => false,
+            'message' => 'Fatal PHP error',
+            'error_detail' => $error['message'],
+            'error_file' => basename($error['file']),
+            'error_line' => $error['line']
+        ]);
+    }
+});
+
+// Enable error reporting for this file
+ini_set('display_errors', 0);
+error_reporting(E_ALL);
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 
