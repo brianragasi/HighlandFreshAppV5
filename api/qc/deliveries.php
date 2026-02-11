@@ -106,13 +106,15 @@ try {
             $farmerId = getParam('farmer_id');
             $milkTypeId = getParam('milk_type_id');
             $volumeLiters = getParam('volume_liters');
-            $receivingDate = getParam('receiving_date', date('Y-m-d'));
-            $receivingTime = getParam('receiving_time', date('H:i:s'));
+            // Accept both delivery_date/delivery_time and receiving_date/receiving_time
+            $receivingDate = getParam('receiving_date') ?: getParam('delivery_date', date('Y-m-d'));
+            $receivingTime = getParam('receiving_time') ?: getParam('delivery_time', date('H:i:s'));
             $temperatureCelsius = getParam('temperature_celsius');
             $transportContainer = getParam('transport_container');
             $visualInspection = getParam('visual_inspection', 'pending');
             $visualNotes = trim(getParam('visual_notes', ''));
             $notes = trim(getParam('notes', ''));
+            $aptResult = getParam('apt_result'); // APT result from initial visual inspection
             
             // Validation
             $errors = [];
@@ -174,14 +176,14 @@ try {
                     receiving_code, rmr_number, farmer_id, milk_type_id, 
                     receiving_date, receiving_time, volume_liters,
                     temperature_celsius, transport_container,
-                    visual_inspection, visual_notes, status, received_by, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_qc', ?, ?)
+                    visual_inspection, visual_notes, apt_result, status, received_by, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_qc', ?, ?)
             ");
             $stmt->execute([
                 $receivingCode, $rmrNumber, $farmerId, $milkTypeId,
                 $receivingDate, $receivingTime, $volumeLiters,
                 $temperatureCelsius ?: null, $transportContainer ?: null,
-                $visualInspection, $visualNotes, $currentUser['user_id'], $notes
+                $visualInspection, $visualNotes, $aptResult ?: 'negative', $currentUser['user_id'], $notes
             ]);
             
             $receivingId = $db->lastInsertId();

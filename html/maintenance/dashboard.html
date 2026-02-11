@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Maintenance | Highland Fresh</title>
+
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .bento-card {
+            @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: oklch(var(--b2));
+            border-radius: 3px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: oklch(var(--bc) / 0.2);
+            border-radius: 3px;
+        }
+
+        .sidebar-transition {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .stat-value {
+            font-variant-numeric: tabular-nums;
+        }
+
+        .quick-action-card {
+            @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg cursor-pointer;
+        }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <img src="../images/logo.jpg" alt="Highland Fresh Logo" class="w-10 h-10 rounded-xl object-cover">
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Maintenance</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <!-- Main Menu -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-th-large w-5 text-center"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Equipment -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Equipment</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="machines.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-cogs w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Machines</span>
+                            <span class="badge badge-sm badge-info" id="totalMachinesBadge">0</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="repairs.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-wrench w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Repairs</span>
+                            <span class="badge badge-sm badge-warning" id="activeRepairsBadge">0</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Inventory -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="requisitions.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-clipboard-list w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">MRO Requisitions</span>
+                            <span class="badge badge-sm badge-warning" id="pendingReqsBadge">0</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="mro_inventory.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-boxes w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">MRO Inventory</span>
+                            <span class="badge badge-sm badge-error" id="lowStockBadge">0</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">MH</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Maintenance Head</p>
+                    <p class="text-xs text-base-content/60 truncate">Maintenance</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0"
+                        class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a><i class="fas fa-user-cog w-4"></i> Profile</a></li>
+                        <li><a><i class="fas fa-cog w-4"></i> Settings</a></li>
+                        <li class="border-t border-base-300 mt-1 pt-1">
+                            <a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i>
+                                Logout</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold text-base-content">Maintenance Dashboard</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <!-- Notifications -->
+                <div class="dropdown dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-circle">
+                        <div class="indicator">
+                            <i class="fas fa-bell text-lg"></i>
+                            <span class="indicator-item badge badge-primary badge-xs" id="notificationCount">0</span>
+                        </div>
+                    </label>
+                    <div tabindex="0"
+                        class="dropdown-content bg-base-100 rounded-box shadow-lg border border-base-300 w-80 mt-3">
+                        <div class="p-4 border-b border-base-300">
+                            <h3 class="font-semibold">Notifications</h3>
+                        </div>
+                        <ul class="menu menu-sm p-2 max-h-64 overflow-y-auto" id="notificationsList">
+                            <li class="text-center py-4 text-base-content/60">No new notifications</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Theme toggle -->
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- Welcome Banner -->
+            <div class="bg-gradient-to-r from-emerald-600 to-emerald-700 rounded-2xl p-6 mb-6 text-white">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div>
+                        <h2 class="text-2xl font-bold mb-1">Good <span id="greeting">Morning</span>, <span
+                                id="welcomeName">Maintenance Head</span>!</h2>
+                        <p class="text-white/80">Here's your equipment and maintenance overview.</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <a href="repairs.html?action=new"
+                            class="btn btn-sm bg-white/20 border-white/30 text-white hover:bg-white/30">
+                            <i class="fas fa-wrench"></i> Report Repair
+                        </a>
+                        <a href="requisitions.html?action=new"
+                            class="btn btn-sm bg-white/20 border-white/30 text-white hover:bg-white/30">
+                            <i class="fas fa-clipboard-list"></i> Request Parts
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Alert for Overdue Maintenance -->
+            <div id="overdueAlert" class="alert alert-error mb-6 hidden">
+                <i class="fas fa-exclamation-triangle text-xl"></i>
+                <div>
+                    <h3 class="font-bold">Overdue Maintenance!</h3>
+                    <p class="text-sm" id="overdueAlertText">Some machines have overdue maintenance schedules.</p>
+                </div>
+                <a href="machines.html?filter=overdue" class="btn btn-sm">View Machines</a>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="card bg-gradient-to-br from-base-100 to-base-200 border border-base-300 mb-6">
+                <div class="card-body">
+                    <h3 class="card-title text-base mb-4">
+                        <i class="fas fa-bolt text-primary"></i>
+                        Quick Actions
+                    </h3>
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <a href="repairs.html?action=new" class="quick-action-card card bg-emerald-600 text-white">
+                            <div class="card-body items-center text-center p-4">
+                                <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center mb-2">
+                                    <i class="fas fa-wrench text-2xl"></i>
+                                </div>
+                                <p class="font-semibold">Report Repair</p>
+                                <p class="text-xs opacity-80">Log a new issue</p>
+                            </div>
+                        </a>
+
+                        <a href="machines.html" class="quick-action-card card bg-blue-500 text-white">
+                            <div class="card-body items-center text-center p-4">
+                                <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center mb-2">
+                                    <i class="fas fa-cogs text-2xl"></i>
+                                </div>
+                                <p class="font-semibold">View Machines</p>
+                                <p class="text-xs opacity-80">Equipment status</p>
+                            </div>
+                        </a>
+
+                        <a href="requisitions.html?action=new" class="quick-action-card card bg-emerald-500 text-white">
+                            <div class="card-body items-center text-center p-4">
+                                <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center mb-2">
+                                    <i class="fas fa-clipboard-list text-2xl"></i>
+                                </div>
+                                <p class="font-semibold">Request Parts</p>
+                                <p class="text-xs opacity-80">MRO requisition</p>
+                            </div>
+                        </a>
+
+                        <a href="mro_inventory.html?filter=low_stock" class="quick-action-card card bg-red-500 text-white">
+                            <div class="card-body items-center text-center p-4">
+                                <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center mb-2">
+                                    <i class="fas fa-boxes text-2xl"></i>
+                                </div>
+                                <p class="font-semibold">Check Stock</p>
+                                <p class="text-xs opacity-80">MRO inventory</p>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bento Grid Stats -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <!-- Total Machines -->
+                <a href="machines.html" class="bento-card card bg-base-100 border border-base-300 cursor-pointer">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                                <i class="fas fa-cogs text-blue-500"></i>
+                            </div>
+                            <span class="badge badge-ghost badge-sm">Total</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="totalMachines">0</p>
+                        <p class="text-sm text-base-content/60">Total Machines</p>
+                    </div>
+                </a>
+
+                <!-- Active Repairs -->
+                <a href="repairs.html" class="bento-card card bg-base-100 border border-base-300 cursor-pointer">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                                <i class="fas fa-wrench text-emerald-600"></i>
+                            </div>
+                            <span class="badge badge-warning badge-sm">Active</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="activeRepairs">0</p>
+                        <p class="text-sm text-base-content/60">Active Repairs</p>
+                    </div>
+                </a>
+
+                <!-- Upcoming Maintenance -->
+                <a href="machines.html?filter=upcoming" class="bento-card card bg-base-100 border border-base-300 cursor-pointer">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                                <i class="fas fa-calendar-check text-amber-500"></i>
+                            </div>
+                            <span class="badge badge-info badge-sm">7 Days</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="upcomingMaintenance">0</p>
+                        <p class="text-sm text-base-content/60">Upcoming Maint.</p>
+                    </div>
+                </a>
+
+                <!-- Low Stock Items -->
+                <a href="mro_inventory.html?filter=low_stock" class="bento-card card bg-base-100 border border-base-300 cursor-pointer">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
+                                <i class="fas fa-exclamation-triangle text-red-500"></i>
+                            </div>
+                            <span class="badge badge-error badge-sm">Alert</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="lowStockItems">0</p>
+                        <p class="text-sm text-base-content/60">Low Stock MRO</p>
+                    </div>
+                </a>
+            </div>
+
+            <!-- Two Column Layout -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- Machine Status Overview -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body">
+                        <h3 class="card-title text-base">
+                            <i class="fas fa-chart-pie text-primary"></i>
+                            Machine Status
+                        </h3>
+                        <div id="machineStatusChart" class="space-y-3">
+                            <div class="skeleton h-8 w-full"></div>
+                            <div class="skeleton h-8 w-full"></div>
+                            <div class="skeleton h-8 w-full"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Upcoming Maintenance Schedule -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="card-title text-base">
+                                <i class="fas fa-calendar text-primary"></i>
+                                Due for Maintenance
+                            </h3>
+                            <a href="machines.html?filter=upcoming" class="btn btn-ghost btn-xs">View All</a>
+                        </div>
+                        <div id="upcomingMaintenanceList" class="space-y-2">
+                            <div class="skeleton h-16 w-full"></div>
+                            <div class="skeleton h-16 w-full"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Repairs & Low Stock -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Recent Repairs -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="card-title text-base">
+                                <i class="fas fa-tools text-primary"></i>
+                                Recent Repairs
+                            </h3>
+                            <a href="repairs.html" class="btn btn-ghost btn-xs">View All</a>
+                        </div>
+                        <div id="recentRepairsList" class="space-y-2">
+                            <div class="skeleton h-16 w-full"></div>
+                            <div class="skeleton h-16 w-full"></div>
+                            <div class="skeleton h-16 w-full"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Low Stock MRO Items -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="card-title text-base">
+                                <i class="fas fa-box-open text-primary"></i>
+                                Low Stock MRO Items
+                            </h3>
+                            <a href="mro_inventory.html?filter=low_stock" class="btn btn-ghost btn-xs">View All</a>
+                        </div>
+                        <div id="lowStockList" class="space-y-2">
+                            <div class="skeleton h-12 w-full"></div>
+                            <div class="skeleton h-12 w-full"></div>
+                            <div class="skeleton h-12 w-full"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
+            <div>
+                <p>&copy; 2025 Highland Fresh Dairy Corporation. All rights reserved.</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-bottom z-50"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/maintenance/maintenance.service.js"></script>
+
+    <script>
+        // Toggle sidebar for mobile
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+
+        // Theme toggle
+        const themeToggle = document.getElementById('themeToggle');
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            themeToggle.checked = true;
+        }
+
+        themeToggle.addEventListener('change', function () {
+            const theme = this.checked ? 'dark' : 'emerald';
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+        });
+
+        // Set greeting based on time
+        function setGreeting() {
+            const hour = new Date().getHours();
+            let greeting = 'Morning';
+            if (hour >= 12 && hour < 17) greeting = 'Afternoon';
+            else if (hour >= 17) greeting = 'Evening';
+            document.getElementById('greeting').textContent = greeting;
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async function () {
+            // Check authentication
+            const user = await AuthService.getCurrentUser();
+            if (!user) {
+                window.location.href = '../login.html';
+                return;
+            }
+
+            // Set user info
+            const fullName = `${user.first_name} ${user.last_name}`;
+            document.getElementById('welcomeName').textContent = user.first_name;
+            document.getElementById('sidebarUserName').textContent = fullName;
+            document.getElementById('userInitials').textContent =
+                `${user.first_name[0]}${user.last_name[0]}`.toUpperCase();
+
+            setGreeting();
+            await loadDashboardData();
+        });
+
+        async function loadDashboardData() {
+            try {
+                // Get dashboard stats
+                const response = await MaintenanceService.getDashboardStats();
+                if (response.type === 'success') {
+                    const data = response.data;
+
+                    // Update stat cards
+                    document.getElementById('totalMachines').textContent = data.machines?.total || 0;
+                    document.getElementById('activeRepairs').textContent = data.repairs?.active || 0;
+                    document.getElementById('upcomingMaintenance').textContent = data.maintenance?.upcoming_7days || 0;
+                    document.getElementById('lowStockItems').textContent = data.alerts?.critical_mro_items || 0;
+
+                    // Update sidebar badges
+                    document.getElementById('totalMachinesBadge').textContent = data.machines?.total || 0;
+                    document.getElementById('activeRepairsBadge').textContent = data.repairs?.active || 0;
+                    document.getElementById('pendingReqsBadge').textContent = data.requisitions?.pending || 0;
+                    document.getElementById('lowStockBadge').textContent = data.alerts?.critical_mro_items || 0;
+
+                    // Show overdue alert if needed
+                    if (data.maintenance?.overdue > 0) {
+                        document.getElementById('overdueAlertText').textContent =
+                            `${data.maintenance.overdue} machine(s) have overdue maintenance schedules. Please address immediately.`;
+                        document.getElementById('overdueAlert').classList.remove('hidden');
+                    }
+
+                    // Render machine status chart
+                    renderMachineStatusChart(data.machines?.by_status || {});
+                }
+
+                // Get recent repairs
+                const repairsResponse = await MaintenanceService.getRecentRepairs(5);
+                if (repairsResponse.type === 'success') {
+                    renderRecentRepairs(repairsResponse.data || []);
+                }
+
+                // Get upcoming maintenance
+                const maintenanceResponse = await MaintenanceService.getUpcomingMaintenance(14);
+                if (maintenanceResponse.type === 'success') {
+                    renderUpcomingMaintenance(maintenanceResponse.data || []);
+                }
+
+                // Get low stock items
+                const lowStockResponse = await MaintenanceService.getLowStockMRO();
+                if (lowStockResponse.type === 'success') {
+                    renderLowStockItems(lowStockResponse.data || []);
+                }
+
+            } catch (error) {
+                console.error('Dashboard error:', error);
+                showToast('Failed to load dashboard data', 'error');
+            }
+        }
+
+        function renderMachineStatusChart(statusData) {
+            const container = document.getElementById('machineStatusChart');
+            const total = Object.values(statusData).reduce((a, b) => a + b, 0) || 1;
+
+            const statusConfig = {
+                'operational': { label: 'Operational', class: 'bg-success', textClass: 'text-success' },
+                'needs_maintenance': { label: 'Needs Maintenance', class: 'bg-warning', textClass: 'text-warning' },
+                'under_repair': { label: 'Under Repair', class: 'bg-error', textClass: 'text-error' },
+                'offline': { label: 'Offline', class: 'bg-neutral', textClass: 'text-neutral' },
+                'decommissioned': { label: 'Decommissioned', class: 'bg-base-300', textClass: 'text-base-content/50' }
+            };
+
+            let html = '';
+            for (const [status, count] of Object.entries(statusData)) {
+                const config = statusConfig[status] || { label: status, class: 'bg-base-300', textClass: 'text-base-content' };
+                const percent = ((count / total) * 100).toFixed(0);
+                html += `
+                    <div class="flex items-center gap-3">
+                        <div class="w-24 text-sm ${config.textClass}">${config.label}</div>
+                        <div class="flex-1">
+                            <progress class="progress ${config.class} w-full" value="${count}" max="${total}"></progress>
+                        </div>
+                        <div class="w-12 text-right font-semibold">${count}</div>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = html || '<p class="text-center text-base-content/60 py-4">No machines registered</p>';
+        }
+
+        function renderRecentRepairs(repairs) {
+            const container = document.getElementById('recentRepairsList');
+
+            if (!repairs.length) {
+                container.innerHTML = '<p class="text-center text-base-content/60 py-4">No recent repairs</p>';
+                return;
+            }
+
+            const statusColors = {
+                'reported': 'badge-info',
+                'diagnosed': 'badge-warning',
+                'in_progress': 'badge-primary',
+                'awaiting_parts': 'badge-warning',
+                'completed': 'badge-success',
+                'cancelled': 'badge-ghost'
+            };
+
+            const priorityColors = {
+                'critical': 'text-error',
+                'high': 'text-warning',
+                'normal': 'text-info',
+                'low': 'text-base-content/60'
+            };
+
+            container.innerHTML = repairs.map(repair => `
+                <a href="repairs.html?id=${repair.id}" class="flex items-center gap-3 p-3 bg-base-200 rounded-xl hover:bg-base-300 transition-colors">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                        <i class="fas fa-wrench text-emerald-600"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="font-semibold text-sm truncate">${repair.repair_code}</p>
+                        <p class="text-xs text-base-content/60 truncate">${repair.machine_name || 'Unknown Machine'}</p>
+                    </div>
+                    <div class="text-right">
+                        <span class="badge ${statusColors[repair.status] || 'badge-ghost'} badge-sm">${repair.status?.replace('_', ' ')}</span>
+                        <p class="text-xs ${priorityColors[repair.priority] || ''} capitalize mt-1">${repair.priority}</p>
+                    </div>
+                </a>
+            `).join('');
+        }
+
+        function renderUpcomingMaintenance(machines) {
+            const container = document.getElementById('upcomingMaintenanceList');
+
+            if (!machines.length) {
+                container.innerHTML = '<p class="text-center text-base-content/60 py-4">No maintenance due soon</p>';
+                return;
+            }
+
+            container.innerHTML = machines.map(machine => {
+                const daysUntil = machine.days_until_due;
+                let urgencyClass = 'badge-info';
+                let urgencyText = `${daysUntil} days`;
+                
+                if (daysUntil < 0) {
+                    urgencyClass = 'badge-error';
+                    urgencyText = `${Math.abs(daysUntil)} days overdue`;
+                } else if (daysUntil === 0) {
+                    urgencyClass = 'badge-error';
+                    urgencyText = 'Today';
+                } else if (daysUntil <= 3) {
+                    urgencyClass = 'badge-warning';
+                }
+
+                return `
+                    <a href="machines.html?id=${machine.id}" class="flex items-center gap-3 p-3 bg-base-200 rounded-xl hover:bg-base-300 transition-colors">
+                        <div class="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                            <i class="fas fa-cog text-amber-500"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <p class="font-semibold text-sm truncate">${machine.machine_name}</p>
+                            <p class="text-xs text-base-content/60">${machine.machine_code}</p>
+                        </div>
+                        <span class="badge ${urgencyClass}">${urgencyText}</span>
+                    </a>
+                `;
+            }).join('');
+        }
+
+        function renderLowStockItems(items) {
+            const container = document.getElementById('lowStockList');
+
+            if (!items.length) {
+                container.innerHTML = '<p class="text-center text-base-content/60 py-4">No low stock items</p>';
+                return;
+            }
+
+            container.innerHTML = items.slice(0, 5).map(item => `
+                <div class="flex items-center gap-3 p-3 bg-base-200 rounded-xl">
+                    <div class="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
+                        <i class="fas fa-box text-red-500"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="font-semibold text-sm truncate">${item.item_name}</p>
+                        <p class="text-xs text-base-content/60">${item.category_name || 'Uncategorized'}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="font-semibold text-error">${item.current_stock}</p>
+                        <p class="text-xs text-base-content/60">Min: ${item.minimum_stock}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
+            const icon = type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle';
+
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `
+                <i class="fas ${icon}"></i>
+                <span>${message}</span>
+            `;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+    </script>
+</body>
+
+</html>

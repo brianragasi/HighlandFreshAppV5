@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Purchase Orders - Purchasing | Highland Fresh</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+
+    <script>
+        tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } } }
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: oklch(var(--b2));
+            border-radius: 3px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: oklch(var(--bc) / 0.2);
+            border-radius: 3px;
+        }
+
+        .sidebar-transition {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .stat-value {
+            font-variant-numeric: tabular-nums;
+        }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <img src="../../images/logo.jpg" alt="Highland Fresh Logo" class="w-10 h-10 rounded-xl object-cover">
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Purchasing Department</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="dashboard.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i><span
+                                class="flex-1">Dashboard</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Procurement
+                </h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="purchase_orders.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-file-invoice-dollar w-5 text-center"></i><span class="flex-1">Purchase
+                                Orders</span></a></li>
+                    <li><a href="suppliers.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-truck-field w-5 text-center text-base-content/60"></i><span
+                                class="flex-1">Suppliers</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Price
+                    Monitoring</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="#" onclick="event.preventDefault(); showToast('Price Trends coming soon!', 'info')"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-chart-line w-5 text-center text-base-content/60"></i><span
+                                class="flex-1">Price Trends</span>
+                            <span class="badge badge-ghost badge-xs">Soon</span></a></li>
+                </ul>
+            </div>
+        </nav>
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content"><span class="text-sm font-semibold"
+                            id="userInitials">PU</span></div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Purchaser</p>
+                    <p class="text-xs text-base-content/60 truncate">Purchasing</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square"><i
+                            class="fas fa-ellipsis-v"></i></label>
+                    <ul tabindex="0"
+                        class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a><i class="fas fa-user-cog w-4"></i> Profile</a></li>
+                        <li class="border-t border-base-300 mt-1 pt-1"><a onclick="AuthService.logout()"
+                                class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i
+                        class="fas fa-bars text-lg"></i></button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold text-base-content" id="pageTitle">Purchase Orders</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <button class="btn btn-primary btn-sm gap-2" onclick="showCreateForm()">
+                    <i class="fas fa-plus"></i>
+                    <span class="hidden md:inline">New PO</span>
+                </button>
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- LIST VIEW -->
+            <div id="listView">
+                <!-- Filters -->
+                <div class="card bg-base-100 border border-base-300 mb-6">
+                    <div class="card-body p-4">
+                        <div class="flex flex-col md:flex-row gap-3">
+                            <label class="input input-bordered input-sm flex items-center gap-2 flex-1">
+                                <i class="fas fa-search text-base-content/40"></i>
+                                <input type="text" id="searchInput" placeholder="Search PO# or supplier..." class="grow"
+                                    oninput="debounceSearch()">
+                            </label>
+                            <select id="statusFilter" class="select select-bordered select-sm w-full md:w-40"
+                                onchange="loadPurchaseOrders()">
+                                <option value="">All Status</option>
+                                <option value="draft">Draft</option>
+                                <option value="pending">Pending Approval</option>
+                                <option value="approved">Approved</option>
+                                <option value="ordered">Ordered</option>
+                                <option value="partial_received">Partial Received</option>
+                                <option value="received">Received</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
+                            <select id="paymentFilter" class="select select-bordered select-sm w-full md:w-36"
+                                onchange="loadPurchaseOrders()">
+                                <option value="">All Payments</option>
+                                <option value="unpaid">Unpaid</option>
+                                <option value="partial">Partial</option>
+                                <option value="paid">Paid</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PO Table -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body">
+                        <div class="overflow-x-auto">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>PO Number</th>
+                                        <th>Supplier</th>
+                                        <th>Order Date</th>
+                                        <th>Expected Delivery</th>
+                                        <th>Items</th>
+                                        <th>Total Amount</th>
+                                        <th>Status</th>
+                                        <th>Payment</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="poTable">
+                                    <tr>
+                                        <td colspan="9" class="text-center py-8"><span
+                                                class="loading loading-spinner loading-md"></span>
+                                            <p class="mt-2 text-base-content/60">Loading...</p>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <!-- Pagination -->
+                        <div class="flex items-center justify-between mt-4" id="paginationRow">
+                            <p class="text-sm text-base-content/60" id="paginationInfo">Showing 0 results</p>
+                            <div class="join" id="paginationControls"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CREATE PO VIEW -->
+            <div id="createView" class="hidden">
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body">
+                        <h2 class="card-title text-lg mb-4">
+                            <i class="fas fa-file-invoice-dollar text-primary mr-1"></i>
+                            Create Purchase Order
+                        </h2>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                            <div class="form-control">
+                                <label class="label"><span class="label-text">Supplier *</span></label>
+                                <select id="poSupplier" class="select select-bordered w-full" required>
+                                    <option value="">Select supplier...</option>
+                                </select>
+                            </div>
+                            <div class="form-control">
+                                <label class="label"><span class="label-text">Order Date</span></label>
+                                <input type="date" id="poOrderDate" class="input input-bordered w-full">
+                            </div>
+                            <div class="form-control">
+                                <label class="label"><span class="label-text">Expected Delivery</span></label>
+                                <input type="date" id="poExpectedDelivery" class="input input-bordered w-full">
+                            </div>
+                            <div class="form-control">
+                                <label class="label"><span class="label-text">Payment Terms *</span></label>
+                                <select id="poPaymentTerms" class="select select-bordered w-full" required>
+                                    <option value="cash">Cash (COD)</option>
+                                    <option value="credit_7">Credit - 7 Days</option>
+                                    <option value="credit_15">Credit - 15 Days</option>
+                                    <option value="credit_30" selected>Credit - 30 Days</option>
+                                    <option value="credit_45">Credit - 45 Days</option>
+                                    <option value="credit_60">Credit - 60 Days</option>
+                                </select>
+                                <label class="label"><span class="label-text-alt text-base-content/50">Tells Finance when payment is due</span></label>
+                            </div>
+                            <div class="form-control">
+                                <label class="label"><span class="label-text">Linked Requisition</span></label>
+                                <select id="poRequisition" class="select select-bordered w-full">
+                                    <option value="">None (Direct Purchase)</option>
+                                </select>
+                            </div>
+                            <div class="form-control md:col-span-2">
+                                <label class="label"><span class="label-text">Notes</span></label>
+                                <input type="text" id="poNotes" class="input input-bordered w-full"
+                                    placeholder="Additional notes">
+                            </div>
+                        </div>
+
+                        <!-- Line Items -->
+                        <div class="mb-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <h3 class="font-semibold">Line Items</h3>
+                                <button class="btn btn-ghost btn-sm text-primary" onclick="addLineItem()">
+                                    <i class="fas fa-plus"></i> Add Item
+                                </button>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th class="w-1/3">Description</th>
+                                            <th>Qty</th>
+                                            <th>Unit</th>
+                                            <th>Unit Price</th>
+                                            <th>Line Total</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="lineItemsBody">
+                                        <!-- Items added here -->
+                                    </tbody>
+                                    <tfoot>
+                                        <tr>
+                                            <td colspan="4" class="text-right font-semibold">Total:</td>
+                                            <td class="font-bold text-lg" id="poTotal">₱0.00</td>
+                                            <td></td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-end gap-2">
+                            <button class="btn btn-ghost" onclick="cancelCreate()">Cancel</button>
+                            <button class="btn btn-primary" onclick="createPurchaseOrder()">
+                                <i class="fas fa-save"></i> Create PO
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DETAIL VIEW -->
+            <div id="detailView" class="hidden">
+                <div id="detailContent"></div>
+            </div>
+
+        </main>
+
+        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
+            <div>
+                <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+
+    <!-- Receive PO Modal -->
+    <dialog id="receiveModal" class="modal">
+        <div class="modal-box max-w-2xl">
+            <h3 class="font-bold text-lg mb-4"><i class="fas fa-box-open text-success mr-2"></i>Receive Purchase Order</h3>
+            <p class="text-sm text-base-content/70 mb-4">Mark this PO as received. If any item prices changed from the original order, you can update them below to keep market prices accurate.</p>
+            
+            <div id="receiveItemsList" class="space-y-3 max-h-64 overflow-y-auto mb-4">
+                <!-- Items will be populated here -->
+            </div>
+            
+            <div class="modal-action">
+                <button class="btn btn-ghost" onclick="document.getElementById('receiveModal').close()">Cancel</button>
+                <button class="btn btn-success" onclick="confirmReceive()">
+                    <i class="fas fa-check"></i> Confirm Received
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/purchasing/purchasing.service.js"></script>
+
+    <script>
+        let searchTimeout;
+        let currentPage = 1;
+        let lineItemCounter = 0;
+        let currentUserRole = '';
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('-translate-x-full');
+            document.getElementById('sidebarBackdrop').classList.toggle('hidden');
+        }
+
+        document.getElementById('themeToggle').addEventListener('change', function () {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('themeToggle').checked = true;
+        }
+
+        // ========================================
+        // INIT
+        // ========================================
+
+        document.addEventListener('DOMContentLoaded', async function () {
+            if (!AuthService.isAuthenticated()) { window.location.href = '../login.html'; return; }
+
+            const user = AuthService.getCurrentUser();
+            if (user) {
+                currentUserRole = user.role;
+                document.getElementById('sidebarUserName').textContent =
+                    `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.name || 'Purchaser';
+                const f = (user.first_name || user.name || '').charAt(0).toUpperCase();
+                const l = (user.last_name || '').charAt(0).toUpperCase();
+                document.getElementById('userInitials').textContent = f + l || 'PU';
+            }
+
+            // Set default order date
+            document.getElementById('poOrderDate').value = new Date().toISOString().split('T')[0];
+
+            // Check URL for action
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('action') === 'new') {
+                showCreateForm();
+            } else {
+                await loadPurchaseOrders();
+            }
+        });
+
+        // ========================================
+        // LIST VIEW
+        // ========================================
+
+        function debounceSearch() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => { currentPage = 1; loadPurchaseOrders(); }, 300);
+        }
+
+        async function loadPurchaseOrders() {
+            try {
+                const filters = { page: currentPage, limit: 15 };
+                const search = document.getElementById('searchInput').value.trim();
+                const status = document.getElementById('statusFilter').value;
+                const payment = document.getElementById('paymentFilter').value;
+
+                if (search) filters.search = search;
+                if (status) filters.status = status;
+                if (payment) filters.payment_status = payment;
+
+                const response = await PurchasingService.getPurchaseOrders(filters);
+                const orders = response?.data || [];
+                const pagination = response?.pagination;
+                const tbody = document.getElementById('poTable');
+
+                if (orders.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="9" class="text-center py-12 text-base-content/60">
+                        <i class="fas fa-inbox text-5xl mb-3"></i><p class="text-lg font-semibold">No purchase orders found</p>
+                        <p class="text-sm mt-1">Try adjusting your filters or create a new PO.</p></td></tr>`;
+                    document.getElementById('paginationInfo').textContent = 'No results';
+                    document.getElementById('paginationControls').innerHTML = '';
+                    return;
+                }
+
+                tbody.innerHTML = orders.map(po => {
+                    const sBadge = PurchasingService.getStatusBadgeClass(po.status);
+                    const pBadge = PurchasingService.getPaymentBadgeClass(po.payment_status);
+
+                    return `
+                        <tr class="hover cursor-pointer" onclick="viewPODetail(${po.id})">
+                            <td><span class="font-mono font-semibold text-primary">${po.po_number}</span></td>
+                            <td>
+                                <div class="font-medium">${po.supplier_name}</div>
+                                <div class="text-xs text-base-content/50">${po.supplier_code}</div>
+                            </td>
+                            <td class="text-sm">${formatDate(po.order_date)}</td>
+                            <td class="text-sm">${formatDate(po.expected_delivery)}</td>
+                            <td><span class="badge badge-ghost badge-sm">${po.item_count || 0}</span></td>
+                            <td class="font-semibold">${formatCurrency(po.total_amount)}</td>
+                            <td><span class="badge badge-sm ${sBadge}">${PurchasingService.formatStatus(po.status)}</span></td>
+                            <td><span class="badge badge-sm ${pBadge} badge-outline">${PurchasingService.formatStatus(po.payment_status)}</span></td>
+                            <td>
+                                <div class="dropdown dropdown-end" onclick="event.stopPropagation()">
+                                    <label tabindex="0" class="btn btn-ghost btn-xs btn-square"><i class="fas fa-ellipsis-v"></i></label>
+                                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2 z-10">
+                                        <li><a onclick="viewPODetail(${po.id})"><i class="fas fa-eye w-4"></i> View Details</a></li>
+                                        ${po.status === 'draft' ? `<li><a onclick="submitPO(${po.id})"><i class="fas fa-paper-plane w-4"></i> Submit</a></li>` : ''}
+                                        ${po.status === 'pending' && currentUserRole === 'general_manager' ? `
+                                            <li><a onclick="approvePO(${po.id})" class="text-success"><i class="fas fa-check w-4"></i> Approve</a></li>
+                                            <li><a onclick="rejectPO(${po.id})" class="text-error"><i class="fas fa-times w-4"></i> Reject</a></li>
+                                        ` : ''}
+                                        ${po.status === 'approved' ? `<li><a onclick="markOrdered(${po.id})"><i class="fas fa-shipping-fast w-4"></i> Mark Ordered</a></li>` : ''}
+                                        ${['ordered', 'partial_received', 'approved'].includes(po.status) ? `<li><a onclick="markReceived(${po.id})"><i class="fas fa-box-open w-4"></i> Mark Received</a></li>` : ''}
+                                        ${!['received', 'cancelled'].includes(po.status) ? `<li><a onclick="cancelPO(${po.id})" class="text-error"><i class="fas fa-ban w-4"></i> Cancel</a></li>` : ''}
+                                    </ul>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+                // Pagination
+                if (pagination) {
+                    const start = (pagination.page - 1) * pagination.limit + 1;
+                    const end = Math.min(pagination.page * pagination.limit, pagination.total);
+                    document.getElementById('paginationInfo').textContent =
+                        `Showing ${start}-${end} of ${pagination.total} results`;
+
+                    let paginationHTML = '';
+                    for (let i = 1; i <= pagination.total_pages; i++) {
+                        paginationHTML += `<button class="join-item btn btn-sm ${i === pagination.page ? 'btn-active' : ''}" 
+                            onclick="currentPage=${i}; loadPurchaseOrders()">${i}</button>`;
+                    }
+                    document.getElementById('paginationControls').innerHTML = paginationHTML;
+                }
+
+            } catch (error) {
+                console.error('Error loading POs:', error);
+                document.getElementById('poTable').innerHTML = `
+                    <tr><td colspan="9" class="text-center py-8 text-error"><i class="fas fa-exclamation-circle mr-2"></i>Failed to load purchase orders</td></tr>`;
+            }
+        }
+
+        // ========================================
+        // CREATE PO
+        // ========================================
+
+        async function showCreateForm(requisitionId = null) {
+            document.getElementById('listView').classList.add('hidden');
+            document.getElementById('detailView').classList.add('hidden');
+            document.getElementById('createView').classList.remove('hidden');
+            document.getElementById('pageTitle').textContent = 'Create Purchase Order';
+
+            // Load suppliers
+            try {
+                const response = await PurchasingService.getSuppliers({ status: 'active' });
+                const suppliers = response?.data || [];
+                const select = document.getElementById('poSupplier');
+                select.innerHTML = '<option value="">Select supplier...</option>' +
+                    suppliers.map(s => `<option value="${s.id}">${s.supplier_name} (${s.supplier_code})</option>`).join('');
+            } catch (e) { console.error('Failed to load suppliers:', e); }
+
+            // Load pending requisitions
+            try {
+                const response = await PurchasingService.getPendingRequisitions();
+                const requisitions = response?.data || [];
+                const reqSelect = document.getElementById('poRequisition');
+                reqSelect.innerHTML = '<option value="">None (Direct Purchase)</option>' +
+                    requisitions.map(r => `<option value="${r.id}" ${requisitionId == r.id ? 'selected' : ''}>${r.requisition_code} - ${r.department}: ${r.purpose || 'No description'}</option>`).join('');
+            } catch (e) { console.error('Failed to load requisitions:', e); }
+
+            // Add first line item
+            lineItemCounter = 0;
+            document.getElementById('lineItemsBody').innerHTML = '';
+            addLineItem();
+        }
+
+        function addLineItem() {
+            lineItemCounter++;
+            const tbody = document.getElementById('lineItemsBody');
+            const row = document.createElement('tr');
+            row.id = `lineItem-${lineItemCounter}`;
+            row.innerHTML = `
+                <td><input type="text" class="input input-bordered input-sm w-full" id="desc-${lineItemCounter}" placeholder="Item description" required></td>
+                <td><input type="number" class="input input-bordered input-sm w-20" id="qty-${lineItemCounter}" value="1" min="0.01" step="0.01" oninput="calcLineTotal(${lineItemCounter})"></td>
+                <td><input type="text" class="input input-bordered input-sm w-20" id="unit-${lineItemCounter}" value="pcs" placeholder="Unit"></td>
+                <td><input type="number" class="input input-bordered input-sm w-28" id="price-${lineItemCounter}" value="0" min="0" step="0.01" oninput="calcLineTotal(${lineItemCounter})"></td>
+                <td class="font-semibold" id="total-${lineItemCounter}">₱0.00</td>
+                <td><button class="btn btn-ghost btn-xs text-error" onclick="removeLineItem(${lineItemCounter})"><i class="fas fa-trash"></i></button></td>
+            `;
+            tbody.appendChild(row);
+        }
+
+        function removeLineItem(id) {
+            const row = document.getElementById(`lineItem-${id}`);
+            if (row) row.remove();
+            calcGrandTotal();
+        }
+
+        function calcLineTotal(id) {
+            const qty = parseFloat(document.getElementById(`qty-${id}`)?.value) || 0;
+            const price = parseFloat(document.getElementById(`price-${id}`)?.value) || 0;
+            const total = qty * price;
+            const el = document.getElementById(`total-${id}`);
+            if (el) el.textContent = formatCurrency(total);
+            calcGrandTotal();
+        }
+
+        function calcGrandTotal() {
+            let total = 0;
+            document.querySelectorAll('#lineItemsBody tr').forEach(row => {
+                const id = row.id.split('-')[1];
+                const qty = parseFloat(document.getElementById(`qty-${id}`)?.value) || 0;
+                const price = parseFloat(document.getElementById(`price-${id}`)?.value) || 0;
+                total += qty * price;
+            });
+            document.getElementById('poTotal').textContent = formatCurrency(total);
+        }
+
+        function cancelCreate() {
+            document.getElementById('createView').classList.add('hidden');
+            document.getElementById('detailView').classList.add('hidden');
+            document.getElementById('listView').classList.remove('hidden');
+            document.getElementById('pageTitle').textContent = 'Purchase Orders';
+            // Reset URL
+            history.pushState(null, '', 'purchase_orders.html');
+        }
+
+        async function createPurchaseOrder() {
+            const supplierId = document.getElementById('poSupplier').value;
+            if (!supplierId) { showToast('Please select a supplier', 'error'); return; }
+
+            const items = [];
+            document.querySelectorAll('#lineItemsBody tr').forEach(row => {
+                const id = row.id.split('-')[1];
+                const desc = document.getElementById(`desc-${id}`)?.value?.trim();
+                const qty = parseFloat(document.getElementById(`qty-${id}`)?.value) || 0;
+                const unit = document.getElementById(`unit-${id}`)?.value?.trim() || 'pcs';
+                const price = parseFloat(document.getElementById(`price-${id}`)?.value) || 0;
+
+                if (desc && qty > 0) {
+                    items.push({ item_description: desc, quantity: qty, unit: unit, unit_price: price });
+                }
+            });
+
+            if (items.length === 0) { showToast('Add at least one item', 'error'); return; }
+
+            try {
+                const data = {
+                    supplier_id: supplierId,
+                    order_date: document.getElementById('poOrderDate').value,
+                    expected_delivery: document.getElementById('poExpectedDelivery').value || null,
+                    payment_terms: document.getElementById('poPaymentTerms').value,
+                    requisition_id: document.getElementById('poRequisition').value || null,
+                    notes: document.getElementById('poNotes').value.trim() || null,
+                    items: items
+                };
+
+                const response = await PurchasingService.createPurchaseOrder(data);
+                showToast(`PO ${response?.data?.po_number} created successfully!`, 'success');
+                cancelCreate();
+                await loadPurchaseOrders();
+            } catch (error) {
+                showToast(error?.message || 'Failed to create PO', 'error');
+            }
+        }
+
+        // ========================================
+        // PO DETAIL
+        // ========================================
+
+        async function viewPODetail(id) {
+            document.getElementById('listView').classList.add('hidden');
+            document.getElementById('createView').classList.add('hidden');
+            document.getElementById('detailView').classList.remove('hidden');
+            document.getElementById('pageTitle').textContent = 'PO Details';
+
+            const content = document.getElementById('detailContent');
+            content.innerHTML = '<div class="text-center py-12"><span class="loading loading-spinner loading-lg"></span></div>';
+
+            try {
+                const response = await PurchasingService.getPurchaseOrderDetail(id);
+                const po = response?.data;
+                if (!po) return;
+
+                const sBadge = PurchasingService.getStatusBadgeClass(po.status);
+                const pBadge = PurchasingService.getPaymentBadgeClass(po.payment_status);
+
+                let actionsHTML = '';
+                if (po.status === 'draft') actionsHTML += `<button class="btn btn-info btn-sm" onclick="submitPO(${po.id})"><i class="fas fa-paper-plane"></i> Submit for Approval</button>`;
+                if (po.status === 'pending' && currentUserRole === 'general_manager') {
+                    actionsHTML += `<button class="btn btn-success btn-sm" onclick="approvePO(${po.id})"><i class="fas fa-check"></i> Approve</button>`;
+                    actionsHTML += `<button class="btn btn-error btn-sm" onclick="rejectPO(${po.id})"><i class="fas fa-times"></i> Reject</button>`;
+                }
+                if (po.status === 'approved') actionsHTML += `<button class="btn btn-primary btn-sm" onclick="markOrdered(${po.id})"><i class="fas fa-shipping-fast"></i> Mark Ordered</button>`;
+                if (['ordered', 'partial_received', 'approved'].includes(po.status)) actionsHTML += `<button class="btn btn-success btn-sm" onclick="markReceived(${po.id})"><i class="fas fa-box-open"></i> Mark Received</button>`;
+
+                content.innerHTML = `
+                    <div class="card bg-base-100 border border-base-300">
+                        <div class="card-body">
+                            <!-- Header -->
+                            <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6">
+                                <div>
+                                    <div class="flex items-center gap-3">
+                                        <button class="btn btn-ghost btn-sm btn-square" onclick="cancelCreate()">
+                                            <i class="fas fa-arrow-left"></i>
+                                        </button>
+                                        <div>
+                                            <h2 class="text-xl font-bold">PO #${po.po_number}</h2>
+                                            <p class="text-sm text-base-content/60">${po.supplier_name}</p>
+                                        </div>
+                                        <span class="badge ${sBadge}">${PurchasingService.formatStatus(po.status)}</span>
+                                        <span class="badge ${pBadge} badge-outline">${PurchasingService.formatStatus(po.payment_status)}</span>
+                                    </div>
+                                </div>
+                                <div class="flex gap-2 flex-wrap">
+                                    ${actionsHTML}
+                                </div>
+                            </div>
+
+                            <!-- Info Grid -->
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                                <div class="bg-base-200 rounded-xl p-3">
+                                    <p class="text-xs text-base-content/60 mb-1">Order Date</p>
+                                    <p class="font-semibold">${formatDate(po.order_date)}</p>
+                                </div>
+                                <div class="bg-base-200 rounded-xl p-3">
+                                    <p class="text-xs text-base-content/60 mb-1">Expected Delivery</p>
+                                    <p class="font-semibold">${formatDate(po.expected_delivery)}</p>
+                                </div>
+                                <div class="bg-base-200 rounded-xl p-3">
+                                    <p class="text-xs text-base-content/60 mb-1">Payment Terms</p>
+                                    <p class="font-semibold"><span class="badge badge-sm ${PurchasingService.getPaymentTermsBadgeClass(po.payment_terms)}">${PurchasingService.formatPaymentTerms(po.payment_terms)}</span></p>
+                                </div>
+                                <div class="bg-base-200 rounded-xl p-3">
+                                    <p class="text-xs text-base-content/60 mb-1">Due Date</p>
+                                    <p class="font-semibold ${po.due_date && new Date(po.due_date) < new Date() && po.payment_status !== 'paid' ? 'text-error' : ''}">${formatDate(po.due_date) || 'COD'}</p>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                                <div class="bg-base-200 rounded-xl p-3">
+                                    <p class="text-xs text-base-content/60 mb-1">Created By</p>
+                                    <p class="font-semibold">${po.created_by_name || '-'}</p>
+                                </div>
+                                <div class="bg-base-200 rounded-xl p-3">
+                                    <p class="text-xs text-base-content/60 mb-1">Approved By</p>
+                                    <p class="font-semibold">${po.approved_by_name || '-'}</p>
+                                </div>
+                                ${po.requisition_code ? `
+                                <div class="bg-base-200 rounded-xl p-3">
+                                    <p class="text-xs text-base-content/60 mb-1">Linked Requisition</p>
+                                    <p class="font-semibold font-mono text-primary">${po.requisition_code}</p>
+                                </div>
+                                ` : ''}
+                            </div>
+
+                            <!-- Supplier Info -->
+                            <div class="bg-base-200 rounded-xl p-4 mb-6">
+                                <h4 class="font-semibold text-sm mb-2"><i class="fas fa-truck-field mr-2"></i>Supplier</h4>
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                                    <div><span class="text-base-content/50">Name:</span> <span class="font-medium">${po.supplier_name}</span></div>
+                                    <div><span class="text-base-content/50">Code:</span> <span class="font-mono">${po.supplier_code}</span></div>
+                                    ${po.supplier_contact ? `<div><span class="text-base-content/50">Contact:</span> ${po.supplier_contact}</div>` : ''}
+                                    ${po.supplier_terms ? `<div><span class="text-base-content/50">Terms:</span> ${po.supplier_terms}</div>` : ''}
+                                </div>
+                            </div>
+
+                            <!-- Items Table -->
+                            <h4 class="font-semibold mb-3"><i class="fas fa-list mr-2"></i>Order Items</h4>
+                            <div class="overflow-x-auto mb-6">
+                                <table class="table table-sm table-zebra">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Description</th>
+                                            <th class="text-right">Qty</th>
+                                            <th>Unit</th>
+                                            <th class="text-right">Unit Price</th>
+                                            <th class="text-right">Line Total</th>
+                                            <th class="text-right">Received</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${(po.items || []).map((item, i) => `
+                                            <tr>
+                                                <td>${i + 1}</td>
+                                                <td class="font-medium">${item.item_description}
+                                                    ${item.ingredient_name ? `<div class="text-xs text-base-content/50">Ingredient: ${item.ingredient_name}</div>` : ''}
+                                                    ${item.mro_item_name ? `<div class="text-xs text-base-content/50">MRO: ${item.mro_item_name}</div>` : ''}
+                                                </td>
+                                                <td class="text-right">${parseFloat(item.quantity).toFixed(2)}</td>
+                                                <td>${item.unit}</td>
+                                                <td class="text-right">${formatCurrency(item.unit_price)}</td>
+                                                <td class="text-right font-semibold">${formatCurrency(item.total_amount)}</td>
+                                                <td class="text-right">${parseFloat(item.quantity_received || 0).toFixed(2)}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                    <tfoot>
+                                        <tr>
+                                            <td colspan="5" class="text-right font-semibold">Subtotal:</td>
+                                            <td class="text-right font-semibold">${formatCurrency(po.subtotal)}</td>
+                                            <td></td>
+                                        </tr>
+                                        ${parseFloat(po.vat_amount) > 0 ? `
+                                            <tr>
+                                                <td colspan="5" class="text-right text-sm">VAT:</td>
+                                                <td class="text-right text-sm">${formatCurrency(po.vat_amount)}</td>
+                                                <td></td>
+                                            </tr>
+                                        ` : ''}
+                                        <tr>
+                                            <td colspan="5" class="text-right font-bold text-lg">Total:</td>
+                                            <td class="text-right font-bold text-lg text-primary">${formatCurrency(po.total_amount)}</td>
+                                            <td></td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+
+                            ${po.notes ? `
+                                <div class="bg-base-200 rounded-xl p-4">
+                                    <h4 class="font-semibold text-sm mb-1"><i class="fas fa-sticky-note mr-2"></i>Notes</h4>
+                                    <p class="text-sm text-base-content/70 whitespace-pre-line">${po.notes}</p>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            } catch (error) {
+                content.innerHTML = `<div class="text-center py-12 text-error"><i class="fas fa-exclamation-circle text-4xl mb-3"></i><p>Failed to load PO details</p></div>`;
+            }
+        }
+
+        // ========================================
+        // PO ACTIONS
+        // ========================================
+
+        async function submitPO(id) {
+            if (!confirm('Submit this PO for approval?')) return;
+            try {
+                await PurchasingService.submitPO(id);
+                showToast('PO submitted for approval', 'success');
+                viewPODetail(id);
+            } catch (e) { showToast(e?.message || 'Failed to submit', 'error'); }
+        }
+
+        async function approvePO(id) {
+            if (!confirm('Approve this Purchase Order?')) return;
+            try {
+                await PurchasingService.approvePO(id);
+                showToast('PO approved!', 'success');
+                viewPODetail(id);
+            } catch (e) { showToast(e?.message || 'Failed to approve', 'error'); }
+        }
+
+        async function rejectPO(id) {
+            const reason = prompt('Enter rejection reason:');
+            if (reason === null) return;
+            try {
+                await PurchasingService.rejectPO(id, reason);
+                showToast('PO rejected', 'success');
+                viewPODetail(id);
+            } catch (e) { showToast(e?.message || 'Failed to reject', 'error'); }
+        }
+
+        async function markOrdered(id) {
+            if (!confirm('Mark this PO as ordered?')) return;
+            try {
+                await PurchasingService.markPOOrdered(id);
+                showToast('PO marked as ordered', 'success');
+                viewPODetail(id);
+            } catch (e) { showToast(e?.message || 'Failed to update', 'error'); }
+        }
+
+        let currentReceivePOId = null;
+        let currentReceiveItems = [];
+
+        async function markReceived(id) {
+            // Load PO details to show items
+            try {
+                const response = await PurchasingService.getPurchaseOrderDetail(id);
+                const po = response?.data;
+                if (!po) return;
+                
+                currentReceivePOId = id;
+                currentReceiveItems = po.items || [];
+                
+                // Populate the modal
+                const container = document.getElementById('receiveItemsList');
+                if (currentReceiveItems.length === 0) {
+                    container.innerHTML = '<p class="text-center text-base-content/60">No items in this PO</p>';
+                } else {
+                    container.innerHTML = currentReceiveItems.map((item, idx) => `
+                        <div class="bg-base-200 rounded-lg p-3">
+                            <div class="flex items-center justify-between gap-4">
+                                <div class="flex-1">
+                                    <p class="font-medium">${item.item_description}</p>
+                                    <p class="text-sm text-base-content/60">${parseFloat(item.quantity).toFixed(2)} ${item.unit} @ ${formatCurrency(item.unit_price)}</p>
+                                </div>
+                                <div class="form-control">
+                                    <label class="label py-0"><span class="label-text-alt">New Price (if changed)</span></label>
+                                    <input type="number" step="0.01" min="0" 
+                                           class="input input-bordered input-sm w-32" 
+                                           id="newPrice-${idx}" 
+                                           placeholder="${parseFloat(item.unit_price).toFixed(2)}"
+                                           data-item-id="${item.ingredient_id || item.mro_item_id || ''}"
+                                           data-item-type="${item.ingredient_id ? 'ingredient' : (item.mro_item_id ? 'mro' : '')}">
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+                
+                document.getElementById('receiveModal').showModal();
+            } catch (e) { 
+                showToast(e?.message || 'Failed to load PO', 'error'); 
+            }
+        }
+
+        async function confirmReceive() {
+            if (!currentReceivePOId) return;
+            
+            // Collect price updates
+            const priceUpdates = [];
+            currentReceiveItems.forEach((item, idx) => {
+                const input = document.getElementById(`newPrice-${idx}`);
+                const newPrice = parseFloat(input?.value);
+                const itemId = input?.dataset?.itemId;
+                const itemType = input?.dataset?.itemType;
+                
+                if (newPrice > 0 && itemId && itemType) {
+                    priceUpdates.push({
+                        item_id: parseInt(itemId),
+                        item_type: itemType,
+                        new_price: newPrice,
+                        reason: 'Price update on receiving'
+                    });
+                }
+            });
+            
+            try {
+                await PurchasingService.receivePOWithPrices(currentReceivePOId, priceUpdates);
+                document.getElementById('receiveModal').close();
+                showToast(`PO received! ${priceUpdates.length > 0 ? `${priceUpdates.length} price(s) updated.` : ''}`, 'success');
+                viewPODetail(currentReceivePOId);
+                currentReceivePOId = null;
+                currentReceiveItems = [];
+            } catch (e) { 
+                showToast(e?.message || 'Failed to receive PO', 'error'); 
+            }
+        }
+
+        async function cancelPO(id) {
+            const reason = prompt('Enter cancellation reason:');
+            if (reason === null) return;
+            try {
+                await PurchasingService.cancelPO(id, reason);
+                showToast('PO cancelled', 'success');
+                cancelCreate();
+                await loadPurchaseOrders();
+            } catch (e) { showToast(e?.message || 'Failed to cancel', 'error'); }
+        }
+
+        // ========================================
+        // HELPERS
+        // ========================================
+
+        function formatCurrency(amount) {
+            return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
+            const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle';
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg text-sm`;
+            toast.innerHTML = `<i class="fas fa-${icon}"></i><span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 3000);
+        }
+    </script>
+</body>
+
+</html>

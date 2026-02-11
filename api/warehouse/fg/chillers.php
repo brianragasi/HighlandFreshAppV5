@@ -44,7 +44,10 @@ function handleGet($db, $action) {
             $stmt = $db->prepare("
                 SELECT 
                     c.*,
-                    COALESCE((SELECT SUM(quantity_available) FROM finished_goods_inventory WHERE chiller_id = c.id AND status = 'available'), 0) as current_count
+                    COALESCE((SELECT SUM((COALESCE(fi.boxes_available, 0) * COALESCE(p.pieces_per_box, 1)) + COALESCE(fi.pieces_available, 0)) 
+                              FROM finished_goods_inventory fi 
+                              JOIN products p ON fi.product_id = p.id
+                              WHERE fi.chiller_id = c.id AND fi.status = 'available'), 0) as current_count
                 FROM chiller_locations c
                 WHERE c.is_active = 1
                 ORDER BY c.chiller_code

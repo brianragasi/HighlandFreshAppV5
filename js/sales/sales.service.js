@@ -27,8 +27,8 @@ const SalesService = {
      */
     async getDashboardStats(period = 'month') {
         try {
-            const response = await api.get(`${this.baseUrl}/dashboard.php`, { 
-                params: { action: 'summary', period } 
+            const response = await api.get(`${this.baseUrl}/dashboard.php`, {
+                params: { action: 'summary', period }
             });
             // Map response to expected format for dashboard
             if (response.data) {
@@ -65,8 +65,8 @@ const SalesService = {
      */
     async getDashboardSummary(period = 'month') {
         try {
-            return await api.get(`${this.baseUrl}/dashboard.php`, { 
-                params: { action: 'summary', period } 
+            return await api.get(`${this.baseUrl}/dashboard.php`, {
+                params: { action: 'summary', period }
             });
         } catch (error) {
             console.error('Error fetching dashboard summary:', error);
@@ -85,45 +85,45 @@ const SalesService = {
                 api.get(`${this.baseUrl}/dashboard.php`, { params: { action: 'aging_summary' } }),
                 api.get(`${this.baseUrl}/customers.php`, { params: { action: 'aging', min_balance: 0 } })
             ]);
-            
+
             const buckets = summaryRes.data?.buckets || {};
             const customers = customersRes.data || [];
-            
+
             // Transform customer data to expected format
             const transformedCustomers = customers.map(c => ({
                 id: c.id,
                 customer_code: c.customer_code,
                 customer_name: c.customer_name,
                 customer_type: c.customer_type,
-                credit_limit: c.credit_limit || 0,
-                current: (c.balance_0_30 || 0),
-                days_31_60: c.balance_31_60 || 0,
-                days_61_90: c.balance_61_90 || 0,
-                over_90: c.balance_91_plus || 0,
-                total: c.total_outstanding || 0
+                credit_limit: parseFloat(c.credit_limit) || 0,
+                current: parseFloat(c.balance_0_30) || 0,
+                days_31_60: parseFloat(c.balance_31_60) || 0,
+                days_61_90: parseFloat(c.balance_61_90) || 0,
+                over_90: parseFloat(c.balance_91_plus) || 0,
+                total: parseFloat(c.total_outstanding) || 0
             }));
-            
+
             return {
                 data: {
                     // For dashboard
-                    bucket_0_30: (buckets.current?.amount || 0) + (buckets.days_1_30?.amount || 0),
+                    bucket_0_30: parseFloat(buckets.current?.amount || 0) + parseFloat(buckets.days_1_30?.amount || 0),
                     bucket_0_30_count: (buckets.current?.count || 0) + (buckets.days_1_30?.count || 0),
-                    bucket_31_60: buckets.days_31_60?.amount || 0,
+                    bucket_31_60: parseFloat(buckets.days_31_60?.amount) || 0,
                     bucket_31_60_count: buckets.days_31_60?.count || 0,
-                    bucket_61_90: buckets.days_61_90?.amount || 0,
+                    bucket_61_90: parseFloat(buckets.days_61_90?.amount) || 0,
                     bucket_61_90_count: buckets.days_61_90?.count || 0,
-                    bucket_91_plus: buckets.days_91_plus?.amount || 0,
+                    bucket_91_plus: parseFloat(buckets.days_91_plus?.amount) || 0,
                     bucket_91_plus_count: buckets.days_91_plus?.count || 0,
-                    total_outstanding: summaryRes.data?.total_outstanding || 0,
+                    total_outstanding: parseFloat(summaryRes.data?.total_outstanding) || 0,
                     by_customer_type: summaryRes.data?.by_customer_type || [],
                     // For aging report page
                     customers: transformedCustomers,
                     summary: {
-                        total: summaryRes.data?.total_outstanding || 0,
-                        current: (buckets.current?.amount || 0) + (buckets.days_1_30?.amount || 0),
-                        days_31_60: buckets.days_31_60?.amount || 0,
-                        days_61_90: buckets.days_61_90?.amount || 0,
-                        over_90: buckets.days_91_plus?.amount || 0
+                        total: parseFloat(summaryRes.data?.total_outstanding) || 0,
+                        current: parseFloat(buckets.current?.amount || 0) + parseFloat(buckets.days_1_30?.amount || 0),
+                        days_31_60: parseFloat(buckets.days_31_60?.amount) || 0,
+                        days_61_90: parseFloat(buckets.days_61_90?.amount) || 0,
+                        over_90: parseFloat(buckets.days_91_plus?.amount) || 0
                     }
                 }
             };
@@ -138,8 +138,8 @@ const SalesService = {
      */
     async getAgingReport(params = {}) {
         try {
-            return await api.get(`${this.baseUrl}/dashboard.php`, { 
-                params: { action: 'aging_summary', ...params } 
+            return await api.get(`${this.baseUrl}/dashboard.php`, {
+                params: { action: 'aging_summary', ...params }
             });
         } catch (error) {
             console.error('Error fetching aging report:', error);
@@ -155,8 +155,8 @@ const SalesService = {
         try {
             const limit = params.limit || 10;
             const period = params.period || 'month';
-            const response = await api.get(`${this.baseUrl}/dashboard.php`, { 
-                params: { action: 'top_customers', limit, period } 
+            const response = await api.get(`${this.baseUrl}/dashboard.php`, {
+                params: { action: 'top_customers', limit, period }
             });
             // API returns {data: {period, date_range, customers: [...]}} - extract customers array
             if (response.data && response.data.customers) {
@@ -175,8 +175,8 @@ const SalesService = {
      */
     async getTopCustomersByBalance(limit = 5) {
         try {
-            const response = await api.get(`${this.baseUrl}/customers.php`, { 
-                params: { action: 'aging', min_balance: 0 } 
+            const response = await api.get(`${this.baseUrl}/customers.php`, {
+                params: { action: 'aging', min_balance: 0 }
             });
             // Return top N by outstanding balance
             if (response.data && Array.isArray(response.data)) {
@@ -185,9 +185,9 @@ const SalesService = {
                     name: c.customer_name,
                     customer_type: c.customer_type,
                     outstanding_balance: c.total_outstanding || 0,
-                    days_overdue: (c.balance_91_plus > 0) ? 91 : 
-                                  (c.balance_61_90 > 0) ? 61 : 
-                                  (c.balance_31_60 > 0) ? 31 : 0
+                    days_overdue: (c.balance_91_plus > 0) ? 91 :
+                        (c.balance_61_90 > 0) ? 61 :
+                            (c.balance_31_60 > 0) ? 31 : 0
                 }));
                 return { data: customers };
             }
@@ -204,8 +204,8 @@ const SalesService = {
      */
     async getRecentOrders(limit = 10) {
         try {
-            const response = await api.get(`${this.baseUrl}/dashboard.php`, { 
-                params: { action: 'recent_orders', limit } 
+            const response = await api.get(`${this.baseUrl}/dashboard.php`, {
+                params: { action: 'recent_orders', limit }
             });
             // Map to expected format
             if (response.data && response.data.orders) {
@@ -240,8 +240,8 @@ const SalesService = {
     async getSalesTrend(params = {}) {
         try {
             const days = params.days || 30;
-            const response = await api.get(`${this.baseUrl}/dashboard.php`, { 
-                params: { action: 'sales_trend', days } 
+            const response = await api.get(`${this.baseUrl}/dashboard.php`, {
+                params: { action: 'sales_trend', days }
             });
             // API returns {data: {period_days, data: [...]}} - extract the data array
             if (response.data && response.data.data) {
@@ -264,8 +264,8 @@ const SalesService = {
      */
     async getCustomers(params = {}) {
         try {
-            return await api.get(`${this.baseUrl}/customers.php`, { 
-                params: { action: 'list', ...params } 
+            return await api.get(`${this.baseUrl}/customers.php`, {
+                params: { action: 'list', ...params }
             });
         } catch (error) {
             console.error('Error fetching customers:', error);
@@ -279,8 +279,8 @@ const SalesService = {
      */
     async getCustomer(id) {
         try {
-            return await api.get(`${this.baseUrl}/customers.php`, { 
-                params: { action: 'detail', id } 
+            return await api.get(`${this.baseUrl}/customers.php`, {
+                params: { action: 'detail', id }
             });
         } catch (error) {
             console.error('Error fetching customer:', error);
@@ -294,8 +294,8 @@ const SalesService = {
      */
     async searchCustomers(query) {
         try {
-            return await api.get(`${this.baseUrl}/customers.php`, { 
-                params: { action: 'search', q: query } 
+            return await api.get(`${this.baseUrl}/customers.php`, {
+                params: { action: 'search', q: query }
             });
         } catch (error) {
             console.error('Error searching customers:', error);
@@ -343,8 +343,8 @@ const SalesService = {
      */
     async getCustomerAging(customerId) {
         try {
-            return await api.get(`${this.baseUrl}/customers.php`, { 
-                params: { action: 'aging', customer_id: customerId } 
+            return await api.get(`${this.baseUrl}/customers.php`, {
+                params: { action: 'aging', customer_id: customerId }
             });
         } catch (error) {
             console.error('Error fetching customer aging:', error);
@@ -359,8 +359,8 @@ const SalesService = {
      */
     async getCustomerTransactions(customerId, params = {}) {
         try {
-            return await api.get(`${this.baseUrl}/customers.php`, { 
-                params: { action: 'transactions', customer_id: customerId, ...params } 
+            return await api.get(`${this.baseUrl}/customers.php`, {
+                params: { action: 'transactions', customer_id: customerId, ...params }
             });
         } catch (error) {
             console.error('Error fetching customer transactions:', error);
@@ -374,8 +374,8 @@ const SalesService = {
      */
     async getCustomerCreditStatus(customerId) {
         try {
-            return await api.get(`${this.baseUrl}/customers.php`, { 
-                params: { action: 'credit_status', customer_id: customerId } 
+            return await api.get(`${this.baseUrl}/customers.php`, {
+                params: { action: 'credit_status', customer_id: customerId }
             });
         } catch (error) {
             console.error('Error fetching customer credit status:', error);
@@ -393,8 +393,8 @@ const SalesService = {
      */
     async getOrders(params = {}) {
         try {
-            return await api.get(`${this.baseUrl}/orders.php`, { 
-                params: { action: 'list', ...params } 
+            return await api.get(`${this.baseUrl}/orders.php`, {
+                params: { action: 'list', ...params }
             });
         } catch (error) {
             console.error('Error fetching orders:', error);
@@ -408,8 +408,8 @@ const SalesService = {
      */
     async getOrder(id) {
         try {
-            return await api.get(`${this.baseUrl}/orders.php`, { 
-                params: { action: 'detail', id } 
+            return await api.get(`${this.baseUrl}/orders.php`, {
+                params: { action: 'detail', id }
             });
         } catch (error) {
             console.error('Error fetching order:', error);
@@ -422,8 +422,8 @@ const SalesService = {
      */
     async getPendingOrders() {
         try {
-            return await api.get(`${this.baseUrl}/orders.php`, { 
-                params: { action: 'pending' } 
+            return await api.get(`${this.baseUrl}/orders.php`, {
+                params: { action: 'pending' }
             });
         } catch (error) {
             console.error('Error fetching pending orders:', error);
@@ -561,8 +561,8 @@ const SalesService = {
      */
     async printOrder(id) {
         try {
-            return await api.get(`${this.baseUrl}/orders.php`, { 
-                params: { action: 'print', id } 
+            return await api.get(`${this.baseUrl}/orders.php`, {
+                params: { action: 'print', id }
             });
         } catch (error) {
             console.error('Error fetching printable order:', error);
@@ -580,8 +580,8 @@ const SalesService = {
      */
     async getInvoices(params = {}) {
         try {
-            return await api.get(`${this.baseUrl}/invoices.php`, { 
-                params: { action: 'list', ...params } 
+            return await api.get(`${this.baseUrl}/invoices.php`, {
+                params: { action: 'list', ...params }
             });
         } catch (error) {
             console.error('Error fetching invoices:', error);
@@ -595,8 +595,8 @@ const SalesService = {
      */
     async getInvoice(id) {
         try {
-            return await api.get(`${this.baseUrl}/invoices.php`, { 
-                params: { action: 'detail', id } 
+            return await api.get(`${this.baseUrl}/invoices.php`, {
+                params: { action: 'detail', id }
             });
         } catch (error) {
             console.error('Error fetching invoice:', error);
@@ -610,8 +610,8 @@ const SalesService = {
      */
     async getUnpaidInvoices(params = {}) {
         try {
-            return await api.get(`${this.baseUrl}/invoices.php`, { 
-                params: { action: 'unpaid', ...params } 
+            return await api.get(`${this.baseUrl}/invoices.php`, {
+                params: { action: 'unpaid', ...params }
             });
         } catch (error) {
             console.error('Error fetching unpaid invoices:', error);
@@ -625,8 +625,8 @@ const SalesService = {
      */
     async getAgingReport(params = {}) {
         try {
-            return await api.get(`${this.baseUrl}/invoices.php`, { 
-                params: { action: 'aging_report', ...params } 
+            return await api.get(`${this.baseUrl}/invoices.php`, {
+                params: { action: 'aging_report', ...params }
             });
         } catch (error) {
             console.error('Error fetching aging report:', error);
@@ -676,8 +676,8 @@ const SalesService = {
      */
     async getInvoicePayments(invoiceId) {
         try {
-            return await api.get(`${this.baseUrl}/invoices.php`, { 
-                params: { action: 'payments', invoice_id: invoiceId } 
+            return await api.get(`${this.baseUrl}/invoices.php`, {
+                params: { action: 'payments', invoice_id: invoiceId }
             });
         } catch (error) {
             console.error('Error fetching invoice payments:', error);
@@ -709,8 +709,8 @@ const SalesService = {
      */
     async printInvoice(id) {
         try {
-            return await api.get(`${this.baseUrl}/invoices.php`, { 
-                params: { action: 'print', id } 
+            return await api.get(`${this.baseUrl}/invoices.php`, {
+                params: { action: 'print', id }
             });
         } catch (error) {
             console.error('Error fetching printable invoice:', error);
@@ -728,8 +728,8 @@ const SalesService = {
      */
     async getDeliveryReceipts(params = {}) {
         try {
-            return await api.get(`${this.baseUrl}/delivery_receipts.php`, { 
-                params: { action: 'list', ...params } 
+            return await api.get(`${this.baseUrl}/delivery_receipts.php`, {
+                params: { action: 'list', ...params }
             });
         } catch (error) {
             console.error('Error fetching delivery receipts:', error);
@@ -742,8 +742,8 @@ const SalesService = {
      */
     async getUninvoicedDRs() {
         try {
-            return await api.get(`${this.baseUrl}/delivery_receipts.php`, { 
-                params: { action: 'uninvoiced' } 
+            return await api.get(`${this.baseUrl}/delivery_receipts.php`, {
+                params: { action: 'uninvoiced' }
             });
         } catch (error) {
             console.error('Error fetching uninvoiced DRs:', error);
@@ -757,8 +757,8 @@ const SalesService = {
      */
     async getDeliveryReceipt(id) {
         try {
-            return await api.get(`${this.baseUrl}/delivery_receipts.php`, { 
-                params: { action: 'detail', id } 
+            return await api.get(`${this.baseUrl}/delivery_receipts.php`, {
+                params: { action: 'detail', id }
             });
         } catch (error) {
             console.error('Error fetching delivery receipt:', error);
@@ -776,8 +776,8 @@ const SalesService = {
      */
     async getSalesSummaryReport(params = {}) {
         try {
-            return await api.get(`${this.baseUrl}/reports.php`, { 
-                params: { action: 'sales_summary', ...params } 
+            return await api.get(`${this.baseUrl}/reports.php`, {
+                params: { action: 'sales_summary', ...params }
             });
         } catch (error) {
             console.error('Error fetching sales summary report:', error);
@@ -791,8 +791,8 @@ const SalesService = {
      */
     async getCustomerSalesReport(params = {}) {
         try {
-            return await api.get(`${this.baseUrl}/reports.php`, { 
-                params: { action: 'customer_sales', ...params } 
+            return await api.get(`${this.baseUrl}/reports.php`, {
+                params: { action: 'customer_sales', ...params }
             });
         } catch (error) {
             console.error('Error fetching customer sales report:', error);
@@ -806,8 +806,8 @@ const SalesService = {
      */
     async getProductSalesReport(params = {}) {
         try {
-            return await api.get(`${this.baseUrl}/reports.php`, { 
-                params: { action: 'product_sales', ...params } 
+            return await api.get(`${this.baseUrl}/reports.php`, {
+                params: { action: 'product_sales', ...params }
             });
         } catch (error) {
             console.error('Error fetching product sales report:', error);
@@ -821,8 +821,8 @@ const SalesService = {
      */
     async getCollectionsReport(params = {}) {
         try {
-            return await api.get(`${this.baseUrl}/reports.php`, { 
-                params: { action: 'collections', ...params } 
+            return await api.get(`${this.baseUrl}/reports.php`, {
+                params: { action: 'collections', ...params }
             });
         } catch (error) {
             console.error('Error fetching collections report:', error);
@@ -844,7 +844,7 @@ const SalesService = {
             const params = { action: 'collections_due' };
             if (date) params.date = date;
             const response = await api.get(`${this.baseUrl}/dashboard.php`, { params });
-            
+
             // Return the response directly as it already has the correct format
             if (response.data) {
                 return {
@@ -871,8 +871,8 @@ const SalesService = {
      */
     async getCustomerOrders(customerId, limit = 20) {
         try {
-            return await api.get(`${this.baseUrl}/orders.php`, { 
-                params: { action: 'by_customer', customer_id: customerId, limit } 
+            return await api.get(`${this.baseUrl}/orders.php`, {
+                params: { action: 'by_customer', customer_id: customerId, limit }
             });
         } catch (error) {
             console.error('Error fetching customer orders:', error);
@@ -908,8 +908,8 @@ const SalesService = {
      */
     async getSalesTrendData(params = {}) {
         try {
-            return await api.get(`${this.baseUrl}/reports.php`, { 
-                params: { action: 'trend', ...params } 
+            return await api.get(`${this.baseUrl}/reports.php`, {
+                params: { action: 'trend', ...params }
             });
         } catch (error) {
             console.error('Error fetching sales trend data:', error);
@@ -922,18 +922,18 @@ const SalesService = {
      */
     async getAgingReportWithCustomers() {
         try {
-            const response = await api.get(`${this.baseUrl}/dashboard.php`, { 
-                params: { action: 'aging_summary' } 
+            const response = await api.get(`${this.baseUrl}/dashboard.php`, {
+                params: { action: 'aging_summary' }
             });
-            
+
             // Get customer aging details
-            const customersResponse = await api.get(`${this.baseUrl}/customers.php`, { 
-                params: { action: 'aging' } 
+            const customersResponse = await api.get(`${this.baseUrl}/customers.php`, {
+                params: { action: 'aging' }
             });
-            
+
             const buckets = response.data?.buckets || {};
             const customers = customersResponse.data || [];
-            
+
             return {
                 data: {
                     summary: {

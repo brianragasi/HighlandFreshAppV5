@@ -443,7 +443,7 @@
         <!-- Footer -->
         <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
             <div>
-                <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+                <p class="text-sm text-base-content/60">ï¿½ 2026 Highland Fresh Dairy. All rights reserved.</p>
             </div>
         </footer>
     </div>
@@ -613,22 +613,26 @@
                 const expiry = new Date(item.expiry_date);
                 const daysUntilExpiry = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
 
+                // Multi-unit inventory calculations
+                const piecesPerBox = parseInt(item.pieces_per_box) || 1;
+                const quantityBoxes = parseInt(item.quantity_boxes) || 0;
+                const quantityPieces = parseInt(item.quantity_pieces) || 0;
+                const totalPieces = (quantityBoxes * piecesPerBox) + quantityPieces;
+
                 let statusBadge = '<span class="badge badge-success badge-sm gap-1"><i class="fas fa-check"></i> Good</span>';
                 let rowClass = '';
 
-                if (daysUntilExpiry <= 0) {
+                // Check quantity first - if 0, show Out of Stock regardless of expiry
+                if (totalPieces === 0) {
+                    statusBadge = '<span class="badge badge-ghost badge-sm gap-1"><i class="fas fa-box-open"></i> Out of Stock</span>';
+                    rowClass = 'opacity-50';
+                } else if (daysUntilExpiry <= 0) {
                     statusBadge = '<span class="badge badge-error badge-sm gap-1"><i class="fas fa-times"></i> Expired</span>';
                     rowClass = 'expired';
                 } else if (daysUntilExpiry <= 3) {
                     statusBadge = '<span class="badge badge-warning badge-sm gap-1"><i class="fas fa-clock"></i> Expiring</span>';
                     rowClass = 'expiring-soon';
                 }
-
-                // Multi-unit inventory calculations
-                const piecesPerBox = parseInt(item.pieces_per_box) || 1;
-                const quantityBoxes = parseInt(item.quantity_boxes) || 0;
-                const quantityPieces = parseInt(item.quantity_pieces) || 0;
-                const totalPieces = (quantityBoxes * piecesPerBox) + quantityPieces;
 
                 // Format quantity display
                 const boxDisplay = quantityBoxes > 0 ? `<span class="font-semibold">${quantityBoxes}</span>` : '<span class="text-base-content/40">0</span>';
@@ -683,12 +687,25 @@
                 totalPieces += (boxes * piecesPerBox) + pieces;
             });
 
+            // Only count expiring items that have stock > 0
             const expiring = inventory.filter(i => {
                 const exp = new Date(i.expiry_date);
                 const days = Math.ceil((exp - today) / (1000 * 60 * 60 * 24));
-                return days > 0 && days <= 3;
+                const piecesPerBox = parseInt(i.pieces_per_box) || 1;
+                const boxes = parseInt(i.quantity_boxes) || 0;
+                const pieces = parseInt(i.quantity_pieces) || 0;
+                const totalQty = (boxes * piecesPerBox) + pieces;
+                return days > 0 && days <= 3 && totalQty > 0;
             }).length;
-            const expired = inventory.filter(i => new Date(i.expiry_date) <= today).length;
+            
+            // Only count expired items that have stock > 0
+            const expired = inventory.filter(i => {
+                const piecesPerBox = parseInt(i.pieces_per_box) || 1;
+                const boxes = parseInt(i.quantity_boxes) || 0;
+                const pieces = parseInt(i.quantity_pieces) || 0;
+                const totalQty = (boxes * piecesPerBox) + pieces;
+                return new Date(i.expiry_date) <= today && totalQty > 0;
+            }).length;
 
             document.getElementById('totalProducts').textContent = uniqueProducts;
             document.getElementById('totalBoxes').textContent = totalBoxes.toLocaleString();

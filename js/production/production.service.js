@@ -118,10 +118,18 @@ const ProductionService = {
     },
 
     /**
-     * Get available QC-approved milk for production
+     * Get available QC-approved milk for production (already issued via requisitions)
      */
     async getAvailableMilk() {
         return await api.get(`${this.baseUrl}/runs.php`, { params: { action: 'available_milk' } });
+    },
+
+    /**
+     * Get available raw milk in warehouse tanks (for requisition requests)
+     * This is milk that production can REQUEST from Warehouse Raw
+     */
+    async getWarehouseMilk() {
+        return await api.get('/api/warehouse/raw/tanks.php', { params: { action: 'available_milk' } });
     },
 
     /**
@@ -243,5 +251,26 @@ const ProductionService = {
      */
     async transferByproduct(id) {
         return await api.put(`${this.baseUrl}/byproducts.php`, { id, action: 'transfer_to_warehouse' });
+    },
+
+    // ========================================
+    // Ingredients (for requisitions)
+    // ========================================
+
+    /**
+     * Get all ingredients for requisition dropdown
+     * NOTE: Does NOT include raw milk - milk is delivered by farmers, not requested.
+     * Per system_context/production_staff.md: Production requests Sugar, Cocoa powder, 
+     * Milk powder, Flavorings, Salt, Rennet, etc. from Warehouse.
+     */
+    async getIngredients() {
+        return await api.get('/warehouse/raw/ingredients.php', { params: { action: 'list' } });
+    },
+
+    /**
+     * Get low stock ingredients (for alerts)
+     */
+    async getLowStockIngredients() {
+        return await api.get('/warehouse/raw/ingredients.php', { params: { action: 'list', low_stock: '1' } });
     }
 };

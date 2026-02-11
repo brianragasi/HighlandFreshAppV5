@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Approvals Dashboard - GM | Highland Fresh</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+
+    <script>
+        tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } } }
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .bento-card { @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .stat-value { font-variant-numeric: tabular-nums; }
+        @keyframes pulse-soft { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        .pulse-soft { animation: pulse-soft 2s ease-in-out infinite; }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <img src="../images/logo.jpg" alt="Highland Fresh Logo" class="w-10 h-10 rounded-xl object-cover">
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">General Manager</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i><span class="flex-1">Dashboard</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Approvals</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="gm_approvals.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-check-double w-5 text-center"></i><span class="flex-1">Pending Approvals</span>
+                            <span class="badge badge-sm badge-warning" id="totalPendingBadge">0</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="#priceAlerts" onclick="scrollToPriceAlerts()" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-chart-line w-5 text-center text-warning"></i><span class="flex-1">Price Alerts</span>
+                            <span class="badge badge-sm badge-error" id="priceAlertsBadge">0</span></a></li>
+                </ul>
+            </div>
+        </nav>
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content"><span class="text-sm font-semibold" id="userInitials">GM</span></div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">General Manager</p>
+                    <p class="text-xs text-base-content/60 truncate">Executive</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square"><i class="fas fa-ellipsis-v"></i></label>
+                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a><i class="fas fa-user-cog w-4"></i> Profile</a></li>
+                        <li class="border-t border-base-300 mt-1 pt-1"><a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold text-base-content">Approvals Dashboard</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <button class="btn btn-ghost btn-sm" onclick="loadAllData()">
+                    <i class="fas fa-sync-alt"></i> <span class="hidden sm:inline">Refresh</span>
+                </button>
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center">
+                                <i class="fas fa-file-invoice-dollar text-warning"></i>
+                            </div>
+                            <span class="badge badge-warning badge-sm">Pending</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="statPendingPOs">
+                            <span class="loading loading-dots loading-sm"></span>
+                        </p>
+                        <p class="text-sm text-base-content/60">Purchase Orders</p>
+                    </div>
+                </div>
+
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-info/10 flex items-center justify-center">
+                                <i class="fas fa-clipboard-list text-info"></i>
+                            </div>
+                            <span class="badge badge-info badge-sm">Pending</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="statPendingReqs">
+                            <span class="loading loading-dots loading-sm"></span>
+                        </p>
+                        <p class="text-sm text-base-content/60">Requisitions</p>
+                    </div>
+                </div>
+
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center">
+                                <i class="fas fa-check-circle text-success"></i>
+                            </div>
+                            <span class="badge badge-success badge-sm">Today</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="statApprovedToday">
+                            <span class="loading loading-dots loading-sm"></span>
+                        </p>
+                        <p class="text-sm text-base-content/60">Approved Today</p>
+                    </div>
+                </div>
+
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                                <i class="fas fa-peso-sign text-emerald-500"></i>
+                            </div>
+                            <span class="badge badge-ghost badge-sm">This Month</span>
+                        </div>
+                        <p class="text-xl lg:text-2xl font-bold stat-value" id="statMonthlySpending">
+                            <span class="loading loading-dots loading-sm"></span>
+                        </p>
+                        <p class="text-sm text-base-content/60">Approved Spending</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pending POs Section -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="card-title text-lg">
+                            <i class="fas fa-file-invoice-dollar text-warning mr-2"></i>
+                            Pending Purchase Orders
+                        </h3>
+                        <span class="badge badge-warning" id="pendingPOsCount">0</span>
+                    </div>
+
+                    <div id="pendingPOsList" class="space-y-4">
+                        <div class="text-center py-8">
+                            <span class="loading loading-spinner loading-lg"></span>
+                            <p class="mt-2 text-base-content/60">Loading pending POs...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pending Requisitions Section -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="card-title text-lg">
+                            <i class="fas fa-clipboard-list text-info mr-2"></i>
+                            Pending Material Requisitions
+                        </h3>
+                        <span class="badge badge-info" id="pendingReqsCount">0</span>
+                    </div>
+
+                    <div id="pendingReqsList" class="space-y-4">
+                        <div class="text-center py-8">
+                            <span class="loading loading-spinner loading-lg"></span>
+                            <p class="mt-2 text-base-content/60">Loading pending requisitions...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Price Alerts Section -->
+            <div id="priceAlerts" class="card bg-base-100 border border-base-300">
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="card-title text-lg">
+                            <i class="fas fa-chart-line text-error mr-2"></i>
+                            Recent Price Changes
+                        </h3>
+                        <span class="badge badge-error" id="priceChangesCount">0</span>
+                    </div>
+                    <p class="text-sm text-base-content/60 mb-4">Significant price changes detected in the last 30 days. Review to ensure costs are being managed.</p>
+
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Item</th>
+                                    <th>Old Price</th>
+                                    <th>New Price</th>
+                                    <th>Change</th>
+                                    <th>Supplier</th>
+                                    <th>PO#</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody id="priceAlertsTable">
+                                <tr>
+                                    <td colspan="7" class="text-center py-8 text-base-content/60">
+                                        <span class="loading loading-spinner loading-md"></span>
+                                        <p class="mt-2">Loading price alerts...</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
+            <div>
+                <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+
+    <!-- Approve PO Modal -->
+    <dialog id="approvePOModal" class="modal">
+        <div class="modal-box max-w-3xl">
+            <h3 class="font-bold text-lg mb-4"><i class="fas fa-file-invoice-dollar text-warning mr-2"></i>Approve Purchase Order</h3>
+            <div id="approvePOContent"></div>
+            <div class="modal-action">
+                <button class="btn btn-ghost" onclick="document.getElementById('approvePOModal').close()">Cancel</button>
+                <button class="btn btn-error" onclick="rejectCurrentPO()"><i class="fas fa-times"></i> Reject</button>
+                <button class="btn btn-success" onclick="approveCurrentPO()"><i class="fas fa-check"></i> Approve</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../js/config/api.js"></script>
+    <script src="../js/config/auth.js"></script>
+    <script src="../js/purchasing/purchasing.service.js"></script>
+
+    <script>
+        let currentApprovalPO = null;
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('-translate-x-full');
+            document.getElementById('sidebarBackdrop').classList.toggle('hidden');
+        }
+
+        document.getElementById('themeToggle').addEventListener('change', function () {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('themeToggle').checked = true;
+        }
+
+        function scrollToPriceAlerts() {
+            document.getElementById('priceAlerts').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // ========================================
+        // INIT
+        // ========================================
+
+        document.addEventListener('DOMContentLoaded', async function () {
+            if (!AuthService.isAuthenticated()) { window.location.href = '../login.html'; return; }
+
+            const user = AuthService.getCurrentUser();
+            if (user) {
+                if (user.role !== 'general_manager') {
+                    showToast('Access denied. GM role required.', 'error');
+                    setTimeout(() => window.location.href = '../login.html', 2000);
+                    return;
+                }
+                document.getElementById('sidebarUserName').textContent =
+                    `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.name || 'General Manager';
+                const f = (user.first_name || user.name || '').charAt(0).toUpperCase();
+                const l = (user.last_name || '').charAt(0).toUpperCase();
+                document.getElementById('userInitials').textContent = f + l || 'GM';
+            }
+
+            await loadAllData();
+        });
+
+        async function loadAllData() {
+            await Promise.all([
+                loadDashboardStats(),
+                loadPendingPOs(),
+                loadPendingRequisitions(),
+                loadPriceAlerts()
+            ]);
+        }
+
+        // ========================================
+        // DASHBOARD STATS
+        // ========================================
+
+        async function loadDashboardStats() {
+            try {
+                const response = await PurchasingService.getGMDashboard();
+                const stats = response?.data;
+                if (!stats) return;
+
+                document.getElementById('statPendingPOs').textContent = stats.pending_pos?.count || 0;
+                document.getElementById('statPendingReqs').textContent = stats.pending_requisitions || 0;
+                document.getElementById('statApprovedToday').textContent = stats.approved_today || 0;
+                document.getElementById('statMonthlySpending').textContent = formatCurrency(stats.monthly_approved_spending || 0);
+                document.getElementById('priceAlertsBadge').textContent = stats.price_alerts || 0;
+                
+                const totalPending = (stats.pending_pos?.count || 0) + (stats.pending_requisitions || 0);
+                document.getElementById('totalPendingBadge').textContent = totalPending;
+
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // ========================================
+        // PENDING POS
+        // ========================================
+
+        async function loadPendingPOs() {
+            try {
+                const response = await PurchasingService.getGMPendingPOs();
+                const orders = response?.data || [];
+                const container = document.getElementById('pendingPOsList');
+                
+                document.getElementById('pendingPOsCount').textContent = orders.length;
+
+                if (orders.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center py-8 text-base-content/60">
+                            <i class="fas fa-check-circle text-4xl text-success mb-2"></i>
+                            <p>No pending purchase orders!</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = orders.map(po => `
+                    <div class="bg-base-200 rounded-xl p-4 hover:bg-base-300 transition-colors">
+                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-3 mb-2">
+                                    <span class="font-mono font-bold text-primary text-lg">PO #${po.po_number}</span>
+                                    <span class="badge badge-warning badge-sm">Pending</span>
+                                    ${po.payment_terms ? `<span class="badge badge-ghost badge-sm">${PurchasingService.formatPaymentTerms(po.payment_terms)}</span>` : ''}
+                                </div>
+                                <p class="text-base-content/70">
+                                    <i class="fas fa-truck-field mr-1"></i> ${po.supplier_name}
+                                    <span class="mx-2">•</span>
+                                    <i class="fas fa-calendar mr-1"></i> ${formatDate(po.order_date)}
+                                    <span class="mx-2">•</span>
+                                    <i class="fas fa-box mr-1"></i> ${po.item_count} item(s)
+                                </p>
+                                <p class="text-sm text-base-content/50 mt-1">
+                                    <i class="fas fa-user mr-1"></i> Requested by: ${po.requested_by || 'Unknown'}
+                                </p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-2xl font-bold text-primary">${formatCurrency(po.total_amount)}</p>
+                                <div class="flex gap-2 mt-2 justify-end">
+                                    <button class="btn btn-ghost btn-sm" onclick="viewPODetail(${po.id})">
+                                        <i class="fas fa-eye"></i> View
+                                    </button>
+                                    <button class="btn btn-error btn-sm" onclick="rejectPO(${po.id})">
+                                        <i class="fas fa-times"></i> Reject
+                                    </button>
+                                    <button class="btn btn-success btn-sm" onclick="approvePO(${po.id})">
+                                        <i class="fas fa-check"></i> Approve
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        ${po.items && po.items.length > 0 ? `
+                            <div class="mt-3 pt-3 border-t border-base-300">
+                                <p class="text-sm font-semibold mb-2">Items:</p>
+                                <div class="overflow-x-auto">
+                                    <table class="table table-xs">
+                                        <thead>
+                                            <tr>
+                                                <th>Description</th>
+                                                <th class="text-right">Qty</th>
+                                                <th>Unit</th>
+                                                <th class="text-right">Price</th>
+                                                <th class="text-right">Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${po.items.map(item => `
+                                                <tr>
+                                                    <td>${item.item_description}</td>
+                                                    <td class="text-right">${parseFloat(item.quantity).toFixed(2)}</td>
+                                                    <td>${item.unit}</td>
+                                                    <td class="text-right">${formatCurrency(item.unit_price)}</td>
+                                                    <td class="text-right font-semibold">${formatCurrency(item.total_amount)}</td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `).join('');
+
+            } catch (error) {
+                console.error('Error loading pending POs:', error);
+                document.getElementById('pendingPOsList').innerHTML = `
+                    <div class="text-center py-8 text-error">
+                        <i class="fas fa-exclamation-circle text-4xl mb-2"></i>
+                        <p>Failed to load pending POs</p>
+                    </div>
+                `;
+            }
+        }
+
+        // ========================================
+        // PENDING REQUISITIONS
+        // ========================================
+
+        async function loadPendingRequisitions() {
+            try {
+                const response = await PurchasingService.getGMPendingRequisitions();
+                const reqs = response?.data || [];
+                const container = document.getElementById('pendingReqsList');
+                
+                document.getElementById('pendingReqsCount').textContent = reqs.length;
+
+                if (reqs.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center py-8 text-base-content/60">
+                            <i class="fas fa-check-circle text-4xl text-success mb-2"></i>
+                            <p>No pending requisitions!</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = reqs.map(req => {
+                    const priorityBadge = PurchasingService.getPriorityBadgeClass(req.priority);
+                    return `
+                        <div class="bg-base-200 rounded-xl p-4 hover:bg-base-300 transition-colors">
+                            <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                <div class="flex-1">
+                                    <div class="flex items-center gap-3 mb-2">
+                                        <span class="font-mono font-bold text-info">${req.requisition_code}</span>
+                                        <span class="badge badge-sm ${priorityBadge}">${req.priority}</span>
+                                        <span class="badge badge-ghost badge-sm">${req.department}</span>
+                                    </div>
+                                    <p class="text-base-content/70">${req.purpose || 'No description'}</p>
+                                    <p class="text-sm text-base-content/50 mt-1">
+                                        <i class="fas fa-user mr-1"></i> ${req.requested_by_name || 'Unknown'}
+                                        <span class="mx-2">•</span>
+                                        <i class="fas fa-clock mr-1"></i> ${getTimeAgo(req.created_at)}
+                                    </p>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button class="btn btn-error btn-sm" onclick="rejectRequisition(${req.id})">
+                                        <i class="fas fa-times"></i> Reject
+                                    </button>
+                                    <button class="btn btn-success btn-sm" onclick="approveRequisition(${req.id})">
+                                        <i class="fas fa-check"></i> Approve
+                                    </button>
+                                </div>
+                            </div>
+                            ${req.items && req.items.length > 0 ? `
+                                <div class="mt-3 pt-3 border-t border-base-300">
+                                    <p class="text-sm font-semibold mb-1">Items: ${req.items.map(i => `${i.item_name} (${i.quantity} ${i.unit})`).join(', ')}</p>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                }).join('');
+
+            } catch (error) {
+                console.error('Error loading requisitions:', error);
+                document.getElementById('pendingReqsList').innerHTML = `
+                    <div class="text-center py-8 text-error">
+                        <i class="fas fa-exclamation-circle text-4xl mb-2"></i>
+                        <p>Failed to load requisitions</p>
+                    </div>
+                `;
+            }
+        }
+
+        // ========================================
+        // PRICE ALERTS
+        // ========================================
+
+        async function loadPriceAlerts() {
+            try {
+                const response = await PurchasingService.getGMPriceAlerts();
+                const alerts = response?.data || [];
+                const tbody = document.getElementById('priceAlertsTable');
+                
+                document.getElementById('priceChangesCount').textContent = alerts.length;
+
+                if (alerts.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="7" class="text-center py-8 text-base-content/60">
+                                <i class="fas fa-check-circle text-4xl text-success mb-2"></i>
+                                <p>No significant price changes detected</p>
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                tbody.innerHTML = alerts.map(alert => {
+                    const changeClass = alert.price_change > 0 ? 'text-error' : 'text-success';
+                    const changeIcon = alert.price_change > 0 ? 'fa-arrow-up' : 'fa-arrow-down';
+                    return `
+                        <tr class="hover">
+                            <td>
+                                <div class="font-medium">${alert.item_name}</div>
+                                <div class="text-xs text-base-content/50">${alert.item_code}</div>
+                            </td>
+                            <td class="font-mono">${formatCurrency(alert.old_price)}</td>
+                            <td class="font-mono font-semibold">${formatCurrency(alert.new_price)}</td>
+                            <td class="${changeClass}">
+                                <i class="fas ${changeIcon} mr-1"></i>
+                                ${alert.change_percent > 0 ? '+' : ''}${parseFloat(alert.change_percent).toFixed(1)}%
+                                <div class="text-xs">(${alert.price_change > 0 ? '+' : ''}${formatCurrency(alert.price_change)})</div>
+                            </td>
+                            <td>${alert.supplier_name || '-'}</td>
+                            <td class="font-mono">${alert.po_number || '-'}</td>
+                            <td class="text-sm">${formatDate(alert.created_at)}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+            } catch (error) {
+                console.error('Error loading price alerts:', error);
+                document.getElementById('priceAlertsTable').innerHTML = `
+                    <tr>
+                        <td colspan="7" class="text-center py-8 text-error">
+                            <i class="fas fa-exclamation-circle mr-2"></i>
+                            Failed to load price alerts
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        // ========================================
+        // ACTIONS
+        // ========================================
+
+        function viewPODetail(id) {
+            window.location.href = `../purchasing/purchase_orders.html?id=${id}`;
+        }
+
+        async function approvePO(id) {
+            if (!confirm('Approve this Purchase Order?')) return;
+            try {
+                await PurchasingService.approvePO(id);
+                showToast('Purchase Order approved!', 'success');
+                await loadAllData();
+            } catch (e) {
+                showToast(e?.message || 'Failed to approve', 'error');
+            }
+        }
+
+        async function rejectPO(id) {
+            const reason = prompt('Enter rejection reason:');
+            if (reason === null) return;
+            try {
+                await PurchasingService.rejectPO(id, reason);
+                showToast('Purchase Order rejected', 'success');
+                await loadAllData();
+            } catch (e) {
+                showToast(e?.message || 'Failed to reject', 'error');
+            }
+        }
+
+        async function approveRequisition(id) {
+            if (!confirm('Approve this requisition?')) return;
+            try {
+                await api.put(`/production/requisitions.php?action=approve&id=${id}`, {});
+                showToast('Requisition approved!', 'success');
+                await loadAllData();
+            } catch (e) {
+                showToast(e?.message || 'Failed to approve', 'error');
+            }
+        }
+
+        async function rejectRequisition(id) {
+            const reason = prompt('Enter rejection reason:');
+            if (reason === null) return;
+            try {
+                await api.put(`/production/requisitions.php?action=reject&id=${id}`, { reason });
+                showToast('Requisition rejected', 'success');
+                await loadAllData();
+            } catch (e) {
+                showToast(e?.message || 'Failed to reject', 'error');
+            }
+        }
+
+        // ========================================
+        // HELPERS
+        // ========================================
+
+        function formatCurrency(amount) {
+            return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function getTimeAgo(dateStr) {
+            if (!dateStr) return '';
+            const now = new Date();
+            const date = new Date(dateStr);
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
+
+            if (diffMins < 1) return 'Just now';
+            if (diffMins < 60) return `${diffMins}m ago`;
+            if (diffHours < 24) return `${diffHours}h ago`;
+            if (diffDays < 7) return `${diffDays}d ago`;
+            return formatDate(dateStr);
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
+            const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle';
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg text-sm`;
+            toast.innerHTML = `<i class="fas fa-${icon}"></i><span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 3000);
+        }
+    </script>
+</body>
+
+</html>

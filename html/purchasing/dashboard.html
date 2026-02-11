@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Purchasing | Highland Fresh</title>
+
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .bento-card {
+            @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: oklch(var(--b2));
+            border-radius: 3px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: oklch(var(--bc) / 0.2);
+            border-radius: 3px;
+        }
+
+        .sidebar-transition {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .stat-value {
+            font-variant-numeric: tabular-nums;
+        }
+
+        .stock-bar {
+            @apply relative h-2 bg-base-200 rounded-full overflow-hidden;
+        }
+
+        .stock-bar-fill {
+            @apply absolute left-0 top-0 h-full rounded-full transition-all duration-500;
+        }
+
+        @keyframes pulse-soft {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.7;
+            }
+        }
+
+        .pulse-soft {
+            animation: pulse-soft 2s ease-in-out infinite;
+        }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <img src="../../images/logo.jpg" alt="Highland Fresh Logo" class="w-10 h-10 rounded-xl object-cover">
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Purchasing Department</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <!-- Main Menu -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-th-large w-5 text-center"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Procurement -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Procurement
+                </h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="purchase_orders.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-file-invoice-dollar w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Purchase Orders</span>
+                            <span class="badge badge-sm badge-warning" id="pendingPOBadge">0</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="suppliers.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-truck-field w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Suppliers</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Inventory Alerts -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory
+                    Alerts</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="#lowStockSection" onclick="scrollToLowStock()"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-exclamation-triangle w-5 text-center text-warning"></i>
+                            <span class="flex-1">Low Stock Alerts</span>
+                            <span class="badge badge-sm badge-error" id="lowStockBadge">0</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#requisitionsSection" onclick="scrollToRequisitions()"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-clipboard-list w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Requisitions</span>
+                            <span class="badge badge-sm badge-info" id="requisitionBadge">0</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Price Monitoring -->
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Price
+                    Monitoring</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="#" onclick="event.preventDefault(); showToast('Price Trends coming soon!', 'info')"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-chart-line w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Price Trends</span>
+                            <span class="badge badge-ghost badge-xs">Soon</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">PU</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Purchaser</p>
+                    <p class="text-xs text-base-content/60 truncate">Purchasing</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0"
+                        class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a><i class="fas fa-user-cog w-4"></i> Profile</a></li>
+                        <li><a><i class="fas fa-cog w-4"></i> Settings</a></li>
+                        <li class="border-t border-base-300 mt-1 pt-1">
+                            <a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i>
+                                Logout</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold text-base-content">Purchasing Dashboard</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <!-- Search -->
+                <div class="hidden md:block">
+                    <label class="input input-bordered input-sm flex items-center gap-2 w-64">
+                        <i class="fas fa-search text-base-content/40"></i>
+                        <input type="text" placeholder="Search..." class="grow" />
+                        <kbd class="kbd kbd-sm">Ctrl+K</kbd>
+                    </label>
+                </div>
+
+                <!-- Notifications -->
+                <div class="dropdown dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-circle">
+                        <div class="indicator">
+                            <i class="fas fa-bell text-lg"></i>
+                            <span class="indicator-item badge badge-primary badge-xs" id="notifCount">0</span>
+                        </div>
+                    </label>
+                    <div tabindex="0"
+                        class="dropdown-content bg-base-100 rounded-box shadow-lg border border-base-300 w-80 mt-3">
+                        <div class="p-4 border-b border-base-300">
+                            <h3 class="font-semibold">Notifications</h3>
+                        </div>
+                        <ul class="menu menu-sm p-2 max-h-64 overflow-y-auto" id="notificationList">
+                            <li class="text-center py-4 text-base-content/60">No new notifications</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Theme toggle -->
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- Welcome Banner -->
+            <div class="bg-gradient-to-r from-primary to-primary/80 rounded-2xl p-6 mb-6 text-primary-content">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div>
+                        <h2 class="text-2xl font-bold mb-1">Welcome back, <span id="welcomeName">Purchaser</span>!</h2>
+                        <p class="text-primary-content/80">Here's your procurement overview for today.</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <a href="purchase_orders.html?action=new"
+                            class="btn btn-sm bg-white/20 border-white/30 text-white hover:bg-white/30">
+                            <i class="fas fa-file-invoice-dollar"></i> New PO
+                        </a>
+                        <a href="suppliers.html"
+                            class="btn btn-sm bg-white/20 border-white/30 text-white hover:bg-white/30">
+                            <i class="fas fa-truck-field"></i> Suppliers
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bento Grid Stats -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <!-- Active Suppliers -->
+                <a href="suppliers.html" class="bento-card card bg-base-100 border border-base-300 cursor-pointer">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                                <i class="fas fa-truck-field text-emerald-500"></i>
+                            </div>
+                            <span class="badge badge-ghost badge-sm">Active</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="statSuppliers">
+                            <span class="loading loading-dots loading-sm"></span>
+                        </p>
+                        <p class="text-sm text-base-content/60">Active Suppliers</p>
+                    </div>
+                </a>
+
+                <!-- POs This Month -->
+                <a href="purchase_orders.html"
+                    class="bento-card card bg-base-100 border border-base-300 cursor-pointer">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                                <i class="fas fa-file-invoice-dollar text-blue-500"></i>
+                            </div>
+                            <span class="badge badge-info badge-sm">This Month</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="statPOsMonth">
+                            <span class="loading loading-dots loading-sm"></span>
+                        </p>
+                        <p class="text-sm text-base-content/60">POs This Month</p>
+                    </div>
+                </a>
+
+                <!-- Pending POs -->
+                <a href="purchase_orders.html?status=pending"
+                    class="bento-card card bg-base-100 border border-base-300 cursor-pointer">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                                <i class="fas fa-clock text-amber-500"></i>
+                            </div>
+                            <span class="badge badge-warning badge-sm">Pending</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="statPendingPOs">
+                            <span class="loading loading-dots loading-sm"></span>
+                        </p>
+                        <p class="text-sm text-base-content/60">Pending/In-transit</p>
+                    </div>
+                </a>
+
+                <!-- Low Stock Items -->
+                <div class="bento-card card bg-base-100 border border-base-300 cursor-pointer"
+                    onclick="scrollToLowStock()">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
+                                <i class="fas fa-exclamation-triangle text-red-500"></i>
+                            </div>
+                            <span class="badge badge-error badge-sm">Alert</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="statLowStock">
+                            <span class="loading loading-dots loading-sm"></span>
+                        </p>
+                        <p class="text-sm text-base-content/60">Low Stock Items</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Secondary Stats Row -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <!-- Monthly Spending -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                                <i class="fas fa-peso-sign text-emerald-500 text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm text-base-content/60">Monthly Spending</p>
+                                <p class="text-xl font-bold stat-value" id="statMonthlySpend">
+                                    <span class="loading loading-dots loading-sm"></span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Unpaid Amount -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-orange-500/10 flex items-center justify-center">
+                                <i class="fas fa-receipt text-orange-500 text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm text-base-content/60">Unpaid POs</p>
+                                <p class="text-xl font-bold stat-value" id="statUnpaid">
+                                    <span class="loading loading-dots loading-sm"></span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pending Requisitions -->
+                <div class="card bg-base-100 border border-base-300 cursor-pointer" onclick="scrollToRequisitions()">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-cyan-500/10 flex items-center justify-center">
+                                <i class="fas fa-clipboard-list text-cyan-500 text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm text-base-content/60">Pending Requisitions</p>
+                                <p class="text-xl font-bold stat-value" id="statRequisitions">
+                                    <span class="loading loading-dots loading-sm"></span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+                <!-- Recent Purchase Orders (Span 2) -->
+                <div class="lg:col-span-2">
+                    <div class="card bg-base-100 border border-base-300">
+                        <div class="card-body">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="card-title text-lg">
+                                    <i class="fas fa-file-invoice-dollar text-primary mr-2"></i>
+                                    Recent Purchase Orders
+                                </h3>
+                                <a href="purchase_orders.html" class="btn btn-ghost btn-sm">View All</a>
+                            </div>
+
+                            <div class="overflow-x-auto">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>PO #</th>
+                                            <th>Supplier</th>
+                                            <th>Date</th>
+                                            <th>Amount</th>
+                                            <th>Status</th>
+                                            <th>Payment</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="recentPOTable">
+                                        <tr>
+                                            <td colspan="6" class="text-center py-8 text-base-content/60">
+                                                <span class="loading loading-spinner loading-md"></span>
+                                                <p class="mt-2">Loading purchase orders...</p>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pending Requisitions -->
+                <div class="lg:col-span-1" id="requisitionsSection">
+                    <div class="card bg-base-100 border border-base-300 h-full">
+                        <div class="card-body">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="card-title text-lg">
+                                    <i class="fas fa-clipboard-list text-info mr-2"></i>
+                                    Pending Requisitions
+                                </h3>
+                                <span class="badge badge-info" id="requisitionsCountBadge">0</span>
+                            </div>
+
+                            <div class="space-y-3 max-h-80 overflow-y-auto scrollbar-thin" id="requisitionsList">
+                                <div class="text-center py-8 text-base-content/60">
+                                    <span class="loading loading-spinner loading-md"></span>
+                                    <p class="mt-2">Loading...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Low Stock Alerts Section -->
+            <div id="lowStockSection" class="card bg-base-100 border border-base-300 mt-6">
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="card-title text-lg">
+                            <i class="fas fa-exclamation-triangle text-warning mr-2"></i>
+                            Low Stock Alerts
+                        </h3>
+                        <div class="flex gap-2 items-center">
+                            <span class="badge badge-error" id="lowStockCountBadge">0</span>
+                            <div class="dropdown dropdown-end">
+                                <label tabindex="0" class="btn btn-ghost btn-sm">
+                                    <i class="fas fa-filter"></i> Filter
+                                </label>
+                                <ul tabindex="0"
+                                    class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-40 p-2">
+                                    <li><a onclick="filterLowStock('all')" class="active">All Items</a></li>
+                                    <li><a onclick="filterLowStock('ingredient')">Ingredients</a></li>
+                                    <li><a onclick="filterLowStock('mro')">MRO Items</a></li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="text-sm text-base-content/60 mb-4">Items below their reorder point that need to be
+                        replenished. Consider creating a Purchase Order for these items.</p>
+
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Code</th>
+                                    <th>Item Name</th>
+                                    <th>Type</th>
+                                    <th>Current Stock</th>
+                                    <th>Reorder Point</th>
+                                    <th>Status</th>
+                                    <th>Lead Time</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="lowStockTable">
+                                <tr>
+                                    <td colspan="8" class="text-center py-8 text-base-content/60">
+                                        <span class="loading loading-spinner loading-md"></span>
+                                        <p class="mt-2">Loading stock alerts...</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
+            <div>
+                <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/purchasing/purchasing.service.js"></script>
+
+    <script>
+        // ========================================
+        // SIDEBAR & THEME
+        // ========================================
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+
+        document.getElementById('themeToggle').addEventListener('change', function () {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('themeToggle').checked = true;
+        }
+
+        // Scroll helpers
+        function scrollToLowStock() {
+            document.getElementById('lowStockSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function scrollToRequisitions() {
+            document.getElementById('requisitionsSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // ========================================
+        // DATA STATE
+        // ========================================
+        let allLowStockItems = [];
+
+        // ========================================
+        // INITIALIZATION
+        // ========================================
+
+        document.addEventListener('DOMContentLoaded', async function () {
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../login.html';
+                return;
+            }
+
+            const user = AuthService.getCurrentUser();
+            if (user) {
+                document.getElementById('welcomeName').textContent = user.first_name || user.name || 'Purchaser';
+                document.getElementById('sidebarUserName').textContent =
+                    `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.name || 'Purchaser';
+                document.getElementById('userInitials').textContent = getInitials(user.first_name || user.name, user.last_name);
+            }
+
+            await loadDashboardData();
+        });
+
+        function getInitials(firstName, lastName) {
+            const f = firstName ? firstName.charAt(0).toUpperCase() : '';
+            const l = lastName ? lastName.charAt(0).toUpperCase() : '';
+            return f + l || 'PU';
+        }
+
+        async function loadDashboardData() {
+            const loaders = [
+                loadStats().catch(e => console.error('Stats error:', e)),
+                loadRecentPOs().catch(e => console.error('Recent POs error:', e)),
+                loadLowStockAlerts().catch(e => console.error('Low stock error:', e)),
+                loadPendingRequisitions().catch(e => console.error('Requisitions error:', e)),
+            ];
+            await Promise.all(loaders);
+        }
+
+        // ========================================
+        // STATS
+        // ========================================
+
+        async function loadStats() {
+            try {
+                const response = await PurchasingService.getDashboardStats();
+                const stats = response?.data;
+
+                if (!stats) return;
+
+                document.getElementById('statSuppliers').textContent = stats.total_suppliers;
+                document.getElementById('statPOsMonth').textContent = stats.pos_this_month;
+                document.getElementById('statPendingPOs').textContent = stats.pending_pos;
+                document.getElementById('statLowStock').textContent =
+                    stats.low_stock_ingredients + stats.low_stock_mro;
+                document.getElementById('statMonthlySpend').textContent =
+                    formatCurrency(stats.monthly_spending);
+                document.getElementById('statUnpaid').textContent =
+                    formatCurrency(stats.unpaid_amount);
+                document.getElementById('statRequisitions').textContent = stats.pending_requisitions;
+
+                // Update sidebar badges
+                document.getElementById('pendingPOBadge').textContent = stats.pending_pos;
+                document.getElementById('lowStockBadge').textContent =
+                    stats.low_stock_ingredients + stats.low_stock_mro;
+                document.getElementById('requisitionBadge').textContent = stats.pending_requisitions;
+
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // ========================================
+        // RECENT POs
+        // ========================================
+
+        async function loadRecentPOs() {
+            try {
+                const response = await PurchasingService.getRecentPOs(8);
+                const orders = response?.data || [];
+                const tbody = document.getElementById('recentPOTable');
+
+                if (orders.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="6" class="text-center py-8 text-base-content/60">
+                                <i class="fas fa-inbox text-4xl mb-2"></i>
+                                <p>No purchase orders found</p>
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                tbody.innerHTML = orders.map(po => {
+                    const statusBadge = PurchasingService.getStatusBadgeClass(po.status);
+                    const paymentBadge = PurchasingService.getPaymentBadgeClass(po.payment_status);
+
+                    return `
+                        <tr class="hover">
+                            <td>
+                                <span class="font-mono font-semibold text-primary">${po.po_number}</span>
+                            </td>
+                            <td>
+                                <div class="font-medium">${po.supplier_name}</div>
+                                <div class="text-xs text-base-content/50">${po.item_count || 0} items</div>
+                            </td>
+                            <td class="text-sm">${formatDate(po.order_date)}</td>
+                            <td class="font-semibold">${formatCurrency(po.total_amount)}</td>
+                            <td>
+                                <span class="badge badge-sm ${statusBadge}">${PurchasingService.formatStatus(po.status)}</span>
+                            </td>
+                            <td>
+                                <span class="badge badge-sm ${paymentBadge} badge-outline">${PurchasingService.formatStatus(po.payment_status)}</span>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+            } catch (error) {
+                console.error('Error loading recent POs:', error);
+                document.getElementById('recentPOTable').innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center py-4 text-error">
+                            <i class="fas fa-exclamation-circle mr-2"></i>
+                            Failed to load purchase orders
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        // ========================================
+        // LOW STOCK ALERTS
+        // ========================================
+
+        async function loadLowStockAlerts() {
+            try {
+                const response = await PurchasingService.getLowStockAlerts();
+                allLowStockItems = response?.data || [];
+                renderLowStockTable(allLowStockItems);
+
+                document.getElementById('lowStockCountBadge').textContent = allLowStockItems.length;
+
+            } catch (error) {
+                console.error('Error loading low stock:', error);
+                document.getElementById('lowStockTable').innerHTML = `
+                    <tr>
+                        <td colspan="8" class="text-center py-4 text-error">
+                            <i class="fas fa-exclamation-circle mr-2"></i>
+                            Failed to load stock alerts
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        function filterLowStock(type) {
+            const filtered = type === 'all'
+                ? allLowStockItems
+                : allLowStockItems.filter(item => item.item_type === type);
+            renderLowStockTable(filtered);
+        }
+
+        function renderLowStockTable(items) {
+            const tbody = document.getElementById('lowStockTable');
+
+            if (items.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="text-center py-8 text-base-content/60">
+                            <i class="fas fa-check-circle text-4xl text-success mb-2"></i>
+                            <p>All stock levels are healthy!</p>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = items.map(item => {
+                const code = item.ingredient_code || item.item_code;
+                const name = item.ingredient_name || item.item_name;
+                const stockStatus = PurchasingService.getStockStatusBadge(item.stock_status);
+                const stockPercent = item.reorder_point > 0
+                    ? Math.min(100, (item.current_stock / item.reorder_point) * 100)
+                    : 0;
+                const barColor = item.stock_status === 'critical' ? 'bg-error'
+                    : item.stock_status === 'low' ? 'bg-warning'
+                        : 'bg-info';
+
+                return `
+                    <tr class="hover">
+                        <td><span class="font-mono text-sm">${code}</span></td>
+                        <td>
+                            <div class="font-medium">${name}</div>
+                            <div class="text-xs text-base-content/50">${item.category_name || '-'}</div>
+                        </td>
+                        <td>
+                            <span class="badge badge-sm badge-ghost">${item.item_type === 'ingredient' ? 'Ingredient' : 'MRO'}</span>
+                        </td>
+                        <td>
+                            <div class="font-semibold">${parseFloat(item.current_stock).toFixed(1)} ${item.unit_of_measure}</div>
+                            <div class="stock-bar mt-1 w-20">
+                                <div class="stock-bar-fill ${barColor}" style="width: ${stockPercent}%"></div>
+                            </div>
+                        </td>
+                        <td class="text-sm">${parseFloat(item.reorder_point).toFixed(1)} ${item.unit_of_measure}</td>
+                        <td>
+                            <span class="badge badge-sm ${stockStatus.class} ${item.stock_status === 'critical' ? 'pulse-soft' : ''}">
+                                ${stockStatus.label}
+                            </span>
+                        </td>
+                        <td class="text-sm">${item.lead_time_days || 7} days</td>
+                        <td>
+                            <a href="purchase_orders.html?action=new&item=${code}" 
+                               class="btn btn-ghost btn-xs text-primary">
+                                <i class="fas fa-cart-plus"></i>
+                            </a>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // ========================================
+        // PENDING REQUISITIONS
+        // ========================================
+
+        async function loadPendingRequisitions() {
+            try {
+                const response = await PurchasingService.getPendingRequisitions();
+                const requisitions = response?.data || [];
+                const container = document.getElementById('requisitionsList');
+
+                document.getElementById('requisitionsCountBadge').textContent = requisitions.length;
+
+                if (requisitions.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center py-8 text-base-content/60">
+                            <i class="fas fa-check-circle text-4xl text-success mb-2"></i>
+                            <p>No pending requisitions</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = requisitions.map(req => {
+                    const priorityBadge = PurchasingService.getPriorityBadgeClass(req.priority);
+                    const statusBadge = PurchasingService.getStatusBadgeClass(req.status);
+                    const timeAgo = getTimeAgo(req.created_at);
+
+                    return `
+                        <div class="bg-base-200 rounded-xl p-3 hover:bg-base-300 transition-colors">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <span class="font-mono text-sm font-semibold text-primary">${req.requisition_code}</span>
+                                        <span class="badge badge-xs ${priorityBadge}">${req.priority}</span>
+                                    </div>
+                                    <p class="text-sm text-base-content/70 truncate">${req.purpose || 'No description'}</p>
+                                    <div class="flex items-center gap-2 mt-1">
+                                        <span class="text-xs text-base-content/50">
+                                            <i class="fas fa-user mr-1"></i>${req.requested_by_name || 'Unknown'}
+                                        </span>
+                                        <span class="text-xs text-base-content/40">•</span>
+                                        <span class="text-xs text-base-content/50">${timeAgo}</span>
+                                    </div>
+                                </div>
+                                <span class="badge badge-sm ${statusBadge}">${PurchasingService.formatStatus(req.status)}</span>
+                            </div>
+                            ${req.item_names ? `
+                                <div class="mt-2 text-xs text-base-content/50">
+                                    <i class="fas fa-box mr-1"></i>${req.item_names}
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                }).join('');
+
+            } catch (error) {
+                console.error('Error loading requisitions:', error);
+                document.getElementById('requisitionsList').innerHTML = `
+                    <div class="text-center py-4 text-error">
+                        <i class="fas fa-exclamation-circle mr-2"></i>
+                        Failed to load requisitions
+                    </div>
+                `;
+            }
+        }
+
+        // ========================================
+        // HELPERS
+        // ========================================
+
+        function formatCurrency(amount) {
+            return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-PH', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+            });
+        }
+
+        function getTimeAgo(dateStr) {
+            if (!dateStr) return '';
+            const now = new Date();
+            const date = new Date(dateStr);
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
+
+            if (diffMins < 1) return 'Just now';
+            if (diffMins < 60) return `${diffMins}m ago`;
+            if (diffHours < 24) return `${diffHours}h ago`;
+            if (diffDays < 7) return `${diffDays}d ago`;
+            return formatDate(dateStr);
+        }
+    </script>
+
+</body>
+
+</html>

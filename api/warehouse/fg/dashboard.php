@@ -24,13 +24,14 @@ try {
     
     // === FINISHED GOODS INVENTORY STATISTICS ===
     
-    // Total FG in inventory
+    // Total FG in inventory - use multi-unit calculation
     $fgStats = $db->prepare("
         SELECT 
-            COALESCE(SUM(quantity_available), 0) as total_units,
-            COUNT(DISTINCT product_id) as product_count
-        FROM finished_goods_inventory
-        WHERE status = 'available'
+            COALESCE(SUM((COALESCE(fgi.boxes_available, 0) * COALESCE(p.pieces_per_box, 1)) + COALESCE(fgi.pieces_available, 0)), 0) as total_units,
+            COUNT(DISTINCT fgi.product_id) as product_count
+        FROM finished_goods_inventory fgi
+        LEFT JOIN products p ON fgi.product_id = p.id
+        WHERE fgi.status = 'available'
     ");
     $fgStats->execute();
     $fgData = $fgStats->fetch();
@@ -53,13 +54,15 @@ try {
     
     // === EXPIRY STATISTICS ===
     
-    // Items expiring within 3 days
+    // Items expiring within 3 days - use multi-unit calculation
     $expiringItems = $db->prepare("
-        SELECT COUNT(*) as count, COALESCE(SUM(quantity_available), 0) as units
-        FROM finished_goods_inventory
-        WHERE status = 'available'
-        AND expiry_date <= DATE_ADD(CURDATE(), INTERVAL 3 DAY)
-        AND expiry_date >= CURDATE()
+        SELECT COUNT(*) as count, 
+            COALESCE(SUM((COALESCE(fgi.boxes_available, 0) * COALESCE(p.pieces_per_box, 1)) + COALESCE(fgi.pieces_available, 0)), 0) as units
+        FROM finished_goods_inventory fgi
+        LEFT JOIN products p ON fgi.product_id = p.id
+        WHERE fgi.status = 'available'
+        AND fgi.expiry_date <= DATE_ADD(CURDATE(), INTERVAL 3 DAY)
+        AND fgi.expiry_date >= CURDATE()
     ");
     $expiringItems->execute();
     $expiringData = $expiringItems->fetch();

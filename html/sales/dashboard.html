@@ -103,6 +103,16 @@
                     </a></li>
                 </ul>
             </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Recalls</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="#recallNotificationsSection" onclick="scrollToRecalls()" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-exclamation-triangle w-5 text-center text-error"></i>
+                        <span class="flex-1">Pending Notifications</span>
+                        <span class="badge badge-sm badge-error" id="pendingRecallsBadge">0</span>
+                    </a></li>
+                </ul>
+            </div>
         </nav>
         
         <div class="p-4 border-t border-base-300">
@@ -406,6 +416,27 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- Recall Notifications Section -->
+            <div id="recallNotificationsSection" class="card bg-base-100 shadow-sm mt-6">
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="card-title text-lg">
+                            <i class="fas fa-exclamation-triangle text-error"></i>
+                            Active Recalls - Pending Customer Notifications
+                        </h2>
+                        <span class="badge badge-error" id="recallsCountBadge">0</span>
+                    </div>
+                    <p class="text-sm text-base-content/60 mb-4">Contact affected customers about product recalls. Click the notification buttons after contacting each location.</p>
+                    
+                    <div id="recallNotificationsList" class="space-y-4 max-h-96 overflow-y-auto scrollbar-thin">
+                        <div class="text-center py-8 text-base-content/40">
+                            <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                            <p>Loading recalls...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </main>
         
         <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
@@ -472,6 +503,7 @@
                 });
                 
                 await loadDashboardData();
+                await loadActiveRecalls();
             } catch (error) {
                 console.error('Init error:', error);
                 showToast('Failed to initialize dashboard', 'error');
@@ -598,6 +630,146 @@
                     </div>
                 </div>
             `).join('');
+        }
+        
+        // ==================== RECALL NOTIFICATION FUNCTIONS ====================
+        const RECALL_API = '../../api/qc/recalls.php';
+        
+        function scrollToRecalls() {
+            document.getElementById('recallNotificationsSection').scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        const classLabels = {
+            class_i: { label: 'Class I', badge: 'badge-error', icon: 'skull-crossbones', desc: 'Dangerous' },
+            class_ii: { label: 'Class II', badge: 'badge-warning', icon: 'exclamation-triangle', desc: 'May Cause Harm' },
+            class_iii: { label: 'Class III', badge: 'badge-info', icon: 'info-circle', desc: 'Unlikely Harm' }
+        };
+        
+        async function loadActiveRecalls() {
+            try {
+                const response = await api.get('/qc/recalls.php', {
+                    params: { action: 'active' }
+                });
+                
+                if (response.success) {
+                    const recalls = response.data || [];
+                    // Filter to only show recalls with pending notifications
+                    const recallsWithPendingNotifications = recalls.filter(r => 
+                        ['approved', 'in_progress'].includes(r.status)
+                    );
+                    
+                    // Count pending notifications
+                    let pendingCount = 0;
+                    for (const recall of recallsWithPendingNotifications) {
+                        const detailRes = await api.get('/qc/recalls.php', { params: { id: recall.id } });
+                        if (detailRes.success && detailRes.data.affected_locations) {
+                            recall.affected_locations = detailRes.data.affected_locations;
+                            pendingCount += recall.affected_locations.filter(l => !l.notification_sent).length;
+                        }
+                    }
+                    
+                    renderRecallNotifications(recallsWithPendingNotifications);
+                    document.getElementById('pendingRecallsBadge').textContent = pendingCount;
+                    document.getElementById('recallsCountBadge').textContent = pendingCount;
+                }
+            } catch (error) {
+                console.error('Error loading recalls:', error);
+                document.getElementById('recallNotificationsList').innerHTML = `
+                    <div class="text-center py-8 text-error">
+                        <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
+                        <p>Failed to load recalls</p>
+                    </div>
+                `;
+            }
+        }
+        
+        function renderRecallNotifications(recalls) {
+            const container = document.getElementById('recallNotificationsList');
+            
+            if (!recalls.length) {
+                container.innerHTML = `
+                    <div class="text-center py-8 text-success">
+                        <i class="fas fa-check-circle text-2xl mb-2"></i>
+                        <p>No pending recall notifications</p>
+                        <p class="text-xs text-base-content/60 mt-1">All affected locations have been notified</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = recalls.map(r => {
+                const cls = classLabels[r.recall_class] || { label: r.recall_class, badge: 'badge-ghost', icon: 'exclamation-triangle' };
+                const pendingLocations = (r.affected_locations || []).filter(l => !l.notification_sent);
+                const notifiedLocations = (r.affected_locations || []).filter(l => l.notification_sent);
+                
+                if (pendingLocations.length === 0) return '';
+                
+                return `
+                    <div class="border ${r.recall_class === 'class_i' ? 'border-error bg-error/5' : 'border-warning bg-warning/5'} rounded-xl p-4">
+                        <div class="flex flex-col md:flex-row md:items-start gap-4 mb-3">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="badge ${cls.badge} gap-1">
+                                        <i class="fas fa-${cls.icon}"></i> ${cls.label}
+                                    </span>
+                                    <code class="text-sm font-mono">${r.recall_code}</code>
+                                </div>
+                                <p class="font-semibold">${r.product_name}</p>
+                                <p class="text-sm text-base-content/60">
+                                    Batch: ${r.batch_code} • ${r.total_dispatched} units dispatched
+                                </p>
+                                <p class="text-xs text-base-content/50 mt-1">${r.reason}</p>
+                            </div>
+                            <div class="text-right">
+                                <div class="badge badge-error badge-lg">${pendingLocations.length} pending</div>
+                                <p class="text-xs text-success mt-1">${notifiedLocations.length} notified</p>
+                            </div>
+                        </div>
+                        
+                        <div class="divider my-2 text-xs">Locations to Contact</div>
+                        
+                        <div class="space-y-2">
+                            ${pendingLocations.map(l => `
+                                <div class="flex items-center justify-between p-3 bg-base-100 rounded-lg border border-base-300">
+                                    <div>
+                                        <p class="font-medium">${l.location_name}</p>
+                                        <p class="text-xs text-base-content/60">${l.units_dispatched} units • ${l.location_address || 'No address'}</p>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button class="btn btn-sm btn-info" onclick="sendRecallNotification(${r.id}, ${l.id}, 'phone')">
+                                            <i class="fas fa-phone"></i> Called
+                                        </button>
+                                        <button class="btn btn-sm btn-ghost" onclick="sendRecallNotification(${r.id}, ${l.id}, 'email')">
+                                            <i class="fas fa-envelope"></i> Emailed
+                                        </button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        async function sendRecallNotification(recallId, locationId, method) {
+            try {
+                const response = await api.put(`/qc/recalls.php`, {
+                    id: recallId,
+                    action: 'send_notification',
+                    affected_location_id: locationId,
+                    notification_method: method
+                });
+                
+                if (response.success) {
+                    showToast(`Notification marked as sent (${method})`, 'success');
+                    await loadActiveRecalls();
+                } else {
+                    showToast(response.message || 'Failed to mark notification', 'error');
+                }
+            } catch (error) {
+                console.error('Error sending notification:', error);
+                showToast(error.message || 'Error sending notification', 'error');
+            }
         }
     </script>
 </body>

@@ -64,12 +64,15 @@ function handleGet($db, $action) {
                 FROM products p
                 LEFT JOIN (
                     SELECT 
-                        product_id, 
-                        SUM(quantity) as total_qty,
-                        SUM(CASE WHEN status = 'available' THEN quantity_available ELSE 0 END) as available_qty
-                    FROM finished_goods_inventory
-                    WHERE expiry_date > CURDATE()
-                    GROUP BY product_id
+                        fi.product_id, 
+                        SUM(fi.quantity) as total_qty,
+                        SUM(CASE WHEN fi.status = 'available' 
+                            THEN (COALESCE(fi.boxes_available, 0) * COALESCE(p2.pieces_per_box, 1)) + COALESCE(fi.pieces_available, 0)
+                            ELSE 0 END) as available_qty
+                    FROM finished_goods_inventory fi
+                    JOIN products p2 ON fi.product_id = p2.id
+                    WHERE fi.expiry_date > CURDATE()
+                    GROUP BY fi.product_id
                 ) inv ON p.id = inv.product_id
                 WHERE 1=1
             ";
@@ -129,14 +132,19 @@ function handleGet($db, $action) {
                 Response::notFound('Product not found');
             }
             
-            // Get inventory by batch
+            // Get inventory by batch (multi-unit)
             $invStmt = $db->prepare("
                 SELECT 
-                    fi.id, fi.batch_id, fi.quantity, fi.quantity_available, fi.status,
-                    fi.manufacturing_date as production_date, fi.expiry_date,
+                    fi.id, fi.batch_id, fi.quantity, 
+                    COALESCE(fi.boxes_available, 0) as boxes_available,
+                    COALESCE(fi.pieces_available, 0) as pieces_available,
+                    (COALESCE(fi.boxes_available, 0) * COALESCE(p.pieces_per_box, 1)) + COALESCE(fi.pieces_available, 0) as quantity_available,
+                    fi.status, fi.manufacturing_date as production_date, fi.expiry_date,
                     DATEDIFF(fi.expiry_date, CURDATE()) as days_to_expiry
                 FROM finished_goods_inventory fi
-                WHERE fi.product_id = ? AND fi.quantity_available > 0
+                JOIN products p ON fi.product_id = p.id
+                WHERE fi.product_id = ? 
+                AND ((COALESCE(fi.boxes_available, 0) > 0) OR (COALESCE(fi.pieces_available, 0) > 0))
                 ORDER BY fi.expiry_date ASC
             ");
             $invStmt->execute([$id]);
@@ -165,6 +173,8 @@ function handleGet($db, $action) {
             
         case 'for_sale':
             // Get products available for sale (with inventory > 0)
+            // Uses multi-unit system: boxes_available + pieces_available
+            // Subtracts quantities reserved in pending/approved/preparing orders
             $category = getParam('category');
             $search = getParam('search');
             
@@ -179,8 +189,28 @@ function handleGet($db, $action) {
                     p.unit_measure,
                     p.base_unit,
                     p.selling_price,
-                    p.pieces_per_box,
-                    COALESCE(SUM(CASE WHEN fi.status = 'available' AND fi.expiry_date > CURDATE() THEN fi.quantity_available ELSE 0 END), 0) as available_qty
+                    COALESCE(p.pieces_per_box, 1) as pieces_per_box,
+                    GREATEST(0, 
+                        COALESCE(SUM(CASE 
+                            WHEN fi.status = 'available' AND fi.expiry_date > CURDATE() 
+                            THEN (COALESCE(fi.boxes_available, 0) * COALESCE(p.pieces_per_box, 1)) + COALESCE(fi.pieces_available, 0)
+                            ELSE 0 
+                        END), 0)
+                        - COALESCE((
+                            SELECT SUM(soi.quantity_ordered)
+                            FROM sales_order_items soi
+                            JOIN sales_orders so ON soi.order_id = so.id
+                            WHERE soi.product_id = p.id
+                            AND so.status IN ('pending', 'approved', 'preparing')
+                        ), 0)
+                    ) as available_qty,
+                    COALESCE((
+                        SELECT SUM(soi.quantity_ordered)
+                        FROM sales_order_items soi
+                        JOIN sales_orders so ON soi.order_id = so.id
+                        WHERE soi.product_id = p.id
+                        AND so.status IN ('pending', 'approved', 'preparing')
+                    ), 0) as reserved_qty
                 FROM products p
                 LEFT JOIN finished_goods_inventory fi ON p.id = fi.product_id
                 WHERE p.is_active = 1
@@ -199,7 +229,7 @@ function handleGet($db, $action) {
                 $params[] = $searchTerm;
             }
             
-            $sql .= " GROUP BY p.id HAVING available_qty > 0 ORDER BY p.product_name ASC";
+            $sql .= " GROUP BY p.id HAVING available_qty > 0 OR reserved_qty > 0 ORDER BY p.product_name ASC";
             
             $stmt = $db->prepare($sql);
             $stmt->execute($params);

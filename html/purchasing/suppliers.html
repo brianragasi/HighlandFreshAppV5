@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suppliers - Purchasing | Highland Fresh</title>
+
+    <!-- Tailwind CSS + DaisyUI CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .bento-card {
+            @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: oklch(var(--b2));
+            border-radius: 3px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: oklch(var(--bc) / 0.2);
+            border-radius: 3px;
+        }
+
+        .sidebar-transition {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <img src="../../images/logo.jpg" alt="Highland Fresh Logo" class="w-10 h-10 rounded-xl object-cover">
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Purchasing Department</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="dashboard.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Procurement
+                </h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="purchase_orders.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-file-invoice-dollar w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Purchase Orders</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="suppliers.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-truck-field w-5 text-center"></i>
+                            <span class="flex-1">Suppliers</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Price
+                    Monitoring</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="#" onclick="event.preventDefault(); showToast('Price Trends coming soon!', 'info')"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-chart-line w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Price Trends</span>
+                            <span class="badge badge-ghost badge-xs">Soon</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- User Section -->
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">PU</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Purchaser</p>
+                    <p class="text-xs text-base-content/60 truncate">Purchasing</p>
+                </div>
+                <div class="dropdown dropdown-top dropdown-end">
+                    <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </label>
+                    <ul tabindex="0"
+                        class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
+                        <li><a><i class="fas fa-user-cog w-4"></i> Profile</a></li>
+                        <li><a><i class="fas fa-cog w-4"></i> Settings</a></li>
+                        <li class="border-t border-base-300 mt-1 pt-1">
+                            <a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i>
+                                Logout</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold text-base-content">Suppliers</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <button class="btn btn-primary btn-sm gap-2" onclick="openCreateModal()">
+                    <i class="fas fa-plus"></i>
+                    <span class="hidden md:inline">Add Supplier</span>
+                </button>
+
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle" />
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- Filters -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body p-4">
+                    <div class="flex flex-col md:flex-row gap-3">
+                        <label class="input input-bordered input-sm flex items-center gap-2 flex-1">
+                            <i class="fas fa-search text-base-content/40"></i>
+                            <input type="text" id="searchInput" placeholder="Search suppliers..." class="grow"
+                                oninput="debounceSearch()">
+                        </label>
+                        <select id="statusFilter" class="select select-bordered select-sm w-full md:w-40"
+                            onchange="loadSuppliers()">
+                            <option value="">All Status</option>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Suppliers Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" id="suppliersGrid">
+                <!-- Skeleton loaders -->
+                <div class="card bg-base-100 border border-base-300 animate-pulse">
+                    <div class="card-body p-5">
+                        <div class="h-28 bg-base-200 rounded-xl"></div>
+                    </div>
+                </div>
+                <div class="card bg-base-100 border border-base-300 animate-pulse">
+                    <div class="card-body p-5">
+                        <div class="h-28 bg-base-200 rounded-xl"></div>
+                    </div>
+                </div>
+                <div class="card bg-base-100 border border-base-300 animate-pulse">
+                    <div class="card-body p-5">
+                        <div class="h-28 bg-base-200 rounded-xl"></div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
+            <div>
+                <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Create/Edit Supplier Modal -->
+    <dialog id="supplierModal" class="modal">
+        <div class="modal-box max-w-lg">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4" id="modalTitle">
+                <i class="fas fa-truck-field text-primary"></i> Add Supplier
+            </h3>
+            <div class="space-y-4">
+                <input type="hidden" id="editSupplierId">
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Supplier Name *</span></label>
+                    <input type="text" id="supplierName" class="input input-bordered w-full"
+                        placeholder="Enter supplier name" required>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Contact Person</span></label>
+                        <input type="text" id="contactPerson" class="input input-bordered w-full"
+                            placeholder="Contact name">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Phone</span></label>
+                        <input type="text" id="phone" class="input input-bordered w-full" placeholder="Phone number">
+                    </div>
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Email</span></label>
+                    <input type="email" id="email" class="input input-bordered w-full" placeholder="email@example.com">
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Address</span></label>
+                    <textarea id="address" class="textarea textarea-bordered w-full" rows="2"
+                        placeholder="Full address"></textarea>
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Payment Terms</span></label>
+                    <select id="paymentTerms" class="select select-bordered w-full">
+                        <option value="30 days">30 Days</option>
+                        <option value="15 days">15 Days</option>
+                        <option value="7 days">7 Days</option>
+                        <option value="COD">Cash on Delivery</option>
+                        <option value="Advance">Advance Payment</option>
+                    </select>
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Notes</span></label>
+                    <textarea id="notes" class="textarea textarea-bordered w-full" rows="2"
+                        placeholder="Additional notes"></textarea>
+                </div>
+            </div>
+            <div class="modal-action">
+                <button class="btn btn-ghost" onclick="document.getElementById('supplierModal').close()">Cancel</button>
+                <button class="btn btn-primary" id="saveBtn" onclick="saveSupplier()">
+                    <i class="fas fa-save"></i> Save Supplier
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Supplier Detail Modal -->
+    <dialog id="detailModal" class="modal">
+        <div class="modal-box max-w-2xl">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <div id="supplierDetailContent">
+                <div class="text-center py-8">
+                    <span class="loading loading-spinner loading-lg"></span>
+                </div>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/purchasing/purchasing.service.js"></script>
+
+    <script>
+        let searchTimeout;
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('-translate-x-full');
+            document.getElementById('sidebarBackdrop').classList.toggle('hidden');
+        }
+
+        document.getElementById('themeToggle').addEventListener('change', function () {
+            document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
+            localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
+        });
+
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('themeToggle').checked = true;
+        }
+
+        // ========================================
+        // INIT
+        // ========================================
+
+        document.addEventListener('DOMContentLoaded', async function () {
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../login.html';
+                return;
+            }
+
+            const user = AuthService.getCurrentUser();
+            if (user) {
+                document.getElementById('sidebarUserName').textContent =
+                    `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.name || 'Purchaser';
+                const f = (user.first_name || user.name || '').charAt(0).toUpperCase();
+                const l = (user.last_name || '').charAt(0).toUpperCase();
+                document.getElementById('userInitials').textContent = f + l || 'PU';
+            }
+
+            await loadSuppliers();
+        });
+
+        // ========================================
+        // SUPPLIERS LIST
+        // ========================================
+
+        function debounceSearch() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(loadSuppliers, 300);
+        }
+
+        async function loadSuppliers() {
+            try {
+                const filters = {};
+                const search = document.getElementById('searchInput').value.trim();
+                const status = document.getElementById('statusFilter').value;
+
+                if (search) filters.search = search;
+                if (status) filters.status = status;
+
+                const response = await PurchasingService.getSuppliers(filters);
+                const suppliers = response?.data || [];
+                const grid = document.getElementById('suppliersGrid');
+
+                if (suppliers.length === 0) {
+                    grid.innerHTML = `
+                        <div class="col-span-full text-center py-12 text-base-content/60">
+                            <i class="fas fa-truck-field text-5xl mb-3"></i>
+                            <p class="text-lg font-semibold">No suppliers found</p>
+                            <p class="text-sm mt-1">Try adjusting your search or add a new supplier.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                grid.innerHTML = suppliers.map(supplier => {
+                    const isActive = supplier.is_active == 1;
+                    const initials = supplier.supplier_name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+                    const bgColors = ['bg-indigo-500', 'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-cyan-500'];
+                    const color = bgColors[supplier.id % bgColors.length];
+
+                    return `
+                        <div class="bento-card card bg-base-100 border border-base-300 ${!isActive ? 'opacity-60' : ''}">
+                            <div class="card-body p-5">
+                                <div class="flex items-start gap-3">
+                                    <div class="avatar placeholder">
+                                        <div class="w-12 h-12 rounded-xl ${color} text-white">
+                                            <span class="text-sm font-bold">${initials}</span>
+                                        </div>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="flex items-center gap-2">
+                                            <h3 class="font-semibold truncate">${supplier.supplier_name}</h3>
+                                            ${isActive
+                            ? '<span class="badge badge-success badge-xs">Active</span>'
+                            : '<span class="badge badge-ghost badge-xs">Inactive</span>'}
+                                        </div>
+                                        <p class="text-xs font-mono text-base-content/50 mt-0.5">${supplier.supplier_code}</p>
+                                    </div>
+                                    <div class="dropdown dropdown-end">
+                                        <label tabindex="0" class="btn btn-ghost btn-xs btn-square">
+                                            <i class="fas fa-ellipsis-v"></i>
+                                        </label>
+                                        <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-40 p-2 z-10">
+                                            <li><a onclick="viewSupplier(${supplier.id})"><i class="fas fa-eye w-4"></i> View Details</a></li>
+                                            <li><a onclick="editSupplier(${supplier.id})"><i class="fas fa-edit w-4"></i> Edit</a></li>
+                                            <li><a onclick="toggleStatus(${supplier.id})" class="${isActive ? 'text-warning' : 'text-success'}">
+                                                <i class="fas fa-${isActive ? 'ban' : 'check'} w-4"></i> ${isActive ? 'Deactivate' : 'Activate'}
+                                            </a></li>
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                <div class="mt-3 space-y-1.5">
+                                    ${supplier.contact_person ? `
+                                        <div class="flex items-center gap-2 text-sm">
+                                            <i class="fas fa-user text-base-content/40 w-4 text-center"></i>
+                                            <span class="text-base-content/70">${supplier.contact_person}</span>
+                                        </div>
+                                    ` : ''}
+                                    ${supplier.phone ? `
+                                        <div class="flex items-center gap-2 text-sm">
+                                            <i class="fas fa-phone text-base-content/40 w-4 text-center"></i>
+                                            <span class="text-base-content/70">${supplier.phone}</span>
+                                        </div>
+                                    ` : ''}
+                                    ${supplier.email ? `
+                                        <div class="flex items-center gap-2 text-sm">
+                                            <i class="fas fa-envelope text-base-content/40 w-4 text-center"></i>
+                                            <span class="text-base-content/70 truncate">${supplier.email}</span>
+                                        </div>
+                                    ` : ''}
+                                </div>
+
+                                <div class="mt-3 pt-3 border-t border-base-200 flex items-center justify-between">
+                                    <span class="badge badge-ghost badge-sm">
+                                        <i class="fas fa-calendar-alt mr-1"></i> ${supplier.payment_terms || '30 days'}
+                                    </span>
+                                    <button class="btn btn-ghost btn-xs text-primary" onclick="viewSupplier(${supplier.id})">
+                                        View Details <i class="fas fa-arrow-right ml-1"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+            } catch (error) {
+                console.error('Error loading suppliers:', error);
+                document.getElementById('suppliersGrid').innerHTML = `
+                    <div class="col-span-full text-center py-8 text-error">
+                        <i class="fas fa-exclamation-circle text-3xl mb-2"></i>
+                        <p>Failed to load suppliers</p>
+                    </div>
+                `;
+            }
+        }
+
+        // ========================================
+        // SUPPLIER CRUD
+        // ========================================
+
+        function openCreateModal() {
+            document.getElementById('modalTitle').innerHTML = '<i class="fas fa-truck-field text-primary"></i> Add Supplier';
+            document.getElementById('editSupplierId').value = '';
+            document.getElementById('supplierName').value = '';
+            document.getElementById('contactPerson').value = '';
+            document.getElementById('phone').value = '';
+            document.getElementById('email').value = '';
+            document.getElementById('address').value = '';
+            document.getElementById('paymentTerms').value = '30 days';
+            document.getElementById('notes').value = '';
+            document.getElementById('saveBtn').innerHTML = '<i class="fas fa-save"></i> Save Supplier';
+            document.getElementById('supplierModal').showModal();
+        }
+
+        async function editSupplier(id) {
+            try {
+                const response = await PurchasingService.getSupplierDetail(id);
+                const supplier = response?.data;
+                if (!supplier) return;
+
+                document.getElementById('modalTitle').innerHTML = '<i class="fas fa-edit text-primary"></i> Edit Supplier';
+                document.getElementById('editSupplierId').value = id;
+                document.getElementById('supplierName').value = supplier.supplier_name || '';
+                document.getElementById('contactPerson').value = supplier.contact_person || '';
+                document.getElementById('phone').value = supplier.phone || '';
+                document.getElementById('email').value = supplier.email || '';
+                document.getElementById('address').value = supplier.address || '';
+                document.getElementById('paymentTerms').value = supplier.payment_terms || '30 days';
+                document.getElementById('notes').value = supplier.notes || '';
+                document.getElementById('saveBtn').innerHTML = '<i class="fas fa-save"></i> Update Supplier';
+                document.getElementById('supplierModal').showModal();
+
+            } catch (error) {
+                showToast('Failed to load supplier details', 'error');
+            }
+        }
+
+        async function saveSupplier() {
+            const name = document.getElementById('supplierName').value.trim();
+            if (!name) {
+                showToast('Supplier name is required', 'error');
+                return;
+            }
+
+            const data = {
+                supplier_name: name,
+                contact_person: document.getElementById('contactPerson').value.trim() || null,
+                phone: document.getElementById('phone').value.trim() || null,
+                email: document.getElementById('email').value.trim() || null,
+                address: document.getElementById('address').value.trim() || null,
+                payment_terms: document.getElementById('paymentTerms').value,
+                notes: document.getElementById('notes').value.trim() || null,
+            };
+
+            const editId = document.getElementById('editSupplierId').value;
+
+            try {
+                if (editId) {
+                    await PurchasingService.updateSupplier(editId, data);
+                    showToast('Supplier updated successfully', 'success');
+                } else {
+                    await PurchasingService.createSupplier(data);
+                    showToast('Supplier created successfully', 'success');
+                }
+
+                document.getElementById('supplierModal').close();
+                await loadSuppliers();
+            } catch (error) {
+                showToast(error?.message || 'Failed to save supplier', 'error');
+            }
+        }
+
+        async function toggleStatus(id) {
+            try {
+                const response = await PurchasingService.toggleSupplierStatus(id);
+                showToast(response?.message || 'Status updated', 'success');
+                await loadSuppliers();
+            } catch (error) {
+                showToast('Failed to update status', 'error');
+            }
+        }
+
+        async function viewSupplier(id) {
+            const modal = document.getElementById('detailModal');
+            const content = document.getElementById('supplierDetailContent');
+            content.innerHTML = '<div class="text-center py-8"><span class="loading loading-spinner loading-lg"></span></div>';
+            modal.showModal();
+
+            try {
+                const response = await PurchasingService.getSupplierDetail(id);
+                const s = response?.data;
+                if (!s) return;
+
+                const stats = s.business_stats || {};
+                const isActive = s.is_active == 1;
+
+                content.innerHTML = `
+                    <h3 class="font-bold text-xl flex items-center gap-3 mb-6">
+                        <div class="avatar placeholder">
+                            <div class="w-12 h-12 rounded-xl bg-primary text-primary-content">
+                                <span class="text-sm font-bold">${s.supplier_name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase()}</span>
+                            </div>
+                        </div>
+                        <div>
+                            ${s.supplier_name}
+                            <span class="badge badge-sm ${isActive ? 'badge-success' : 'badge-ghost'} ml-2">${isActive ? 'Active' : 'Inactive'}</span>
+                            <div class="text-xs font-mono text-base-content/50 font-normal">${s.supplier_code}</div>
+                        </div>
+                    </h3>
+
+                    <!-- Stats -->
+                    <div class="grid grid-cols-3 gap-3 mb-6">
+                        <div class="bg-base-200 rounded-xl p-3 text-center">
+                            <p class="text-2xl font-bold text-primary">${stats.total_orders || 0}</p>
+                            <p class="text-xs text-base-content/60">Total Orders</p>
+                        </div>
+                        <div class="bg-base-200 rounded-xl p-3 text-center">
+                            <p class="text-lg font-bold">${formatCurrency(stats.total_business || 0)}</p>
+                            <p class="text-xs text-base-content/60">Total Business</p>
+                        </div>
+                        <div class="bg-base-200 rounded-xl p-3 text-center">
+                            <p class="text-lg font-bold">${formatCurrency(stats.avg_order_value || 0)}</p>
+                            <p class="text-xs text-base-content/60">Avg Order</p>
+                        </div>
+                    </div>
+
+                    <!-- Contact Info -->
+                    <div class="bg-base-200 rounded-xl p-4 mb-4 space-y-2">
+                        <h4 class="font-semibold text-sm mb-2"><i class="fas fa-address-card mr-2"></i>Contact Information</h4>
+                        ${s.contact_person ? `<div class="flex gap-2 text-sm"><i class="fas fa-user w-5 text-base-content/40"></i> ${s.contact_person}</div>` : ''}
+                        ${s.phone ? `<div class="flex gap-2 text-sm"><i class="fas fa-phone w-5 text-base-content/40"></i> ${s.phone}</div>` : ''}
+                        ${s.email ? `<div class="flex gap-2 text-sm"><i class="fas fa-envelope w-5 text-base-content/40"></i> ${s.email}</div>` : ''}
+                        ${s.address ? `<div class="flex gap-2 text-sm"><i class="fas fa-map-marker-alt w-5 text-base-content/40"></i> ${s.address}</div>` : ''}
+                        <div class="flex gap-2 text-sm"><i class="fas fa-calendar-alt w-5 text-base-content/40"></i> Terms: ${s.payment_terms || '30 days'}</div>
+                    </div>
+
+                    <!-- Recent Orders -->
+                    ${s.recent_orders && s.recent_orders.length > 0 ? `
+                        <h4 class="font-semibold text-sm mb-2"><i class="fas fa-history mr-2"></i>Recent Orders</h4>
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm table-zebra">
+                                <thead>
+                                    <tr><th>PO #</th><th>Date</th><th>Amount</th><th>Status</th></tr>
+                                </thead>
+                                <tbody>
+                                    ${s.recent_orders.map(o => `
+                                        <tr>
+                                            <td class="font-mono text-sm">${o.po_number}</td>
+                                            <td class="text-sm">${formatDate(o.order_date)}</td>
+                                            <td class="font-semibold">${formatCurrency(o.total_amount)}</td>
+                                            <td><span class="badge badge-sm ${PurchasingService.getStatusBadgeClass(o.status)}">${PurchasingService.formatStatus(o.status)}</span></td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    ` : '<p class="text-sm text-base-content/50">No orders yet</p>'}
+
+                    <div class="modal-action">
+                        <button class="btn btn-ghost btn-sm" onclick="editSupplier(${s.id}); document.getElementById('detailModal').close();">
+                            <i class="fas fa-edit"></i> Edit
+                        </button>
+                        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('detailModal').close()">Close</button>
+                    </div>
+                `;
+            } catch (error) {
+                content.innerHTML = `<div class="text-center py-8 text-error"><i class="fas fa-exclamation-circle text-3xl mb-2"></i><p>Failed to load details</p></div>`;
+            }
+        }
+
+        // ========================================
+        // HELPERS
+        // ========================================
+
+        function formatCurrency(amount) {
+            return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
+            const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle';
+
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg text-sm`;
+            toast.innerHTML = `<i class="fas fa-${icon}"></i><span>${message}</span>`;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+    </script>
+
+</body>
+
+</html>

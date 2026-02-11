@@ -279,7 +279,17 @@ try {
             }
             
             // Calculate required milk liters
-            $requiredMilkLiters = $milkLitersUsed ?? $recipe['base_milk_liters'];
+            // If user provided custom milk_liters_used, use that
+            // Otherwise, scale from recipe: (base_milk_liters / expected_yield) * planned_quantity
+            if ($milkLitersUsed && $milkLitersUsed > 0) {
+                $requiredMilkLiters = (float) $milkLitersUsed;
+            } else if ($recipe) {
+                // Scale milk requirement based on planned quantity vs recipe's expected yield
+                $baseYield = $recipe['expected_yield'] > 0 ? $recipe['expected_yield'] : 1;
+                $requiredMilkLiters = round(($recipe['base_milk_liters'] / $baseYield) * $plannedQuantity, 2);
+            } else {
+                $requiredMilkLiters = 0;
+            }
             
             // ====================================================
             // YOGURT VALIDATION: Must use PASTEURIZED milk only!
@@ -431,13 +441,17 @@ try {
                     error_log("Yogurt production {$runCode}: Deducted {$requiredMilkLiters}L from pasteurized batch #{$pasteurizedBatchId}");
                 }
                 
-                // If butter production, auto-create byproduct for cream (skim_milk will be added after DB migration)
+                // If butter production, auto-create skim_milk byproduct from separation
+                // Per production_requirements.md: Butter separation produces ~80% skim milk + ~20% cream
+                // The skim_milk byproduct can be used for yogurt or sold
                 if ($recipe['product_type'] === 'butter' && $skimMilkOutputLiters > 0) {
                     $byproductStmt = $db->prepare("
-                        INSERT INTO production_byproducts (run_id, byproduct_type, quantity, unit, status, recorded_by)
-                        VALUES (?, 'cream', ?, 'liters', 'pending', ?)
+                        INSERT INTO production_byproducts 
+                        (run_id, byproduct_type, quantity, unit, status, destination, recorded_by, notes)
+                        VALUES (?, 'skim_milk', ?, 'liters', 'pending', 'warehouse', ?, 'From butter separation - can be used for yogurt')
                     ");
                     $byproductStmt->execute([$runId, $skimMilkOutputLiters, $currentUser['user_id']]);
+                    error_log("Butter production {$runCode}: Recorded {$skimMilkOutputLiters}L skim milk byproduct");
                 }
                 
                 $db->commit();
@@ -714,6 +728,75 @@ try {
                         ]);
                         
                         $batchId = $db->lastInsertId();
+                        
+                        // =====================================================
+                        // CRITICAL GAP #1 FIX: Record Ingredient Consumption
+                        // Per production_staff.md: Track actual ingredients used
+                        // vs master recipe for inventory accuracy
+                        // =====================================================
+                        
+                        // Get recipe ingredients
+                        $ingredientsStmt = $db->prepare("
+                            SELECT ingredient_id, ingredient_name, quantity, unit 
+                            FROM recipe_ingredients 
+                            WHERE recipe_id = ?
+                        ");
+                        $ingredientsStmt->execute([$run['recipe_id']]);
+                        $recipeIngredients = $ingredientsStmt->fetchAll();
+                        
+                        if (!empty($recipeIngredients)) {
+                            // Calculate scaling factor based on actual vs planned production
+                            $scaleFactor = $run['planned_quantity'] > 0 
+                                ? $totalPieces / $run['planned_quantity'] 
+                                : 1;
+                            
+                            // Insert consumption records for each ingredient
+                            $consumptionStmt = $db->prepare("
+                                INSERT INTO ingredient_consumption 
+                                (run_id, ingredient_id, ingredient_name, quantity_used, unit, batch_code, notes)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                            ");
+                            
+                            foreach ($recipeIngredients as $ingredient) {
+                                // Scale quantity based on actual production
+                                $actualQuantity = round($ingredient['quantity'] * $scaleFactor, 3);
+                                
+                                $consumptionStmt->execute([
+                                    $runId,
+                                    $ingredient['ingredient_id'],
+                                    $ingredient['ingredient_name'],
+                                    $actualQuantity,
+                                    $ingredient['unit'],
+                                    $batchCode,
+                                    "Auto-recorded on run completion. Scale factor: {$scaleFactor}"
+                                ]);
+                            }
+                            
+                            error_log("Production run {$run['run_code']}: Recorded " . count($recipeIngredients) . " ingredient consumption records");
+                        }
+                        
+                        // =====================================================
+                        // CRITICAL GAP #2 FIX: Record Buttermilk Byproduct
+                        // Per production_requirements.md: Butter churning produces
+                        // buttermilk as a byproduct (~50% of cream weight)
+                        // =====================================================
+                        
+                        if ($productType === 'butter') {
+                            // Estimate buttermilk output (~50-55% of cream used)
+                            // Cream is typically 20% of milk input, buttermilk is ~55% of cream
+                            $creamUsed = $run['cream_output_kg'] ?? 0;
+                            if ($creamUsed > 0) {
+                                $buttermilkLiters = round($creamUsed * 0.55, 2); // ~55% of cream becomes buttermilk
+                                
+                                $buttermilkStmt = $db->prepare("
+                                    INSERT INTO production_byproducts 
+                                    (run_id, byproduct_type, quantity, unit, status, destination, recorded_by, notes)
+                                    VALUES (?, 'buttermilk', ?, 'liters', 'pending', 'warehouse', ?, 'From butter churning')
+                                ");
+                                $buttermilkStmt->execute([$runId, $buttermilkLiters, $currentUser['user_id']]);
+                                error_log("Butter run {$run['run_code']}: Recorded {$buttermilkLiters}L buttermilk byproduct");
+                            }
+                        }
                         
                         $db->commit();
                         
