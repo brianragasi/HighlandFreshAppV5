@@ -222,7 +222,7 @@ function handleGet($db, $action, $validCustomerTypes) {
                 $params[] = $type;
             }
             
-            $sql .= " GROUP BY c.id HAVING total_outstanding > ? ORDER BY total_outstanding DESC";
+            $sql .= " GROUP BY c.id, c.customer_code, c.name, c.customer_type, c.contact_number, c.credit_limit HAVING total_outstanding > ? ORDER BY total_outstanding DESC";
             $params[] = $minBalance;
             
             $stmt = $db->prepare($sql);

@@ -245,7 +245,7 @@ function getAgingReport($db) {
             AND dr.status NOT IN ('cancelled', 'draft')
             AND dr.payment_status != 'paid'
         WHERE c.status = 'active'
-        GROUP BY c.id
+        GROUP BY c.id, c.customer_code, c.name, c.customer_type, c.credit_limit
         HAVING outstanding_balance >= ?
         ORDER BY outstanding_balance DESC
         LIMIT ?
@@ -294,7 +294,7 @@ function getTopCustomers($db) {
             AND dr.status NOT IN ('cancelled', 'draft') 
             AND DATE(dr.created_at) BETWEEN ? AND ?
         WHERE c.status = 'active' 
-        GROUP BY c.id 
+        GROUP BY c.id, c.customer_code, c.name, c.customer_type 
         ORDER BY total_sales DESC 
         LIMIT ?
     ");
