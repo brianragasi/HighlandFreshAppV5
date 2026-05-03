@@ -181,6 +181,7 @@ QC monitors product shelf life and authorizes transformations for near-expiry pr
 | **Critical** | 0-3 days | Consider transformation |
 | **Expired** | <0 days | Dispose or transform |
 
+
 #### Yogurt Transformation Process
 
 When bottled milk approaches expiry, it can be transformed into yogurt:

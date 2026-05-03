@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Packaging — Production | Highland Fresh</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet">
+    <script>tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } } }</script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .sidebar-transition {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .pkg-card {
+            transition: box-shadow 0.15s, border-color 0.15s;
+        }
+
+        .pkg-card:hover {
+            box-shadow: 0 4px 24px 0 rgba(0, 0, 0, 0.10);
+            border-color: oklch(var(--p) / 0.4);
+        }
+
+        .size-row {
+            animation: fadeIn 0.2s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-6px)
+            }
+
+            to {
+                opacity: 1;
+                transform: none
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <img src="../images/logo.jpg" alt="Highland Fresh" class="w-10 h-10 rounded-xl object-cover">
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60">Production</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()"><i
+                        class="fas fa-times"></i></button>
+            </div>
+        </div>
+
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="dashboard.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i
+                                class="fas fa-th-large w-5 text-center text-base-content/60"></i><span>Dashboard</span></a>
+                    </li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Production
+                </h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="batches.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i
+                                class="fas fa-box w-5 text-center text-base-content/60"></i><span>Production
+                                Batches</span></a></li>
+                    <li><a href="pasteurization.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i
+                                class="fas fa-fire-alt w-5 text-center text-base-content/60"></i><span>Pasteurization</span></a>
+                    </li>
+                    <li><a href="packaging.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content font-semibold"><i
+                                class="fas fa-boxes w-5 text-center"></i><span>Packaging</span></a></li>
+                    <li><a href="ccp_logging.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i
+                                class="fas fa-thermometer-half w-5 text-center text-base-content/60"></i><span>CCP
+                                Logging</span></a></li>
+                </ul>
+            </div>
+        </nav>
+
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content"><span class="text-sm font-semibold"
+                            id="userInitials">PS</span></div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Production Staff</p>
+                    <p class="text-xs text-base-content/60">Production</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square" onclick="AuthService.logout()"><i
+                        class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i
+                        class="fas fa-bars text-lg"></i></button>
+            </div>
+            <div class="flex-1">
+                <div class="breadcrumbs text-sm">
+                    <ul>
+                        <li><a href="dashboard.html">Production</a></li>
+                        <li class="font-semibold">Packaging</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle">
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- Header -->
+            <div class="mb-6">
+                <h1 class="text-2xl font-bold text-base-content flex items-center gap-3">
+                    <span class="w-10 h-10 bg-success/10 rounded-xl flex items-center justify-center"><i
+                            class="fas fa-boxes text-success"></i></span>
+                    Packaging — Step 2
+                </h1>
+                <p class="text-base-content/60 mt-1">After production is complete, record how many bottles you sealed,
+                    then hand off to QC for release.</p>
+            </div>
+
+            <!-- Production Flow Banner -->
+            <div class="bg-base-100 border border-base-300 rounded-2xl p-4 mb-6">
+                <p class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-3">Production Flow</p>
+                <div class="flex items-center gap-1 flex-wrap text-sm">
+                    <div class="flex items-center gap-2 px-3 py-2 bg-base-200 rounded-xl text-base-content/50">
+                        <i class="fas fa-box w-4 text-center"></i> <span>1. Production Run</span>
+                    </div>
+                    <i class="fas fa-chevron-right text-base-content/30 text-xs"></i>
+                    <div
+                        class="flex items-center gap-2 px-3 py-2 bg-success/10 border border-success/30 rounded-xl text-success font-bold">
+                        <i class="fas fa-boxes w-4 text-center"></i> <span>2. Packaging ← You are here</span>
+                    </div>
+                    <i class="fas fa-chevron-right text-base-content/30 text-xs"></i>
+                    <div class="flex items-center gap-2 px-3 py-2 bg-base-200 rounded-xl text-base-content/50">
+                        <i class="fas fa-flask w-4 text-center"></i> <span>3. QC Release</span>
+                    </div>
+                    <i class="fas fa-chevron-right text-base-content/30 text-xs"></i>
+                    <div class="flex items-center gap-2 px-3 py-2 bg-base-200 rounded-xl text-base-content/50">
+                        <i class="fas fa-warehouse w-4 text-center"></i> <span>4. FG Warehouse</span>
+                    </div>
+                    <i class="fas fa-chevron-right text-base-content/30 text-xs"></i>
+                    <div class="flex items-center gap-2 px-3 py-2 bg-base-200 rounded-xl text-base-content/50">
+                        <i class="fas fa-truck w-4 text-center"></i> <span>5. Dispatch</span>
+                    </div>
+                </div>
+                <p class="text-xs text-base-content/50 mt-3">
+                    <i class="fas fa-info-circle mr-1"></i> 
+                    <strong>Workflow:</strong> 
+                    <span class="inline-flex items-center gap-2 bg-base-200 px-2 py-1 rounded">
+                        <i class="fas fa-fire text-warning"></i> Pasteurization
+                    </span>
+                    →
+                    <span class="inline-flex items-center gap-2 bg-base-200 px-2 py-1 rounded">
+                        <i class="fas fa-check-circle text-success"></i> QC Approval
+                    </span>
+                    →
+                    <span class="inline-flex items-center gap-2 bg-primary/10 px-2 py-1 rounded font-semibold">
+                        <i class="fas fa-boxes text-primary"></i> Packaging (You are here)
+                    </span>
+                    →
+                    <span class="inline-flex items-center gap-2 bg-base-200 px-2 py-1 rounded">
+                        <i class="fas fa-warehouse text-info"></i> Warehouse
+                    </span>
+                    <br>
+                    <span class="ml-5 mt-1 inline-block">Only <strong class="text-success">QC-approved</strong> batches can be packaged. Fill bottles, record quantities by size, then send to warehouse.</span>
+                </p>
+            </div>
+
+            <!-- Stats Row -->
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-4 flex items-center gap-3">
+                    <div class="w-11 h-11 bg-warning/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-clock text-warning"></i>
+                    </div>
+                    <div>
+                        <p class="text-2xl font-bold" id="statPending">–</p>
+                        <p class="text-xs text-base-content/60">Awaiting Packaging</p>
+                    </div>
+                </div>
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-4 flex items-center gap-3">
+                    <div class="w-11 h-11 bg-success/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-check-double text-success"></i>
+                    </div>
+                    <div>
+                        <p class="text-2xl font-bold" id="statDoneToday">–</p>
+                        <p class="text-xs text-base-content/60">Packaged Today</p>
+                    </div>
+                </div>
+                <div class="bg-base-100 rounded-2xl border border-base-300 p-4 flex items-center gap-3">
+                    <div class="w-11 h-11 bg-primary/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-cubes text-primary"></i>
+                    </div>
+                    <div>
+                        <p class="text-2xl font-bold" id="statUnitsToday">–</p>
+                        <p class="text-xs text-base-content/60">Units Packaged Today</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="tabs tabs-boxed mb-6 bg-base-100 p-1 rounded-2xl inline-flex">
+                <button id="tabReady" class="tab tab-active" onclick="switchTab('ready')">
+                    <i class="fas fa-layer-group mr-2"></i>Ready to Package
+                    <span id="readyBadge" class="badge badge-sm badge-warning ml-2">0</span>
+                </button>
+                <button id="tabLogs" class="tab" onclick="switchTab('logs')">
+                    <i class="fas fa-history mr-2"></i>Packaging Log
+                </button>
+            </div>
+
+            <!-- Ready to Package Tab -->
+            <div id="panelReady">
+                <div id="readyContainer" class="space-y-4">
+                    <div class="text-center py-12"><span class="loading loading-spinner loading-lg text-primary"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logs Tab -->
+            <div id="panelLogs" class="hidden">
+                <div class="bg-base-100 rounded-2xl border border-base-300 overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead class="bg-base-200">
+                                <tr>
+                                    <th>Code</th>
+                                    <th>Batch</th>
+                                    <th>Product Type</th>
+                                    <th>Total Packed</th>
+                                    <th>Packaged By</th>
+                                    <th>Date</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logsTable">
+                                <tr>
+                                    <td colspan="7" class="text-center py-8 text-base-content/40">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- ═══════════════════ PACKAGING MODAL ═══════════════════ -->
+    <dialog id="packagingModal" class="modal">
+        <div class="modal-box w-11/12 max-w-2xl">
+            <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+
+            <h3 class="font-bold text-xl mb-1 flex items-center gap-2">
+                <i class="fas fa-boxes text-success"></i> Record Packaging
+            </h3>
+            <p class="text-sm text-base-content/60 mb-4">How many bottles did you seal from this production run?</p>
+
+            <!-- Run Summary -->
+            <div class="bg-base-200 rounded-xl p-3 mb-5 grid grid-cols-2 gap-2 text-sm">
+                <div><span class="text-base-content/50">Run Code:</span> <span id="pkgRunCode"
+                        class="font-semibold"></span></div>
+                <div><span class="text-base-content/50">Product:</span> <span id="pkgProduct"
+                        class="font-semibold"></span></div>
+                <div><span class="text-base-content/50">Total Produced:</span> <span id="pkgTotal"
+                        class="font-semibold text-primary"></span></div>
+                <div><span class="text-base-content/50">Still to Pack:</span> <span id="pkgAvailable"
+                        class="font-semibold text-success"></span></div>
+            </div>
+
+            <input type="hidden" id="pkgRunId">
+            <input type="hidden" id="pkgBatchId">
+            <input type="hidden" id="pkgProductName">
+
+            <!-- Quick Size Buttons -->
+            <div class="mb-4">
+                <div class="flex items-center justify-between mb-2">
+                    <label class="font-semibold text-sm">Bottle Sizes Packed</label>
+                    <span class="text-xs text-base-content/40">Tap a size to add a row, or add a custom size</span>
+                </div>
+                <!-- Quick-add size preset buttons -->
+                <div class="flex flex-wrap gap-2 mb-4" id="quickSizeButtons"></div>
+
+                <!-- Size rows -->
+                <div id="sizeRows" class="space-y-2"></div>
+
+                <!-- Counter -->
+                <div class="mt-3 flex items-center justify-between text-sm border-t border-base-300 pt-3">
+                    <span class="text-base-content/50 font-medium">Total bottles in this run:</span>
+                    <span id="pkgTotalCount" class="font-bold text-2xl text-success">0</span>
+                </div>
+            </div>
+
+            <!-- Expiry Date (shared) -->
+            <div class="form-control mb-4">
+                <label class="label"><span class="label-text font-medium">Expiry Date for this batch</span></label>
+                <input type="date" id="pkgExpiryDate" class="input input-bordered w-full md:w-60">
+            </div>
+
+            <!-- Notes -->
+            <div class="form-control mb-5">
+                <label class="label"><span class="label-text font-medium">Notes (optional)</span></label>
+                <textarea id="pkgNotes" class="textarea textarea-bordered text-sm" rows="2"
+                    placeholder="Any observations about this packaging run..."></textarea>
+            </div>
+
+            <div class="modal-action">
+                <button type="button" class="btn btn-ghost"
+                    onclick="document.getElementById('packagingModal').close()">Cancel</button>
+                <button type="button" id="pkgSubmitBtn" class="btn btn-success gap-2" onclick="submitPackaging()">
+                    <i class="fas fa-check-double"></i> Record Packaging
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Toast -->
+    <div class="toast toast-end" id="toastContainer"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/production/production.service.js?v=20260221b"></script>
+    <script>
+        const PKG_API = 'production/packaging.php';
+        const PROD_API = 'production/runs.php';
+
+        let sizeRowIdx = 0;
+        let currentTab = 'ready';
+        let readyBatches = [];
+
+        /* ── Auth & boot ── */
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!AuthService.isAuthenticated()) { window.location.href = '../login.html'; return; }
+            const user = AuthService.getCurrentUser();
+            document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
+            document.getElementById('userInitials').textContent = (user.first_name[0] + user.last_name[0]).toUpperCase();
+
+            // Theme
+            const t = localStorage.getItem('theme');
+            if (t === 'dark') { document.documentElement.setAttribute('data-theme', 'dark'); document.getElementById('themeToggle').checked = true; }
+            document.getElementById('themeToggle').addEventListener('change', e => {
+                const th = e.target.checked ? 'dark' : 'emerald';
+                document.documentElement.setAttribute('data-theme', th);
+                localStorage.setItem('theme', th);
+            });
+
+            await loadReady();
+            loadStats();
+        });
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('-translate-x-full');
+            document.getElementById('sidebarBackdrop').classList.toggle('hidden');
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.getElementById('panelReady').classList.toggle('hidden', tab !== 'ready');
+            document.getElementById('panelLogs').classList.toggle('hidden', tab !== 'logs');
+            document.getElementById('tabReady').classList.toggle('tab-active', tab === 'ready');
+            document.getElementById('tabLogs').classList.toggle('tab-active', tab === 'logs');
+            if (tab === 'logs') loadLogs();
+        }
+
+        /* ── Stats ── */
+        async function loadStats() {
+            try {
+                const r = await api.get(PKG_API, { params: { action: 'logs', limit: 100 } });
+                if (r.success) {
+                    const logs = r.data.items || r.data.runs || r.data || [];
+                    const logArr = Array.isArray(logs) ? logs : [];
+                    const today = new Date().toDateString();
+                    const todayLogs = logArr.filter(l => new Date(l.created_at).toDateString() === today);
+                    document.getElementById('statDoneToday').textContent = todayLogs.length;
+                    document.getElementById('statUnitsToday').textContent = todayLogs.reduce((s, l) => s + (parseInt(l.total_pieces_packaged) || 0), 0).toLocaleString();
+                }
+            } catch (e) { /* silent */ }
+        }
+
+        /* ── Load ready batches ── */
+        async function loadReady() {
+            const el = document.getElementById('readyContainer');
+            el.innerHTML = '<div class="text-center py-12"><span class="loading loading-spinner loading-lg text-primary"></span></div>';
+            try {
+                const r = await api.get(PKG_API, { params: { action: 'ready_batches' } });
+                if (!r.success) throw new Error(r.message);
+
+                readyBatches = r.data.batches || [];
+                const pending = readyBatches.filter(b => !b.fully_packaged);
+                document.getElementById('statPending').textContent = pending.length;
+                document.getElementById('readyBadge').textContent = pending.length;
+
+                if (!readyBatches.length) {
+                    el.innerHTML = `
+                    <div class="text-center py-16 bg-base-100 rounded-2xl border border-base-300">
+                        <i class="fas fa-box-open text-5xl text-base-content/20 mb-4"></i>
+                        <p class="text-xl font-semibold text-base-content/50">No Completed Production Runs</p>
+                        <p class="text-sm text-base-content/40 mt-1">Complete a production run in <a href="batches.html" class="link link-primary">Production Batches</a> first.</p>
+                    </div>`;
+                    return;
+                }
+
+                el.innerHTML = readyBatches.map(b => renderReadyCard(b)).join('');
+            } catch (e) {
+                console.error(e);
+                el.innerHTML = `<div class="alert alert-error"><i class="fas fa-exclamation-circle"></i> Failed to load: ${e.message}</div>`;
+            }
+        }
+
+        function renderReadyCard(b) {
+            const bd = b.output_breakdown || {};
+            const outputDisplay = b.actual_quantity
+                ? `${bd.secondary_count ?? 0} ${bd.secondary_unit ?? 'crates'} + ${bd.remaining_primary ?? 0} ${bd.primary_unit ?? 'bottles'} (${b.actual_quantity} total)`
+                : `${b.actual_quantity ?? '?'} units`;
+
+            const typeLabel = {
+                bottled_milk: 'Bottled Milk', cheese: 'Cheese', butter: 'Butter',
+                yogurt: 'Yogurt', milk_bar: 'Milk Bar', cream: 'Cream', flavored_milk: 'Flavored Milk'
+            }[b.product_type] || b.product_type;
+
+            const isQCApproved = b.qc_status === 'released' || b.release_decision === 'approved';
+            const qcPending = b.qc_status === 'pending' || b.qc_status === 'on_hold';
+            const qcRejected = b.qc_status === 'rejected' || b.release_decision === 'rejected';
+
+            const statusBadge = b.fully_packaged
+                ? `<span class="badge badge-success gap-1"><i class="fas fa-check"></i> Fully Packaged</span>`
+                : `<span class="badge badge-warning gap-1"><i class="fas fa-clock"></i> ${b.remaining_to_package} units left</span>`;
+
+            let qcBadge = '';
+            if (qcRejected) {
+                qcBadge = `<span class="badge badge-error badge-sm gap-1"><i class="fas fa-times-circle"></i> QC Rejected</span>`;
+            } else if (qcPending) {
+                qcBadge = `<span class="badge badge-warning badge-sm gap-1"><i class="fas fa-clock"></i> QC Pending</span>`;
+            } else if (isQCApproved) {
+                qcBadge = `<span class="badge badge-success badge-sm gap-1"><i class="fas fa-check-circle"></i> QC Approved</span>`;
+            } else {
+                qcBadge = `<span class="badge badge-ghost badge-sm">No QC</span>`;
+            }
+
+            // Can only package if QC approved AND not fully packaged
+            const canPackage = isQCApproved && !b.fully_packaged;
+            const blockReason = qcRejected ? 'QC rejected this batch' 
+                              : qcPending ? 'Waiting for QC approval'
+                              : !isQCApproved ? 'QC approval required'
+                              : b.fully_packaged ? 'Already fully packaged' 
+                              : '';
+
+            return `
+        <div class="pkg-card bg-base-100 rounded-2xl border border-base-300 p-5 ${!isQCApproved ? 'opacity-60' : ''}">
+            <div class="flex items-start justify-between gap-4 flex-wrap">
+                <div class="flex items-start gap-3">
+                    <div class="w-12 h-12 bg-${isQCApproved ? 'success' : 'warning'}/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-industry text-${isQCApproved ? 'success' : 'warning'} text-xl"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2 flex-wrap mb-1">
+                            <span class="font-bold text-base-content text-base">${b.run_code}</span>
+                            <span class="badge badge-ghost badge-sm">${typeLabel}</span>
+                            ${qcBadge}
+                            ${statusBadge}
+                        </div>
+                        <p class="text-sm font-semibold text-base-content/80">${b.product_name}</p>
+                        <p class="text-xs text-base-content/50 mt-0.5">Batch: <span class="font-mono">${b.batch_code || '—'}</span> · Expiry: ${b.expiry_date || '—'}</p>
+                    </div>
+                </div>
+                <button
+                    class="btn ${canPackage ? 'btn-success' : 'btn-disabled'} btn-sm gap-2 flex-shrink-0"
+                    onclick="${canPackage ? `openPackagingModal(${b.run_id}, ${b.batch_id || 0})` : ''}"
+                    ${canPackage ? '' : 'disabled'}
+                    title="${blockReason || 'Record packaging for this run'}">
+                    <i class="fas fa-boxes"></i>
+                    ${canPackage ? 'Package Now' : blockReason ? '⏸ Blocked' : 'Packaged ✓'}
+                </button>
+            </div>
+
+            <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div class="bg-base-200 rounded-xl p-3">
+                    <p class="text-xs text-base-content/50 mb-0.5">Planned</p>
+                    <p class="font-bold">${b.planned_quantity?.toLocaleString() ?? '—'} units</p>
+                </div>
+                <div class="bg-base-200 rounded-xl p-3">
+                    <p class="text-xs text-base-content/50 mb-0.5">Actual Output</p>
+                    <p class="font-bold">${outputDisplay}</p>
+                </div>
+                <div class="bg-base-200 rounded-xl p-3">
+                    <p class="text-xs text-base-content/50 mb-0.5">Milk Used</p>
+                    <p class="font-bold">${Math.round(parseFloat(b.milk_liters_used) || 0)} L</p>
+                </div>
+                <div class="bg-base-200 rounded-xl p-3">
+                    <p class="text-xs text-base-content/50 mb-0.5">Already Packaged</p>
+                    <p class="font-bold ${b.fully_packaged ? 'text-success' : 'text-warning'}">${b.already_packaged} / ${b.actual_quantity}</p>
+                </div>
+            </div>
+        </div>`;
+        }
+
+        /* ── Load logs ── */
+        async function loadLogs() {
+            const tbody = document.getElementById('logsTable');
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8"><span class="loading loading-spinner"></span></td></tr>';
+            try {
+                const r = await api.get(PKG_API, { params: { action: 'logs', limit: 50 } });
+                if (!r.success) throw new Error(r.message);
+
+                const logs = r.data.items || [];
+                if (!logs.length) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-base-content/40">No packaging runs yet</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = logs.map(l => `
+                <tr class="hover">
+                    <td class="font-mono text-sm font-semibold">${l.packaging_code}</td>
+                    <td class="font-mono text-xs text-base-content/60">${l.batch_code || l.run_code || '—'}</td>
+                    <td><span class="badge badge-ghost badge-sm">${l.product_type || '—'}</span></td>
+                    <td class="font-bold">${parseInt(l.total_pieces_packaged).toLocaleString()} units</td>
+                    <td>${l.packaged_by_name || '—'}</td>
+                    <td class="text-xs">${new Date(l.packaging_date || l.created_at).toLocaleDateString()}</td>
+                    <td><span class="badge badge-success badge-sm">Completed</span></td>
+                </tr>`).join('');
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-error">${e.message}</td></tr>`;
+            }
+        }
+
+        /* ── Open Packaging Modal ── */
+        async function openPackagingModal(runId, batchId) {
+            const batch = readyBatches.find(b => b.run_id == runId);
+            if (!batch) return;
+
+            document.getElementById('pkgRunId').value = runId;
+            document.getElementById('pkgBatchId').value = batchId || '';
+            document.getElementById('pkgProductName').value = batch.product_name;
+            document.getElementById('pkgRunCode').textContent = batch.run_code;
+            document.getElementById('pkgProduct').textContent = batch.product_name;
+            document.getElementById('pkgTotal').textContent = `${batch.actual_quantity} bottles / units`;
+            document.getElementById('pkgAvailable').textContent = `${batch.remaining_to_package} left to pack`;
+            document.getElementById('pkgNotes').value = '';
+
+            // Set a default expiry date (+7 days)
+            const exp = new Date();
+            exp.setDate(exp.getDate() + 7);
+            document.getElementById('pkgExpiryDate').value = exp.toISOString().split('T')[0];
+
+            // Reset rows
+            document.getElementById('sizeRows').innerHTML = '';
+            sizeRowIdx = 0;
+
+            // Build quick-add size buttons - fetch REAL sizes from products
+            await buildQuickSizeButtons(batch.product_name, batch.product_type);
+
+            document.getElementById('packagingModal').showModal();
+            updateTotalCount();
+        }
+
+        /* ── Quick-add preset size buttons ── */
+        async function buildQuickSizeButtons(productName, productType) {
+            const container = document.getElementById('quickSizeButtons');
+            container.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Loading sizes...';
+
+            try {
+                // Fetch all products matching this product name to get available sizes
+                const response = await api.get('/admin/products.php', {
+                    params: { 
+                        search: productName,
+                        limit: 50 
+                    }
+                });
+
+                let sizes = [];
+                
+                if (response.success && response.data?.products) {
+                    const matchingProducts = response.data.products.filter(p => 
+                        p.product_name === productName || p.product_name?.includes(productName)
+                    );
+                    
+                    // Extract unique sizes from products
+                    const uniqueSizes = new Map();
+                    matchingProducts.forEach(p => {
+                        if (p.unit_size && p.unit_measure) {
+                            const key = `${p.unit_size}_${p.unit_measure}`;
+                            if (!uniqueSizes.has(key)) {
+                                uniqueSizes.set(key, {
+                                    label: `${p.unit_size} ${p.unit_measure}`,
+                                    size: parseFloat(p.unit_size),
+                                    unit: p.unit_measure,
+                                    product_id: p.id,
+                                    variant: p.variant
+                                });
+                            }
+                        }
+                    });
+                    
+                    sizes = Array.from(uniqueSizes.values());
+                }
+
+                // If no sizes found in products, fall back to type-based presets
+                if (sizes.length === 0) {
+                    const presets = {
+                        bottled_milk: [{ label: '1000 ml', size: 1000, unit: 'ml' }, { label: '500 ml', size: 500, unit: 'ml' }, { label: '200 ml', size: 200, unit: 'ml' }],
+                        flavored_milk: [{ label: '1000 ml', size: 1000, unit: 'ml' }, { label: '500 ml', size: 500, unit: 'ml' }, { label: '200 ml', size: 200, unit: 'ml' }],
+                        pasteurized_milk: [{ label: '1000 ml', size: 1000, unit: 'ml' }, { label: '500 ml', size: 500, unit: 'ml' }, { label: '200 ml', size: 200, unit: 'ml' }],
+                        yogurt: [{ label: '200 ml cup', size: 200, unit: 'ml' }, { label: '500 ml', size: 500, unit: 'ml' }],
+                        cheese: [{ label: '240 g block', size: 240, unit: 'g' }, { label: '1 kg block', size: 1000, unit: 'g' }],
+                        butter: [{ label: '250 g pack', size: 250, unit: 'g' }, { label: '500 g pack', size: 500, unit: 'g' }],
+                        milk_bar: [{ label: '50 ml', size: 50, unit: 'ml' }],
+                        cream: [{ label: '250 ml', size: 250, unit: 'ml' }, { label: '500 ml', size: 500, unit: 'ml' }]
+                    };
+                    sizes = presets[productType] || [{ label: '500 ml', size: 500, unit: 'ml' }];
+                }
+
+                // Render buttons
+                container.innerHTML = sizes.map((s, idx) =>
+                    `<button type="button" class="btn btn-outline btn-sm gap-2" 
+                        onclick="addSizeRow(${s.size},'${s.unit}', ${s.product_id || 'null'}, '${s.variant || ''}')">
+                        <i class="fas fa-plus text-xs"></i> ${s.label}
+                    </button>`
+                ).join('') +
+                    `<button type="button" class="btn btn-ghost btn-sm gap-2" onclick="addSizeRow(null,'ml',null,'')">
+                    <i class="fas fa-plus text-xs"></i> Other size
+                </button>`;
+
+            } catch (error) {
+                console.error('Failed to load product sizes:', error);
+                // Fallback to basic options
+                container.innerHTML = `
+                    <button type="button" class="btn btn-outline btn-sm gap-2" onclick="addSizeRow(1000,'ml',null,'')">
+                        <i class="fas fa-plus text-xs"></i> 1000 ml
+                    </button>
+                    <button type="button" class="btn btn-outline btn-sm gap-2" onclick="addSizeRow(500,'ml',null,'')">
+                        <i class="fas fa-plus text-xs"></i> 500 ml
+                    </button>
+                    <button type="button" class="btn btn-ghost btn-sm gap-2" onclick="addSizeRow(null,'ml',null,'')">
+                        <i class="fas fa-plus text-xs"></i> Other size
+                    </button>`;
+            }
+        }
+
+        function addSizeRow(presetSize = null, presetUnit = 'ml', productId = null, variant = '') {
+            const idx = sizeRowIdx++;
+            const container = document.getElementById('sizeRows');
+            const div = document.createElement('div');
+            div.className = 'size-row bg-base-200/60 border border-base-300 rounded-xl p-3 flex items-center gap-3 flex-wrap';
+            div.id = `sizeRow_${idx}`;
+            div.setAttribute('data-product-id', productId || '');
+            div.setAttribute('data-variant', variant || '');
+
+            const sizeLabel = presetSize ? `${presetSize} ${presetUnit}` : 'Custom';
+
+            div.innerHTML = `
+            <div class="flex-1 min-w-0">
+                <p class="text-xs font-semibold text-base-content/60 mb-1">Bottle size</p>
+                <div class="flex items-center gap-2">
+                    <input type="number" id="size_${idx}" class="input input-sm input-bordered w-24 font-bold"
+                        value="${presetSize || ''}" placeholder="e.g. 500" min="0" step="1">
+                    <select id="unit_${idx}" class="select select-sm select-bordered w-20">
+                        <option value="ml" ${presetUnit === 'ml' ? 'selected' : ''}>ml</option>
+                        <option value="g"  ${presetUnit === 'g' ? 'selected' : ''}>g</option>
+                        <option value="kg" ${presetUnit === 'kg' ? 'selected' : ''}>kg</option>
+                        <option value="L"  ${presetUnit === 'L' ? 'selected' : ''}>L</option>
+                        <option value="piece" ${presetUnit === 'piece' ? 'selected' : ''}>piece</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex-shrink-0">
+                <p class="text-xs font-semibold text-base-content/60 mb-1">How many sealed? <span class="text-error">*</span></p>
+                <input type="number" id="qty_${idx}" class="input input-bordered w-32 font-bold text-lg text-center"
+                    placeholder="0" min="1" oninput="updateTotalCount()" autofocus>
+            </div>
+            <div class="flex-shrink-0 self-end">
+                <button type="button" class="btn btn-ghost btn-sm text-error" onclick="removeSizeRow(${idx})" title="Remove">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+            </div>`;
+            container.appendChild(div);
+            // Focus quantity field
+            setTimeout(() => document.getElementById(`qty_${idx}`)?.focus(), 50);
+        }
+
+        function removeSizeRow(idx) {
+            const el = document.getElementById(`sizeRow_${idx}`);
+            if (el) { el.remove(); updateTotalCount(); }
+        }
+
+        function updateTotalCount() {
+            const rows = document.querySelectorAll('[id^="qty_"]');
+            let total = 0;
+            rows.forEach(r => { total += parseInt(r.value) || 0; });
+            document.getElementById('pkgTotalCount').textContent = total.toLocaleString();
+        }
+
+        /* ── Submit Packaging ── */
+        async function submitPackaging() {
+            const runId = document.getElementById('pkgRunId').value;
+            const batchId = document.getElementById('pkgBatchId').value;
+            const notes = document.getElementById('pkgNotes').value;
+            const sharedExpiry = document.getElementById('pkgExpiryDate').value;
+            const productName = document.getElementById('pkgProductName').value;
+
+            const rows = document.querySelectorAll('[id^="sizeRow_"]');
+            const items = [];
+            let hasError = false;
+
+            rows.forEach(row => {
+                const idx = row.id.replace('sizeRow_', '');
+                const qty = parseInt(document.getElementById(`qty_${idx}`)?.value) || 0;
+                const size = parseFloat(document.getElementById(`size_${idx}`)?.value) || null;
+                const unit = document.getElementById(`unit_${idx}`)?.value || 'ml';
+                const productId = row.getAttribute('data-product-id') || null;
+                const variant = row.getAttribute('data-variant') || '';
+
+                if (qty <= 0) { hasError = true; return; }
+
+                items.push({
+                    product_id: productId && productId !== 'null' ? parseInt(productId) : null,
+                    product_name: productName,
+                    product_variant: variant || (size ? `${size}${unit}` : ''),
+                    size_ml: size,
+                    unit_measure: unit,
+                    quantity: qty,
+                    expiry_date: sharedExpiry
+                });
+            });
+
+            if (hasError || !items.length) {
+                showToast('Please enter quantity for at least one size row.', 'warning');
+                return;
+            }
+
+            const btn = document.getElementById('pkgSubmitBtn');
+            btn.classList.add('loading');
+            btn.disabled = true;
+
+            try {
+                const r = await api.post(PKG_API, {
+                    production_run_id: parseInt(runId),
+                    batch_id: batchId ? parseInt(batchId) : null,
+                    notes,
+                    items
+                });
+
+                if (r.success) {
+                    showToast(`✅ ${r.message}`, 'success');
+                    document.getElementById('packagingModal').close();
+                    await loadReady();
+                    loadStats();
+                } else {
+                    showToast(r.message || 'Failed to record packaging', 'error');
+                }
+            } catch (e) {
+                console.error(e);
+                const msg = e.errors ? Object.values(e.errors).join('; ') : (e.message || 'Error');
+                showToast('Error: ' + msg, 'error');
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+
+        /* ── Toast ── */
+        function showToast(msg, type = 'info') {
+            const icons = { success: 'check-circle', error: 'exclamation-circle', warning: 'exclamation-triangle', info: 'info-circle' };
+            const colors = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' };
+            const id = 'toast_' + Date.now();
+            const el = document.createElement('div');
+            el.id = id;
+            el.className = `alert ${colors[type]} shadow-lg max-w-sm text-sm`;
+            el.innerHTML = `<i class="fas fa-${icons[type]}"></i><span>${msg}</span>`;
+            document.getElementById('toastContainer').appendChild(el);
+            setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 300); }, 4000);
+        }
+    </script>
+</body>
+
+</html>

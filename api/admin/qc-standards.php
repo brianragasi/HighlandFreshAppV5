@@ -6,6 +6,9 @@
 
 require_once __DIR__ . '/../bootstrap.php';
 
+// SECURITY: Restrict QC standards management to GM/Admin roles
+$currentUser = Auth::requireRole(['general_manager', 'admin']);
+
 // Get database connection
 $pdo = Database::getInstance()->getConnection();
 

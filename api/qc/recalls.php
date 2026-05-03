@@ -57,6 +57,11 @@ function handleGetRequest($db, $currentUser) {
         getActiveRecalls($db);
         return;
     }
+
+    if ($action === 'batches') {
+        getRecallBatches($db);
+        return;
+    }
     
     if ($id) {
         getRecallDetails($db, $id);
@@ -64,6 +69,83 @@ function handleGetRequest($db, $currentUser) {
     }
     
     getRecallList($db);
+}
+
+function currentUserId($currentUser) {
+    return (int)($currentUser['user_id'] ?? $currentUser['id'] ?? 0);
+}
+
+function recallBatchQuery($whereClause) {
+    return "
+        SELECT
+            pb.id,
+            pb.batch_code,
+            COALESCE(pb.product_id, mr.product_id, inv.product_id, 0) as product_id,
+            COALESCE(p.product_name, mr.product_name, inv.product_name, NULLIF(pb.product_type, ''), 'Production Batch') as product_name,
+            COALESCE(pb.actual_yield, pb.expected_yield, inv.total_quantity, 0) as quantity_produced,
+            pb.qc_status,
+            pb.manufacturing_date,
+            pb.expiry_date,
+            COALESCE(dispatch.total_dispatched, 0) as total_dispatched,
+            COALESCE(inv.available_quantity, 0) as total_in_warehouse
+        FROM production_batches pb
+        LEFT JOIN master_recipes mr ON pb.recipe_id = mr.id
+        LEFT JOIN (
+            SELECT
+                batch_id,
+                MIN(product_id) as product_id,
+                MIN(product_name) as product_name,
+                SUM(COALESCE(quantity, quantity_available, pieces_available, remaining_quantity, 0)) as total_quantity,
+                SUM(COALESCE(quantity_available, pieces_available, remaining_quantity, quantity, 0)) as available_quantity
+            FROM finished_goods_inventory
+            WHERE batch_id IS NOT NULL
+            GROUP BY batch_id
+        ) inv ON inv.batch_id = pb.id
+        LEFT JOIN products p ON p.id = COALESCE(pb.product_id, mr.product_id, inv.product_id)
+        LEFT JOIN (
+            SELECT
+                fgi.batch_id,
+                SUM(dl.quantity_released) as total_dispatched
+            FROM fg_dispatch_log dl
+            JOIN finished_goods_inventory fgi ON dl.inventory_id = fgi.id
+            WHERE fgi.batch_id IS NOT NULL
+            GROUP BY fgi.batch_id
+        ) dispatch ON dispatch.batch_id = pb.id
+        {$whereClause}
+    ";
+}
+
+/**
+ * Get released batches that can be recalled.
+ */
+function getRecallBatches($db) {
+    $search = trim($_GET['search'] ?? '');
+    $where = "
+        WHERE pb.qc_status = 'released'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM batch_recalls br
+              WHERE br.batch_id = pb.id
+                AND br.status NOT IN ('completed', 'cancelled')
+          )
+    ";
+    $params = [];
+
+    if ($search !== '') {
+        $where .= " AND (pb.batch_code LIKE ? OR p.product_name LIKE ? OR mr.product_name LIKE ? OR inv.product_name LIKE ?)";
+        $term = "%{$search}%";
+        $params = [$term, $term, $term, $term];
+    }
+
+    $sql = recallBatchQuery($where) . "
+        ORDER BY pb.manufacturing_date DESC, pb.created_at DESC
+        LIMIT 100
+    ";
+
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+
+    Response::success($stmt->fetchAll(PDO::FETCH_ASSOC));
 }
 
 /**
@@ -325,37 +407,14 @@ function handlePostRequest($db, $currentUser) {
         Response::error('Invalid recall class', 400);
     }
     
-    // Get batch details - support both batch_id (numeric) and batch_code (string)
-    $batchInput = $data['batch_id'] ?? $data['batch_code'];
-    
-    // Check if input is numeric ID or batch code string
+    // Get batch details from the real production batch structure.
+    $batchInput = trim((string)($data['batch_id'] ?? $data['batch_code']));
+
     if (is_numeric($batchInput) && strlen($batchInput) < 10) {
-        // Looks like a numeric ID
-        $stmt = $db->prepare("
-            SELECT 
-                pb.id,
-                pb.batch_code,
-                pb.product_id,
-                p.name as product_name,
-                pb.quantity_produced
-            FROM production_batches pb
-            JOIN products p ON pb.product_id = p.id
-            WHERE pb.id = ?
-        ");
+        $stmt = $db->prepare(recallBatchQuery("WHERE pb.id = ?"));
         $stmt->execute([$batchInput]);
     } else {
-        // Looks like a batch code - search by code
-        $stmt = $db->prepare("
-            SELECT 
-                pb.id,
-                pb.batch_code,
-                pb.product_id,
-                p.name as product_name,
-                pb.quantity_produced
-            FROM production_batches pb
-            JOIN products p ON pb.product_id = p.id
-            WHERE pb.batch_code = ?
-        ");
+        $stmt = $db->prepare(recallBatchQuery("WHERE pb.batch_code = ?"));
         $stmt->execute([$batchInput]);
     }
     
@@ -381,29 +440,17 @@ function handlePostRequest($db, $currentUser) {
     // Generate recall code
     $recallCode = 'RCL-' . date('Ymd') . '-' . str_pad(mt_rand(1, 999), 3, '0', STR_PAD_LEFT);
     
-    // Calculate dispatched quantities (from sales/dispatch records if available)
-    $totalDispatched = 0;
-    $totalInWarehouse = 0;
-    
-    // Try to get dispatch data from fg_inventory_transactions
-    $stmt = $db->prepare("
-        SELECT 
-            COALESCE(SUM(CASE WHEN transaction_type = 'sale' THEN quantity ELSE 0 END), 0) as dispatched,
-            COALESCE(SUM(CASE WHEN transaction_type IN ('receive', 'return') THEN quantity ELSE 0 END), 0) as in_warehouse
-        FROM fg_inventory_transactions
-        WHERE batch_id = ?
-    ");
-    $stmt->execute([$batchId]);
-    $txData = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($txData) {
-        $totalDispatched = (int)$txData['dispatched'];
-        $totalInWarehouse = max(0, (int)$txData['in_warehouse'] - $totalDispatched);
+    $totalProduced = (int)$batch['quantity_produced'];
+    $totalDispatched = (int)$batch['total_dispatched'];
+    $totalInWarehouse = (int)$batch['total_in_warehouse'];
+
+    if ($totalDispatched === 0 && $totalInWarehouse === 0 && $totalProduced > 0) {
+        $totalInWarehouse = $totalProduced;
     }
-    
-    // If no transaction data, estimate from production
-    if ($totalDispatched == 0) {
-        $totalDispatched = (int)$batch['quantity_produced'];
+
+    $userId = currentUserId($currentUser);
+    if ($userId <= 0) {
+        Response::error('Unable to identify current user for recall initiation', 401);
     }
     
     $db->beginTransaction();
@@ -428,10 +475,10 @@ function handlePostRequest($db, $currentUser) {
             $data['recall_class'],
             $data['reason'],
             $data['evidence_notes'] ?? null,
-            $batch['quantity_produced'],
+            $totalProduced,
             $totalDispatched,
             $totalInWarehouse,
-            $currentUser['id']
+            $userId
         ]);
         
         $recallId = $db->lastInsertId();
@@ -447,7 +494,7 @@ function handlePostRequest($db, $currentUser) {
         ");
         $stmt->execute([
             $recallId,
-            $currentUser['id'],
+            $userId,
             json_encode(['recall_class' => $data['recall_class'], 'reason' => $data['reason']])
         ]);
         
@@ -632,7 +679,7 @@ function approveRecall($db, $recall, $currentUser, $data) {
     ");
     
     $stmt->execute([
-        $currentUser['id'],
+        currentUserId($currentUser),
         $data['approval_notes'] ?? null,
         $recall['id']
     ]);
@@ -667,7 +714,7 @@ function rejectRecall($db, $recall, $currentUser, $data) {
     ");
     
     $stmt->execute([
-        $currentUser['id'],
+        currentUserId($currentUser),
         $data['rejection_reason'],
         $recall['id']
     ]);
@@ -682,6 +729,11 @@ function logReturn($db, $recall, $currentUser, $data) {
     // Validate
     if (empty($data['affected_location_id']) || empty($data['units_returned'])) {
         Response::error('Location ID and units returned required', 400);
+    }
+
+    $unitsReturned = (int)$data['units_returned'];
+    if ($unitsReturned <= 0) {
+        Response::error('Units returned must be greater than zero', 400);
     }
     
     if (!in_array($recall['status'], ['approved', 'in_progress'])) {
@@ -699,6 +751,19 @@ function logReturn($db, $recall, $currentUser, $data) {
     if (!$location) {
         Response::error('Invalid location for this recall', 400);
     }
+
+    $unitsDispatched = (int)($location['units_dispatched'] ?? 0);
+    $alreadyReturned = (int)($location['units_returned'] ?? 0);
+    $destroyedOnsite = (int)($location['units_destroyed_onsite'] ?? 0);
+    $consumed = (int)($location['units_consumed'] ?? 0);
+    $remainingRecoverable = max(0, $unitsDispatched - $alreadyReturned - $destroyedOnsite - $consumed);
+
+    if ($unitsReturned > $remainingRecoverable) {
+        Response::error(
+            "Cannot log {$unitsReturned} returned units. Only {$remainingRecoverable} units remain recoverable for this location.",
+            400
+        );
+    }
     
     $db->beginTransaction();
     
@@ -715,10 +780,10 @@ function logReturn($db, $recall, $currentUser, $data) {
             $recall['id'],
             $data['affected_location_id'],
             $data['return_date'] ?? date('Y-m-d'),
-            $data['units_returned'],
+            $unitsReturned,
             $data['condition_status'] ?? 'unknown',
             $data['condition_notes'] ?? null,
-            $currentUser['id']
+            currentUserId($currentUser)
         ]);
         
         // Update recall status to in_progress if not already
@@ -734,16 +799,16 @@ function logReturn($db, $recall, $currentUser, $data) {
         ");
         $stmt->execute([
             $recall['id'],
-            $currentUser['id'],
+            currentUserId($currentUser),
             json_encode([
                 'location' => $location['location_name'],
-                'units' => $data['units_returned']
+                'units' => $unitsReturned
             ])
         ]);
         
         $db->commit();
         
-        Response::success(['units_logged' => $data['units_returned']], 'Return logged successfully');
+        Response::success(['units_logged' => $unitsReturned], 'Return logged successfully');
         
     } catch (Exception $e) {
         $db->rollBack();
@@ -770,7 +835,7 @@ function sendNotification($db, $recall, $currentUser, $data) {
     
     $stmt->execute([
         $data['notification_method'] ?? 'phone',
-        $currentUser['id'],
+        currentUserId($currentUser),
         $data['affected_location_id'],
         $recall['id']
     ]);
@@ -782,7 +847,7 @@ function sendNotification($db, $recall, $currentUser, $data) {
     ");
     $stmt->execute([
         $recall['id'],
-        $currentUser['id'],
+        currentUserId($currentUser),
         json_encode(['location_id' => $data['affected_location_id'], 'method' => $data['notification_method'] ?? 'phone'])
     ]);
     
@@ -807,7 +872,7 @@ function completeRecall($db, $recall, $currentUser, $data) {
     ");
     
     $stmt->execute([
-        $currentUser['id'],
+        currentUserId($currentUser),
         $data['completion_notes'] ?? null,
         $recall['id']
     ]);

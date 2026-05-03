@@ -120,6 +120,22 @@
 
             <!-- User Management -->
             <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Approvals
+                </h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="gm_approvals.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-check-double w-5 text-center text-warning"></i>
+                            <span class="flex-1">Pending Approvals</span>
+                            <span id="pendingApprovalsBadge" class="badge badge-warning badge-sm"></span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- User Management -->
+            <div>
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">User
                     Management</h2>
                 <ul class="menu menu-sm p-0 gap-1">
@@ -215,8 +231,7 @@
                 </h2>
                 <ul class="menu menu-sm p-0 gap-1">
                     <li>
-                        <a href="orders.html"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <a href="orders.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-clipboard-list w-5 text-center text-base-content/60"></i>
                             <span class="flex-1">Orders for Approval</span>
                             <span id="pendingOrdersBadge" class="badge badge-warning badge-sm"></span>
@@ -239,8 +254,7 @@
                         </a>
                     </li>
                     <li>
-                        <a href="recalls.html"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <a href="recalls.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-exclamation-triangle w-5 text-center text-base-content/60"></i>
                             <span class="flex-1">Batch Recalls</span>
                             <span id="activeRecallsBadge" class="badge badge-error badge-sm"></span>
@@ -544,6 +558,19 @@
 
             </div>
 
+            <!-- Low Stock Alerts -->
+            <div class="bg-base-100 rounded-2xl border border-base-300 p-6 mb-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold"><i class="fas fa-exclamation-triangle text-warning mr-2"></i>Low Stock Alerts</h3>
+                    <span class="badge badge-warning badge-sm" id="gmLowStockBadge">0</span>
+                </div>
+                <div id="gmLowStockList" class="space-y-2 max-h-64 overflow-y-auto scrollbar-thin">
+                    <div class="text-center py-8 text-base-content/60">
+                        <i class="fas fa-spinner fa-spin mr-2"></i> Loading...
+                    </div>
+                </div>
+            </div>
+
             <!-- Recent Activity -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <!-- Recent Users -->
@@ -692,8 +719,10 @@
                     if (stats.qc_standards) {
                         document.getElementById('badgeQCStandards').textContent = `${stats.qc_standards.total || 0} standards`;
                     }
+
+                    renderLowStockAlerts(stats.low_stock_alerts || []);
                 }
-                
+
                 // Load pending disposals count
                 try {
                     const disposalRes = await api.get('/qc/disposals.php', { params: { action: 'stats' } });
@@ -706,7 +735,7 @@
                         }
                     }
                 } catch (e) { console.log('Could not load disposal stats'); }
-                
+
                 // Load active recalls count
                 try {
                     const recallRes = await api.get('/qc/recalls.php', { params: { action: 'stats' } });
@@ -724,6 +753,41 @@
                 console.error('Init error:', error);
             }
         });
+
+        function renderLowStockAlerts(alerts) {
+            const list = document.getElementById('gmLowStockList');
+            const badge = document.getElementById('gmLowStockBadge');
+            badge.textContent = alerts.length;
+
+            if (!alerts.length) {
+                list.innerHTML = `
+                    <div class="text-center py-8 text-success">
+                        <i class="fas fa-check-circle text-2xl mb-2"></i>
+                        <p>All stock levels OK</p>
+                    </div>
+                `;
+                return;
+            }
+
+            list.innerHTML = alerts.map(item => {
+                const stock = parseFloat(item.current_stock || 0);
+                const min = parseFloat(item.minimum_stock || 0);
+                const isOut = stock <= 0;
+                return `
+                    <div class="flex items-center gap-3 p-3 ${isOut ? 'bg-error/10' : 'bg-warning/10'} rounded-xl">
+                        <i class="fas fa-${item.item_type === 'mro' ? 'tools' : 'box'} ${isOut ? 'text-error' : 'text-warning'}"></i>
+                        <div class="flex-1 min-w-0">
+                            <p class="font-semibold text-sm truncate">${item.item_name}</p>
+                            <p class="text-xs text-base-content/60">${item.item_code}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="font-bold ${isOut ? 'text-error' : 'text-warning'}">${stock}</p>
+                            <p class="text-xs text-base-content/60">Min: ${min}</p>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
     </script>
 </body>
 

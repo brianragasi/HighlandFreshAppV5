@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+ï»¿<!DOCTYPE html>
 <html lang="en" data-theme="emerald">
 
 <head>
@@ -428,7 +428,7 @@
         <!-- Footer -->
         <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
             <div>
-                <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+                <p class="text-sm text-base-content/60">ï¿½ 2026 Highland Fresh Dairy. All rights reserved.</p>
             </div>
         </footer>
     </div>
@@ -510,7 +510,7 @@
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js"></script>
-    <script src="../../../js/warehouse/fg.service.js"></script>
+    <script src="../../../js/warehouse/fg.service.js?v=20260221"></script>
 
     <script>
         let pendingBatches = [];
@@ -722,8 +722,8 @@
             `}).join('');
         }
 
-        function openReceiveModal(batchId) {
-            const batch = pendingBatches.find(b => b.id === batchId);
+        function openReceiveModal(itemId) {
+            const batch = pendingBatches.find(b => b.id === itemId);
             if (!batch) return;
 
             const piecesPerBox = parseInt(batch.pieces_per_box) || 1;
@@ -734,6 +734,14 @@
             // Format product name nicely
             let productName = batch.product_name || batch.product_type || 'Unknown';
             productName = productName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            
+            // Add size info if available
+            if (batch.size_ml) {
+                productName += ` ${batch.size_ml}ml`;
+            }
+            if (batch.variant && !productName.includes(batch.variant)) {
+                productName += ` - ${batch.variant}`;
+            }
 
             // Format quantity display
             let qtyDisplay = '';
@@ -745,8 +753,8 @@
                 qtyDisplay = `${totalPieces} Pieces`;
             }
 
-            document.getElementById('receiveBatchId').value = batchId;
-            document.getElementById('receiveBatchCode').textContent = batch.batch_code || batch.batch_number;
+            document.getElementById('receiveBatchId').value = itemId;
+            document.getElementById('receiveBatchCode').textContent = batch.batch_code || batch.batch_number || 'N/A';
             document.getElementById('receiveProduct').textContent = productName;
             document.getElementById('receiveQuantity').textContent = qtyDisplay;
             document.getElementById('receiveExpiry').textContent = batch.expiry_date ? new Date(batch.expiry_date).toLocaleDateString() : 'N/A';
@@ -758,7 +766,7 @@
 
         document.getElementById('receiveForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const batchId = document.getElementById('receiveBatchId').value;
+            const inventoryId = document.getElementById('receiveBatchId').value;
             const chillerId = document.getElementById('receiveChiller').value;
             const notes = document.getElementById('receiveNotes').value;
 
@@ -768,15 +776,16 @@
             }
 
             try {
-                await WarehouseFGService.receiveBatchFromProduction(batchId, chillerId, notes);
-                showToast('Batch received successfully!', 'success');
+                // Use the new assign_to_chiller action for packaged items
+                await WarehouseFGService.assignToChiller(inventoryId, chillerId, notes);
+                showToast('Item assigned to chiller successfully!', 'success');
                 document.getElementById('receiveModal').close();
                 await loadPendingBatches();
                 await loadRecentReceipts();
                 await loadChillers();
             } catch (error) {
-                console.error('Failed to receive batch:', error);
-                showToast('Failed to receive batch', 'error');
+                console.error('Failed to assign to chiller:', error);
+                showToast('Failed to assign to chiller', 'error');
             }
         });
     </script>

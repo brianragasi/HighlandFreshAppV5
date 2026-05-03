@@ -34,14 +34,19 @@ try {
 }
 
 function handleGet($db, $action) {
+    global $currentUser;
+
     switch ($action) {
         case 'list':
+            requireActionRole($currentUser, ['finance_officer', 'general_manager'], 'Access forbidden');
             getPayablesList($db);
             break;
         case 'detail':
+            requireActionRole($currentUser, ['finance_officer', 'general_manager'], 'Access forbidden');
             getPayableDetail($db);
             break;
         case 'supplier_ledger':
+            requireActionRole($currentUser, ['finance_officer', 'general_manager'], 'Access forbidden');
             getSupplierLedger($db);
             break;
         default:
@@ -52,6 +57,7 @@ function handleGet($db, $action) {
 function handlePost($db, $action, $user) {
     switch ($action) {
         case 'record_payment':
+            requireActionRole($user, ['finance_officer', 'general_manager'], 'Access forbidden');
             recordPayment($db, $user);
             break;
         default:
@@ -77,7 +83,17 @@ function getPayablesList($db) {
     }
     
     if ($search) {
-        $where[] = "(po.po_number LIKE ? OR s.supplier_name LIKE ?)";
+        $where[] = "(
+            po.po_number LIKE ?
+            OR s.supplier_name LIKE ?
+            OR EXISTS (
+                SELECT 1
+                FROM purchase_order_items poi_search
+                WHERE poi_search.po_id = po.id
+                AND poi_search.item_description LIKE ?
+            )
+        )";
+        $params[] = "%{$search}%";
         $params[] = "%{$search}%";
         $params[] = "%{$search}%";
     }
@@ -114,6 +130,13 @@ function getPayablesList($db) {
             s.payment_terms,
             u.full_name as created_by_name,
             (SELECT COUNT(*) FROM purchase_order_items WHERE po_id = po.id) as item_count,
+            (SELECT GROUP_CONCAT(item_description SEPARATOR ', ') FROM purchase_order_items WHERE po_id = po.id) as item_summary,
+            (SELECT COALESCE(SUM(
+                CASE 
+                    WHEN IFNULL(quantity_received, 0) > 0 THEN quantity_received
+                    ELSE GREATEST(quantity - IFNULL(quantity_rejected, 0), 0)
+                END * unit_price
+            ), 0) FROM purchase_order_items WHERE po_id = po.id) as payable_total,
             CASE 
                 WHEN po.status = 'received' AND po.payment_status != 'paid' 
                      AND po.expected_delivery < DATE_SUB(CURDATE(), INTERVAL 30 DAY)
@@ -129,18 +152,20 @@ function getPayablesList($db) {
                 WHEN 'partial' THEN 2 
                 ELSE 3 
             END,
+            CASE po.status
+                WHEN 'received' THEN 1
+                WHEN 'partial_received' THEN 2
+                WHEN 'ordered' THEN 3
+                WHEN 'approved' THEN 4
+                ELSE 5
+            END,
             po.order_date ASC
         LIMIT ? OFFSET ?
     ");
     $stmt->execute($dataParams);
     $payables = $stmt->fetchAll();
     
-    Response::success($payables, 'Payables list retrieved', [
-        'page' => $page,
-        'limit' => $limit,
-        'total' => $total,
-        'total_pages' => ceil($total / $limit)
-    ]);
+    Response::paginated($payables, $total, $page, $limit, 'Payables list retrieved');
 }
 
 function getPayableDetail($db) {
@@ -170,7 +195,19 @@ function getPayableDetail($db) {
     
     // Get items
     $itemStmt = $db->prepare("
-        SELECT * FROM purchase_order_items WHERE po_id = ? ORDER BY id
+        SELECT 
+            poi.*, 
+            CASE 
+                WHEN IFNULL(poi.quantity_received, 0) > 0 THEN poi.quantity_received
+                ELSE GREATEST(poi.quantity - IFNULL(poi.quantity_rejected, 0), 0)
+            END as payable_quantity,
+            (CASE 
+                WHEN IFNULL(poi.quantity_received, 0) > 0 THEN poi.quantity_received
+                ELSE GREATEST(poi.quantity - IFNULL(poi.quantity_rejected, 0), 0)
+            END * poi.unit_price) as payable_total
+        FROM purchase_order_items poi
+        WHERE poi.po_id = ?
+        ORDER BY poi.id
     ");
     $itemStmt->execute([$id]);
     $po['items'] = $itemStmt->fetchAll();
@@ -208,6 +245,9 @@ function recordPayment($db, $user) {
     
     $poId = $data['po_id'] ?? null;
     if (!$poId) Response::error('PO ID required', 400);
+
+    $stepUpToken = $data['step_up_token'] ?? null;
+    Auth::requireStepUp($user, 'payment_release', $stepUpToken);
     
     // Get PO
     $stmt = $db->prepare("SELECT * FROM purchase_orders WHERE id = ? AND status != 'cancelled'");
@@ -226,21 +266,15 @@ function recordPayment($db, $user) {
     ");
     $updateStmt->execute([$poId]);
     
-    // Log to audit
-    $auditStmt = $db->prepare("
-        INSERT INTO audit_logs (user_id, action, table_name, record_id, details, created_at)
-        VALUES (?, 'payment_recorded', 'purchase_orders', ?, ?, NOW())
-    ");
-    $auditStmt->execute([
-        $user['id'],
-        $poId,
-        json_encode([
-            'po_number' => $po['po_number'],
-            'amount' => $po['total_amount'],
-            'payment_method' => $data['payment_method'] ?? 'cash',
-            'reference' => $data['reference_number'] ?? null,
-            'notes' => $data['notes'] ?? null
-        ])
+    logAudit($user['user_id'], 'PAYMENT_RELEASE', 'purchase_orders', $poId, [
+        'payment_status' => $po['payment_status'],
+        'total_amount' => $po['total_amount']
+    ], [
+        'payment_status' => 'paid',
+        'total_amount' => $po['total_amount'],
+        'payment_method' => $data['payment_method'] ?? 'cash',
+        'reference_number' => $data['reference_number'] ?? null,
+        'notes' => $data['notes'] ?? null
     ]);
     
     Response::success([

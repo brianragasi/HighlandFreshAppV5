@@ -175,6 +175,13 @@ const WarehouseRawService = {
     },
 
     /**
+     * Get expired ingredient batches
+     */
+    async getExpiredIngredients() {
+        return await api.get(`${this.baseUrl}/ingredients.php`, { params: { action: 'expired' } });
+    },
+
+    /**
      * Check stock availability for multiple ingredients
      * @param {Array} items - Array of {ingredient_id, quantity}
      */

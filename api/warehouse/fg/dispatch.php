@@ -236,6 +236,12 @@ function handlePost($db, $action, $currentUser) {
     
     switch ($action) {
         case 'release':
+            requireActionRole(
+                $currentUser,
+                ['warehouse_fg', 'general_manager'],
+                'Only Warehouse FG or General Manager can release stock'
+            );
+
             // Single item release
             $required = ['inventory_id', 'quantity'];
             foreach ($required as $field) {
@@ -273,6 +279,12 @@ function handlePost($db, $action, $currentUser) {
                 $boxesAvail = (int)($inventory['boxes_available'] ?? 0);
                 $piecesAvail = (int)($inventory['pieces_available'] ?? 0);
                 $totalAvailable = ($boxesAvail * $piecesPerBox) + $piecesAvail;
+                $oldAuditValues = [
+                    'boxes_available' => $boxesAvail,
+                    'pieces_available' => $piecesAvail,
+                    'quantity_available' => (int)($inventory['quantity_available'] ?? 0),
+                    'total_available_pieces' => $totalAvailable
+                ];
                 
                 if ($totalAvailable < $quantity) {
                     throw new Exception('Insufficient quantity available (have ' . $totalAvailable . ', need ' . $quantity . ')');
@@ -282,6 +294,16 @@ function handlePost($db, $action, $currentUser) {
                 $remaining = $totalAvailable - $quantity;
                 $newBoxes = floor($remaining / $piecesPerBox);
                 $newPieces = $remaining % $piecesPerBox;
+                $newAuditValues = [
+                    'boxes_available' => (int)$newBoxes,
+                    'pieces_available' => (int)$newPieces,
+                    'quantity_available' => max(0, (int)($inventory['quantity_available'] ?? 0) - $quantity),
+                    'total_available_pieces' => (int)$remaining,
+                    'released_quantity' => $quantity,
+                    'dispatch_code' => null,
+                    'dr_id' => $drId,
+                    'barcode' => $barcode
+                ];
                 
                 // Deduct from inventory using multi-unit columns
                 $updateStmt = $db->prepare("
@@ -316,6 +338,7 @@ function handlePost($db, $action, $currentUser) {
                     $currentUser['user_id'],
                     $data['notes'] ?? null
                 ]);
+                $newAuditValues['dispatch_code'] = $dispatchCode;
                 
                 // Log transaction
                 $txnCode = 'TXN-' . date('Ymd') . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
@@ -393,6 +416,15 @@ function handlePost($db, $action, $currentUser) {
                 }
                 
                 $db->commit();
+
+                logAudit(
+                    $currentUser['user_id'],
+                    'STOCK_RELEASE',
+                    'finished_goods_inventory',
+                    $inventoryId,
+                    $oldAuditValues,
+                    $newAuditValues
+                );
                 
                 Response::success([
                     'released_quantity' => $quantity,
@@ -406,6 +438,12 @@ function handlePost($db, $action, $currentUser) {
             break;
             
         case 'bulk_release':
+            requireActionRole(
+                $currentUser,
+                ['warehouse_fg', 'general_manager'],
+                'Only Warehouse FG or General Manager can release stock'
+            );
+
             // Multiple items release
             $items = $data['items'] ?? [];
             $drId = $data['dr_id'] ?? null;
@@ -451,6 +489,7 @@ function handlePost($db, $action, $currentUser) {
             try {
                 $released = [];
                 $releasedByProduct = []; // Track total released per product_id
+                $auditEntries = [];
                 
                 foreach ($items as $item) {
                     $inventoryId = $item['inventory_id'];
@@ -497,6 +536,12 @@ function handlePost($db, $action, $currentUser) {
                     $boxesAvail = (int)($inventory['boxes_available'] ?? 0);
                     $piecesAvail = (int)($inventory['pieces_available'] ?? 0);
                     $totalAvailable = ($boxesAvail * $piecesPerBox) + $piecesAvail;
+                    $oldAuditValues = [
+                        'boxes_available' => $boxesAvail,
+                        'pieces_available' => $piecesAvail,
+                        'quantity_available' => (int)($inventory['quantity_available'] ?? 0),
+                        'total_available_pieces' => $totalAvailable
+                    ];
                     
                     if (!$inventory || $totalAvailable < $quantity) {
                         throw new Exception("Insufficient quantity for item $inventoryId (have $totalAvailable, need $quantity)");
@@ -506,6 +551,16 @@ function handlePost($db, $action, $currentUser) {
                     $remaining = $totalAvailable - $quantity;
                     $newBoxes = floor($remaining / $piecesPerBox);
                     $newPieces = $remaining % $piecesPerBox;
+                    $newAuditValues = [
+                        'boxes_available' => (int)$newBoxes,
+                        'pieces_available' => (int)$newPieces,
+                        'quantity_available' => max(0, (int)($inventory['quantity_available'] ?? 0) - $quantity),
+                        'total_available_pieces' => (int)$remaining,
+                        'released_quantity' => $quantity,
+                        'dispatch_code' => null,
+                        'dr_id' => $drId,
+                        'barcode' => $barcode
+                    ];
                     
                     // Deduct using multi-unit columns
                     $updateStmt = $db->prepare("
@@ -529,6 +584,7 @@ function handlePost($db, $action, $currentUser) {
                         VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
                     ");
                     $logStmt->execute([$dispatchCode, $inventoryId, $inventory['product_id'], $inventory['batch_code'], $drId, $quantity, $currentUser['user_id']]);
+                    $newAuditValues['dispatch_code'] = $dispatchCode;
                     
                     // Log transaction
                     $txnCode = 'TXN-' . date('Ymd') . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
@@ -586,6 +642,11 @@ function handlePost($db, $action, $currentUser) {
                         'inventory_id' => $inventoryId,
                         'quantity' => $quantity
                     ];
+                    $auditEntries[] = [
+                        'record_id' => $inventoryId,
+                        'old' => $oldAuditValues,
+                        'new' => $newAuditValues
+                    ];
                 }
                 
                 // Check if ALL items are fully picked before setting DR to 'ready'
@@ -616,6 +677,17 @@ function handlePost($db, $action, $currentUser) {
                 }
                 
                 $db->commit();
+
+                foreach ($auditEntries as $entry) {
+                    logAudit(
+                        $currentUser['user_id'],
+                        'STOCK_RELEASE',
+                        'finished_goods_inventory',
+                        $entry['record_id'],
+                        $entry['old'],
+                        $entry['new']
+                    );
+                }
                 
                 Response::success([
                     'released_count' => count($released),

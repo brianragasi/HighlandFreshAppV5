@@ -32,6 +32,7 @@ try {
         FROM finished_goods_inventory fgi
         LEFT JOIN products p ON fgi.product_id = p.id
         WHERE fgi.status = 'available'
+        AND (fgi.expiry_date IS NULL OR fgi.expiry_date > CURDATE())
     ");
     $fgStats->execute();
     $fgData = $fgStats->fetch();

@@ -108,6 +108,10 @@
                             class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i
                                 class="fas fa-clipboard-check w-5 text-center text-base-content/60"></i><span>Requisitions</span></a>
                     </li>
+                    <li><a href="receive_deliveries.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i
+                                class="fas fa-truck-ramp-box w-5 text-center text-base-content/60"></i><span>Receive Deliveries</span></a>
+                    </li>
                 </ul>
             </div>
         </nav>
@@ -141,9 +145,12 @@
                 <h1 class="text-lg lg:text-xl font-bold">Ingredients Inventory</h1>
             </div>
             <div class="flex-none flex items-center gap-2">
-                <button class="btn btn-primary btn-sm" onclick="openReceiveModal()">
-                    <i class="fas fa-plus"></i> <span class="hidden sm:inline">Receive Stock</span>
-                </button>
+                <div class="tooltip tooltip-bottom" data-tip="Stock is added automatically when a PO delivery is received">
+                    <span class="btn btn-ghost btn-sm btn-disabled gap-1 opacity-60">
+                        <i class="fas fa-lock text-xs"></i>
+                        <span class="hidden sm:inline text-xs">Stock via PO only</span>
+                    </span>
+                </div>
             </div>
         </header>
 
@@ -206,120 +213,96 @@
                 </div>
             </div>
 
-            <!-- Filters -->
-            <div class="card bg-base-100 border border-base-300 mb-6">
-                <div class="card-body p-4">
-                    <!-- Category Tabs -->
-                    <div class="flex flex-wrap gap-2 mb-4" id="categoryTabs">
-                        <button class="btn btn-sm btn-primary" data-category="all">All</button>
-                    </div>
+            <!-- Inventory Tabs -->
+            <div class="tabs tabs-boxed mb-4" id="inventoryTabs">
+                <button class="tab tab-active" data-view="inventory">Inventory</button>
+                <button class="tab" data-view="expired">Expired/Spoiled</button>
+            </div>
 
-                    <!-- Search & Filters -->
-                    <div class="flex flex-col md:flex-row gap-3">
-                        <label class="input input-bordered input-sm flex items-center gap-2 flex-1">
-                            <i class="fas fa-search text-base-content/40"></i>
-                            <input type="text" id="searchInput" placeholder="Search ingredients..." class="grow" />
-                        </label>
-                        <select class="select select-bordered select-sm w-full md:w-48" id="stockFilter">
-                            <option value="">All Stock Levels</option>
-                            <option value="ok">In Stock</option>
-                            <option value="low">Low Stock</option>
-                            <option value="critical">Critical</option>
-                            <option value="out">Out of Stock</option>
-                        </select>
-                        <select class="select select-bordered select-sm w-full md:w-40" id="sortBy">
-                            <option value="name">Sort by Name</option>
-                            <option value="stock_asc">Stock: Low → High</option>
-                            <option value="stock_desc">Stock: High → Low</option>
-                            <option value="expiry">Expiring Soon</option>
-                        </select>
-                        <button class="btn btn-ghost btn-sm" onclick="loadIngredients()">
-                            <i class="fas fa-sync-alt"></i>
-                        </button>
+            <!-- Inventory View -->
+            <div id="inventoryView">
+                <!-- Filters -->
+                <div class="card bg-base-100 border border-base-300 mb-6">
+                    <div class="card-body p-4">
+                        <!-- Category Tabs -->
+                        <div class="flex flex-wrap gap-2 mb-4" id="categoryTabs">
+                            <button class="btn btn-sm btn-primary" data-category="all">All</button>
+                        </div>
+
+                        <!-- Search & Filters -->
+                        <div class="flex flex-col md:flex-row gap-3">
+                            <label class="input input-bordered input-sm flex items-center gap-2 flex-1">
+                                <i class="fas fa-search text-base-content/40"></i>
+                                <input type="text" id="searchInput" placeholder="Search ingredients..." class="grow" />
+                            </label>
+                            <select class="select select-bordered select-sm w-full md:w-48" id="stockFilter">
+                                <option value="">All Stock Levels</option>
+                                <option value="ok">In Stock</option>
+                                <option value="low">Low Stock</option>
+                                <option value="critical">Critical</option>
+                                <option value="out">Out of Stock</option>
+                            </select>
+                            <select class="select select-bordered select-sm w-full md:w-40" id="sortBy">
+                                <option value="name">Sort by Name</option>
+                                <option value="stock_asc">Stock: Low → High</option>
+                                <option value="stock_desc">Stock: High → Low</option>
+                                <option value="expiry">Expiring Soon</option>
+                            </select>
+                            <button class="btn btn-ghost btn-sm" onclick="loadIngredients()">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Ingredients Grid -->
+                <div id="ingredientsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    <div class="col-span-full text-center py-12">
+                        <span class="loading loading-spinner loading-lg text-primary"></span>
+                        <p class="text-base-content/60 mt-2">Loading ingredients...</p>
                     </div>
                 </div>
             </div>
 
-            <!-- Ingredients Grid -->
-            <div id="ingredientsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                <div class="col-span-full text-center py-12">
-                    <span class="loading loading-spinner loading-lg text-primary"></span>
-                    <p class="text-base-content/60 mt-2">Loading ingredients...</p>
+            <!-- Expired View -->
+            <div id="expiredView" class="hidden">
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="font-semibold"><i class="fas fa-skull-crossbones text-error mr-2"></i>Expired/Spoiled Items</h3>
+                            <button class="btn btn-ghost btn-sm" onclick="loadExpiredBatches()">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr class="bg-base-200">
+                                        <th>Batch</th>
+                                        <th>Ingredient</th>
+                                        <th>Qty</th>
+                                        <th>Expired</th>
+                                        <th>Days Over</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="expiredTableBody">
+                                    <tr>
+                                        <td colspan="6" class="text-center py-8 text-base-content/60">
+                                            Loading expired batches...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
 
         </main>
     </div>
 
-    <!-- Receive Stock Modal -->
-    <dialog id="receiveModal" class="modal">
-        <div class="modal-box max-w-md">
-            <form method="dialog">
-                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-            </form>
-            <h3 class="font-bold text-lg mb-4"><i class="fas fa-truck-loading text-primary"></i> Receive Ingredient
-                Stock</h3>
-
-            <form id="receiveForm" onsubmit="submitReceive(event)">
-                <div class="form-control mb-3">
-                    <label class="label"><span class="label-text">Ingredient *</span></label>
-                    <select class="select select-bordered w-full" id="receiveIngredientId" required>
-                        <option value="">Select ingredient...</option>
-                    </select>
-                </div>
-
-                <div class="grid grid-cols-2 gap-3 mb-3">
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Quantity *</span></label>
-                        <input type="number" class="input input-bordered" id="receiveQuantity" step="0.01" min="0.01"
-                            required>
-                        <label class="label"><span class="label-text-alt" id="receiveUnit"></span></label>
-                    </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Unit Cost</span></label>
-                        <input type="number" class="input input-bordered" id="receiveUnitCost" step="0.01" min="0"
-                            placeholder="0.00">
-                    </div>
-                </div>
-
-                <div class="form-control mb-3">
-                    <label class="label"><span class="label-text">Batch/Lot Number</span></label>
-                    <input type="text" class="input input-bordered" id="receiveBatchNumber" placeholder="LOT-2026-001">
-                </div>
-
-                <div class="grid grid-cols-2 gap-3 mb-3">
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Manufacture Date</span></label>
-                        <input type="date" class="input input-bordered" id="receiveManufactureDate">
-                    </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Expiry Date *</span></label>
-                        <input type="date" class="input input-bordered" id="receiveExpiryDate" required>
-                    </div>
-                </div>
-
-                <div class="form-control mb-3">
-                    <label class="label"><span class="label-text">Supplier</span></label>
-                    <select class="select select-bordered" id="receiveSupplier">
-                        <option value="">Select supplier...</option>
-                    </select>
-                </div>
-
-                <div class="form-control mb-4">
-                    <label class="label"><span class="label-text">Notes</span></label>
-                    <textarea class="textarea textarea-bordered" id="receiveNotes" rows="2"
-                        placeholder="Delivery notes..."></textarea>
-                </div>
-
-                <div class="modal-action">
-                    <button type="button" class="btn btn-ghost"
-                        onclick="document.getElementById('receiveModal').close()">Cancel</button>
-                    <button type="submit" class="btn btn-primary"><i class="fas fa-check"></i> Receive</button>
-                </div>
-            </form>
-        </div>
-        <form method="dialog" class="modal-backdrop"><button>close</button></form>
-    </dialog>
+    <!-- Receive Stock Modal REMOVED: Stock now added via PO receiving only -->
 
     <!-- Detail Modal -->
     <dialog id="detailModal" class="modal">
@@ -520,6 +503,7 @@
     <script>
         let ingredients = [];
         let categories = [];
+        let expiredBatches = [];
         let currentFilter = { category: 'all', search: '', stock: '', sort: 'name' };
 
         function toggleSidebar() {
@@ -544,24 +528,26 @@
                 document.getElementById('stockFilter').value = 'low';
             }
 
-            await Promise.all([loadCategories(), loadIngredients(), loadSuppliers()]);
+            await Promise.all([loadCategories(), loadIngredients()]);
             setupEventListeners();
         });
 
-        async function loadSuppliers() {
-            try {
-                const response = await api.get('/warehouse/raw/suppliers.php?action=list');
-                const suppliers = response?.data || [];
-                const select = document.getElementById('receiveSupplier');
+        // loadSuppliers removed: stock receiving now happens through PO workflow
 
-                select.innerHTML = '<option value="">Select supplier...</option>' +
-                    suppliers.map(s => `<option value="${s.id}">${s.supplier_name}</option>`).join('');
-            } catch (error) {
-                console.error('Failed to load suppliers:', error);
-            }
+        function setupTabNavigation() {
+            const tabs = document.getElementById('inventoryTabs');
+            tabs.querySelectorAll('button').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    tabs.querySelectorAll('button').forEach(t => t.classList.remove('tab-active'));
+                    tab.classList.add('tab-active');
+                    switchView(tab.dataset.view);
+                });
+            });
         }
 
         function setupEventListeners() {
+            setupTabNavigation();
+
             document.getElementById('searchInput').addEventListener('input', debounce(() => {
                 currentFilter.search = document.getElementById('searchInput').value;
                 renderIngredients();
@@ -577,10 +563,7 @@
                 renderIngredients();
             });
 
-            document.getElementById('receiveIngredientId').addEventListener('change', (e) => {
-                const ing = ingredients.find(i => i.id == e.target.value);
-                document.getElementById('receiveUnit').textContent = ing ? `Unit: ${ing.unit_of_measure}` : '';
-            });
+            // receiveIngredientId listener removed: stock receiving now through PO workflow
 
             document.getElementById('issueReason').addEventListener('change', (e) => {
                 document.getElementById('issueOtherReasonGroup').classList.toggle('hidden', e.target.value !== 'other');
@@ -589,6 +572,82 @@
             document.getElementById('adjustReason').addEventListener('change', (e) => {
                 document.getElementById('adjustOtherReasonGroup').classList.toggle('hidden', e.target.value !== 'other');
             });
+        }
+
+        function switchView(view) {
+            const inventoryView = document.getElementById('inventoryView');
+            const expiredView = document.getElementById('expiredView');
+
+            inventoryView.classList.toggle('hidden', view !== 'inventory');
+            expiredView.classList.toggle('hidden', view !== 'expired');
+
+            if (view === 'expired') {
+                loadExpiredBatches();
+            }
+        }
+
+        async function loadExpiredBatches() {
+            const tableBody = document.getElementById('expiredTableBody');
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center py-8 text-base-content/60">Loading expired batches...</td>
+                </tr>
+            `;
+
+            try {
+                const response = await WarehouseRawService.getExpiredIngredients();
+                if (response.success) {
+                    expiredBatches = response.data.expired_batches || [];
+                    renderExpiredBatches();
+                } else {
+                    tableBody.innerHTML = `
+                        <tr>
+                            <td colspan="6" class="text-center py-8 text-error">Failed to load expired batches</td>
+                        </tr>
+                    `;
+                }
+            } catch (e) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center py-8 text-error">Failed to load expired batches</td>
+                    </tr>
+                `;
+            }
+        }
+
+        function renderExpiredBatches() {
+            const tableBody = document.getElementById('expiredTableBody');
+
+            if (!expiredBatches.length) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center py-8 text-base-content/60">No expired batches found</td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tableBody.innerHTML = expiredBatches.map(b => {
+                const qty = parseFloat(b.remaining_quantity || 0);
+                const days = parseInt(b.days_expired, 10) || 0;
+                const unit = b.unit_of_measure || '';
+                const status = b.status || '-';
+                const expiredDate = b.expiry_date ? new Date(b.expiry_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : '-';
+
+                return `
+                    <tr>
+                        <td><span class="font-mono text-xs">${b.batch_code || '-'}</span></td>
+                        <td>
+                            <div class="font-semibold">${b.ingredient_name || '-'}</div>
+                            <div class="text-xs text-base-content/60">${b.ingredient_code || '-'}</div>
+                        </td>
+                        <td>${qty.toLocaleString()} ${unit}</td>
+                        <td>${expiredDate}</td>
+                        <td class="text-error font-semibold">${days}d</td>
+                        <td><span class="badge badge-error badge-outline badge-sm">${status}</span></td>
+                    </tr>
+                `;
+            }).join('');
         }
 
         async function loadCategories() {
@@ -631,7 +690,6 @@
                     ingredients = response.data.ingredients || response.data || [];
                     updateStats();
                     renderIngredients();
-                    populateReceiveDropdown();
                 }
             } catch (e) {
                 console.error(e);
@@ -651,29 +709,6 @@
             document.getElementById('expiringCount').textContent = expiring;
         }
 
-        function populateReceiveDropdown() {
-            const select = document.getElementById('receiveIngredientId');
-            select.innerHTML = '<option value="">Select ingredient...</option>';
-
-            const grouped = {};
-            ingredients.forEach(ing => {
-                const cat = ing.category_name || 'Uncategorized';
-                if (!grouped[cat]) grouped[cat] = [];
-                grouped[cat].push(ing);
-            });
-
-            Object.keys(grouped).sort().forEach(cat => {
-                const og = document.createElement('optgroup');
-                og.label = cat;
-                grouped[cat].forEach(ing => {
-                    const opt = document.createElement('option');
-                    opt.value = ing.id;
-                    opt.textContent = `${ing.ingredient_code || ing.code} - ${ing.ingredient_name || ing.name}`;
-                    og.appendChild(opt);
-                });
-                select.appendChild(og);
-            });
-        }
 
         function renderIngredients() {
             const container = document.getElementById('ingredientsGrid');
@@ -761,36 +796,6 @@
             }).join('');
         }
 
-        function openReceiveModal() {
-            document.getElementById('receiveForm').reset();
-            document.getElementById('receiveUnit').textContent = '';
-            document.getElementById('receiveModal').showModal();
-        }
-
-        async function submitReceive(e) {
-            e.preventDefault();
-            const data = {
-                ingredient_id: document.getElementById('receiveIngredientId').value,
-                quantity: document.getElementById('receiveQuantity').value,
-                unit_cost: document.getElementById('receiveUnitCost').value || null,
-                batch_number: document.getElementById('receiveBatchNumber').value || null,
-                manufacture_date: document.getElementById('receiveManufactureDate').value || null,
-                expiry_date: document.getElementById('receiveExpiryDate').value,
-                supplier: document.getElementById('receiveSupplier').value || null,
-                notes: document.getElementById('receiveNotes').value || null
-            };
-
-            try {
-                const response = await WarehouseRawService.receiveIngredient(data);
-                if (response.success) {
-                    showToast('Stock received successfully', 'success');
-                    document.getElementById('receiveModal').close();
-                    loadIngredients();
-                } else {
-                    showToast(response.error || 'Failed', 'error');
-                }
-            } catch (e) { showToast('Failed to receive stock', 'error'); }
-        }
 
         async function openDetailModal(id) {
             document.getElementById('detailModal').showModal();
@@ -931,9 +936,17 @@
                 if (response.success) {
                     showToast('Stock adjusted', 'success');
                     document.getElementById('adjustModal').close();
-                    loadIngredients();
-                } else showToast(response.error || 'Failed', 'error');
-            } catch (e) { showToast('Failed to adjust', 'error'); }
+                    try {
+                        await loadIngredients();
+                    } catch (e) {
+                        showToast('Adjusted, but failed to refresh list', 'warning');
+                    }
+                } else {
+                    showToast(response.error || 'Failed', 'error');
+                }
+            } catch (e) {
+                showToast('Failed to adjust', 'error');
+            }
         }
 
         function openSettingsModal(id, name, minStock, leadTime, reorderPoint) {

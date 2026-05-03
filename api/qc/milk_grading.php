@@ -411,14 +411,15 @@ try {
                 
                 // If accepted, add to raw milk inventory (using revised schema)
                 if ($isAccepted) {
-                    $batchCode = 'RAW-' . date('Ymd') . '-' . str_pad(rand(1, 999), 3, '0', STR_PAD_LEFT);
-                    $expiryDate = date('Y-m-d', strtotime('+2 days'));
+                    $batchCode = 'RAW-RCV-' . str_pad((string) $receivingId, 6, '0', STR_PAD_LEFT);
+                    $receivedDate = $receiving['receiving_date'] ?? date('Y-m-d');
+                    $expiryDate = date('Y-m-d', strtotime($receivedDate . ' +2 days'));
                     $invStmt = $db->prepare("
                         INSERT INTO raw_milk_inventory (
                             batch_code, receiving_id, qc_test_id, milk_type_id, tank_id,
                             volume_liters, remaining_liters, received_date, expiry_date,
                             fat_percentage, grade, unit_cost, status, qc_status, received_by
-                        ) VALUES (?, ?, ?, ?, NULL, ?, ?, CURDATE(), ?, ?, ?, ?, 'available', 'approved', ?)
+                        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 'available', 'approved', ?)
                     ");
                     $invStmt->execute([
                         $batchCode,
@@ -427,6 +428,7 @@ try {
                         $receiving['milk_type_id'],
                         $receiving['volume_liters'],
                         $receiving['volume_liters'],
+                        $receivedDate,
                         $expiryDate,
                         $fatPercentage,
                         $milkGrade,

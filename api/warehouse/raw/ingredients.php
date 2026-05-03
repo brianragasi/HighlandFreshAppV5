@@ -204,6 +204,37 @@ function handleGet($db, $currentUser) {
             
             Response::success(['expiring_ingredients' => $expiring], 'Expiring ingredients retrieved successfully');
             break;
+
+        case 'expired':
+            // Get expired batches that are still in stock
+            $stmt = $db->prepare("
+                SELECT 
+                    ib.id as batch_id,
+                    ib.batch_code,
+                    ib.expiry_date,
+                    ib.received_date,
+                    ib.remaining_quantity,
+                    ib.status,
+                    ib.qc_status,
+                    DATEDIFF(CURDATE(), ib.expiry_date) as days_expired,
+                    i.ingredient_code,
+                    i.ingredient_name,
+                    i.unit_of_measure,
+                    ic.category_name
+                FROM ingredient_batches ib
+                JOIN ingredients i ON ib.ingredient_id = i.id
+                LEFT JOIN ingredient_categories ic ON i.category_id = ic.id
+                WHERE ib.expiry_date IS NOT NULL
+                AND ib.expiry_date < CURDATE()
+                AND ib.remaining_quantity > 0
+                AND ib.status IN ('available', 'partially_used', 'quarantine')
+                ORDER BY ib.expiry_date ASC, ib.received_date ASC, ib.id ASC
+            ");
+            $stmt->execute();
+            $expired = $stmt->fetchAll();
+
+            Response::success(['expired_batches' => $expired], 'Expired batches retrieved successfully');
+            break;
             
         case 'check_stock':
             // Check if sufficient stock available for a list of items
@@ -345,119 +376,7 @@ function handlePost($db, $currentUser) {
     
     switch ($action) {
         case 'receive':
-            // Receive new ingredient batch
-            $ingredientId = getParam('ingredient_id');
-            $quantity = getParam('quantity');
-            $unitCost = getParam('unit_cost');
-            $supplierId = getParam('supplier');  // Can be ID or name
-            $supplierBatchNo = getParam('supplier_batch_no') ?? getParam('batch_number');
-            $expiryDate = getParam('expiry_date');
-            $manufactureDate = getParam('manufacture_date');
-            $notes = getParam('notes');
-            
-            // Resolve supplier name from ID if numeric
-            $supplierName = $supplierId;
-            if ($supplierId && is_numeric($supplierId)) {
-                $supplierStmt = $db->prepare("SELECT supplier_name FROM suppliers WHERE id = ?");
-                $supplierStmt->execute([$supplierId]);
-                $supplierData = $supplierStmt->fetch();
-                $supplierName = $supplierData ? $supplierData['supplier_name'] : null;
-            }
-            
-            if (!$ingredientId || !$quantity || $quantity <= 0) {
-                Response::error('Ingredient ID and valid quantity are required', 400);
-            }
-            
-            $db->beginTransaction();
-            
-            try {
-                // Verify ingredient exists
-                $ingredient = $db->prepare("SELECT * FROM ingredients WHERE id = ? AND is_active = 1");
-                $ingredient->execute([$ingredientId]);
-                $ingredientData = $ingredient->fetch();
-                
-                if (!$ingredientData) {
-                    throw new Exception('Ingredient not found');
-                }
-                
-                // Generate batch code
-                $batchCode = generateCode('IB');
-                
-                // Get supplier_id and po_id if provided
-                $supplierIdNum = is_numeric($supplierId) ? $supplierId : null;
-                $poId = getParam('po_id');
-
-                // Create batch record (status = quarantine until QC approves - revised schema)
-                $stmt = $db->prepare("
-                    INSERT INTO ingredient_batches
-                    (batch_code, ingredient_id, po_id, quantity, remaining_quantity, unit_cost,
-                     supplier_id, supplier_batch_no, received_date, expiry_date,
-                     qc_status, status, received_by, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, 'pending', 'quarantine', ?, ?)
-                ");
-                $stmt->execute([
-                    $batchCode,
-                    $ingredientId,
-                    $poId,
-                    $quantity,
-                    $quantity,
-                    $unitCost,
-                    $supplierIdNum,
-                    $supplierBatchNo,
-                    $expiryDate,
-                    $currentUser['user_id'],
-                    $notes
-                ]);
-                $batchId = $db->lastInsertId();
-                
-                // Update ingredient current stock
-                $stmt = $db->prepare("
-                    UPDATE ingredients 
-                    SET current_stock = current_stock + ?,
-                        unit_cost = COALESCE(?, unit_cost),
-                        updated_at = NOW()
-                    WHERE id = ?
-                ");
-                $stmt->execute([$quantity, $unitCost, $ingredientId]);
-                
-                // Create transaction record
-                $txCode = generateCode('TX');
-                $stmt = $db->prepare("
-                    INSERT INTO inventory_transactions 
-                    (transaction_code, transaction_type, item_type, item_id, batch_id,
-                     quantity, unit_of_measure, reference_type, to_location, performed_by, reason)
-                    VALUES (?, 'po_receive', 'ingredient', ?, ?, ?, ?, 'purchase_order', ?, ?, ?)
-                ");
-                $stmt->execute([
-                    $txCode,
-                    $ingredientId,
-                    $batchId,
-                    $quantity,
-                    $ingredientData['unit_of_measure'],
-                    $ingredientData['storage_location'],
-                    $currentUser['user_id'],
-                    "Received from supplier: " . ($supplierName ?? 'Unknown')
-                ]);
-                
-                // Log audit
-                logAudit($currentUser['user_id'], 'receive_ingredient', 'ingredient_batches', $batchId, null, [
-                    'ingredient_id' => $ingredientId,
-                    'quantity' => $quantity,
-                    'supplier' => $supplierName
-                ]);
-                
-                $db->commit();
-                
-                Response::success([
-                    'batch_id' => $batchId,
-                    'batch_code' => $batchCode,
-                    'transaction_code' => $txCode
-                ], 'Ingredient batch received successfully');
-                
-            } catch (Exception $e) {
-                $db->rollBack();
-                Response::error($e->getMessage(), 400);
-            }
+            Response::error('Manual receiving is disabled. Use the PO receiving workflow.', 403);
             break;
             
         case 'create':
@@ -647,9 +566,8 @@ function handlePut($db, $currentUser) {
                 Response::error('Ingredient ID, new quantity, and reason are required', 400);
             }
             
-            $db->beginTransaction();
-            
             try {
+                $db->beginTransaction();
                 // Get current stock
                 $ingredient = $db->prepare("SELECT * FROM ingredients WHERE id = ? AND is_active = 1");
                 $ingredient->execute([$ingredientId]);
@@ -659,8 +577,13 @@ function handlePut($db, $currentUser) {
                     throw new Exception('Ingredient not found');
                 }
                 
-                $oldQuantity = $ingredientData['current_stock'];
+                $oldQuantity = (float) $ingredientData['current_stock'];
+                $newQuantity = (float) $newQuantity;
                 $difference = $newQuantity - $oldQuantity;
+
+                if ($difference > 0) {
+                    throw new Exception('Stock increases must come from PO receiving. Use the receiving workflow.');
+                }
                 
                 // Update ingredient stock
                 $stmt = $db->prepare("
@@ -700,8 +623,10 @@ function handlePut($db, $currentUser) {
                     'transaction_code' => $txCode
                 ], 'Stock adjusted successfully');
                 
-            } catch (Exception $e) {
-                $db->rollBack();
+            } catch (Throwable $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
                 Response::error($e->getMessage(), 400);
             }
             break;

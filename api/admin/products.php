@@ -125,6 +125,7 @@ function getProducts($conn) {
                 p.base_unit,
                 p.box_unit,
                 p.pieces_per_box,
+                p.selling_price,
                 p.is_active,
                 p.created_at,
                 p.updated_at,
@@ -177,6 +178,7 @@ function getProduct($conn, $id) {
                 p.base_unit,
                 p.box_unit,
                 p.pieces_per_box,
+                p.selling_price,
                 p.is_active,
                 p.created_at,
                 p.updated_at
@@ -298,8 +300,8 @@ function createProduct($conn) {
                 product_code, product_name, category, variant, milk_type_id,
                 description, unit_size, unit_measure, shelf_life_days,
                 storage_temp_min, storage_temp_max, base_unit, box_unit,
-                pieces_per_box, is_active
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                pieces_per_box, selling_price, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
     $stmt = $conn->prepare($sql);
     $stmt->execute([
@@ -317,6 +319,7 @@ function createProduct($conn) {
         $data['base_unit'] ?? 'piece',
         $data['box_unit'] ?? 'box',
         $data['pieces_per_box'] ?? 1,
+        $data['selling_price'] ?? $data['unit_price'] ?? 0.00,
         $data['is_active'] ?? 1
     ]);
     
@@ -353,7 +356,7 @@ function updateProduct($conn, $id) {
         'product_code', 'product_name', 'category', 'variant', 'milk_type_id',
         'description', 'unit_size', 'unit_measure', 'shelf_life_days',
         'storage_temp_min', 'storage_temp_max', 'base_unit', 'box_unit',
-        'pieces_per_box', 'is_active'
+        'pieces_per_box', 'selling_price', 'unit_price', 'is_active'
     ];
     
     foreach ($allowedFields as $field) {

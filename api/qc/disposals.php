@@ -37,8 +37,8 @@ error_reporting(E_ALL);
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 
-// Require QC, GM, or Finance role
-$currentUser = Auth::requireRole(['qc_officer', 'general_manager', 'finance_officer', 'warehouse_raw', 'warehouse_fg']);
+// Require QC, GM/Admin, Finance, or Warehouse role
+$currentUser = Auth::requireRole(['qc_officer', 'general_manager', 'admin', 'finance_officer', 'warehouse_raw', 'warehouse_fg']);
 
 // Disposal categories
 define('DISPOSAL_CATEGORIES', [
@@ -397,9 +397,11 @@ function handlePostRequest($db, $currentUser) {
     // Only QC Officer and General Manager can create disposal requests
     // Warehouse staff must report to QC (segregation of duties)
     $allowedToCreate = ['qc_officer', 'general_manager'];
-    if (!in_array($currentUser['role'], $allowedToCreate)) {
-        Response::error('Only QC Officers can create disposal requests. Please report the issue to QC for validation.', 403);
-    }
+    requireActionRole(
+        $currentUser,
+        $allowedToCreate,
+        'Only QC Officers can create disposal requests. Please report the issue to QC for validation.'
+    );
     
     // Validate required fields
     $sourceType = getParam('source_type');
@@ -536,10 +538,15 @@ function handlePutRequest($db, $currentUser) {
     try {
         switch ($action) {
             case 'approve':
+                requireActionRole($currentUser, ['general_manager', 'admin'], 'Access forbidden');
+
                 // Only GM can approve
                 if (!in_array($currentUser['role'], ['general_manager', 'admin'])) {
                     Response::error('Only General Manager can approve disposals', 403);
                 }
+
+                $stepUpToken = getParam('step_up_token');
+                Auth::requireStepUp($currentUser, 'disposal_approval', $stepUpToken);
                 
                 if ($disposal['status'] !== 'pending') {
                     Response::error('Only pending disposals can be approved', 400);
@@ -559,13 +566,20 @@ function handlePutRequest($db, $currentUser) {
                 
                 logAudit($currentUser['user_id'], 'APPROVE', 'disposals', $id, 
                     ['status' => 'pending'], 
-                    ['status' => 'approved', 'approved_by' => $currentUser['user_id']]
+                    [
+                        'status' => 'approved',
+                        'approved_by' => $currentUser['user_id'],
+                        'approval_notes' => $approvalNotes,
+                        'step_up_verified' => true
+                    ]
                 );
                 
                 $message = 'Disposal approved successfully';
                 break;
                 
             case 'reject':
+                requireActionRole($currentUser, ['general_manager', 'admin'], 'Access forbidden');
+
                 // Only GM can reject
                 if (!in_array($currentUser['role'], ['general_manager', 'admin'])) {
                     Response::error('Only General Manager can reject disposals', 403);
@@ -600,6 +614,12 @@ function handlePutRequest($db, $currentUser) {
                 
             case 'complete':
             case 'execute':
+                requireActionRole(
+                    $currentUser,
+                    ['qc_officer', 'warehouse_raw', 'warehouse_fg', 'general_manager', 'admin'],
+                    'Only QC, Warehouse, or GM/Admin can execute disposals'
+                );
+
                 if ($disposal['status'] !== 'approved') {
                     Response::error('Only approved disposals can be completed', 400);
                 }
@@ -660,6 +680,12 @@ function handlePutRequest($db, $currentUser) {
  * Handle DELETE requests - Cancel disposal
  */
 function handleDeleteRequest($db, $currentUser) {
+    requireActionRole(
+        $currentUser,
+        ['qc_officer', 'general_manager', 'admin'],
+        'Only QC or GM/Admin can cancel disposal requests'
+    );
+
     $id = getParam('id');
     
     if (!$id || !is_numeric($id)) {

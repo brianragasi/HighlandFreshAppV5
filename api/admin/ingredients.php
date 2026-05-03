@@ -230,7 +230,7 @@ function createIngredient($conn) {
         sendValidationError(['ingredient_code' => 'Ingredient code already exists']);
     }
     
-    $sql = "INSERT INTO ingredients (ingredient_code, ingredient_name, category_id, unit_of_measure,
+        $sql = "INSERT INTO ingredients (ingredient_code, ingredient_name, category_id, unit_of_measure,
             minimum_stock, reorder_point, lead_time_days, current_stock, unit_cost, 
             storage_location, storage_requirements, shelf_life_days, is_active)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
@@ -244,7 +244,7 @@ function createIngredient($conn) {
         $data['minimum_stock'] ?? 0,
         $data['reorder_point'] ?? 0,
         $data['lead_time_days'] ?? 7,
-        $data['current_stock'] ?? 0,
+        0,
         $data['unit_cost'] ?? null,
         $data['storage_location'] ?? null,
         $data['storage_requirements'] ?? null,
@@ -280,7 +280,7 @@ function updateIngredient($conn, $id) {
     $params = [];
     
     $allowedFields = ['ingredient_name', 'category_id', 'unit_of_measure', 'minimum_stock',
-                      'reorder_point', 'lead_time_days', 'current_stock', 'unit_cost',
+                      'reorder_point', 'lead_time_days', 'unit_cost',
                       'storage_location', 'storage_requirements', 'shelf_life_days', 'is_active'];
     
     foreach ($allowedFields as $field) {

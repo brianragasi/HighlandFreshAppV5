@@ -477,7 +477,7 @@
                     
                     <div class="alert alert-warning mb-4">
                         <i class="fas fa-lightbulb"></i>
-                        <span class="text-sm"><strong>How to add items:</strong> Type the item name, quantity, and select the unit. Click "➕ Add More" if you need multiple items.</span>
+                        <span class="text-sm"><strong>How to add items:</strong> Select the item name, quantity, and unit. Click "➕ Add More" if you need multiple items.</span>
                     </div>
                     
                     <div class="flex items-center justify-between mb-3">
@@ -495,7 +495,9 @@
                             <div class="grid grid-cols-12 gap-2 items-end">
                                 <div class="col-span-12 sm:col-span-4">
                                     <label class="label py-0"><span class="label-text text-xs text-base-content/60">Item Name *</span></label>
-                                    <input type="text" class="input input-bordered input-sm w-full item-name" placeholder="e.g., Raw Milk, Sugar, Salt..." required>
+                                    <select class="select select-bordered select-sm w-full item-name" required onchange="handleItemChange(this)">
+                                        <option value="">Loading items...</option>
+                                    </select>
                                 </div>
                                 <div class="col-span-4 sm:col-span-2">
                                     <label class="label py-0"><span class="label-text text-xs text-base-content/60">Quantity *</span></label>
@@ -586,6 +588,7 @@
     <script>
         let currentPage = 1;
         let currentUser = null;
+        let ingredientOptionsHtml = '';
         
         // Sidebar toggle
         function toggleSidebar() {
@@ -616,6 +619,7 @@
                     (currentUser.first_name || '') + ' ' + (currentUser.last_name || '') || 'Production Staff';
             }
             
+            await loadIngredientCatalog();
             await loadRuns();
             loadStats();
             loadRequisitions();
@@ -688,6 +692,75 @@
             } catch (error) {
                 console.error('Error loading runs:', error);
             }
+        }
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function buildIngredientOptions(ingredients) {
+            const baseOptions = [
+                '<option value="" disabled selected>Select item...</option>',
+                '<option value="raw_milk" data-type="raw_milk" data-name="Raw Milk" data-unit="liters">Raw Milk (tanks)</option>'
+            ];
+
+            const ingredientOptions = ingredients.map(ing => {
+                const name = escapeHtml(ing.ingredient_name || 'Unnamed');
+                const unit = escapeHtml(ing.unit_of_measure || 'units');
+                const category = escapeHtml(ing.category_name || '');
+                const label = category ? `${name} (${category})` : name;
+                return `<option value="${ing.id}" data-type="ingredient" data-name="${name}" data-unit="${unit}">${label}</option>`;
+            });
+
+            return baseOptions.concat(ingredientOptions).join('');
+        }
+
+        function updateAllItemSelects() {
+            const selects = document.querySelectorAll('.item-name');
+            selects.forEach(select => {
+                const current = select.value;
+                select.innerHTML = ingredientOptionsHtml || '<option value="">Loading items...</option>';
+                if (current) select.value = current;
+            });
+        }
+
+        async function loadIngredientCatalog() {
+            try {
+                const response = await ProductionService.getIngredientCatalog();
+                const ingredients = response?.data?.ingredients || response?.data || [];
+                ingredientOptionsHtml = buildIngredientOptions(ingredients);
+                updateAllItemSelects();
+            } catch (error) {
+                console.error('Error loading ingredients:', error);
+                ingredientOptionsHtml = '<option value="">Failed to load items</option>';
+                updateAllItemSelects();
+                showToast('Failed to load item list', 'error');
+            }
+        }
+
+        function handleItemChange(selectEl) {
+            const row = selectEl.closest('.item-row');
+            if (!row) return;
+
+            const unitSelect = row.querySelector('.item-unit');
+            const option = selectEl.options[selectEl.selectedIndex];
+            const unit = option?.getAttribute('data-unit');
+
+            if (!unitSelect || !unit) return;
+
+            const hasUnit = Array.from(unitSelect.options).some(opt => opt.value === unit);
+            if (!hasUnit) {
+                const opt = document.createElement('option');
+                opt.value = unit;
+                opt.textContent = unit;
+                unitSelect.appendChild(opt);
+            }
+            unitSelect.value = unit;
         }
         
         async function loadRequisitions() {
@@ -834,7 +907,9 @@
                     <div class="grid grid-cols-12 gap-2 items-end">
                         <div class="col-span-12 sm:col-span-4">
                             <label class="label py-0"><span class="label-text text-xs text-base-content/60">Item Name *</span></label>
-                            <input type="text" class="input input-bordered input-sm w-full item-name" placeholder="e.g., Raw Milk, Sugar, Salt..." required>
+                            <select class="select select-bordered select-sm w-full item-name" required onchange="handleItemChange(this)">
+                                ${ingredientOptionsHtml || '<option value="">Loading items...</option>'}
+                            </select>
                         </div>
                         <div class="col-span-4 sm:col-span-2">
                             <label class="label py-0"><span class="label-text text-xs text-base-content/60">Quantity *</span></label>
@@ -874,7 +949,9 @@
                 <div class="grid grid-cols-12 gap-2 items-end">
                     <div class="col-span-12 sm:col-span-4">
                         <label class="label py-0"><span class="label-text text-xs text-base-content/60">Item Name *</span></label>
-                        <input type="text" class="input input-bordered input-sm w-full item-name" placeholder="e.g., Raw Milk, Sugar, Salt..." required>
+                        <select class="select select-bordered select-sm w-full item-name" required onchange="handleItemChange(this)">
+                            ${ingredientOptionsHtml || '<option value="">Loading items...</option>'}
+                        </select>
                     </div>
                     <div class="col-span-4 sm:col-span-2">
                         <label class="label py-0"><span class="label-text text-xs text-base-content/60">Quantity *</span></label>
@@ -920,14 +997,22 @@
             // Collect items
             const items = [];
             document.querySelectorAll('.item-row').forEach(row => {
-                const name = row.querySelector('.item-name').value.trim();
+                const select = row.querySelector('.item-name');
                 const qty = row.querySelector('.item-qty').value;
                 const unit = row.querySelector('.item-unit').value;
                 const notes = row.querySelector('.item-notes').value.trim();
-                
-                if (name && qty) {
+                const selectedOption = select?.options[select.selectedIndex];
+                const selectedValue = select?.value;
+
+                if (selectedValue && qty) {
+                    const itemType = selectedOption?.getAttribute('data-type') || 'ingredient';
+                    const itemName = selectedOption?.getAttribute('data-name') || selectedOption?.textContent || '';
+                    const itemId = itemType === 'ingredient' ? parseInt(selectedValue, 10) : null;
+
                     items.push({
-                        item_name: name,
+                        item_type: itemType,
+                        item_id: itemId,
+                        item_name: itemName,
                         quantity: parseFloat(qty),
                         unit: unit,
                         notes: notes
@@ -1055,7 +1140,14 @@
         }
         
         async function approveRequisition(id) {
-            if (!confirm('Approve this requisition?')) return;
+            const confirmed = await AuthService.confirmAction({
+                title: 'Approve Requisition',
+                message: 'Approve this requisition?',
+                confirmText: 'Approve',
+                tone: 'success',
+                icon: 'fa-check-circle'
+            });
+            if (!confirmed) return;
             
             try {
                 const response = await ProductionService.approveRequisition(id);
@@ -1072,7 +1164,16 @@
         }
         
         async function rejectRequisition(id) {
-            const reason = prompt('Enter rejection reason:');
+            const reason = await AuthService.promptText({
+                title: 'Reject Requisition',
+                message: 'Enter the rejection reason.',
+                label: 'Rejection reason',
+                placeholder: 'Required reason',
+                confirmText: 'Reject',
+                tone: 'error',
+                icon: 'fa-times-circle',
+                required: true
+            });
             if (reason === null) return;
             
             try {
@@ -1090,7 +1191,14 @@
         }
         
         async function cancelRequisition(id) {
-            if (!confirm('Cancel this requisition?')) return;
+            const confirmed = await AuthService.confirmAction({
+                title: 'Cancel Requisition',
+                message: 'Cancel this requisition?',
+                confirmText: 'Cancel Requisition',
+                tone: 'error',
+                icon: 'fa-ban'
+            });
+            if (!confirmed) return;
             
             try {
                 const response = await ProductionService.cancelRequisition(id);

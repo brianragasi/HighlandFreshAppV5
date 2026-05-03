@@ -153,6 +153,13 @@
                             <span class="flex-1">Requisitions</span>
                         </a>
                     </li>
+                    <li>
+                        <a href="packaging.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-boxes w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Packaging</span>
+                        </a>
+                    </li>
                 </ul>
             </div>
 
@@ -511,13 +518,17 @@
 
                     <div class="form-control">
                         <label class="label">
-                            <span class="label-text">Planned Quantity <span class="text-error">*</span></span>
+                            <span class="label-text">Planned Volume (Liters) <span class="text-error">*</span></span>
                         </label>
                         <div class="join w-full">
                             <input type="number" class="input input-bordered join-item flex-1" id="plannedQuantity"
-                                required min="1" placeholder="Enter quantity" onchange="checkMilkRequirement()">
-                            <span class="btn join-item no-animation" id="yieldUnit">units</span>
+                                required min="1" placeholder="e.g. 100" onchange="checkMilkRequirement()">
+                            <span class="btn join-item no-animation" id="yieldUnit">Liters</span>
                         </div>
+                        <label class="label">
+                            <span class="label-text-alt text-base-content/60">How many liters of base liquid to produce
+                                in this batch</span>
+                        </label>
                     </div>
 
                     <div class="form-control">
@@ -531,34 +542,34 @@
                         </label>
                     </div>
 
-                    <!-- Temperature & Duration Fields (Per production_requirements.md) -->
+                    <!-- Temperature & Duration: Read-only, auto-filled from Recipe -->
                     <div class="grid grid-cols-2 gap-3">
                         <div class="form-control">
                             <label class="label">
-                                <span class="label-text">Temperature (°C)</span>
+                                <span class="label-text">Pasteurization Temp</span>
+                                <span class="badge badge-ghost badge-xs">from Recipe</span>
                             </label>
-                            <div class="join w-full">
-                                <input type="number" class="input input-bordered join-item flex-1"
-                                    id="processTemperature" step="0.5" placeholder="e.g. 75">
-                                <span class="btn join-item no-animation">°C</span>
+                            <div class="input input-bordered bg-base-200 flex items-center gap-2">
+                                <i class="fas fa-thermometer-half text-base-content/40"></i>
+                                <span id="processTemperature" class="flex-1 font-mono">— Select a recipe first</span>
                             </div>
                             <label class="label">
-                                <span class="label-text-alt text-base-content/60" id="tempHint">Pasteurization:
-                                    72-75°C</span>
+                                <span class="label-text-alt text-base-content/60" id="tempHint">Auto-filled from
+                                    recipe</span>
                             </label>
                         </div>
                         <div class="form-control">
                             <label class="label">
-                                <span class="label-text">Duration (mins)</span>
+                                <span class="label-text">Process Duration</span>
+                                <span class="badge badge-ghost badge-xs">from Recipe</span>
                             </label>
-                            <div class="join w-full">
-                                <input type="number" class="input input-bordered join-item flex-1" id="processDuration"
-                                    step="1" placeholder="e.g. 15">
-                                <span class="btn join-item no-animation">min</span>
+                            <div class="input input-bordered bg-base-200 flex items-center gap-2">
+                                <i class="fas fa-clock text-base-content/40"></i>
+                                <span id="processDuration" class="flex-1 font-mono">— Select a recipe first</span>
                             </div>
                             <label class="label">
-                                <span class="label-text-alt text-base-content/60" id="durationHint">Processing
-                                    time</span>
+                                <span class="label-text-alt text-base-content/60" id="durationHint">Auto-filled from
+                                    recipe</span>
                             </label>
                         </div>
                     </div>
@@ -892,7 +903,7 @@
 
                     const select = document.getElementById('recipeSelect');
                     select.innerHTML = '<option value="">Select a recipe...</option>' +
-                        recipes.map(r => `<option value="${r.id}">${r.recipe_code} - ${r.product_name} ${r.variant || ''}</option>`).join('');
+                        recipes.map(r => `<option value="${r.id}">${r.recipe_code} — ${r.product_name}</option>`).join('');
                 }
             } catch (error) {
                 console.error('Error loading recipes:', error);
@@ -927,13 +938,28 @@
             const recipe = recipes.find(r => r.id == recipeId);
             if (recipe) {
                 selectedRecipeData = recipe;
-                document.getElementById('selectedRecipeName').textContent = `${recipe.product_name} ${recipe.variant || ''}`;
+                document.getElementById('selectedRecipeName').textContent = recipe.product_name;
                 document.getElementById('selectedRecipeYield').textContent = `${recipe.expected_yield} ${recipe.yield_unit} per batch`;
                 document.getElementById('selectedRecipeMilk').textContent = `${recipe.base_milk_liters}L`;
-                document.getElementById('yieldUnit').textContent = recipe.yield_unit || 'units';
+                // Planned quantity is ALWAYS in Liters (we plan liquid volume, not bottle count)
+                document.getElementById('yieldUnit').textContent = 'Liters';
                 detailsDiv.classList.remove('hidden');
 
-                // Update temp/duration hints based on product type
+                // Auto-fill temp & duration from recipe (read-only — single source of truth)
+                const tempDisplay = document.getElementById('processTemperature');
+                const durDisplay = document.getElementById('processDuration');
+                if (recipe.pasteurization_temp) {
+                    tempDisplay.textContent = `${parseFloat(recipe.pasteurization_temp).toFixed(1)} °C`;
+                } else {
+                    tempDisplay.textContent = '—';
+                }
+                if (recipe.pasteurization_time_mins) {
+                    durDisplay.textContent = `${recipe.pasteurization_time_mins} min`;
+                } else {
+                    durDisplay.textContent = '—';
+                }
+
+                // Update hint labels based on product type
                 updateProductTypeHints(recipe.product_type);
 
                 // Show product-type specific sections
@@ -942,7 +968,6 @@
                 } else if (recipe.product_type === 'cheese') {
                     cheeseSection.classList.remove('hidden');
                 } else if (recipe.product_type === 'yogurt') {
-                    // Show yogurt-specific warning about pasteurized milk
                     showYogurtMilkWarning();
                 }
 
@@ -1127,7 +1152,7 @@
                     </td>
                     <td>
                         <div class="font-medium">${run.product_name}</div>
-                        ${run.variant ? `<div class="text-xs text-base-content/60">${run.variant}</div>` : ''}
+                        <div class="text-xs text-base-content/60"><span class="badge badge-ghost badge-xs">${run.product_type || ''}</span></div>
                     </td>
                     <td>
                         <span class="badge ${config.class} gap-1">
@@ -1233,7 +1258,7 @@
                                     <span class="text-2xl"><i class="fas fa-tint text-primary"></i></span>
                                     <div class="flex-1">
                                         <div class="font-semibold">
-                                            <i class="fas fa-check-circle mr-1"></i> QC-Approved Milk Available: ${totalLiters.toLocaleString()}L
+                                            <i class="fas fa-check-circle mr-1"></i> QC-Approved Milk Available: ${Math.round(totalLiters).toLocaleString()} L
                                         </div>
                                         <div class="text-sm opacity-80 mt-1">
                                             From ${sources.length} delivery${sources.length !== 1 ? 's' : ''} in the last 2 days
@@ -1340,9 +1365,9 @@
                     milk_liters_used: document.getElementById('milkLiters').value || null,
                     notes: document.getElementById('runNotes').value,
 
-                    // New fields: Temperature & Duration
-                    process_temperature: document.getElementById('processTemperature').value || null,
-                    process_duration_mins: document.getElementById('processDuration').value || null
+                    // Temp & Duration come from recipe (read-only display — single source of truth)
+                    process_temperature: selectedRecipeData?.pasteurization_temp || null,
+                    process_duration_mins: selectedRecipeData?.pasteurization_time_mins || null
                 };
 
                 // Collect ingredient adjustments if any were modified
@@ -1408,7 +1433,14 @@
         }
 
         async function startRun(id) {
-            if (!confirm('Start this production run?')) return;
+            const confirmed = await AuthService.confirmAction({
+                title: 'Start Production Run',
+                message: 'Start this production run?',
+                confirmText: 'Start Run',
+                tone: 'success',
+                icon: 'fa-play'
+            });
+            if (!confirmed) return;
 
             try {
                 const response = await ProductionService.startRun(id);
@@ -1628,7 +1660,14 @@
         }
 
         async function cancelRun(id) {
-            if (!confirm('Are you sure you want to cancel this production run?')) return;
+            const confirmed = await AuthService.confirmAction({
+                title: 'Cancel Production Run',
+                message: 'Are you sure you want to cancel this production run?',
+                confirmText: 'Cancel Run',
+                tone: 'error',
+                icon: 'fa-ban'
+            });
+            if (!confirmed) return;
 
             try {
                 const response = await ProductionService.cancelRun(id);

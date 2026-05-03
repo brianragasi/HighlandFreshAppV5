@@ -21,9 +21,10 @@ $currentUser = Auth::requireRole(['production_staff', 'general_manager']);
 
 try {
     $db = Database::getInstance()->getConnection();
-    $method = $_SERVER['REQUEST_METHOD'];
+    // Use $requestMethod from bootstrap — it already resolves X-HTTP-Method-Override
+    global $requestMethod;
     
-    switch ($method) {
+    switch ($requestMethod) {
         case 'GET':
             $action = getParam('action');
             $runId = getParam('id');

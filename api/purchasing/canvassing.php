@@ -323,6 +323,15 @@ function handlePut($db, $action, $currentUser) {
             if ($quote['canvass_status'] !== 'open') {
                 Response::error('Canvass is no longer open', 400);
             }
+
+            // Enforce Rule of 3: canvass must have at least 3 supplier quotes before selection
+            $quoteCountStmt = $db->prepare("SELECT COUNT(*) as quote_count FROM canvass_quotes WHERE canvass_id = ?");
+            $quoteCountStmt->execute([$quote['canvass_id']]);
+            $quoteCount = (int) $quoteCountStmt->fetch()['quote_count'];
+
+            if ($quoteCount < 3) {
+                Response::error('At least 3 supplier quotes are required before selecting a winner', 400);
+            }
             
             $db->beginTransaction();
             try {

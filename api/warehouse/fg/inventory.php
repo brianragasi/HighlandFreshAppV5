@@ -100,10 +100,12 @@ function piecesToBoxes($totalPieces, $piecesPerBox) {
  * @param int $boxes Box count
  * @param int $pieces Loose piece count
  * @param int $piecesPerBox Conversion ratio
- * @return int Total pieces
+ * @return int Total pieces (minimum 0)
  */
 function boxesToPieces($boxes, $pieces, $piecesPerBox) {
     if ($piecesPerBox <= 0) $piecesPerBox = 1;
+    $boxes = max(0, (int)$boxes);
+    $pieces = max(0, (int)$pieces);
     return ($boxes * $piecesPerBox) + $pieces;
 }
 
@@ -241,6 +243,14 @@ function releaseMultiUnit($db, $inventoryId, $releasedBoxes, $releasedPieces, $u
     
     if (!$inventory) {
         throw new Exception('Inventory item not found');
+    }
+
+    if (($inventory['status'] ?? '') !== 'available') {
+        throw new Exception('Only available inventory can be released.');
+    }
+
+    if (!empty($inventory['expiry_date']) && $inventory['expiry_date'] <= date('Y-m-d')) {
+        throw new Exception('Expired inventory cannot be released. Dispose or quarantine this stock instead.');
     }
     
     $piecesPerBox = $inventory['pieces_per_box'] ?: 1;
@@ -395,29 +405,66 @@ function handleGet($db, $action) {
             $productId = getParam('product_id');
             $chillerId = getParam('chiller_id');
             $status = getParam('status', 'available');
+            $includeExpired = in_array((string)getParam('include_expired', '0'), ['1', 'true', 'yes'], true);
             
             $sql = "
                 SELECT 
                     fg.*,
-                    p.product_name,
-                    p.variant,
-                    p.unit_size as size_value,
-                    p.unit_measure as size_unit,
+                    COALESCE(p.product_name, fg.product_name) as product_name,
+                    COALESCE(p.variant, fg.product_variant, fg.variant) as variant,
+                    COALESCE(p.unit_size, fg.size_ml) as size_value,
+                    COALESCE(p.unit_measure, fg.unit, 'ml') as size_unit,
                     p.category,
                     COALESCE(p.base_unit, 'piece') as base_unit,
                     COALESCE(p.box_unit, 'box') as box_unit,
                     COALESCE(p.pieces_per_box, 1) as pieces_per_box,
                     c.chiller_code,
                     c.chiller_name,
-                    pb.batch_code,
+                    COALESCE(pb.batch_code, CONCAT('PKG-', fg.id)) as batch_code,
                     DATEDIFF(fg.expiry_date, CURDATE()) as days_until_expiry,
-                    -- Multi-unit calculated fields (use boxes_available/pieces_available as source of truth)
-                    COALESCE(fg.boxes_available, fg.quantity_boxes, 0) as quantity_boxes,
-                    COALESCE(fg.pieces_available, fg.quantity_pieces, 0) as quantity_pieces,
-                    COALESCE(fg.boxes_available, 0) as boxes_available,
-                    COALESCE(fg.pieces_available, 0) as pieces_available
+                    CASE
+                        WHEN fg.status <> 'available' THEN fg.status
+                        WHEN fg.expiry_date <= CURDATE() THEN 'expired'
+                        WHEN DATEDIFF(fg.expiry_date, CURDATE()) <= 3 THEN 'expiring'
+                        ELSE 'good'
+                    END as effective_status,
+                    CASE
+                        WHEN fg.status = 'available'
+                         AND fg.expiry_date > CURDATE()
+                         AND (
+                            COALESCE(fg.quantity_available, 0) > 0
+                            OR COALESCE(fg.boxes_available, 0) > 0
+                            OR COALESCE(fg.pieces_available, 0) > 0
+                         )
+                        THEN 1 ELSE 0
+                    END as is_dispatchable,
+                    -- Multi-unit calculated fields.
+                    -- CASE logic: if new-style columns (boxes/pieces) have data, use them directly.
+                    -- Only fall back to legacy quantity_available when both are zero.
+                    GREATEST(0, COALESCE(NULLIF(fg.boxes_available, 0), NULLIF(fg.quantity_boxes, 0), 0)) as quantity_boxes,
+                    CASE
+                        WHEN fg.boxes_available > 0 OR fg.pieces_available > 0
+                        THEN fg.pieces_available
+                        ELSE GREATEST(0, COALESCE(
+                            NULLIF(fg.quantity_pieces, 0),
+                            fg.quantity_available,
+                            fg.remaining_quantity,
+                            0
+                        ))
+                    END as quantity_pieces,
+                    GREATEST(0, COALESCE(NULLIF(fg.boxes_available, 0), NULLIF(fg.quantity_boxes, 0), 0)) as boxes_available,
+                    CASE
+                        WHEN fg.boxes_available > 0 OR fg.pieces_available > 0
+                        THEN fg.pieces_available
+                        ELSE GREATEST(0, COALESCE(
+                            NULLIF(fg.quantity_pieces, 0),
+                            fg.quantity_available,
+                            fg.remaining_quantity,
+                            0
+                        ))
+                    END as pieces_available
                 FROM finished_goods_inventory fg
-                JOIN products p ON fg.product_id = p.id
+                LEFT JOIN products p ON fg.product_id = p.id
                 LEFT JOIN chiller_locations c ON fg.chiller_id = c.id
                 LEFT JOIN production_batches pb ON fg.batch_id = pb.id
                 WHERE 1=1
@@ -428,6 +475,10 @@ function handleGet($db, $action) {
             if ($status) {
                 $sql .= " AND fg.status = ?";
                 $params[] = $status;
+            }
+
+            if (!$includeExpired) {
+                $sql .= " AND (fg.expiry_date IS NULL OR fg.expiry_date > CURDATE())";
             }
             
             if ($productId) {
@@ -448,6 +499,18 @@ function handleGet($db, $action) {
             
             // Add formatted display strings
             foreach ($inventory as &$item) {
+                $piecesPerBox = (int) ($item['pieces_per_box'] ?? 1);
+                $boxesAvailable = (int) ($item['boxes_available'] ?? 0);
+                $piecesAvailable = (int) ($item['pieces_available'] ?? 0);
+
+                if ($boxesAvailable === 0 && $piecesAvailable > 0 && $piecesPerBox > 1) {
+                    $converted = piecesToBoxes($piecesAvailable, $piecesPerBox);
+                    $item['boxes_available'] = $converted['boxes'];
+                    $item['pieces_available'] = $converted['pieces'];
+                    $item['quantity_boxes'] = $converted['boxes'];
+                    $item['quantity_pieces'] = $converted['pieces'];
+                }
+
                 $item['inventory_display'] = formatMultiUnitDisplay(
                     $item['boxes_available'],
                     $item['pieces_available'],
@@ -473,22 +536,22 @@ function handleGet($db, $action) {
             $stmt = $db->prepare("
                 SELECT 
                     fg.*,
-                    p.product_name,
-                    p.variant,
-                    p.unit_size,
-                    p.unit_measure,
+                    COALESCE(p.product_name, fg.product_name) as product_name,
+                    COALESCE(p.variant, fg.product_variant, fg.variant) as variant,
+                    COALESCE(p.unit_size, fg.size_ml) as unit_size,
+                    COALESCE(p.unit_measure, fg.unit, 'ml') as unit_measure,
                     COALESCE(p.base_unit, 'piece') as base_unit,
                     COALESCE(p.box_unit, 'box') as box_unit,
                     COALESCE(p.pieces_per_box, 1) as pieces_per_box,
                     c.chiller_code,
                     c.chiller_name,
-                    pb.batch_code,
-                    COALESCE(fg.quantity_boxes, 0) as quantity_boxes,
-                    COALESCE(fg.quantity_pieces, 0) as quantity_pieces,
-                    COALESCE(fg.boxes_available, 0) as boxes_available,
-                    COALESCE(fg.pieces_available, 0) as pieces_available
+                    COALESCE(pb.batch_code, CONCAT('PKG-', fg.id)) as batch_code,
+                    GREATEST(0, COALESCE(fg.quantity_boxes, 0)) as quantity_boxes,
+                    GREATEST(0, COALESCE(fg.quantity_pieces, fg.quantity_available, 0)) as quantity_pieces,
+                    GREATEST(0, COALESCE(fg.boxes_available, 0)) as boxes_available,
+                    GREATEST(0, COALESCE(fg.pieces_available, fg.quantity_available, 0)) as pieces_available
                 FROM finished_goods_inventory fg
-                JOIN products p ON fg.product_id = p.id
+                LEFT JOIN products p ON fg.product_id = p.id
                 LEFT JOIN chiller_locations c ON fg.chiller_id = c.id
                 LEFT JOIN production_batches pb ON fg.batch_id = pb.id
                 WHERE fg.id = ?
@@ -710,47 +773,54 @@ function handleGet($db, $action) {
             break;
             
         case 'pending_batches':
-            // Get QC-released batches not yet received into FG warehouse
-            // The fg_received flag is the primary indicator, but we also check
-            // fg_receiving and finished_goods_inventory tables as fallback
+            // Get packaged items from production awaiting warehouse chiller assignment
+            // These are finished_goods_inventory records created by packaging but not yet assigned to a chiller
             $stmt = $db->prepare("
                 SELECT 
-                    pb.id,
+                    fgi.id,
+                    fgi.id as inventory_id,
+                    fgi.batch_id,
                     pb.batch_code,
-                    pb.product_type,
-                    pb.product_variant,
-                    COALESCE(mr.product_name, CONCAT(COALESCE(pb.product_type, 'Unknown'), COALESCE(CONCAT(' - ', pb.product_variant), ''))) as product_name,
-                    COALESCE(mr.variant, pb.product_variant) as variant,
-                    pb.expected_yield as quantity_produced,
-                    pb.actual_yield,
-                    COALESCE(pb.actual_yield, pb.expected_yield, 0) as total_pieces,
+                    pb.batch_code as batch_number,
+                    fgi.product_type,
+                    fgi.product_name,
+                    fgi.product_variant as variant,
+                    fgi.size_ml,
+                    fgi.quantity,
+                    fgi.remaining_quantity,
+                    fgi.quantity_available,
+                    fgi.quantity_available as total_pieces,
+                    fgi.quantity_available as actual_yield,
                     0 as quantity_boxes,
-                    COALESCE(pb.actual_yield, pb.expected_yield, 0) as quantity_pieces,
+                    fgi.quantity_available as quantity_pieces,
                     COALESCE(p.pieces_per_box, 1) as pieces_per_box,
-                    COALESCE(p.base_unit, 'pcs') as unit,
-                    COALESCE(pb.manufacturing_date, pb.created_at) as production_date,
-                    pb.expiry_date,
-                    pb.qc_status as status,
-                    COALESCE(pb.qc_released_at, pb.released_at) as qc_release_date,
-                    pb.released_by,
-                    mr.id as recipe_id,
-                    pb.barcode
-                FROM production_batches pb
+                    fgi.unit,
+                    fgi.manufacturing_date as production_date,
+                    fgi.expiry_date,
+                    fgi.status,
+                    fgi.received_at as packaged_at,
+                    fgi.received_by as packaged_by,
+                    pb.qc_status,
+                    qbr.release_decision as qc_decision,
+                    qbr.inspection_datetime as qc_release_date,
+                    mr.id as recipe_id
+                FROM finished_goods_inventory fgi
+                LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
+                LEFT JOIN products p ON fgi.product_id = p.id
+                LEFT JOIN qc_batch_release qbr ON fgi.qc_release_id = qbr.id
                 LEFT JOIN master_recipes mr ON pb.recipe_id = mr.id
-                LEFT JOIN products p ON (mr.id IS NOT NULL AND p.id = mr.id) OR p.id = pb.product_id
-                WHERE pb.qc_status = 'released'
-                AND (pb.fg_received IS NULL OR pb.fg_received = 0)
-                AND NOT EXISTS (SELECT 1 FROM fg_receiving fr WHERE fr.batch_id = pb.id)
-                AND NOT EXISTS (SELECT 1 FROM finished_goods_inventory fgi WHERE fgi.batch_id = pb.id)
-                ORDER BY COALESCE(pb.qc_released_at, pb.released_at, pb.created_at) ASC
+                WHERE fgi.status = 'available'
+                  AND fgi.chiller_id IS NULL
+                  AND fgi.remaining_quantity > 0
+                ORDER BY fgi.received_at ASC
             ");
             $stmt->execute();
-            $pendingBatches = $stmt->fetchAll();
+            $pendingItems = $stmt->fetchAll();
             
             Response::success([
-                'batches' => $pendingBatches,
-                'count' => count($pendingBatches)
-            ], 'Pending batches retrieved');
+                'batches' => $pendingItems,
+                'count' => count($pendingItems)
+            ], 'Pending items for warehouse receiving retrieved');
             break;
             
         case 'transactions':
@@ -1007,6 +1077,102 @@ function handlePost($db, $action, $currentUser) {
             }
             break;
             
+        case 'assign_to_chiller':
+            // Assign packaged FG inventory items to a chiller (new flow: Packaging creates FG records, Warehouse assigns to chiller)
+            if (empty($data['inventory_id'])) {
+                Response::error('Inventory ID is required', 400);
+            }
+            if (empty($data['chiller_id'])) {
+                Response::error('Chiller ID is required', 400);
+            }
+            
+            $inventoryId = $data['inventory_id'];
+            $chillerId = $data['chiller_id'];
+            $notes = $data['notes'] ?? '';
+            
+            // Verify the inventory item exists and has no chiller assigned yet
+            $checkStmt = $db->prepare("
+                SELECT id, product_id, product_name, remaining_quantity, quantity_available, status,
+                       boxes_available, pieces_available
+                FROM finished_goods_inventory
+                WHERE id = ? AND status = 'available' AND chiller_id IS NULL
+            ");
+            $checkStmt->execute([$inventoryId]);
+            $fgItem = $checkStmt->fetch();
+            
+            if (!$fgItem) {
+                Response::error('Inventory item not found, already assigned, or not available', 404);
+            }
+            
+            // Verify chiller exists and is available
+            $chillerStmt = $db->prepare("
+                SELECT id, chiller_name, chiller_code, capacity, current_count
+                FROM chiller_locations
+                WHERE id = ? AND (status = 'available' OR is_active = 1)
+            ");
+            $chillerStmt->execute([$chillerId]);
+            $chiller = $chillerStmt->fetch();
+            
+            if (!$chiller) {
+                Response::error('Chiller not found or not available', 404);
+            }
+            
+            // Convert total pieces to boxes/pieces for display and stock tracking
+            $unitConfig = getProductUnitConfig($db, $fgItem['product_id']);
+            $piecesPerBox = (int) ($unitConfig['pieces_per_box'] ?? 1);
+            $totalPieces = (int) ($fgItem['quantity_available'] ?? $fgItem['remaining_quantity'] ?? 0);
+            $converted = piecesToBoxes($totalPieces, $piecesPerBox);
+
+            // Update the inventory item with chiller assignment
+            $updateStmt = $db->prepare("
+                UPDATE finished_goods_inventory
+                SET chiller_id = ?,
+                    chiller_location = ?,
+                    quantity_boxes = ?,
+                    quantity_pieces = ?,
+                    boxes_available = ?,
+                    pieces_available = ?,
+                    last_movement_at = NOW(),
+                    notes = CONCAT(COALESCE(notes, ''), '\n', ?)
+                WHERE id = ?
+            ");
+            $updateStmt->execute([
+                $chillerId,
+                $chiller['chiller_name'],
+                $converted['boxes'],
+                $converted['pieces'],
+                $converted['boxes'],
+                $converted['pieces'],
+                "Assigned to {$chiller['chiller_name']} by warehouse on " . date('Y-m-d H:i:s') . ($notes ? " - {$notes}" : ''),
+                $inventoryId
+            ]);
+            
+            // Log transaction
+            $transStmt = $db->prepare("
+                INSERT INTO fg_inventory_transactions
+                    (inventory_id, product_id, transaction_type, to_chiller_id, 
+                     pieces_quantity, boxes_quantity, performed_by, reason, created_at)
+                SELECT 
+                    id, product_id, 'receive', ?,
+                    remaining_quantity, ?, ?, ?, NOW()
+                FROM finished_goods_inventory
+                WHERE id = ?
+            ");
+            $transStmt->execute([
+                $chillerId, 
+                $converted['boxes'],
+                $currentUser['user_id'], 
+                $notes ?: 'Warehouse receiving - assigned to chiller', 
+                $inventoryId
+            ]);
+            
+            Response::success([
+                'inventory_id' => $inventoryId,
+                'chiller_id' => $chillerId,
+                'chiller_name' => $chiller['chiller_name']
+            ], 'Item successfully assigned to chiller');
+            break;
+            
         case 'receive_batch':
             // Receive a production batch from QC into FG inventory
             if (empty($data['batch_id'])) {
@@ -1093,13 +1259,12 @@ function handlePost($db, $action, $currentUser) {
             }
             
             $quantity = intval($batch['quantity']);
-            // For batches from production, treat everything as individual pieces
-            // Box/piece conversion happens at the warehouse level
-            $piecesPerBox = 1;
-            
-            // All items treated as pieces initially
-            $boxes = 0;
-            $pieces = $quantity;
+
+            $unitConfig = getProductUnitConfig($db, $productId);
+            $piecesPerBox = (int) ($unitConfig['pieces_per_box'] ?? 1);
+            $converted = piecesToBoxes($quantity, $piecesPerBox);
+            $boxes = $converted['boxes'];
+            $pieces = $converted['pieces'];
             
             $db->beginTransaction();
             
@@ -1270,6 +1435,14 @@ function handlePut($db, $action, $currentUser) {
             $db->beginTransaction();
             
             try {
+                if (($current['status'] ?? '') !== 'available') {
+                    Response::error('Only available inventory can be transferred', 400);
+                }
+
+                if (!empty($current['expiry_date']) && $current['expiry_date'] <= date('Y-m-d')) {
+                    Response::error('Expired inventory should be disposed or quarantined, not transferred as usable stock', 400);
+                }
+
                 // Update inventory chiller
                 $stmt = $db->prepare("UPDATE finished_goods_inventory SET chiller_id = ? WHERE id = ?");
                 $stmt->execute([$data['to_chiller_id'], $id]);
