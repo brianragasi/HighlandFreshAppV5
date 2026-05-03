@@ -278,6 +278,21 @@ const WarehouseFGService = {
     },
 
     /**
+     * Assign a packaged FG inventory item to a chiller (new packaging flow)
+     * @param {number} inventoryId - Finished goods inventory ID
+     * @param {number} chillerId - Target chiller ID
+     * @param {string} notes - Optional notes
+     */
+    async assignToChiller(inventoryId, chillerId, notes = '') {
+        return await api.post(`${this.baseUrl}/inventory.php`, {
+            action: 'assign_to_chiller',
+            inventory_id: inventoryId,
+            chiller_id: chillerId,
+            notes
+        });
+    },
+
+    /**
      * Get pending batches from production (QC released, not yet received)
      */
     async getPendingBatches() {

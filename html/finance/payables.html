@@ -392,15 +392,16 @@
                     search, payment_status: status, page: currentPage, limit: 15
                 });
                 const payables = response?.data || [];
-                const meta = response?.meta || {};
+                const meta = response?.pagination || response?.meta || {};
                 const tbody = document.getElementById('payablesBody');
 
                 // Summary counts
                 let totalUnpaid = 0, countUnpaid = 0, totalPartial = 0, countPartial = 0, totalOverdue = 0, countOverdue = 0;
                 payables.forEach(po => {
-                    if (po.payment_status === 'unpaid') { totalUnpaid += parseFloat(po.total_amount); countUnpaid++; }
-                    if (po.payment_status === 'partial') { totalPartial += parseFloat(po.total_amount); countPartial++; }
-                    if (po.is_overdue == 1) { totalOverdue += parseFloat(po.total_amount); countOverdue++; }
+                    const payableAmount = parseFloat(po.payable_total ?? po.total_amount ?? 0);
+                    if (po.payment_status === 'unpaid') { totalUnpaid += payableAmount; countUnpaid++; }
+                    if (po.payment_status === 'partial') { totalPartial += payableAmount; countPartial++; }
+                    if (po.is_overdue == 1) { totalOverdue += payableAmount; countOverdue++; }
                 });
                 document.getElementById('summaryTotalUnpaid').textContent = formatCurrency(totalUnpaid);
                 document.getElementById('summaryCountUnpaid').textContent = countUnpaid;
@@ -432,8 +433,11 @@
                                 <div class="text-xs text-base-content/50">${po.supplier_code} • ${po.payment_terms || '30 days'}</div>
                             </td>
                             <td class="text-sm">${formatDate(po.order_date)}</td>
-                            <td class="text-sm text-center">${po.item_count}</td>
-                            <td class="font-semibold">${formatCurrency(po.total_amount)}</td>
+                            <td class="text-sm max-w-xs">
+                                <div class="font-medium">${po.item_count} item${parseInt(po.item_count || 0, 10) === 1 ? '' : 's'}</div>
+                                <div class="text-xs text-base-content/60 truncate" title="${po.item_summary || ''}">${po.item_summary || '-'}</div>
+                            </td>
+                            <td class="font-semibold">${formatCurrency(po.payable_total ?? po.total_amount)}</td>
                             <td><span class="badge badge-sm ${statusBadge}">${FinanceService.formatStatus(po.status)}</span></td>
                             <td><span class="badge badge-sm ${payBadge}">${FinanceService.formatStatus(po.payment_status)}</span></td>
                             <td>
@@ -442,7 +446,7 @@
                                         <i class="fas fa-eye"></i>
                                     </button>
                                     ${po.payment_status !== 'paid' ? `
-                                    <button class="btn btn-primary btn-xs" onclick="openPaymentModal(${po.id}, '${po.po_number}', '${po.supplier_name.replace(/'/g, "\\'")}', ${po.total_amount})" title="Record Payment">
+                                    <button class="btn btn-primary btn-xs" onclick="openPaymentModal(${po.id}, '${po.po_number}', '${po.supplier_name.replace(/'/g, "\\'")}', ${po.payable_total ?? po.total_amount})" title="Record Payment">
                                         <i class="fas fa-money-bill-wave"></i>
                                     </button>` : ''}
                                 </div>
@@ -504,11 +508,17 @@
             btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Processing...';
 
             try {
+                const stepUpToken = await AuthService.promptStepUp('payment_release', 'payment release');
+                if (!stepUpToken) {
+                    return;
+                }
+
                 await FinanceService.recordPayment({
                     po_id: document.getElementById('payPoId').value,
                     payment_method: document.getElementById('payMethod').value,
                     reference_number: document.getElementById('payReference').value,
-                    notes: document.getElementById('payNotes').value
+                    notes: document.getElementById('payNotes').value,
+                    step_up_token: stepUpToken
                 });
                 document.getElementById('paymentModal').close();
                 showToast('Payment recorded successfully!', 'success');
@@ -535,6 +545,10 @@
                 if (!po) { document.getElementById('detailContent').innerHTML = '<p class="text-error">Not found</p>'; return; }
 
                 const items = po.items || [];
+                const computedSubtotal = items.reduce((sum, item) => {
+                    const payableTotal = parseFloat(item.payable_total ?? item.total_amount ?? 0);
+                    return sum + payableTotal;
+                }, 0);
                 document.getElementById('detailContent').innerHTML = `
                     <div class="grid grid-cols-2 gap-4 mb-4">
                         <div>
@@ -575,17 +589,17 @@
                                 ${items.map(item => `
                                     <tr>
                                         <td>${item.item_description}</td>
-                                        <td>${parseFloat(item.quantity).toLocaleString()}</td>
+                                        <td>${parseFloat((item.payable_quantity ?? item.quantity) || 0).toLocaleString()}</td>
                                         <td>${item.unit}</td>
                                         <td>${formatCurrency(item.unit_price)}</td>
-                                        <td class="font-semibold">${formatCurrency(item.total_amount)}</td>
+                                        <td class="font-semibold">${formatCurrency(item.payable_total ?? item.total_amount)}</td>
                                     </tr>
                                 `).join('')}
                             </tbody>
                             <tfoot>
-                                <tr><td colspan="4" class="text-right font-semibold">Subtotal</td><td class="font-bold">${formatCurrency(po.subtotal)}</td></tr>
+                                <tr><td colspan="4" class="text-right font-semibold">Subtotal</td><td class="font-bold">${formatCurrency(computedSubtotal)}</td></tr>
                                 ${parseFloat(po.vat_amount) > 0 ? `<tr><td colspan="4" class="text-right">VAT</td><td>${formatCurrency(po.vat_amount)}</td></tr>` : ''}
-                                <tr><td colspan="4" class="text-right font-bold text-base">Total</td><td class="font-bold text-base text-primary">${formatCurrency(po.total_amount)}</td></tr>
+                                <tr><td colspan="4" class="text-right font-bold text-base">Total</td><td class="font-bold text-base text-primary">${formatCurrency(computedSubtotal)}</td></tr>
                             </tfoot>
                         </table>
                     </div>

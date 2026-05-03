@@ -19,11 +19,56 @@
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
 
+/**
+ * Backfill raw milk inventory rows for accepted QC records that are missing inventory.
+ * This prevents accepted milk from being invisible in Warehouse when a prior insert was skipped.
+ */
+function syncAcceptedMilkInventory($db) {
+    $stmt = $db->prepare(" 
+        INSERT INTO raw_milk_inventory (
+            batch_code, receiving_id, qc_test_id, milk_type_id, tank_id,
+            volume_liters, remaining_liters, received_date, expiry_date,
+            fat_percentage, grade, unit_cost, status, qc_status, received_by, notes
+        )
+        SELECT
+            CONCAT('RAW-RCV-', LPAD(mr.id, 6, '0')) as batch_code,
+            mr.id as receiving_id,
+            qmt.id as qc_test_id,
+            mr.milk_type_id,
+            NULL as tank_id,
+            COALESCE(NULLIF(mr.accepted_liters, 0), mr.volume_liters) as volume_liters,
+            COALESCE(NULLIF(mr.accepted_liters, 0), mr.volume_liters) as remaining_liters,
+            mr.receiving_date as received_date,
+            DATE_ADD(mr.receiving_date, INTERVAL 2 DAY) as expiry_date,
+            qmt.fat_percentage,
+            qmt.grade,
+            qmt.final_price_per_liter as unit_cost,
+            'available' as status,
+            'approved' as qc_status,
+            qmt.tested_by as received_by,
+            CONCAT('Backfilled from accepted QC receiving ', mr.receiving_code) as notes
+        FROM milk_receiving mr
+        JOIN (
+            SELECT receiving_id, MAX(id) as latest_test_id
+            FROM qc_milk_tests
+            WHERE is_accepted = 1
+            GROUP BY receiving_id
+        ) latest ON latest.receiving_id = mr.id
+        JOIN qc_milk_tests qmt ON qmt.id = latest.latest_test_id
+        LEFT JOIN raw_milk_inventory rmi ON rmi.receiving_id = mr.id
+        WHERE mr.status = 'accepted'
+          AND COALESCE(NULLIF(mr.accepted_liters, 0), mr.volume_liters) > 0
+          AND rmi.id IS NULL
+    ");
+    $stmt->execute();
+}
+
 // Require Warehouse Raw role
 $currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'production_staff']);
 
 try {
     $db = Database::getInstance()->getConnection();
+    syncAcceptedMilkInventory($db);
 
     switch ($requestMethod) {
         case 'GET':
@@ -313,18 +358,46 @@ function handlePost($db, $currentUser) {
                     throw new Exception('Tank is not available for receiving milk');
                 }
 
-                // Verify raw milk inventory exists and hasn't been assigned yet
+                // Verify raw milk inventory record exists first, then validate assignment eligibility.
                 $rawMilk = $db->prepare("
                     SELECT rmi.*, mt.type_code as milk_type_code
                     FROM raw_milk_inventory rmi
                     LEFT JOIN milk_types mt ON rmi.milk_type_id = mt.id
-                    WHERE rmi.id = ? AND rmi.status = 'available' AND rmi.tank_id IS NULL
+                    WHERE rmi.id = ?
                 ");
                 $rawMilk->execute([$rawMilkInventoryId]);
                 $rawMilkData = $rawMilk->fetch();
 
                 if (!$rawMilkData) {
-                    throw new Exception('Raw milk inventory not found or already assigned to a tank');
+                    throw new Exception('Raw milk inventory record not found');
+                }
+
+                if (!empty($rawMilkData['tank_id'])) {
+                    throw new Exception('Raw milk inventory is already assigned to a tank');
+                }
+
+                if (isset($rawMilkData['remaining_liters']) && (float) $rawMilkData['remaining_liters'] <= 0) {
+                    throw new Exception('Raw milk inventory has no remaining liters to store');
+                }
+
+                if (isset($rawMilkData['qc_status']) && $rawMilkData['qc_status'] !== 'approved') {
+                    throw new Exception('Raw milk inventory is not QC-approved for storage');
+                }
+
+                $terminalStatuses = ['depleted', 'expired', 'in_production'];
+                if (in_array((string) ($rawMilkData['status'] ?? ''), $terminalStatuses, true)) {
+                    throw new Exception('Raw milk inventory is not available for storage (status: ' . $rawMilkData['status'] . ')');
+                }
+
+                // Self-heal legacy/invalid non-terminal states so assignment can proceed.
+                if (($rawMilkData['status'] ?? '') !== 'available') {
+                    $normalizeStmt = $db->prepare(" 
+                        UPDATE raw_milk_inventory
+                        SET status = 'available', updated_at = NOW()
+                        WHERE id = ? AND tank_id IS NULL
+                    ");
+                    $normalizeStmt->execute([$rawMilkInventoryId]);
+                    $rawMilkData['status'] = 'available';
                 }
 
                 // Check milk type compatibility (if tank has dedicated milk type)
@@ -377,14 +450,14 @@ function handlePost($db, $currentUser) {
                     $notes ?? 'Assigned to storage tank'
                 ]);
 
-                // Log audit
+                $db->commit();
+
+                // Log audit after commit to avoid interfering with the main transaction.
                 logAudit($currentUser['user_id'], 'assign_milk_to_tank', 'raw_milk_inventory', $rawMilkInventoryId, null, [
                     'tank_id' => $tankId,
                     'tank_code' => $tankData['tank_code'],
                     'volume_liters' => $rawMilkData['remaining_liters']
                 ]);
-
-                $db->commit();
 
                 Response::success([
                     'raw_milk_inventory_id' => $rawMilkInventoryId,
@@ -395,7 +468,9 @@ function handlePost($db, $currentUser) {
                 ], 'Milk assigned to tank successfully');
 
             } catch (Exception $e) {
-                $db->rollBack();
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
                 Response::error($e->getMessage(), 400);
             }
             break;

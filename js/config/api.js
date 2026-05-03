@@ -77,6 +77,10 @@ if (typeof axios !== 'undefined') {
                 // Unauthorized - redirect to login
                 localStorage.removeItem('highland_token');
                 localStorage.removeItem('highland_user');
+                localStorage.removeItem('highland_session_started_at');
+                localStorage.removeItem('highland_session_expires_at');
+                localStorage.removeItem('highland_last_activity_at');
+                localStorage.removeItem('highland_idle_timeout_ms');
                 window.location.href = APP_BASE + '/html/login.html';
             } else if (status === 403) {
                 // Forbidden - show access denied

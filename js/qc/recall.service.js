@@ -117,6 +117,15 @@ class RecallService {
     }
 
     /**
+     * Get released batches that are eligible for recall.
+     */
+    static async getEligibleBatches(search = '') {
+        const params = { action: 'batches' };
+        if (search) params.search = search;
+        return await api.get(this.API_PATH, { params });
+    }
+
+    /**
      * Create new recall
      */
     static async create(data) {

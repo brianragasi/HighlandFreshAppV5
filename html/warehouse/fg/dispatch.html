@@ -895,9 +895,16 @@
             renderScannedItems();
         }
         
-        function clearScanned() {
+        async function clearScanned() {
             if (scannedItems.length === 0) return;
-            if (!confirm('Clear all scanned items?')) return;
+            const confirmed = await AuthService.confirmAction({
+                title: 'Clear Scanned Items',
+                message: 'Clear all scanned items?',
+                confirmText: 'Clear Items',
+                tone: 'warning',
+                icon: 'fa-list-check'
+            });
+            if (!confirmed) return;
             scannedItems = [];
             renderScannedItems();
         }
@@ -919,7 +926,14 @@
                 ? `Generate Delivery Receipt for ${scannedItems.length} picked items?\n\nThis will:\n- Assign official DR number\n- Deduct inventory from stock`
                 : `Release ${scannedItems.length} items for ${currentDR.dr_number}?`;
             
-            if (!confirm(confirmMsg)) return;
+            const confirmed = await AuthService.confirmAction({
+                title: isPicking ? 'Generate Delivery Receipt' : 'Release Items',
+                message: confirmMsg,
+                confirmText: isPicking ? 'Generate DR' : 'Release Items',
+                tone: 'success',
+                icon: 'fa-truck'
+            });
+            if (!confirmed) return;
             
             try {
                 const items = scannedItems.map(i => ({
@@ -962,8 +976,15 @@
             showToast('View older batches feature coming soon', 'info');
         }
         
-        function overrideFIFO() {
-            if (confirm('Override FIFO and continue with this batch? This will be logged.')) {
+        async function overrideFIFO() {
+            const confirmed = await AuthService.confirmAction({
+                title: 'Override FIFO',
+                message: 'Override FIFO and continue with this batch? This will be logged.',
+                confirmText: 'Override FIFO',
+                tone: 'warning',
+                icon: 'fa-triangle-exclamation'
+            });
+            if (confirmed) {
                 document.getElementById('fifoWarning').classList.add('hidden');
                 addToRelease();
             }

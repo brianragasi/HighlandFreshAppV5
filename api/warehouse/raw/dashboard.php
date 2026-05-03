@@ -15,6 +15,50 @@
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
 
+/**
+ * Backfill raw milk inventory rows for accepted QC records that are missing inventory.
+ * This keeps warehouse dashboard and storage queue consistent with QC acceptance.
+ */
+function syncAcceptedMilkInventory($db) {
+    $stmt = $db->prepare(" 
+        INSERT INTO raw_milk_inventory (
+            batch_code, receiving_id, qc_test_id, milk_type_id, tank_id,
+            volume_liters, remaining_liters, received_date, expiry_date,
+            fat_percentage, grade, unit_cost, status, qc_status, received_by, notes
+        )
+        SELECT
+            CONCAT('RAW-RCV-', LPAD(mr.id, 6, '0')) as batch_code,
+            mr.id as receiving_id,
+            qmt.id as qc_test_id,
+            mr.milk_type_id,
+            NULL as tank_id,
+            COALESCE(NULLIF(mr.accepted_liters, 0), mr.volume_liters) as volume_liters,
+            COALESCE(NULLIF(mr.accepted_liters, 0), mr.volume_liters) as remaining_liters,
+            mr.receiving_date as received_date,
+            DATE_ADD(mr.receiving_date, INTERVAL 2 DAY) as expiry_date,
+            qmt.fat_percentage,
+            qmt.grade,
+            qmt.final_price_per_liter as unit_cost,
+            'available' as status,
+            'approved' as qc_status,
+            qmt.tested_by as received_by,
+            CONCAT('Backfilled from accepted QC receiving ', mr.receiving_code) as notes
+        FROM milk_receiving mr
+        JOIN (
+            SELECT receiving_id, MAX(id) as latest_test_id
+            FROM qc_milk_tests
+            WHERE is_accepted = 1
+            GROUP BY receiving_id
+        ) latest ON latest.receiving_id = mr.id
+        JOIN qc_milk_tests qmt ON qmt.id = latest.latest_test_id
+        LEFT JOIN raw_milk_inventory rmi ON rmi.receiving_id = mr.id
+        WHERE mr.status = 'accepted'
+          AND COALESCE(NULLIF(mr.accepted_liters, 0), mr.volume_liters) > 0
+          AND rmi.id IS NULL
+    ");
+    $stmt->execute();
+}
+
 // Require Warehouse Raw role
 $currentUser = Auth::requireRole(['warehouse_raw', 'general_manager']);
 
@@ -24,6 +68,7 @@ if ($requestMethod !== 'GET') {
 
 try {
     $db = Database::getInstance()->getConnection();
+    syncAcceptedMilkInventory($db);
 
     $today = date('Y-m-d');
     $weekStart = date('Y-m-d', strtotime('monday this week'));

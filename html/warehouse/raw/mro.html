@@ -109,6 +109,10 @@
                             class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i
                                 class="fas fa-clipboard-check w-5 text-center text-base-content/60"></i><span>Requisitions</span><span
                                 class="badge badge-warning badge-sm" id="pendingReqsBadge">0</span></a></li>
+                        <li><a href="receive_deliveries.html"
+                                class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i
+                                    class="fas fa-truck-ramp-box w-5 text-center text-base-content/60"></i><span>Receive Deliveries</span></a>
+                        </li>
                 </ul>
             </div>
         </nav>
@@ -140,11 +144,6 @@
             </div>
             <div class="flex-1">
                 <h1 class="text-lg lg:text-xl font-bold">MRO Supplies</h1>
-            </div>
-            <div class="flex-none flex items-center gap-2">
-                <button class="btn btn-primary btn-sm" onclick="openReceiveModal()">
-                    <i class="fas fa-plus"></i> <span class="hidden sm:inline">Receive Stock</span>
-                </button>
             </div>
         </header>
 
@@ -259,61 +258,6 @@
         </main>
     </div>
 
-    <!-- Receive Stock Modal -->
-    <dialog id="receiveModal" class="modal">
-        <div class="modal-box max-w-md">
-            <form method="dialog">
-                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">X</button>
-            </form>
-            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
-                <i class="fas fa-truck-loading text-primary"></i> Receive MRO Stock
-            </h3>
-            <form id="receiveForm" onsubmit="submitReceive(event)">
-                <div class="form-control mb-3">
-                    <label class="label"><span class="label-text">MRO Item <span
-                                class="text-error">*</span></span></label>
-                    <select class="select select-bordered w-full" id="receiveMROId" required>
-                        <option value="">Select item...</option>
-                    </select>
-                </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Quantity <span
-                                    class="text-error">*</span></span></label>
-                        <input type="number" class="input input-bordered" id="receiveQuantity" step="1" min="1"
-                            required>
-                        <label class="label"><span class="label-text-alt text-base-content/60"
-                                id="receiveUnit"></span></label>
-                    </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Unit Cost</span></label>
-                        <input type="number" class="input input-bordered" id="receiveUnitCost" step="0.01" min="0"
-                            placeholder="0.00">
-                    </div>
-                </div>
-                <div class="form-control mb-3">
-                    <label class="label"><span class="label-text">PO/Reference Number</span></label>
-                    <input type="text" class="input input-bordered" id="receiveReference"
-                        placeholder="e.g., PO-2026-001">
-                </div>
-                <div class="form-control mb-3">
-                    <label class="label"><span class="label-text">Supplier</span></label>
-                    <input type="text" class="input input-bordered" id="receiveSupplier" placeholder="Supplier name">
-                </div>
-                <div class="form-control mb-4">
-                    <label class="label"><span class="label-text">Notes</span></label>
-                    <textarea class="textarea textarea-bordered" id="receiveNotes" rows="2"
-                        placeholder="Delivery notes..."></textarea>
-                </div>
-                <div class="modal-action">
-                    <button type="button" class="btn btn-ghost"
-                        onclick="document.getElementById('receiveModal').close()">Cancel</button>
-                    <button type="submit" class="btn btn-primary"><i class="fas fa-check"></i> Receive Stock</button>
-                </div>
-            </form>
-        </div>
-        <form method="dialog" class="modal-backdrop"><button>close</button></form>
-    </dialog>
 
     <!-- Item Detail Modal -->
     <dialog id="detailModal" class="modal">
@@ -504,16 +448,6 @@
                 renderMROItems();
             });
 
-            // Receive item selection
-            document.getElementById('receiveMROId').addEventListener('change', (e) => {
-                const item = mroItems.find(i => i.id == e.target.value);
-                if (item) {
-                    document.getElementById('receiveUnit').textContent = `Unit: ${item.unit_of_measure}`;
-                } else {
-                    document.getElementById('receiveUnit').textContent = '';
-                }
-            });
-
             // Issue reason change
             document.getElementById('issueReason').addEventListener('change', (e) => {
                 document.getElementById('issueOtherReasonGroup').classList.toggle('hidden', e.target.value !== 'other');
@@ -583,7 +517,6 @@
                     mroItems = response.data.mro_items || response.data.items || response.data || [];
                     updateStats();
                     renderMROItems();
-                    populateReceiveDropdown();
                 }
             } catch (error) {
                 console.error('Failed to load MRO items:', error);
@@ -607,30 +540,6 @@
             document.getElementById('criticalCount').textContent = critical;
         }
 
-        function populateReceiveDropdown() {
-            const select = document.getElementById('receiveMROId');
-            select.innerHTML = '<option value="">Select item...</option>';
-
-            // Group by category
-            const grouped = {};
-            mroItems.forEach(item => {
-                const catName = item.category_name || 'Uncategorized';
-                if (!grouped[catName]) grouped[catName] = [];
-                grouped[catName].push(item);
-            });
-
-            Object.keys(grouped).sort().forEach(catName => {
-                const optgroup = document.createElement('optgroup');
-                optgroup.label = catName;
-                grouped[catName].forEach(item => {
-                    const option = document.createElement('option');
-                    option.value = item.id;
-                    option.textContent = `${item.code} - ${item.name}`;
-                    optgroup.appendChild(option);
-                });
-                select.appendChild(optgroup);
-            });
-        }
 
         function renderMROItems() {
             const container = document.getElementById('mroGrid');
@@ -875,38 +784,6 @@
             `;
         }
 
-        function openReceiveModal() {
-            document.getElementById('receiveForm').reset();
-            document.getElementById('receiveUnit').textContent = '';
-            document.getElementById('receiveModal').showModal();
-        }
-
-        async function submitReceive(e) {
-            e.preventDefault();
-
-            const data = {
-                mro_item_id: document.getElementById('receiveMROId').value,
-                quantity: document.getElementById('receiveQuantity').value,
-                unit_cost: document.getElementById('receiveUnitCost').value || null,
-                reference_number: document.getElementById('receiveReference').value || null,
-                supplier: document.getElementById('receiveSupplier').value || null,
-                notes: document.getElementById('receiveNotes').value || null
-            };
-
-            try {
-                const response = await WarehouseRawService.receiveMROItem(data);
-                if (response.success) {
-                    showToast('Stock received successfully', 'success');
-                    document.getElementById('receiveModal').close();
-                    loadMROItems();
-                } else {
-                    showToast(response.error || 'Failed to receive stock', 'error');
-                }
-            } catch (error) {
-                console.error('Receive error:', error);
-                showToast('Failed to receive stock', 'error');
-            }
-        }
 
         function openIssueModal(id, name, available, unit) {
             document.getElementById('issueMROId').value = id;

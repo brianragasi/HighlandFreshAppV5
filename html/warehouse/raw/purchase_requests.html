@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Purchase Requests - Warehouse Raw | Highland Fresh</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script>tailwind.config={theme:{extend:{fontFamily:{sans:['Inter','system-ui','sans-serif']}}}}</script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body{font-family:'Inter',sans-serif}
+        .bento-card{@apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg}
+        .sidebar-transition{transition:transform .3s cubic-bezier(.4,0,.2,1)}
+        .scrollbar-thin::-webkit-scrollbar{width:6px}
+        .scrollbar-thin::-webkit-scrollbar-track{background:oklch(var(--b2))}
+        .scrollbar-thin::-webkit-scrollbar-thumb{background:oklch(var(--bc)/0.2);border-radius:3px}
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <img src="../../images/logo.jpg" alt="Logo" class="w-10 h-10 rounded-xl object-cover">
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60">Warehouse Raw</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()"><i class="fas fa-times"></i></button>
+            </div>
+        </div>
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-th-large w-5 text-center text-base-content/60"></i><span>Dashboard</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="milk_storage.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-tint w-5 text-center text-base-content/60"></i><span>Milk Storage</span></a></li>
+                    <li><a href="ingredients.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-box-open w-5 text-center text-base-content/60"></i><span>Ingredients</span></a></li>
+                    <li><a href="mro.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-tools w-5 text-center text-base-content/60"></i><span>MRO Supplies</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Operations</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="requisitions.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-clipboard-check w-5 text-center text-base-content/60"></i><span>Requisitions</span></a></li>
+                    <li><a href="purchase_requests.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content"><i class="fas fa-shopping-cart w-5 text-center"></i><span>Purchase Requests</span></a></li>
+                    <li><a href="receive_deliveries.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-truck-ramp-box w-5 text-center text-base-content/60"></i><span>Receive Deliveries</span></a></li>
+                </ul>
+            </div>
+        </nav>
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder"><div class="w-10 rounded-xl bg-primary text-primary-content"><span class="text-sm font-semibold" id="userInitials">WR</span></div></div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Warehouse Staff</p>
+                    <p class="text-xs text-base-content/60">Warehouse Raw</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square" onclick="AuthService.logout()"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden"><button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button></div>
+            <div class="flex-1"><h1 class="text-lg lg:text-xl font-bold">Purchase Requests</h1></div>
+            <div class="flex-none flex items-center gap-2">
+                <button class="btn btn-primary btn-sm gap-2" onclick="openCreateModal()"><i class="fas fa-plus"></i><span class="hidden sm:inline">New PR</span></button>
+                <button class="btn btn-ghost btn-sm" onclick="loadPRs()"><i class="fas fa-sync-alt"></i></button>
+            </div>
+        </header>
+
+        <main class="flex-1 p-4 lg:p-6">
+            <!-- Stats -->
+            <div class="grid grid-cols-3 gap-4 mb-6">
+                <div class="bento-card card bg-base-100 border border-base-300"><div class="card-body p-4"><div class="flex items-center gap-3"><div class="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center"><i class="fas fa-hourglass-half text-warning"></i></div><div><p class="text-2xl font-bold" id="statPending">0</p><p class="text-xs text-base-content/60">Pending</p></div></div></div></div>
+                <div class="bento-card card bg-base-100 border border-base-300"><div class="card-body p-4"><div class="flex items-center gap-3"><div class="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center"><i class="fas fa-check-circle text-success"></i></div><div><p class="text-2xl font-bold" id="statApproved">0</p><p class="text-xs text-base-content/60">Approved</p></div></div></div></div>
+                <div class="bento-card card bg-base-100 border border-base-300"><div class="card-body p-4"><div class="flex items-center gap-3"><div class="w-10 h-10 rounded-xl bg-error/10 flex items-center justify-center"><i class="fas fa-times-circle text-error"></i></div><div><p class="text-2xl font-bold" id="statRejected">0</p><p class="text-xs text-base-content/60">Rejected</p></div></div></div></div>
+            </div>
+
+            <!-- Filters -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body p-4">
+                    <div class="flex flex-wrap gap-2 mb-3" id="statusTabs">
+                        <button class="btn btn-warning btn-sm gap-1 active-tab" data-status="pending"><i class="fas fa-hourglass-half"></i> Pending</button>
+                        <button class="btn btn-ghost btn-sm gap-1" data-status="approved"><i class="fas fa-check"></i> Approved</button>
+                        <button class="btn btn-ghost btn-sm gap-1" data-status="rejected"><i class="fas fa-times"></i> Rejected</button>
+                        <button class="btn btn-ghost btn-sm gap-1" data-status=""><i class="fas fa-list"></i> All</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PR List -->
+            <div id="prList" class="space-y-4">
+                <div class="card bg-base-100 border border-base-300"><div class="card-body items-center justify-center py-12"><span class="loading loading-spinner loading-lg text-primary"></span><p class="text-base-content/60 mt-2">Loading...</p></div></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Create PR Modal -->
+    <dialog id="createModal" class="modal">
+        <div class="modal-box max-w-2xl max-h-[90vh]">
+            <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button></form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4"><i class="fas fa-shopping-cart text-primary"></i> New Purchase Request</h3>
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Priority</span></label>
+                        <select id="prPriority" class="select select-bordered w-full">
+                            <option value="normal">Normal</option>
+                            <option value="low">Low</option>
+                            <option value="high">High</option>
+                            <option value="urgent">Urgent</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Needed By</span></label>
+                        <input type="date" id="prNeededBy" class="input input-bordered w-full">
+                    </div>
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Purpose / Reason *</span></label>
+                    <select id="prPurpose" class="select select-bordered w-full">
+                        <option value="">Select reason...</option>
+                        <option value="Stock below reorder point">Stock below reorder point</option>
+                        <option value="Production forecast requirement">Production forecast requirement</option>
+                        <option value="Safety stock replenishment">Safety stock replenishment</option>
+                        <option value="Emergency replacement">Emergency replacement</option>
+                        <option value="Approved operating need">Approved operating need</option>
+                    </select>
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Notes</span></label>
+                    <textarea id="prNotes" class="textarea textarea-bordered w-full" rows="2" placeholder="Additional notes..."></textarea>
+                </div>
+
+                <!-- Items -->
+                <div class="divider">Items</div>
+                <div id="prItemsContainer" class="space-y-3"></div>
+                <button type="button" class="btn btn-ghost btn-sm gap-1" onclick="addPRItem()"><i class="fas fa-plus"></i> Add Item</button>
+            </div>
+            <div class="modal-action">
+                <button class="btn btn-ghost" onclick="document.getElementById('createModal').close()">Cancel</button>
+                <button class="btn btn-primary" id="submitPRBtn" onclick="submitPR()"><i class="fas fa-paper-plane"></i> Submit PR</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Detail Modal -->
+    <dialog id="detailModal" class="modal">
+        <div class="modal-box max-w-2xl"><form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button></form>
+            <div id="detailContent"><div class="text-center py-8"><span class="loading loading-spinner loading-lg"></span></div></div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <div id="toastContainer" class="toast toast-end toast-bottom z-50"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../../js/config/api.js"></script>
+    <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/purchasing/purchasing.service.js"></script>
+    <script>
+        let allPRs = [];
+        let currentStatus = 'pending';
+        let prItemCounter = 0;
+        let prCatalog = [];
+
+        function toggleSidebar(){
+            document.getElementById('sidebar').classList.toggle('-translate-x-full');
+            document.getElementById('sidebarBackdrop').classList.toggle('hidden');
+        }
+
+        document.addEventListener('DOMContentLoaded', async()=>{
+            if(!AuthService.isAuthenticated()){window.location.href='../../login.html';return;}
+            const user=AuthService.getCurrentUser();
+            if(user){
+                document.getElementById('sidebarUserName').textContent=`${user.first_name||''} ${user.last_name||''}`.trim();
+                document.getElementById('userInitials').textContent=((user.first_name||'W')[0]+(user.last_name||'R')[0]).toUpperCase();
+            }
+            setupTabs();
+            await loadCatalog();
+            await loadPRs();
+        });
+
+        async function loadCatalog(){
+            try{
+                const [ingredientRes,mroRes]=await Promise.all([
+                    PurchasingService.getIngredientCatalog(),
+                    PurchasingService.getMroCatalog()
+                ]);
+
+                const ingredients=(ingredientRes?.data?.ingredients||ingredientRes?.data||[]).map(item=>({
+                    source_type:'ingredient',
+                    source_id:item.id,
+                    code:item.ingredient_code||item.code||'',
+                    name:item.ingredient_name||item.name||'',
+                    unit:item.unit_of_measure||'units',
+                    current_stock:parseFloat(item.current_stock||0),
+                    reorder_point:parseFloat(item.reorder_point||item.minimum_stock||0),
+                    unit_cost:parseFloat(item.unit_cost||0),
+                    category:item.category_name||'Ingredient'
+                }));
+
+                const mroItems=(mroRes?.data?.mro_items||mroRes?.data?.items||mroRes?.data||[]).map(item=>({
+                    source_type:'mro',
+                    source_id:item.id,
+                    code:item.item_code||item.code||'',
+                    name:item.item_name||item.name||'',
+                    unit:item.unit_of_measure||'units',
+                    current_stock:parseFloat(item.current_stock||0),
+                    reorder_point:parseFloat(item.reorder_point||item.minimum_stock||0),
+                    unit_cost:parseFloat(item.unit_cost||0),
+                    category:item.category_name||'MRO'
+                }));
+
+                prCatalog=[...ingredients,...mroItems].sort((a,b)=>a.name.localeCompare(b.name));
+            }catch(e){
+                console.error(e);
+                prCatalog=[];
+                showToast('Failed to load item master list','error');
+            }
+        }
+
+        function setupTabs(){
+            document.querySelectorAll('#statusTabs button').forEach(btn=>{
+                btn.addEventListener('click',()=>{
+                    document.querySelectorAll('#statusTabs button').forEach(b=>{b.classList.remove('btn-warning','btn-success','btn-error','btn-primary');b.classList.add('btn-ghost');});
+                    btn.classList.remove('btn-ghost');
+                    const s=btn.dataset.status;
+                    if(s==='pending')btn.classList.add('btn-warning');
+                    else if(s==='approved')btn.classList.add('btn-success');
+                    else if(s==='rejected')btn.classList.add('btn-error');
+                    else btn.classList.add('btn-primary');
+                    currentStatus=s;
+                    renderPRs();
+                });
+            });
+        }
+
+        async function loadPRs(){
+            try{
+                const res=await PurchasingService.getPurchaseRequests();
+                allPRs=res?.data||[];
+                updateStats();
+                renderPRs();
+            }catch(e){
+                console.error(e);
+                allPRs=[];renderPRs();
+                showToast('Failed to load purchase requests','error');
+            }
+        }
+
+        function updateStats(){
+            document.getElementById('statPending').textContent=allPRs.filter(p=>p.status==='pending').length;
+            document.getElementById('statApproved').textContent=allPRs.filter(p=>p.status==='approved').length;
+            document.getElementById('statRejected').textContent=allPRs.filter(p=>p.status==='rejected').length;
+        }
+
+        function renderPRs(){
+            const container=document.getElementById('prList');
+            let filtered=currentStatus?allPRs.filter(p=>p.status===currentStatus):[...allPRs];
+
+            if(filtered.length===0){
+                container.innerHTML=`<div class="card bg-base-100 border border-base-300"><div class="card-body items-center justify-center py-12"><i class="fas fa-shopping-cart fa-3x text-base-content/20 mb-4"></i><h4 class="font-semibold text-lg">No purchase requests</h4><p class="text-base-content/60">${currentStatus==='pending'?'No pending requests':'Try a different filter'}</p></div></div>`;
+                return;
+            }
+
+            const priorityBadge={urgent:'badge-error',high:'badge-warning',normal:'badge-info',low:'badge-ghost'};
+            const statusBadge={pending:'badge-warning',approved:'badge-success',rejected:'badge-error'};
+            const statusBorder={pending:'border-l-warning',approved:'border-l-success',rejected:'border-l-error'};
+
+            container.innerHTML=filtered.map(pr=>`
+                <div class="card bg-base-100 border border-base-300 border-l-4 ${statusBorder[pr.status]||''} hover:shadow-md transition-shadow cursor-pointer" onclick="viewPR(${pr.id})">
+                    <div class="card-body p-4">
+                        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-lg">${pr.pr_number}</span>
+                                <span class="badge ${priorityBadge[pr.priority]||'badge-ghost'} badge-sm">${(pr.priority||'normal').toUpperCase()}</span>
+                                <span class="badge ${statusBadge[pr.status]||'badge-ghost'} badge-sm badge-outline">${(pr.status||'').toUpperCase()}</span>
+                            </div>
+                            <span class="text-sm text-base-content/60">${formatDate(pr.created_at)}</span>
+                        </div>
+                        <p class="text-sm text-base-content/70 mb-2">${pr.purpose||'No purpose specified'}</p>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-base-content/60"><i class="fas fa-boxes mr-1"></i>${pr.item_count||0} items</span>
+                            <span class="font-semibold">${pr.estimated_total>0?'Est. ₱'+parseFloat(pr.estimated_total).toLocaleString('en-PH',{minimumFractionDigits:2}):''}</span>
+                            ${pr.po_count>0?'<span class="badge badge-info badge-sm">PO Created</span>':''}
+                        </div>
+                        ${pr.status==='rejected'&&pr.rejection_reason?`<div class="alert alert-error mt-2 py-2 text-sm"><i class="fas fa-info-circle"></i><span>${pr.rejection_reason}</span></div>`:''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function viewPR(id){
+            const modal=document.getElementById('detailModal');
+            const content=document.getElementById('detailContent');
+            content.innerHTML='<div class="text-center py-8"><span class="loading loading-spinner loading-lg"></span></div>';
+            modal.showModal();
+
+            try{
+                const res=await PurchasingService.getPurchaseRequestDetail(id);
+                const pr=res?.data;
+                if(!pr){content.innerHTML='<p class="text-error">Not found</p>';return;}
+
+                const statusColors={pending:'warning',approved:'success',rejected:'error'};
+                const c=statusColors[pr.status]||'ghost';
+
+                content.innerHTML=`
+                    <h3 class="font-bold text-xl mb-4 flex items-center gap-2">
+                        <i class="fas fa-shopping-cart text-primary"></i> ${pr.pr_number}
+                        <span class="badge badge-${c} badge-sm">${(pr.status||'').toUpperCase()}</span>
+                    </h3>
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div><p class="text-xs text-base-content/60">Requested By</p><p class="font-semibold">${pr.requested_by_name||'—'}</p></div>
+                        <div><p class="text-xs text-base-content/60">Priority</p><p class="font-semibold">${(pr.priority||'normal').toUpperCase()}</p></div>
+                        <div><p class="text-xs text-base-content/60">Needed By</p><p class="font-semibold">${pr.needed_by_date?formatDate(pr.needed_by_date):'Not specified'}</p></div>
+                        <div><p class="text-xs text-base-content/60">Created</p><p class="font-semibold">${formatDate(pr.created_at)}</p></div>
+                    </div>
+                    ${pr.purpose?`<div class="bg-base-200 rounded-lg p-3 mb-4"><p class="text-sm"><strong>Purpose:</strong> ${pr.purpose}</p></div>`:''}
+                    ${pr.status==='approved'&&pr.approved_by_name?`<div class="alert alert-success mb-4 py-2"><i class="fas fa-check-circle"></i><span>Approved by ${pr.approved_by_name} on ${formatDate(pr.approved_at)}</span></div>`:''}
+                    ${pr.status==='rejected'?`<div class="alert alert-error mb-4 py-2"><i class="fas fa-times-circle"></i><span>Rejected: ${pr.rejection_reason||'No reason'}</span></div>`:''}
+                    <div class="divider">Items</div>
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead><tr><th>Description</th><th>Qty</th><th>Unit</th><th>Est. Price</th><th>Est. Total</th></tr></thead>
+                            <tbody>${(pr.items||[]).map(i=>`
+                                <tr>
+                                    <td>${i.item_description}</td>
+                                    <td>${i.quantity}</td>
+                                    <td>${i.unit}</td>
+                                    <td>${i.estimated_unit_price?'₱'+parseFloat(i.estimated_unit_price).toFixed(2):'—'}</td>
+                                    <td class="font-semibold">${i.estimated_total?'₱'+parseFloat(i.estimated_total).toFixed(2):'—'}</td>
+                                </tr>
+                            `).join('')}</tbody>
+                        </table>
+                    </div>
+                    ${pr.linked_pos&&pr.linked_pos.length>0?`
+                        <div class="divider">Linked Purchase Orders</div>
+                        ${pr.linked_pos.map(po=>`<div class="badge badge-info gap-1"><i class="fas fa-file-invoice-dollar"></i>${po.po_number} — ${PurchasingService.formatStatus(po.status)}</div>`).join(' ')}
+                    `:''}
+                    <div class="modal-action"><button class="btn btn-ghost" onclick="document.getElementById('detailModal').close()">Close</button></div>
+                `;
+            }catch(e){content.innerHTML='<p class="text-error text-center py-8">Failed to load details</p>';}
+        }
+
+        // --- Create PR ---
+        function openCreateModal(){
+            document.getElementById('prPriority').value='normal';
+            document.getElementById('prNeededBy').value='';
+            document.getElementById('prPurpose').value='';
+            document.getElementById('prNotes').value='';
+            document.getElementById('prItemsContainer').innerHTML='';
+            prItemCounter=0;
+            addPRItem();
+            document.getElementById('createModal').showModal();
+        }
+
+        function addPRItem(){
+            prItemCounter++;
+            const div=document.createElement('div');
+            div.className='bg-base-200 rounded-lg p-3';
+            div.id=`prItem_${prItemCounter}`;
+            const catalogOptions=prCatalog.map((item,index)=>`
+                <option value="${index}">
+                    ${escapeHtml(item.name)}${item.code?` (${escapeHtml(item.code)})`:''} - ${item.source_type==='ingredient'?'Ingredient':'MRO'} - Stock: ${item.current_stock.toLocaleString()} ${escapeHtml(item.unit)}
+                </option>
+            `).join('');
+            div.innerHTML=`
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-sm font-semibold">Item #${prItemCounter}</span>
+                    <button type="button" class="btn btn-ghost btn-xs btn-square text-error" onclick="this.closest('.bg-base-200').remove()"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-2">
+                    <div class="md:col-span-2">
+                        <select class="select select-bordered select-sm w-full pr-item-select" onchange="onPRItemSelected(this)">
+                            <option value="">Select item *</option>
+                            ${catalogOptions}
+                        </select>
+                    </div>
+                    <div><input type="number" class="input input-bordered input-sm w-full pr-qty" placeholder="Qty" min="0.01" step="0.01"></div>
+                    <div><input type="text" class="input input-bordered input-sm w-full pr-unit" placeholder="Unit" readonly></div>
+                </div>
+                <div class="grid grid-cols-2 gap-2 mt-2">
+                    <div><input type="number" class="input input-bordered input-sm w-full pr-price" placeholder="Est. unit price" min="0" step="0.01" readonly></div>
+                    <div><input type="text" class="input input-bordered input-sm w-full pr-item-notes" placeholder="Notes (optional)"></div>
+                </div>
+                <div class="text-xs text-base-content/60 mt-2 pr-stock-hint">Choose from the approved item master.</div>
+            `;
+            document.getElementById('prItemsContainer').appendChild(div);
+        }
+
+        function onPRItemSelected(select){
+            const row=select.closest('.bg-base-200');
+            const item=prCatalog[Number(select.value)];
+            const unit=row.querySelector('.pr-unit');
+            const price=row.querySelector('.pr-price');
+            const qty=row.querySelector('.pr-qty');
+            const hint=row.querySelector('.pr-stock-hint');
+
+            if(!item){
+                unit.value='';
+                price.value='';
+                qty.value='';
+                hint.textContent='Choose from the approved item master.';
+                return;
+            }
+
+            unit.value=item.unit||'units';
+            price.value=item.unit_cost>0?item.unit_cost.toFixed(2):'';
+            const suggestedQty=Math.max(0,item.reorder_point-item.current_stock);
+            if(suggestedQty>0&&!qty.value){
+                qty.value=suggestedQty.toFixed(2);
+            }
+            hint.textContent=`${item.category} | Current stock: ${item.current_stock.toLocaleString()} ${item.unit}${item.reorder_point?` | Reorder point: ${item.reorder_point.toLocaleString()} ${item.unit}`:''}`;
+        }
+
+        async function submitPR(){
+            const purpose=document.getElementById('prPurpose').value;
+            if(!purpose){showToast('Purpose is required','error');return;}
+
+            const itemEls=document.querySelectorAll('#prItemsContainer .bg-base-200');
+            if(itemEls.length===0){showToast('Add at least one item','error');return;}
+
+            const items=[];
+            let valid=true;
+            itemEls.forEach(el=>{
+                const selectedIndex=el.querySelector('.pr-item-select').value;
+                const selectedItem=prCatalog[Number(selectedIndex)];
+                const qty=parseFloat(el.querySelector('.pr-qty').value);
+                const unit=selectedItem?.unit||'units';
+                const price=parseFloat(el.querySelector('.pr-price').value)||selectedItem?.unit_cost||0;
+                const notes=el.querySelector('.pr-item-notes').value.trim();
+                if(!selectedItem||!qty||qty<=0){valid=false;return;}
+                items.push({
+                    ingredient_id:selectedItem.source_type==='ingredient'?selectedItem.source_id:null,
+                    mro_item_id:selectedItem.source_type==='mro'?selectedItem.source_id:null,
+                    item_description:selectedItem.name,
+                    quantity:qty,
+                    unit,
+                    estimated_unit_price:price,
+                    notes
+                });
+            });
+
+            if(!valid){showToast('All items need an approved item and quantity','error');return;}
+
+            const btn=document.getElementById('submitPRBtn');
+            btn.disabled=true;btn.innerHTML='<span class="loading loading-spinner loading-sm"></span> Submitting...';
+
+            try{
+                const res=await PurchasingService.createPurchaseRequest({
+                    priority:document.getElementById('prPriority').value,
+                    needed_by_date:document.getElementById('prNeededBy').value||null,
+                    purpose,
+                    notes:document.getElementById('prNotes').value.trim()||null,
+                    items
+                });
+                showToast(res?.message||'Purchase Request created!','success');
+                document.getElementById('createModal').close();
+                await loadPRs();
+            }catch(e){
+                showToast(e?.response?.data?.message||e?.message||'Failed to create PR','error');
+            }finally{
+                btn.disabled=false;btn.innerHTML='<i class="fas fa-paper-plane"></i> Submit PR';
+            }
+        }
+
+        // --- Helpers ---
+        function formatDate(d){if(!d)return'—';return new Date(d).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'});}
+        function escapeHtml(value){
+            return String(value||'')
+                .replace(/&/g,'&amp;')
+                .replace(/</g,'&lt;')
+                .replace(/>/g,'&gt;')
+                .replace(/"/g,'&quot;')
+                .replace(/'/g,'&#39;');
+        }
+
+        function showToast(msg,type='info'){
+            const c=document.getElementById('toastContainer');
+            const cls=type==='success'?'alert-success':type==='error'?'alert-error':'alert-info';
+            const icon=type==='success'?'check-circle':type==='error'?'exclamation-circle':'info-circle';
+            const t=document.createElement('div');
+            t.className=`alert ${cls} shadow-lg text-sm`;
+            t.innerHTML=`<i class="fas fa-${icon}"></i><span>${msg}</span>`;
+            c.appendChild(t);
+            setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(()=>t.remove(),300);},3000);
+        }
+    </script>
+</body>
+</html>

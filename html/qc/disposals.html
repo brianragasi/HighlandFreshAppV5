@@ -577,6 +577,11 @@
         async function handleApproval(action) {
             try {
                 const data = { id: currentDisposalId, action, approval_notes: document.getElementById('approvalNotes').value };
+                if (action === 'approve') {
+                    const stepUpToken = await AuthService.promptStepUp('disposal_approval', 'disposal approval');
+                    if (!stepUpToken) return;
+                    data.step_up_token = stepUpToken;
+                }
                 if (action === 'reject') data.rejection_reason = data.approval_notes || 'Rejected by GM';
                 const res = await api.put('/qc/disposals.php', data);
                 if (res.success) {
@@ -608,7 +613,14 @@
         }
 
         async function cancelDisposal(id) {
-            if (!confirm('Cancel this disposal request?')) return;
+            const confirmed = await AuthService.confirmAction({
+                title: 'Cancel Disposal Request',
+                message: 'Cancel this disposal request?',
+                confirmText: 'Cancel Request',
+                tone: 'error',
+                icon: 'fa-ban'
+            });
+            if (!confirmed) return;
             try {
                 const res = await api.delete('/qc/disposals.php', { params: { id } });
                 if (res.success) { showToast('Cancelled', 'success'); loadStats(); loadDisposals(); }
@@ -620,7 +632,13 @@
                 const res = await api.get('/qc/disposals.php', { params: { id } });
                 if (res.success) {
                     const d = res.data;
-                    alert(`Disposal: ${d.disposal_code}\nProduct: ${d.product_name}\nQty: ${d.quantity} ${d.unit}\nValue: ${formatCurrencyLocal(d.total_value)}\nReason: ${d.disposal_reason}\nStatus: ${d.status}`);
+                    await AuthService.showMessage({
+                        title: 'Disposal Details',
+                        message: `Disposal: ${d.disposal_code}\nProduct: ${d.product_name}\nQty: ${d.quantity} ${d.unit}\nValue: ${formatCurrencyLocal(d.total_value)}\nReason: ${d.disposal_reason}\nStatus: ${d.status}`,
+                        confirmText: 'Close',
+                        tone: 'info',
+                        icon: 'fa-circle-info'
+                    });
                 }
             } catch (e) { showToast('Error loading details', 'error'); }
         }
