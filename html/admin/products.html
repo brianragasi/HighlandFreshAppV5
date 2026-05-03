@@ -1,39 +1,129 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="emerald">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Products Management | Highland Fresh Admin</title>
-    
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
-    
+
     <script>
         tailwind.config = {
             theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } }
         }
     </script>
-    
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    
-    <!-- Axios -->
+
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-    
+
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
-        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
-        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
-        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: oklch(var(--b2));
+            border-radius: 3px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: oklch(var(--bc) / 0.2);
+            border-radius: 3px;
+        }
+
+        .sidebar-transition {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .sku-row {
+            animation: fadeIn 0.2s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-4px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .parent-card {
+            border-left: 4px solid oklch(var(--p));
+        }
+
+        .sku-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: oklch(var(--b2));
+            border: 1px solid oklch(var(--b3));
+            border-radius: 8px;
+            padding: 3px 6px 3px 10px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: border-color 0.15s, background 0.15s;
+            position: relative;
+        }
+
+        .sku-chip:hover {
+            border-color: oklch(var(--p));
+            background: oklch(var(--p) / 0.06);
+        }
+
+        .sku-chip .chip-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            margin-left: 4px;
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+
+        .sku-chip:hover .chip-actions {
+            opacity: 1;
+        }
+
+        .sku-chip .chip-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            font-size: 10px;
+            transition: background 0.12s, color 0.12s;
+        }
+
+        .sku-chip .chip-btn:hover {
+            background: oklch(var(--b3));
+        }
+
+        .sku-chip .chip-btn.chip-delete:hover {
+            background: oklch(var(--er) / 0.15);
+            color: oklch(var(--er));
+        }
     </style>
 </head>
+
 <body class="bg-base-200 min-h-screen">
-    
+
     <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
-    
+
     <!-- Sidebar -->
     <aside id="sidebar"
         class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
@@ -54,7 +144,6 @@
 
         <!-- Navigation -->
         <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
-            <!-- Main Menu -->
             <div>
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
                 <ul class="menu menu-sm p-0 gap-1">
@@ -67,26 +156,24 @@
                     </li>
                 </ul>
             </div>
-            <!-- User Management -->
             <div>
-                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">User Management</h2>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">User
+                    Management</h2>
                 <ul class="menu menu-sm p-0 gap-1">
                     <li>
-                        <a href="users.html"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <a href="users.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-users-cog w-5 text-center text-base-content/60"></i>
                             <span class="flex-1">Users &amp; Accounts</span>
                         </a>
                     </li>
                 </ul>
             </div>
-            <!-- Supply Chain -->
             <div>
-                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Supply Chain</h2>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Supply Chain
+                </h2>
                 <ul class="menu menu-sm p-0 gap-1">
                     <li>
-                        <a href="farmers.html"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <a href="farmers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-tractor w-5 text-center text-base-content/60"></i>
                             <span class="flex-1">Farmers</span>
                         </a>
@@ -102,14 +189,14 @@
                         <a href="customers.html"
                             class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-store w-5 text-center text-base-content/60"></i>
-                            <span class="flex-1">Customers</span>
+                            <span class="flex-1">Customer Accounts</span>
                         </a>
                     </li>
                 </ul>
             </div>
-            <!-- Product Catalog -->
             <div>
-                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Product Catalog</h2>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Product
+                    Catalog</h2>
                 <ul class="menu menu-sm p-0 gap-1">
                     <li>
                         <a href="products.html"
@@ -119,8 +206,7 @@
                         </a>
                     </li>
                     <li>
-                        <a href="recipes.html"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <a href="recipes.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-clipboard-list w-5 text-center text-base-content/60"></i>
                             <span class="flex-1">Recipes</span>
                         </a>
@@ -134,13 +220,12 @@
                     </li>
                 </ul>
             </div>
-            <!-- Infrastructure -->
             <div>
-                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Infrastructure</h2>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Infrastructure
+                </h2>
                 <ul class="menu menu-sm p-0 gap-1">
                     <li>
-                        <a href="storage.html"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <a href="storage.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-warehouse w-5 text-center text-base-content/60"></i>
                             <span class="flex-1">Storage &amp; Tanks</span>
                         </a>
@@ -154,13 +239,12 @@
                     </li>
                 </ul>
             </div>
-            <!-- Sales & Orders -->
             <div>
-                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Sales & Orders</h2>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Sales &amp;
+                    Orders</h2>
                 <ul class="menu menu-sm p-0 gap-1">
                     <li>
-                        <a href="orders.html"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <a href="orders.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-clipboard-list w-5 text-center text-base-content/60"></i>
                             <span class="flex-1">Orders for Approval</span>
                             <span id="pendingOrdersBadge" class="badge badge-warning badge-sm"></span>
@@ -168,9 +252,9 @@
                     </li>
                 </ul>
             </div>
-            <!-- Quality Control -->
             <div>
-                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Quality Control</h2>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Quality
+                    Control</h2>
                 <ul class="menu menu-sm p-0 gap-1">
                     <li>
                         <a href="disposals.html"
@@ -181,8 +265,7 @@
                         </a>
                     </li>
                     <li>
-                        <a href="recalls.html"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <a href="recalls.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-exclamation-triangle w-5 text-center text-base-content/60"></i>
                             <span class="flex-1">Batch Recalls</span>
                             <span id="activeRecallsBadge" class="badge badge-error badge-sm"></span>
@@ -228,16 +311,20 @@
             </div>
         </div>
     </aside>
-    
+
     <!-- Main Content -->
     <div class="lg:ml-72 min-h-screen flex flex-col">
         <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
             <div class="flex-none lg:hidden">
-                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button>
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i
+                        class="fas fa-bars text-lg"></i></button>
             </div>
             <div class="flex-1">
                 <div class="breadcrumbs text-sm">
-                    <ul><li><a href="dashboard.html">Admin</a></li><li class="font-semibold">Products</li></ul>
+                    <ul>
+                        <li><a href="dashboard.html">Admin</a></li>
+                        <li class="font-semibold">Product Catalog</li>
+                    </ul>
                 </div>
             </div>
             <div class="flex-none flex items-center gap-2">
@@ -248,18 +335,18 @@
                 </label>
             </div>
         </header>
-        
+
         <main class="flex-1 p-4 lg:p-6">
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
                 <div>
                     <h1 class="text-2xl font-bold text-base-content">Product Catalog</h1>
-                    <p class="text-base-content/60">Manage finished goods products</p>
+                    <p class="text-base-content/60">Base products with their size/packaging variants (SKUs)</p>
                 </div>
                 <button class="btn btn-primary" onclick="openAddModal()">
-                    <i class="fas fa-plus mr-2"></i>Add Product
+                    <i class="fas fa-plus mr-2"></i>Add Base Product
                 </button>
             </div>
-            
+
             <!-- Stats -->
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                 <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
@@ -268,19 +355,19 @@
                             <i class="fas fa-boxes text-primary text-xl"></i>
                         </div>
                         <div>
-                            <p class="text-2xl font-bold" id="statTotal">0</p>
-                            <p class="text-xs text-base-content/60">Total Products</p>
+                            <p class="text-2xl font-bold" id="statBaseProducts">0</p>
+                            <p class="text-xs text-base-content/60">Base Products</p>
                         </div>
                     </div>
                 </div>
                 <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
                     <div class="flex items-center gap-3">
                         <div class="w-12 h-12 bg-success/10 rounded-xl flex items-center justify-center">
-                            <i class="fas fa-check-circle text-success text-xl"></i>
+                            <i class="fas fa-tags text-success text-xl"></i>
                         </div>
                         <div>
-                            <p class="text-2xl font-bold" id="statActive">0</p>
-                            <p class="text-xs text-base-content/60">Active</p>
+                            <p class="text-2xl font-bold" id="statTotalSKUs">0</p>
+                            <p class="text-xs text-base-content/60">Total SKUs</p>
                         </div>
                     </div>
                 </div>
@@ -291,7 +378,7 @@
                         </div>
                         <div>
                             <p class="text-2xl font-bold" id="statLowStock">0</p>
-                            <p class="text-xs text-base-content/60">Low Stock</p>
+                            <p class="text-xs text-base-content/60">Low Stock SKUs</p>
                         </div>
                     </div>
                 </div>
@@ -307,14 +394,15 @@
                     </div>
                 </div>
             </div>
-            
+
             <!-- Filters -->
             <div class="bg-base-100 rounded-2xl border border-base-300 p-4 mb-6">
                 <div class="flex flex-col md:flex-row gap-4">
                     <div class="flex-1">
                         <label class="input input-bordered flex items-center gap-2">
                             <i class="fas fa-search text-base-content/40"></i>
-                            <input type="text" id="searchInput" placeholder="Search products..." class="grow" onkeyup="filterData()"/>
+                            <input type="text" id="searchInput" placeholder="Search products..." class="grow"
+                                oninput="filterData()" />
                         </label>
                     </div>
                     <select id="categoryFilter" class="select select-bordered w-full md:w-48" onchange="filterData()">
@@ -333,40 +421,46 @@
                     </select>
                 </div>
             </div>
-            
-            <!-- Products Grid -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" id="productsGrid">
-                <div class="col-span-full text-center py-12">
+
+            <!-- Product Groups (Parent-Child view) -->
+            <div id="productsContainer" class="space-y-4">
+                <div class="text-center py-12">
                     <span class="loading loading-spinner loading-lg text-primary"></span>
                     <p class="mt-2 text-base-content/60">Loading products...</p>
                 </div>
             </div>
-        </div>
+        </main>
     </div>
-    
-    <!-- Add/Edit Modal -->
-    <dialog id="formModal" class="modal">
+
+    <!-- ====================== ADD/EDIT BASE PRODUCT MODAL ====================== -->
+    <dialog id="baseProductModal" class="modal">
         <div class="modal-box w-11/12 max-w-2xl">
             <form method="dialog">
                 <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
-            <h3 class="font-bold text-lg mb-4" id="modalTitle">Add New Product</h3>
-            
-            <form id="dataForm" onsubmit="saveData(event)">
-                <input type="hidden" id="recordId" value="">
-                
+            <h3 class="font-bold text-lg mb-1" id="baseModalTitle">Add Base Product</h3>
+            <p class="text-sm text-base-content/60 mb-5">Define the universal properties of the liquid/product. You will
+                add sizes separately after saving.</p>
+
+            <form id="baseProductForm" onsubmit="saveBaseProduct(event)">
+                <input type="hidden" id="baseRecordId" value="">
+                <input type="hidden" id="baseOriginalName" value="">
+                <input type="hidden" id="baseOriginalCategory" value="">
+
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Product Name - full width -->
                     <div class="form-control md:col-span-2">
-                        <label class="label"><span class="label-text">Product Name <span class="text-error">*</span></span></label>
-                        <input type="text" id="product_name" class="input input-bordered" required />
+                        <label class="label"><span class="label-text font-medium">Product Name <span
+                                    class="text-error">*</span></span></label>
+                        <input type="text" id="base_product_name" class="input input-bordered" required
+                            placeholder="e.g., Highland Chocolate Milk" />
                     </div>
+
+                    <!-- Category -->
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Product Code <span class="text-error">*</span></span></label>
-                        <input type="text" id="product_code" class="input input-bordered" required placeholder="e.g., PM-COW-1L" />
-                    </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Category <span class="text-error">*</span></span></label>
-                        <select id="category" class="select select-bordered" required>
+                        <label class="label"><span class="label-text font-medium">Category <span
+                                    class="text-error">*</span></span></label>
+                        <select id="base_category" class="select select-bordered" required>
                             <option value="pasteurized_milk">Pasteurized Milk</option>
                             <option value="flavored_milk">Flavored Milk</option>
                             <option value="yogurt">Yogurt</option>
@@ -375,34 +469,121 @@
                             <option value="cream">Cream</option>
                         </select>
                     </div>
+
+                    <!-- Milk Type -->
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Variant</span></label>
-                        <input type="text" id="variant" class="input input-bordered" placeholder="e.g., Chocolate, Plain" />
-                    </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Milk Type</span></label>
-                        <select id="milk_type_id" class="select select-bordered">
-                            <option value="">-- Select Milk Type --</option>
+                        <label class="label"><span class="label-text font-medium">Milk Type</span></label>
+                        <select id="base_milk_type_id" class="select select-bordered">
+                            <option value="">— Not Specified —</option>
                             <option value="1">Cow Milk</option>
                             <option value="2">Goat Milk</option>
                         </select>
                     </div>
+
+                    <!-- Divider -->
+                    <div class="md:col-span-2 divider my-0 text-xs text-base-content/40">Storage &amp; Shelf Life</div>
+
+                    <!-- Shelf Life -->
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Unit Size</span></label>
-                        <input type="number" id="unit_size" class="input input-bordered" step="0.01" placeholder="e.g., 1000" />
+                        <label class="label"><span class="label-text font-medium">Shelf Life (days)</span></label>
+                        <input type="number" id="base_shelf_life_days" class="input input-bordered" value="7" min="1" />
+                    </div>
+
+                    <!-- Storage Temp Min -->
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-medium">Storage Temp Min (°C)</span></label>
+                        <input type="number" id="base_storage_temp_min" class="input input-bordered" value="2"
+                            step="0.1" />
+                    </div>
+
+                    <!-- Storage Temp Max -->
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-medium">Storage Temp Max (°C)</span></label>
+                        <input type="number" id="base_storage_temp_max" class="input input-bordered" value="6"
+                            step="0.1" />
+                    </div>
+
+                    <!-- Description -->
+                    <div class="form-control md:col-span-2">
+                        <label class="label"><span class="label-text font-medium">Description</span></label>
+                        <textarea id="base_description" class="textarea textarea-bordered" rows="2"
+                            placeholder="Optional product description"></textarea>
+                    </div>
+
+                    <!-- Active Toggle -->
+                    <div class="form-control md:col-span-2">
+                        <label class="label cursor-pointer justify-start gap-4">
+                            <input type="checkbox" id="base_is_active" class="toggle toggle-primary" checked />
+                            <span class="label-text font-medium">Active Product</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- ── SKU SECTION ── -->
+                <div class="divider my-4 text-sm font-semibold text-base-content/60">
+                    <i class="fas fa-tags mr-1"></i> Sizes / Packaging (SKUs)
+                </div>
+                <p class="text-xs text-base-content/50 mb-3">Add every size you sell this product in. Each size becomes
+                    a separate SKU with its own product code and price.</p>
+
+                <div id="skuList" class="space-y-2 mb-3">
+                    <!-- SKU rows injected here -->
+                </div>
+
+                <button type="button" class="btn btn-ghost btn-sm gap-2 border-dashed border-2 w-full"
+                    onclick="addSkuRow()">
+                    <i class="fas fa-plus text-primary"></i>
+                    <span class="text-primary">Add Size / SKU</span>
+                </button>
+
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost"
+                        onclick="document.getElementById('baseProductModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="baseModalSaveBtn">
+                        <i class="fas fa-save mr-2"></i>Save Product
+                    </button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- ====================== EDIT SINGLE SKU MODAL ====================== -->
+    <dialog id="skuEditModal" class="modal">
+        <div class="modal-box w-11/12 max-w-lg">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-1">Edit SKU / Size Variant</h3>
+            <p class="text-sm text-base-content/60 mb-4">Update the packaging size and pricing for this variant.</p>
+
+            <form id="skuEditForm" onsubmit="saveSkuEdit(event)">
+                <input type="hidden" id="sku_edit_id" value="">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Variant / Flavor</span></label>
+                        <input type="text" id="sku_edit_variant" class="input input-bordered"
+                            placeholder="e.g., Chocolate (optional)" />
                     </div>
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Unit Measure</span></label>
-                        <select id="unit_measure" class="select select-bordered">
-                            <option value="ml">Milliliters (ml)</option>
-                            <option value="L">Liters (L)</option>
-                            <option value="g">Grams (g)</option>
-                            <option value="kg">Kilograms (kg)</option>
+                        <label class="label"><span class="label-text">Unit Size <span
+                                    class="text-error">*</span></span></label>
+                        <input type="number" id="sku_edit_unit_size" class="input input-bordered" step="0.01" required
+                            placeholder="e.g., 1000" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Unit Measure <span
+                                    class="text-error">*</span></span></label>
+                        <select id="sku_edit_unit_measure" class="select select-bordered">
+                            <option value="ml">ml</option>
+                            <option value="L">L</option>
+                            <option value="g">g</option>
+                            <option value="kg">kg</option>
                         </select>
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Base Unit</span></label>
-                        <select id="base_unit" class="select select-bordered">
+                        <select id="sku_edit_base_unit" class="select select-bordered">
                             <option value="piece">Piece</option>
                             <option value="bottle">Bottle</option>
                             <option value="pack">Pack</option>
@@ -412,51 +593,40 @@
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Box Unit</span></label>
-                        <select id="box_unit" class="select select-bordered">
+                        <select id="sku_edit_box_unit" class="select select-bordered">
                             <option value="box">Box</option>
                             <option value="case">Case</option>
                             <option value="crate">Crate</option>
                         </select>
                     </div>
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Pieces Per Box</span></label>
-                        <input type="number" id="pieces_per_box" class="input input-bordered" value="1" min="1" />
+                        <label class="label"><span class="label-text">Pcs / Box</span></label>
+                        <input type="number" id="sku_edit_pieces_per_box" class="input input-bordered" value="1"
+                            min="1" />
                     </div>
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Shelf Life (days)</span></label>
-                        <input type="number" id="shelf_life_days" class="input input-bordered" value="7" min="1" />
+                        <label class="label"><span class="label-text">Selling Price (₱)</span></label>
+                        <input type="number" id="sku_edit_selling_price" class="input input-bordered" step="0.01"
+                            value="0" />
                     </div>
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Storage Temp Min (°C)</span></label>
-                        <input type="number" id="storage_temp_min" class="input input-bordered" value="2" step="0.1" />
-                    </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Storage Temp Max (°C)</span></label>
-                        <input type="number" id="storage_temp_max" class="input input-bordered" value="6" step="0.1" />
-                    </div>
-                    <div class="form-control md:col-span-2">
-                        <label class="label"><span class="label-text">Description</span></label>
-                        <textarea id="description" class="textarea textarea-bordered" rows="2"></textarea>
-                    </div>
-                    <div class="form-control md:col-span-2">
-                        <label class="label cursor-pointer justify-start gap-4">
-                            <input type="checkbox" id="is_active" class="toggle toggle-primary" checked />
-                            <span class="label-text">Active Product</span>
-                        </label>
+                        <label class="label"><span class="label-text">Product Code</span></label>
+                        <input type="text" id="sku_edit_product_code" class="input input-bordered bg-base-200" readonly
+                            placeholder="Auto-generated" />
                     </div>
                 </div>
-                
                 <div class="modal-action">
-                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('formModal').close()">Cancel</button>
-                    <button type="submit" class="btn btn-primary" id="saveBtn">
-                        <i class="fas fa-save mr-2"></i>Save Product
+                    <button type="button" class="btn btn-ghost"
+                        onclick="document.getElementById('skuEditModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save mr-2"></i>Save SKU
                     </button>
                 </div>
             </form>
         </div>
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
-    
+
     <!-- Delete Confirmation -->
     <dialog id="deleteModal" class="modal">
         <div class="modal-box">
@@ -471,291 +641,503 @@
         </div>
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
-    
+
     <div id="toastContainer" class="toast toast-end"></div>
-    
+
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js"></script>
     <script src="../../js/admin/admin.service.js"></script>
-    
+
     <script>
-        let allData = [];
-        let filteredData = [];
+        /* ─────────── State ─────────── */
+        let allProducts = [];       // flat list from API
+        let productGroups = [];     // grouped by base product name+category
+        let filteredGroups = [];
         let recordToDelete = null;
-        
+        let skuRowCounter = 0;
+
+        /* ─────────── Sidebar / Theme ─────────── */
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
             document.getElementById('sidebarBackdrop').classList.toggle('hidden');
         }
-        
-        document.getElementById('themeToggle').addEventListener('change', function() {
+
+        document.getElementById('themeToggle').addEventListener('change', function () {
             document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
             localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
         });
-        
         const savedTheme = localStorage.getItem('theme') || 'emerald';
         document.documentElement.setAttribute('data-theme', savedTheme);
         document.getElementById('themeToggle').checked = savedTheme === 'dark';
-        
-        function formatCurrency(amount) {
-            return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+        /* ─────────── Helpers ─────────── */
+        function formatCurrency(v) {
+            return '₱' + parseFloat(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 });
         }
-        
-        function getCategoryLabel(category) {
-            const labels = {
-                'pasteurized_milk': 'Pasteurized Milk',
-                'flavored_milk': 'Flavored Milk',
-                'yogurt': 'Yogurt',
-                'cheese': 'Cheese',
-                'butter': 'Butter',
-                'cream': 'Cream'
-            };
-            return labels[category] || category;
+
+        const CATEGORY_LABELS = {
+            pasteurized_milk: 'Pasteurized Milk', flavored_milk: 'Flavored Milk',
+            yogurt: 'Yogurt', cheese: 'Cheese', butter: 'Butter', cream: 'Cream'
+        };
+        const CATEGORY_ICONS = {
+            pasteurized_milk: 'fa-bottle-water', flavored_milk: 'fa-mug-hot',
+            yogurt: 'fa-jar', cheese: 'fa-cheese', butter: 'fa-cube', cream: 'fa-fill-drip'
+        };
+        const CATEGORY_COLORS = {
+            pasteurized_milk: 'primary', flavored_milk: 'secondary',
+            yogurt: 'accent', cheese: 'warning', butter: 'info', cream: 'success'
+        };
+
+        /* ─────────── Group products by base (name + category) ─────────── */
+        function groupProducts(flat) {
+            const map = new Map();
+            flat.forEach(p => {
+                const key = `${p.product_name.trim().toLowerCase()}||${p.category}`;
+                if (!map.has(key)) {
+                    map.set(key, {
+                        name: p.product_name,
+                        category: p.category,
+                        milk_type_name: p.milk_type_name,
+                        shelf_life_days: p.shelf_life_days,
+                        storage_temp_min: p.storage_temp_min,
+                        storage_temp_max: p.storage_temp_max,
+                        description: p.description,
+                        skus: []
+                    });
+                }
+                map.get(key).skus.push(p);
+            });
+            return Array.from(map.values());
         }
-        
-        function getCategoryIcon(category) {
-            const icons = {
-                'pasteurized_milk': 'fa-bottle-water',
-                'flavored_milk': 'fa-mug-hot',
-                'yogurt': 'fa-jar',
-                'cheese': 'fa-cheese',
-                'butter': 'fa-cube',
-                'cream': 'fa-fill-drip'
-            };
-            return icons[category] || 'fa-box';
-        }
-        
+
+        /* ─────────── Load ─────────── */
         async function loadData() {
             try {
-                const response = await AdminService.getProducts();
+                const response = await AdminService.getProducts({ limit: 100 });
                 if (response.success) {
-                    allData = response.data?.products || response.data || [];
-                    filteredData = [...allData];
+                    allProducts = response.data?.products || [];
+                    productGroups = groupProducts(allProducts);
+                    filteredGroups = [...productGroups];
                     updateStats();
-                    renderGrid();
+                    renderGroups();
                 }
-            } catch (error) {
-                console.error('Error loading data:', error);
+            } catch (err) {
+                console.error(err);
                 showToast('Failed to load products', 'error');
             }
         }
-        
+
+        /* ─────────── Stats ─────────── */
         function updateStats() {
-            document.getElementById('statTotal').textContent = allData.length;
-            document.getElementById('statActive').textContent = allData.filter(p => p.is_active == 1).length;
-            // Low stock stat removed - no stock_quantity in products table
-            document.getElementById('statLowStock').textContent = 0;
-            
-            const categories = [...new Set(allData.map(p => p.category))];
-            document.getElementById('statCategories').textContent = categories.length;
+            const categories = new Set(allProducts.map(p => p.category));
+            document.getElementById('statBaseProducts').textContent = productGroups.length;
+            document.getElementById('statTotalSKUs').textContent = allProducts.length;
+            document.getElementById('statCategories').textContent = categories.size;
+            document.getElementById('statLowStock').textContent = allProducts.filter(p => (parseFloat(p.current_stock) || 0) < 50).length;
         }
-        
+
+        /* ─────────── Filter ─────────── */
         function filterData() {
             const search = document.getElementById('searchInput').value.toLowerCase();
-            const category = document.getElementById('categoryFilter').value;
+            const cat = document.getElementById('categoryFilter').value;
             const status = document.getElementById('statusFilter').value;
-            
-            filteredData = allData.filter(item => {
-                const matchSearch = !search || 
-                    item.product_name?.toLowerCase().includes(search) ||
-                    item.product_code?.toLowerCase().includes(search) ||
-                    item.variant?.toLowerCase().includes(search);
-                const matchCategory = !category || item.category === category;
-                const matchStatus = status === '' || String(item.is_active) === status;
-                return matchSearch && matchCategory && matchStatus;
+
+            filteredGroups = productGroups.filter(g => {
+                const matchCat = !cat || g.category === cat;
+                const matchSearch = !search || g.name.toLowerCase().includes(search) ||
+                    g.skus.some(s => s.product_code?.toLowerCase().includes(search) || s.variant?.toLowerCase().includes(search));
+                const matchStatus = status === '' || g.skus.some(s => String(s.is_active) === status);
+                return matchCat && matchSearch && matchStatus;
             });
-            
-            renderGrid();
+            renderGroups();
         }
-        
-        function renderGrid() {
-            const grid = document.getElementById('productsGrid');
-            
-            if (filteredData.length === 0) {
-                grid.innerHTML = `<div class="col-span-full text-center py-12">
-                    <i class="fas fa-box-open text-4xl text-base-content/20 mb-4"></i>
-                    <p class="text-base-content/60">No products found</p>
-                </div>`;
+
+        /* ─────────── Render ─────────── */
+        function renderGroups() {
+            const container = document.getElementById('productsContainer');
+
+            if (filteredGroups.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-16">
+                        <i class="fas fa-box-open text-5xl text-base-content/20 mb-4"></i>
+                        <p class="text-base-content/60 text-lg">No products found</p>
+                        <button class="btn btn-primary btn-sm mt-4" onclick="openAddModal()">
+                            <i class="fas fa-plus mr-2"></i>Add First Product
+                        </button>
+                    </div>`;
                 return;
             }
-            
-            grid.innerHTML = filteredData.map(item => {
+
+            container.innerHTML = filteredGroups.map(g => {
+                const color = CATEGORY_COLORS[g.category] || 'primary';
+                const icon = CATEGORY_ICONS[g.category] || 'fa-box';
+                const label = CATEGORY_LABELS[g.category] || g.category;
+
+                const skuChips = g.skus.map(s => {
+                    const rawSize = parseFloat(s.unit_size);
+                    const cleanSize = s.unit_size ? (rawSize % 1 === 0 ? Math.round(rawSize) : rawSize) : null;
+                    const sizeLabel = cleanSize !== null ? `${cleanSize} ${s.unit_measure || 'ml'}` : null;
+                    const noSize = !sizeLabel;
+                    return `
+                    <div class="sku-chip ${noSize ? 'border-warning/60 bg-warning/10' : ''}" onclick="editSku(${s.id})" title="Click to edit">
+                        ${noSize
+                            ? `<span class="text-warning font-medium"><i class="fas fa-exclamation-triangle"></i> No size — click to fix</span>`
+                            : `<span class="font-medium">${sizeLabel}</span>`
+                        }
+                        ${s.variant ? `<span class="text-base-content/50">· ${s.variant}</span>` : ''}
+                        <span class="font-semibold text-${color}">${formatCurrency(s.selling_price || s.unit_price)}</span>
+                        <span class="badge badge-xs ${s.is_active == 1 ? 'badge-success' : 'badge-error'}">${s.is_active == 1 ? '●' : '○'}</span>
+                        <span class="chip-actions" onclick="event.stopPropagation()">
+                            <button class="chip-btn chip-delete" onclick="deleteSku(${s.id},'${escapeJs(s.product_name)} ${sizeLabel || '(no size)'}')" title="Delete this size"><i class="fas fa-times"></i></button>
+                        </span>
+                    </div>`;
+                }).join('');
+
                 return `
-                <div class="bg-base-100 rounded-2xl border border-base-300 overflow-hidden hover:shadow-lg transition-shadow">
+                <div class="bg-base-100 rounded-2xl border border-base-300 parent-card overflow-hidden" style="border-left-color: oklch(var(--${color}))">
                     <div class="p-4">
-                        <div class="flex items-start justify-between mb-3">
-                            <div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
-                                <i class="fas ${getCategoryIcon(item.category)} text-primary text-xl"></i>
+                        <div class="flex items-start justify-between gap-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-12 h-12 bg-${color}/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                                    <i class="fas ${icon} text-${color} text-xl"></i>
+                                </div>
+                                <div>
+                                    <h3 class="font-bold text-base-content text-base">${g.name}</h3>
+                                    <div class="flex items-center gap-2 mt-0.5">
+                                        <span class="badge badge-sm badge-ghost">${label}</span>
+                                        ${g.milk_type_name ? `<span class="text-xs text-base-content/50">· ${g.milk_type_name}</span>` : ''}
+                                        <span class="text-xs text-base-content/40">· Shelf life: ${g.shelf_life_days || 7}d · ${g.storage_temp_min || 2}–${g.storage_temp_max || 6}°C</span>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="flex gap-1">
-                                ${item.is_active == 1 ? 
-                                    '<span class="badge badge-success badge-sm">Active</span>' : 
-                                    '<span class="badge badge-error badge-sm">Inactive</span>'
-                                }
+                            <div class="flex gap-2 flex-shrink-0">
+                                <button class="btn btn-ghost btn-xs" onclick="editBaseProduct('${escapeJs(g.name)}', '${g.category}')" title="Edit base product">
+                                    <i class="fas fa-edit text-primary"></i>
+                                </button>
+                                <button class="btn btn-primary btn-xs gap-1" onclick="openAddSkuModal('${escapeJs(g.name)}', '${g.category}')" title="Add new size/SKU">
+                                    <i class="fas fa-plus"></i> Add Size
+                                </button>
                             </div>
                         </div>
-                        
-                        <h3 class="font-semibold text-base-content mb-1 line-clamp-1">${item.product_name}</h3>
-                        <p class="text-xs text-base-content/60 mb-1">Code: ${item.product_code}</p>
-                        ${item.variant ? `<p class="text-xs text-base-content/60 mb-3">Variant: ${item.variant}</p>` : '<div class="mb-3"></div>'}
-                        
-                        <div class="flex items-center justify-between text-sm mb-2">
-                            <span class="text-base-content/60">Category</span>
-                            <span class="badge badge-ghost badge-sm">${getCategoryLabel(item.category)}</span>
-                        </div>
-                        
-                        <div class="flex items-center justify-between text-sm mb-2">
-                            <span class="text-base-content/60">Size</span>
-                            <span>${item.unit_size || '-'} ${item.unit_measure || ''}</span>
-                        </div>
-                        
-                        <div class="flex items-center justify-between text-sm mb-2">
-                            <span class="text-base-content/60">Milk Type</span>
-                            <span>${item.milk_type_name || 'Not specified'}</span>
-                        </div>
-                        
-                        <div class="flex items-center justify-between text-sm mb-4">
-                            <span class="text-base-content/60">Shelf Life</span>
-                            <span>${item.shelf_life_days || 7} days</span>
-                        </div>
-                        
-                        <div class="flex gap-2">
-                            <button class="btn btn-sm btn-ghost flex-1" onclick="editRecord(${item.id})">
-                                <i class="fas fa-edit"></i> Edit
-                            </button>
-                            <button class="btn btn-sm btn-ghost text-error" onclick="deleteRecord(${item.id}, '${item.product_name}')">
-                                <i class="fas fa-trash"></i>
-                            </button>
+
+                        <!-- SKU chips row -->
+                        <div class="mt-3 flex flex-wrap gap-2 items-center">
+                            <span class="text-xs text-base-content/40 mr-1">Sizes:</span>
+                            ${skuChips || '<span class="text-xs text-base-content/40 italic">No sizes — add one above</span>'}
                         </div>
                     </div>
-                </div>
-            `}).join('');
+                </div>`;
+            }).join('');
         }
-        
+
+        function escapeJs(s) { return (s || '').replace(/'/g, "\\'").replace(/"/g, '\\"'); }
+
+        /* ─────────── Open Add Base Product Modal ─────────── */
         function openAddModal() {
-            document.getElementById('modalTitle').textContent = 'Add New Product';
-            document.getElementById('dataForm').reset();
-            document.getElementById('recordId').value = '';
-            document.getElementById('is_active').checked = true;
-            document.getElementById('formModal').showModal();
+            document.getElementById('baseModalTitle').textContent = 'Add Base Product';
+            document.getElementById('baseProductForm').reset();
+            document.getElementById('baseRecordId').value = '';
+            document.getElementById('base_is_active').checked = true;
+            document.getElementById('skuList').innerHTML = '';
+            skuRowCounter = 0;
+            addSkuRow(); // start with one empty SKU row
+            document.getElementById('baseProductModal').showModal();
         }
-        
-        async function editRecord(id) {
-            try {
-                const response = await AdminService.getProduct(id);
-                if (response.success) {
-                    const data = response.data;
-                    document.getElementById('modalTitle').textContent = 'Edit Product';
-                    document.getElementById('recordId').value = data.id;
-                    document.getElementById('product_name').value = data.product_name || '';
-                    document.getElementById('product_code').value = data.product_code || '';
-                    document.getElementById('category').value = data.category || 'pasteurized_milk';
-                    document.getElementById('variant').value = data.variant || '';
-                    document.getElementById('milk_type_id').value = data.milk_type_id || '';
-                    document.getElementById('unit_size').value = data.unit_size || '';
-                    document.getElementById('unit_measure').value = data.unit_measure || 'ml';
-                    document.getElementById('base_unit').value = data.base_unit || 'piece';
-                    document.getElementById('box_unit').value = data.box_unit || 'box';
-                    document.getElementById('pieces_per_box').value = data.pieces_per_box || 1;
-                    document.getElementById('shelf_life_days').value = data.shelf_life_days || 7;
-                    document.getElementById('storage_temp_min').value = data.storage_temp_min || 2;
-                    document.getElementById('storage_temp_max').value = data.storage_temp_max || 6;
-                    document.getElementById('description').value = data.description || '';
-                    document.getElementById('is_active').checked = data.is_active == 1;
-                    document.getElementById('formModal').showModal();
-                }
-            } catch (error) {
-                console.error('Error loading record:', error);
-                showToast('Failed to load product details', 'error');
-            }
+
+        /* ─────────── Edit Base Product (shared props from first SKU) ─────────── */
+        function editBaseProduct(productName, category) {
+            const group = productGroups.find(g => g.name === productName && g.category === category);
+            if (!group) return;
+            const firstSku = group.skus[0];
+
+            document.getElementById('baseModalTitle').textContent = 'Edit Base Product';
+            document.getElementById('baseRecordId').value = 'EDIT_BASE';
+            // Store ORIGINAL name+category so lookup works even if user changes them
+            document.getElementById('baseOriginalName').value = productName;
+            document.getElementById('baseOriginalCategory').value = category;
+
+            document.getElementById('base_product_name').value = group.name;
+            document.getElementById('base_category').value = group.category;
+            document.getElementById('base_milk_type_id').value = firstSku?.milk_type_id || '';
+            document.getElementById('base_shelf_life_days').value = group.shelf_life_days || 7;
+            document.getElementById('base_storage_temp_min').value = group.storage_temp_min || 2;
+            document.getElementById('base_storage_temp_max').value = group.storage_temp_max || 6;
+            document.getElementById('base_description').value = group.description || '';
+            document.getElementById('base_is_active').checked = firstSku?.is_active == 1;
+
+            document.getElementById('skuList').innerHTML = `
+                <div class="alert alert-info py-2 text-sm">
+                    <i class="fas fa-info-circle"></i>
+                    <span>This will update the <strong>base properties</strong> (name, category, temp, shelf life) for all ${group.skus.length} SKU(s) in this product. To edit individual sizes/prices, click a size chip directly.</span>
+                </div>`;
+
+            document.getElementById('baseProductModal').showModal();
         }
-        
-        async function saveData(event) {
+
+        /* ─────────── Open Add SKU Modal (adding new size to existing product) ─────────── */
+        function openAddSkuModal(productName, category) {
+            const group = productGroups.find(g => g.name === productName && g.category === category);
+            if (!group) return;
+            const firstSku = group.skus[0];
+
+            document.getElementById('baseModalTitle').textContent = `Add Size to "${productName}"`;
+            document.getElementById('baseProductForm').reset();
+            document.getElementById('baseRecordId').value = 'ADD_SKU';
+            document.getElementById('base_product_name').value = productName;
+            document.getElementById('base_category').value = category;
+            document.getElementById('base_milk_type_id').value = firstSku?.milk_type_id || '';
+            document.getElementById('base_shelf_life_days').value = group.shelf_life_days || 7;
+            document.getElementById('base_storage_temp_min').value = group.storage_temp_min || 2;
+            document.getElementById('base_storage_temp_max').value = group.storage_temp_max || 6;
+            document.getElementById('base_description').value = group.description || '';
+            document.getElementById('base_is_active').checked = true;
+
+            // Lock base fields visually
+            ['base_product_name', 'base_category', 'base_milk_type_id'].forEach(id => {
+                document.getElementById(id).setAttribute('disabled', true);
+            });
+
+            document.getElementById('skuList').innerHTML = '';
+            skuRowCounter = 0;
+            addSkuRow();
+            document.getElementById('baseProductModal').showModal();
+        }
+
+        /* ─────────── SKU Row Builder ─────────── */
+        function addSkuRow() {
+            const idx = skuRowCounter++;
+            const div = document.createElement('div');
+            div.className = 'sku-row bg-base-200 rounded-xl p-3 grid grid-cols-2 md:grid-cols-4 gap-2 relative';
+            div.id = `skuRow_${idx}`;
+            div.innerHTML = `
+                <div class="form-control">
+                    <label class="label py-0"><span class="label-text text-xs">Variant/Flavor</span></label>
+                    <input type="text" name="sku_variant_${idx}" class="input input-sm input-bordered" placeholder="e.g., Chocolate" />
+                </div>
+                <div class="form-control">
+                    <label class="label py-0"><span class="label-text text-xs">Size <span class="text-error">*</span></span></label>
+                    <div class="flex gap-1">
+                        <input type="number" name="sku_unit_size_${idx}" class="input input-sm input-bordered w-20" placeholder="1000" required />
+                        <select name="sku_unit_measure_${idx}" class="select select-sm select-bordered">
+                            <option value="ml">ml</option>
+                            <option value="L">L</option>
+                            <option value="g">g</option>
+                            <option value="kg">kg</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-control">
+                    <label class="label py-0"><span class="label-text text-xs">Base Unit</span></label>
+                    <select name="sku_base_unit_${idx}" class="select select-sm select-bordered">
+                        <option value="piece">Piece</option>
+                        <option value="bottle">Bottle</option>
+                        <option value="pack">Pack</option>
+                        <option value="tub">Tub</option>
+                        <option value="jar">Jar</option>
+                    </select>
+                </div>
+                <div class="form-control">
+                    <label class="label py-0"><span class="label-text text-xs">Selling Price (₱) <span class="text-error">*</span></span></label>
+                    <div class="flex gap-1 items-center">
+                        <input type="number" name="sku_selling_price_${idx}" class="input input-sm input-bordered w-full" placeholder="0.00" step="0.01" required />
+                        <button type="button" class="btn btn-ghost btn-xs text-error" onclick="removeSkuRow(${idx})" title="Remove">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>`;
+            document.getElementById('skuList').appendChild(div);
+        }
+
+        function removeSkuRow(idx) {
+            const el = document.getElementById(`skuRow_${idx}`);
+            if (el) el.remove();
+        }
+
+        /* ─────────── Save Base Product + SKUs ─────────── */
+        async function saveBaseProduct(event) {
             event.preventDefault();
-            
-            const recordId = document.getElementById('recordId').value;
-            const formData = {
-                product_name: document.getElementById('product_name').value,
-                product_code: document.getElementById('product_code').value,
-                category: document.getElementById('category').value,
-                variant: document.getElementById('variant').value || null,
-                milk_type_id: document.getElementById('milk_type_id').value || null,
-                unit_size: document.getElementById('unit_size').value || null,
-                unit_measure: document.getElementById('unit_measure').value,
-                base_unit: document.getElementById('base_unit').value,
-                box_unit: document.getElementById('box_unit').value,
-                pieces_per_box: document.getElementById('pieces_per_box').value || 1,
-                shelf_life_days: document.getElementById('shelf_life_days').value || 7,
-                storage_temp_min: document.getElementById('storage_temp_min').value || 2,
-                storage_temp_max: document.getElementById('storage_temp_max').value || 6,
-                description: document.getElementById('description').value,
-                is_active: document.getElementById('is_active').checked ? 1 : 0
-            };
-            
+
+            const mode = document.getElementById('baseRecordId').value;
+            const baseName = document.getElementById('base_product_name').value.trim();
+            const category = document.getElementById('base_category').value;
+            const milkTypeId = document.getElementById('base_milk_type_id').value || null;
+            const shelfLife = parseInt(document.getElementById('base_shelf_life_days').value) || 7;
+            const tempMin = parseFloat(document.getElementById('base_storage_temp_min').value) || 2;
+            const tempMax = parseFloat(document.getElementById('base_storage_temp_max').value) || 6;
+            const description = document.getElementById('base_description').value;
+            const isActive = document.getElementById('base_is_active').checked ? 1 : 0;
+
+            const saveBtn = document.getElementById('baseModalSaveBtn');
+            saveBtn.classList.add('loading');
+            saveBtn.disabled = true;
+
             try {
-                const saveBtn = document.getElementById('saveBtn');
-                saveBtn.classList.add('loading');
-                saveBtn.disabled = true;
-                
-                let response;
-                if (recordId) {
-                    response = await AdminService.updateProduct(recordId, formData);
+                if (mode === 'EDIT_BASE') {
+                    // Use ORIGINAL name+category for lookup (user may have changed them in form)
+                    const origName = document.getElementById('baseOriginalName').value;
+                    const origCat = document.getElementById('baseOriginalCategory').value;
+                    const group = productGroups.find(g => g.name === origName && g.category === origCat);
+                    if (group) {
+                        const promises = group.skus.map(sku => AdminService.updateProduct(sku.id, {
+                            product_name: baseName,
+                            category,
+                            milk_type_id: milkTypeId,
+                            shelf_life_days: shelfLife,
+                            storage_temp_min: tempMin,
+                            storage_temp_max: tempMax,
+                            description,
+                            is_active: isActive
+                        }));
+                        await Promise.all(promises);
+                    }
+                    showToast('Base product updated successfully', 'success');
                 } else {
-                    response = await AdminService.createProduct(formData);
+                    // Collect SKU rows
+                    const skuRows = document.querySelectorAll('[id^="skuRow_"]');
+                    if (skuRows.length === 0) {
+                        showToast('Please add at least one size/SKU', 'warning');
+                        return;
+                    }
+
+                    const createPromises = [];
+                    for (const row of skuRows) {
+                        const idx = row.id.replace('skuRow_', '');
+                        const unitSize = parseFloat(row.querySelector(`[name="sku_unit_size_${idx}"]`)?.value);
+                        const unitMeasure = row.querySelector(`[name="sku_unit_measure_${idx}"]`)?.value || 'ml';
+                        const baseUnit = row.querySelector(`[name="sku_base_unit_${idx}"]`)?.value || 'piece';
+                        const sellingPrice = parseFloat(row.querySelector(`[name="sku_selling_price_${idx}"]`)?.value) || 0;
+                        const variant = row.querySelector(`[name="sku_variant_${idx}"]`)?.value?.trim() || null;
+
+                        if (!unitSize) continue;
+
+                        createPromises.push(AdminService.createProduct({
+                            product_name: baseName,
+                            category,
+                            milk_type_id: milkTypeId,
+                            variant,
+                            unit_size: unitSize,
+                            unit_measure: unitMeasure,
+                            base_unit: baseUnit,
+                            box_unit: 'box',
+                            pieces_per_box: 1,
+                            shelf_life_days: shelfLife,
+                            storage_temp_min: tempMin,
+                            storage_temp_max: tempMax,
+                            description,
+                            selling_price: sellingPrice,
+                            unit_price: sellingPrice,
+                            is_active: isActive
+                        }));
+                    }
+                    await Promise.all(createPromises);
+                    showToast(`Product saved with ${createPromises.length} SKU(s)`, 'success');
                 }
-                
-                if (response.success) {
-                    showToast(recordId ? 'Product updated successfully' : 'Product created successfully', 'success');
-                    document.getElementById('formModal').close();
-                    loadData();
-                } else {
-                    showToast(response.message || 'Failed to save product', 'error');
-                }
-            } catch (error) {
-                console.error('Error saving:', error);
+
+                document.getElementById('baseProductModal').close();
+                // Re-enable any locked fields
+                ['base_product_name', 'base_category', 'base_milk_type_id'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.removeAttribute('disabled');
+                });
+                loadData();
+            } catch (err) {
+                console.error(err);
                 showToast('Failed to save product', 'error');
             } finally {
-                const saveBtn = document.getElementById('saveBtn');
                 saveBtn.classList.remove('loading');
                 saveBtn.disabled = false;
             }
         }
-        
-        function deleteRecord(id, name) {
+
+        /* ─────────── Edit individual SKU ─────────── */
+        async function editSku(id) {
+            try {
+                const response = await AdminService.getProduct(id);
+                if (response.success) {
+                    // FIX: API returns { data: { product: {...} } }
+                    const data = response.data?.product || response.data;
+                    document.getElementById('sku_edit_id').value = data.id;
+                    document.getElementById('sku_edit_variant').value = data.variant || '';
+                    document.getElementById('sku_edit_unit_size').value = data.unit_size || '';
+                    document.getElementById('sku_edit_unit_measure').value = data.unit_measure || 'ml';
+                    document.getElementById('sku_edit_base_unit').value = data.base_unit || 'piece';
+                    document.getElementById('sku_edit_box_unit').value = data.box_unit || 'box';
+                    document.getElementById('sku_edit_pieces_per_box').value = data.pieces_per_box || 1;
+                    document.getElementById('sku_edit_selling_price').value = data.selling_price || data.unit_price || 0;
+                    document.getElementById('sku_edit_product_code').value = data.product_code || '';
+                    document.getElementById('skuEditModal').showModal();
+                }
+            } catch (err) {
+                showToast('Failed to load SKU details', 'error');
+            }
+        }
+
+        async function saveSkuEdit(event) {
+            event.preventDefault();
+            const id = document.getElementById('sku_edit_id').value;
+            if (!id) return;
+
+            const formData = {
+                variant: document.getElementById('sku_edit_variant').value || null,
+                unit_size: parseFloat(document.getElementById('sku_edit_unit_size').value),
+                unit_measure: document.getElementById('sku_edit_unit_measure').value,
+                base_unit: document.getElementById('sku_edit_base_unit').value,
+                box_unit: document.getElementById('sku_edit_box_unit').value,
+                pieces_per_box: parseInt(document.getElementById('sku_edit_pieces_per_box').value) || 1,
+                selling_price: parseFloat(document.getElementById('sku_edit_selling_price').value) || 0,
+                unit_price: parseFloat(document.getElementById('sku_edit_selling_price').value) || 0
+            };
+
+            try {
+                const response = await AdminService.updateProduct(id, formData);
+                if (response.success) {
+                    showToast('SKU updated successfully', 'success');
+                    document.getElementById('skuEditModal').close();
+                    loadData();
+                } else {
+                    showToast(response.message || 'Failed to update', 'error');
+                }
+            } catch (err) {
+                showToast('Failed to update SKU', 'error');
+            }
+        }
+
+        /* ─────────── Delete SKU ─────────── */
+        function deleteSku(id, name) {
             recordToDelete = id;
             document.getElementById('deleteName').textContent = name;
             document.getElementById('deleteModal').showModal();
         }
-        
+
         async function confirmDelete() {
             if (!recordToDelete) return;
-            
             try {
                 const response = await AdminService.deleteProduct(recordToDelete);
                 if (response.success) {
-                    showToast('Product deleted/deactivated successfully', 'success');
+                    showToast('SKU deleted/deactivated', 'success');
                     document.getElementById('deleteModal').close();
                     loadData();
                 } else {
-                    showToast(response.message || 'Failed to delete product', 'error');
+                    showToast(response.message || 'Failed to delete', 'error');
                 }
-            } catch (error) {
-                console.error('Error deleting:', error);
-                showToast('Failed to delete product', 'error');
+            } catch (err) {
+                showToast('Failed to delete', 'error');
             }
             recordToDelete = null;
         }
-        
+
+        /* ─────────── Toast ─────────── */
         function showToast(message, type = 'info') {
             const container = document.getElementById('toastContainer');
-            const alertClass = { 'success': 'alert-success', 'error': 'alert-error', 'warning': 'alert-warning', 'info': 'alert-info' }[type] || 'alert-info';
+            const alertClass = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type] || 'alert-info';
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
             toast.innerHTML = `<span>${message}</span>`;
             container.appendChild(toast);
-            setTimeout(() => toast.remove(), 3000);
+            setTimeout(() => toast.remove(), 3500);
         }
-        
+
+        /* ─────────── Init ─────────── */
         document.addEventListener('DOMContentLoaded', async () => {
             try {
                 const user = await AuthService.getCurrentUser();
@@ -764,8 +1146,9 @@
                     document.getElementById('userInitials').textContent = user.full_name.split(' ').map(n => n[0]).join('').substring(0, 2);
                 }
                 await loadData();
-            } catch (error) { console.error('Init error:', error); }
+            } catch (err) { console.error('Init error:', err); }
         });
     </script>
 </body>
+
 </html>

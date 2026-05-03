@@ -276,9 +276,11 @@
                     class="fas fa-exclamation-triangle text-error"></i> Initiate Batch Recall</h3>
             <form id="recallForm" onsubmit="submitRecall(event)">
                 <div class="space-y-4">
-                    <div class="form-control"><label class="label"><span class="label-text">Batch Code *</span></label>
-                        <input type="text" id="batchId" class="input input-bordered w-full" required
-                            placeholder="e.g., BATCH-20260205-0001">
+                    <div class="form-control"><label class="label"><span class="label-text">Batch *</span></label>
+                        <select id="batchId" class="select select-bordered w-full" required>
+                            <option value="">Loading released batches...</option>
+                        </select>
+                        <label class="label py-1"><span id="batchHelp" class="label-text-alt text-base-content/60">Choose the released batch being recalled.</span></label>
                     </div>
                     <div class="form-control"><label class="label"><span class="label-text">Recall Classification
                                 *</span></label>
@@ -393,6 +395,7 @@
         let currentRecallId = null;
         let currentRecallData = null;
         let userRole = '';
+        let recallBatchOptions = [];
 
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -423,6 +426,14 @@
             completed: { label: 'Completed', badge: 'badge-success' },
             cancelled: { label: 'Cancelled', badge: 'badge-ghost' }
         };
+
+        function getLocationRemaining(location) {
+            const dispatched = Number(location.units_dispatched || 0);
+            const returned = Number(location.units_returned || 0);
+            const destroyed = Number(location.units_destroyed_onsite || 0);
+            const consumed = Number(location.units_consumed || 0);
+            return Math.max(0, dispatched - returned - destroyed - consumed);
+        }
 
         document.addEventListener('DOMContentLoaded', async () => {
             if (!AuthService.isAuthenticated()) { window.location.href = '../login.html'; return; }
@@ -537,9 +548,44 @@
             loadRecalls();
         }
 
+        function formatRecallBatchOption(batch) {
+            const product = batch.product_name || 'Production Batch';
+            const batchCode = batch.batch_code || `Batch #${batch.id}`;
+            const mfg = batch.manufacturing_date ? `Mfg ${RecallService.formatDate(batch.manufacturing_date)}` : 'No mfg date';
+            const dispatched = Number(batch.total_dispatched || 0);
+            const warehouse = Number(batch.total_in_warehouse || 0);
+            return `${product} - ${batchCode} - ${mfg} - ${dispatched} dispatched / ${warehouse} in warehouse`;
+        }
+
+        async function loadRecallBatchOptions() {
+            const select = document.getElementById('batchId');
+            const help = document.getElementById('batchHelp');
+            select.innerHTML = '<option value="">Loading released batches...</option>';
+            help.textContent = 'Choose the released batch being recalled.';
+
+            try {
+                const res = await RecallService.getEligibleBatches();
+                recallBatchOptions = res.success ? (res.data || []) : [];
+
+                if (recallBatchOptions.length === 0) {
+                    select.innerHTML = '<option value="">No released batches available for recall</option>';
+                    help.textContent = 'A batch must be QC-released and cannot already have an active recall.';
+                    return;
+                }
+
+                select.innerHTML = '<option value="">Select released batch...</option>' + recallBatchOptions.map(batch =>
+                    `<option value="${batch.id}">${formatRecallBatchOption(batch)}</option>`
+                ).join('');
+            } catch (e) {
+                select.innerHTML = '<option value="">Unable to load batches</option>';
+                help.textContent = e.message || 'Batch list could not be loaded.';
+            }
+        }
+
         function openNewRecallModal() {
             document.getElementById('recallForm').reset();
             document.getElementById('newRecallModal').showModal();
+            loadRecallBatchOptions();
         }
 
         async function submitRecall(e) {
@@ -693,23 +739,60 @@
             try {
                 const res = await RecallService.get(id);
                 if (res.success) {
-                    const locations = res.data.affected_locations || [];
+                    currentRecallData = res.data;
+                    const locations = (res.data.affected_locations || []).filter(l => getLocationRemaining(l) > 0);
                     const select = document.getElementById('returnLocationId');
-                    select.innerHTML = locations.map(l =>
-                        `<option value="${l.id}">${l.location_name} (${l.units_dispatched - l.units_returned} remaining)</option>`
-                    ).join('');
+                    const unitsInput = document.getElementById('unitsReturned');
+                    if (locations.length === 0) {
+                        showToast('No remaining units to recover for this recall', 'warning');
+                        return;
+                    }
+                    select.innerHTML = locations.map(l => {
+                        const remaining = getLocationRemaining(l);
+                        return `<option value="${l.id}" data-remaining="${remaining}">${l.location_name} (${remaining} remaining)</option>`;
+                    }).join('');
                     document.getElementById('returnForm').reset();
+                    updateReturnLimit();
                     document.getElementById('logReturnModal').showModal();
                 }
             } catch (e) { showToast('Error', 'error'); }
         }
 
+        function updateReturnLimit() {
+            const select = document.getElementById('returnLocationId');
+            const option = select.options[select.selectedIndex];
+            const remaining = Number(option?.dataset.remaining || 0);
+            const unitsInput = document.getElementById('unitsReturned');
+            unitsInput.max = remaining || '';
+            unitsInput.placeholder = remaining ? `Max ${remaining}` : '';
+            if (Number(unitsInput.value || 0) > remaining) {
+                unitsInput.value = remaining;
+            }
+        }
+
+        document.getElementById('returnLocationId').addEventListener('change', updateReturnLimit);
+
         async function submitReturn(e) {
             e.preventDefault();
             try {
+                const select = document.getElementById('returnLocationId');
+                const option = select.options[select.selectedIndex];
+                const remaining = Number(option?.dataset.remaining || 0);
+                const unitsReturned = Number(document.getElementById('unitsReturned').value || 0);
+
+                if (unitsReturned <= 0) {
+                    showToast('Enter at least 1 returned unit', 'warning');
+                    return;
+                }
+
+                if (remaining && unitsReturned > remaining) {
+                    showToast(`Returned units cannot exceed ${remaining} for this location`, 'warning');
+                    return;
+                }
+
                 const res = await RecallService.logReturn(currentRecallId, {
                     affected_location_id: document.getElementById('returnLocationId').value,
-                    units_returned: document.getElementById('unitsReturned').value,
+                    units_returned: unitsReturned,
                     condition_status: document.getElementById('conditionStatus').value,
                     condition_notes: document.getElementById('conditionNotes').value
                 });
@@ -737,7 +820,14 @@
         }
 
         async function completeRecall(id) {
-            if (!confirm('Mark this recall as completed?')) return;
+            const confirmed = await AuthService.confirmAction({
+                title: 'Complete Recall',
+                message: 'Mark this recall as completed?',
+                confirmText: 'Mark Completed',
+                tone: 'success',
+                icon: 'fa-check-circle'
+            });
+            if (!confirmed) return;
             try {
                 const res = await RecallService.complete(id);
                 if (res.success) {
@@ -749,7 +839,14 @@
         }
 
         async function cancelRecall(id) {
-            if (!confirm('Cancel this recall?')) return;
+            const confirmed = await AuthService.confirmAction({
+                title: 'Cancel Recall',
+                message: 'Cancel this recall?',
+                confirmText: 'Cancel Recall',
+                tone: 'error',
+                icon: 'fa-ban'
+            });
+            if (!confirmed) return;
             try {
                 const res = await RecallService.cancel(id);
                 if (res.success) { showToast('Recall cancelled', 'success'); loadStats(); loadRecalls(); }

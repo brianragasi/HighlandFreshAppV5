@@ -54,6 +54,14 @@ function handleGet($db, $action, $currentUser) {
             ");
             $stats['pending_requisitions'] = (int) $stmt->fetch()['count'];
             
+            // Pending Purchase Requests (Phase 1)
+            try {
+                $stmt = $db->query("SELECT COUNT(*) as count FROM purchase_requests WHERE status = 'pending'");
+                $stats['pending_purchase_requests'] = (int) $stmt->fetch()['count'];
+            } catch (Exception $e) {
+                $stats['pending_purchase_requests'] = 0;
+            }
+
             // Pending Disposals (if exists)
             try {
                 $stmt = $db->query("
@@ -92,6 +100,14 @@ function handleGet($db, $action, $currentUser) {
                 AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
             ");
             $stats['price_alerts'] = (int) $stmt->fetch()['count'];
+
+            // Pending Item Requests (Purchasing)
+            try {
+                $stmt = $db->query("SELECT COUNT(*) as count FROM item_requests WHERE status = 'pending'");
+                $stats['pending_item_requests'] = (int) $stmt->fetch()['count'];
+            } catch (Exception $e) {
+                $stats['pending_item_requests'] = 0;
+            }
             
             Response::success($stats, 'Dashboard stats retrieved');
             break;
@@ -150,6 +166,22 @@ function handleGet($db, $action, $currentUser) {
             }
             
             Response::success($requisitions, 'Pending requisitions retrieved');
+            break;
+
+        case 'pending_item_requests':
+            try {
+                $stmt = $db->query("
+                    SELECT ir.*, u.full_name as requested_by_name
+                    FROM item_requests ir
+                    LEFT JOIN users u ON ir.requested_by = u.id
+                    WHERE ir.status = 'pending'
+                    ORDER BY ir.created_at ASC
+                ");
+                $requests = $stmt->fetchAll();
+                Response::success($requests, 'Pending item requests retrieved');
+            } catch (Exception $e) {
+                Response::success([], 'Pending item requests retrieved');
+            }
             break;
             
         case 'price_alerts':
@@ -228,6 +260,30 @@ function handleGet($db, $action, $currentUser) {
             $reqs = $stmt->fetchAll();
             $pending = array_merge($pending, $reqs);
             
+            // Pending Purchase Requests (Phase 1)
+            try {
+                $stmt = $db->query("
+                    SELECT 
+                        'purchase_request' as type,
+                        pr.id,
+                        pr.pr_number as reference,
+                        CONCAT('PR: ', COALESCE(pr.purpose, 'Purchase request')) as description,
+                        (SELECT COALESCE(SUM(estimated_total), 0) FROM purchase_request_items WHERE purchase_request_id = pr.id) as amount,
+                        NULL as payment_terms,
+                        u.full_name as requested_by,
+                        pr.created_at,
+                        pr.status,
+                        pr.priority
+                    FROM purchase_requests pr
+                    LEFT JOIN users u ON pr.requested_by = u.id
+                    WHERE pr.status = 'pending'
+                ");
+                $prs = $stmt->fetchAll();
+                $pending = array_merge($pending, $prs);
+            } catch (Exception $e) {
+                // purchase_requests table may not exist yet
+            }
+            
             // Sort by priority and date
             usort($pending, function($a, $b) {
                 $priorityOrder = ['urgent' => 0, 'high' => 1, 'normal' => 2, 'low' => 3];
@@ -238,6 +294,36 @@ function handleGet($db, $action, $currentUser) {
             });
             
             Response::success($pending, 'All pending approvals retrieved');
+            break;
+            
+        case 'pending_purchase_requests':
+            // Phase 1: pending PRs from Warehouse Raw
+            try {
+                $stmt = $db->query("
+                    SELECT 
+                        pr.*,
+                        u.full_name as requested_by_name,
+                        (SELECT COUNT(*) FROM purchase_request_items WHERE purchase_request_id = pr.id) as item_count,
+                        (SELECT COALESCE(SUM(estimated_total), 0) FROM purchase_request_items WHERE purchase_request_id = pr.id) as estimated_total
+                    FROM purchase_requests pr
+                    LEFT JOIN users u ON pr.requested_by = u.id
+                    WHERE pr.status = 'pending'
+                    ORDER BY 
+                        FIELD(pr.priority, 'urgent', 'high', 'normal', 'low'),
+                        pr.created_at ASC
+                ");
+                $prs = $stmt->fetchAll();
+
+                foreach ($prs as &$pr) {
+                    $itemsStmt = $db->prepare("SELECT * FROM purchase_request_items WHERE purchase_request_id = ?");
+                    $itemsStmt->execute([$pr['id']]);
+                    $pr['items'] = $itemsStmt->fetchAll();
+                }
+
+                Response::success($prs, 'Pending purchase requests retrieved');
+            } catch (Exception $e) {
+                Response::success([], 'No purchase requests table yet');
+            }
             break;
             
         default:

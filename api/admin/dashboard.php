@@ -6,6 +6,9 @@
 
 require_once __DIR__ . '/../bootstrap.php';
 
+// SECURITY: Restrict admin dashboard to GM/Admin roles
+$currentUser = Auth::requireRole(['general_manager', 'admin']);
+
 // Get database connection
 $pdo = Database::getInstance()->getConnection();
 
@@ -97,6 +100,34 @@ try {
                          FROM users WHERE is_active = 1 
                          GROUP BY role ORDER BY count DESC");
     $stats['role_distribution'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+   // Low stock alerts (ingredients + MRO)
+   $lowStockStmt = $pdo->prepare("
+      SELECT
+         'ingredient' as item_type,
+         ingredient_code as item_code,
+         ingredient_name as item_name,
+         current_stock,
+         minimum_stock,
+         unit_of_measure
+      FROM ingredients
+      WHERE is_active = 1 AND current_stock <= minimum_stock
+      UNION ALL
+      SELECT
+         'mro' as item_type,
+         item_code as item_code,
+         item_name as item_name,
+         current_stock,
+         minimum_stock,
+         unit_of_measure
+      FROM mro_items
+      WHERE is_active = 1 AND current_stock <= minimum_stock
+      ORDER BY (current_stock / NULLIF(minimum_stock, 0)) ASC
+      LIMIT 10
+   ");
+   $lowStockStmt->execute();
+   $stats['low_stock_alerts'] = $lowStockStmt->fetchAll(PDO::FETCH_ASSOC);
+   $stats['low_stock_count'] = count($stats['low_stock_alerts']);
     
     Response::success($stats);
     

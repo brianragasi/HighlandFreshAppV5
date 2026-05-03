@@ -1,8 +1,8 @@
 /**
  * Highland Fresh System - Purchasing Service
- * 
+ *
  * API client for the Purchasing module
- * 
+ *
  * @package HighlandFresh
  * @version 4.0
  */
@@ -27,6 +27,14 @@ const PurchasingService = {
 
     async getPendingRequisitions() {
         return await api.get('/purchasing/dashboard.php?action=pending_requisitions');
+    },
+
+    async getIngredientCatalog() {
+        return await api.get('/warehouse/raw/ingredients.php', { params: { action: 'list' } });
+    },
+
+    async getMroCatalog() {
+        return await api.get('/warehouse/raw/mro.php', { params: { action: 'list' } });
     },
 
     async getMonthlySpending(months = 6) {
@@ -87,8 +95,8 @@ const PurchasingService = {
         return await api.put(`/purchasing/purchase_orders.php?action=submit&id=${id}`, {});
     },
 
-    async approvePO(id) {
-        return await api.put(`/purchasing/purchase_orders.php?action=approve&id=${id}`, {});
+    async approvePO(id, stepUpToken) {
+        return await api.put(`/purchasing/purchase_orders.php?action=approve&id=${id}`, { step_up_token: stepUpToken });
     },
 
     async rejectPO(id, reason) {
@@ -111,8 +119,45 @@ const PurchasingService = {
         return await api.put(`/purchasing/purchase_orders.php?action=update_payment&id=${id}`, { payment_status: paymentStatus });
     },
 
-    async receivePOWithPrices(id, priceUpdates = []) {
-        return await api.put(`/purchasing/purchase_orders.php?action=receive_with_prices&id=${id}`, { price_updates: priceUpdates });
+    async receivePOWithPrices(id, priceUpdates = [], receivingItems = [], receivingMeta = {}) {
+        return await api.put(`/purchasing/purchase_orders.php?action=receive_with_prices&id=${id}`, {
+            price_updates: priceUpdates,
+            receiving_items: receivingItems,
+            receiving_meta: receivingMeta
+        });
+    },
+
+    // ========================================
+    // PURCHASE REQUESTS (Phase 1 PR Flow)
+    // ========================================
+
+    async getPurchaseRequests(filters = {}) {
+        const params = new URLSearchParams({ action: 'list', ...filters });
+        return await api.get(`/purchasing/purchase_requests.php?${params}`);
+    },
+
+    async getPurchaseRequestDetail(id) {
+        return await api.get(`/purchasing/purchase_requests.php?action=detail&id=${id}`);
+    },
+
+    async getNextPRNumber() {
+        return await api.get('/purchasing/purchase_requests.php?action=next_number');
+    },
+
+    async createPurchaseRequest(data) {
+        return await api.post('/purchasing/purchase_requests.php?action=create', data);
+    },
+
+    async approvePR(id) {
+        return await api.put(`/purchasing/purchase_requests.php?action=approve&id=${id}`, {});
+    },
+
+    async rejectPR(id, reason) {
+        return await api.put(`/purchasing/purchase_requests.php?action=reject&id=${id}`, { reason });
+    },
+
+    async getApprovedPRsForPO() {
+        return await api.get('/purchasing/purchase_requests.php?action=approved_for_po');
     },
 
     // ========================================
@@ -170,6 +215,26 @@ const PurchasingService = {
 
     async getGMPriceAlerts() {
         return await api.get('/admin/gm_approvals.php?action=price_alerts');
+    },
+
+    async getGMPendingPurchaseRequests() {
+        return await api.get('/admin/gm_approvals.php?action=pending_purchase_requests');
+    },
+
+    async getGMPendingItemRequests() {
+        return await api.get('/admin/gm_approvals.php?action=pending_item_requests');
+    },
+
+    async createItemRequest(data) {
+        return await api.post('/purchasing/item_requests.php?action=create', data);
+    },
+
+    async approveItemRequest(id) {
+        return await api.put(`/purchasing/item_requests.php?action=approve&id=${id}`, {});
+    },
+
+    async rejectItemRequest(id, reason) {
+        return await api.put(`/purchasing/item_requests.php?action=reject&id=${id}`, { reason });
     },
 
     // ========================================

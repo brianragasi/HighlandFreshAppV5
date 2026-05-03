@@ -188,7 +188,7 @@ function getRecipeStatistics($conn) {
  */
 function createRecipe($conn) {
     $data = json_decode(file_get_contents('php://input'), true);
-    $user = getAuthUser();
+    $user = Auth::getCurrentUser();
     
     // Validation
     $errors = [];
@@ -196,10 +196,7 @@ function createRecipe($conn) {
         $errors['product_name'] = 'Product name is required';
     }
     if (empty($data['product_type'])) {
-        $errors['product_type'] = 'Product type is required';
-    }
-    if (empty($data['milk_type_id'])) {
-        $errors['milk_type_id'] = 'Milk type is required';
+        $errors['product_type'] = 'Product type / category is required';
     }
     if (empty($data['base_milk_liters'])) {
         $errors['base_milk_liters'] = 'Base milk liters is required';
@@ -222,11 +219,11 @@ function createRecipe($conn) {
     $conn->beginTransaction();
     
     try {
-        $sql = "INSERT INTO master_recipes (recipe_code, product_id, product_name, product_type, variant, 
-                milk_type_id, description, base_milk_liters, expected_yield, yield_unit, shelf_life_days,
+        $sql = "INSERT INTO master_recipes (recipe_code, product_id, product_name, product_type,
+                milk_type_id, description, base_milk_liters, expected_yield, yield_unit,
                 pasteurization_temp, pasteurization_time_mins, cooling_temp, special_instructions, 
                 is_active, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         $stmt = $conn->prepare($sql);
         $stmt->execute([
@@ -234,19 +231,17 @@ function createRecipe($conn) {
             $data['product_id'] ?? null,
             $data['product_name'],
             $data['product_type'],
-            $data['variant'] ?? null,
-            $data['milk_type_id'],
+            $data['milk_type_id'] ?? null,
             $data['description'] ?? null,
             $data['base_milk_liters'],
             $data['expected_yield'],
-            $data['yield_unit'] ?? 'units',
-            $data['shelf_life_days'] ?? 7,
+            $data['yield_unit'] ?? 'liters',
             $data['pasteurization_temp'] ?? 81.00,
             $data['pasteurization_time_mins'] ?? 15,
             $data['cooling_temp'] ?? 4.00,
             $data['special_instructions'] ?? null,
             isset($data['is_active']) ? intval($data['is_active']) : 1,
-            $user['id']
+            $user['user_id'] ?? $user['id'] ?? null
         ]);
         
         $recipeId = $conn->lastInsertId();
@@ -301,8 +296,9 @@ function updateRecipe($conn, $id) {
     $fields = [];
     $params = [];
     
-    $allowedFields = ['product_name', 'product_type', 'variant', 'milk_type_id', 'description',
-                      'base_milk_liters', 'expected_yield', 'yield_unit', 'shelf_life_days',
+    // Only allow fields that belong to the recipe, NOT to the product master (shelf_life_days, variant live in products)
+    $allowedFields = ['product_name', 'product_type', 'milk_type_id', 'description',
+                      'base_milk_liters', 'expected_yield', 'yield_unit',
                       'pasteurization_temp', 'pasteurization_time_mins', 'cooling_temp',
                       'special_instructions', 'is_active'];
     

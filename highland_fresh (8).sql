@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Feb 11, 2026 at 07:09 AM
+-- Generation Time: Feb 24, 2026 at 11:01 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -20,66 +20,6 @@ SET time_zone = "+00:00";
 --
 -- Database: `highland_fresh`
 --
-
-DELIMITER $$
---
--- Procedures
---
-CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_populate_recall_locations` (IN `p_recall_id` INT, IN `p_batch_id` INT)   BEGIN
-    
-    INSERT INTO recall_affected_locations 
-        (recall_id, location_type, location_id, location_name, location_address,
-         contact_person, contact_phone, contact_email, dispatch_date, 
-         dispatch_reference, units_dispatched)
-    SELECT 
-        p_recall_id,
-        CASE d.customer_type 
-            WHEN 'supermarket' THEN 'store'
-            WHEN 'school' THEN 'store'
-            WHEN 'feeding_program' THEN 'distributor'
-            ELSE 'direct_customer'
-        END as location_type,
-        d.customer_id,
-        d.customer_name,
-        d.delivery_address,
-        fc.contact_person,
-        d.contact_number,
-        fc.email,
-        DATE(d.dispatched_at),
-        d.dr_number,
-        SUM(di.quantity_dispatched) as units_dispatched
-    FROM delivery_items di
-    JOIN deliveries d ON di.delivery_id = d.id
-    JOIN finished_goods_inventory fgi ON di.inventory_id = fgi.id
-    LEFT JOIN fg_customers fc ON d.customer_id = fc.id
-    WHERE fgi.batch_id = p_batch_id
-      AND d.status IN ('dispatched', 'in_transit', 'delivered')
-      AND di.quantity_dispatched > 0
-    GROUP BY d.customer_id, d.customer_name
-    ON DUPLICATE KEY UPDATE 
-        units_dispatched = units_dispatched + VALUES(units_dispatched);
-    
-    
-    IF ROW_COUNT() = 0 THEN
-        INSERT INTO recall_affected_locations 
-            (recall_id, location_type, location_name, units_dispatched, notes)
-        VALUES 
-            (p_recall_id, 'internal', 'Dispatch Records Unavailable', 
-             (SELECT total_dispatched FROM batch_recalls WHERE id = p_recall_id),
-             'Manual tracking required - delivery records not linked to batch');
-    END IF;
-    
-    
-    UPDATE batch_recalls 
-    SET total_dispatched = (
-        SELECT COALESCE(SUM(units_dispatched), 0) 
-        FROM recall_affected_locations 
-        WHERE recall_id = p_recall_id
-    )
-    WHERE id = p_recall_id;
-END$$
-
-DELIMITER ;
 
 -- --------------------------------------------------------
 
@@ -554,7 +494,113 @@ INSERT INTO `audit_logs` (`id`, `user_id`, `action`, `table_name`, `record_id`, 
 (445, 7, 'create', 'payment_collections', 13, NULL, '{\"or_number\":\"OR-2026-00005\",\"dr_number\":\"DR-20260211-003\",\"amount\":1260,\"method\":\"cash\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-11 04:39:31'),
 (446, 7, 'start_shift', 'cashier_shifts', 2, NULL, '{\"opening_cash\":5000}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-11 04:41:32'),
 (447, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-11 04:42:50'),
-(448, 5, 'LOGIN', 'users', 5, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-11 06:04:31');
+(448, 5, 'LOGIN', 'users', 5, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-11 06:04:31'),
+(449, 2, 'LOGIN', 'users', 2, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-11 06:20:32'),
+(450, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-14 02:07:37'),
+(451, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-14 02:24:54'),
+(452, 2, 'LOGIN', 'users', 2, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-16 11:46:37'),
+(453, 2, 'CREATE', 'disposals', 9, NULL, '{\"disposal_code\":\"DSP-20260216-0001\",\"source_type\":\"finished_goods\",\"source_id\":\"20\",\"quantity\":50,\"category\":\"expired\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-16 11:46:48'),
+(454, 2, 'CREATE', 'disposals', 10, NULL, '{\"disposal_code\":\"DSP-20260216-0002\",\"source_type\":\"finished_goods\",\"source_id\":\"21\",\"quantity\":50,\"category\":\"expired\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-16 11:47:44'),
+(455, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-16 11:47:57'),
+(456, 8, 'APPROVE', 'disposals', 10, '{\"status\":\"pending\"}', '{\"status\":\"approved\",\"approved_by\":8}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-16 11:48:06'),
+(457, 8, 'APPROVE', 'disposals', 9, '{\"status\":\"pending\"}', '{\"status\":\"approved\",\"approved_by\":8}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-16 11:48:07'),
+(458, 5, 'LOGIN', 'users', 5, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-16 11:48:13'),
+(459, 5, 'COMPLETE', 'disposals', 10, '{\"status\":\"approved\"}', '{\"status\":\"completed\",\"disposed_by\":5}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-16 11:48:28'),
+(460, 5, 'COMPLETE', 'disposals', 9, '{\"status\":\"approved\"}', '{\"status\":\"completed\",\"disposed_by\":5}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-16 11:48:38'),
+(461, 2, 'LOGIN', 'users', 2, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-16 11:48:48'),
+(462, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 07:58:45'),
+(463, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 08:38:35'),
+(464, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 14:49:34'),
+(465, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 15:42:07'),
+(466, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 15:45:01'),
+(467, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 15:50:20'),
+(468, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 15:50:36'),
+(469, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 15:55:38'),
+(470, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 15:56:06'),
+(471, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 15:57:47'),
+(472, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 16:00:35'),
+(473, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 16:01:08'),
+(474, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 16:01:58'),
+(475, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 16:10:03'),
+(476, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 16:10:35'),
+(477, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 16:12:02'),
+(478, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 16:28:40'),
+(479, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 16:30:53'),
+(480, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 16:32:14'),
+(481, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 16:42:07'),
+(482, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 16:46:11'),
+(483, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 16:47:22'),
+(484, 2, 'LOGIN', 'users', 2, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:01:30'),
+(485, 2, 'RELEASE', 'production_batches', 23, NULL, '{\"action\":\"release\",\"qc_notes\":\"\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:04:20'),
+(486, 11, 'LOGIN', 'users', 11, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:04:39'),
+(487, 5, 'LOGIN', 'users', 5, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:04:57'),
+(488, 2, 'LOGIN', 'users', 2, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:05:35'),
+(489, 5, 'LOGIN', 'users', 5, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:06:15'),
+(490, 5, 'LOGIN', 'users', 5, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:15:44'),
+(491, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:17:00'),
+(492, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:17:52'),
+(493, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:19:37'),
+(494, 2, 'LOGIN', 'users', 2, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:20:43'),
+(495, 2, 'RELEASE', 'production_batches', 24, NULL, '{\"action\":\"release\",\"qc_notes\":\"\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:20:51'),
+(496, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:21:05'),
+(497, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:22:02'),
+(498, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:25:05'),
+(499, 5, 'LOGIN', 'users', 5, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:25:46'),
+(500, 6, 'LOGIN', 'users', 6, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:36:53'),
+(501, 5, 'LOGIN', 'users', 5, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:41:32'),
+(502, 6, 'LOGIN', 'users', 6, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:44:43'),
+(503, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:45:36'),
+(504, 6, 'LOGIN', 'users', 6, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:46:30'),
+(505, 6, 'CREATE', 'sales_orders', 18, NULL, '{\"action\":\"create\",\"customer_id\":6,\"customer_po_number\":\"34989483943\",\"sub_account_id\":null,\"delivery_date\":\"2026-02-20\",\"payment_mode\":\"cash\",\"notes\":\"\",\"items\":[{\"product_id\":21,\"quantity\":50,\"quantity_boxes\":0,\"quantity_pieces\":50,\"unit_type\":\"piece\",\"unit_price\":50}]}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:51:54'),
+(506, 6, 'UPDATE_STATUS', 'sales_orders', 18, '{\"status\":\"draft\"}', '{\"status\":\"cancelled\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:52:02'),
+(507, 6, 'CREATE', 'sales_orders', 19, NULL, '{\"action\":\"create\",\"customer_id\":1,\"customer_po_number\":\"Basta\",\"sub_account_id\":null,\"delivery_date\":\"2026-02-20\",\"payment_mode\":\"cash\",\"notes\":\"\",\"items\":[{\"product_id\":21,\"quantity\":50,\"quantity_boxes\":0,\"quantity_pieces\":50,\"unit_type\":\"piece\",\"unit_price\":50}]}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:52:25'),
+(508, 6, 'UPDATE_STATUS', 'sales_orders', 19, '{\"status\":\"draft\"}', '{\"status\":\"pending\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:52:28'),
+(509, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:52:36'),
+(510, 8, 'APPROVE', 'sales_orders', 19, '{\"status\":\"pending\"}', '{\"status\":\"approved\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:52:47'),
+(511, 5, 'LOGIN', 'users', 5, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:53:01'),
+(512, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 17:53:38'),
+(513, 5, 'LOGIN', 'users', 5, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 22:05:58'),
+(514, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 22:17:59'),
+(515, 5, 'LOGIN', 'users', 5, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 22:23:14'),
+(516, 5, 'LOGIN', 'users', 5, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 22:28:30'),
+(517, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 22:31:19'),
+(518, 5, 'LOGIN', 'users', 5, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 22:34:15'),
+(519, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:24:45'),
+(520, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:28:11'),
+(521, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:29:06'),
+(522, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:29:59'),
+(523, 2, 'LOGIN', 'users', 2, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:30:30'),
+(524, 2, 'RELEASE', 'production_batches', 25, NULL, '{\"action\":\"release\",\"qc_notes\":\"\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:30:44'),
+(525, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:31:05'),
+(526, 5, 'LOGIN', 'users', 5, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:31:39'),
+(527, 6, 'LOGIN', 'users', 6, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:33:00'),
+(528, 6, 'CREATE', 'sales_orders', 20, NULL, '{\"action\":\"create\",\"customer_id\":3,\"customer_po_number\":\"9894859489534\",\"sub_account_id\":null,\"delivery_date\":\"2026-02-20\",\"payment_mode\":\"cash\",\"notes\":\"\",\"items\":[{\"product_id\":22,\"quantity\":50,\"quantity_boxes\":0,\"quantity_pieces\":50,\"unit_type\":\"piece\",\"unit_price\":60}]}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:33:34'),
+(529, 6, 'UPDATE_STATUS', 'sales_orders', 20, '{\"status\":\"draft\"}', '{\"status\":\"pending\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:33:39'),
+(530, 6, 'LOGIN', 'users', 6, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:33:53'),
+(531, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:34:09'),
+(532, 8, 'APPROVE', 'sales_orders', 20, '{\"status\":\"pending\"}', '{\"status\":\"approved\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:34:23'),
+(533, 5, 'LOGIN', 'users', 5, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:34:32'),
+(534, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:36:11'),
+(535, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:38:52'),
+(536, 2, 'LOGIN', 'users', 2, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:40:57'),
+(537, 2, 'RELEASE', 'production_batches', 26, NULL, '{\"action\":\"release\",\"qc_notes\":\"\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:41:07'),
+(538, 3, 'LOGIN', 'users', 3, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:41:21'),
+(539, 5, 'LOGIN', 'users', 5, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:42:51'),
+(540, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:43:30'),
+(541, 7, 'LOGIN', 'users', 7, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-20 23:45:06'),
+(542, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-21 00:29:43'),
+(543, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-21 00:54:57'),
+(544, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-21 01:27:09'),
+(545, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-21 02:51:57'),
+(546, 6, 'LOGIN', 'users', 6, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-21 03:03:18'),
+(547, 10, 'LOGIN', 'users', 10, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-22 09:03:32'),
+(548, 10, 'CREATE', 'purchase_orders', 23, NULL, '{\"po_number\":\"5253\",\"supplier_id\":\"5\",\"total_amount\":0,\"payment_terms\":\"credit_30\",\"items_count\":1}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-22 09:14:03'),
+(549, 10, 'UPDATE', 'purchase_orders', 23, '{\"status\":\"draft\"}', '{\"status\":\"pending\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-22 09:14:09'),
+(550, 10, 'CREATE', 'purchase_orders', 24, NULL, '{\"po_number\":\"5254\",\"supplier_id\":\"4\",\"total_amount\":50,\"payment_terms\":\"credit_30\",\"items_count\":1}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-22 09:14:40'),
+(551, 10, 'UPDATE', 'purchase_orders', 24, '{\"status\":\"draft\"}', '{\"status\":\"pending\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-22 09:14:43'),
+(552, 8, 'LOGIN', 'users', 8, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-22 09:14:49'),
+(553, 8, 'APPROVE', 'purchase_orders', 22, '{\"status\":\"pending\"}', '{\"status\":\"approved\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-22 09:30:56'),
+(554, 4, 'LOGIN', 'users', 4, NULL, '{\"ip\":\"::1\"}', '::1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', '2026-02-22 09:31:06');
 
 -- --------------------------------------------------------
 
@@ -633,6 +679,25 @@ CREATE TABLE `box_opening_log` (
   `opened_by` int(11) NOT NULL,
   `opened_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `notes` text DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `canvass_quotes`
+--
+
+CREATE TABLE `canvass_quotes` (
+  `id` int(11) NOT NULL,
+  `canvass_id` int(11) NOT NULL,
+  `supplier_id` int(11) NOT NULL,
+  `unit_price` decimal(12,2) NOT NULL,
+  `delivery_days` int(11) DEFAULT 7,
+  `payment_terms` enum('cash','credit_7','credit_15','credit_30','credit_45','credit_60') DEFAULT 'cash',
+  `validity_date` date DEFAULT NULL,
+  `is_selected` tinyint(1) DEFAULT 0,
+  `notes` text DEFAULT NULL,
+  `quoted_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -885,7 +950,8 @@ INSERT INTO `customers` (`id`, `customer_code`, `customer_type`, `name`, `sub_lo
 (3, NULL, 'supermarket', 'Metro Gaisano', 'Downtown', 'Pedro Cruz', '09191234567', 'gaisano@example.com', 'Downtown Tacloban', 50000.00, 0.00, 15, 'cash', 'active', NULL, '2026-02-03 09:47:31', '2026-02-03 09:47:31'),
 (4, NULL, 'supermarket', 'PureGold', 'Real Street', 'Ana Reyes', '09201234567', 'puregold@example.com', 'Real Street Tacloban', 75000.00, 0.00, 30, 'cash', 'active', NULL, '2026-02-03 09:47:31', '2026-02-03 09:47:31'),
 (5, NULL, 'restaurant', 'Hotel 101', 'Main', 'Chris Santos', '09211234567', 'hotel101@example.com', 'Hotel 101 Tacloban', 30000.00, 0.00, 7, 'cash', 'active', NULL, '2026-02-03 09:47:31', '2026-02-03 09:47:31'),
-(6, 'DEPED-CDO-001', 'supermarket', 'DepEd Region X Feeding Program', NULL, 'Maria Santos', '09090909', '', 'DepEd Complex, Cagayan de Oro City', 500000.00, -1310.00, 0, 'cash', 'active', NULL, '2026-02-05 08:06:35', '2026-02-11 04:39:31');
+(6, 'DEPED-CDO-001', 'supermarket', 'DepEd Region X Feeding Program', NULL, 'Maria Santos', '09090909', '', 'DepEd Complex, Cagayan de Oro City', 500000.00, -1310.00, 0, 'cash', 'active', NULL, '2026-02-05 08:06:35', '2026-02-11 04:39:31'),
+(8, 'CUS00001', 'institutional', 'COC', 'PHINMA-COC', 'test@gmail.com', '09078734040', 'test@gmail.com', 'PHINMA CoC CARMEn', 500.00, 0.00, 30, 'credit', 'active', '', '2026-02-21 01:10:50', '2026-02-21 01:10:50');
 
 -- --------------------------------------------------------
 
@@ -1103,7 +1169,9 @@ INSERT INTO `delivery_receipts` (`id`, `dr_number`, `order_id`, `customer_id`, `
 (19, 'DR-20260211-001', 14, 6, 'DepEd Region X Feeding Program', NULL, 'DepEd Complex, Cagayan de Oro City', NULL, '09090909', 1, 1140.00, 0.00, 'dispatched', '2026-02-11 02:57:40', 'unpaid', 'normal', NULL, NULL, 5, '2026-02-11 10:59:49', NULL, NULL, 5, '2026-02-11 11:01:16', NULL, NULL, NULL, 1, '2026-02-11 03:01:29', 5, NULL, NULL, 5, '2026-02-11 02:57:40', '2026-02-11 11:01:29'),
 (20, 'DR-20260211-004', 15, 5, 'Hotel 101', NULL, 'Hotel 101 Tacloban', NULL, '09211234567', 1, 2800.00, 0.00, 'dispatched', '2026-02-11 10:43:26', 'unpaid', 'normal', NULL, NULL, 5, '2026-02-11 14:05:33', NULL, NULL, 5, '2026-02-11 14:05:55', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, 5, '2026-02-11 10:43:26', '2026-02-11 14:05:55'),
 (21, 'DR-20260211-002', 16, 6, 'DepEd Region X Feeding Program', NULL, 'DepEd Complex, Cagayan de Oro City', NULL, '09090909', 1, 1575.00, 50.00, 'delivered', '2026-02-11 11:58:15', 'partial', 'normal', NULL, NULL, 5, '2026-02-11 12:08:28', NULL, NULL, 5, '2026-02-11 12:10:15', NULL, NULL, '2026-02-11 14:04:59', 1, '2026-02-11 04:11:55', 5, NULL, NULL, 5, '2026-02-11 11:58:15', '2026-02-11 14:04:59'),
-(22, 'DR-20260211-003', 17, 6, 'DepEd Region X Feeding Program', NULL, 'DepEd Complex, Cagayan de Oro City', NULL, '09090909', 1, 1260.00, 1260.00, 'delivered', '2026-02-11 12:30:53', 'paid', 'normal', NULL, NULL, 5, '2026-02-11 12:35:52', NULL, NULL, 5, '2026-02-11 12:37:24', NULL, NULL, '2026-02-11 14:04:57', 1, '2026-02-11 04:37:30', 5, NULL, NULL, 5, '2026-02-11 12:30:53', '2026-02-11 14:04:57');
+(22, 'DR-20260211-003', 17, 6, 'DepEd Region X Feeding Program', NULL, 'DepEd Complex, Cagayan de Oro City', NULL, '09090909', 1, 1260.00, 1260.00, 'delivered', '2026-02-11 12:30:53', 'paid', 'normal', NULL, NULL, 5, '2026-02-11 12:35:52', NULL, NULL, 5, '2026-02-11 12:37:24', NULL, NULL, '2026-02-11 14:04:57', 1, '2026-02-11 04:37:30', 5, NULL, NULL, 5, '2026-02-11 12:30:53', '2026-02-11 14:04:57'),
+(23, 'DR-20260221-001', 19, 1, 'SM Supermarket', NULL, 'SM Tacloban', NULL, '09171234567', 1, 2500.00, 0.00, 'delivered', '2026-02-21 06:15:08', 'unpaid', 'normal', NULL, NULL, 5, '2026-02-21 06:16:19', NULL, NULL, 5, '2026-02-21 06:16:28', NULL, NULL, '2026-02-21 06:16:48', 1, '2026-02-20 22:16:41', 5, NULL, NULL, 5, '2026-02-21 06:15:08', '2026-02-21 06:16:48'),
+(24, 'DR-20260221-002', 20, 3, 'Metro Gaisano', NULL, 'Downtown Tacloban', NULL, '09191234567', 1, 3000.00, 0.00, 'delivered', '2026-02-21 07:34:41', 'unpaid', 'normal', NULL, NULL, 5, '2026-02-21 07:35:06', NULL, NULL, 5, '2026-02-21 07:35:19', NULL, NULL, '2026-02-21 07:35:37', 1, '2026-02-20 23:35:30', 5, NULL, NULL, 5, '2026-02-21 07:34:41', '2026-02-21 07:35:37');
 
 -- --------------------------------------------------------
 
@@ -1150,7 +1218,9 @@ INSERT INTO `delivery_receipt_items` (`id`, `delivery_receipt_id`, `product_id`,
 (16, 19, 8, NULL, 26, 12, 0, 12, 0, 95.00, 1140.00, NULL, NULL, '2026-02-11 10:59:49', '2026-02-11 02:57:40'),
 (17, 20, 7, NULL, 8, 20, 0, 20, 0, 140.00, 2800.00, NULL, NULL, '2026-02-11 14:05:33', '2026-02-11 10:43:26'),
 (18, 21, 1, NULL, 27, 15, 0, 15, 0, 105.00, 1575.00, NULL, NULL, '2026-02-11 12:08:28', '2026-02-11 11:58:15'),
-(19, 22, 1, NULL, 24, 12, 0, 12, 0, 105.00, 1260.00, NULL, NULL, '2026-02-11 12:35:52', '2026-02-11 12:30:53');
+(19, 22, 1, NULL, 24, 12, 0, 12, 0, 105.00, 1260.00, NULL, NULL, '2026-02-11 12:35:52', '2026-02-11 12:30:53'),
+(20, 23, 21, NULL, 34, 50, 0, 50, 0, 50.00, 2500.00, NULL, NULL, '2026-02-21 06:16:19', '2026-02-21 06:15:08'),
+(21, 24, 22, NULL, 35, 50, 0, 50, 0, 60.00, 3000.00, NULL, NULL, '2026-02-21 07:35:06', '2026-02-21 07:34:41');
 
 -- --------------------------------------------------------
 
@@ -1231,7 +1301,9 @@ INSERT INTO `disposals` (`id`, `disposal_code`, `source_type`, `source_id`, `sou
 (5, 'DSP-20260209-0003', 'finished_goods', 2, 'BATCH-20260203-001', 1, 'Fresh Milk 1L', 32.00, 'pcs', 0.00, 0.00, 'qc_failed', 'Yehey', 'drain', 'completed', 2, '2026-02-09 12:43:41', 8, '2026-02-09 12:44:14', '', 5, '2026-02-09 12:48:36', 'Basta', NULL, '', '\n[Execution] Ngekngok', NULL, '2026-02-09 04:43:41', '2026-02-09 04:48:36'),
 (6, 'DSP-20260209-0004', 'finished_goods', 3, 'BATCH-20260203-002', 2, 'Fresh Milk 500ml', 99.00, 'pcs', 0.00, 0.00, 'qc_failed', 'Basta', 'drain', 'completed', 2, '2026-02-09 12:49:32', 8, '2026-02-09 12:49:46', '', 5, '2026-02-09 18:34:15', 'Yehey', NULL, 'Basta', '\n[Execution] BOOM', NULL, '2026-02-09 04:49:32', '2026-02-09 10:34:15'),
 (7, 'DSP-20260209-0005', 'raw_milk', 5, 'RAW-20260205-911', NULL, 'Raw Milk', 25.00, 'liters', 30.00, 750.00, 'expired', 'Basta', 'drain', 'approved', 2, '2026-02-09 20:38:44', 8, '2026-02-09 20:38:59', '', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-02-09 12:38:44', '2026-02-09 12:38:59'),
-(8, 'DSP-20260211-0001', 'raw_milk', 5, 'RAW-20260205-911', NULL, 'Raw Milk', 25.00, 'liters', 30.00, 750.00, 'spoiled', 'TEST', 'drain', 'completed', 2, '2026-02-11 12:20:02', 8, '2026-02-11 12:20:56', 'Basta', 8, '2026-02-11 12:21:00', '', NULL, '', '\n[Execution] ', NULL, '2026-02-11 04:20:02', '2026-02-11 04:21:00');
+(8, 'DSP-20260211-0001', 'raw_milk', 5, 'RAW-20260205-911', NULL, 'Raw Milk', 25.00, 'liters', 30.00, 750.00, 'spoiled', 'TEST', 'drain', 'completed', 2, '2026-02-11 12:20:02', 8, '2026-02-11 12:20:56', 'Basta', 8, '2026-02-11 12:21:00', '', NULL, '', '\n[Execution] ', NULL, '2026-02-11 04:20:02', '2026-02-11 04:21:00'),
+(9, 'DSP-20260216-0001', 'finished_goods', 20, 'BATCH-20260205-0004', 2, 'Fresh Milk 500ml', 50.00, 'pcs', 0.00, 0.00, 'expired', 'Basta', 'drain', 'completed', 2, '2026-02-16 19:46:48', 8, '2026-02-16 19:48:07', '', 5, '2026-02-16 19:48:38', 'Tangina', NULL, 'Tangina', '\n[Execution] Tangina', NULL, '2026-02-16 11:46:48', '2026-02-16 11:48:38'),
+(10, 'DSP-20260216-0002', 'finished_goods', 21, 'BATCH-20260205-0005', 2, 'Fresh Milk 500ml', 50.00, 'pcs', 0.00, 0.00, 'expired', 'Basta', 'drain', 'completed', 2, '2026-02-16 19:47:44', 8, '2026-02-16 19:48:06', '', 5, '2026-02-16 19:48:28', 'Area B', NULL, 'Brybry', '\n[Execution] Tangina', NULL, '2026-02-16 11:47:44', '2026-02-16 11:48:28');
 
 -- --------------------------------------------------------
 
@@ -1447,7 +1519,14 @@ INSERT INTO `fg_inventory_transactions` (`id`, `transaction_code`, `transaction_
 (38, 'FGT-20260211-0024', 'receive', 24, 1, 50, 0, 50, 0, 50, 0, 0, 0, 50, NULL, 1, 5, 'Received from production batch BATCH-20260211-0008', NULL, NULL, '2026-02-10 18:30:27'),
 (39, 'FGT-20260211-0025', 'receive', 25, 8, 1, 0, 1, 0, 1, 0, 0, 0, 1, NULL, 2, 5, 'Received from production batch BATCH-20260211-0009', NULL, NULL, '2026-02-10 18:50:20'),
 (40, 'FGT-20260211-0026', 'receive', 26, 8, 20, 0, 20, 0, 20, 0, 0, 0, 20, NULL, 1, 5, 'Received from production batch BATCH-20260211-0010', NULL, NULL, '2026-02-10 18:57:36'),
-(41, 'FGT-20260211-0027', 'receive', 27, 1, 10, 0, 10, 0, 10, 0, 0, 0, 10, NULL, 1, 5, 'Received from production batch BATCH-20260211-0011', NULL, NULL, '2026-02-11 04:03:42');
+(41, 'FGT-20260211-0027', 'receive', 27, 1, 10, 0, 10, 0, 10, 0, 0, 0, 10, NULL, 1, 5, 'Received from production batch BATCH-20260211-0011', NULL, NULL, '2026-02-11 04:03:42'),
+(42, 'DSP-20260216-3223', 'disposal', 21, 2, 50, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 5, 'Disposal: DSP-20260216-0002 - Basta', 'disposal', 10, '2026-02-16 11:48:28'),
+(43, 'DSP-20260216-2210', 'disposal', 20, 2, 50, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 5, 'Disposal: DSP-20260216-0001 - Basta', 'disposal', 9, '2026-02-16 11:48:38'),
+(44, '', 'receive', 32, 0, 0, 0, 5, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, 5, 'Warehouse receiving - assigned to chiller', NULL, NULL, '2026-02-20 17:30:46'),
+(45, '', 'receive', 33, 0, 0, 0, 5, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, 5, 'Warehouse receiving - assigned to chiller', NULL, NULL, '2026-02-20 17:30:48'),
+(46, '', 'receive', 35, 22, 0, 0, 100, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, 5, 'Test', NULL, NULL, '2026-02-20 23:31:57'),
+(47, '', 'receive', 36, 22, 0, 0, 50, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, 5, 'Warehouse receiving - assigned to chiller', NULL, NULL, '2026-02-20 23:43:08'),
+(48, '', 'receive', 37, 22, 0, 0, 50, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, 5, 'Warehouse receiving - assigned to chiller', NULL, NULL, '2026-02-20 23:43:11');
 
 -- --------------------------------------------------------
 
@@ -1482,12 +1561,12 @@ CREATE TABLE `fg_receiving` (
 
 CREATE TABLE `finished_goods_inventory` (
   `id` int(11) NOT NULL,
-  `batch_id` int(11) NOT NULL,
-  `qc_release_id` int(11) NOT NULL COMMENT 'QC release that approved entry',
+  `batch_id` int(11) DEFAULT NULL,
+  `qc_release_id` int(11) DEFAULT NULL,
   `product_id` int(11) DEFAULT NULL,
-  `milk_type_id` int(11) NOT NULL COMMENT 'For traceability',
+  `milk_type_id` int(11) DEFAULT NULL,
   `product_name` varchar(100) NOT NULL,
-  `product_type` enum('bottled_milk','cheese','butter','yogurt','milk_bar') NOT NULL,
+  `product_type` enum('bottled_milk','cheese','butter','yogurt','milk_bar','cream','flavored_milk') NOT NULL,
   `product_variant` varchar(100) DEFAULT NULL,
   `variant` varchar(50) DEFAULT NULL,
   `size_ml` int(11) DEFAULT NULL,
@@ -1530,14 +1609,37 @@ INSERT INTO `finished_goods_inventory` (`id`, `batch_id`, `qc_release_id`, `prod
 (7, 6, 6, 6, 1, 'Kesong Puti 250g', 'cheese', NULL, NULL, NULL, 100, 100, 100, 0, 0, 4, 4, 4, 4, 'pack', NULL, '2026-02-03', '2026-02-24', NULL, 1, NULL, '2026-02-03 09:35:24', NULL, 1, 'available', NULL, NULL, NULL, NULL),
 (8, 7, 7, 7, 1, 'Butter 250g', 'butter', NULL, NULL, NULL, 79, 100, 48, 0, 0, 2, 8, -1, 0, 'block', NULL, '2026-02-03', '2026-03-05', NULL, 1, NULL, '2026-02-03 09:35:24', '2026-02-11 14:05:33', 1, 'available', NULL, NULL, NULL, NULL),
 (9, 8, 8, 8, 1, 'Fresh Cream 1L', 'bottled_milk', NULL, NULL, NULL, 4, 100, 4, 0, 0, 0, 4, -1, 0, 'bottle', NULL, '2026-02-03', '2026-02-13', NULL, 1, NULL, '2026-02-03 09:35:24', '2026-02-11 10:59:49', 1, 'available', NULL, NULL, NULL, NULL),
-(20, 14, 9, 2, 1, 'Fresh Milk 500ml', 'bottled_milk', '500ml', NULL, NULL, 50, 50, 50, 0, 0, 0, 50, 0, 50, 'pcs', NULL, '2026-02-05', '2026-02-12', NULL, 2, NULL, '2026-02-05 08:36:51', NULL, 5, 'available', '', NULL, NULL, NULL),
-(21, 15, 10, 2, 1, 'Fresh Milk 500ml', 'bottled_milk', '500ml', NULL, NULL, 50, 50, 50, 0, 0, 0, 50, 0, 50, 'pcs', NULL, '2026-02-05', '2026-02-12', NULL, 1, NULL, '2026-02-05 11:17:02', NULL, 5, 'available', '', NULL, NULL, NULL),
+(20, 14, 9, 2, 1, 'Fresh Milk 500ml', 'bottled_milk', '500ml', NULL, NULL, 50, 0, 0, 50, 0, 0, 50, 0, 50, 'pcs', NULL, '2026-02-05', '2026-02-12', NULL, 2, NULL, '2026-02-05 08:36:51', NULL, 5, '', '', 9, '2026-02-16 19:48:38', 'Basta'),
+(21, 15, 10, 2, 1, 'Fresh Milk 500ml', 'bottled_milk', '500ml', NULL, NULL, 50, 0, 0, 50, 0, 0, 50, 0, 50, 'pcs', NULL, '2026-02-05', '2026-02-12', NULL, 1, NULL, '2026-02-05 11:17:02', NULL, 5, '', '', 10, '2026-02-16 19:48:28', 'Basta'),
 (22, 16, 11, 1, 1, 'Fresh Milk 1L', 'bottled_milk', '1 Liter', NULL, NULL, 50, 50, 13, 0, 0, 1, 1, -1, 0, 'pcs', NULL, '2026-02-09', '2026-02-16', NULL, 3, NULL, '2026-02-09 06:49:49', '2026-02-11 12:08:29', 5, 'available', 'Basta', NULL, NULL, NULL),
-(23, 17, 12, 3, 1, 'Chocolate Milk 1L', 'bottled_milk', '1 Liter', NULL, NULL, 0, 10, 0, 0, 0, 0, 0, 0, 0, 'pcs', NULL, '2026-02-09', '2026-02-16', NULL, 4, NULL, '2026-02-09 13:15:19', '2026-02-09 21:20:56', 5, 'available', '', NULL, NULL, NULL),
+(23, 17, 12, 3, 1, 'Chocolate Milk 1L', 'bottled_milk', '1 Liter', NULL, NULL, 0, 10, 0, 0, 0, 0, 10, 0, 10, 'pcs', NULL, '2026-02-09', '2026-02-16', NULL, 4, NULL, '2026-02-09 13:15:19', '2026-02-21 06:15:50', 5, 'available', '', NULL, NULL, NULL),
 (24, 18, 13, 1, 1, 'Fresh Milk 1L', 'bottled_milk', '1 Liter', NULL, NULL, 50, 50, 50, 0, 0, 0, 50, 1, 33, 'pcs', NULL, '2026-02-11', '2026-02-18', NULL, 1, NULL, '2026-02-10 18:30:27', '2026-02-11 12:35:52', 5, 'available', '', NULL, NULL, NULL),
 (25, 19, 14, 8, 1, 'Fresh Cream 1L', '', NULL, NULL, NULL, 1, 1, 1, 0, 0, 0, 1, -1, 0, 'pcs', NULL, '2026-02-11', '2026-02-18', NULL, 2, NULL, '2026-02-10 18:50:20', '2026-02-11 10:59:49', 5, 'available', '', NULL, NULL, NULL),
 (26, 20, 15, 8, 1, 'Fresh Cream 1L', '', NULL, NULL, NULL, 20, 20, 20, 0, 0, 0, 20, 0, 13, 'pcs', NULL, '2026-02-11', '2026-02-18', NULL, 1, NULL, '2026-02-10 18:57:36', '2026-02-11 10:59:49', 5, 'available', '', NULL, NULL, NULL),
-(27, 21, 16, 1, 1, 'Fresh Milk 1L', 'bottled_milk', '1 Liter', NULL, NULL, 10, 10, 10, 0, 0, 0, 10, 0, 10, 'pcs', NULL, '2026-02-11', '2026-02-18', NULL, 1, NULL, '2026-02-11 04:03:42', NULL, 5, 'available', '', NULL, NULL, NULL);
+(27, 21, 16, 1, 1, 'Fresh Milk 1L', 'bottled_milk', '1 Liter', NULL, NULL, 10, 10, 10, 0, 0, 0, 10, 0, 10, 'pcs', NULL, '2026-02-11', '2026-02-18', NULL, 1, NULL, '2026-02-11 04:03:42', NULL, 5, 'available', '', NULL, NULL, NULL),
+(32, 23, NULL, 17, 1, 'Basta', 'flavored_milk', '200ml', '200ml', 200, 5, 5, 5, 0, 0, 0, 5, 0, 5, 'pcs', NULL, '2026-02-21', '2026-02-27', NULL, 1, 'Chiller A - Section 1', '2026-02-20 17:01:14', '2026-02-21 06:15:50', 3, 'available', 'From packaging run PKG-20260221-001 · batch BATCH-20260221-0013\nAssigned to Chiller A - Section 1 by warehouse on 2026-02-21 01:30:46', NULL, NULL, NULL),
+(33, 23, NULL, 17, 1, 'Basta', 'flavored_milk', '200ml', '200ml', 200, 5, 5, 5, 0, 0, 0, 5, 0, 5, 'pcs', NULL, '2026-02-21', '2026-02-27', NULL, 1, 'Chiller A - Section 1', '2026-02-20 17:01:14', '2026-02-21 06:15:50', 3, 'available', 'From packaging run PKG-20260221-001 · batch BATCH-20260221-0013\nAssigned to Chiller A - Section 1 by warehouse on 2026-02-21 01:30:48', NULL, NULL, NULL),
+(34, 24, NULL, 21, 1, 'MilkBarBisaya', 'bottled_milk', '50ml', '50ml', 50, 100, 50, 50, 0, 0, 0, 0, 5, 0, 'pcs', NULL, '2026-02-21', '2026-02-27', NULL, 1, 'Chiller A - Section 1', '2026-02-20 17:25:36', '2026-02-21 06:27:03', 3, 'available', 'From packaging run PKG-20260221-002 · batch BATCH-20260221-0014\nAssigned to Chiller A - Section 1 by warehouse on 2026-02-21 01:27:50', NULL, NULL, NULL),
+(35, 25, NULL, 22, 1, 'AnotherTesting', 'flavored_milk', 'Yippe', 'Yippe', 250, 100, 100, 100, 0, 0, 0, 100, 0, 50, 'pcs', NULL, '2026-02-21', '2026-02-27', NULL, 2, 'Chiller A - Section 2', '2026-02-20 23:31:28', '2026-02-21 07:35:06', 3, 'available', 'From packaging run PKG-20260221-003 · batch BATCH-20260221-0015\nAssigned to Chiller A - Section 2 by warehouse on 2026-02-21 07:31:57 - Test', NULL, NULL, NULL),
+(36, 26, NULL, 22, 1, 'AnotherTesting', 'flavored_milk', 'Yippe', 'Yippe', 250, 50, 50, 50, 0, 0, 0, 50, 0, 50, 'pcs', NULL, '2026-02-21', '2026-02-27', NULL, 1, 'Chiller A - Section 1', '2026-02-20 23:42:40', '2026-02-21 07:43:08', 3, 'available', 'From packaging run PKG-20260221-004 · batch BATCH-20260221-0016\nAssigned to Chiller A - Section 1 by warehouse on 2026-02-21 07:43:08', NULL, NULL, NULL),
+(37, 26, NULL, 22, 1, 'AnotherTesting', 'flavored_milk', 'Yippe', 'Yippe', 100, 50, 50, 50, 0, 0, 0, 50, 0, 50, 'pcs', NULL, '2026-02-21', '2026-02-27', NULL, 2, 'Chiller A - Section 2', '2026-02-20 23:42:40', '2026-02-21 07:43:11', 3, 'available', 'From packaging run PKG-20260221-004 · batch BATCH-20260221-0016\nAssigned to Chiller A - Section 2 by warehouse on 2026-02-21 07:43:11', NULL, NULL, NULL);
+
+-- --------------------------------------------------------
+
+--
+-- Stand-in structure for view `gm_pending_approvals`
+-- (See below for the actual view)
+--
+CREATE TABLE `gm_pending_approvals` (
+`type` varchar(11)
+,`id` int(11)
+,`reference_code` varchar(30)
+,`description` varchar(291)
+,`amount` decimal(12,2)
+,`requested_by` varchar(100)
+,`requested_at` timestamp
+,`status` varchar(9)
+);
 
 -- --------------------------------------------------------
 
@@ -1558,6 +1660,8 @@ CREATE TABLE `ingredients` (
   `reserved_stock` decimal(10,2) DEFAULT 0.00,
   `available_stock` decimal(10,2) GENERATED ALWAYS AS (`current_stock` - `reserved_stock`) STORED,
   `unit_cost` decimal(10,2) DEFAULT NULL,
+  `market_price` decimal(12,2) DEFAULT NULL,
+  `last_price_update` date DEFAULT NULL,
   `storage_location` varchar(100) DEFAULT NULL,
   `storage_requirements` text DEFAULT NULL,
   `shelf_life_days` int(11) DEFAULT NULL,
@@ -1570,15 +1674,15 @@ CREATE TABLE `ingredients` (
 -- Dumping data for table `ingredients`
 --
 
-INSERT INTO `ingredients` (`id`, `ingredient_code`, `ingredient_name`, `category_id`, `unit_of_measure`, `minimum_stock`, `reorder_point`, `lead_time_days`, `current_stock`, `reserved_stock`, `unit_cost`, `storage_location`, `storage_requirements`, `shelf_life_days`, `is_active`, `created_at`, `updated_at`) VALUES
-(9, 'ING-001', 'Sugar', 1, 'kg', 50.00, 75.00, 3, 200.00, 0.00, 45.00, 'Dry Storage A', 'Cool dry place', 365, 1, '2026-02-03 08:50:32', '2026-02-03 08:50:32'),
-(10, 'ING-002', 'Vanilla Extract', 2, 'liter', 5.00, 8.00, 7, 15.00, 0.00, 850.00, 'Cold Storage', 'Refrigerated', 180, 1, '2026-02-03 08:50:32', '2026-02-03 08:50:32'),
-(11, 'ING-003', 'Chocolate Powder', 2, 'kg', 20.00, 30.00, 5, 75.00, 0.00, 320.00, 'Dry Storage A', 'Cool dry place', 270, 1, '2026-02-03 08:50:32', '2026-02-03 08:50:32'),
-(12, 'ING-004', 'Stabilizer', 3, 'kg', 10.00, 15.00, 7, 40.00, 0.00, 480.00, 'Dry Storage B', 'Cool dry place', 365, 1, '2026-02-03 08:50:32', '2026-02-03 08:50:32'),
-(13, 'ING-005', 'Cultures (Yogurt)', 4, 'packet', 20.00, 30.00, 14, 60.00, 0.00, 150.00, 'Freezer', 'Frozen -18C', 90, 1, '2026-02-03 08:50:32', '2026-02-03 08:50:32'),
-(14, 'ING-006', 'Salt', 3, 'kg', 25.00, 40.00, 3, 100.00, 0.00, 25.00, 'Dry Storage A', 'Cool dry place', 730, 1, '2026-02-03 08:50:32', '2026-02-03 08:50:32'),
-(15, 'ING-007', 'Rennet', 4, 'liter', 3.00, 5.00, 14, 10.00, 0.00, 1200.00, 'Cold Storage', 'Refrigerated', 180, 1, '2026-02-03 08:50:32', '2026-02-03 08:50:32'),
-(16, 'ING-008', 'Food Coloring', 3, 'liter', 2.00, 4.00, 5, 8.00, 0.00, 350.00, 'Dry Storage B', 'Cool dry place', 365, 1, '2026-02-03 08:50:32', '2026-02-03 08:50:32');
+INSERT INTO `ingredients` (`id`, `ingredient_code`, `ingredient_name`, `category_id`, `unit_of_measure`, `minimum_stock`, `reorder_point`, `lead_time_days`, `current_stock`, `reserved_stock`, `unit_cost`, `market_price`, `last_price_update`, `storage_location`, `storage_requirements`, `shelf_life_days`, `is_active`, `created_at`, `updated_at`) VALUES
+(9, 'ING-001', 'Sugar', 1, 'kg', 50.00, 75.00, 3, 200.00, 0.00, 45.00, NULL, NULL, 'Dry Storage A', 'Cool dry place', 365, 1, '2026-02-03 08:50:32', '2026-02-03 08:50:32'),
+(10, 'ING-002', 'Vanilla Extract', 2, 'liter', 5.00, 8.00, 7, 15.00, 0.00, 850.00, NULL, NULL, 'Cold Storage', 'Refrigerated', 180, 1, '2026-02-03 08:50:32', '2026-02-03 08:50:32'),
+(11, 'ING-003', 'Chocolate Powder X', 2, 'kg', 20.00, 30.00, 5, 75.00, 0.00, 320.00, NULL, NULL, 'Dry Storage A', 'Cool dry place', 270, 1, '2026-02-03 08:50:32', '2026-02-14 02:40:11'),
+(12, 'ING-004', 'Stabilizer', 3, 'kg', 10.00, 15.00, 7, 40.00, 0.00, 480.00, NULL, NULL, 'Dry Storage B', 'Cool dry place', 365, 1, '2026-02-03 08:50:32', '2026-02-03 08:50:32'),
+(13, 'ING-005', 'Cultures (Yogurt)', 4, 'packet', 20.00, 30.00, 14, 60.00, 0.00, 150.00, NULL, NULL, 'Freezer', 'Frozen -18C', 90, 1, '2026-02-03 08:50:32', '2026-02-03 08:50:32'),
+(14, 'ING-006', 'Salt', 3, 'kg', 25.00, 40.00, 3, 100.00, 0.00, 25.00, NULL, NULL, 'Dry Storage A', 'Cool dry place', 730, 1, '2026-02-03 08:50:32', '2026-02-03 08:50:32'),
+(15, 'ING-007', 'Rennet', 4, 'liter', 3.00, 5.00, 14, 10.00, 0.00, 1200.00, NULL, NULL, 'Cold Storage', 'Refrigerated', 180, 1, '2026-02-03 08:50:32', '2026-02-03 08:50:32'),
+(16, 'ING-008', 'Food Coloring', 3, 'liter', 2.00, 4.00, 5, 8.00, 0.00, 350.00, NULL, NULL, 'Dry Storage B', 'Cool dry place', 365, 1, '2026-02-03 08:50:32', '2026-02-03 08:50:32');
 
 -- --------------------------------------------------------
 
@@ -1662,7 +1766,33 @@ INSERT INTO `ingredient_consumption` (`id`, `run_id`, `ingredient_id`, `ingredie
 (4, 8, 9, 'Sugar', 0.500, 'kg', 'BATCH-20260211-0008', 'Auto-recorded on run completion. Scale factor: 1', '2026-02-10 18:29:35'),
 (5, 8, 10, 'Vanilla Extract', 0.020, 'L', 'BATCH-20260211-0008', 'Auto-recorded on run completion. Scale factor: 1', '2026-02-10 18:29:35'),
 (6, 11, 9, 'Sugar', 0.500, 'kg', 'BATCH-20260211-0011', 'Auto-recorded on run completion. Scale factor: 1', '2026-02-11 04:02:41'),
-(7, 11, 10, 'Vanilla Extract', 0.020, 'L', 'BATCH-20260211-0011', 'Auto-recorded on run completion. Scale factor: 1', '2026-02-11 04:02:41');
+(7, 11, 10, 'Vanilla Extract', 0.020, 'L', 'BATCH-20260211-0011', 'Auto-recorded on run completion. Scale factor: 1', '2026-02-11 04:02:41'),
+(8, 12, 9, 'Sugar', 0.500, 'kg', 'BATCH-20260220-0012', 'Auto-recorded on run completion. Scale factor: 1', '2026-02-20 08:47:52'),
+(9, 12, 10, 'Vanilla Extract', 0.020, 'L', 'BATCH-20260220-0012', 'Auto-recorded on run completion. Scale factor: 1', '2026-02-20 08:47:52'),
+(10, 14, 15, 'Rennet', 1.000, 'liter', 'BATCH-20260221-0014', 'Auto-recorded on run completion. Scale factor: 1', '2026-02-20 17:20:23'),
+(11, 14, 11, 'Chocolate Powder X', 1.000, 'kg', 'BATCH-20260221-0014', 'Auto-recorded on run completion. Scale factor: 1', '2026-02-20 17:20:23'),
+(12, 15, 15, 'Rennet', 50.000, 'liter', 'BATCH-20260221-0015', 'Auto-recorded on run completion. Scale factor: 1', '2026-02-20 23:30:16'),
+(13, 16, 15, 'Rennet', 50.000, 'liter', 'BATCH-20260221-0016', 'Auto-recorded on run completion. Scale factor: 1', '2026-02-20 23:40:14');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `ingredient_price_history`
+--
+
+CREATE TABLE `ingredient_price_history` (
+  `id` int(11) NOT NULL,
+  `ingredient_id` int(11) NOT NULL,
+  `old_price` decimal(12,2) NOT NULL,
+  `new_price` decimal(12,2) NOT NULL,
+  `price_change` decimal(12,2) GENERATED ALWAYS AS (`new_price` - `old_price`) STORED,
+  `change_percent` decimal(5,2) GENERATED ALWAYS AS ((`new_price` - `old_price`) / `old_price` * 100) STORED,
+  `po_id` int(11) DEFAULT NULL,
+  `supplier_id` int(11) DEFAULT NULL,
+  `reason` varchar(255) DEFAULT NULL,
+  `updated_by` int(11) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
@@ -1912,13 +2042,18 @@ CREATE TABLE `master_recipes` (
 --
 
 INSERT INTO `master_recipes` (`id`, `recipe_code`, `product_id`, `product_name`, `product_type`, `variant`, `milk_type_id`, `description`, `base_milk_liters`, `expected_yield`, `yield_unit`, `shelf_life_days`, `pasteurization_temp`, `pasteurization_time_mins`, `cooling_temp`, `special_instructions`, `is_active`, `created_by`, `created_at`, `updated_at`) VALUES
-(12, 'RCP-FM-1L', 1, 'Fresh Milk 1L', 'bottled_milk', '1 Liter', 1, NULL, 100.00, 95, 'bottles', 7, 75.00, 15, 4.00, 'Standard pasteurization process for 1L fresh milk', 1, 1, '2026-02-03 09:22:39', '2026-02-05 08:35:59'),
-(13, 'RCP-FM-500', 2, 'Fresh Milk 500ml', 'bottled_milk', '500ml', 1, NULL, 100.00, 190, 'bottles', 7, 75.00, 15, 4.00, 'Standard pasteurization process for 500ml fresh milk', 1, 1, '2026-02-03 09:22:39', '2026-02-05 08:36:00'),
-(14, 'RCP-CHO-1L', 3, 'Chocolate Milk 1L', 'bottled_milk', '1 Liter', 1, NULL, 100.00, 92, 'bottles', 7, 75.00, 15, 4.00, 'Add chocolate powder after pasteurization', 1, 1, '2026-02-03 09:22:39', '2026-02-05 08:36:00'),
-(15, 'RCP-YOG-500', 4, 'Plain Yogurt 500g', 'yogurt', '500g', 1, NULL, 100.00, 180, 'cups', 14, 85.00, 30, 43.00, 'Fermentation for 6-8 hours at 43C', 1, 1, '2026-02-03 09:22:39', '2026-02-05 08:36:00'),
-(16, 'RCP-CHE-250', 6, 'Kesong Puti 250g', 'cheese', '250g', 1, NULL, 100.00, 35, 'packs', 21, 75.00, 15, 35.00, 'Add rennet and cultures, age for 24 hours', 1, 1, '2026-02-03 09:22:39', '2026-02-05 08:36:00'),
-(17, 'RCP-BUT-250', 7, 'Butter 250g', 'butter', '250g', 1, NULL, 100.00, 20, 'blocks', 30, 75.00, 15, 10.00, 'Churn cream until butter forms, wash and shape', 1, 1, '2026-02-03 09:22:39', '2026-02-05 08:36:00'),
-(18, 'RCP-CRM-001', 8, 'Fresh Cream 1L', 'cream', NULL, 1, 'Fresh cream separated from whole milk through centrifugation. Pasteurized for safety.', 10.00, 1, 'units', 5, 72.00, 15, 4.00, 'Separate cream at 40-50??C for best results. Adjust separator for 35-40% fat content. Cool immediately after pasteurization.', 1, 1, '2026-02-10 18:44:56', '2026-02-10 18:44:56');
+(12, 'RCP-FM-1L', 1, 'Fresh Milk', 'bottled_milk', '1 Liter', 1, NULL, 100.00, 95, 'bottles', 7, 75.00, 15, 4.00, 'Standard pasteurization process for 1L fresh milk', 1, 1, '2026-02-03 09:22:39', '2026-02-20 15:49:13'),
+(13, 'RCP-FM-500', 2, 'Fresh Milk', 'bottled_milk', '500ml', 1, NULL, 100.00, 190, 'bottles', 7, 75.00, 15, 4.00, 'Standard pasteurization process for 500ml fresh milk', 1, 1, '2026-02-03 09:22:39', '2026-02-20 15:49:13'),
+(14, 'RCP-CHO-1L', 3, 'Chocolate Milk', 'bottled_milk', '1 Liter', 1, NULL, 100.00, 92, 'bottles', 7, 75.00, 15, 4.00, 'Add chocolate powder after pasteurization', 1, 1, '2026-02-03 09:22:39', '2026-02-20 15:49:13'),
+(15, 'RCP-YOG-500', 4, 'Plain Yogurt', 'yogurt', '500g', 1, NULL, 100.00, 180, 'cups', 14, 85.00, 30, 43.00, 'Fermentation for 6-8 hours at 43C', 1, 1, '2026-02-03 09:22:39', '2026-02-20 15:49:13'),
+(16, 'RCP-CHE-250', 6, 'Kesong Puti', 'cheese', '250g', 1, NULL, 100.00, 35, 'packs', 21, 75.00, 15, 35.00, 'Add rennet and cultures, age for 24 hours', 1, 1, '2026-02-03 09:22:39', '2026-02-20 15:49:13'),
+(17, 'RCP-BUT-250', 7, 'Butter', 'butter', '250g', 1, '', 100.00, 20, '', 30, 75.00, 15, 10.00, 'Churn cream until butter forms, wash and shap', 1, 1, '2026-02-03 09:22:39', '2026-02-20 15:49:13'),
+(18, 'RCP-CRM-001', 8, 'Fresh Cream', 'cream', NULL, 1, 'Fresh cream separated from whole milk through centrifugation. Pasteurized for safety.', 10.00, 1, 'units', 5, 72.00, 15, 4.00, 'Separate cream at 40-50??C for best results. Adjust separator for 35-40% fat content. Cool immediately after pasteurization.', 1, 1, '2026-02-10 18:44:56', '2026-02-20 15:49:13'),
+(19, 'RCP-0019', NULL, 'Basta', 'yogurt', NULL, 1, 'Basta', 10.00, 95, 'kg', 7, 81.00, 15, 4.00, 'Basta', 0, 8, '2026-02-20 15:56:53', '2026-02-20 16:11:33'),
+(20, 'RCP-0020', NULL, 'Basta', 'flavored_milk', NULL, 1, '', 10.00, 95, 'liters', 7, 81.00, 15, 4.00, '', 1, 8, '2026-02-20 16:11:54', '2026-02-20 16:11:54'),
+(21, 'RCP-0021', NULL, 'MilkBarBisaya', '', NULL, 1, '', 10.00, 95, 'liters', 7, 81.00, 15, 4.00, '', 1, 8, '2026-02-20 17:19:21', '2026-02-20 17:19:21'),
+(22, 'RCP-0022', NULL, 'AnotherTesting', 'flavored_milk', NULL, 1, 'Test', 50.00, 95, 'liters', 7, 81.00, 15, 4.00, 'Basta', 1, 8, '2026-02-20 23:27:52', '2026-02-20 23:27:52'),
+(23, 'RCP-0023', NULL, 'Milkbar-UBE', 'flavored_milk', NULL, 2, '', 10.00, 95, 'liters', 7, 81.00, 15, 4.00, '', 1, 8, '2026-02-21 02:59:07', '2026-02-21 02:59:07');
 
 -- --------------------------------------------------------
 
@@ -1952,7 +2087,7 @@ CREATE TABLE `material_requisitions` (
 --
 
 INSERT INTO `material_requisitions` (`id`, `requisition_code`, `production_run_id`, `requested_by`, `department`, `priority`, `needed_by_date`, `purpose`, `total_items`, `status`, `approved_by`, `approved_at`, `rejection_reason`, `fulfilled_by`, `fulfilled_at`, `notes`, `created_at`, `updated_at`) VALUES
-(1, 'REQ-2026-0001', NULL, 2, 'production', 'normal', '2026-02-04 00:00:00', 'Production batch YOG-001', 3, 'approved', NULL, NULL, NULL, NULL, NULL, NULL, '2026-02-03 08:46:55', '2026-02-03 08:46:55'),
+(1, 'REQ-2026-0001', NULL, 2, 'production', 'normal', '2026-02-04 00:00:00', 'Production batch YOG-001', 3, 'partial', NULL, NULL, NULL, NULL, NULL, NULL, '2026-02-03 08:46:55', '2026-02-22 09:14:03'),
 (2, 'REQ-2026-0002', NULL, 2, 'maintenance', 'high', '2026-02-03 00:00:00', 'Pasteurizer maintenance', 2, 'fulfilled', 4, '2026-02-05 13:42:43', NULL, 4, '2026-02-05 13:42:49', NULL, '2026-02-03 08:46:55', '2026-02-05 05:42:49'),
 (3, 'REQ-2026-0003', NULL, 2, 'production', 'urgent', '2026-02-03 00:00:00', 'Emergency production run', 2, 'approved', NULL, NULL, NULL, NULL, NULL, NULL, '2026-02-03 08:46:55', '2026-02-03 08:46:55'),
 (4, 'REQ-20260205-001', NULL, 3, 'production', 'normal', NULL, '', 1, 'fulfilled', 4, '2026-02-05 13:52:39', NULL, 4, '2026-02-05 14:05:17', NULL, '2026-02-05 05:47:17', '2026-02-05 06:08:37'),
@@ -2120,10 +2255,12 @@ CREATE TABLE `mro_inventory` (
   `id` int(11) NOT NULL,
   `batch_code` varchar(30) NOT NULL,
   `mro_item_id` int(11) NOT NULL,
+  `po_id` int(11) DEFAULT NULL,
   `quantity` decimal(10,2) NOT NULL,
   `remaining_quantity` decimal(10,2) NOT NULL,
   `unit_cost` decimal(10,2) DEFAULT NULL,
-  `supplier_name` varchar(150) DEFAULT NULL,
+  `supplier_name` varchar(255) DEFAULT NULL,
+  `supplier_id` int(11) DEFAULT NULL,
   `received_date` date NOT NULL,
   `received_by` int(11) NOT NULL,
   `status` enum('available','partially_used','consumed','returned') NOT NULL DEFAULT 'available',
@@ -2136,15 +2273,15 @@ CREATE TABLE `mro_inventory` (
 -- Dumping data for table `mro_inventory`
 --
 
-INSERT INTO `mro_inventory` (`id`, `batch_code`, `mro_item_id`, `quantity`, `remaining_quantity`, `unit_cost`, `supplier_name`, `received_date`, `received_by`, `status`, `notes`, `created_at`, `updated_at`) VALUES
-(1, 'MRO-20260203-7069', 1, 22.00, 21.00, 369.00, 'MRO Supplier', '2026-02-03', 2, 'partially_used', NULL, '2026-02-03 08:49:05', '2026-02-05 05:42:49'),
-(2, 'MRO-20260203-1365', 2, 21.00, 21.00, 120.00, 'MRO Supplier', '2026-02-03', 2, 'available', NULL, '2026-02-03 08:49:05', '2026-02-03 08:49:05'),
-(3, 'MRO-20260203-4751', 3, 33.00, 33.00, 398.00, 'MRO Supplier', '2026-02-03', 2, 'available', NULL, '2026-02-03 08:49:05', '2026-02-03 08:49:05'),
-(4, 'MRO-20260203-4081', 4, 20.00, 20.00, 298.00, 'MRO Supplier', '2026-02-03', 2, 'available', NULL, '2026-02-03 08:49:05', '2026-02-03 08:49:05'),
-(5, 'MRO-20260203-1961', 5, 34.00, 34.00, 283.00, 'MRO Supplier', '2026-02-03', 2, 'available', NULL, '2026-02-03 08:49:05', '2026-02-03 08:49:05'),
-(6, 'MRO-20260203-5431', 6, 42.00, 42.00, 106.00, 'MRO Supplier', '2026-02-03', 2, 'available', NULL, '2026-02-03 08:49:05', '2026-02-03 08:49:05'),
-(7, 'MRO-20260203-2808', 7, 34.00, 32.00, 324.00, 'MRO Supplier', '2026-02-03', 2, 'partially_used', NULL, '2026-02-03 08:49:05', '2026-02-05 05:42:49'),
-(8, 'MRO-20260203-4206', 8, 20.00, 20.00, 165.00, 'MRO Supplier', '2026-02-03', 2, 'available', NULL, '2026-02-03 08:49:05', '2026-02-03 08:49:05');
+INSERT INTO `mro_inventory` (`id`, `batch_code`, `mro_item_id`, `po_id`, `quantity`, `remaining_quantity`, `unit_cost`, `supplier_name`, `supplier_id`, `received_date`, `received_by`, `status`, `notes`, `created_at`, `updated_at`) VALUES
+(1, 'MRO-20260203-7069', 1, NULL, 22.00, 21.00, 369.00, 'MRO Supplier', NULL, '2026-02-03', 2, 'partially_used', NULL, '2026-02-03 08:49:05', '2026-02-05 05:42:49'),
+(2, 'MRO-20260203-1365', 2, NULL, 21.00, 21.00, 120.00, 'MRO Supplier', NULL, '2026-02-03', 2, 'available', NULL, '2026-02-03 08:49:05', '2026-02-03 08:49:05'),
+(3, 'MRO-20260203-4751', 3, NULL, 33.00, 33.00, 398.00, 'MRO Supplier', NULL, '2026-02-03', 2, 'available', NULL, '2026-02-03 08:49:05', '2026-02-03 08:49:05'),
+(4, 'MRO-20260203-4081', 4, NULL, 20.00, 20.00, 298.00, 'MRO Supplier', NULL, '2026-02-03', 2, 'available', NULL, '2026-02-03 08:49:05', '2026-02-03 08:49:05'),
+(5, 'MRO-20260203-1961', 5, NULL, 34.00, 34.00, 283.00, 'MRO Supplier', NULL, '2026-02-03', 2, 'available', NULL, '2026-02-03 08:49:05', '2026-02-03 08:49:05'),
+(6, 'MRO-20260203-5431', 6, NULL, 42.00, 42.00, 106.00, 'MRO Supplier', NULL, '2026-02-03', 2, 'available', NULL, '2026-02-03 08:49:05', '2026-02-03 08:49:05'),
+(7, 'MRO-20260203-2808', 7, NULL, 34.00, 32.00, 324.00, 'MRO Supplier', NULL, '2026-02-03', 2, 'partially_used', NULL, '2026-02-03 08:49:05', '2026-02-05 05:42:49'),
+(8, 'MRO-20260203-4206', 8, NULL, 20.00, 20.00, 165.00, 'MRO Supplier', NULL, '2026-02-03', 2, 'available', NULL, '2026-02-03 08:49:05', '2026-02-03 08:49:05');
 
 -- --------------------------------------------------------
 
@@ -2162,6 +2299,8 @@ CREATE TABLE `mro_items` (
   `lead_time_days` int(11) DEFAULT 7,
   `current_stock` decimal(10,2) NOT NULL DEFAULT 0.00,
   `unit_cost` decimal(10,2) DEFAULT NULL,
+  `market_price` decimal(12,2) DEFAULT NULL,
+  `last_price_update` date DEFAULT NULL,
   `storage_location` varchar(100) DEFAULT NULL,
   `compatible_equipment` text DEFAULT NULL,
   `is_critical` tinyint(1) DEFAULT 0,
@@ -2174,15 +2313,98 @@ CREATE TABLE `mro_items` (
 -- Dumping data for table `mro_items`
 --
 
-INSERT INTO `mro_items` (`id`, `item_code`, `item_name`, `category_id`, `unit_of_measure`, `minimum_stock`, `lead_time_days`, `current_stock`, `unit_cost`, `storage_location`, `compatible_equipment`, `is_critical`, `is_active`, `created_at`, `updated_at`) VALUES
-(1, 'MRO-001', 'Pasteurizer Gasket Set', 1, 'set', 3.00, 7, 21.00, 369.00, 'Shelf A1', NULL, 1, 1, '2026-02-03 08:49:05', '2026-02-05 05:42:49'),
-(2, 'MRO-002', 'Homogenizer Valve', 1, 'pcs', 2.00, 7, 22.00, 120.00, 'Shelf A2', NULL, 1, 1, '2026-02-03 08:49:05', '2026-02-05 05:46:07'),
-(3, 'MRO-003', 'Tank Agitator Belt', 1, 'pcs', 5.00, 7, 33.00, 398.00, 'Shelf A3', NULL, 1, 1, '2026-02-03 08:49:05', '2026-02-03 08:49:05'),
-(4, 'MRO-004', 'Temperature Sensor', 1, 'pcs', 2.00, 7, 20.00, 298.00, 'Shelf B1', NULL, 1, 1, '2026-02-03 08:49:05', '2026-02-03 08:49:05'),
-(5, 'MRO-005', 'Pump Seal Kit', 1, 'kit', 3.00, 7, 34.00, 283.00, 'Shelf B2', NULL, 1, 1, '2026-02-03 08:49:05', '2026-02-03 08:49:05'),
-(6, 'MRO-006', 'CIP Cleaning Solution', 3, 'liter', 20.00, 7, 42.00, 106.00, 'Chemical Room', NULL, 0, 1, '2026-02-03 08:49:05', '2026-02-03 08:49:05'),
-(7, 'MRO-007', 'Food Grade Lubricant', 5, 'liter', 5.00, 7, 32.00, 324.00, 'Lube Room', NULL, 0, 1, '2026-02-03 08:49:05', '2026-02-05 05:42:49'),
-(8, 'MRO-008', 'Safety Goggles', 4, 'pcs', 10.00, 7, 20.00, 165.00, 'PPE Cabinet', NULL, 0, 1, '2026-02-03 08:49:05', '2026-02-03 08:49:05');
+INSERT INTO `mro_items` (`id`, `item_code`, `item_name`, `category_id`, `unit_of_measure`, `minimum_stock`, `lead_time_days`, `current_stock`, `unit_cost`, `market_price`, `last_price_update`, `storage_location`, `compatible_equipment`, `is_critical`, `is_active`, `created_at`, `updated_at`) VALUES
+(1, 'MRO-001', 'Pasteurizer Gasket Set', 1, 'set', 3.00, 7, 21.00, 369.00, NULL, NULL, 'Shelf A1', NULL, 1, 1, '2026-02-03 08:49:05', '2026-02-05 05:42:49'),
+(2, 'MRO-002', 'Homogenizer Valve', 1, 'pcs', 2.00, 7, 22.00, 120.00, NULL, NULL, 'Shelf A2', NULL, 1, 1, '2026-02-03 08:49:05', '2026-02-05 05:46:07'),
+(3, 'MRO-003', 'Tank Agitator Belt', 1, 'pcs', 5.00, 7, 33.00, 398.00, NULL, NULL, 'Shelf A3', NULL, 1, 1, '2026-02-03 08:49:05', '2026-02-03 08:49:05'),
+(4, 'MRO-004', 'Temperature Sensor', 1, 'pcs', 2.00, 7, 20.00, 298.00, NULL, NULL, 'Shelf B1', NULL, 1, 1, '2026-02-03 08:49:05', '2026-02-03 08:49:05'),
+(5, 'MRO-005', 'Pump Seal Kit', 1, 'kit', 3.00, 7, 34.00, 283.00, NULL, NULL, 'Shelf B2', NULL, 1, 1, '2026-02-03 08:49:05', '2026-02-03 08:49:05'),
+(6, 'MRO-006', 'CIP Cleaning Solution', 3, 'liter', 20.00, 7, 42.00, 106.00, NULL, NULL, 'Chemical Room', NULL, 0, 1, '2026-02-03 08:49:05', '2026-02-03 08:49:05'),
+(7, 'MRO-007', 'Food Grade Lubricant', 5, 'liter', 5.00, 7, 32.00, 324.00, NULL, NULL, 'Lube Room', NULL, 0, 1, '2026-02-03 08:49:05', '2026-02-05 05:42:49'),
+(8, 'MRO-008', 'Safety Goggles', 4, 'pcs', 10.00, 7, 20.00, 165.00, NULL, NULL, 'PPE Cabinet', NULL, 0, 1, '2026-02-03 08:49:05', '2026-02-03 08:49:05');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `mro_price_history`
+--
+
+CREATE TABLE `mro_price_history` (
+  `id` int(11) NOT NULL,
+  `mro_item_id` int(11) NOT NULL,
+  `old_price` decimal(12,2) NOT NULL,
+  `new_price` decimal(12,2) NOT NULL,
+  `price_change` decimal(12,2) GENERATED ALWAYS AS (`new_price` - `old_price`) STORED,
+  `change_percent` decimal(5,2) GENERATED ALWAYS AS ((`new_price` - `old_price`) / `old_price` * 100) STORED,
+  `po_id` int(11) DEFAULT NULL,
+  `supplier_id` int(11) DEFAULT NULL,
+  `reason` varchar(255) DEFAULT NULL,
+  `updated_by` int(11) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `packaging_runs`
+--
+
+CREATE TABLE `packaging_runs` (
+  `id` int(11) NOT NULL,
+  `packaging_code` varchar(30) NOT NULL,
+  `production_run_id` int(11) DEFAULT NULL,
+  `batch_id` int(11) DEFAULT NULL,
+  `batch_code` varchar(50) DEFAULT NULL,
+  `product_type` varchar(50) DEFAULT NULL,
+  `total_pieces_packaged` int(11) NOT NULL DEFAULT 0,
+  `packaging_date` date NOT NULL,
+  `packaged_by` int(11) DEFAULT NULL,
+  `notes` text DEFAULT NULL,
+  `status` enum('completed','cancelled') DEFAULT 'completed',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `packaging_runs`
+--
+
+INSERT INTO `packaging_runs` (`id`, `packaging_code`, `production_run_id`, `batch_id`, `batch_code`, `product_type`, `total_pieces_packaged`, `packaging_date`, `packaged_by`, `notes`, `status`, `created_at`, `updated_at`) VALUES
+(5, 'PKG-20260221-001', 13, 23, 'BATCH-20260221-0013', 'flavored_milk', 10, '2026-02-21', 3, '', 'completed', '2026-02-20 17:01:14', '2026-02-20 17:01:14'),
+(6, 'PKG-20260221-002', 14, 24, 'BATCH-20260221-0014', '', 100, '2026-02-21', 3, '', 'completed', '2026-02-20 17:25:36', '2026-02-20 17:25:36'),
+(7, 'PKG-20260221-003', 15, 25, 'BATCH-20260221-0015', 'flavored_milk', 100, '2026-02-21', 3, '', 'completed', '2026-02-20 23:31:28', '2026-02-20 23:31:28'),
+(8, 'PKG-20260221-004', 16, 26, 'BATCH-20260221-0016', 'flavored_milk', 100, '2026-02-21', 3, '', 'completed', '2026-02-20 23:42:40', '2026-02-20 23:42:40');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `packaging_run_items`
+--
+
+CREATE TABLE `packaging_run_items` (
+  `id` int(11) NOT NULL,
+  `packaging_run_id` int(11) NOT NULL,
+  `product_id` int(11) DEFAULT NULL,
+  `product_name` varchar(100) NOT NULL,
+  `product_variant` varchar(100) DEFAULT NULL,
+  `size_ml` decimal(10,2) DEFAULT NULL,
+  `unit_measure` varchar(10) DEFAULT 'ml',
+  `quantity` int(11) NOT NULL DEFAULT 0,
+  `fg_inventory_id` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `packaging_run_items`
+--
+
+INSERT INTO `packaging_run_items` (`id`, `packaging_run_id`, `product_id`, `product_name`, `product_variant`, `size_ml`, `unit_measure`, `quantity`, `fg_inventory_id`, `created_at`) VALUES
+(1, 5, NULL, 'Basta', '200ml', 200.00, 'ml', 5, 32, '2026-02-20 17:01:14'),
+(2, 5, NULL, 'Basta', '200ml', 200.00, 'ml', 5, 33, '2026-02-20 17:01:14'),
+(3, 6, NULL, 'MilkBarBisaya', '50ml', 50.00, 'ml', 100, 34, '2026-02-20 17:25:36'),
+(4, 7, 22, 'AnotherTesting', 'Yippe', 250.00, 'ml', 100, 35, '2026-02-20 23:31:28'),
+(5, 8, 22, 'AnotherTesting', 'Yippe', 250.00, 'ml', 50, 36, '2026-02-20 23:42:40'),
+(6, 8, 22, 'AnotherTesting', 'Yippe', 100.00, 'ml', 50, 37, '2026-02-20 23:42:40');
 
 -- --------------------------------------------------------
 
@@ -2205,6 +2427,13 @@ CREATE TABLE `pasteurization_runs` (
   `created_at` datetime DEFAULT current_timestamp(),
   `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `pasteurization_runs`
+--
+
+INSERT INTO `pasteurization_runs` (`id`, `run_code`, `input_milk_liters`, `output_milk_liters`, `temperature`, `duration_mins`, `status`, `performed_by`, `started_at`, `completed_at`, `notes`, `created_at`, `updated_at`) VALUES
+(1, 'PAST-20260220-001', 100.00, 0.00, 75.00, 15, 'in_progress', 3, '2026-02-20 23:59:34', NULL, '', '2026-02-20 23:59:34', '2026-02-20 23:59:34');
 
 -- --------------------------------------------------------
 
@@ -2320,6 +2549,29 @@ CREATE TABLE `pos_transaction_items` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `price_canvass`
+--
+
+CREATE TABLE `price_canvass` (
+  `id` int(11) NOT NULL,
+  `canvass_code` varchar(30) NOT NULL,
+  `item_type` enum('ingredient','mro','other') NOT NULL DEFAULT 'ingredient',
+  `ingredient_id` int(11) DEFAULT NULL,
+  `mro_item_id` int(11) DEFAULT NULL,
+  `item_description` varchar(255) NOT NULL,
+  `quantity` decimal(10,2) NOT NULL,
+  `unit` varchar(30) NOT NULL,
+  `status` enum('open','completed','cancelled') DEFAULT 'open',
+  `selected_quote_id` int(11) DEFAULT NULL,
+  `created_by` int(11) NOT NULL,
+  `notes` text DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `production_batches`
 --
 
@@ -2380,7 +2632,12 @@ INSERT INTO `production_batches` (`id`, `batch_code`, `run_id`, `recipe_id`, `pr
 (18, 'BATCH-20260211-0008', 8, 12, NULL, 1, 'bottled_milk', NULL, 52.63, 1.00, '2026-02-11', NULL, '2026-02-18', NULL, NULL, NULL, NULL, 0, 0, 0, 'released', '2026-02-11 02:29:48', '', 1, NULL, NULL, 50, 50, 'BATCH-20260211-0008-260211', 3, 2, '2026-02-10 18:29:48', '2026-02-10 18:29:35', '2026-02-10 18:30:27'),
 (19, 'BATCH-20260211-0009', 9, 18, NULL, 1, 'cream', NULL, 10.00, 1.00, '2026-02-11', NULL, '2026-02-18', NULL, NULL, NULL, NULL, 0, 0, 0, 'released', '2026-02-11 02:49:59', '', 1, NULL, NULL, 1, 1, 'BATCH-20260211-0009-260211', 3, 2, '2026-02-10 18:49:59', '2026-02-10 18:49:32', '2026-02-10 18:50:20'),
 (20, 'BATCH-20260211-0010', 10, 18, NULL, 1, 'cream', NULL, 200.00, 1.00, '2026-02-11', NULL, '2026-02-18', NULL, NULL, NULL, NULL, 0, 0, 0, 'released', '2026-02-11 02:57:03', '', 1, NULL, NULL, 20, 20, 'BATCH-20260211-0010-260211', 3, 2, '2026-02-10 18:57:03', '2026-02-10 18:56:23', '2026-02-10 18:57:36'),
-(21, 'BATCH-20260211-0011', 11, 12, NULL, 1, 'bottled_milk', NULL, 10.53, 1.00, '2026-02-11', NULL, '2026-02-18', NULL, NULL, NULL, NULL, 0, 0, 0, 'released', '2026-02-11 12:03:06', 'Test', 1, NULL, NULL, 10, 10, 'BATCH-20260211-0011-260211', 3, 2, '2026-02-11 04:03:06', '2026-02-11 04:02:41', '2026-02-11 04:03:42');
+(21, 'BATCH-20260211-0011', 11, 12, NULL, 1, 'bottled_milk', NULL, 10.53, 1.00, '2026-02-11', NULL, '2026-02-18', NULL, NULL, NULL, NULL, 0, 0, 0, 'released', '2026-02-11 12:03:06', 'Test', 1, NULL, NULL, 10, 10, 'BATCH-20260211-0011-260211', 3, 2, '2026-02-11 04:03:06', '2026-02-11 04:02:41', '2026-02-11 04:03:42'),
+(22, 'BATCH-20260220-0012', 12, 12, NULL, 1, 'bottled_milk', NULL, 10.53, 1.00, '2026-02-20', NULL, '2026-02-27', NULL, NULL, NULL, NULL, 0, 0, 0, 'pending', NULL, NULL, 0, NULL, NULL, 10, 10, NULL, 3, NULL, NULL, '2026-02-20 08:47:52', '2026-02-20 08:47:52'),
+(23, 'BATCH-20260221-0013', 13, 20, NULL, 1, 'flavored_milk', NULL, 1.05, 1.00, '2026-02-21', NULL, '2026-02-28', NULL, NULL, NULL, NULL, 0, 0, 0, 'released', '2026-02-21 01:04:20', '', 0, NULL, NULL, 10, 10, 'BATCH-20260221-0013-260221', 3, 2, '2026-02-20 17:04:20', '2026-02-20 16:12:51', '2026-02-20 17:04:20'),
+(24, 'BATCH-20260221-0014', 14, 21, NULL, 1, '', NULL, 10.53, 1.00, '2026-02-21', NULL, '2026-02-28', NULL, NULL, NULL, NULL, 0, 0, 0, 'released', '2026-02-21 01:20:51', '', 0, NULL, NULL, 100, 100, 'BATCH-20260221-0014-260221', 3, 2, '2026-02-20 17:20:51', '2026-02-20 17:20:23', '2026-02-20 17:20:51'),
+(25, 'BATCH-20260221-0015', 15, 22, NULL, 1, 'flavored_milk', NULL, 52.63, 1.00, '2026-02-21', NULL, '2026-02-28', NULL, NULL, NULL, NULL, 0, 0, 0, 'released', '2026-02-21 07:30:44', '', 0, NULL, NULL, 100, 100, 'BATCH-20260221-0015-260221', 3, 2, '2026-02-20 23:30:44', '2026-02-20 23:30:16', '2026-02-20 23:30:44'),
+(26, 'BATCH-20260221-0016', 16, 22, NULL, 1, 'flavored_milk', NULL, 52.63, 1.00, '2026-02-21', NULL, '2026-02-28', NULL, NULL, NULL, NULL, 0, 0, 0, 'released', '2026-02-21 07:41:07', '', 0, NULL, NULL, 100, 100, 'BATCH-20260221-0016-260221', 3, 2, '2026-02-20 23:41:07', '2026-02-20 23:40:14', '2026-02-20 23:41:07');
 
 -- --------------------------------------------------------
 
@@ -2452,7 +2709,19 @@ INSERT INTO `production_ccp_logs` (`id`, `run_id`, `check_type`, `temperature`, 
 (19, 10, 'pasteurization', 75.00, NULL, 0, 15, 75.00, 2.00, 'pass', '2026-02-10 18:56:10', 3, '', '2026-02-10 18:56:10'),
 (20, 10, 'cooling', 4.00, NULL, 0, 0, 4.00, 1.00, 'pass', '2026-02-10 18:56:15', 3, '', '2026-02-10 18:56:15'),
 (21, 11, 'pasteurization', 75.00, NULL, 0, 15, 75.00, 2.00, 'pass', '2026-02-11 04:01:41', 3, '', '2026-02-11 04:01:41'),
-(22, 11, 'cooling', 4.00, NULL, 0, 0, 4.00, 1.00, 'pass', '2026-02-11 04:02:09', 3, '', '2026-02-11 04:02:09');
+(22, 11, 'cooling', 4.00, NULL, 0, 0, 4.00, 1.00, 'pass', '2026-02-11 04:02:09', 3, '', '2026-02-11 04:02:09'),
+(23, 12, 'pasteurization', 75.00, NULL, 0, 0, 75.00, 2.00, 'warning', '2026-02-20 08:47:24', 3, '', '2026-02-20 08:47:24'),
+(24, 12, 'pasteurization', 75.00, NULL, 0, 15, 75.00, 2.00, 'pass', '2026-02-20 08:47:31', 3, '', '2026-02-20 08:47:31'),
+(25, 12, 'cooling', 4.00, NULL, 0, 0, 4.00, 1.00, 'pass', '2026-02-20 08:47:36', 3, '', '2026-02-20 08:47:36'),
+(26, 13, 'pasteurization', 75.00, NULL, 0, 0, 75.00, 2.00, 'warning', '2026-02-20 16:12:30', 3, '', '2026-02-20 16:12:30'),
+(27, 13, 'pasteurization', 75.00, NULL, 0, 15, 75.00, 2.00, 'pass', '2026-02-20 16:12:40', 3, '', '2026-02-20 16:12:40'),
+(28, 13, 'cooling', 4.00, NULL, 0, 0, 4.00, 1.00, 'pass', '2026-02-20 16:12:46', 3, '', '2026-02-20 16:12:46'),
+(29, 14, 'pasteurization', 75.00, NULL, 0, 15, 75.00, 2.00, 'pass', '2026-02-20 17:20:03', 3, '', '2026-02-20 17:20:03'),
+(30, 14, 'cooling', 4.00, NULL, 0, 0, 4.00, 1.00, 'pass', '2026-02-20 17:20:09', 3, '', '2026-02-20 17:20:09'),
+(31, 15, 'pasteurization', 75.00, NULL, 0, 15, 75.00, 2.00, 'pass', '2026-02-20 23:28:46', 3, '', '2026-02-20 23:28:46'),
+(32, 15, 'cooling', 4.00, NULL, 0, 0, 4.00, 1.00, 'pass', '2026-02-20 23:28:51', 3, '', '2026-02-20 23:28:51'),
+(33, 16, 'pasteurization', 75.00, NULL, 0, 15, 75.00, 2.00, 'pass', '2026-02-20 23:39:58', 3, '', '2026-02-20 23:39:58'),
+(34, 16, 'cooling', 4.00, NULL, 0, 0, 4.00, 1.00, 'pass', '2026-02-20 23:40:03', 3, '', '2026-02-20 23:40:03');
 
 -- --------------------------------------------------------
 
@@ -2546,7 +2815,12 @@ INSERT INTO `production_runs` (`id`, `run_code`, `recipe_id`, `milk_type_id`, `p
 (8, 'PRD-20260211-001', 12, 1, 50, 50, 52.63, 'raw', NULL, 'completed', '2026-02-11 02:29:14', '2026-02-11 02:29:35', 3, 3, 0.00, '', '', '2026-02-10 18:29:11', '2026-02-10 18:29:35', '{\"total_pieces\":50,\"secondary_count\":2,\"secondary_unit\":\"crates\",\"remaining_primary\":2,\"primary_unit\":\"bottles\",\"input_quantity\":50,\"input_unit\":\"pieces\",\"conversion_factor\":24}', '{\"source\":\"requisition_based\",\"available_at_creation\":89.13,\"allocated\":52.63,\"pasteurized_batch_id\":null}', 75.00, 15, NULL, NULL, NULL, NULL, 0),
 (9, 'PRD-20260211-002', 18, 1, 1, 1, 10.00, 'raw', NULL, 'completed', '2026-02-11 02:49:11', '2026-02-11 02:49:32', 3, 3, 0.00, '', '', '2026-02-10 18:49:09', '2026-02-10 18:49:32', '{\"total_pieces\":1,\"secondary_count\":0,\"secondary_unit\":\"crates\",\"remaining_primary\":1,\"primary_unit\":\"bottles\",\"input_quantity\":1,\"input_unit\":\"pieces\",\"conversion_factor\":24}', '{\"source\":\"requisition_based\",\"available_at_creation\":36.5,\"allocated\":10,\"pasteurized_batch_id\":null}', 75.00, 15, NULL, NULL, NULL, NULL, 0),
 (10, 'PRD-20260211-003', 18, 1, 20, 20, 200.00, 'raw', NULL, 'completed', '2026-02-11 02:56:00', '2026-02-11 02:56:23', 3, 3, 0.00, '', 'Test', '2026-02-10 18:55:58', '2026-02-10 18:56:23', '{\"total_pieces\":20,\"secondary_count\":0,\"secondary_unit\":\"crates\",\"remaining_primary\":20,\"primary_unit\":\"bottles\",\"input_quantity\":20,\"input_unit\":\"pieces\",\"conversion_factor\":24}', '{\"source\":\"requisition_based\",\"available_at_creation\":526.5,\"allocated\":200,\"pasteurized_batch_id\":null}', 75.00, 15, NULL, NULL, NULL, NULL, 0),
-(11, 'PRD-20260211-004', 12, 1, 10, 10, 10.53, 'raw', NULL, 'completed', '2026-02-11 12:01:28', '2026-02-11 12:02:41', 3, 3, 0.00, '', '', '2026-02-11 04:01:25', '2026-02-11 04:02:41', '{\"total_pieces\":10,\"secondary_count\":0,\"secondary_unit\":\"crates\",\"remaining_primary\":10,\"primary_unit\":\"bottles\",\"input_quantity\":10,\"input_unit\":\"pieces\",\"conversion_factor\":24}', '{\"source\":\"requisition_based\",\"available_at_creation\":326.5,\"allocated\":10.53,\"pasteurized_batch_id\":null}', 75.00, 15, NULL, NULL, NULL, NULL, 0);
+(11, 'PRD-20260211-004', 12, 1, 10, 10, 10.53, 'raw', NULL, 'completed', '2026-02-11 12:01:28', '2026-02-11 12:02:41', 3, 3, 0.00, '', '', '2026-02-11 04:01:25', '2026-02-11 04:02:41', '{\"total_pieces\":10,\"secondary_count\":0,\"secondary_unit\":\"crates\",\"remaining_primary\":10,\"primary_unit\":\"bottles\",\"input_quantity\":10,\"input_unit\":\"pieces\",\"conversion_factor\":24}', '{\"source\":\"requisition_based\",\"available_at_creation\":326.5,\"allocated\":10.53,\"pasteurized_batch_id\":null}', 75.00, 15, NULL, NULL, NULL, NULL, 0),
+(12, 'PRD-20260220-001', 12, 1, 10, 10, 10.53, 'raw', NULL, 'completed', '2026-02-20 16:47:15', '2026-02-20 16:47:52', 3, 3, 0.00, '', 'Basta', '2026-02-20 08:47:12', '2026-02-20 08:47:52', '{\"total_pieces\":10,\"secondary_count\":0,\"secondary_unit\":\"crates\",\"remaining_primary\":10,\"primary_unit\":\"bottles\",\"input_quantity\":10,\"input_unit\":\"pieces\",\"conversion_factor\":24}', '{\"source\":\"requisition_based\",\"available_at_creation\":315.97,\"allocated\":10.53,\"pasteurized_batch_id\":null}', NULL, NULL, NULL, NULL, NULL, NULL, 0),
+(13, 'PRD-20260221-001', 20, 1, 10, 10, 1.05, 'raw', NULL, 'completed', '2026-02-21 00:12:21', '2026-02-21 00:12:51', 3, 3, 0.00, '', '', '2026-02-20 16:12:18', '2026-02-20 16:12:51', '{\"total_pieces\":10,\"secondary_count\":0,\"secondary_unit\":\"crates\",\"remaining_primary\":10,\"primary_unit\":\"bottles\",\"input_quantity\":10,\"input_unit\":\"pieces\",\"conversion_factor\":24}', '{\"source\":\"requisition_based\",\"available_at_creation\":305.44000000000005,\"allocated\":1.05,\"pasteurized_batch_id\":null}', NULL, NULL, NULL, NULL, NULL, NULL, 0),
+(14, 'PRD-20260221-002', 21, 1, 100, 100, 10.53, 'raw', NULL, 'completed', '2026-02-21 01:19:54', '2026-02-21 01:20:23', 3, 3, 0.00, '', 'Basta', '2026-02-20 17:19:52', '2026-02-20 17:20:23', '{\"total_pieces\":100,\"secondary_count\":4,\"secondary_unit\":\"crates\",\"remaining_primary\":4,\"primary_unit\":\"bottles\",\"input_quantity\":100,\"input_unit\":\"pieces\",\"conversion_factor\":24}', '{\"source\":\"requisition_based\",\"available_at_creation\":304.39,\"allocated\":10.53,\"pasteurized_batch_id\":null}', NULL, NULL, NULL, NULL, NULL, NULL, 0),
+(15, 'PRD-20260221-003', 22, 1, 100, 100, 52.63, 'raw', NULL, 'completed', '2026-02-21 07:28:34', '2026-02-21 07:30:16', 3, 3, 0.00, '', 'Basta', '2026-02-20 23:28:30', '2026-02-20 23:30:16', '{\"total_pieces\":100,\"secondary_count\":4,\"secondary_unit\":\"crates\",\"remaining_primary\":4,\"primary_unit\":\"bottles\",\"input_quantity\":100,\"input_unit\":\"pieces\",\"conversion_factor\":24}', '{\"source\":\"requisition_based\",\"available_at_creation\":293.86,\"allocated\":52.63,\"pasteurized_batch_id\":null}', NULL, NULL, NULL, NULL, NULL, NULL, 0),
+(16, 'PRD-20260221-004', 22, 1, 100, 100, 52.63, 'raw', NULL, 'completed', '2026-02-21 07:39:40', '2026-02-21 07:40:13', 3, 3, 0.00, '', '', '2026-02-20 23:39:37', '2026-02-20 23:40:13', '{\"total_pieces\":100,\"secondary_count\":4,\"secondary_unit\":\"crates\",\"remaining_primary\":4,\"primary_unit\":\"bottles\",\"input_quantity\":100,\"input_unit\":\"pieces\",\"conversion_factor\":24}', '{\"source\":\"requisition_based\",\"available_at_creation\":241.23000000000002,\"allocated\":52.63,\"pasteurized_batch_id\":null}', NULL, NULL, NULL, NULL, NULL, NULL, 0);
 
 -- --------------------------------------------------------
 
@@ -2604,7 +2878,20 @@ INSERT INTO `products` (`id`, `product_code`, `product_name`, `category`, `varia
 (5, 'YOG-STR', 'Strawberry Yogurt 150g', 'yogurt', '150g', NULL, NULL, 150.00, 'g', 14, 2.00, 4.00, 'cup', 'box', 48, 45.00, 50.00, 35.00, 1, '2026-02-03 09:12:00', '2026-02-03 09:31:04'),
 (6, 'CHE-250', 'Kesong Puti 250g', 'cheese', '250g', NULL, NULL, 250.00, 'g', 21, 2.00, 4.00, 'pack', 'box', 24, 150.00, 175.00, 120.00, 1, '2026-02-03 09:12:00', '2026-02-03 09:31:04'),
 (7, 'BUT-250', 'Butter 250g', 'butter', '250g', NULL, NULL, 250.00, 'g', 30, 2.00, 4.00, 'block', 'box', 20, 120.00, 140.00, 95.00, 1, '2026-02-03 09:12:00', '2026-02-03 09:31:04'),
-(8, 'CRM-1L', 'Fresh Cream 1L', 'cream', '1 Liter', NULL, NULL, 1000.00, 'ml', 10, 2.00, 4.00, 'bottle', 'box', 12, 80.00, 95.00, 65.00, 1, '2026-02-03 09:12:00', '2026-02-03 09:31:04');
+(8, 'CRM-1L', 'Fresh Cream 1L', 'cream', '1 Liter', NULL, NULL, 1000.00, 'ml', 10, 2.00, 4.00, 'bottle', 'box', 12, 80.00, 95.00, 65.00, 1, '2026-02-03 09:12:00', '2026-02-03 09:31:04'),
+(9, 'BAR-2021', 'MilkBar', 'pasteurized_milk', '100G', 1, 'Test', 1000.00, 'ml', 7, 2.00, 6.00, 'piece', 'box', 1, 0.00, 0.00, 0.00, 1, '2026-02-14 02:35:15', '2026-02-14 02:35:15'),
+(10, 'PANDAN-2021', 'MilkBAR-PANDAN', 'pasteurized_milk', '100G', 1, '', 1000.00, 'ml', 7, 2.00, 6.00, 'piece', 'box', 1, 50.00, 50.00, 0.00, 1, '2026-02-14 02:35:56', '2026-02-20 17:18:40'),
+(14, 'PM0001', 'BastaGatas', 'pasteurized_milk', NULL, 1, '', 1000.00, 'ml', 7, 2.00, 6.00, 'piece', 'box', 1, 0.00, 0.00, 0.00, 1, '2026-02-20 14:50:13', '2026-02-20 16:44:30'),
+(15, 'FM0001', 'Basta', 'flavored_milk', 'Chocolate', NULL, NULL, 1000.00, 'ml', 7, 2.00, 6.00, 'bottle', 'box', 1, 0.00, 45.00, 0.00, 1, '2026-02-20 16:44:30', '2026-02-20 16:44:30'),
+(16, 'FM0002', 'Basta', 'flavored_milk', 'Chocolate', NULL, NULL, 500.00, 'ml', 7, 2.00, 6.00, 'bottle', 'box', 1, 0.00, 25.00, 0.00, 1, '2026-02-20 16:44:30', '2026-02-20 16:44:30'),
+(17, 'FM0003', 'Basta', 'flavored_milk', 'Chocolate', NULL, NULL, 200.00, 'ml', 7, 2.00, 6.00, 'bottle', 'box', 1, 0.00, 15.00, 0.00, 1, '2026-02-20 16:44:30', '2026-02-20 16:44:30'),
+(18, 'FM0004', 'Basta', 'flavored_milk', 'Yippe', NULL, NULL, 1000.00, 'ml', 7, 2.00, 6.00, 'bottle', 'box', 1, 0.00, 45.00, 0.00, 1, '2026-02-20 16:44:30', '2026-02-20 16:44:30'),
+(19, 'FM0005', 'Basta', 'flavored_milk', 'Yippe', NULL, NULL, 500.00, 'ml', 7, 2.00, 6.00, 'bottle', 'box', 1, 0.00, 25.00, 0.00, 1, '2026-02-20 16:44:30', '2026-02-20 16:44:30'),
+(21, 'PM0002', 'MilkBarBisaya', 'pasteurized_milk', 'IkawBahala', 1, '', 50.00, 'ml', 7, 2.00, 6.00, 'piece', 'box', 10, 50.00, 50.00, 0.00, 1, '2026-02-20 17:18:26', '2026-02-20 22:22:52'),
+(22, 'FM0006', 'AnotherTesting', 'flavored_milk', 'Yippe', 1, '', 250.00, 'ml', 7, 2.00, 6.00, 'piece', 'box', 10, 60.00, 60.00, 0.00, 1, '2026-02-20 23:26:06', '2026-02-20 23:29:34'),
+(23, 'PM0003', 'MilkBar', 'pasteurized_milk', 'Chocolate', 1, 'Test', 100.00, 'ml', 7, 2.00, 6.00, 'piece', 'box', 1, 0.00, 50.00, 0.00, 1, '2026-02-20 23:37:12', '2026-02-20 23:37:12'),
+(24, 'FM0007', 'Milkbar-UBE', 'flavored_milk', 'Ube', 2, '', 60.00, 'ml', 7, 2.00, 6.00, 'piece', 'box', 1, 0.00, 50.00, 0.00, 1, '2026-02-21 01:15:11', '2026-02-21 01:15:11'),
+(26, 'FM0008', 'Milkbar-UBE', 'flavored_milk', 'Ube', 2, '', 75.00, 'ml', 7, 2.00, 6.00, 'piece', 'box', 1, 0.00, 60.00, 0.00, 1, '2026-02-21 01:15:54', '2026-02-21 01:15:54');
 
 -- --------------------------------------------------------
 
@@ -2657,7 +2944,10 @@ CREATE TABLE `purchase_orders` (
   `vat_amount` decimal(12,2) DEFAULT 0.00,
   `total_amount` decimal(12,2) DEFAULT 0.00,
   `payment_status` enum('unpaid','partial','paid') DEFAULT 'unpaid',
+  `payment_terms` enum('cash','credit_7','credit_15','credit_30','credit_45','credit_60') DEFAULT 'cash',
+  `due_date` date DEFAULT NULL,
   `notes` text DEFAULT NULL,
+  `requisition_id` int(11) DEFAULT NULL,
   `created_by` int(11) DEFAULT NULL,
   `approved_by` int(11) DEFAULT NULL,
   `approved_at` datetime DEFAULT NULL,
@@ -2670,29 +2960,31 @@ CREATE TABLE `purchase_orders` (
 -- Dumping data for table `purchase_orders`
 --
 
-INSERT INTO `purchase_orders` (`id`, `po_number`, `supplier_id`, `order_date`, `expected_delivery`, `status`, `subtotal`, `vat_amount`, `total_amount`, `payment_status`, `notes`, `created_by`, `approved_by`, `approved_at`, `received_at`, `created_at`, `updated_at`) VALUES
-(1, '5231', 1, '2025-01-04', '2025-01-11', 'received', 29750.00, 0.00, 29750.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(2, '5232', 2, '2025-01-07', '2025-01-14', 'received', 102000.00, 0.00, 102000.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(3, '5233', 1, '2025-01-08', '2025-01-15', 'received', 59500.00, 0.00, 59500.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(4, '5234', 2, '2025-01-09', '2025-01-16', 'received', 83400.00, 0.00, 83400.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(5, '5235', 3, '2025-01-14', '2025-01-21', 'received', 13600.00, 1632.00, 15232.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(6, '5236', 1, '2025-01-11', '2025-01-18', 'received', 29750.00, 0.00, 29750.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(7, '5237', 2, '2025-01-15', '2025-01-22', 'received', 105000.00, 0.00, 105000.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(8, '5238', 3, '2025-01-17', '2025-01-24', 'received', 40388.25, 0.00, 40388.25, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(9, '5239', 1, '2025-01-15', '2025-01-22', 'received', 59500.00, 0.00, 59500.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(10, '5240', 3, '2024-11-19', '2024-11-26', 'received', 600000.00, 0.00, 600000.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(11, '5241', 4, '2025-01-17', '2025-01-24', 'received', 28000.00, 0.00, 28000.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(12, '5242', 1, '2025-01-18', '2025-01-25', 'received', 64796.00, 0.00, 64796.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(13, '5243', 1, '2025-01-21', '2025-01-28', 'received', 49980.00, 0.00, 49980.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(14, '5244', 1, '2025-01-22', '2025-01-29', 'received', 17850.00, 0.00, 17850.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(15, '5245', 5, '2025-01-24', '2025-01-31', 'received', 56000.00, 0.00, 56000.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(16, '5246', 6, '2025-01-24', '2025-01-31', 'received', 61000.00, 0.00, 61000.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(17, '5247', 1, '2025-01-24', '2025-01-31', 'received', 59500.00, 0.00, 59500.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(18, '5248', 2, '2025-01-24', '2025-01-31', 'received', 158500.00, 0.00, 158500.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(19, '5249', 2, '2025-01-27', '2025-02-03', 'received', 87000.00, 0.00, 87000.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(20, '5250', 1, '2025-01-29', '2025-02-05', 'received', 44625.00, 0.00, 44625.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(21, '5251', 2, '2025-01-31', '2025-02-07', 'received', 112500.00, 0.00, 112500.00, 'paid', NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
-(22, '5252', 5, '2026-02-10', '2026-02-11', 'pending', 50.00, 0.00, 50.00, 'unpaid', 'Basta', 10, NULL, NULL, NULL, '2026-02-10 10:33:34', '2026-02-10 10:33:39');
+INSERT INTO `purchase_orders` (`id`, `po_number`, `supplier_id`, `order_date`, `expected_delivery`, `status`, `subtotal`, `vat_amount`, `total_amount`, `payment_status`, `payment_terms`, `due_date`, `notes`, `requisition_id`, `created_by`, `approved_by`, `approved_at`, `received_at`, `created_at`, `updated_at`) VALUES
+(1, '5231', 1, '2025-01-04', '2025-01-11', 'received', 29750.00, 0.00, 29750.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(2, '5232', 2, '2025-01-07', '2025-01-14', 'received', 102000.00, 0.00, 102000.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(3, '5233', 1, '2025-01-08', '2025-01-15', 'received', 59500.00, 0.00, 59500.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(4, '5234', 2, '2025-01-09', '2025-01-16', 'received', 83400.00, 0.00, 83400.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(5, '5235', 3, '2025-01-14', '2025-01-21', 'received', 13600.00, 1632.00, 15232.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(6, '5236', 1, '2025-01-11', '2025-01-18', 'received', 29750.00, 0.00, 29750.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(7, '5237', 2, '2025-01-15', '2025-01-22', 'received', 105000.00, 0.00, 105000.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(8, '5238', 3, '2025-01-17', '2025-01-24', 'received', 40388.25, 0.00, 40388.25, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(9, '5239', 1, '2025-01-15', '2025-01-22', 'received', 59500.00, 0.00, 59500.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(10, '5240', 3, '2024-11-19', '2024-11-26', 'received', 600000.00, 0.00, 600000.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(11, '5241', 4, '2025-01-17', '2025-01-24', 'received', 28000.00, 0.00, 28000.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(12, '5242', 1, '2025-01-18', '2025-01-25', 'received', 64796.00, 0.00, 64796.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(13, '5243', 1, '2025-01-21', '2025-01-28', 'received', 49980.00, 0.00, 49980.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(14, '5244', 1, '2025-01-22', '2025-01-29', 'received', 17850.00, 0.00, 17850.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(15, '5245', 5, '2025-01-24', '2025-01-31', 'received', 56000.00, 0.00, 56000.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(16, '5246', 6, '2025-01-24', '2025-01-31', 'received', 61000.00, 0.00, 61000.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(17, '5247', 1, '2025-01-24', '2025-01-31', 'received', 59500.00, 0.00, 59500.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(18, '5248', 2, '2025-01-24', '2025-01-31', 'received', 158500.00, 0.00, 158500.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(19, '5249', 2, '2025-01-27', '2025-02-03', 'received', 87000.00, 0.00, 87000.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(20, '5250', 1, '2025-01-29', '2025-02-05', 'received', 44625.00, 0.00, 44625.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(21, '5251', 2, '2025-01-31', '2025-02-07', 'received', 112500.00, 0.00, 112500.00, 'paid', 'cash', NULL, NULL, NULL, 1, NULL, NULL, NULL, '2026-02-03 08:17:18', '2026-02-03 08:17:18'),
+(22, '5252', 5, '2026-02-10', '2026-02-11', 'approved', 50.00, 0.00, 50.00, 'unpaid', 'cash', NULL, 'Basta', NULL, 10, 8, '2026-02-22 17:30:56', NULL, '2026-02-10 10:33:34', '2026-02-22 09:30:56'),
+(23, '5253', 5, '2026-02-22', '2026-02-25', 'pending', 0.00, 0.00, 0.00, 'unpaid', 'credit_30', '2026-03-24', 'Basta', 1, 10, NULL, NULL, NULL, '2026-02-22 09:14:03', '2026-02-22 09:14:09'),
+(24, '5254', 4, '2026-02-22', NULL, 'pending', 50.00, 0.00, 50.00, 'unpaid', 'credit_30', '2026-03-24', 'Paldo', NULL, 10, NULL, NULL, NULL, '2026-02-22 09:14:40', '2026-02-22 09:14:43');
 
 -- --------------------------------------------------------
 
@@ -2758,7 +3050,9 @@ INSERT INTO `purchase_order_items` (`id`, `po_id`, `ingredient_id`, `mro_item_id
 (35, 20, NULL, NULL, 'BOTTLES 1000ml', 8925.00, 'PCS', 4.38, 39091.50, 8925.00, 0, NULL, '2026-02-03 08:17:18'),
 (36, 20, NULL, NULL, 'CAPS', 8925.00, 'PCS', 0.62, 5533.50, 8925.00, 0, NULL, '2026-02-03 08:17:18'),
 (37, 21, NULL, NULL, 'WHITE SUGAR', 30.00, 'SCKS', 3750.00, 112500.00, 30.00, 0, NULL, '2026-02-03 08:17:18'),
-(38, 22, NULL, NULL, 'Yehey', 1.00, 'pcs', 50.00, 50.00, 0.00, 0, NULL, '2026-02-10 10:33:34');
+(38, 22, NULL, NULL, 'Yehey', 1.00, 'pcs', 50.00, 50.00, 0.00, 0, NULL, '2026-02-10 10:33:34'),
+(39, 23, NULL, NULL, 'Yehey', 1.00, 'pcs', 0.00, 0.00, 0.00, 0, NULL, '2026-02-22 09:14:03'),
+(40, 24, NULL, NULL, 'Yehey', 1.00, 'pcs', 50.00, 50.00, 0.00, 0, NULL, '2026-02-22 09:14:40');
 
 -- --------------------------------------------------------
 
@@ -3114,7 +3408,12 @@ INSERT INTO `recipe_ingredients` (`id`, `recipe_id`, `ingredient_id`, `ingredien
 (9, 15, 9, 'Sugar', 'sugar', 0.100, 'kg', 0, 'Optional sweetener'),
 (10, 16, 10, 'Vanilla Extract', 'flavoring', 0.005, 'L', 0, 'For flavor'),
 (11, 16, 12, 'Stabilizer', 'other', 0.020, 'kg', 0, 'Texture enhancer'),
-(12, 17, 12, 'Stabilizer', 'other', 0.010, 'kg', 0, 'For consistency');
+(13, 17, 12, 'Stabilizer', '', 0.010, 'kg', 0, 'For consistency'),
+(14, 19, 14, 'Salt', '', 1.000, 'kg', 0, 'basta'),
+(15, 21, 15, 'Rennet', '', 1.000, 'liter', 0, ''),
+(16, 21, 11, 'Chocolate Powder X', '', 1.000, 'kg', 0, ''),
+(17, 22, 15, 'Rennet', '', 50.000, 'liter', 0, 'Morning'),
+(18, 23, 9, 'Sugar', '', 1.000, 'kg', 0, 'test');
 
 -- --------------------------------------------------------
 
@@ -3346,7 +3645,10 @@ INSERT INTO `sales_orders` (`id`, `order_number`, `customer_id`, `sub_account_id
 (14, 'SO-20260211-001', 6, NULL, '', 'other', NULL, 'cash', 0, NULL, NULL, 'DepEd Complex, Cagayan de Oro City', '2026-02-10', 0, 0, 1140.00, 0.00, 0.00, 0.00, 1140.00, 0.00, 0.00, NULL, 'unpaid', 'dispatched', 'normal', 6, 8, '2026-02-11 02:11:53', NULL, '', NULL, NULL, NULL, '2026-02-10 18:11:34', '2026-02-11 03:01:16'),
 (15, 'SO-20260211-002', 5, NULL, '', 'other', '123456', 'cash', 0, NULL, NULL, 'Hotel 101 Tacloban', '2026-02-11', 0, 0, 2800.00, 0.00, 0.00, 0.00, 2800.00, 0.00, 0.00, NULL, 'unpaid', 'dispatched', 'normal', 6, 8, '2026-02-11 10:43:10', NULL, '', NULL, NULL, NULL, '2026-02-11 02:42:51', '2026-02-11 06:05:55'),
 (16, 'SO-20260211-003', 6, NULL, '', 'other', '65764456', 'cash', 0, NULL, NULL, 'DepEd Complex, Cagayan de Oro City', '2026-02-11', 0, 0, 1575.00, 0.00, 0.00, 0.00, 1575.00, 0.00, 0.00, NULL, 'unpaid', 'delivered', 'normal', 6, 8, '2026-02-11 11:57:59', NULL, '', NULL, NULL, NULL, '2026-02-11 03:55:39', '2026-02-11 06:04:59'),
-(17, 'SO-20260211-004', 6, NULL, '', 'other', NULL, 'cash', 0, NULL, NULL, 'DepEd Complex, Cagayan de Oro City', '2026-02-11', 0, 0, 1260.00, 0.00, 0.00, 0.00, 1260.00, 0.00, 0.00, NULL, 'unpaid', 'delivered', 'normal', 6, 8, '2026-02-11 12:28:37', NULL, '', NULL, NULL, NULL, '2026-02-11 04:27:21', '2026-02-11 06:04:57');
+(17, 'SO-20260211-004', 6, NULL, '', 'other', NULL, 'cash', 0, NULL, NULL, 'DepEd Complex, Cagayan de Oro City', '2026-02-11', 0, 0, 1260.00, 0.00, 0.00, 0.00, 1260.00, 0.00, 0.00, NULL, 'unpaid', 'delivered', 'normal', 6, 8, '2026-02-11 12:28:37', NULL, '', NULL, NULL, NULL, '2026-02-11 04:27:21', '2026-02-11 06:04:57'),
+(18, 'SO-20260221-001', 6, NULL, '', 'other', '34989483943', 'cash', 0, NULL, NULL, 'DepEd Complex, Cagayan de Oro City', '2026-02-20', 0, 0, 2500.00, 0.00, 0.00, 0.00, 2500.00, 0.00, 0.00, NULL, 'unpaid', 'cancelled', 'normal', 6, NULL, NULL, NULL, '', NULL, NULL, NULL, '2026-02-20 17:51:54', '2026-02-20 17:52:02'),
+(19, 'SO-20260221-002', 1, NULL, '', 'other', 'Basta', 'cash', 0, NULL, NULL, 'SM Tacloban', '2026-02-20', 0, 0, 2500.00, 0.00, 0.00, 0.00, 2500.00, 0.00, 0.00, NULL, 'unpaid', 'delivered', 'normal', 6, 8, '2026-02-21 01:52:47', NULL, '', NULL, NULL, NULL, '2026-02-20 17:52:25', '2026-02-20 22:16:48'),
+(20, 'SO-20260221-003', 3, NULL, '', 'other', '9894859489534', 'cash', 0, NULL, NULL, 'Downtown Tacloban', '2026-02-20', 0, 0, 3000.00, 0.00, 0.00, 0.00, 3000.00, 0.00, 0.00, NULL, 'unpaid', 'delivered', 'normal', 6, 8, '2026-02-21 07:34:23', NULL, '', NULL, NULL, NULL, '2026-02-20 23:33:34', '2026-02-20 23:35:37');
 
 -- --------------------------------------------------------
 
@@ -3395,7 +3697,10 @@ INSERT INTO `sales_order_items` (`id`, `order_id`, `product_id`, `product_name`,
 (13, 14, 8, 'Fresh Cream 1L', NULL, 1000.00, 'ml', 12, 1, 0, 'box', 0, 95.00, 1140.00, 'pending', NULL, '2026-02-10 18:11:34', '2026-02-10 18:11:34'),
 (14, 15, 7, 'Butter 250g', NULL, 250.00, 'g', 20, 1, 0, 'box', 0, 140.00, 2800.00, 'pending', NULL, '2026-02-11 02:42:51', '2026-02-11 02:42:51'),
 (15, 16, 1, 'Fresh Milk 1L', NULL, 1000.00, 'ml', 15, 1, 3, 'mixed', 0, 105.00, 1575.00, 'pending', NULL, '2026-02-11 03:55:39', '2026-02-11 03:55:39'),
-(16, 17, 1, 'Fresh Milk 1L', NULL, 1000.00, 'ml', 12, 1, 0, 'box', 0, 105.00, 1260.00, 'pending', NULL, '2026-02-11 04:27:21', '2026-02-11 04:27:21');
+(16, 17, 1, 'Fresh Milk 1L', NULL, 1000.00, 'ml', 12, 1, 0, 'box', 0, 105.00, 1260.00, 'pending', NULL, '2026-02-11 04:27:21', '2026-02-11 04:27:21'),
+(17, 18, 21, 'MilkBarBisaya', NULL, 50.00, 'ml', 50, 0, 50, 'piece', 0, 50.00, 2500.00, 'pending', NULL, '2026-02-20 17:51:54', '2026-02-20 17:51:54'),
+(18, 19, 21, 'MilkBarBisaya', NULL, 50.00, 'ml', 50, 0, 50, 'piece', 0, 50.00, 2500.00, 'pending', NULL, '2026-02-20 17:52:25', '2026-02-20 17:52:25'),
+(19, 20, 22, 'AnotherTesting', NULL, 250.00, 'ml', 50, 0, 50, 'piece', 0, 60.00, 3000.00, 'pending', NULL, '2026-02-20 23:33:34', '2026-02-20 23:33:34');
 
 -- --------------------------------------------------------
 
@@ -3471,7 +3776,15 @@ INSERT INTO `sales_order_status_history` (`id`, `order_id`, `status`, `notes`, `
 (52, 16, 'approved', 'Order approved', 8, '2026-02-11 03:57:59'),
 (53, 17, 'draft', 'Order created', 6, '2026-02-11 04:27:21'),
 (54, 17, 'pending', NULL, 6, '2026-02-11 04:28:11'),
-(55, 17, 'approved', 'Order approved', 8, '2026-02-11 04:28:37');
+(55, 17, 'approved', 'Order approved', 8, '2026-02-11 04:28:37'),
+(56, 18, 'draft', 'Order created', 6, '2026-02-20 17:51:54'),
+(57, 18, 'cancelled', NULL, 6, '2026-02-20 17:52:02'),
+(58, 19, 'draft', 'Order created', 6, '2026-02-20 17:52:25'),
+(59, 19, 'pending', NULL, 6, '2026-02-20 17:52:28'),
+(60, 19, 'approved', 'Order approved', 8, '2026-02-20 17:52:47'),
+(61, 20, 'draft', 'Order created', 6, '2026-02-20 23:33:34'),
+(62, 20, 'pending', NULL, 6, '2026-02-20 23:33:39'),
+(63, 20, 'approved', 'Order approved', 8, '2026-02-20 23:34:23');
 
 -- --------------------------------------------------------
 
@@ -3761,7 +4074,8 @@ INSERT INTO `users` (`id`, `username`, `password`, `full_name`, `first_name`, `l
 (8, 'general_manager', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'General Manager', 'General', 'Manager', NULL, 'general_manager', 'gm@highlandfresh.com', 1, '2026-02-03 07:57:05', '2026-02-03 08:00:03'),
 (10, 'purchaser', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Rosa Villanueva', 'Rosa', 'Villanueva', NULL, 'purchaser', 'purchasing@highlandfresh.com', 1, '2026-02-10 10:25:56', '2026-02-10 10:31:35'),
 (11, 'finance_officer', '$2y$12$huffGwsovTEJOO6dBJ/Nx.4tuDgPgqEO8E8SQf.441HIH7BiafeW2', 'Maria Santos', 'Maria', 'Santos', 'EMP-FIN-001', 'finance_officer', 'finance@highlandfresh.com', 1, '2026-02-10 15:43:16', '2026-02-10 15:49:04'),
-(12, 'maintenance_head', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', '', 'Juan', 'Dela Cruz', NULL, 'maintenance_head', 'maintenance@highlandfresh.com', 1, '2026-02-10 17:15:31', '2026-02-10 17:15:31');
+(12, 'maintenance_head', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', '', 'Juan', 'Dela Cruz', NULL, 'maintenance_head', 'maintenance@highlandfresh.com', 1, '2026-02-10 17:15:31', '2026-02-10 17:15:31'),
+(13, 'ragasibrian2', '$2y$10$Kje3RZ7ySxsDJNLVMGI/Oe0K9ts5yaVlWsAF6IRJjGIRJlak.TEKC', 'Brian Ragasi', 'Brian', 'Ragasi', '2323', 'sales_custodian', 'ragasibrian2@gmail.com', 1, '2026-02-21 00:58:17', '2026-02-21 00:58:17');
 
 -- --------------------------------------------------------
 
@@ -3858,6 +4172,15 @@ INSERT INTO `yogurt_transformations` (`id`, `transformation_code`, `source_inven
 -- --------------------------------------------------------
 
 --
+-- Structure for view `gm_pending_approvals`
+--
+DROP TABLE IF EXISTS `gm_pending_approvals`;
+
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `gm_pending_approvals`  AS SELECT 'PO' AS `type`, `po`.`id` AS `id`, `po`.`po_number` AS `reference_code`, concat('Purchase Order - ',`s`.`supplier_name`) AS `description`, `po`.`total_amount` AS `amount`, `u`.`full_name` AS `requested_by`, `po`.`created_at` AS `requested_at`, 'pending' AS `status` FROM ((`purchase_orders` `po` join `suppliers` `s` on(`po`.`supplier_id` = `s`.`id`)) left join `users` `u` on(`po`.`created_by` = `u`.`id`)) WHERE `po`.`status` = 'pending'union all select 'REQUISITION' AS `type`,`mr`.`id` AS `id`,`mr`.`requisition_code` AS `reference_code`,concat('Material Requisition - ',`mr`.`department`,': ',coalesce(`mr`.`purpose`,'No description')) AS `description`,NULL AS `amount`,`u`.`full_name` AS `requested_by`,`mr`.`created_at` AS `requested_at`,`mr`.`status` AS `status` from (`material_requisitions` `mr` left join `users` `u` on(`mr`.`requested_by` = `u`.`id`)) where `mr`.`status` = 'pending' order by `requested_at`  ;
+
+-- --------------------------------------------------------
+
+--
 -- Structure for view `vw_disposal_summary`
 --
 DROP TABLE IF EXISTS `vw_disposal_summary`;
@@ -3905,6 +4228,14 @@ ALTER TABLE `box_opening_log`
   ADD KEY `idx_inventory_id` (`inventory_id`),
   ADD KEY `idx_opened_at` (`opened_at`),
   ADD KEY `idx_opened_by` (`opened_by`);
+
+--
+-- Indexes for table `canvass_quotes`
+--
+ALTER TABLE `canvass_quotes`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_canvass` (`canvass_id`),
+  ADD KEY `idx_supplier` (`supplier_id`);
 
 --
 -- Indexes for table `cashier_shifts`
@@ -4188,6 +4519,17 @@ ALTER TABLE `ingredient_consumption`
   ADD KEY `idx_run_id` (`run_id`);
 
 --
+-- Indexes for table `ingredient_price_history`
+--
+ALTER TABLE `ingredient_price_history`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `po_id` (`po_id`),
+  ADD KEY `supplier_id` (`supplier_id`),
+  ADD KEY `updated_by` (`updated_by`),
+  ADD KEY `idx_ingredient` (`ingredient_id`),
+  ADD KEY `idx_created` (`created_at`);
+
+--
 -- Indexes for table `inventory_transactions`
 --
 ALTER TABLE `inventory_transactions`
@@ -4331,6 +4673,35 @@ ALTER TABLE `mro_items`
   ADD KEY `idx_category` (`category_id`);
 
 --
+-- Indexes for table `mro_price_history`
+--
+ALTER TABLE `mro_price_history`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `po_id` (`po_id`),
+  ADD KEY `supplier_id` (`supplier_id`),
+  ADD KEY `updated_by` (`updated_by`),
+  ADD KEY `idx_mro_item` (`mro_item_id`),
+  ADD KEY `idx_created` (`created_at`);
+
+--
+-- Indexes for table `packaging_runs`
+--
+ALTER TABLE `packaging_runs`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `packaging_code` (`packaging_code`),
+  ADD KEY `production_run_id` (`production_run_id`),
+  ADD KEY `batch_id` (`batch_id`),
+  ADD KEY `packaged_by` (`packaged_by`);
+
+--
+-- Indexes for table `packaging_run_items`
+--
+ALTER TABLE `packaging_run_items`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `packaging_run_id` (`packaging_run_id`),
+  ADD KEY `product_id` (`product_id`);
+
+--
 -- Indexes for table `pasteurization_runs`
 --
 ALTER TABLE `pasteurization_runs`
@@ -4381,6 +4752,17 @@ ALTER TABLE `pos_transaction_items`
   ADD PRIMARY KEY (`id`),
   ADD KEY `idx_transaction` (`transaction_id`),
   ADD KEY `idx_inventory` (`inventory_id`);
+
+--
+-- Indexes for table `price_canvass`
+--
+ALTER TABLE `price_canvass`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `canvass_code` (`canvass_code`),
+  ADD KEY `idx_status` (`status`),
+  ADD KEY `idx_created_by` (`created_by`),
+  ADD KEY `ingredient_id` (`ingredient_id`),
+  ADD KEY `mro_item_id` (`mro_item_id`);
 
 --
 -- Indexes for table `production_batches`
@@ -4487,7 +4869,10 @@ ALTER TABLE `purchase_orders`
   ADD KEY `idx_supplier` (`supplier_id`),
   ADD KEY `idx_status` (`status`),
   ADD KEY `fk_po_creator` (`created_by`),
-  ADD KEY `fk_po_approver` (`approved_by`);
+  ADD KEY `fk_po_approver` (`approved_by`),
+  ADD KEY `idx_payment_terms` (`payment_terms`),
+  ADD KEY `idx_due_date` (`due_date`),
+  ADD KEY `fk_po_requisition` (`requisition_id`);
 
 --
 -- Indexes for table `purchase_order_items`
@@ -4753,7 +5138,7 @@ ALTER TABLE `yogurt_transformations`
 -- AUTO_INCREMENT for table `audit_logs`
 --
 ALTER TABLE `audit_logs`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=449;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=555;
 
 --
 -- AUTO_INCREMENT for table `batch_recalls`
@@ -4766,6 +5151,12 @@ ALTER TABLE `batch_recalls`
 --
 ALTER TABLE `box_opening_log`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `canvass_quotes`
+--
+ALTER TABLE `canvass_quotes`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `cashier_shifts`
@@ -4819,7 +5210,7 @@ ALTER TABLE `chiller_temp_logs`
 -- AUTO_INCREMENT for table `customers`
 --
 ALTER TABLE `customers`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
 
 --
 -- AUTO_INCREMENT for table `customer_returns`
@@ -4849,13 +5240,13 @@ ALTER TABLE `delivery_items`
 -- AUTO_INCREMENT for table `delivery_receipts`
 --
 ALTER TABLE `delivery_receipts`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=23;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=25;
 
 --
 -- AUTO_INCREMENT for table `delivery_receipt_items`
 --
 ALTER TABLE `delivery_receipt_items`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=20;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=22;
 
 --
 -- AUTO_INCREMENT for table `delivery_returns`
@@ -4867,7 +5258,7 @@ ALTER TABLE `delivery_returns`
 -- AUTO_INCREMENT for table `disposals`
 --
 ALTER TABLE `disposals`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
 
 --
 -- AUTO_INCREMENT for table `disposal_items`
@@ -4897,7 +5288,7 @@ ALTER TABLE `fg_dispatch_log`
 -- AUTO_INCREMENT for table `fg_inventory_transactions`
 --
 ALTER TABLE `fg_inventory_transactions`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=42;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=49;
 
 --
 -- AUTO_INCREMENT for table `fg_receiving`
@@ -4909,7 +5300,7 @@ ALTER TABLE `fg_receiving`
 -- AUTO_INCREMENT for table `finished_goods_inventory`
 --
 ALTER TABLE `finished_goods_inventory`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=28;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=38;
 
 --
 -- AUTO_INCREMENT for table `ingredients`
@@ -4933,7 +5324,13 @@ ALTER TABLE `ingredient_categories`
 -- AUTO_INCREMENT for table `ingredient_consumption`
 --
 ALTER TABLE `ingredient_consumption`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
+
+--
+-- AUTO_INCREMENT for table `ingredient_price_history`
+--
+ALTER TABLE `ingredient_price_history`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `inventory_transactions`
@@ -4975,7 +5372,7 @@ ALTER TABLE `maintenance_schedules`
 -- AUTO_INCREMENT for table `master_recipes`
 --
 ALTER TABLE `master_recipes`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=19;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=24;
 
 --
 -- AUTO_INCREMENT for table `material_requisitions`
@@ -5020,10 +5417,28 @@ ALTER TABLE `mro_items`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
 
 --
+-- AUTO_INCREMENT for table `mro_price_history`
+--
+ALTER TABLE `mro_price_history`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `packaging_runs`
+--
+ALTER TABLE `packaging_runs`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+
+--
+-- AUTO_INCREMENT for table `packaging_run_items`
+--
+ALTER TABLE `packaging_run_items`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+
+--
 -- AUTO_INCREMENT for table `pasteurization_runs`
 --
 ALTER TABLE `pasteurization_runs`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `pasteurized_milk_inventory`
@@ -5050,10 +5465,16 @@ ALTER TABLE `pos_transaction_items`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `price_canvass`
+--
+ALTER TABLE `price_canvass`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
 -- AUTO_INCREMENT for table `production_batches`
 --
 ALTER TABLE `production_batches`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=22;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=27;
 
 --
 -- AUTO_INCREMENT for table `production_byproducts`
@@ -5065,7 +5486,7 @@ ALTER TABLE `production_byproducts`
 -- AUTO_INCREMENT for table `production_ccp_logs`
 --
 ALTER TABLE `production_ccp_logs`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=23;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=35;
 
 --
 -- AUTO_INCREMENT for table `production_material_usage`
@@ -5083,7 +5504,7 @@ ALTER TABLE `production_output`
 -- AUTO_INCREMENT for table `production_runs`
 --
 ALTER TABLE `production_runs`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
 
 --
 -- AUTO_INCREMENT for table `production_run_milk_usage`
@@ -5095,7 +5516,7 @@ ALTER TABLE `production_run_milk_usage`
 -- AUTO_INCREMENT for table `products`
 --
 ALTER TABLE `products`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=27;
 
 --
 -- AUTO_INCREMENT for table `product_prices`
@@ -5107,13 +5528,13 @@ ALTER TABLE `product_prices`
 -- AUTO_INCREMENT for table `purchase_orders`
 --
 ALTER TABLE `purchase_orders`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=23;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=25;
 
 --
 -- AUTO_INCREMENT for table `purchase_order_items`
 --
 ALTER TABLE `purchase_order_items`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=39;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=41;
 
 --
 -- AUTO_INCREMENT for table `qc_batch_release`
@@ -5161,7 +5582,7 @@ ALTER TABLE `recall_returns`
 -- AUTO_INCREMENT for table `recipe_ingredients`
 --
 ALTER TABLE `recipe_ingredients`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=19;
 
 --
 -- AUTO_INCREMENT for table `repair_parts_used`
@@ -5203,19 +5624,19 @@ ALTER TABLE `sales_invoice_payments`
 -- AUTO_INCREMENT for table `sales_orders`
 --
 ALTER TABLE `sales_orders`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
 
 --
 -- AUTO_INCREMENT for table `sales_order_items`
 --
 ALTER TABLE `sales_order_items`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=20;
 
 --
 -- AUTO_INCREMENT for table `sales_order_status_history`
 --
 ALTER TABLE `sales_order_status_history`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=56;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=64;
 
 --
 -- AUTO_INCREMENT for table `sales_transactions`
@@ -5257,7 +5678,7 @@ ALTER TABLE `supplier_return_items`
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
 
 --
 -- AUTO_INCREMENT for table `yogurt_transformations`
@@ -5275,6 +5696,13 @@ ALTER TABLE `yogurt_transformations`
 ALTER TABLE `box_opening_log`
   ADD CONSTRAINT `fk_box_opening_inventory` FOREIGN KEY (`inventory_id`) REFERENCES `finished_goods_inventory` (`id`),
   ADD CONSTRAINT `fk_box_opening_user` FOREIGN KEY (`opened_by`) REFERENCES `users` (`id`);
+
+--
+-- Constraints for table `canvass_quotes`
+--
+ALTER TABLE `canvass_quotes`
+  ADD CONSTRAINT `canvass_quotes_ibfk_1` FOREIGN KEY (`canvass_id`) REFERENCES `price_canvass` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `canvass_quotes_ibfk_2` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`id`);
 
 --
 -- Constraints for table `ccp_logs`
@@ -5396,6 +5824,15 @@ ALTER TABLE `ingredient_batches`
   ADD CONSTRAINT `fk_ing_batch_supplier` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`id`);
 
 --
+-- Constraints for table `ingredient_price_history`
+--
+ALTER TABLE `ingredient_price_history`
+  ADD CONSTRAINT `ingredient_price_history_ibfk_1` FOREIGN KEY (`ingredient_id`) REFERENCES `ingredients` (`id`),
+  ADD CONSTRAINT `ingredient_price_history_ibfk_2` FOREIGN KEY (`po_id`) REFERENCES `purchase_orders` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `ingredient_price_history_ibfk_3` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `ingredient_price_history_ibfk_4` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`);
+
+--
 -- Constraints for table `inventory_transactions`
 --
 ALTER TABLE `inventory_transactions`
@@ -5459,6 +5896,30 @@ ALTER TABLE `mro_items`
   ADD CONSTRAINT `fk_mro_category` FOREIGN KEY (`category_id`) REFERENCES `mro_categories` (`id`);
 
 --
+-- Constraints for table `mro_price_history`
+--
+ALTER TABLE `mro_price_history`
+  ADD CONSTRAINT `mro_price_history_ibfk_1` FOREIGN KEY (`mro_item_id`) REFERENCES `mro_items` (`id`),
+  ADD CONSTRAINT `mro_price_history_ibfk_2` FOREIGN KEY (`po_id`) REFERENCES `purchase_orders` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `mro_price_history_ibfk_3` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `mro_price_history_ibfk_4` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`);
+
+--
+-- Constraints for table `packaging_runs`
+--
+ALTER TABLE `packaging_runs`
+  ADD CONSTRAINT `packaging_runs_ibfk_1` FOREIGN KEY (`production_run_id`) REFERENCES `production_runs` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `packaging_runs_ibfk_2` FOREIGN KEY (`batch_id`) REFERENCES `production_batches` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `packaging_runs_ibfk_3` FOREIGN KEY (`packaged_by`) REFERENCES `users` (`id`) ON DELETE SET NULL;
+
+--
+-- Constraints for table `packaging_run_items`
+--
+ALTER TABLE `packaging_run_items`
+  ADD CONSTRAINT `packaging_run_items_ibfk_1` FOREIGN KEY (`packaging_run_id`) REFERENCES `packaging_runs` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `packaging_run_items_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE SET NULL;
+
+--
 -- Constraints for table `pos_transactions`
 --
 ALTER TABLE `pos_transactions`
@@ -5472,6 +5933,14 @@ ALTER TABLE `pos_transactions`
 ALTER TABLE `pos_transaction_items`
   ADD CONSTRAINT `fk_pti_inventory` FOREIGN KEY (`inventory_id`) REFERENCES `finished_goods_inventory` (`id`),
   ADD CONSTRAINT `fk_pti_transaction` FOREIGN KEY (`transaction_id`) REFERENCES `pos_transactions` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `price_canvass`
+--
+ALTER TABLE `price_canvass`
+  ADD CONSTRAINT `price_canvass_ibfk_1` FOREIGN KEY (`ingredient_id`) REFERENCES `ingredients` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `price_canvass_ibfk_2` FOREIGN KEY (`mro_item_id`) REFERENCES `mro_items` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `price_canvass_ibfk_3` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
 
 --
 -- Constraints for table `production_batches`
@@ -5537,6 +6006,7 @@ ALTER TABLE `product_prices`
 ALTER TABLE `purchase_orders`
   ADD CONSTRAINT `fk_po_approver` FOREIGN KEY (`approved_by`) REFERENCES `users` (`id`),
   ADD CONSTRAINT `fk_po_creator` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`),
+  ADD CONSTRAINT `fk_po_requisition` FOREIGN KEY (`requisition_id`) REFERENCES `material_requisitions` (`id`) ON DELETE SET NULL,
   ADD CONSTRAINT `fk_po_supplier` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`id`);
 
 --

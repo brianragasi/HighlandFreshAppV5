@@ -213,99 +213,7 @@ function handlePost($db, $currentUser) {
     
     switch ($action) {
         case 'receive':
-            // Receive new MRO inventory
-            $mroItemId = getParam('mro_item_id');
-            $quantity = getParam('quantity');
-            $unitCost = getParam('unit_cost');
-            $supplierName = getParam('supplier_name');
-            $notes = getParam('notes');
-            
-            if (!$mroItemId || !$quantity || $quantity <= 0) {
-                Response::error('MRO Item ID and valid quantity are required', 400);
-            }
-            
-            $db->beginTransaction();
-            
-            try {
-                // Verify item exists
-                $item = $db->prepare("SELECT * FROM mro_items WHERE id = ? AND is_active = 1");
-                $item->execute([$mroItemId]);
-                $itemData = $item->fetch();
-                
-                if (!$itemData) {
-                    throw new Exception('MRO item not found');
-                }
-                
-                // Generate batch code
-                $batchCode = generateCode('MRO');
-                
-                // Create inventory record
-                $stmt = $db->prepare("
-                    INSERT INTO mro_inventory 
-                    (batch_code, mro_item_id, quantity, remaining_quantity, unit_cost,
-                     supplier_name, received_date, received_by, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?, ?)
-                ");
-                $stmt->execute([
-                    $batchCode,
-                    $mroItemId,
-                    $quantity,
-                    $quantity,
-                    $unitCost,
-                    $supplierName,
-                    $currentUser['user_id'],
-                    $notes
-                ]);
-                $batchId = $db->lastInsertId();
-                
-                // Update item current stock
-                $stmt = $db->prepare("
-                    UPDATE mro_items 
-                    SET current_stock = current_stock + ?,
-                        unit_cost = COALESCE(?, unit_cost),
-                        updated_at = NOW()
-                    WHERE id = ?
-                ");
-                $stmt->execute([$quantity, $unitCost, $mroItemId]);
-                
-                // Create transaction record
-                $txCode = generateCode('TX');
-                $stmt = $db->prepare("
-                    INSERT INTO inventory_transactions 
-                    (transaction_code, transaction_type, item_type, item_id, batch_id,
-                     quantity, unit_of_measure, reference_type, to_location, performed_by, reason)
-                    VALUES (?, 'receive', 'mro', ?, ?, ?, ?, 'purchase', ?, ?, ?)
-                ");
-                $stmt->execute([
-                    $txCode,
-                    $mroItemId,
-                    $batchId,
-                    $quantity,
-                    $itemData['unit_of_measure'],
-                    $itemData['storage_location'],
-                    $currentUser['user_id'],
-                    "Received from supplier: " . ($supplierName ?? 'Unknown')
-                ]);
-                
-                // Log audit
-                logAudit($currentUser['user_id'], 'receive_mro', 'mro_inventory', $batchId, null, [
-                    'mro_item_id' => $mroItemId,
-                    'quantity' => $quantity,
-                    'supplier' => $supplierName
-                ]);
-                
-                $db->commit();
-                
-                Response::success([
-                    'batch_id' => $batchId,
-                    'batch_code' => $batchCode,
-                    'transaction_code' => $txCode
-                ], 'MRO inventory received successfully');
-                
-            } catch (Exception $e) {
-                $db->rollBack();
-                Response::error($e->getMessage(), 400);
-            }
+            Response::error('Manual receiving is disabled. Use the PO receiving workflow.', 403);
             break;
             
         case 'create':
@@ -495,9 +403,8 @@ function handlePut($db, $currentUser) {
                 Response::error('MRO Item ID, new quantity, and reason are required', 400);
             }
             
-            $db->beginTransaction();
-            
             try {
+                $db->beginTransaction();
                 // Get current stock
                 $item = $db->prepare("SELECT * FROM mro_items WHERE id = ? AND is_active = 1");
                 $item->execute([$mroItemId]);
@@ -507,8 +414,13 @@ function handlePut($db, $currentUser) {
                     throw new Exception('MRO item not found');
                 }
                 
-                $oldQuantity = $itemData['current_stock'];
+                $oldQuantity = (float) $itemData['current_stock'];
+                $newQuantity = (float) $newQuantity;
                 $difference = $newQuantity - $oldQuantity;
+
+                if ($difference > 0) {
+                    throw new Exception('Stock increases must come from PO receiving. Use the receiving workflow.');
+                }
                 
                 // Update item stock
                 $stmt = $db->prepare("
@@ -548,8 +460,10 @@ function handlePut($db, $currentUser) {
                     'transaction_code' => $txCode
                 ], 'Stock adjusted successfully');
                 
-            } catch (Exception $e) {
-                $db->rollBack();
+            } catch (Throwable $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
                 Response::error($e->getMessage(), 400);
             }
             break;

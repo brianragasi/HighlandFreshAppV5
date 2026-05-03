@@ -181,40 +181,57 @@ try {
                 ");
                 
                 foreach ($items as $item) {
-                    // Auto-detect item_type based on item name (free-text input)
-                    $itemName = strtolower(trim($item['item_name'] ?? ''));
-                    $itemType = 'ingredient'; // Default
-                    $itemId = 0;
-                    
-                    // Check if this is raw milk based on name patterns
-                    $rawMilkPatterns = ['raw milk', 'fresh milk', 'carabao milk', 'cow milk', 'goat milk', 'whole milk'];
-                    foreach ($rawMilkPatterns as $pattern) {
-                        if ($itemName === $pattern || strpos($itemName, $pattern) !== false) {
-                            $itemType = 'raw_milk';
-                            break;
-                        }
+                    $itemNameRaw = trim($item['item_name'] ?? '');
+                    $itemName = strtolower($itemNameRaw);
+                    $itemType = $item['item_type'] ?? null;
+                    $itemId = $item['item_id'] ?? 0;
+                    $allowedTypes = ['ingredient', 'raw_milk'];
+
+                    if ($itemType && !in_array($itemType, $allowedTypes, true)) {
+                        $itemType = null;
                     }
-                    
-                    // Also check for just 'milk' but exclude processed products
-                    if ($itemType !== 'raw_milk' && strpos($itemName, 'milk') !== false) {
-                        $excludePatterns = ['powder', 'chocolate', 'flavored', 'pasteurized', 'skim', 'condensed', 'evaporated'];
-                        $isExcluded = false;
-                        foreach ($excludePatterns as $exclude) {
-                            if (strpos($itemName, $exclude) !== false) {
-                                $isExcluded = true;
+
+                    if ($itemType === 'ingredient') {
+                        $itemId = (int) $itemId;
+                    } elseif ($itemType === 'raw_milk') {
+                        $itemId = 0;
+                    }
+
+                    if (!$itemType) {
+                        // Auto-detect item_type based on item name (free-text input)
+                        $itemType = 'ingredient'; // Default
+                        $itemId = 0;
+
+                        // Check if this is raw milk based on name patterns
+                        $rawMilkPatterns = ['raw milk', 'fresh milk', 'carabao milk', 'cow milk', 'goat milk', 'whole milk'];
+                        foreach ($rawMilkPatterns as $pattern) {
+                            if ($itemName === $pattern || strpos($itemName, $pattern) !== false) {
+                                $itemType = 'raw_milk';
                                 break;
                             }
                         }
-                        if (!$isExcluded) {
-                            $itemType = 'raw_milk';
+
+                        // Also check for just 'milk' but exclude processed products
+                        if ($itemType !== 'raw_milk' && strpos($itemName, 'milk') !== false) {
+                            $excludePatterns = ['powder', 'chocolate', 'flavored', 'pasteurized', 'skim', 'condensed', 'evaporated'];
+                            $isExcluded = false;
+                            foreach ($excludePatterns as $exclude) {
+                                if (strpos($itemName, $exclude) !== false) {
+                                    $isExcluded = true;
+                                    break;
+                                }
+                            }
+                            if (!$isExcluded) {
+                                $itemType = 'raw_milk';
+                            }
                         }
                     }
-                    
+
                     $itemStmt->execute([
                         $requisitionId,
                         $itemType,
                         $itemId,
-                        $item['item_name'],
+                        $itemNameRaw,
                         $item['quantity'],
                         $item['unit'] ?? 'units',
                         $item['notes'] ?? ''

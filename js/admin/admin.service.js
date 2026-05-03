@@ -75,6 +75,54 @@ const AdminService = {
             throw error;
         }
     },
+
+    async unlockUserLogin(id) {
+        try {
+            const response = await fetch(`${ApiConfig.baseUrl}/admin/users.php?action=unlock_login&id=${id}`, {
+                method: 'POST',
+                headers: ApiConfig.getHeaders(),
+                body: JSON.stringify({})
+            });
+            return await response.json();
+        } catch (error) {
+            console.error('Error unlocking user login:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Send email invitation to a user
+     */
+    async sendInvite(userId) {
+        try {
+            const response = await fetch(`${ApiConfig.baseUrl}/auth/invite.php`, {
+                method: 'POST',
+                headers: ApiConfig.getHeaders(),
+                body: JSON.stringify({ user_id: userId, method: 'email' })
+            });
+            return await response.json();
+        } catch (error) {
+            console.error('Error sending invite:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Generate temporary credentials for a user (no-email fallback)
+     */
+    async generateTempCredential(userId) {
+        try {
+            const response = await fetch(`${ApiConfig.baseUrl}/auth/invite.php`, {
+                method: 'POST',
+                headers: ApiConfig.getHeaders(),
+                body: JSON.stringify({ user_id: userId, method: 'manual' })
+            });
+            return await response.json();
+        } catch (error) {
+            console.error('Error generating temp credentials:', error);
+            throw error;
+        }
+    },
     
     // ========================
     // FARMER MANAGEMENT

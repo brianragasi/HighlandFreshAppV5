@@ -217,10 +217,25 @@ function handlePost($db, $action, $currentUser) {
         // =====================================================
         $stockWarnings = [];
         foreach ($orderItems as $item) {
-            // Get available stock for this product
+            // Get available stock for this product.
+            // CASE logic avoids double-counting:
+            //  - If new-style columns (boxes/pieces) are populated → use them directly
+            //  - Otherwise fall back to legacy quantity_available column
             $stockStmt = $db->prepare("
                 SELECT 
-                    COALESCE(SUM((fgi.boxes_available * COALESCE(p.pieces_per_box, 12)) + fgi.pieces_available), 0) as total_available
+                    COALESCE(SUM(
+                        CASE
+                            WHEN fgi.boxes_available > 0 OR fgi.pieces_available > 0
+                            THEN (fgi.boxes_available * COALESCE(p.pieces_per_box, 12))
+                                 + fgi.pieces_available
+                            ELSE GREATEST(0, COALESCE(
+                                NULLIF(fgi.quantity_pieces, 0),
+                                fgi.quantity_available,
+                                fgi.remaining_quantity,
+                                0
+                            ))
+                        END
+                    ), 0) as total_available
                 FROM finished_goods_inventory fgi
                 LEFT JOIN products p ON fgi.product_id = p.id
                 LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
@@ -505,17 +520,42 @@ function handlePut($db, $action, $currentUser) {
                 foreach ($items as $item) {
                     if ($item['quantity_picked'] > 0) {
                         // Deduct from FG inventory using FIFO (oldest batches first)
+                        // Uses COALESCE to handle both new (pieces_available) and
+                        // old-style (quantity_available) rows from packaging.php
                         $remaining = $item['quantity_picked'];
                         
                         $batchesStmt = $db->prepare("
-                            SELECT fgi.id, fgi.batch_id, fgi.pieces_available, 
-                                   COALESCE(p.pieces_per_box, 12) as pieces_per_box
+                            SELECT fgi.id, fgi.batch_id,
+                                   fgi.pieces_available,
+                                   fgi.boxes_available,
+                                   fgi.quantity_available,
+                                   fgi.quantity_pieces,
+                                   fgi.remaining_quantity,
+                                   COALESCE(p.pieces_per_box, 12) as pieces_per_box,
+                                   -- Same CASE logic as stock check to avoid double-counting
+                                   CASE
+                                       WHEN fgi.boxes_available > 0 OR fgi.pieces_available > 0
+                                       THEN (fgi.boxes_available * COALESCE(p.pieces_per_box, 12))
+                                            + fgi.pieces_available
+                                       ELSE GREATEST(0, COALESCE(
+                                           NULLIF(fgi.quantity_pieces, 0),
+                                           fgi.quantity_available,
+                                           fgi.remaining_quantity,
+                                           0
+                                       ))
+                                   END as effective_pieces
                             FROM finished_goods_inventory fgi
                             LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
                             LEFT JOIN products p ON fgi.product_id = p.id
                             WHERE fgi.product_id = ?
-                              AND (fgi.pieces_available > 0 OR fgi.boxes_available > 0)
                               AND pb.qc_status = 'released'
+                              AND (
+                                  fgi.pieces_available > 0
+                                  OR fgi.boxes_available > 0
+                                  OR fgi.quantity_available > 0
+                                  OR fgi.quantity_pieces > 0
+                                  OR fgi.remaining_quantity > 0
+                              )
                             ORDER BY pb.manufacturing_date ASC, pb.created_at ASC
                         ");
                         $batchesStmt->execute([$item['product_id']]);
@@ -524,17 +564,31 @@ function handlePut($db, $action, $currentUser) {
                         foreach ($batches as $batch) {
                             if ($remaining <= 0) break;
                             
-                            $totalAvailable = $batch['pieces_available'];
-                            $toDeduct = min($remaining, $totalAvailable);
+                            $effectivePieces = (int)$batch['effective_pieces'];
+                            $toDeduct = min($remaining, $effectivePieces);
                             
-                            $deductStmt = $db->prepare("
-                                UPDATE finished_goods_inventory 
-                                SET pieces_available = pieces_available - ?,
-                                    boxes_available = FLOOR((pieces_available - ?) / ?),
-                                    last_movement_at = NOW()
-                                WHERE id = ?
-                            ");
-                            $deductStmt->execute([$toDeduct, $toDeduct, $batch['pieces_per_box'], $batch['id']]);
+                            // Deduct from whichever column holds the stock
+                            if ((int)$batch['pieces_available'] > 0) {
+                                $deductStmt = $db->prepare("
+                                    UPDATE finished_goods_inventory 
+                                    SET pieces_available = GREATEST(0, pieces_available - ?),
+                                        boxes_available = FLOOR(GREATEST(0, pieces_available - ?) / ?),
+                                        last_movement_at = NOW()
+                                    WHERE id = ?
+                                ");
+                                $deductStmt->execute([$toDeduct, $toDeduct, $batch['pieces_per_box'], $batch['id']]);
+                            } else {
+                                // Old-style row: deduct from quantity_available and remaining_quantity
+                                $deductStmt = $db->prepare("
+                                    UPDATE finished_goods_inventory 
+                                    SET quantity_available = GREATEST(0, quantity_available - ?),
+                                        remaining_quantity = GREATEST(0, remaining_quantity - ?),
+                                        quantity_pieces = GREATEST(0, quantity_pieces - ?),
+                                        last_movement_at = NOW()
+                                    WHERE id = ?
+                                ");
+                                $deductStmt->execute([$toDeduct, $toDeduct, $toDeduct, $batch['id']]);
+                            }
                             
                             $remaining -= $toDeduct;
                         }

@@ -67,7 +67,8 @@ function handleGet($db, $action) {
                         fi.product_id, 
                         SUM(fi.quantity) as total_qty,
                         SUM(CASE WHEN fi.status = 'available' 
-                            THEN (COALESCE(fi.boxes_available, 0) * COALESCE(p2.pieces_per_box, 1)) + COALESCE(fi.pieces_available, 0)
+                            THEN (COALESCE(NULLIF(fi.boxes_available, 0), NULLIF(fi.quantity_boxes, 0), 0) * COALESCE(p2.pieces_per_box, 1)) 
+                                + COALESCE(NULLIF(fi.pieces_available, 0), NULLIF(fi.quantity_pieces, 0), fi.quantity_available, fi.remaining_quantity, 0)
                             ELSE 0 END) as available_qty
                     FROM finished_goods_inventory fi
                     JOIN products p2 ON fi.product_id = p2.id
@@ -136,15 +137,17 @@ function handleGet($db, $action) {
             $invStmt = $db->prepare("
                 SELECT 
                     fi.id, fi.batch_id, fi.quantity, 
-                    COALESCE(fi.boxes_available, 0) as boxes_available,
-                    COALESCE(fi.pieces_available, 0) as pieces_available,
-                    (COALESCE(fi.boxes_available, 0) * COALESCE(p.pieces_per_box, 1)) + COALESCE(fi.pieces_available, 0) as quantity_available,
+                    COALESCE(NULLIF(fi.boxes_available, 0), NULLIF(fi.quantity_boxes, 0), 0) as boxes_available,
+                    COALESCE(NULLIF(fi.pieces_available, 0), NULLIF(fi.quantity_pieces, 0), fi.quantity_available, fi.remaining_quantity, 0) as pieces_available,
+                    (COALESCE(NULLIF(fi.boxes_available, 0), NULLIF(fi.quantity_boxes, 0), 0) * COALESCE(p.pieces_per_box, 1)) 
+                        + COALESCE(NULLIF(fi.pieces_available, 0), NULLIF(fi.quantity_pieces, 0), fi.quantity_available, fi.remaining_quantity, 0) as quantity_available,
                     fi.status, fi.manufacturing_date as production_date, fi.expiry_date,
                     DATEDIFF(fi.expiry_date, CURDATE()) as days_to_expiry
                 FROM finished_goods_inventory fi
                 JOIN products p ON fi.product_id = p.id
                 WHERE fi.product_id = ? 
-                AND ((COALESCE(fi.boxes_available, 0) > 0) OR (COALESCE(fi.pieces_available, 0) > 0))
+                AND (COALESCE(NULLIF(fi.boxes_available, 0), NULLIF(fi.quantity_boxes, 0), 0) > 0 
+                     OR COALESCE(NULLIF(fi.pieces_available, 0), NULLIF(fi.quantity_pieces, 0), fi.quantity_available, fi.remaining_quantity, 0) > 0)
                 ORDER BY fi.expiry_date ASC
             ");
             $invStmt->execute([$id]);
@@ -175,32 +178,35 @@ function handleGet($db, $action) {
             // Get products available for sale (with inventory > 0)
             // Uses multi-unit system: boxes_available + pieces_available
             // Subtracts quantities reserved in pending/approved/preparing orders
+            // INCLUDES items without product_id (manually packaged custom sizes)
             $category = getParam('category');
             $search = getParam('search');
             
             $sql = "
                 SELECT 
-                    p.id,
-                    p.product_code,
-                    p.product_name,
-                    p.category,
-                    p.variant,
-                    p.unit_size,
-                    p.unit_measure,
-                    p.base_unit,
-                    p.selling_price,
+                    COALESCE(p.id, CONCAT('fg-', fi.id)) as id,
+                    COALESCE(p.product_code, CONCAT('FG-', fi.id)) as product_code,
+                    COALESCE(p.product_name, fi.product_name) as product_name,
+                    COALESCE(p.category, fi.product_type) as category,
+                    COALESCE(p.variant, fi.variant, CONCAT(fi.size_ml, fi.unit)) as variant,
+                    COALESCE(p.unit_size, fi.size_ml) as unit_size,
+                    COALESCE(p.unit_measure, fi.unit) as unit_measure,
+                    COALESCE(p.base_unit, 'piece') as base_unit,
+                    COALESCE(p.selling_price, 0) as selling_price,
                     COALESCE(p.pieces_per_box, 1) as pieces_per_box,
+                    p.id as real_product_id,
+                    fi.id as fg_inventory_id,
                     GREATEST(0, 
-                        COALESCE(SUM(CASE 
+                        SUM(CASE 
                             WHEN fi.status = 'available' AND fi.expiry_date > CURDATE() 
-                            THEN (COALESCE(fi.boxes_available, 0) * COALESCE(p.pieces_per_box, 1)) + COALESCE(fi.pieces_available, 0)
+                            THEN COALESCE(NULLIF(fi.pieces_available, 0), NULLIF(fi.quantity_pieces, 0), fi.quantity_available, fi.remaining_quantity, 0)
                             ELSE 0 
-                        END), 0)
+                        END)
                         - COALESCE((
                             SELECT SUM(soi.quantity_ordered)
                             FROM sales_order_items soi
                             JOIN sales_orders so ON soi.order_id = so.id
-                            WHERE soi.product_id = p.id
+                            WHERE (soi.product_id = p.id OR (soi.product_id IS NULL AND soi.product_name = fi.product_name))
                             AND so.status IN ('pending', 'approved', 'preparing')
                         ), 0)
                     ) as available_qty,
@@ -208,28 +214,34 @@ function handleGet($db, $action) {
                         SELECT SUM(soi.quantity_ordered)
                         FROM sales_order_items soi
                         JOIN sales_orders so ON soi.order_id = so.id
-                        WHERE soi.product_id = p.id
+                        WHERE (soi.product_id = p.id OR (soi.product_id IS NULL AND soi.product_name = fi.product_name))
                         AND so.status IN ('pending', 'approved', 'preparing')
                     ), 0) as reserved_qty
-                FROM products p
-                LEFT JOIN finished_goods_inventory fi ON p.id = fi.product_id
-                WHERE p.is_active = 1
+                FROM finished_goods_inventory fi
+                LEFT JOIN products p ON fi.product_id = p.id
+                WHERE (p.id IS NULL OR p.is_active = 1)
+                AND fi.status = 'available' 
+                AND fi.expiry_date > CURDATE()
             ";
             $params = [];
             
             if ($category) {
-                $sql .= " AND p.category = ?";
+                $sql .= " AND (p.category = ? OR fi.product_type = ?)";
+                $params[] = $category;
                 $params[] = $category;
             }
             
             if ($search) {
-                $sql .= " AND (p.product_name LIKE ? OR p.product_code LIKE ?)";
+                $sql .= " AND ((p.product_name LIKE ? OR p.product_code LIKE ?) OR (fi.product_name LIKE ?))";
                 $searchTerm = "%$search%";
+                $params[] = $searchTerm;
                 $params[] = $searchTerm;
                 $params[] = $searchTerm;
             }
             
-            $sql .= " GROUP BY p.id, p.product_code, p.product_name, p.category, p.variant, p.unit_size, p.unit_measure, p.base_unit, p.selling_price, p.pieces_per_box HAVING available_qty > 0 OR reserved_qty > 0 ORDER BY p.product_name ASC";
+            $sql .= " GROUP BY COALESCE(p.id, fi.id), fi.id, p.product_code, p.product_name, fi.product_name, p.category, fi.product_type, p.variant, fi.variant, fi.size_ml, fi.unit, p.unit_size, p.unit_measure, p.base_unit, p.selling_price, p.pieces_per_box 
+                      HAVING available_qty > 0 OR reserved_qty > 0 
+                      ORDER BY product_name ASC";
             
             $stmt = $db->prepare($sql);
             $stmt->execute($params);

@@ -165,6 +165,13 @@ const ProductionService = {
     // ========================================
 
     /**
+     * Get ingredient catalog for requisition dropdowns
+     */
+    async getIngredientCatalog() {
+        return await api.get('/warehouse/raw/ingredients.php', { params: { action: 'list' } });
+    },
+
+    /**
      * Get all requisitions
      * @param {Object} params - Filter parameters
      */
