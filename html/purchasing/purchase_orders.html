@@ -171,12 +171,16 @@
                                 onchange="loadPurchaseOrders()">
                                 <option value="">All Status</option>
                                 <option value="draft">Draft</option>
-                                <option value="pending">Pending Approval</option>
+                                <option value="pending">Pending Finalization</option>
                                 <option value="approved">Approved</option>
-                                <option value="ordered">Ordered</option>
-                                <option value="partial_received">Partial Received</option>
-                                <option value="received">Received</option>
-                                <option value="cancelled">Cancelled</option>
+                                <option value="rejected">Rejected</option>
+                                <option value="partial_received">Partially Received</option>
+                                <option value="received">Fully Received</option>
+                                <option value="closed">Closed</option>
+                            </select>
+                            <select id="supplierFilter" class="select select-bordered select-sm w-full md:w-48"
+                                onchange="loadPurchaseOrders()">
+                                <option value="">All Suppliers</option>
                             </select>
                             <select id="paymentFilter" class="select select-bordered select-sm w-full md:w-36"
                                 onchange="loadPurchaseOrders()">
@@ -238,7 +242,7 @@
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                             <div class="form-control">
                                 <label class="label"><span class="label-text">Supplier *</span></label>
-                                <select id="poSupplier" class="select select-bordered w-full" required>
+                                <select id="poSupplier" class="select select-bordered w-full" required onchange="renderSelectedSupplierDetails()">
                                     <option value="">Select supplier...</option>
                                 </select>
                             </div>
@@ -278,9 +282,24 @@
                                 </select>
                             </div>
                             <div class="form-control md:col-span-2">
+                                <label class="label"><span class="label-text">Delivery Details</span></label>
+                                <textarea id="poDeliveryDetails" class="textarea textarea-bordered w-full" rows="2"
+                                    placeholder="Delivery address, contact instructions, vehicle/loading notes"></textarea>
+                            </div>
+                            <div class="form-control md:col-span-2">
                                 <label class="label"><span class="label-text">Notes</span></label>
                                 <input type="text" id="poNotes" class="input input-bordered w-full"
                                     placeholder="Additional notes">
+                            </div>
+                        </div>
+
+                        <div id="selectedSupplierSummary" class="hidden bg-base-200 rounded-lg p-4 mb-4">
+                            <h4 class="font-semibold text-sm mb-2"><i class="fas fa-truck-field mr-2"></i>Supplier Details</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
+                                <div><span class="text-base-content/50">Name:</span> <span class="font-medium" id="supplierDetailName">-</span></div>
+                                <div><span class="text-base-content/50">Contact:</span> <span id="supplierDetailContact">-</span></div>
+                                <div><span class="text-base-content/50">Terms:</span> <span id="supplierDetailTerms">-</span></div>
+                                <div class="md:col-span-2 xl:col-span-1"><span class="text-base-content/50">Address:</span> <span id="supplierDetailAddress">-</span></div>
                             </div>
                         </div>
 
@@ -297,9 +316,7 @@
                         <div class="mb-4">
                             <div class="flex items-center justify-between mb-3">
                                 <h3 class="font-semibold">Line Items</h3>
-                                <button class="btn btn-ghost btn-sm text-primary" onclick="addLineItem()">
-                                    <i class="fas fa-plus"></i> Add Item
-                                </button>
+                                <span class="badge badge-primary badge-outline">From approved PR</span>
                             </div>
                             <div class="overflow-x-auto">
                                 <table class="table table-sm">
@@ -308,7 +325,7 @@
                                             <th class="w-1/3">Description</th>
                                             <th>Qty</th>
                                             <th>Unit</th>
-                                            <th>Unit Price</th>
+                                            <th>Current Unit Price</th>
                                             <th>Line Total</th>
                                             <th></th>
                                         </tr>
@@ -409,6 +426,8 @@
         let currentUserRole = '';
         let itemOptionsHtml = '';
         let approvedPurchaseRequests = [];
+        let availableSuppliers = [];
+        let markOrderedInFlight = new Set();
 
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -453,6 +472,7 @@
                 await showCreateForm();
             } else {
                 await Promise.all([
+                    loadSupplierFilter(),
                     loadPurchaseOrders(),
                     loadApprovedPurchaseRequestNotice()
                 ]);
@@ -468,15 +488,31 @@
             searchTimeout = setTimeout(() => { currentPage = 1; loadPurchaseOrders(); }, 300);
         }
 
+        async function loadSupplierFilter() {
+            try {
+                const response = await PurchasingService.getSuppliers({ status: 'active' });
+                const suppliers = response?.data || [];
+                const select = document.getElementById('supplierFilter');
+                if (!select) return;
+
+                select.innerHTML = '<option value="">All Suppliers</option>' +
+                    suppliers.map(s => `<option value="${s.id}">${escapeHtml(s.supplier_name)} (${escapeHtml(s.supplier_code)})</option>`).join('');
+            } catch (error) {
+                console.error('Failed to load supplier filter:', error);
+            }
+        }
+
         async function loadPurchaseOrders() {
             try {
                 const filters = { page: currentPage, limit: 15 };
                 const search = document.getElementById('searchInput').value.trim();
                 const status = document.getElementById('statusFilter').value;
+                const supplierId = document.getElementById('supplierFilter')?.value;
                 const payment = document.getElementById('paymentFilter').value;
 
                 if (search) filters.search = search;
                 if (status) filters.status = status;
+                if (supplierId) filters.supplier_id = supplierId;
                 if (payment) filters.payment_status = payment;
 
                 const response = await PurchasingService.getPurchaseOrders(filters);
@@ -508,20 +544,17 @@
                             <td class="text-sm">${formatDate(po.expected_delivery)}</td>
                             <td><span class="badge badge-ghost badge-sm">${po.item_count || 0}</span></td>
                             <td class="font-semibold">${formatCurrency(po.total_amount)}</td>
-                            <td><span class="badge badge-sm ${sBadge}">${PurchasingService.formatStatus(po.status)}</span></td>
+                            <td><span class="badge badge-sm ${sBadge}">${formatPOStatus(po.status)}</span></td>
                             <td><span class="badge badge-sm ${pBadge} badge-outline">${PurchasingService.formatStatus(po.payment_status)}</span></td>
                             <td>
                                 <div class="dropdown dropdown-end" onclick="event.stopPropagation()">
                                     <label tabindex="0" class="btn btn-ghost btn-xs btn-square"><i class="fas fa-ellipsis-v"></i></label>
                                     <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2 z-10">
                                         <li><a onclick="viewPODetail(${po.id})"><i class="fas fa-eye w-4"></i> View Details</a></li>
-                                        ${po.status === 'draft' ? `<li><a onclick="submitPO(${po.id})"><i class="fas fa-paper-plane w-4"></i> Submit</a></li>` : ''}
-                                        ${po.status === 'pending' && currentUserRole === 'general_manager' ? `
-                                            <li><a onclick="approvePO(${po.id})" class="text-success"><i class="fas fa-check w-4"></i> Approve</a></li>
-                                            <li><a onclick="rejectPO(${po.id})" class="text-error"><i class="fas fa-times w-4"></i> Reject</a></li>
-                                        ` : ''}
-                                        ${po.status === 'approved' && currentUserRole === 'purchaser' ? `<li><a onclick="markOrdered(${po.id})"><i class="fas fa-shipping-fast w-4"></i> Mark Ordered</a></li>` : ''}
-                                        ${!['received', 'cancelled'].includes(po.status) ? `<li><a onclick="cancelPO(${po.id})" class="text-error"><i class="fas fa-ban w-4"></i> Cancel</a></li>` : ''}
+                                        ${['draft', 'pending'].includes(po.status) && currentUserRole === 'purchaser' ? `<li><a onclick="submitPO(${po.id})"><i class="fas fa-check w-4"></i> Finalize PO</a></li>` : ''}
+                                        ${po.status === 'approved' && currentUserRole === 'purchaser' && !po.sent_to_supplier_at ? `<li><a onclick="markOrdered(${po.id})"><i class="fas fa-paper-plane w-4"></i> Send Final PO</a></li>` : ''}
+                                        ${po.status === 'received' && ['purchaser', 'general_manager'].includes(currentUserRole) ? `<li><a onclick="closePO(${po.id})"><i class="fas fa-lock w-4"></i> Close PO</a></li>` : ''}
+                                        ${!['received', 'closed', 'rejected', 'cancelled'].includes(po.status) ? `<li><a onclick="cancelPO(${po.id})" class="text-error"><i class="fas fa-ban w-4"></i> Cancel</a></li>` : ''}
                                     </ul>
                                 </div>
                             </td>
@@ -612,9 +645,11 @@
             try {
                 const response = await PurchasingService.getSuppliers({ status: 'active' });
                 const suppliers = response?.data || [];
+                availableSuppliers = suppliers;
                 const select = document.getElementById('poSupplier');
                 select.innerHTML = '<option value="">Select supplier...</option>' +
-                    suppliers.map(s => `<option value="${s.id}">${s.supplier_name} (${s.supplier_code})</option>`).join('');
+                    suppliers.map(s => `<option value="${s.id}">${escapeHtml(s.supplier_name)} (${escapeHtml(s.supplier_code)})</option>`).join('');
+                renderSelectedSupplierDetails();
             } catch (e) { console.error('Failed to load suppliers:', e); }
 
             // Load pending requisitions
@@ -650,8 +685,7 @@
 
             // Add first line item
             lineItemCounter = 0;
-            document.getElementById('lineItemsBody').innerHTML = '';
-            addLineItem();
+            renderNoPurchaseRequestLineItems();
             clearSelectedPurchaseRequestSummary();
             if (requestedPrId && document.getElementById('poPurchaseRequest').value) {
                 applySelectedPurchaseRequest();
@@ -676,6 +710,29 @@
             );
             const more = items.length > 2 ? ` +${items.length - 2} more` : '';
             return names.join(', ') + more;
+        }
+
+        function renderSelectedSupplierDetails() {
+            const supplierId = document.getElementById('poSupplier')?.value;
+            const summary = document.getElementById('selectedSupplierSummary');
+            const supplier = availableSuppliers.find(s => String(s.id) === String(supplierId));
+
+            if (!summary || !supplier) {
+                summary?.classList.add('hidden');
+                return;
+            }
+
+            const contactParts = [
+                supplier.contact_person,
+                supplier.phone,
+                supplier.email
+            ].filter(Boolean);
+
+            document.getElementById('supplierDetailName').textContent = supplier.supplier_name || '-';
+            document.getElementById('supplierDetailContact').textContent = contactParts.length ? contactParts.join(' | ') : '-';
+            document.getElementById('supplierDetailTerms').textContent = supplier.payment_terms || '-';
+            document.getElementById('supplierDetailAddress').textContent = supplier.address || '-';
+            summary.classList.remove('hidden');
         }
 
         function buildItemOptions(ingredients, mroItems) {
@@ -751,28 +808,39 @@
             if (unitInput) unitInput.value = unit;
         }
 
+        function renderNoPurchaseRequestLineItems() {
+            document.getElementById('lineItemsBody').innerHTML = `
+                <tr id="lineItem-empty">
+                    <td colspan="6" class="text-center py-8 text-base-content/60">
+                        <i class="fas fa-clipboard-check text-3xl mb-2"></i>
+                        <p class="font-medium">Select an approved PR to fill PO items.</p>
+                    </td>
+                </tr>
+            `;
+            calcGrandTotal();
+        }
+
         function addLineItem(item = null) {
             lineItemCounter++;
             const tbody = document.getElementById('lineItemsBody');
             const row = document.createElement('tr');
             row.id = `lineItem-${lineItemCounter}`;
+            row.dataset.prItemId = item?.id || '';
             row.innerHTML = `
                 <td>
-                    <select class="select select-bordered select-sm w-full item-select" id="desc-${lineItemCounter}" required onchange="handleItemSelection(this)">
+                    <select class="select select-bordered select-sm w-full item-select" id="desc-${lineItemCounter}" required disabled onchange="handleItemSelection(this)">
                         ${itemOptionsHtml || '<option value="">Loading items...</option>'}
                     </select>
                 </td>
-                <td><input type="number" class="input input-bordered input-sm w-20" id="qty-${lineItemCounter}" value="1" min="0.01" step="0.01" oninput="calcLineTotal(${lineItemCounter})"></td>
+                <td><input type="number" class="input input-bordered input-sm w-20" id="qty-${lineItemCounter}" value="1" min="0.01" step="0.01" readonly></td>
                 <td><input type="text" class="input input-bordered input-sm w-20 item-unit" id="unit-${lineItemCounter}" value="" placeholder="Unit" readonly></td>
                 <td><input type="number" class="input input-bordered input-sm w-28" id="price-${lineItemCounter}" value="0" min="0" step="0.01" oninput="calcLineTotal(${lineItemCounter})"></td>
                 <td class="font-semibold" id="total-${lineItemCounter}">₱0.00</td>
-                <td><button class="btn btn-ghost btn-xs text-error" onclick="removeLineItem(${lineItemCounter})"><i class="fas fa-trash"></i></button></td>
+                <td><span class="badge badge-ghost badge-sm">PR</span></td>
             `;
             tbody.appendChild(row);
 
-            if (item) {
-                populateLineItem(lineItemCounter, item);
-            }
+            populateLineItem(lineItemCounter, item);
         }
 
         function populateLineItem(rowId, item) {
@@ -807,9 +875,8 @@
 
             if (!selectedPr) {
                 clearSelectedPurchaseRequestSummary();
-                document.getElementById('lineItemsBody').innerHTML = '';
                 lineItemCounter = 0;
-                addLineItem();
+                renderNoPurchaseRequestLineItems();
                 return;
             }
 
@@ -820,7 +887,7 @@
             if (items.length) {
                 items.forEach(item => addLineItem(item));
             } else {
-                addLineItem();
+                renderNoPurchaseRequestLineItems();
             }
 
             renderSelectedPurchaseRequestSummary(selectedPr);
@@ -884,6 +951,7 @@
             document.getElementById('pageTitle').textContent = 'Purchase Orders';
             // Reset URL
             history.pushState(null, '', 'purchase_orders.html');
+            loadSupplierFilter().catch(e => console.error('Supplier filter refresh error:', e));
             loadApprovedPurchaseRequestNotice().catch(e => console.error('Approved PR notice refresh error:', e));
         }
 
@@ -893,50 +961,52 @@
             if (!supplierId) { showToast('Please select a supplier', 'error'); return; }
             if (!purchaseRequestId) { showToast('Please select an approved Purchase Request (PR).', 'error'); return; }
 
+            const selectedPr = approvedPurchaseRequests.find(pr => String(pr.id) === String(purchaseRequestId));
+            if (!selectedPr || !(selectedPr.items || []).length) {
+                showToast('The selected approved PR has no items to convert.', 'error');
+                return;
+            }
+
             const items = [];
             let hasInvalid = false;
 
             document.querySelectorAll('#lineItemsBody tr').forEach(row => {
                 const id = row.id.split('-')[1];
-                const select = document.getElementById(`desc-${id}`);
-                const option = select?.options[select.selectedIndex];
-                const qty = parseFloat(document.getElementById(`qty-${id}`)?.value) || 0;
-                const unit = document.getElementById(`unit-${id}`)?.value?.trim() || '';
                 const price = parseFloat(document.getElementById(`price-${id}`)?.value) || 0;
+                const prItemId = parseInt(row.dataset.prItemId || '0', 10);
 
-                const itemType = option?.getAttribute('data-type');
-                const itemId = option?.getAttribute('data-id');
-                const itemName = option?.getAttribute('data-name');
-
-                if (!itemType || itemType === 'other' || !itemId) {
+                if (!prItemId) {
                     hasInvalid = true;
                     return;
                 }
 
-                if (qty > 0) {
-                    items.push({
-                        item_description: itemName,
-                        ingredient_id: itemType === 'ingredient' ? parseInt(itemId, 10) : null,
-                        mro_item_id: itemType === 'mro' ? parseInt(itemId, 10) : null,
-                        quantity: qty,
-                        unit: unit || 'pcs',
-                        unit_price: price
-                    });
-                }
+                items.push({
+                    purchase_request_item_id: prItemId,
+                    unit_price: price
+                });
             });
 
             if (hasInvalid) {
-                showToast('Please select a valid item (use the request flow for Other).', 'error');
+                showToast('PO items must come from the selected approved PR.', 'error');
                 return;
             }
 
-            if (items.length === 0) { showToast('Add at least one item', 'error'); return; }
+            if (items.length !== (selectedPr.items || []).length) {
+                showToast('Every approved PR item must be included in the PO.', 'error');
+                return;
+            }
+
+            if (items.some(item => item.unit_price <= 0)) {
+                showToast('Enter the current unit price for every PO item.', 'error');
+                return;
+            }
 
             try {
                 const data = {
                     supplier_id: supplierId,
                     order_date: document.getElementById('poOrderDate').value,
                     expected_delivery: document.getElementById('poExpectedDelivery').value || null,
+                    delivery_details: document.getElementById('poDeliveryDetails').value.trim() || null,
                     payment_terms: document.getElementById('poPaymentTerms').value,
                     purchase_request_id: purchaseRequestId,
                     requisition_id: document.getElementById('poRequisition').value || null,
@@ -1007,15 +1077,16 @@
                 const pBadge = PurchasingService.getPaymentBadgeClass(po.payment_status);
 
                 let actionsHTML = '';
-                if (po.status === 'draft') actionsHTML += `<button class="btn btn-info btn-sm" onclick="submitPO(${po.id})"><i class="fas fa-paper-plane"></i> Submit for Approval</button>`;
-                if (po.status === 'pending' && currentUserRole === 'general_manager') {
-                    actionsHTML += `<button class="btn btn-success btn-sm" onclick="approvePO(${po.id})"><i class="fas fa-check"></i> Approve</button>`;
-                    actionsHTML += `<button class="btn btn-error btn-sm" onclick="rejectPO(${po.id})"><i class="fas fa-times"></i> Reject</button>`;
+                if (['draft', 'pending'].includes(po.status) && currentUserRole === 'purchaser') {
+                    actionsHTML += `<button class="btn btn-info btn-sm" onclick="submitPO(${po.id})"><i class="fas fa-check"></i> Finalize PO</button>`;
                 }
-                if (po.status === 'approved' && currentUserRole === 'purchaser') {
-                    actionsHTML += `<button class="btn btn-primary btn-sm" onclick="markOrdered(${po.id})"><i class="fas fa-shipping-fast"></i> Mark Ordered</button>`;
+                if (po.status === 'approved' && currentUserRole === 'purchaser' && !po.sent_to_supplier_at) {
+                    actionsHTML += `<button class="btn btn-primary btn-sm" onclick="markOrdered(${po.id})"><i class="fas fa-paper-plane"></i> Send Final PO</button>`;
                 }
-                const printableStatuses = ['approved', 'ordered', 'partial_received', 'received'];
+                if (po.status === 'received' && ['purchaser', 'general_manager'].includes(currentUserRole)) {
+                    actionsHTML += `<button class="btn btn-neutral btn-sm" onclick="closePO(${po.id})"><i class="fas fa-lock"></i> Close PO</button>`;
+                }
+                const printableStatuses = ['approved', 'ordered', 'partial_received', 'received', 'closed'];
                 if (printableStatuses.includes(po.status)) {
                     actionsHTML += `<button class="btn btn-ghost btn-sm" onclick="openPrintablePO(${po.id})"><i class="fas fa-print"></i> Print Approved PO</button>`;
                 }
@@ -1042,7 +1113,7 @@
                                             <h2 class="text-xl font-bold">PO #${po.po_number}</h2>
                                             <p class="text-sm text-base-content/60">${po.supplier_name}</p>
                                         </div>
-                                        <span class="badge ${sBadge}">${PurchasingService.formatStatus(po.status)}</span>
+                                        <span class="badge ${sBadge}">${formatPOStatus(po.status)}</span>
                                         <span class="badge ${pBadge} badge-outline">${PurchasingService.formatStatus(po.payment_status)}</span>
                                     </div>
                                 </div>
@@ -1070,6 +1141,12 @@
                                     <p class="font-semibold ${po.due_date && new Date(po.due_date) < new Date() && po.payment_status !== 'paid' ? 'text-error' : ''}">${formatDate(po.due_date) || 'COD'}</p>
                                 </div>
                             </div>
+                            ${po.delivery_details ? `
+                                <div class="bg-base-200 rounded-xl p-4 mb-6">
+                                    <h4 class="font-semibold text-sm mb-1"><i class="fas fa-route mr-2"></i>Delivery Details</h4>
+                                    <p class="text-sm text-base-content/70 whitespace-pre-line">${escapeHtml(po.delivery_details)}</p>
+                                </div>
+                            ` : ''}
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                                 <div class="bg-base-200 rounded-xl p-3">
                                     <p class="text-xs text-base-content/60 mb-1">Created By</p>
@@ -1100,7 +1177,10 @@
                                     <div><span class="text-base-content/50">Name:</span> <span class="font-medium">${po.supplier_name}</span></div>
                                     <div><span class="text-base-content/50">Code:</span> <span class="font-mono">${po.supplier_code}</span></div>
                                     ${po.supplier_contact ? `<div><span class="text-base-content/50">Contact:</span> ${po.supplier_contact}</div>` : ''}
+                                    ${po.supplier_phone ? `<div><span class="text-base-content/50">Phone:</span> ${po.supplier_phone}</div>` : ''}
+                                    ${po.supplier_email ? `<div><span class="text-base-content/50">Email:</span> ${po.supplier_email}</div>` : ''}
                                     ${po.supplier_terms ? `<div><span class="text-base-content/50">Terms:</span> ${po.supplier_terms}</div>` : ''}
+                                    ${po.supplier_address ? `<div class="md:col-span-2"><span class="text-base-content/50">Address:</span> ${po.supplier_address}</div>` : ''}
                                 </div>
                             </div>
 
@@ -1171,6 +1251,18 @@
                                     <p class="text-sm text-base-content/70 whitespace-pre-line">${po.notes}</p>
                                 </div>
                             ` : ''}
+                            ${po.approval_remarks ? `
+                                <div class="bg-success/10 border border-success/20 rounded-xl p-4">
+                                    <h4 class="font-semibold text-sm mb-1"><i class="fas fa-comment-dots mr-2"></i>Approval Remarks</h4>
+                                    <p class="text-sm text-base-content/70 whitespace-pre-line">${po.approval_remarks}</p>
+                                </div>
+                            ` : ''}
+                            ${po.rejection_reason ? `
+                                <div class="bg-error/10 border border-error/20 rounded-xl p-4">
+                                    <h4 class="font-semibold text-sm mb-1"><i class="fas fa-comment-dots mr-2"></i>Rejection Remarks</h4>
+                                    <p class="text-sm text-base-content/70 whitespace-pre-line">${po.rejection_reason}</p>
+                                </div>
+                            ` : ''}
                         </div>
                     </div>
                 `;
@@ -1185,16 +1277,16 @@
 
         async function submitPO(id) {
             const confirmed = await AuthService.confirmAction({
-                title: 'Submit Purchase Order',
-                message: 'Send this PO to the General Manager for approval?',
-                confirmText: 'Submit',
-                icon: 'fa-paper-plane',
+                title: 'Finalize Purchase Order',
+                message: 'Finalize this PO? It will be auto-approved by Purchasing.',
+                confirmText: 'Finalize PO',
+                icon: 'fa-check',
                 tone: 'primary'
             });
             if (!confirmed) return;
             try {
                 await PurchasingService.submitPO(id);
-                showToast('PO submitted for approval', 'success');
+                showToast('PO finalized and approved', 'success');
                 viewPODetail(id);
             } catch (e) { showToast(e?.message || 'Failed to submit', 'error'); }
         }
@@ -1208,11 +1300,22 @@
                 tone: 'success'
             });
             if (!confirmed) return;
+            const approvalRemarks = await AuthService.promptText({
+                title: 'Approval Remarks',
+                message: 'Add remarks for Purchasing before this PO moves forward.',
+                label: 'Approval remarks',
+                placeholder: 'Example: Approved as requested',
+                confirmText: 'Continue',
+                icon: 'fa-comment-dots',
+                tone: 'success',
+                required: false
+            });
+            if (approvalRemarks === null) return;
             try {
                 const stepUpToken = await AuthService.promptStepUp('po_approval', 'PO approval');
                 if (!stepUpToken) return;
 
-                await PurchasingService.approvePO(id, stepUpToken);
+                await PurchasingService.approvePO(id, stepUpToken, approvalRemarks);
                 showToast('PO approved!', 'success');
                 viewPODetail(id);
             } catch (e) { showToast(e?.message || 'Failed to approve', 'error'); }
@@ -1237,19 +1340,38 @@
         }
 
         async function markOrdered(id) {
+            if (markOrderedInFlight.has(id)) return;
             const confirmed = await AuthService.confirmAction({
-                title: 'Mark PO as Ordered',
+                title: 'Send Final PO',
                 message: 'Confirm that this approved PO has been sent to the supplier.',
-                confirmText: 'Mark Ordered',
-                icon: 'fa-shipping-fast',
+                confirmText: 'Send Final PO',
+                icon: 'fa-paper-plane',
+                tone: 'primary'
+            });
+            if (!confirmed) return;
+            markOrderedInFlight.add(id);
+            try {
+                await PurchasingService.markPOOrdered(id);
+                showToast('Final PO sent to supplier', 'success');
+                viewPODetail(id);
+            } catch (e) { showToast(e?.message || 'Failed to update', 'error'); }
+            finally { markOrderedInFlight.delete(id); }
+        }
+
+        async function closePO(id) {
+            const confirmed = await AuthService.confirmAction({
+                title: 'Close Purchase Order',
+                message: 'Close this fully received PO? Closed POs remain available for history and finance records.',
+                confirmText: 'Close PO',
+                icon: 'fa-lock',
                 tone: 'primary'
             });
             if (!confirmed) return;
             try {
-                await PurchasingService.markPOOrdered(id);
-                showToast('PO marked as ordered', 'success');
+                await PurchasingService.closePO(id);
+                showToast('PO closed', 'success');
                 viewPODetail(id);
-            } catch (e) { showToast(e?.message || 'Failed to update', 'error'); }
+            } catch (e) { showToast(e?.message || 'Failed to close PO', 'error'); }
         }
 
         async function cancelPO(id) {
@@ -1282,6 +1404,21 @@
 
         function formatCurrency(amount) {
             return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatPOStatus(status) {
+            const labels = {
+                draft: 'Draft',
+                pending: 'Pending Finalization',
+                approved: 'Approved',
+                rejected: 'Rejected',
+                partial_received: 'Partially Received',
+                received: 'Fully Received',
+                closed: 'Closed',
+                ordered: 'Approved',
+                cancelled: 'Cancelled'
+            };
+            return labels[status] || PurchasingService.formatStatus(status);
         }
 
         function formatDate(dateStr) {

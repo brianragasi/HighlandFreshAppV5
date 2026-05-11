@@ -11,6 +11,7 @@ Auth::requireAuth();
 
 // Get database connection
 $conn = Database::getInstance()->getConnection();
+ensureIngredientMasterSettings($conn);
 
 // Get request method and handle routing
 $method = $_SERVER['REQUEST_METHOD'];
@@ -117,6 +118,23 @@ function getIngredients($conn) {
             'pages' => ceil($total / $limit)
         ]
     ]);
+}
+
+function ensureIngredientMasterSettings($conn) {
+    if (!auditColumnExists($conn, 'ingredients', 'is_perishable')) {
+        $conn->exec("ALTER TABLE `ingredients` ADD COLUMN `is_perishable` TINYINT(1) NOT NULL DEFAULT 1 AFTER `shelf_life_days`");
+        $conn->exec("
+            UPDATE `ingredients`
+            SET `is_perishable` = CASE
+                WHEN LOWER(CONCAT(COALESCE(ingredient_name, ''), ' ', COALESCE(storage_requirements, ''))) REGEXP 'bottle|cap|label|ribbon|cellophane|plastic|packaging' THEN 0
+                ELSE 1
+            END
+        ");
+    }
+
+    if (!auditColumnExists($conn, 'ingredients', 'maximum_stock')) {
+        $conn->exec("ALTER TABLE `ingredients` ADD COLUMN `maximum_stock` DECIMAL(10,2) DEFAULT NULL COMMENT 'Par level / order-up-to stock' AFTER `reorder_point`");
+    }
 }
 
 /**
@@ -231,9 +249,9 @@ function createIngredient($conn) {
     }
     
         $sql = "INSERT INTO ingredients (ingredient_code, ingredient_name, category_id, unit_of_measure,
-            minimum_stock, reorder_point, lead_time_days, current_stock, unit_cost, 
-            storage_location, storage_requirements, shelf_life_days, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            minimum_stock, reorder_point, maximum_stock, lead_time_days, current_stock, unit_cost, 
+            storage_location, storage_requirements, shelf_life_days, is_perishable, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
     $stmt = $conn->prepare($sql);
     $stmt->execute([
@@ -243,12 +261,14 @@ function createIngredient($conn) {
         $data['unit_of_measure'],
         $data['minimum_stock'] ?? 0,
         $data['reorder_point'] ?? 0,
+        $data['maximum_stock'] ?? null,
         $data['lead_time_days'] ?? 7,
         0,
         $data['unit_cost'] ?? null,
         $data['storage_location'] ?? null,
         $data['storage_requirements'] ?? null,
         $data['shelf_life_days'] ?? null,
+        isset($data['is_perishable']) ? intval($data['is_perishable']) : 1,
         isset($data['is_active']) ? intval($data['is_active']) : 1
     ]);
     
@@ -280,13 +300,13 @@ function updateIngredient($conn, $id) {
     $params = [];
     
     $allowedFields = ['ingredient_name', 'category_id', 'unit_of_measure', 'minimum_stock',
-                      'reorder_point', 'lead_time_days', 'unit_cost',
-                      'storage_location', 'storage_requirements', 'shelf_life_days', 'is_active'];
+                      'reorder_point', 'maximum_stock', 'lead_time_days', 'unit_cost',
+                      'storage_location', 'storage_requirements', 'shelf_life_days', 'is_perishable', 'is_active'];
     
     foreach ($allowedFields as $field) {
         if (isset($data[$field])) {
             $fields[] = "$field = ?";
-            $params[] = $field === 'is_active' ? intval($data[$field]) : $data[$field];
+            $params[] = in_array($field, ['is_active', 'is_perishable'], true) ? intval($data[$field]) : $data[$field];
         }
     }
     

@@ -112,6 +112,10 @@
                             class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i
                                 class="fas fa-truck-ramp-box w-5 text-center text-base-content/60"></i><span>Receive Deliveries</span></a>
                     </li>
+                    <li><a href="waste.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i
+                                class="fas fa-trash-alt w-5 text-center text-base-content/60"></i><span>Spoilage & Waste</span></a>
+                    </li>
                 </ul>
             </div>
         </nav>
@@ -481,6 +485,18 @@
                     </label>
                 </div>
 
+                <div class="form-control mb-4">
+                    <label class="label">
+                        <span class="label-text">Par Level (Max Stock)</span>
+                        <span class="label-text-alt text-base-content/60">Order-up-to target</span>
+                    </label>
+                    <input type="number" class="input input-bordered" id="settingsMaxStock" step="0.01" min="0"
+                        placeholder="Optional">
+                    <label class="label">
+                        <span class="label-text-alt text-base-content/60">Suggested reorder qty = Par Level - Current</span>
+                    </label>
+                </div>
+
                 <div class="modal-action">
                     <button type="button" class="btn btn-ghost"
                         onclick="document.getElementById('settingsModal').close()">Cancel</button>
@@ -832,15 +848,19 @@
                 const days = daysUntil(b.expiry_date);
                 const expClass = days < 0 ? 'badge-error' : days <= 7 ? 'badge-warning' : 'badge-ghost';
                 const remaining = parseFloat(b.remaining_quantity || b.quantity_remaining) || 0;
+                const wasteHref = `waste.html?item_type=ingredient&item_id=${ing.id}&batch_id=${b.id}&reason_category=${days < 0 ? 'expired' : 'damaged'}`;
                 return `
                     <div class="flex items-center justify-between p-3 bg-base-200 rounded-lg mb-2">
                         <div>
                             <p class="font-semibold text-sm">${b.batch_code || b.batch_number || 'No batch #'}</p>
                             <p class="text-xs text-base-content/60">Rcvd: ${formatDate(b.received_date)}</p>
                         </div>
-                        <div class="text-right">
+                        <div class="text-right flex flex-col items-end gap-1">
                             <p class="font-bold">${remaining.toLocaleString()} ${unit}</p>
                             <span class="badge ${expClass} badge-xs">${days < 0 ? 'EXPIRED' : formatDate(b.expiry_date)}</span>
+                            <a class="btn btn-error btn-xs mt-1" href="${wasteHref}">
+                                <i class="fas fa-trash-alt"></i> Record Waste
+                            </a>
                         </div>
                     </div>`;
             }).join('') : '<p class="text-center text-base-content/60 py-4">No batches in stock</p>';
@@ -878,7 +898,7 @@
 
             document.getElementById('detailModalFooter').innerHTML = `
                 <button class="btn btn-ghost" onclick="document.getElementById('detailModal').close()">Close</button>
-                <button class="btn btn-primary btn-sm" onclick="openSettingsModal(${ing.id}, '${escapedName}', ${minStock}, ${ing.lead_time_days || 7}, ${ing.reorder_point || 'null'})"><i class="fas fa-cog"></i> Settings</button>
+                <button class="btn btn-primary btn-sm" onclick="openSettingsModal(${ing.id}, '${escapedName}', ${minStock}, ${ing.lead_time_days || 7}, ${ing.reorder_point || 'null'}, ${ing.maximum_stock || 'null'})"><i class="fas fa-cog"></i> Settings</button>
                 <button class="btn btn-info btn-sm" onclick="openAdjustModal(${ing.id}, '${escapedName}', ${stock}, '${unit}')"><i class="fas fa-sliders-h"></i> Adjust</button>
                 <button class="btn btn-warning btn-sm" onclick="openIssueModal(${ing.id}, '${escapedName}', ${stock}, '${unit}')" ${stock <= 0 ? 'disabled' : ''}><i class="fas fa-arrow-up"></i> Issue</button>
             `;
@@ -949,12 +969,13 @@
             }
         }
 
-        function openSettingsModal(id, name, minStock, leadTime, reorderPoint) {
+        function openSettingsModal(id, name, minStock, leadTime, reorderPoint, maxStock) {
             document.getElementById('settingsIngredientId').value = id;
             document.getElementById('settingsIngredientName').textContent = name;
             document.getElementById('settingsMinStock').value = minStock;
             document.getElementById('settingsLeadTime').value = leadTime;
             document.getElementById('settingsReorderPoint').value = reorderPoint === 'null' || reorderPoint === null ? '' : reorderPoint;
+            document.getElementById('settingsMaxStock').value = maxStock === 'null' || maxStock === null ? '' : maxStock;
             document.getElementById('detailModal').close();
             document.getElementById('settingsModal').showModal();
         }
@@ -965,6 +986,7 @@
             const minStock = document.getElementById('settingsMinStock').value;
             const leadTime = document.getElementById('settingsLeadTime').value;
             const reorderPoint = document.getElementById('settingsReorderPoint').value || null;
+            const maxStock = document.getElementById('settingsMaxStock').value || null;
 
             try {
                 const response = await api.put('/warehouse/raw/ingredients.php', {
@@ -972,7 +994,8 @@
                     ingredient_id: id,
                     minimum_stock: minStock,
                     lead_time_days: leadTime,
-                    reorder_point: reorderPoint
+                    reorder_point: reorderPoint,
+                    maximum_stock: maxStock
                 });
 
                 if (response.success) {

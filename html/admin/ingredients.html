@@ -360,6 +360,7 @@
                                 <th>Ingredient Name</th>
                                 <th>Category</th>
                                 <th>Unit</th>
+                                <th>Expiry</th>
                                 <th>Current Stock</th>
                                 <th>Reorder Point</th>
                                 <th>Unit Cost</th>
@@ -369,7 +370,7 @@
                         </thead>
                         <tbody id="dataTable">
                             <tr>
-                                <td colspan="9" class="text-center py-8">
+                                <td colspan="10" class="text-center py-8">
                                     <i class="fas fa-spinner fa-spin text-2xl text-base-content/40"></i>
                                     <p class="mt-2 text-base-content/60">Loading...</p>
                                 </td>
@@ -432,7 +433,7 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div class="form-control">
                         <label class="label">
                             <span class="label-text font-medium">Minimum Stock</span>
@@ -454,6 +455,15 @@
                         </label>
                     </div>
                     <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-medium">Par Level (Max Stock)</span>
+                        </label>
+                        <input type="number" id="maximum_stock" class="input input-bordered" step="1" min="0" value="0">
+                        <label class="label">
+                            <span class="label-text-alt text-base-content/50">Target level after reorder</span>
+                        </label>
+                    </div>
+                    <div class="form-control">
                         <label class="label"><span class="label-text font-medium">Lead Time (days)</span></label>
                         <input type="number" id="lead_time_days" class="input input-bordered" value="7" min="1">
                         <label class="label">
@@ -472,6 +482,13 @@
                     <div class="form-control">
                         <label class="label"><span class="label-text font-medium">Shelf Life (days)</span></label>
                         <input type="number" id="shelf_life_days" class="input input-bordered" min="1">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-medium">Expiry Handling</span></label>
+                        <select id="is_perishable" class="select select-bordered">
+                            <option value="1">Perishable - require expiry</option>
+                            <option value="0">Non-perishable - no expiry</option>
+                        </select>
                     </div>
                 </div>
 
@@ -567,7 +584,7 @@
 
         async function loadData() {
             const tableBody = document.getElementById('dataTable');
-            tableBody.innerHTML = '<tr><td colspan="9" class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl"></i></td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="10" class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl"></i></td></tr>';
 
             try {
                 const params = {
@@ -611,7 +628,7 @@
             const tableBody = document.getElementById('dataTable');
 
             if (!ingredients || ingredients.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-base-content/60">No ingredients found</td></tr>';
+                tableBody.innerHTML = '<tr><td colspan="10" class="text-center py-8 text-base-content/60">No ingredients found</td></tr>';
                 return;
             }
 
@@ -628,6 +645,11 @@
                     <td><span class="font-semibold">${i.ingredient_name}</span></td>
                     <td>${i.category_name || '-'}</td>
                     <td><span class="badge badge-ghost badge-sm">${i.unit_of_measure}</span></td>
+                    <td>
+                        <span class="badge ${i.is_perishable == 1 ? 'badge-warning' : 'badge-ghost'} badge-sm">
+                            ${i.is_perishable == 1 ? 'Perishable' : 'Non-perishable'}
+                        </span>
+                    </td>
                     <td>
                         <span class="font-semibold ${isDanger ? 'text-error' : isLowStock ? 'text-warning' : ''} flex items-center gap-1">
                             ${currentStock.toLocaleString()}
@@ -700,9 +722,11 @@
                     // Display whole numbers — DB stores DECIMAL(10,2) but we track in whole units
                     document.getElementById('minimum_stock').value = parseInt(i.minimum_stock, 10) || 0;
                     document.getElementById('reorder_point').value = parseInt(i.reorder_point, 10) || 0;
+                    document.getElementById('maximum_stock').value = parseInt(i.maximum_stock, 10) || 0;
                     document.getElementById('lead_time_days').value = i.lead_time_days || 7;
                     document.getElementById('unit_cost').value = i.unit_cost ? parseFloat(i.unit_cost).toFixed(2) : '';
                     document.getElementById('shelf_life_days').value = i.shelf_life_days || '';
+                    document.getElementById('is_perishable').value = String(i.is_perishable ?? 1);
                     document.getElementById('storage_location').value = i.storage_location || '';
                     document.getElementById('storage_requirements').value = i.storage_requirements || '';
                     document.getElementById('is_active').value = i.is_active;
@@ -750,9 +774,11 @@
                 unit_of_measure: document.getElementById('unit_of_measure').value,
                 minimum_stock: document.getElementById('minimum_stock').value,
                 reorder_point: document.getElementById('reorder_point').value,
+                maximum_stock: document.getElementById('maximum_stock').value,
                 lead_time_days: document.getElementById('lead_time_days').value,
                 unit_cost: document.getElementById('unit_cost').value || null,
                 shelf_life_days: document.getElementById('shelf_life_days').value || null,
+                is_perishable: document.getElementById('is_perishable').value,
                 storage_location: document.getElementById('storage_location').value,
                 storage_requirements: document.getElementById('storage_requirements').value,
                 is_active: document.getElementById('is_active').value

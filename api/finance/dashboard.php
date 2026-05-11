@@ -16,6 +16,7 @@ $action = getParam('action', 'stats');
 
 try {
     $db = Database::getInstance()->getConnection();
+    ensureProcurementNotificationSupport($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -49,9 +50,45 @@ function handleGet($db, $action) {
         case 'receivables_aging':
             getReceivablesAging($db);
             break;
+        case 'notifications':
+            getFinanceNotifications($db);
+            break;
         default:
             Response::error('Invalid action', 400);
     }
+}
+
+function ensureProcurementNotificationSupport($db) {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS `procurement_notifications` (
+            `id` INT(11) NOT NULL AUTO_INCREMENT,
+            `target_role` VARCHAR(50) NOT NULL,
+            `notification_type` VARCHAR(50) NOT NULL,
+            `title` VARCHAR(150) NOT NULL,
+            `message` TEXT NOT NULL,
+            `reference_type` VARCHAR(50) DEFAULT NULL,
+            `reference_id` INT(11) DEFAULT NULL,
+            `is_read` TINYINT(1) NOT NULL DEFAULT 0,
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_procurement_notifications_role` (`target_role`, `is_read`),
+            KEY `idx_procurement_notifications_reference` (`reference_type`, `reference_id`),
+            KEY `idx_procurement_notifications_created` (`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    ");
+}
+
+function getFinanceNotifications($db) {
+    $stmt = $db->prepare("
+        SELECT *
+        FROM procurement_notifications
+        WHERE target_role = 'finance_officer'
+          AND is_read = 0
+        ORDER BY created_at DESC
+        LIMIT 8
+    ");
+    $stmt->execute();
+    Response::success($stmt->fetchAll(), 'Finance notifications retrieved');
 }
 
 function getDashboardStats($db) {

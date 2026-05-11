@@ -68,6 +68,7 @@ if ($requestMethod !== 'GET') {
 
 try {
     $db = Database::getInstance()->getConnection();
+    ensureProcurementNotificationSupport($db);
     syncAcceptedMilkInventory($db);
 
     $today = date('Y-m-d');
@@ -244,6 +245,42 @@ try {
     $pendingReqsList->execute();
     $pendingReqListData = $pendingReqsList->fetchAll();
 
+    // GM-approved POs awaiting warehouse receiving
+    $pendingDeliveries = $db->prepare("
+        SELECT
+            COUNT(*) as count,
+            SUM(CASE WHEN po.expected_delivery IS NOT NULL AND po.expected_delivery < CURDATE() THEN 1 ELSE 0 END) as overdue_count
+        FROM purchase_orders po
+        WHERE po.status IN ('approved', 'ordered', 'partial_received')
+    ");
+    $pendingDeliveries->execute();
+    $pendingDeliveryData = $pendingDeliveries->fetch();
+
+    $pendingDeliveryList = $db->prepare("
+        SELECT
+            po.id,
+            po.po_number,
+            po.order_date,
+            po.expected_delivery,
+            po.status,
+            po.total_amount,
+            s.supplier_name,
+            s.supplier_code,
+            (SELECT COUNT(*) FROM purchase_order_items poi WHERE poi.po_id = po.id) as item_count,
+            (SELECT COALESCE(SUM(poi.quantity), 0) FROM purchase_order_items poi WHERE poi.po_id = po.id) as total_ordered,
+            (SELECT COALESCE(SUM(poi.quantity_received), 0) FROM purchase_order_items poi WHERE poi.po_id = po.id) as total_accepted
+        FROM purchase_orders po
+        JOIN suppliers s ON po.supplier_id = s.id
+        WHERE po.status IN ('approved', 'ordered', 'partial_received')
+        ORDER BY
+            CASE WHEN po.expected_delivery IS NOT NULL AND po.expected_delivery < CURDATE() THEN 0 ELSE 1 END,
+            po.expected_delivery ASC,
+            po.order_date ASC
+        LIMIT 5
+    ");
+    $pendingDeliveryList->execute();
+    $pendingDeliveryListData = $pendingDeliveryList->fetchAll();
+
     // Low stock alerts (combined)
     $lowStockAlerts = $db->prepare("
         SELECT
@@ -299,6 +336,17 @@ try {
     $pendingMilk->execute();
     $pendingMilkList = $pendingMilk->fetchAll();
 
+    $notificationsStmt = $db->prepare("
+        SELECT *
+        FROM procurement_notifications
+        WHERE target_role = 'warehouse_raw'
+          AND is_read = 0
+        ORDER BY created_at DESC
+        LIMIT 8
+    ");
+    $notificationsStmt->execute();
+    $notifications = $notificationsStmt->fetchAll();
+
     // Milk by type summary
     $milkByType = $db->prepare("
         SELECT
@@ -349,13 +397,39 @@ try {
             'high_priority_count' => (int) ($pendingReqData['high_priority'] ?? 0),
             'fulfilled_today' => (int) ($todayFulfilledData['count'] ?? 0)
         ],
+        'pending_deliveries' => [
+            'count' => (int) ($pendingDeliveryData['count'] ?? 0),
+            'overdue_count' => (int) ($pendingDeliveryData['overdue_count'] ?? 0)
+        ],
+        'pending_deliveries_list' => $pendingDeliveryListData,
         'pending_requisitions_list' => $pendingReqListData,
         'low_stock_alerts' => $lowStockAlertList,
         'pending_milk_storage' => $pendingMilkList,
+        'notifications' => $notifications,
         'recent_transactions' => $recentTxList
     ], 'Dashboard data retrieved successfully');
 
 } catch (Exception $e) {
     error_log("Warehouse Raw Dashboard API error: " . $e->getMessage());
     Response::error('An error occurred: ' . $e->getMessage(), 500);
+}
+
+function ensureProcurementNotificationSupport($db) {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS `procurement_notifications` (
+            `id` INT(11) NOT NULL AUTO_INCREMENT,
+            `target_role` VARCHAR(50) NOT NULL,
+            `notification_type` VARCHAR(50) NOT NULL,
+            `title` VARCHAR(150) NOT NULL,
+            `message` TEXT NOT NULL,
+            `reference_type` VARCHAR(50) DEFAULT NULL,
+            `reference_id` INT(11) DEFAULT NULL,
+            `is_read` TINYINT(1) NOT NULL DEFAULT 0,
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_procurement_notifications_role` (`target_role`, `is_read`),
+            KEY `idx_procurement_notifications_reference` (`reference_type`, `reference_id`),
+            KEY `idx_procurement_notifications_created` (`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    ");
 }

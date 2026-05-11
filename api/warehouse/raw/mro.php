@@ -20,6 +20,7 @@ $currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'maintenan
 
 try {
     $db = Database::getInstance()->getConnection();
+    ensureMROPerishabilitySupport($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -37,6 +38,16 @@ try {
 } catch (Exception $e) {
     error_log("Warehouse Raw MRO API error: " . $e->getMessage());
     Response::error('An error occurred: ' . $e->getMessage(), 500);
+}
+
+function ensureMROPerishabilitySupport($db) {
+    if (!auditColumnExists($db, 'mro_items', 'is_perishable')) {
+        $db->exec("ALTER TABLE `mro_items` ADD COLUMN `is_perishable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `is_critical`");
+    }
+
+    if (!auditColumnExists($db, 'mro_items', 'maximum_stock')) {
+        $db->exec("ALTER TABLE `mro_items` ADD COLUMN `maximum_stock` DECIMAL(10,2) DEFAULT NULL COMMENT 'Par level / order-up-to stock' AFTER `reorder_point`");
+    }
 }
 
 /**
@@ -227,9 +238,11 @@ function handlePost($db, $currentUser) {
             $categoryId = getParam('category_id');
             $unitOfMeasure = getParam('unit_of_measure', 'pcs');
             $minimumStock = getParam('minimum_stock', 0);
+            $maximumStock = getParam('maximum_stock');
             $storageLocation = getParam('storage_location');
             $compatibleEquipment = getParam('compatible_equipment');
             $isCritical = getParam('is_critical', 0);
+            $isPerishable = getParam('is_perishable', 0);
             
             if (!$itemCode || !$itemName) {
                 Response::error('Item code and name are required', 400);
@@ -245,8 +258,8 @@ function handlePost($db, $currentUser) {
             $stmt = $db->prepare("
                 INSERT INTO mro_items 
                 (item_code, item_name, category_id, unit_of_measure,
-                 minimum_stock, storage_location, compatible_equipment, is_critical)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 minimum_stock, maximum_stock, storage_location, compatible_equipment, is_critical, is_perishable)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
             $stmt->execute([
                 $itemCode,
@@ -254,9 +267,11 @@ function handlePost($db, $currentUser) {
                 $categoryId,
                 $unitOfMeasure,
                 $minimumStock,
+                $maximumStock !== null && $maximumStock !== '' ? $maximumStock : null,
                 $storageLocation,
                 $compatibleEquipment,
-                $isCritical ? 1 : 0
+                $isCritical ? 1 : 0,
+                $isPerishable ? 1 : 0
             ]);
             
             Response::success(['id' => $db->lastInsertId()], 'MRO item created successfully');
@@ -482,13 +497,13 @@ function handlePut($db, $currentUser) {
             $updateFields = [];
             $params = [];
             
-            $allowedFields = ['item_name', 'category_id', 'minimum_stock', 
-                             'storage_location', 'compatible_equipment', 'is_critical'];
+            $allowedFields = ['item_name', 'category_id', 'minimum_stock', 'maximum_stock',
+                             'storage_location', 'compatible_equipment', 'is_critical', 'is_perishable'];
             
             foreach ($allowedFields as $field) {
                 $value = getParam($field);
                 if ($value !== null) {
-                    if ($field === 'is_critical') {
+                    if ($field === 'is_critical' || $field === 'is_perishable') {
                         $value = $value ? 1 : 0;
                     }
                     $updateFields[] = "$field = ?";

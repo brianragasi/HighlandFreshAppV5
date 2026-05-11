@@ -87,10 +87,6 @@ it from being overwhelming, focus on one category at a time.
   box if it's taking up space).
 
 ## Phase 4: Production & Pricing (Do this last)
-
-- [ ] Automate Finished Goods Pricing: Instead of manually typing the selling
-  price of a finished product, make the system calculate it automatically based
-  on the cost of the raw materials used to make it.
 - [ ] Add a Quality Control (QC) Log: Create a simple form for production staff
   to input machine temperatures and production data, replacing their manual
   pen-and-paper tracking.

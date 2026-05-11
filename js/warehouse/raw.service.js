@@ -181,6 +181,26 @@ const WarehouseRawService = {
         return await api.get(`${this.baseUrl}/ingredients.php`, { params: { action: 'expired' } });
     },
 
+    async getWasteAvailableItems() {
+        return await api.get(`${this.baseUrl}/waste.php`, { params: { action: 'available_items' } });
+    },
+
+    async getWasteBatches(itemType, itemId) {
+        return await api.get(`${this.baseUrl}/waste.php`, { params: { action: 'batches', item_type: itemType, item_id: itemId } });
+    },
+
+    async getWasteRecords() {
+        return await api.get(`${this.baseUrl}/waste.php`, { params: { action: 'list' } });
+    },
+
+    async getRawMaterialWasteReports() {
+        return await api.get(`${this.baseUrl}/waste.php`, { params: { action: 'reports' } });
+    },
+
+    async recordWaste(wasteData) {
+        return await api.post(`${this.baseUrl}/waste.php`, wasteData);
+    },
+
     /**
      * Check stock availability for multiple ingredients
      * @param {Array} items - Array of {ingredient_id, quantity}
