@@ -585,8 +585,33 @@
                 loadRecentDisbursements().catch(e => console.error('Disbursements error:', e)),
                 loadPayablesSummary().catch(e => console.error('Payables error:', e)),
                 loadReceivablesAging().catch(e => console.error('Aging error:', e)),
+                loadNotifications().catch(e => console.error('Notifications error:', e)),
             ];
             await Promise.all(loaders);
+        }
+
+        async function loadNotifications() {
+            const response = await FinanceService.getNotifications();
+            const notifications = response?.data || [];
+            const list = document.getElementById('notificationList');
+            if (!list) return;
+
+            if (!notifications.length) {
+                list.innerHTML = '<li class="text-center py-4 text-base-content/60">No new notifications</li>';
+                return;
+            }
+
+            list.innerHTML = notifications.map(n => `
+                <li>
+                    <a href="payables.html" class="items-start gap-3">
+                        <i class="fas fa-file-invoice-dollar text-warning mt-1"></i>
+                        <span>
+                            <span class="font-semibold block">${n.title}</span>
+                            <span class="text-xs text-base-content/60">${n.message}</span>
+                        </span>
+                    </a>
+                </li>
+            `).join('');
         }
 
         // ========================================

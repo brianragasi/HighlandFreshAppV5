@@ -560,11 +560,14 @@
 
             <!-- Low Stock Alerts -->
             <div class="bg-base-100 rounded-2xl border border-base-300 p-6 mb-6">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="font-bold"><i class="fas fa-exclamation-triangle text-warning mr-2"></i>Low Stock Alerts</h3>
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
+                    <div>
+                        <h3 class="font-bold"><i class="fas fa-exclamation-triangle text-warning mr-2"></i>Low Stock Alerts</h3>
+                        <p class="text-xs text-base-content/60">Based on reorder points and minimum stock levels.</p>
+                    </div>
                     <span class="badge badge-warning badge-sm" id="gmLowStockBadge">0</span>
                 </div>
-                <div id="gmLowStockList" class="space-y-2 max-h-64 overflow-y-auto scrollbar-thin">
+                <div id="gmLowStockList" class="max-h-72 overflow-y-auto scrollbar-thin">
                     <div class="text-center py-8 text-base-content/60">
                         <i class="fas fa-spinner fa-spin mr-2"></i> Loading...
                     </div>
@@ -769,24 +772,75 @@
                 return;
             }
 
-            list.innerHTML = alerts.map(item => {
+            const rows = alerts.map(item => {
                 const stock = parseFloat(item.current_stock || 0);
                 const min = parseFloat(item.minimum_stock || 0);
-                const isOut = stock <= 0;
+                const reorderPoint = item.reorder_point ?? item.minimum_stock;
+                const status = String(item.stock_status || '').toUpperCase();
+                const statusMeta = getStockStatusMeta(status, stock);
+                const unit = item.unit_of_measure ? ` ${item.unit_of_measure}` : '';
+
                 return `
-                    <div class="flex items-center gap-3 p-3 ${isOut ? 'bg-error/10' : 'bg-warning/10'} rounded-xl">
-                        <i class="fas fa-${item.item_type === 'mro' ? 'tools' : 'box'} ${isOut ? 'text-error' : 'text-warning'}"></i>
-                        <div class="flex-1 min-w-0">
-                            <p class="font-semibold text-sm truncate">${item.item_name}</p>
-                            <p class="text-xs text-base-content/60">${item.item_code}</p>
-                        </div>
-                        <div class="text-right">
-                            <p class="font-bold ${isOut ? 'text-error' : 'text-warning'}">${stock}</p>
-                            <p class="text-xs text-base-content/60">Min: ${min}</p>
-                        </div>
-                    </div>
+                    <tr>
+                        <td>
+                            <span class="badge badge-sm ${statusMeta.className}">${statusMeta.label}</span>
+                        </td>
+                        <td>
+                            <div class="font-medium">${escapeHtml(item.item_name)}</div>
+                            <div class="text-xs text-base-content/60">${escapeHtml(item.item_type === 'mro' ? 'MRO' : 'Ingredient')}</div>
+                        </td>
+                        <td class="font-mono text-xs">${escapeHtml(item.item_code)}</td>
+                        <td class="text-right font-semibold">${formatQty(stock)}${unit}</td>
+                        <td class="text-right">${formatQty(reorderPoint)}${unit}</td>
+                        <td class="text-right text-base-content/60">${formatQty(min)}${unit}</td>
+                    </tr>
                 `;
             }).join('');
+
+            list.innerHTML = `
+                <div class="overflow-x-auto">
+                    <table class="table table-sm table-zebra">
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Item</th>
+                                <th>Code</th>
+                                <th class="text-right">Current</th>
+                                <th class="text-right">Reorder Point</th>
+                                <th class="text-right">Minimum</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function getStockStatusMeta(status, stock) {
+            if (status === 'OUT_OF_STOCK' || stock <= 0) {
+                return { label: 'Out of Stock', className: 'badge-error' };
+            }
+            if (status === 'CRITICAL') {
+                return { label: 'Critical', className: 'badge-error badge-outline' };
+            }
+            return { label: 'Low', className: 'badge-warning badge-outline' };
+        }
+
+        function formatQty(value) {
+            const qty = parseFloat(value);
+            if (Number.isNaN(qty)) return '-';
+            return qty.toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+        }
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
     </script>
 </body>

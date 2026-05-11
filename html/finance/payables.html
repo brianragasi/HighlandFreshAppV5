@@ -56,6 +56,10 @@
         .stat-value {
             font-variant-numeric: tabular-nums;
         }
+
+        .muted-hint {
+            color: oklch(var(--bc) / 0.6);
+        }
     </style>
 </head>
 
@@ -280,7 +284,26 @@
                     <div class="text-sm text-base-content/60 mb-1">PO Number</div>
                     <div class="font-bold text-lg" id="payPoNumber">-</div>
                     <div class="text-sm mt-1">Supplier: <span class="font-semibold" id="paySupplier">-</span></div>
-                    <div class="text-sm">Amount: <span class="font-bold text-error" id="payAmount">₱0.00</span></div>
+                    <div class="text-sm">Terms: <span class="font-semibold" id="payTerms">-</span></div>
+                    <div class="text-sm">Due Date: <span class="font-semibold" id="payDueDate">-</span></div>
+                    <div class="text-sm">Balance: <span class="font-bold text-error" id="payAmount">₱0.00</span></div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Payment Date</span></label>
+                        <input type="date" id="payDate" class="input input-bordered w-full">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Amount to Pay</span></label>
+                        <input type="number" id="payAmountInput" class="input input-bordered w-full" min="0.01" step="0.01" placeholder="0.00" oninput="updatePaymentPreview()">
+                    </div>
+                </div>
+
+                <div class="bg-base-200 rounded-xl p-3 mb-3 text-xs">
+                    <div class="flex items-center justify-between"><span class="muted-hint">Total Payable</span><strong id="payTotal">₱0.00</strong></div>
+                    <div class="flex items-center justify-between"><span class="muted-hint">Already Paid</span><strong id="payPaid">₱0.00</strong></div>
+                    <div class="flex items-center justify-between"><span class="muted-hint">Remaining Balance</span><strong id="payRemaining">₱0.00</strong></div>
                 </div>
 
                 <div class="form-control mb-3">
@@ -296,6 +319,23 @@
                     <label class="label"><span class="label-text">Reference Number</span></label>
                     <input type="text" id="payReference" class="input input-bordered w-full"
                         placeholder="Check # / Transfer Ref #">
+                </div>
+
+                <div class="bg-base-200 rounded-xl p-3 mb-3 text-xs">
+                    <div class="font-semibold mb-2">Verification Checklist</div>
+                    <label class="label cursor-pointer justify-start gap-3">
+                        <input type="checkbox" id="verifyPo" class="checkbox checkbox-sm checkbox-primary">
+                        <span class="label-text">I verified the PO document.</span>
+                    </label>
+                    <label class="label cursor-pointer justify-start gap-3">
+                        <input type="checkbox" id="verifyRR" class="checkbox checkbox-sm checkbox-primary">
+                        <span class="label-text">I verified the Receiving Report.</span>
+                    </label>
+                    <label class="label cursor-pointer justify-start gap-3">
+                        <input type="checkbox" id="verifyInvoice" class="checkbox checkbox-sm checkbox-primary">
+                        <span class="label-text">I verified the supplier invoice.</span>
+                    </label>
+                    <div class="text-xs text-base-content/60 mt-1" id="paymentVerifyHint">RR and invoice must be available before payment.</div>
                 </div>
 
                 <div class="form-control mb-4">
@@ -347,6 +387,8 @@
     <script>
         let currentPage = 1;
         let searchTimeout;
+        let payablesIndex = {};
+        let currentPayable = null;
 
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -395,13 +437,21 @@
                 const meta = response?.pagination || response?.meta || {};
                 const tbody = document.getElementById('payablesBody');
 
+                payablesIndex = {};
                 // Summary counts
                 let totalUnpaid = 0, countUnpaid = 0, totalPartial = 0, countPartial = 0, totalOverdue = 0, countOverdue = 0;
                 payables.forEach(po => {
-                    const payableAmount = parseFloat(po.payable_total ?? po.total_amount ?? 0);
-                    if (po.payment_status === 'unpaid') { totalUnpaid += payableAmount; countUnpaid++; }
-                    if (po.payment_status === 'partial') { totalPartial += payableAmount; countPartial++; }
-                    if (po.is_overdue == 1) { totalOverdue += payableAmount; countOverdue++; }
+                    const payableTotal = parseFloat(po.payable_total ?? po.total_amount ?? 0);
+                    const amountPaid = parseFloat(po.amount_paid ?? 0);
+                    const balanceDue = Math.max(payableTotal - amountPaid, 0);
+                    po.payable_total = payableTotal;
+                    po.amount_paid = amountPaid;
+                    po.balance_due = balanceDue;
+                    payablesIndex[po.id] = po;
+
+                    if (po.payment_status === 'unpaid') { totalUnpaid += balanceDue; countUnpaid++; }
+                    if (po.payment_status === 'partial') { totalPartial += balanceDue; countPartial++; }
+                    if (po.is_overdue == 1) { totalOverdue += balanceDue; countOverdue++; }
                 });
                 document.getElementById('summaryTotalUnpaid').textContent = formatCurrency(totalUnpaid);
                 document.getElementById('summaryCountUnpaid').textContent = countUnpaid;
@@ -422,6 +472,7 @@
                     const payBadge = FinanceService.getPaymentBadgeClass(po.payment_status);
                     const statusBadge = FinanceService.getStatusBadgeClass(po.status);
                     const overdueClass = po.is_overdue == 1 ? 'bg-error/5' : '';
+                    const canPay = po.balance_due > 0 && po.payment_status !== 'cancelled' && po.rr_number && po.invoice_number;
                     return `
                         <tr class="hover ${overdueClass}">
                             <td>
@@ -430,14 +481,18 @@
                             </td>
                             <td>
                                 <div class="font-medium">${po.supplier_name}</div>
-                                <div class="text-xs text-base-content/50">${po.supplier_code} • ${po.payment_terms || '30 days'}</div>
+                                <div class="text-xs text-base-content/50">${po.supplier_code} • ${formatPaymentTerms(po.payment_terms || po.supplier_terms)}</div>
                             </td>
                             <td class="text-sm">${formatDate(po.order_date)}</td>
                             <td class="text-sm max-w-xs">
                                 <div class="font-medium">${po.item_count} item${parseInt(po.item_count || 0, 10) === 1 ? '' : 's'}</div>
                                 <div class="text-xs text-base-content/60 truncate" title="${po.item_summary || ''}">${po.item_summary || '-'}</div>
                             </td>
-                            <td class="font-semibold">${formatCurrency(po.payable_total ?? po.total_amount)}</td>
+                            <td>
+                                <div class="font-semibold">${formatCurrency(po.payable_total ?? po.total_amount)}</div>
+                                <div class="text-xs text-base-content/60">Paid: ${formatCurrency(po.amount_paid)} | Bal: ${formatCurrency(po.balance_due)}</div>
+                                <div class="text-xs text-base-content/50">RR: ${po.rr_number || 'Missing'} | Inv: ${po.invoice_number || 'Missing'}</div>
+                            </td>
                             <td><span class="badge badge-sm ${statusBadge}">${FinanceService.formatStatus(po.status)}</span></td>
                             <td><span class="badge badge-sm ${payBadge}">${FinanceService.formatStatus(po.payment_status)}</span></td>
                             <td>
@@ -446,7 +501,7 @@
                                         <i class="fas fa-eye"></i>
                                     </button>
                                     ${po.payment_status !== 'paid' ? `
-                                    <button class="btn btn-primary btn-xs" onclick="openPaymentModal(${po.id}, '${po.po_number}', '${po.supplier_name.replace(/'/g, "\\'")}', ${po.payable_total ?? po.total_amount})" title="Record Payment">
+                                    <button class="btn btn-primary btn-xs" onclick="openPaymentModal(${po.id})" title="Record Payment" ${canPay ? '' : 'disabled'}>
                                         <i class="fas fa-money-bill-wave"></i>
                                     </button>` : ''}
                                 </div>
@@ -490,15 +545,46 @@
         // PAYMENT
         // ========================================
 
-        function openPaymentModal(id, poNumber, supplier, amount) {
+        function openPaymentModal(id) {
+            const po = payablesIndex[id];
+            if (!po) return;
+            currentPayable = po;
+
             document.getElementById('payPoId').value = id;
-            document.getElementById('payPoNumber').textContent = poNumber;
-            document.getElementById('paySupplier').textContent = supplier;
-            document.getElementById('payAmount').textContent = formatCurrency(amount);
+            document.getElementById('payPoNumber').textContent = po.po_number;
+            document.getElementById('paySupplier').textContent = po.supplier_name;
+            document.getElementById('payTerms').textContent = formatPaymentTerms(po.payment_terms || po.supplier_terms);
+            document.getElementById('payDueDate').textContent = formatDate(po.due_date);
+            document.getElementById('payAmount').textContent = formatCurrency(po.balance_due);
+            document.getElementById('payTotal').textContent = formatCurrency(po.payable_total);
+            document.getElementById('payPaid').textContent = formatCurrency(po.amount_paid);
+            document.getElementById('payRemaining').textContent = formatCurrency(po.balance_due);
+
+            document.getElementById('payDate').value = new Date().toISOString().slice(0, 10);
+            document.getElementById('payAmountInput').value = po.balance_due.toFixed(2);
             document.getElementById('payMethod').value = 'cash';
             document.getElementById('payReference').value = '';
             document.getElementById('payNotes').value = '';
+            document.getElementById('verifyPo').checked = false;
+            document.getElementById('verifyRR').checked = false;
+            document.getElementById('verifyInvoice').checked = false;
+
+            const verifyHint = document.getElementById('paymentVerifyHint');
+            if (verifyHint) {
+                const missing = [];
+                if (!po.rr_number) missing.push('receiving report');
+                if (!po.invoice_number) missing.push('invoice');
+                verifyHint.textContent = missing.length ? `Missing ${missing.join(' and ')}. Payment is blocked until documents are complete.` : 'All required documents are available.';
+            }
+
             document.getElementById('paymentModal').showModal();
+        }
+
+        function updatePaymentPreview() {
+            if (!currentPayable) return;
+            const amount = parseFloat(document.getElementById('payAmountInput').value || 0);
+            const remaining = Math.max(currentPayable.balance_due - amount, 0);
+            document.getElementById('payRemaining').textContent = formatCurrency(remaining);
         }
 
         document.getElementById('paymentForm').addEventListener('submit', async function (e) {
@@ -508,6 +594,37 @@
             btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Processing...';
 
             try {
+                if (!currentPayable) {
+                    showToast('No payable selected', 'error');
+                    return;
+                }
+
+                const paymentAmount = parseFloat(document.getElementById('payAmountInput').value || 0);
+                const paymentDate = document.getElementById('payDate').value;
+                const verifyPo = document.getElementById('verifyPo').checked;
+                const verifyRR = document.getElementById('verifyRR').checked;
+                const verifyInvoice = document.getElementById('verifyInvoice').checked;
+
+                if (!paymentDate) {
+                    showToast('Payment date is required', 'error');
+                    return;
+                }
+
+                if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+                    showToast('Payment amount must be greater than zero', 'error');
+                    return;
+                }
+
+                if (paymentAmount > currentPayable.balance_due) {
+                    showToast('Payment exceeds remaining balance', 'error');
+                    return;
+                }
+
+                if (!verifyPo || !verifyRR || !verifyInvoice) {
+                    showToast('Please verify PO, Receiving Report, and invoice before payment', 'error');
+                    return;
+                }
+
                 const stepUpToken = await AuthService.promptStepUp('payment_release', 'payment release');
                 if (!stepUpToken) {
                     return;
@@ -518,6 +635,11 @@
                     payment_method: document.getElementById('payMethod').value,
                     reference_number: document.getElementById('payReference').value,
                     notes: document.getElementById('payNotes').value,
+                    payment_amount: paymentAmount,
+                    payment_date: paymentDate,
+                    verify_po: verifyPo,
+                    verify_rr: verifyRR,
+                    verify_invoice: verifyInvoice,
                     step_up_token: stepUpToken
                 });
                 document.getElementById('paymentModal').close();
@@ -576,6 +698,30 @@
                             <p class="text-sm text-base-content/60">Payment</p>
                             <span class="badge ${FinanceService.getPaymentBadgeClass(po.payment_status)}">${FinanceService.formatStatus(po.payment_status)}</span>
                         </div>
+                        <div>
+                            <p class="text-sm text-base-content/60">Payment Terms</p>
+                            <p class="font-medium">${formatPaymentTerms(po.payment_terms || po.supplier_terms)}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-base-content/60">Due Date</p>
+                            <p class="font-medium">${formatDate(po.due_date)}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-base-content/60">Amount Paid</p>
+                            <p class="font-medium">${formatCurrency(po.amount_paid)}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-base-content/60">Balance Due</p>
+                            <p class="font-semibold">${formatCurrency(po.balance_due)}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-base-content/60">Receiving Report</p>
+                            <p class="font-medium">${po.rr_number || '-'}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-base-content/60">Invoice Number</p>
+                            <p class="font-medium">${po.invoice_number || '-'}</p>
+                        </div>
                     </div>
 
                     <div class="divider my-2">Items</div>
@@ -604,6 +750,29 @@
                         </table>
                     </div>
 
+                    <div class="divider my-2">Payments</div>
+                    ${po.payments && po.payments.length ? `
+                        <div class="overflow-x-auto">
+                            <table class="table table-xs">
+                                <thead>
+                                    <tr><th>Date</th><th>Amount</th><th>Method</th><th>Reference</th><th>Remarks</th><th>Recorded By</th></tr>
+                                </thead>
+                                <tbody>
+                                    ${po.payments.map(pay => `
+                                        <tr>
+                                            <td>${formatDate(pay.payment_date)}</td>
+                                            <td class="font-semibold">${formatCurrency(pay.amount_paid)}</td>
+                                            <td>${formatPaymentMethod(pay.payment_method)}</td>
+                                            <td>${pay.reference_number || '-'}</td>
+                                            <td>${pay.remarks || '-'}</td>
+                                            <td>${pay.paid_by_name || 'Finance'}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    ` : '<p class="text-sm text-base-content/60">No payments recorded yet.</p>'}
+
                     ${po.notes ? `<div class="mt-3 p-3 bg-base-200 rounded-lg text-sm"><strong>Notes:</strong> ${po.notes}</div>` : ''}
                 `;
             } catch (error) {
@@ -622,6 +791,27 @@
         function formatDate(dateStr) {
             if (!dateStr) return '-';
             return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function formatPaymentTerms(terms) {
+            if (!terms) return '-';
+            const value = String(terms);
+            if (value === 'cash') return 'Cash';
+            if (value.startsWith('credit_')) {
+                const days = value.replace('credit_', '');
+                return `Credit ${days} days`;
+            }
+            return value.replace(/_/g, ' ');
+        }
+
+        function formatPaymentMethod(method) {
+            if (!method) return '-';
+            const map = {
+                cash: 'Cash',
+                check: 'Check',
+                bank_transfer: 'Bank Transfer'
+            };
+            return map[method] || method.replace(/_/g, ' ');
         }
 
         function showToast(message, type = 'info') {

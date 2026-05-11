@@ -101,33 +101,72 @@ try {
                          GROUP BY role ORDER BY count DESC");
     $stats['role_distribution'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-   // Low stock alerts (ingredients + MRO)
-   $lowStockStmt = $pdo->prepare("
-      SELECT
-         'ingredient' as item_type,
-         ingredient_code as item_code,
-         ingredient_name as item_name,
-         current_stock,
-         minimum_stock,
-         unit_of_measure
-      FROM ingredients
-      WHERE is_active = 1 AND current_stock <= minimum_stock
-      UNION ALL
-      SELECT
-         'mro' as item_type,
-         item_code as item_code,
-         item_name as item_name,
-         current_stock,
-         minimum_stock,
-         unit_of_measure
-      FROM mro_items
-      WHERE is_active = 1 AND current_stock <= minimum_stock
-      ORDER BY (current_stock / NULLIF(minimum_stock, 0)) ASC
-      LIMIT 10
-   ");
-   $lowStockStmt->execute();
-   $stats['low_stock_alerts'] = $lowStockStmt->fetchAll(PDO::FETCH_ASSOC);
-   $stats['low_stock_count'] = count($stats['low_stock_alerts']);
+      // Low stock alerts (ingredients + MRO) using reorder point
+      $ingredientReorderExpr = auditColumnExists($pdo, 'ingredients', 'reorder_point')
+         ? 'COALESCE(i.reorder_point, i.minimum_stock * 1.5)'
+         : 'i.minimum_stock * 1.5';
+      $mroReorderExpr = auditColumnExists($pdo, 'mro_items', 'reorder_point')
+         ? 'COALESCE(m.reorder_point, m.minimum_stock * 1.5)'
+         : 'm.minimum_stock * 1.5';
+
+      $lowStockSql = "
+         SELECT * FROM (
+            SELECT
+               'ingredient' as item_type,
+               i.ingredient_code as item_code,
+               i.ingredient_name as item_name,
+               i.current_stock,
+               i.minimum_stock,
+               {$ingredientReorderExpr} as reorder_point,
+               i.unit_of_measure,
+               CASE
+                  WHEN i.current_stock <= 0 THEN 'OUT_OF_STOCK'
+                  WHEN i.current_stock <= i.minimum_stock THEN 'CRITICAL'
+                  WHEN i.current_stock <= {$ingredientReorderExpr} THEN 'LOW'
+                  ELSE 'OK'
+               END as stock_status,
+               (i.current_stock / NULLIF({$ingredientReorderExpr}, 0)) as stock_ratio
+            FROM ingredients i
+            WHERE i.is_active = 1
+              AND i.current_stock <= {$ingredientReorderExpr}
+
+            UNION ALL
+
+            SELECT
+               'mro' as item_type,
+               m.item_code as item_code,
+               m.item_name as item_name,
+               m.current_stock,
+               m.minimum_stock,
+               {$mroReorderExpr} as reorder_point,
+               m.unit_of_measure,
+               CASE
+                  WHEN m.current_stock <= 0 THEN 'OUT_OF_STOCK'
+                  WHEN m.current_stock <= m.minimum_stock THEN 'CRITICAL'
+                  WHEN m.current_stock <= {$mroReorderExpr} THEN 'LOW'
+                  ELSE 'OK'
+               END as stock_status,
+               (m.current_stock / NULLIF({$mroReorderExpr}, 0)) as stock_ratio
+            FROM mro_items m
+            WHERE m.is_active = 1
+              AND m.current_stock <= {$mroReorderExpr}
+         ) as low_stock
+         ORDER BY
+            CASE stock_status
+               WHEN 'OUT_OF_STOCK' THEN 1
+               WHEN 'CRITICAL' THEN 2
+               WHEN 'LOW' THEN 3
+               ELSE 4
+            END,
+            stock_ratio ASC,
+            item_name ASC
+         LIMIT 15
+      ";
+
+      $lowStockStmt = $pdo->prepare($lowStockSql);
+      $lowStockStmt->execute();
+      $stats['low_stock_alerts'] = $lowStockStmt->fetchAll(PDO::FETCH_ASSOC);
+      $stats['low_stock_count'] = count($stats['low_stock_alerts']);
     
     Response::success($stats);
     
