@@ -21,6 +21,7 @@ $action = getParam('action', 'pending_pos');
 
 try {
     $db = Database::getInstance()->getConnection();
+    ensureProcurementNotificationSupport($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -38,6 +39,35 @@ try {
 } catch (Exception $e) {
     error_log("Receiving Report API Error: " . $e->getMessage());
     Response::error('Server error: ' . $e->getMessage(), 500);
+}
+
+function ensureProcurementNotificationSupport($db) {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS `procurement_notifications` (
+            `id` INT(11) NOT NULL AUTO_INCREMENT,
+            `target_role` VARCHAR(50) NOT NULL,
+            `notification_type` VARCHAR(50) NOT NULL,
+            `title` VARCHAR(150) NOT NULL,
+            `message` TEXT NOT NULL,
+            `reference_type` VARCHAR(50) DEFAULT NULL,
+            `reference_id` INT(11) DEFAULT NULL,
+            `is_read` TINYINT(1) NOT NULL DEFAULT 0,
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_procurement_notifications_role` (`target_role`, `is_read`),
+            KEY `idx_procurement_notifications_reference` (`reference_type`, `reference_id`),
+            KEY `idx_procurement_notifications_created` (`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    ");
+}
+
+function createProcurementNotification($db, $targetRole, $type, $title, $message, $referenceType = null, $referenceId = null) {
+    $stmt = $db->prepare("
+        INSERT INTO procurement_notifications
+        (target_role, notification_type, title, message, reference_type, reference_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ");
+    $stmt->execute([$targetRole, $type, $title, $message, $referenceType, $referenceId]);
 }
 
 /**
@@ -405,6 +435,7 @@ function getSupplierRejections($db) {
 function handlePost($db, $action, $currentUser) {
     switch ($action) {
         case 'create':
+            requireActionRole($currentUser, ['warehouse_raw'], 'Only Warehouse Raw can receive deliveries');
             createReceivingReport($db, $currentUser);
             break;
             
@@ -550,6 +581,16 @@ function createReceivingReport($db, $currentUser) {
             SET status = ?, received_at = NOW(), updated_at = NOW() 
             WHERE id = ?
         ")->execute([$newStatus, $poId]);
+
+        createProcurementNotification(
+            $db,
+            'finance_officer',
+            $newStatus === 'received' ? 'po_received_pending_payment' : 'po_partially_received_pending_payment',
+            $newStatus === 'received' ? 'PO received for payment review' : 'PO partially received',
+            'PO ' . $po['po_number'] . ' has been ' . ($newStatus === 'received' ? 'fully received' : 'partially received') . ' by Warehouse and is ready for Finance review.',
+            'purchase_order',
+            $poId
+        );
         
         // Log audit
         logAudit($currentUser['user_id'], 'CREATE', 'receiving_reports', $rrId, null, [

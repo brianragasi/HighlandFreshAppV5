@@ -95,8 +95,11 @@ const PurchasingService = {
         return await api.put(`/purchasing/purchase_orders.php?action=submit&id=${id}`, {});
     },
 
-    async approvePO(id, stepUpToken) {
-        return await api.put(`/purchasing/purchase_orders.php?action=approve&id=${id}`, { step_up_token: stepUpToken });
+    async approvePO(id, stepUpToken, approvalRemarks = '') {
+        return await api.put(`/purchasing/purchase_orders.php?action=approve&id=${id}`, {
+            step_up_token: stepUpToken,
+            approval_remarks: approvalRemarks
+        });
     },
 
     async rejectPO(id, reason) {
@@ -113,6 +116,10 @@ const PurchasingService = {
 
     async cancelPO(id, reason) {
         return await api.put(`/purchasing/purchase_orders.php?action=cancel&id=${id}`, { reason });
+    },
+
+    async closePO(id) {
+        return await api.put(`/purchasing/purchase_orders.php?action=close&id=${id}`, {});
     },
 
     async updatePaymentStatus(id, paymentStatus) {
@@ -148,8 +155,24 @@ const PurchasingService = {
         return await api.post('/purchasing/purchase_requests.php?action=create', data);
     },
 
-    async approvePR(id) {
-        return await api.put(`/purchasing/purchase_requests.php?action=approve&id=${id}`, {});
+    async updatePurchaseRequest(id, data) {
+        return await api.put(`/purchasing/purchase_requests.php?action=update&id=${id}`, data);
+    },
+
+    async gmUpdatePurchaseRequest(id, data) {
+        return await api.put(`/purchasing/purchase_requests.php?action=gm_update&id=${id}`, data);
+    },
+
+    async submitPR(id) {
+        return await api.put(`/purchasing/purchase_requests.php?action=submit&id=${id}`, {});
+    },
+
+    async reopenPR(id, reason) {
+        return await api.put(`/purchasing/purchase_requests.php?action=reopen&id=${id}`, { reason });
+    },
+
+    async approvePR(id, approvalRemarks = '') {
+        return await api.put(`/purchasing/purchase_requests.php?action=approve&id=${id}`, { approval_remarks: approvalRemarks });
     },
 
     async rejectPR(id, reason) {
@@ -246,12 +269,13 @@ const PurchasingService = {
             'draft': 'badge-ghost',
             'pending': 'badge-warning',
             'approved': 'badge-info',
+            'rejected': 'badge-error',
             'ordered': 'badge-primary',
             'partial_received': 'badge-accent',
             'received': 'badge-success',
+            'closed': 'badge-neutral',
             'cancelled': 'badge-error',
             'fulfilled': 'badge-success',
-            'rejected': 'badge-error',
         };
         return map[status] || 'badge-ghost';
     },
@@ -286,6 +310,18 @@ const PurchasingService = {
     },
 
     formatStatus(status) {
+        const labels = {
+            'draft': 'Draft',
+            'pending': 'Pending GM Approval',
+            'approved': 'Approved',
+            'rejected': 'Rejected',
+            'partial_received': 'Partially Received',
+            'received': 'Fully Received',
+            'closed': 'Closed',
+            'ordered': 'Approved',
+            'cancelled': 'Cancelled'
+        };
+        if (labels[status]) return labels[status];
         return status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     },
 

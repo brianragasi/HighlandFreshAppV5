@@ -454,7 +454,9 @@
                 const rowClass = getRowClass(alert.stock_status);
                 const stock = parseFloat(alert.current_stock) || 0;
                 const reorderPt = parseFloat(alert.reorder_point) || 0;
-                const qtyToOrder = parseFloat(alert.qty_to_reorder) || Math.max(0, reorderPt - stock);
+                const maxStock = parseFloat(alert.maximum_stock);
+                const parLevel = Number.isFinite(maxStock) && maxStock > 0 ? maxStock : reorderPt;
+                const qtyToOrder = Math.max(0, parLevel - stock);
                 const hasCreatedPR = createdReorderPRs.has(String(alert.item_id));
 
                 return `
@@ -476,8 +478,8 @@
                                 <a href="ingredients.html?id=${alert.item_id}" class="btn btn-ghost btn-xs" title="View Details">
                                     <i class="fas fa-eye"></i>
                                 </a>
-                                <button class="btn ${hasCreatedPR ? 'btn-success' : 'btn-primary'} btn-xs" onclick="createPurchaseRequest(${alert.item_id}, this)" title="${hasCreatedPR ? 'Purchase Request created' : 'Create Purchase Request'}" ${(qtyToOrder <= 0 || hasCreatedPR) ? 'disabled' : ''}>
-                                    <i class="fas ${hasCreatedPR ? 'fa-check' : 'fa-shopping-cart'}"></i>
+                                <button class="btn ${hasCreatedPR ? 'btn-success' : 'btn-primary'} btn-xs" onclick="startPurchaseRequest(${alert.item_id}, this)" title="${hasCreatedPR ? 'Purchase Request started' : 'Start Purchase Request'}" ${(qtyToOrder <= 0 || hasCreatedPR) ? 'disabled' : ''}>
+                                    <i class="fas ${hasCreatedPR ? 'fa-check' : 'fa-file-signature'}"></i>
                                 </button>
                             </div>
                         </td>
@@ -509,7 +511,7 @@
             document.getElementById('alertsSection').scrollIntoView({ behavior: 'smooth' });
         }
 
-        async function createPurchaseRequest(itemId, button) {
+        function startPurchaseRequest(itemId, button) {
             const alert = allAlerts.find(a => String(a.item_id) === String(itemId));
             if (!alert) {
                 showToast('Could not find this reorder alert. Please refresh and try again.', 'error');
@@ -518,7 +520,9 @@
 
             const stock = parseFloat(alert.current_stock) || 0;
             const reorderPoint = parseFloat(alert.reorder_point) || 0;
-            const qty = parseFloat(alert.qty_to_reorder) || Math.max(0, reorderPoint - stock);
+            const maxStock = parseFloat(alert.maximum_stock);
+            const parLevel = Number.isFinite(maxStock) && maxStock > 0 ? maxStock : reorderPoint;
+            const qty = Math.max(0, parLevel - stock);
             if (qty <= 0) {
                 showToast(`${alert.item_name} does not need reordering right now.`, 'info');
                 return;
@@ -532,50 +536,38 @@
             const neededBy = new Date();
             neededBy.setDate(neededBy.getDate() + parseInt(alert.lead_time_days || 7, 10));
 
-            const payload = {
+            const prefill = {
+                source: 'reorder_alert',
+                source_type: 'ingredient',
+                source_id: parseInt(alert.item_id, 10),
+                item_id: parseInt(alert.item_id, 10),
+                item_code: alert.item_code,
+                item_name: alert.item_name,
+                unit: alert.unit_of_measure || 'units',
+                quantity: qty,
+                estimated_unit_price: parseFloat(alert.unit_cost) || 0,
                 priority,
                 needed_by_date: neededBy.toISOString().slice(0, 10),
-                purpose: `Reorder alert: ${alert.item_name}`,
-                notes: `Auto-created from Reorder Alerts. Current stock: ${stock} ${alert.unit_of_measure}. Reorder point: ${reorderPoint} ${alert.unit_of_measure}. Status: ${alert.stock_status}.`,
-                items: [{
-                    ingredient_id: parseInt(alert.item_id, 10),
-                    item_description: alert.item_name,
-                    quantity: qty,
-                    unit: alert.unit_of_measure || 'units',
-                    estimated_unit_price: parseFloat(alert.unit_cost) || 0,
-                    notes: `Generated from reorder alert for ${alert.item_code || alert.item_name}.`
-                }]
+                purpose: 'Stock below reorder point',
+                line_purpose: 'Stock below reorder point',
+                notes: `Started from Reorder Alerts. Current stock: ${stock} ${alert.unit_of_measure}. Reorder point: ${reorderPoint} ${alert.unit_of_measure}. Status: ${alert.stock_status}.`,
+                line_notes: `Reorder alert for ${alert.item_code || alert.item_name}.`
             };
 
-            const originalHtml = button?.innerHTML;
+            sessionStorage.setItem('highland_pr_prefill', JSON.stringify(prefill));
+            createdReorderPRs.add(String(alert.item_id));
             if (button) {
                 button.disabled = true;
-                button.innerHTML = '<span class="loading loading-spinner loading-xs"></span>';
+                button.classList.remove('btn-primary');
+                button.classList.add('btn-success');
+                button.innerHTML = '<i class="fas fa-check"></i>';
             }
-
-            try {
-                const response = await api.post('/purchasing/purchase_requests.php?action=create', payload);
-                const prNumber = response?.data?.pr_number || response?.data?.data?.pr_number;
-                showToast(`${prNumber || 'Purchase Request'} created for ${alert.item_name}. Awaiting GM approval.`, 'success');
-                createdReorderPRs.add(String(alert.item_id));
-                if (button) {
-                    button.classList.remove('btn-primary');
-                    button.classList.add('btn-success');
-                    button.innerHTML = '<i class="fas fa-check"></i>';
-                    button.title = 'Purchase Request created';
-                }
-            } catch (error) {
-                showToast(error?.message || error?.response?.data?.message || 'Failed to create Purchase Request', 'error');
-                if (button) {
-                    button.disabled = false;
-                    button.innerHTML = originalHtml;
-                }
-            }
+            window.location.href = `purchase_requests.html?prefill=low_stock&item_id=${encodeURIComponent(alert.item_id)}`;
         }
 
         function exportReport() {
             // Simple CSV export
-            const headers = ['Status', 'Item Code', 'Item Name', 'Category', 'Current Stock', 'Reorder Point', 'Qty to Order', 'Lead Time (days)'];
+            const headers = ['Status', 'Item Code', 'Item Name', 'Category', 'Current Stock', 'Reorder Point', 'Par Level', 'Qty to Order', 'Lead Time (days)'];
             const rows = filteredAlerts.map(a => [
                 a.stock_status,
                 a.item_code,
@@ -583,7 +575,8 @@
                 a.category_name || '',
                 a.current_stock,
                 a.reorder_point,
-                Math.max(0, parseFloat(a.reorder_point) - parseFloat(a.current_stock)),
+                a.maximum_stock || '',
+                Math.max(0, (parseFloat(a.maximum_stock) || parseFloat(a.reorder_point)) - parseFloat(a.current_stock)),
                 a.lead_time_days || 7
             ]);
 

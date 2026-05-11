@@ -25,6 +25,7 @@ $currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'productio
 
 try {
     $db = Database::getInstance()->getConnection();
+    ensureIngredientPerishabilitySupport($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -42,6 +43,16 @@ try {
 } catch (Exception $e) {
     error_log("Warehouse Raw Ingredients API error: " . $e->getMessage());
     Response::error('An error occurred: ' . $e->getMessage(), 500);
+}
+
+function ensureIngredientPerishabilitySupport($db) {
+    if (!auditColumnExists($db, 'ingredients', 'is_perishable')) {
+        $db->exec("ALTER TABLE `ingredients` ADD COLUMN `is_perishable` TINYINT(1) NOT NULL DEFAULT 1 AFTER `shelf_life_days`");
+    }
+
+    if (!auditColumnExists($db, 'ingredients', 'maximum_stock')) {
+        $db->exec("ALTER TABLE `ingredients` ADD COLUMN `maximum_stock` DECIMAL(10,2) DEFAULT NULL COMMENT 'Par level / order-up-to stock' AFTER `reorder_point`");
+    }
 }
 
 /**
@@ -296,34 +307,35 @@ function handleGet($db, $currentUser) {
                     i.unit_of_measure,
                     i.current_stock,
                     i.minimum_stock,
-                    COALESCE(i.minimum_stock * 1.5, i.minimum_stock) AS reorder_point,
+                    COALESCE(i.reorder_point, i.minimum_stock * 1.5) AS reorder_point,
+                    i.maximum_stock,
                     COALESCE(i.lead_time_days, 7) AS lead_time_days,
                     i.unit_cost,
                     CASE 
                         WHEN i.current_stock <= 0 THEN 'OUT_OF_STOCK'
                         WHEN i.current_stock <= i.minimum_stock THEN 'CRITICAL'
-                        WHEN i.current_stock <= (i.minimum_stock * 1.5) THEN 'LOW'
+                        WHEN i.current_stock <= COALESCE(i.reorder_point, i.minimum_stock * 1.5) THEN 'LOW'
                         ELSE 'OK'
                     END AS stock_status,
                     CASE 
                         WHEN i.current_stock <= 0 THEN 0
                         ELSE ROUND((i.current_stock / NULLIF(i.minimum_stock, 0)) * 100, 1)
                     END AS stock_percentage,
-                    GREATEST(0, (i.minimum_stock * 1.5) - i.current_stock) AS qty_to_reorder
+                    GREATEST(0, COALESCE(i.maximum_stock, COALESCE(i.reorder_point, i.minimum_stock * 1.5)) - i.current_stock) AS qty_to_reorder
                 FROM ingredients i
                 LEFT JOIN ingredient_categories ic ON i.category_id = ic.id
                 WHERE i.is_active = 1
             ";
             
             if (!$includeOk) {
-                $sql .= " AND i.current_stock <= (i.minimum_stock * 1.5)";
+                $sql .= " AND i.current_stock <= COALESCE(i.reorder_point, i.minimum_stock * 1.5)";
             }
             
             $sql .= " ORDER BY 
                 CASE 
                     WHEN i.current_stock <= 0 THEN 1
                     WHEN i.current_stock <= i.minimum_stock THEN 2
-                    WHEN i.current_stock <= (i.minimum_stock * 1.5) THEN 3
+                    WHEN i.current_stock <= COALESCE(i.reorder_point, i.minimum_stock * 1.5) THEN 3
                     ELSE 4
                 END,
                 i.ingredient_name ASC
@@ -390,9 +402,11 @@ function handlePost($db, $currentUser) {
             $categoryId = getParam('category_id');
             $unitOfMeasure = getParam('unit_of_measure');
             $minimumStock = getParam('minimum_stock', 0);
+            $maximumStock = getParam('maximum_stock');
             $storageLocation = getParam('storage_location');
             $storageRequirements = getParam('storage_requirements');
             $shelfLifeDays = getParam('shelf_life_days');
+            $isPerishable = getParam('is_perishable', 1);
             
             if (!$ingredientCode || !$ingredientName || !$unitOfMeasure) {
                 Response::error('Ingredient code, name, and unit of measure are required', 400);
@@ -408,8 +422,8 @@ function handlePost($db, $currentUser) {
             $stmt = $db->prepare("
                 INSERT INTO ingredients 
                 (ingredient_code, ingredient_name, category_id, unit_of_measure,
-                 minimum_stock, storage_location, storage_requirements, shelf_life_days)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 minimum_stock, maximum_stock, storage_location, storage_requirements, shelf_life_days, is_perishable)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
             $stmt->execute([
                 $ingredientCode,
@@ -417,9 +431,11 @@ function handlePost($db, $currentUser) {
                 $categoryId,
                 $unitOfMeasure,
                 $minimumStock,
+                $maximumStock !== null && $maximumStock !== '' ? $maximumStock : null,
                 $storageLocation,
                 $storageRequirements,
-                $shelfLifeDays
+                $shelfLifeDays,
+                $isPerishable ? 1 : 0
             ]);
             
             Response::success(['id' => $db->lastInsertId()], 'Ingredient created successfully');
@@ -645,12 +661,15 @@ function handlePut($db, $currentUser) {
             $updateFields = [];
             $params = [];
             
-            $allowedFields = ['ingredient_name', 'category_id', 'minimum_stock', 
-                             'storage_location', 'storage_requirements', 'shelf_life_days'];
+            $allowedFields = ['ingredient_name', 'category_id', 'minimum_stock', 'maximum_stock',
+                             'storage_location', 'storage_requirements', 'shelf_life_days', 'is_perishable'];
             
             foreach ($allowedFields as $field) {
                 $value = getParam($field);
                 if ($value !== null) {
+                    if ($field === 'is_perishable') {
+                        $value = $value ? 1 : 0;
+                    }
                     $updateFields[] = "$field = ?";
                     $params[] = $value;
                 }
@@ -758,6 +777,7 @@ function handlePut($db, $currentUser) {
             $minimumStock = getParam('minimum_stock');
             $leadTimeDays = getParam('lead_time_days');
             $reorderPoint = getParam('reorder_point');
+            $maximumStock = getParam('maximum_stock');
             
             if (!$ingredientId) {
                 Response::error('Ingredient ID is required', 400);
@@ -790,6 +810,11 @@ function handlePut($db, $currentUser) {
                 $updates[] = "reorder_point = ?";
                 $params[] = floatval($reorderPoint);
             }
+
+            if ($maximumStock !== null && $maximumStock !== '') {
+                $updates[] = "maximum_stock = ?";
+                $params[] = floatval($maximumStock);
+            }
             
             if (empty($updates)) {
                 Response::error('No settings provided to update', 400);
@@ -805,7 +830,8 @@ function handlePut($db, $currentUser) {
             logAudit($currentUser['user_id'], 'UPDATE_SETTINGS', 'ingredients', $ingredientId, null, [
                 'minimum_stock' => $minimumStock,
                 'lead_time_days' => $leadTimeDays,
-                'reorder_point' => $reorderPoint
+                'reorder_point' => $reorderPoint,
+                'maximum_stock' => $maximumStock
             ]);
             
             // Get updated ingredient
@@ -817,7 +843,8 @@ function handlePut($db, $currentUser) {
                 'id' => $ingredientId,
                 'minimum_stock' => $updated['minimum_stock'],
                 'lead_time_days' => $updated['lead_time_days'],
-                'reorder_point' => $updated['reorder_point']
+                'reorder_point' => $updated['reorder_point'],
+                'maximum_stock' => $updated['maximum_stock']
             ], 'Ingredient settings updated successfully');
             break;
             

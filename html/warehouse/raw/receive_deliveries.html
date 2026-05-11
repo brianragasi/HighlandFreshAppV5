@@ -114,6 +114,10 @@
                             class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content"><i
                                 class="fas fa-truck-ramp-box w-5 text-center"></i><span>Receive Deliveries</span></a>
                     </li>
+                    <li><a href="waste.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i
+                                class="fas fa-trash-alt w-5 text-center text-base-content/60"></i><span>Spoilage & Waste</span></a>
+                    </li>
                 </ul>
             </div>
             <div>
@@ -181,6 +185,7 @@
                             </label>
                             <select id="statusFilter" class="select select-bordered select-sm w-full md:w-44"
                                 onchange="loadPurchaseOrders()">
+                                <option value="pending_delivery" selected>Pending Deliveries</option>
                                 <option value="">All Status</option>
                                 <option value="approved">Approved</option>
                                 <option value="ordered">Ordered</option>
@@ -252,7 +257,39 @@
 
             <div class="alert alert-info mb-4 py-2 text-sm">
                 <i class="fas fa-info-circle"></i>
-                <span>Accepted + Rejected must not exceed the ordered quantity for each item.</span>
+                <span>Accepted + Rejected must not exceed the remaining accepted quantity needed for each item. Rejected items do not add stock or complete the PO.</span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3 bg-base-200 rounded-xl p-4 mb-4">
+                <label class="form-control">
+                    <span class="label-text-alt font-semibold mb-1">Delivery Reference</span>
+                    <input type="text" id="deliveryReference" class="input input-bordered input-sm" placeholder="DR/SI number">
+                </label>
+                <label class="form-control">
+                    <span class="label-text-alt font-semibold mb-1">Invoice Number</span>
+                    <input type="text" id="invoiceNumber" class="input input-bordered input-sm" placeholder="Optional">
+                </label>
+                <label class="form-control">
+                    <span class="label-text-alt font-semibold mb-1">Driver Name</span>
+                    <input type="text" id="driverName" class="input input-bordered input-sm" placeholder="Driver / courier">
+                </label>
+                <label class="form-control">
+                    <span class="label-text-alt font-semibold mb-1">Vehicle Plate</span>
+                    <input type="text" id="vehiclePlate" class="input input-bordered input-sm" placeholder="Optional">
+                </label>
+                <label class="form-control md:col-span-2">
+                    <span class="label-text-alt font-semibold mb-1">Delivery Condition</span>
+                    <select id="receivedCondition" class="select select-bordered select-sm">
+                        <option value="acceptable">Acceptable</option>
+                        <option value="with_discrepancy">With discrepancy</option>
+                        <option value="damaged_packaging">Damaged packaging</option>
+                        <option value="temperature_issue">Temperature issue</option>
+                    </select>
+                </label>
+                <label class="form-control md:col-span-2">
+                    <span class="label-text-alt font-semibold mb-1">Driver / Delivery Notes</span>
+                    <input type="text" id="deliveryNotes" class="input input-bordered input-sm" placeholder="Optional notes">
+                </label>
             </div>
 
             <div id="receiveItemsList" class="space-y-4 max-h-[50vh] overflow-y-auto scrollbar-thin mb-4">
@@ -326,7 +363,11 @@
                 const status = document.getElementById('statusFilter').value;
 
                 if (search) filters.search = search;
-                if (status) filters.status = status;
+                if (status === 'pending_delivery') {
+                    filters.receiving_pending = 1;
+                } else if (status) {
+                    filters.status = status;
+                }
 
                 const response = await PurchasingService.getPurchaseOrders(filters);
                 const orders = response?.data || [];
@@ -363,6 +404,7 @@
                                     <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2 z-10">
                                         <li><a onclick="viewPODetail(${po.id})"><i class="fas fa-eye w-4"></i> View Details</a></li>
                                         ${['ordered', 'partial_received', 'approved'].includes(po.status) ? `<li><a onclick="markReceived(${po.id})"><i class="fas fa-box-open w-4"></i> Receive Delivery</a></li>` : ''}
+                                        ${['partial_received', 'received'].includes(po.status) ? `<li><a onclick="openPrintableReceivingReport(${po.id})"><i class="fas fa-print w-4"></i> Print RR</a></li>` : ''}
                                     </ul>
                                 </div>
                             </td>
@@ -411,13 +453,13 @@
                 if (['ordered', 'partial_received', 'approved'].includes(po.status)) {
                     actionsHTML += `<button class="btn btn-success btn-sm" onclick="markReceived(${po.id})"><i class="fas fa-box-open"></i> Receive Delivery</button>`;
                 }
+                if (['partial_received', 'received'].includes(po.status)) {
+                    actionsHTML += `<button class="btn btn-ghost btn-sm" onclick="openPrintableReceivingReport(${po.id})"><i class="fas fa-print"></i> Print RR</button>`;
+                }
 
                 const computedSubtotal = (po.items || []).reduce((sum, item) => {
                     const receivedQty = parseFloat(item.quantity_received || 0);
-                    const rejectedQty = parseFloat(item.quantity_rejected || 0);
-                    const orderedQty = parseFloat(item.quantity || 0);
-                    const payableQty = receivedQty > 0 ? receivedQty : Math.max(orderedQty - rejectedQty, 0);
-                    return sum + (payableQty * parseFloat(item.unit_price || 0));
+                    return sum + (receivedQty * parseFloat(item.unit_price || 0));
                 }, 0);
 
                 content.innerHTML = `
@@ -490,9 +532,7 @@
                                         ${(po.items || []).map((item, i) => {
                                             const rejected = parseFloat(item.quantity_rejected || 0);
                                             const received = parseFloat(item.quantity_received || 0);
-                                            const ordered = parseFloat(item.quantity || 0);
-                                            const payableQty = received > 0 ? received : Math.max(ordered - rejected, 0);
-                                            const payableTotal = payableQty * parseFloat(item.unit_price || 0);
+                                            const payableTotal = received * parseFloat(item.unit_price || 0);
                                             return `
                                             <tr>
                                                 <td>${i + 1}</td>
@@ -551,6 +591,11 @@
             document.getElementById('pageTitle').textContent = 'Receive Deliveries';
         }
 
+        function openPrintableReceivingReport(id) {
+            if (!id) return;
+            window.open(`print_receiving_report.html?po_id=${id}`, '_blank', 'noopener');
+        }
+
         async function markReceived(id) {
             try {
                 const response = await PurchasingService.getPurchaseOrderDetail(id);
@@ -561,6 +606,12 @@
                 currentReceiveItems = po.items || [];
 
                 document.getElementById('receivePONumber').textContent = po.po_number;
+                ['deliveryReference', 'invoiceNumber', 'driverName', 'vehiclePlate', 'deliveryNotes'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.value = '';
+                });
+                const conditionEl = document.getElementById('receivedCondition');
+                if (conditionEl) conditionEl.value = 'acceptable';
                 const container = document.getElementById('receiveItemsList');
                 if (currentReceiveItems.length === 0) {
                     container.innerHTML = '<p class="text-center text-base-content/60 py-8">No items in this PO</p>';
@@ -569,8 +620,12 @@
                         const ordered = parseFloat(item.quantity);
                         const prevAccepted = parseFloat(item.quantity_received || 0);
                         const prevRejected = parseFloat(item.quantity_rejected || 0);
-                        const remaining = Math.max(0, ordered - prevAccepted - prevRejected);
-                        const alreadyDone = prevAccepted + prevRejected >= ordered;
+                        const remaining = Math.max(0, ordered - prevAccepted);
+                        const alreadyDone = prevAccepted >= ordered;
+                        const isPerishable = item.ingredient_id
+                            ? String(item.ingredient_is_perishable ?? '1') === '1'
+                            : String(item.mro_is_perishable ?? '0') === '1';
+                        const itemCode = item.ingredient_code || item.mro_item_code || `ITEM${item.id}`;
 
                         return `
                             <div class="border rounded-lg ${alreadyDone ? 'border-success/30 bg-success/5 opacity-70' : 'border-base-300 bg-base-100'}">
@@ -578,10 +633,11 @@
                                     <div class="flex items-start justify-between gap-3 mb-3">
                                         <div class="flex-1">
                                             <p class="font-semibold">${item.item_description}</p>
+                                            <p class="text-xs text-base-content/60">System lot: ${itemCode}-Lot-###${isPerishable ? ' - Expiry required' : ' - Non-perishable'}</p>
                                             <p class="text-sm text-base-content/60">${ordered.toFixed(2)} ${item.unit} ordered @ ${formatCurrency(item.unit_price)}</p>
                                             ${prevAccepted > 0 || prevRejected > 0 ? `<p class="text-xs mt-1"><span class="text-success">Previously accepted: ${prevAccepted.toFixed(2)}</span>${prevRejected > 0 ? ` · <span class="text-error">Previously rejected: ${prevRejected.toFixed(2)}</span>` : ''}</p>` : ''}
                                         </div>
-                                        ${alreadyDone ? '<span class="badge badge-success badge-sm">Fully Received</span>' : `<span class="badge badge-warning badge-sm">Remaining: ${remaining.toFixed(2)}</span>`}
+                                        ${alreadyDone ? '<span class="badge badge-success badge-sm">Fully Received</span>' : `<span class="badge badge-warning badge-sm">Accepted Needed: ${remaining.toFixed(2)}</span>`}
                                     </div>
                                     ${!alreadyDone ? `
                                     <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
@@ -589,7 +645,7 @@
                                             <label class="label py-0"><span class="label-text-alt text-success font-semibold">Accepted</span></label>
                                             <input type="number" step="0.01" min="0" max="${remaining}"
                                                    class="input input-bordered input-sm w-full recv-accepted"
-                                                   id="recvAccepted-${idx}" value="${remaining.toFixed(2)}"
+                                                   id="recvAccepted-${idx}" value="0"
                                                    data-remaining="${remaining}" data-idx="${idx}"
                                                    oninput="updateRecvTotals()">
                                         </div>
@@ -602,15 +658,22 @@
                                                    oninput="updateRecvTotals(); toggleRejectReason(${idx})">
                                         </div>
                                         <div class="form-control md:col-span-2">
-                                            <label class="label py-0"><span class="label-text-alt font-semibold">Supplier Lot / Batch</span></label>
+                                            <label class="label py-0"><span class="label-text-alt font-semibold">Supplier Lot Ref</span></label>
                                             <input type="text" class="input input-bordered input-sm w-full"
-                                                   id="recvLot-${idx}" placeholder="Lot number on label">
+                                                   id="recvLot-${idx}" placeholder="Optional label reference">
                                         </div>
+                                        ${isPerishable ? `
                                         <div class="form-control">
                                             <label class="label py-0"><span class="label-text-alt font-semibold">Expiry Date</span></label>
                                             <input type="date" class="input input-bordered input-sm w-full"
                                                    id="recvExpiry-${idx}">
                                         </div>
+                                        ` : `
+                                        <div class="form-control">
+                                            <label class="label py-0"><span class="label-text-alt font-semibold">Expiry Date</span></label>
+                                            <input type="text" class="input input-bordered input-sm w-full" value="Not required" disabled>
+                                        </div>
+                                        `}
                                         <div class="form-control md:col-span-2">
                                             <label class="label py-0"><span class="label-text-alt font-semibold">Condition</span></label>
                                             <select class="select select-bordered select-sm w-full" id="recvCondition-${idx}">
@@ -681,8 +744,8 @@
             let totalOrdered = 0, totalAccepted = 0, totalRejected = 0;
             currentReceiveItems.forEach((item, idx) => {
                 const ordered = parseFloat(item.quantity);
-                const prevDone = parseFloat(item.quantity_received || 0) + parseFloat(item.quantity_rejected || 0);
-                const remaining = Math.max(0, ordered - prevDone);
+                const prevAccepted = parseFloat(item.quantity_received || 0);
+                const remaining = Math.max(0, ordered - prevAccepted);
                 totalOrdered += remaining;
 
                 const accEl = document.getElementById(`recvAccepted-${idx}`);
@@ -704,8 +767,7 @@
             currentReceiveItems.forEach((item, idx) => {
                 const ordered = parseFloat(item.quantity);
                 const prevAccepted = parseFloat(item.quantity_received || 0);
-                const prevRejected = parseFloat(item.quantity_rejected || 0);
-                const remaining = ordered - prevAccepted - prevRejected;
+                const remaining = ordered - prevAccepted;
 
                 if (remaining <= 0) return;
 
@@ -724,9 +786,12 @@
                     return;
                 }
 
-                const expiryDate = document.getElementById(`recvExpiry-${idx}`)?.value || null;
-                if (accepted > 0 && item.ingredient_id && !expiryDate) {
-                    showToast(`${item.item_description}: Expiry date is required for accepted ingredients`, 'error');
+                const isPerishable = item.ingredient_id
+                    ? String(item.ingredient_is_perishable ?? '1') === '1'
+                    : String(item.mro_is_perishable ?? '0') === '1';
+                const expiryDate = isPerishable ? (document.getElementById(`recvExpiry-${idx}`)?.value || null) : null;
+                if (accepted > 0 && isPerishable && !expiryDate) {
+                    showToast(`${item.item_description}: Expiry date is required because this item is marked perishable`, 'error');
                     hasError = true;
                     return;
                 }
@@ -762,7 +827,17 @@
             btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Processing...';
 
             try {
-                const result = await PurchasingService.receivePOWithPrices(currentReceivePOId, [], receivingItems);
+                const receivingMeta = {
+                    delivery_reference: document.getElementById('deliveryReference')?.value?.trim() || null,
+                    invoice_number: document.getElementById('invoiceNumber')?.value?.trim() || null,
+                    driver_name: document.getElementById('driverName')?.value?.trim() || null,
+                    vehicle_plate: document.getElementById('vehiclePlate')?.value?.trim() || null,
+                    received_condition: document.getElementById('receivedCondition')?.value || 'acceptable',
+                    driver_notes: document.getElementById('deliveryNotes')?.value?.trim() || null,
+                    notes: document.getElementById('deliveryNotes')?.value?.trim() || null
+                };
+
+                const result = await PurchasingService.receivePOWithPrices(currentReceivePOId, [], receivingItems, receivingMeta);
                 document.getElementById('receiveModal').close();
 
                 const data = result?.data || {};

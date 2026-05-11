@@ -34,6 +34,10 @@ const FinanceService = {
         return api.get('/finance/dashboard.php?action=receivables_aging');
     },
 
+    getNotifications() {
+        return api.get('/finance/dashboard.php?action=notifications');
+    },
+
     // ========================================
     // PAYABLES
     // ========================================
@@ -67,6 +71,7 @@ const FinanceService = {
             'ordered': 'badge-primary',
             'partial_received': 'badge-accent',
             'received': 'badge-success',
+            'closed': 'badge-neutral',
             'cancelled': 'badge-error',
             'active': 'badge-success',
             'voided': 'badge-error'
@@ -78,13 +83,29 @@ const FinanceService = {
         const map = {
             'unpaid': 'badge-error',
             'partial': 'badge-warning',
-            'paid': 'badge-success'
+            'paid': 'badge-success',
+            'cancelled': 'badge-ghost'
         };
         return map[status] || 'badge-ghost';
     },
 
     formatStatus(status) {
         if (!status) return '-';
+        const labels = {
+            'draft': 'Draft',
+            'pending': 'Pending GM Approval',
+            'approved': 'Approved',
+            'rejected': 'Rejected',
+            'partial_received': 'Partially Received',
+            'received': 'Fully Received',
+            'closed': 'Closed',
+            'ordered': 'Approved',
+            'cancelled': 'Cancelled',
+            'unpaid': 'Unpaid',
+            'partial': 'Partially Paid',
+            'paid': 'Paid'
+        };
+        if (labels[status]) return labels[status];
         return status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     }
 };

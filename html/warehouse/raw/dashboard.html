@@ -158,6 +158,13 @@
                             <span class="flex-1">Receive Deliveries</span>
                         </a>
                     </li>
+                    <li>
+                        <a href="waste.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-trash-alt w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Spoilage & Waste</span>
+                        </a>
+                    </li>
                 </ul>
             </div>
 
@@ -264,7 +271,7 @@
                     <label tabindex="0" class="btn btn-ghost btn-circle">
                         <div class="indicator">
                             <i class="fas fa-bell text-lg"></i>
-                            <span class="indicator-item badge badge-primary badge-xs" id="notifCount">3</span>
+                            <span class="indicator-item badge badge-primary badge-xs" id="notifCount">0</span>
                         </div>
                     </label>
                     <div tabindex="0"
@@ -272,7 +279,7 @@
                         <div class="p-4 border-b border-base-300">
                             <h3 class="font-semibold">Notifications</h3>
                         </div>
-                        <ul class="menu menu-sm p-2 max-h-64 overflow-y-auto">
+                        <ul class="menu menu-sm p-2 max-h-64 overflow-y-auto" id="notificationList">
                             <li class="text-center py-4 text-base-content/60">No new notifications</li>
                         </ul>
                     </div>
@@ -350,19 +357,19 @@
                     </div>
                 </a>
 
-                <!-- Fulfilled Today -->
-                <div class="bento-card card bg-base-100 border border-base-300">
+                <!-- Pending Deliveries -->
+                <a href="receive_deliveries.html" class="bento-card card bg-base-100 border border-base-300 cursor-pointer">
                     <div class="card-body p-4">
                         <div class="flex items-center justify-between mb-2">
                             <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                                <i class="fas fa-check-circle text-emerald-500"></i>
+                                <i class="fas fa-truck-ramp-box text-emerald-500"></i>
                             </div>
-                            <span class="badge badge-success badge-sm">Today</span>
+                            <span class="badge badge-success badge-sm">PO</span>
                         </div>
-                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="fulfilledToday">0</p>
-                        <p class="text-sm text-base-content/60">Fulfilled Today</p>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="pendingDeliveries">0</p>
+                        <p class="text-sm text-base-content/60">Pending Deliveries</p>
                     </div>
-                </div>
+                </a>
             </div>
 
             <!-- Main Bento Grid -->
@@ -633,8 +640,8 @@
                         data.requisitions?.pending_count || 0;
                     document.getElementById('lowStockCount').textContent =
                         (data.ingredients?.low_stock_count || 0) + (data.mro?.low_stock_count || 0);
-                    document.getElementById('fulfilledToday').textContent =
-                        data.requisitions?.fulfilled_today || 0;
+                    document.getElementById('pendingDeliveries').textContent =
+                        data.pending_deliveries?.count || 0;
 
                     // Update badges
                     document.getElementById('pendingMilkBadge').textContent =
@@ -648,6 +655,7 @@
                     renderLowStockAlerts(data.low_stock_alerts || []);
                     renderPendingMilkStorage(data.pending_milk_storage || []);
                     renderRecentTransactions(data.recent_transactions || []);
+                    renderNotifications(data.notifications || []);
                 }
             } catch (error) {
                 console.error('Dashboard error:', error);
@@ -656,6 +664,32 @@
             
             // Always load pending disposals (independent of main dashboard)
             await loadPendingDisposals();
+        }
+
+        function renderNotifications(notifications) {
+            const list = document.getElementById('notificationList');
+            const count = document.getElementById('notifCount');
+            if (!list || !count) return;
+
+            count.textContent = notifications.length;
+            count.classList.toggle('hidden', notifications.length === 0);
+
+            if (!notifications.length) {
+                list.innerHTML = '<li class="text-center py-4 text-base-content/60">No new notifications</li>';
+                return;
+            }
+
+            list.innerHTML = notifications.map(n => `
+                <li>
+                    <a href="receive_deliveries.html" class="items-start gap-3">
+                        <i class="fas fa-truck-loading text-primary mt-1"></i>
+                        <span>
+                            <span class="font-semibold block">${n.title}</span>
+                            <span class="text-xs text-base-content/60">${n.message}</span>
+                        </span>
+                    </a>
+                </li>
+            `).join('');
         }
 
         function renderTanksOverview(tankStats) {
