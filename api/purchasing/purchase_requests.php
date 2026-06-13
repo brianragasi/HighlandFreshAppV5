@@ -105,6 +105,10 @@ function ensurePRTables($db) {
         $db->exec("ALTER TABLE `purchase_requests` ADD COLUMN `approver_name` VARCHAR(100) DEFAULT NULL AFTER `approved_at`");
     }
 
+    if (!auditColumnExists($db, 'purchase_requests', 'request_fingerprint')) {
+        $db->exec("ALTER TABLE `purchase_requests` ADD COLUMN `request_fingerprint` VARCHAR(64) DEFAULT NULL AFTER `notes`");
+    }
+
     $db->exec("
         ALTER TABLE `purchase_requests`
         MODIFY COLUMN `status` ENUM('draft','pending','approved','rejected','converted') DEFAULT 'pending'
@@ -345,14 +349,14 @@ function handleGet($db, $action, $currentUser) {
 }
 
 function getCurrentGeneralManagerName($db) {
-    $stmt = $db->query("
-        SELECT full_name
-        FROM users
-        WHERE role = 'general_manager'
-          AND is_active = 1
-        ORDER BY updated_at DESC, created_at DESC, id DESC
-        LIMIT 1
-    ");
+        $stmt = $db->query("
+                SELECT full_name
+                FROM users
+                WHERE is_active = 1
+                    AND REPLACE(LOWER(role), ' ', '_') = 'general_manager'
+                ORDER BY updated_at DESC, created_at DESC, id DESC
+                LIMIT 1
+        ");
     $name = $stmt->fetchColumn();
     return $name ?: null;
 }
@@ -399,6 +403,116 @@ function validatePRCreateData($data) {
             Response::error("Line {$lineNo}: purpose/reason is required", 400);
         }
     }
+}
+
+function buildPRFingerprint($items) {
+    $entries = [];
+    foreach ($items as $item) {
+        $type = !empty($item['ingredient_id']) ? 'ingredient' : (!empty($item['mro_item_id']) ? 'mro' : 'unknown');
+        $id = $item['ingredient_id'] ?? ($item['mro_item_id'] ?? '');
+        $qty = number_format((float) ($item['quantity'] ?? 0), 4, '.', '');
+        $unit = strtolower(trim((string) ($item['unit'] ?? '')));
+        $entries[] = "{$type}:{$id}|qty:{$qty}|unit:{$unit}";
+    }
+
+    sort($entries, SORT_STRING);
+    return hash('sha256', implode(';', $entries));
+}
+
+function getPRFingerprintFromDb($db, $prId) {
+    $items = getRequestItemsById($db, $prId);
+    if (!$items) {
+        return null;
+    }
+
+    return buildPRFingerprint($items);
+}
+
+function getRequestItemsById($db, $prId) {
+    $stmt = $db->prepare("SELECT ingredient_id, mro_item_id, quantity, unit FROM purchase_request_items WHERE purchase_request_id = ?");
+    $stmt->execute([$prId]);
+    return $stmt->fetchAll();
+}
+
+function findDuplicatePendingPR($db, $department, $fingerprint, $excludeId = null) {
+    if (!$fingerprint) {
+        return null;
+    }
+
+    $sql = "SELECT id, pr_number FROM purchase_requests WHERE department = ? AND status = 'pending' AND request_fingerprint = ?";
+    $params = [$department, $fingerprint];
+    if ($excludeId) {
+        $sql .= " AND id != ?";
+        $params[] = $excludeId;
+    }
+    $sql .= " LIMIT 1";
+
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetch();
+}
+
+function findPendingPRWithOverlappingItems($db, $department, $items, $excludeId = null) {
+    if (empty($items) || !is_array($items)) {
+        return null;
+    }
+
+    $ingredientIds = [];
+    $mroIds = [];
+
+    foreach ($items as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+        if (!empty($item['ingredient_id'])) {
+            $ingredientIds[] = (int) $item['ingredient_id'];
+        }
+        if (!empty($item['mro_item_id'])) {
+            $mroIds[] = (int) $item['mro_item_id'];
+        }
+    }
+
+    $ingredientIds = array_values(array_unique(array_filter($ingredientIds)));
+    $mroIds = array_values(array_unique(array_filter($mroIds)));
+
+    if (empty($ingredientIds) && empty($mroIds)) {
+        return null;
+    }
+
+    $conditions = [];
+    $params = [$department];
+
+    if (!empty($ingredientIds)) {
+        $placeholders = implode(',', array_fill(0, count($ingredientIds), '?'));
+        $conditions[] = "(pri.ingredient_id IS NOT NULL AND pri.ingredient_id IN ($placeholders))";
+        $params = array_merge($params, $ingredientIds);
+    }
+
+    if (!empty($mroIds)) {
+        $placeholders = implode(',', array_fill(0, count($mroIds), '?'));
+        $conditions[] = "(pri.mro_item_id IS NOT NULL AND pri.mro_item_id IN ($placeholders))";
+        $params = array_merge($params, $mroIds);
+    }
+
+    $sql = "
+        SELECT pr.id, pr.pr_number
+        FROM purchase_requests pr
+        JOIN purchase_request_items pri ON pri.purchase_request_id = pr.id
+        WHERE pr.department = ?
+          AND pr.status = 'pending'
+          AND (" . implode(' OR ', $conditions) . ")
+    ";
+
+    if ($excludeId) {
+        $sql .= " AND pr.id != ?";
+        $params[] = (int) $excludeId;
+    }
+
+    $sql .= " ORDER BY pr.created_at DESC LIMIT 1";
+
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetch();
 }
 
 function countActivePOsForPR($db, $prId) {
@@ -458,6 +572,8 @@ function handlePost($db, $action, $currentUser) {
 
             validatePRCreateData($data);
 
+            $fingerprint = buildPRFingerprint($data['items']);
+
             $priority = $data['priority'] ?? 'normal';
             if (!in_array($priority, ['low', 'normal', 'high', 'urgent'])) {
                 Response::error('Invalid priority', 400);
@@ -466,6 +582,24 @@ function handlePost($db, $action, $currentUser) {
             $status = $data['status'] ?? 'pending';
             if (!in_array($status, ['draft', 'pending'])) {
                 Response::error('Invalid Purchase Request status', 400);
+            }
+
+            if ($status === 'pending') {
+                $duplicate = findDuplicatePendingPR($db, 'warehouse_raw', $fingerprint);
+                if ($duplicate) {
+                    Response::error('Duplicate pending Purchase Request already exists (' . $duplicate['pr_number'] . '). Please update that request instead.', 409, [
+                        'duplicate_pr_id' => (int) $duplicate['id'],
+                        'duplicate_pr_number' => $duplicate['pr_number']
+                    ]);
+                }
+
+                $overlap = findPendingPRWithOverlappingItems($db, 'warehouse_raw', $data['items']);
+                if ($overlap) {
+                    Response::error('Pending Purchase Request already exists for one or more items (' . $overlap['pr_number'] . '). Please update that request instead.', 409, [
+                        'duplicate_pr_id' => (int) $overlap['id'],
+                        'duplicate_pr_number' => $overlap['pr_number']
+                    ]);
+                }
             }
 
             $db->beginTransaction();
@@ -481,8 +615,8 @@ function handlePost($db, $action, $currentUser) {
                 // Insert PR
                 $stmt = $db->prepare("
                     INSERT INTO purchase_requests 
-                    (pr_number, requested_by, department, priority, needed_by_date, purpose, notes, status)
-                    VALUES (?, ?, 'warehouse_raw', ?, ?, ?, ?, ?)
+                    (pr_number, requested_by, department, priority, needed_by_date, purpose, notes, status, request_fingerprint)
+                    VALUES (?, ?, 'warehouse_raw', ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
                     $prNumber,
@@ -491,7 +625,8 @@ function handlePost($db, $action, $currentUser) {
                     $data['needed_by_date'] ?? null,
                     $data['purpose'] ?? null,
                     $data['notes'] ?? null,
-                    $status
+                    $status,
+                    $fingerprint
                 ]);
 
                 $prId = $db->lastInsertId();
@@ -588,6 +723,8 @@ function handlePut($db, $action, $currentUser) {
             rejectSupplierFieldsInPR($data);
             validatePRCreateData($data);
 
+            $fingerprint = buildPRFingerprint($data['items']);
+
             $priority = $data['priority'] ?? $current['priority'];
             if (!in_array($priority, ['low', 'normal', 'high', 'urgent'])) {
                 Response::error('Invalid priority', 400);
@@ -601,6 +738,7 @@ function handlePut($db, $action, $currentUser) {
                         needed_by_date = ?,
                         purpose = ?,
                         notes = ?,
+                        request_fingerprint = ?,
                         updated_at = NOW()
                     WHERE id = ?
                 ");
@@ -609,6 +747,7 @@ function handlePut($db, $action, $currentUser) {
                     $data['needed_by_date'] ?? null,
                     $data['purpose'] ?? null,
                     $data['notes'] ?? null,
+                    $fingerprint,
                     $id
                 ]);
 
@@ -640,6 +779,32 @@ function handlePut($db, $action, $currentUser) {
                 Response::error('Only draft Purchase Requests can be submitted. Current status: ' . $current['status'], 400);
             }
 
+            $fingerprint = $current['request_fingerprint'] ?? null;
+            if (!$fingerprint) {
+                $fingerprint = getPRFingerprintFromDb($db, $id);
+                if ($fingerprint) {
+                    $fpStmt = $db->prepare("UPDATE purchase_requests SET request_fingerprint = ? WHERE id = ?");
+                    $fpStmt->execute([$fingerprint, $id]);
+                }
+            }
+
+            $duplicate = findDuplicatePendingPR($db, $current['department'], $fingerprint, $id);
+            if ($duplicate) {
+                Response::error('Duplicate pending Purchase Request already exists (' . $duplicate['pr_number'] . '). Please update that request instead.', 409, [
+                    'duplicate_pr_id' => (int) $duplicate['id'],
+                    'duplicate_pr_number' => $duplicate['pr_number']
+                ]);
+            }
+
+            $pendingItems = getRequestItemsById($db, $id);
+            $overlap = findPendingPRWithOverlappingItems($db, $current['department'], $pendingItems, $id);
+            if ($overlap) {
+                Response::error('Pending Purchase Request already exists for one or more items (' . $overlap['pr_number'] . '). Please update that request instead.', 409, [
+                    'duplicate_pr_id' => (int) $overlap['id'],
+                    'duplicate_pr_number' => $overlap['pr_number']
+                ]);
+            }
+
             $stmt = $db->prepare("
                 UPDATE purchase_requests
                 SET status = 'pending',
@@ -667,6 +832,16 @@ function handlePut($db, $action, $currentUser) {
             rejectSupplierFieldsInPR($data);
             validatePRCreateData($data);
 
+            $fingerprint = buildPRFingerprint($data['items']);
+
+            $overlap = findPendingPRWithOverlappingItems($db, $current['department'], $data['items'], $id);
+            if ($overlap) {
+                Response::error('Pending Purchase Request already exists for one or more items (' . $overlap['pr_number'] . '). Please update that request instead.', 409, [
+                    'duplicate_pr_id' => (int) $overlap['id'],
+                    'duplicate_pr_number' => $overlap['pr_number']
+                ]);
+            }
+
             $priority = $data['priority'] ?? $current['priority'];
             if (!in_array($priority, ['low', 'normal', 'high', 'urgent'])) {
                 Response::error('Invalid priority', 400);
@@ -680,6 +855,7 @@ function handlePut($db, $action, $currentUser) {
                         needed_by_date = ?,
                         purpose = ?,
                         notes = ?,
+                        request_fingerprint = ?,
                         updated_at = NOW()
                     WHERE id = ?
                 ");
@@ -688,6 +864,7 @@ function handlePut($db, $action, $currentUser) {
                     $data['needed_by_date'] ?? null,
                     $data['purpose'] ?? null,
                     $data['notes'] ?? null,
+                    $fingerprint,
                     $id
                 ]);
 

@@ -19,6 +19,7 @@
  */
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
+require_once __DIR__ . '/ingredient_stock_helpers.php';
 
 // Require Warehouse Raw role
 $currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'production_staff', 'purchaser']);
@@ -271,7 +272,7 @@ function handleGet($db, $currentUser) {
                 $stmt->execute([$item['ingredient_id']]);
                 $ing = $stmt->fetch();
                 
-                $available = $ing ? (float)$ing['available_quantity'] : 0;
+                $available = $ing ? max((float)$ing['available_quantity'], (float)$ing['current_stock']) : 0;
                 $needed = (float)$item['quantity'];
                 $sufficient = $available >= $needed;
                 
@@ -472,7 +473,7 @@ function handlePut($db, $currentUser) {
             
             try {
                 // Get ingredient info
-                $ingredient = $db->prepare("SELECT * FROM ingredients WHERE id = ? AND is_active = 1");
+                $ingredient = $db->prepare("SELECT * FROM ingredients WHERE id = ? AND is_active = 1 FOR UPDATE");
                 $ingredient->execute([$ingredientId]);
                 $ingredientData = $ingredient->fetch();
                 
@@ -480,16 +481,8 @@ function handlePut($db, $currentUser) {
                     throw new Exception('Ingredient not found');
                 }
                 
-                // Get available batches (FIFO)
-                $batches = $db->prepare("
-                    SELECT * FROM ingredient_batches
-                    WHERE ingredient_id = ?
-                    AND status IN ('available', 'partially_used')
-                    AND remaining_quantity > 0
-                    ORDER BY expiry_date ASC, received_date ASC, id ASC
-                ");
-                $batches->execute([$ingredientId]);
-                $batchList = $batches->fetchAll();
+                ensureIngredientBatchesForIssue($db, $ingredientData, $quantity, $currentUser);
+                $batchList = getUsableIngredientBatches($db, $ingredientId, true);
                 
                 $totalAvailable = array_sum(array_column($batchList, 'remaining_quantity'));
                 
@@ -549,7 +542,7 @@ function handlePut($db, $currentUser) {
                 // Update ingredient current stock
                 $stmt = $db->prepare("
                     UPDATE ingredients 
-                    SET current_stock = current_stock - ?, updated_at = NOW()
+                    SET current_stock = GREATEST(current_stock - ?, 0), updated_at = NOW()
                     WHERE id = ?
                 ");
                 $stmt->execute([$quantity, $ingredientId]);
@@ -597,9 +590,15 @@ function handlePut($db, $currentUser) {
                 $newQuantity = (float) $newQuantity;
                 $difference = $newQuantity - $oldQuantity;
 
+                if ($newQuantity < 0) {
+                    throw new Exception('New quantity cannot be negative');
+                }
+
                 if ($difference > 0) {
                     throw new Exception('Stock increases must come from PO receiving. Use the receiving workflow.');
                 }
+
+                $adjustedBatches = reduceIngredientBatchesToQuantity($db, $ingredientData, $newQuantity, $currentUser, $reason);
                 
                 // Update ingredient stock
                 $stmt = $db->prepare("
@@ -636,6 +635,7 @@ function handlePut($db, $currentUser) {
                     'old_quantity' => $oldQuantity,
                     'new_quantity' => $newQuantity,
                     'difference' => $difference,
+                    'adjusted_batches' => $adjustedBatches,
                     'transaction_code' => $txCode
                 ], 'Stock adjusted successfully');
                 
