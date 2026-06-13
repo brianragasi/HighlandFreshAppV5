@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * Highland Fresh System - Purchase Orders API
  *
@@ -783,7 +783,7 @@ function handlePost($db, $action, $currentUser) {
                 }
             }
 
-            // ===== REQUIRE APPROVED PURCHASE REQUEST — Phase 1 Enforcement =====
+            // ===== REQUIRE APPROVED PURCHASE REQUEST â€” Phase 1 Enforcement =====
             $purchaseRequestId = $data['purchase_request_id'];
             $prData = getApprovedPurchaseRequestForPO($db, $purchaseRequestId);
             $prItems = getPurchaseRequestItemsForPO($db, $purchaseRequestId);
@@ -924,6 +924,131 @@ function handlePost($db, $action, $currentUser) {
             }
             break;
 
+        case 'create_from_pr':
+            // ===== PURCHASER ONLY =====
+            requireActionRole($currentUser, ['purchaser'], 'Only the Purchaser can generate POs from Purchase Requests.');
+
+            if (empty($data['purchase_request_id'])) {
+                Response::error('purchase_request_id is required', 400);
+            }
+
+            $validated = loadAndValidateApprovedPRForSplit($db, (int) $data['purchase_request_id'], $data);
+            $prData      = $validated['pr'];
+            $prItems     = $validated['prItems'];
+            $assignments = $validated['assignments'];
+            $prItemsById = [];
+            foreach ($prItems as $pi) { $prItemsById[(int) $pi['id']] = $pi; }
+
+            $supplierIds = array_values(array_unique(array_map(fn($a) => (int) $a['supplier_id'], $assignments)));
+            $suppliers   = loadActiveSuppliersForSplit($db, $supplierIds);
+            foreach ($supplierIds as $sid) {
+                if (!isset($suppliers[$sid])) {
+                    Response::error("Supplier $sid is invalid or inactive", 400);
+                }
+            }
+            $groups = groupAssignmentsBySupplier($assignments);
+
+            $paymentTerms = $data['payment_terms'] ?? 'cash';
+            $orderDate    = $data['order_date'] ?? date('Y-m-d');
+            $dueDate      = null;
+            if ($paymentTerms !== 'cash') {
+                $days = (int) str_replace('credit_', '', $paymentTerms);
+                $dueDate = date('Y-m-d', strtotime($orderDate . " + $days days"));
+            }
+
+            $db->beginTransaction();
+            try {
+                $createdPOs = [];
+                foreach ($groups as $supplierId => $groupAssignments) {
+                    $supplierId = (int) $supplierId;
+                    $poNumber   = generateNextPONumberForSplit($db);
+
+                    $subtotal = 0; $vatAmount = 0;
+                    foreach ($groupAssignments as $a) {
+                        $lineTotal = (float) $a['quantity'] * (float) $a['unit_price'];
+                        $subtotal += $lineTotal;
+                        if (!empty($a['is_vat_item'])) { $vatAmount += $lineTotal; }
+                    }
+                    $totalAmount = $subtotal;
+
+                    $poId = insertPOHeaderFromSplit(
+                        $db, $poNumber, $supplierId, (int) $prData['id'], $data,
+                        $paymentTerms, $orderDate, $dueDate,
+                        $subtotal, $vatAmount, $totalAmount, $currentUser
+                    );
+
+                    $lineSummaries = [];
+                    foreach ($groupAssignments as $a) {
+                        $prItem = $prItemsById[$a['pr_item_id']];
+                        insertPOItemFromSplit($db, $poId, $a, $prItem);
+                        insertPRItemPOAllocation($db, (int) $a['pr_item_id'], $poId, (float) $a['quantity'], $currentUser);
+                        stampPRItemSupplier($db, (int) $a['pr_item_id'], $supplierId, $currentUser);
+                        $lineSummaries[] = [
+                            'pr_item_id'        => (int) $a['pr_item_id'],
+                            'item_description'  => $prItem['item_description'],
+                            'quantity'          => (float) $a['quantity'],
+                            'unit'              => $prItem['unit'] ?: 'units',
+                            'unit_price'        => (float) $a['unit_price'],
+                            'total_amount'      => (float) $a['quantity'] * (float) $a['unit_price'],
+                        ];
+                    }
+
+                    $priceHistoryPayload = array_map(function($a) {
+                        return [
+                            'ingredient_id' => null, 'mro_item_id' => null,
+                            'unit_price'    => $a['unit_price'],
+                        ];
+                    }, $groupAssignments);
+                    recordPOCreationPriceHistory($db, $priceHistoryPayload, $poId, $supplierId, $currentUser);
+
+                    logAudit($currentUser['user_id'], 'CREATE', 'purchase_orders', $poId, null, [
+                        'po_number'           => $poNumber,
+                        'supplier_id'         => $supplierId,
+                        'supplier_name'       => $suppliers[$supplierId]['supplier_name'] ?? null,
+                        'purchase_request_id' => (int) $prData['id'],
+                        'pr_number'           => $prData['pr_number'],
+                        'total_amount'        => $totalAmount,
+                        'payment_terms'       => $paymentTerms,
+                        'items_count'         => count($groupAssignments),
+                        'source'              => 'create_from_pr_supplier_grouped'
+                    ]);
+
+                    $createdPOs[] = [
+                        'po_id'         => $poId,
+                        'po_number'     => $poNumber,
+                        'supplier_id'   => $supplierId,
+                        'supplier_name' => $suppliers[$supplierId]['supplier_name'] ?? null,
+                        'supplier_code' => $suppliers[$supplierId]['supplier_code'] ?? null,
+                        'subtotal'      => $subtotal,
+                        'vat_amount'    => $vatAmount,
+                        'total_amount'  => $totalAmount,
+                        'item_count'    => count($groupAssignments),
+                        'items'         => $lineSummaries,
+                    ];
+                }
+
+                recomputeAndStampPRConversionState($db, (int) $prData['id'], $currentUser);
+
+                $db->commit();
+
+                $finalPrStatusStmt = $db->prepare("SELECT status FROM purchase_requests WHERE id = ?");
+                $finalPrStatusStmt->execute([(int) $prData['id']]);
+                $finalPrStatus = $finalPrStatusStmt->fetchColumn();
+
+                Response::success([
+                    'pr_id'           => (int) $prData['id'],
+                    'pr_number'       => $prData['pr_number'],
+                    'pr_status'       => $finalPrStatus,
+                    'po_count'        => count($createdPOs),
+                    'purchase_orders' => $createdPOs,
+                ], count($createdPOs) . ' purchase order(s) generated from PR ' . $prData['pr_number'], 201);
+
+            } catch (Exception $e) {
+                $db->rollBack();
+                throw $e;
+            }
+            break;
+
         default:
             Response::error('Invalid action', 400);
     }
@@ -950,7 +1075,7 @@ function handlePut($db, $action, $currentUser) {
         case 'submit':
             requireActionRole($currentUser, ['purchaser'], 'Only the Purchaser can finalize purchase orders');
 
-            // Finalize PO (draft/pending -> approved) — no GM approval required
+            // Finalize PO (draft/pending -> approved) â€” no GM approval required
             if (!in_array($current['status'], ['draft', 'pending'])) {
                 Response::error('Only draft or pending POs can be finalized', 400);
             }
@@ -1277,7 +1402,7 @@ function handlePut($db, $action, $currentUser) {
                 foreach ($allPOItems as $poItem) {
                     $itemData = $receivingMap[(int)$poItem['id']] ?? null;
                     if (!$itemData) {
-                        // Item not in this receiving batch — check if already fully received
+                        // Item not in this receiving batch â€” check if already fully received
                         $prevAccepted = (float)$poItem['quantity_received'];
                         if ($prevAccepted < (float)$poItem['quantity'] - 0.001) {
                             $allFullyAccepted = false;
@@ -2096,4 +2221,261 @@ function buildReceivingNotes($receivingMeta, $itemData) {
     }
 
     return empty($parts) ? null : implode(' | ', $parts);
+}
+
+
+/**
+ * ============================================================
+ * PR -> PO Supplier Consolidation (create_from_pr)
+ * ============================================================
+ * Allows a single approved Purchase Request to be split into
+ * multiple POs (one per distinct supplier). Items that share a
+ * supplier are consolidated into a single PO. The PR's status
+ * becomes `converted` only when every line is fully allocated;
+ * otherwise it becomes `partially_converted`.
+ */
+
+/**
+ * Validate the assignments payload submitted to create_from_pr.
+ * Returns the indexed list of approved PR items + the validated
+ * assignments array. On error, calls Response::error() which
+ * short-circuits the request.
+ */
+function loadAndValidateApprovedPRForSplit($db, $purchaseRequestId, $data) {
+    $prData = getApprovedPurchaseRequestForPO($db, $purchaseRequestId);
+    $prItems = getPurchaseRequestItemsForPO($db, $purchaseRequestId);
+
+    if (empty($data['items']) || !is_array($data['items'])) {
+        Response::error('items[] is required and must be a non-empty array', 400);
+    }
+
+    $prItemsById = [];
+    foreach ($prItems as $i) {
+        $prItemsById[(int) $i['id']] = $i;
+    }
+
+    $assignments = [];
+    $seenPrItemQty = [];
+
+    foreach ($data['items'] as $idx => $row) {
+        if (!is_array($row) || empty($row['purchase_request_item_id'])) {
+            Response::error("items[$idx].purchase_request_item_id is required", 400);
+        }
+        $prItemId = (int) $row['purchase_request_item_id'];
+        if (!isset($prItemsById[$prItemId])) {
+            Response::error("items[$idx] references PR line $prItemId which does not belong to PR $purchaseRequestId", 400);
+        }
+        if (empty($row['supplier_id'])) {
+            Response::error("items[$idx].supplier_id is required (PR line $prItemId: " . $prItemsById[$prItemId]['item_description'] . ')', 400);
+        }
+        $supplierId = (int) $row['supplier_id'];
+
+        $unitPrice = $row['unit_price'] ?? null;
+        if (!is_numeric($unitPrice) || (float) $unitPrice <= 0) {
+            Response::error("items[$idx].unit_price must be a positive number (PR line $prItemId)", 400);
+        }
+        $unitPrice = (float) $unitPrice;
+
+        $prItemQty = (float) $prItemsById[$prItemId]['quantity'];
+        $rowQty = isset($row['quantity']) && is_numeric($row['quantity'])
+            ? (float) $row['quantity']
+            : $prItemQty;
+        if ($rowQty <= 0) {
+            Response::error("items[$idx].quantity must be positive (PR line $prItemId)", 400);
+        }
+
+        $alreadyAssigned = $seenPrItemQty[$prItemId] ?? 0;
+        if ($alreadyAssigned + $rowQty > $prItemQty + 0.0001) {
+            Response::error(
+                "Over-allocation on PR line $prItemId: requested " .
+                number_format($alreadyAssigned + $rowQty, 2) . ' ' .
+                $prItemsById[$prItemId]['unit'] . ', only ' . number_format($prItemQty, 2) . ' available',
+                400
+            );
+        }
+        $seenPrItemQty[$prItemId] = $alreadyAssigned + $rowQty;
+
+        $assignments[] = [
+            'pr_item_id'     => $prItemId,
+            'supplier_id'    => $supplierId,
+            'unit_price'     => $unitPrice,
+            'quantity'       => $rowQty,
+            'is_vat_item'    => !empty($row['is_vat_item']) ? 1 : 0,
+            'notes'          => isset($row['notes']) ? trim((string) $row['notes']) : null,
+            'pr_item_qty'    => $prItemQty,
+        ];
+    }
+
+    return ['pr' => $prData, 'prItems' => $prItems, 'assignments' => $assignments];
+}
+
+function groupAssignmentsBySupplier($assignments) {
+    $groups = [];
+    foreach ($assignments as $a) {
+        $sid = (int) $a['supplier_id'];
+        if (!isset($groups[$sid])) {
+            $groups[$sid] = [];
+        }
+        $groups[$sid][] = $a;
+    }
+    return $groups;
+}
+
+function loadActiveSuppliersForSplit($db, array $supplierIds) {
+    if (empty($supplierIds)) {
+        return [];
+    }
+    $placeholders = implode(',', array_fill(0, count($supplierIds), '?'));
+    $stmt = $db->prepare("SELECT id, supplier_name, supplier_code FROM suppliers WHERE id IN ($placeholders) AND is_active = 1");
+    $stmt->execute(array_values($supplierIds));
+    $rows = $stmt->fetchAll();
+    $byId = [];
+    foreach ($rows as $r) {
+        $byId[(int) $r['id']] = $r;
+    }
+    return $byId;
+}
+
+function generateNextPONumberForSplit($db) {
+    $stmt = $db->query("SELECT po_number FROM purchase_orders ORDER BY id DESC LIMIT 1");
+    $last = $stmt->fetch();
+    return $last ? (string) ((int) $last['po_number'] + 1) : '5252';
+}
+
+function insertPOHeaderFromSplit($db, $poNumber, $supplierId, $prId, $data, $paymentTerms, $orderDate, $dueDate, $subtotal, $vatAmount, $totalAmount, $currentUser) {
+    $stmt = $db->prepare("
+        INSERT INTO purchase_orders
+        (po_number, supplier_id, order_date, expected_delivery, delivery_details, status,
+         subtotal, vat_amount, total_amount, payment_status, payment_terms, due_date,
+         notes, purchase_request_id, created_by)
+        VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, 'unpaid', ?, ?, ?, ?, ?)
+    ");
+    $stmt->execute([
+        $poNumber,
+        $supplierId,
+        $orderDate,
+        $data['expected_delivery'] ?? null,
+        $data['delivery_details'] ?? null,
+        $subtotal,
+        $vatAmount,
+        $totalAmount,
+        $paymentTerms,
+        $dueDate,
+        $data['notes'] ?? null,
+        $prId,
+        $currentUser['user_id'],
+    ]);
+    return (int) $db->lastInsertId();
+}
+
+function insertPOItemFromSplit($db, $poId, $assignment, $prItem) {
+    $stmt = $db->prepare("
+        INSERT INTO purchase_order_items
+        (po_id, purchase_request_item_id, ingredient_id, mro_item_id, item_description, quantity, unit,
+         unit_price, total_amount, is_vat_item, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ");
+    $stmt->execute([
+        $poId,
+        $assignment['pr_item_id'],
+        $prItem['ingredient_id'] ?? null,
+        $prItem['mro_item_id'] ?? null,
+        $prItem['item_description'],
+        $assignment['quantity'],
+        $prItem['unit'] ?: 'units',
+        $assignment['unit_price'],
+        $assignment['quantity'] * $assignment['unit_price'],
+        $assignment['is_vat_item'] ?? 0,
+        $assignment['notes'] ?? $prItem['notes'] ?? null,
+    ]);
+    return (int) $db->lastInsertId();
+}
+
+function insertPRItemPOAllocation($db, $prItemId, $poId, $quantity, $currentUser) {
+    $stmt = $db->prepare("
+        INSERT INTO purchase_request_item_po
+        (purchase_request_item_id, po_id, quantity, created_by)
+        VALUES (?, ?, ?, ?)
+    ");
+    $stmt->execute([$prItemId, $poId, $quantity, $currentUser['user_id']]);
+    return (int) $db->lastInsertId();
+}
+
+function stampPRItemSupplier($db, $prItemId, $supplierId, $currentUser) {
+    $stmt = $db->prepare("
+        UPDATE purchase_request_items
+        SET supplier_id = ?,
+            supplier_assigned_by = ?,
+            supplier_assigned_at = NOW()
+        WHERE id = ?
+          AND (supplier_id IS NULL OR supplier_id <> ?)
+    ");
+    $stmt->execute([$supplierId, $currentUser['user_id'], $prItemId, $supplierId]);
+}
+
+function recomputeAndStampPRConversionState($db, $prId, $currentUser) {
+    $stmt = $db->prepare("SELECT status FROM purchase_requests WHERE id = ?");
+    $stmt->execute([$prId]);
+    $pr = $stmt->fetch();
+    if (!$pr) {
+        return;
+    }
+    $oldStatus = $pr['status'];
+
+    $allocStmt = $db->prepare("
+        SELECT
+            pri.id              AS pr_item_id,
+            pri.quantity        AS pr_item_qty,
+            COALESCE(SUM(prip.quantity), 0) AS allocated_qty
+        FROM purchase_request_items pri
+        LEFT JOIN purchase_request_item_po prip ON prip.purchase_request_item_id = pri.id
+        WHERE pri.purchase_request_id = ?
+        GROUP BY pri.id, pri.quantity
+    ");
+    $allocStmt->execute([$prId]);
+    $rows = $allocStmt->fetchAll();
+
+    $totalLines   = count($rows);
+    $fullLines    = 0;
+    $partialLines = 0;
+    foreach ($rows as $r) {
+        if ((float) $r['allocated_qty'] + 0.0001 >= (float) $r['pr_item_qty']) {
+            $fullLines++;
+        } elseif ((float) $r['allocated_qty'] > 0) {
+            $partialLines++;
+        }
+    }
+
+    if ($totalLines > 0 && $fullLines === $totalLines) {
+        $newStatus = 'converted';
+    } elseif ($partialLines > 0 || $fullLines > 0) {
+        $newStatus = 'partially_converted';
+    } else {
+        $newStatus = 'approved';
+    }
+
+    if ($newStatus === $oldStatus) {
+        return;
+    }
+
+    $upd = $db->prepare("
+        UPDATE purchase_requests
+        SET status = ?, updated_at = NOW()
+        WHERE id = ? AND status = ?
+    ");
+    $upd->execute([$newStatus, $prId, $oldStatus]);
+
+    addPRStatusHistory(
+        $db,
+        $prId,
+        $oldStatus,
+        $newStatus,
+        $currentUser['user_id'],
+        'Recomputed after supplier-grouped PO creation'
+    );
+
+    logAudit($currentUser['user_id'], 'STATUS_CHANGE', 'purchase_requests', $prId,
+        ['status' => $oldStatus],
+        ['status' => $newStatus, 'reason' => 'supplier_grouped_po_creation']
+    );
 }
