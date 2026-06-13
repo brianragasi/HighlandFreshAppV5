@@ -345,7 +345,7 @@
                         <div class="signature-line"><span id="approvedBySignature">Approved By</span></div>
                     </div>
                     <div>
-                        <div class="signature-line">Supplier Signature</div>
+                        <div class="signature-line"><span id="supplierSignature">Supplier Signature</span></div>
                     </div>
                 </div>
             </div>
@@ -395,13 +395,26 @@
                 document.getElementById('paymentTerms').textContent = PurchasingService.formatPaymentTerms(po.payment_terms);
                 document.getElementById('linkedPr').textContent = po.pr_number || '-';
                 document.getElementById('prPurpose').textContent = po.pr_purpose || '-';
-                const requestedByName = normalizeName(po.pr_requested_by_name);
-                const preparedByName = normalizeName(po.created_by_name);
+                const preparedByName = normalizeName(po.created_by_name || po.prepared_by_name);
                 const approvalFallbackAllowed = ['approved', 'ordered', 'partial_received', 'received', 'closed'].includes(po.status);
-                const approvedByName = resolveGMName(
+                const gmApprovedName = resolveGMName(
                     po.pr_approver_name || po.pr_approved_by_name,
                     approvalFallbackAllowed ? po.current_general_manager_name : null
                 );
+                const hasPr = Boolean(po.pr_number);
+                const requestedByName = hasPr
+                    ? normalizeName(po.pr_requested_by_name)
+                    : normalizeName(po.requested_by_name || po.created_by_name);
+                let approvedByName = hasPr
+                    ? normalizeName(po.pr_approver_name || po.pr_approved_by_name || po.current_general_manager_name)
+                    : resolveGMName(
+                        po.approver_name || po.approved_by_name,
+                        approvalFallbackAllowed ? po.current_general_manager_name : null
+                    );
+                if (hasPr && !approvedByName) {
+                    approvedByName = 'General Manager';
+                }
+                const supplierSignatureName = normalizeName(po.supplier_contact || po.supplier_name);
 
                 document.getElementById('requestedBy').textContent = requestedByName || '-';
                 document.getElementById('preparedBy').textContent = preparedByName || '-';
@@ -409,6 +422,7 @@
                 document.getElementById('requestedBySignature').textContent = requestedByName ? `${requestedByName} / Requested By` : 'Requested By';
                 document.getElementById('preparedBySignature').textContent = preparedByName ? `${preparedByName} / Prepared By` : 'Prepared By';
                 document.getElementById('approvedBySignature').textContent = approvedByName ? `${approvedByName} / Approved By` : 'Approved By';
+                document.getElementById('supplierSignature').textContent = supplierSignatureName ? `${supplierSignatureName} / Supplier` : 'Supplier Signature';
 
                 const printableStatuses = ['approved', 'ordered', 'partial_received', 'received', 'closed'];
                 const canPrint = printableStatuses.includes(po.status);

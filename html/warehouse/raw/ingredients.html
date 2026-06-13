@@ -715,8 +715,20 @@
 
         function updateStats() {
             const total = ingredients.length;
-            const inStock = ingredients.filter(i => parseFloat(i.current_stock) > parseFloat(i.minimum_stock)).length;
-            const lowStock = ingredients.filter(i => { const s = parseFloat(i.current_stock), m = parseFloat(i.minimum_stock); return s > 0 && s <= m; }).length;
+            const inStock = ingredients.filter(i => {
+                const stock = parseFloat(i.current_stock);
+                const min = parseFloat(i.minimum_stock) || 0;
+                const reorder = parseFloat(i.reorder_point);
+                const reorderPoint = Number.isFinite(reorder) && reorder > 0 ? reorder : min * 1.5;
+                return stock > reorderPoint;
+            }).length;
+            const lowStock = ingredients.filter(i => {
+                const stock = parseFloat(i.current_stock);
+                const min = parseFloat(i.minimum_stock) || 0;
+                const reorder = parseFloat(i.reorder_point);
+                const reorderPoint = Number.isFinite(reorder) && reorder > 0 ? reorder : min * 1.5;
+                return stock > 0 && stock <= reorderPoint;
+            }).length;
             const expiring = ingredients.filter(i => i.nearest_expiry && daysUntil(i.nearest_expiry) <= 7 && daysUntil(i.nearest_expiry) >= 0).length;
 
             document.getElementById('totalIngredients').textContent = total;
@@ -737,11 +749,14 @@
             }
             if (currentFilter.stock) {
                 filtered = filtered.filter(i => {
-                    const stock = parseFloat(i.current_stock), min = parseFloat(i.minimum_stock), reorder = min * 1.5;
+                    const stock = parseFloat(i.current_stock);
+                    const min = parseFloat(i.minimum_stock) || 0;
+                    const reorder = parseFloat(i.reorder_point);
+                    const reorderPoint = Number.isFinite(reorder) && reorder > 0 ? reorder : min * 1.5;
                     switch (currentFilter.stock) {
-                        case 'ok': return stock > reorder;
-                        case 'low': return stock > 0 && stock <= reorder;
-                        case 'critical': return stock > 0 && stock <= min;
+                        case 'ok': return stock > reorderPoint;
+                        case 'low': return stock > 0 && stock <= reorderPoint;
+                        case 'critical': return stock > 0 && min > 0 && stock < min;
                         case 'out': return stock <= 0;
                         default: return true;
                     }
@@ -764,13 +779,17 @@
             const catIcons = { sugar: 'fa-cubes', powder: 'fa-mortar-pestle', flavor: 'fa-flask', culture: 'fa-microscope', enzyme: 'fa-dna', packaging: 'fa-box', additive: 'fa-vial' };
 
             container.innerHTML = filtered.map(ing => {
-                const stock = parseFloat(ing.current_stock), min = parseFloat(ing.minimum_stock), max = parseFloat(ing.maximum_stock || min * 3);
+                const stock = parseFloat(ing.current_stock);
+                const min = parseFloat(ing.minimum_stock) || 0;
+                const reorder = parseFloat(ing.reorder_point);
+                const reorderPoint = Number.isFinite(reorder) && reorder > 0 ? reorder : min * 1.5;
+                const max = parseFloat(ing.maximum_stock || min * 3);
                 const pct = Math.min(100, (stock / max) * 100);
 
                 let statusClass, statusText, barColor;
                 if (stock <= 0) { statusClass = 'badge-ghost'; statusText = 'Out'; barColor = 'bg-base-300'; }
-                else if (stock <= min) { statusClass = 'badge-error'; statusText = 'Critical'; barColor = 'bg-error'; }
-                else if (stock <= min * 1.5) { statusClass = 'badge-warning'; statusText = 'Low'; barColor = 'bg-warning'; }
+                else if (min > 0 && stock < min) { statusClass = 'badge-error'; statusText = 'Critical'; barColor = 'bg-error'; }
+                else if (stock <= reorderPoint) { statusClass = 'badge-warning'; statusText = 'Low'; barColor = 'bg-warning'; }
                 else { statusClass = 'badge-success'; statusText = 'OK'; barColor = 'bg-success'; }
 
                 const slug = ing.category_slug || 'additive';

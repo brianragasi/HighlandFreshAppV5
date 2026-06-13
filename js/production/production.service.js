@@ -188,6 +188,27 @@ const ProductionService = {
     },
 
     /**
+     * Get recipe-based item requirements for a selected production run
+     * @param {number} runId - Production Run ID
+     */
+    async getRunRecipeRequisitionItems(runId) {
+        return await api.get(`${this.baseUrl}/requisitions.php`, {
+            params: { action: 'run_recipe_items', run_id: runId }
+        });
+    },
+
+    /**
+     * Get recipe-based item requirements before a production run exists
+     * @param {number} recipeId - Recipe ID
+     * @param {number} plannedQuantity - Planned output quantity
+     */
+    async getPlannedRecipeRequisitionItems(recipeId, plannedQuantity) {
+        return await api.get(`${this.baseUrl}/requisitions.php`, {
+            params: { action: 'planned_recipe_items', recipe_id: recipeId, planned_quantity: plannedQuantity }
+        });
+    },
+
+    /**
      * Create new requisition
      * @param {Object} requisitionData - Requisition data with items
      */

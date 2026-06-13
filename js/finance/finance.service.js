@@ -26,6 +26,20 @@ const FinanceService = {
         return api.get('/finance/dashboard.php?action=farmer_payment_summary');
     },
 
+    getFarmerUnpaidDeliveries(farmerId, filters = {}) {
+        const params = new URLSearchParams({ action: 'unpaid_deliveries', farmer_id: farmerId, ...filters });
+        return api.get(`/finance/farmer_payments.php?${params}`);
+    },
+
+    getFarmerPaymentHistory(farmerId, limit = 10) {
+        const params = new URLSearchParams({ action: 'history', farmer_id: farmerId, limit });
+        return api.get(`/finance/farmer_payments.php?${params}`);
+    },
+
+    recordFarmerPayment(data) {
+        return api.post('/finance/farmer_payments.php?action=record_payment', data);
+    },
+
     getRecentDisbursements(limit = 10) {
         return api.get(`/finance/dashboard.php?action=recent_disbursements&limit=${limit}`);
     },

@@ -19,6 +19,331 @@ require_once dirname(__DIR__) . '/bootstrap.php';
 // Require Production role
 $currentUser = Auth::requireRole(['production_staff', 'general_manager', 'qc_officer']);
 
+function productionRunMaterialStatusesSql() {
+    return "'planned', 'in_progress', 'pasteurization', 'processing', 'cooling', 'packaging', 'completed'";
+}
+
+function normalizeProductionUnit($unit) {
+    $unit = strtolower(trim((string) $unit));
+    $unit = rtrim($unit, '.');
+
+    $aliases = [
+        'kgs' => 'kg',
+        'kilo' => 'kg',
+        'kilos' => 'kg',
+        'kilogram' => 'kg',
+        'kilograms' => 'kg',
+        'l' => 'liter',
+        'litre' => 'liter',
+        'litres' => 'liter',
+        'liters' => 'liter',
+        'packet' => 'packet',
+        'packets' => 'packet',
+        'pcs' => 'piece',
+        'pc' => 'piece',
+        'pieces' => 'piece',
+        'unit' => 'unit',
+        'units' => 'unit'
+    ];
+
+    return $aliases[$unit] ?? $unit;
+}
+
+function parseIngredientAdjustments($ingredientAdjustmentsJson) {
+    if (!$ingredientAdjustmentsJson) {
+        return [];
+    }
+
+    $decoded = json_decode($ingredientAdjustmentsJson, true);
+    if (!is_array($decoded)) {
+        return [];
+    }
+
+    $adjustments = [];
+    foreach ($decoded as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+
+        $ingredientId = (int) ($item['ingredient_id'] ?? 0);
+        $ingredientName = strtolower(trim($item['ingredient_name'] ?? ''));
+        $key = $ingredientId > 0 ? "id:{$ingredientId}" : "name:{$ingredientName}";
+        $adjustments[$key] = $item;
+    }
+
+    return $adjustments;
+}
+
+function calculateRecipeIngredientRequirements($db, $recipeId, $plannedQuantity, $ingredientAdjustmentsJson = null) {
+    $recipeStmt = $db->prepare("SELECT expected_yield FROM master_recipes WHERE id = ?");
+    $recipeStmt->execute([$recipeId]);
+    $recipe = $recipeStmt->fetch();
+    $expectedYield = $recipe && (float) $recipe['expected_yield'] > 0 ? (float) $recipe['expected_yield'] : 1;
+    $scaleFactor = max(0, (float) $plannedQuantity) / $expectedYield;
+
+    $ingredientsStmt = $db->prepare("
+        SELECT ingredient_id, ingredient_name, quantity, unit, is_optional
+        FROM recipe_ingredients
+        WHERE recipe_id = ?
+    ");
+    $ingredientsStmt->execute([$recipeId]);
+    $recipeIngredients = $ingredientsStmt->fetchAll();
+
+    $adjustments = parseIngredientAdjustments($ingredientAdjustmentsJson);
+    $requirements = [];
+
+    foreach ($recipeIngredients as $ingredient) {
+        $ingredientId = (int) ($ingredient['ingredient_id'] ?? 0);
+        $ingredientName = trim($ingredient['ingredient_name'] ?? '');
+        $nameKey = strtolower($ingredientName);
+        $adjustment = $adjustments[$ingredientId > 0 ? "id:{$ingredientId}" : "name:{$nameKey}"] ?? null;
+        $quantity = $adjustment && isset($adjustment['actual_quantity'])
+            ? (float) $adjustment['actual_quantity']
+            : round(((float) $ingredient['quantity']) * $scaleFactor, 3);
+
+        if ($quantity <= 0) {
+            continue;
+        }
+
+        $requirements[] = [
+            'ingredient_id' => $ingredientId,
+            'ingredient_name' => $ingredientName,
+            'quantity' => $quantity,
+            'unit' => $ingredient['unit'],
+            'normalized_unit' => normalizeProductionUnit($ingredient['unit']),
+            'is_optional' => (int) ($ingredient['is_optional'] ?? 0)
+        ];
+    }
+
+    $combined = [];
+    foreach ($requirements as $requirement) {
+        $idPart = $requirement['ingredient_id'] > 0
+            ? "id:{$requirement['ingredient_id']}"
+            : "name:" . strtolower(trim($requirement['ingredient_name']));
+        $key = $idPart . "|unit:" . $requirement['normalized_unit'];
+
+        if (!isset($combined[$key])) {
+            $combined[$key] = $requirement;
+            continue;
+        }
+
+        $combined[$key]['quantity'] += $requirement['quantity'];
+        $combined[$key]['quantity'] = round($combined[$key]['quantity'], 3);
+    }
+
+    return array_values($combined);
+}
+
+function getIssuedIngredientStats($db, $ingredient) {
+    $ingredientId = (int) ($ingredient['ingredient_id'] ?? 0);
+    $normalizedUnit = $ingredient['normalized_unit'];
+    $params = [];
+
+    $where = "
+        ri.item_type = 'ingredient'
+        AND ri.issued_quantity > 0
+        AND ir.department = 'production'
+    ";
+
+    if ($ingredientId > 0) {
+        $where .= " AND ri.item_id = ?";
+        $params[] = $ingredientId;
+    } else {
+        $where .= " AND LOWER(TRIM(ri.item_name)) = ?";
+        $params[] = strtolower(trim($ingredient['ingredient_name']));
+    }
+
+    $stmt = $db->prepare("
+        SELECT ri.issued_quantity, ri.unit_of_measure, COALESCE(ri.fulfilled_at, ri.updated_at, ri.created_at) AS issued_at
+        FROM requisition_items ri
+        JOIN material_requisitions ir ON ri.requisition_id = ir.id
+        WHERE {$where}
+    ");
+    $stmt->execute($params);
+
+    $total = 0.0;
+    $earliestIssuedAt = null;
+    foreach ($stmt->fetchAll() as $row) {
+        if (normalizeProductionUnit($row['unit_of_measure']) === $normalizedUnit) {
+            $total += (float) $row['issued_quantity'];
+            if ($row['issued_at'] && (!$earliestIssuedAt || $row['issued_at'] < $earliestIssuedAt)) {
+                $earliestIssuedAt = $row['issued_at'];
+            }
+        }
+    }
+
+    return [
+        'total_issued' => $total,
+        'earliest_issued_at' => $earliestIssuedAt
+    ];
+}
+
+function getReservedIngredientQuantity($db, $ingredient, $excludeRunId = null, $earliestIssuedAt = null) {
+    $statuses = productionRunMaterialStatusesSql();
+    $sql = "
+        SELECT pr.id, pr.recipe_id, pr.planned_quantity, pr.ingredient_adjustments
+        FROM production_runs pr
+        WHERE pr.status IN ({$statuses})
+    ";
+    $params = [];
+
+    if ($excludeRunId) {
+        $sql .= " AND pr.id <> ?";
+        $params[] = $excludeRunId;
+    }
+
+    if ($earliestIssuedAt) {
+        $sql .= " AND pr.created_at >= ?";
+        $params[] = $earliestIssuedAt;
+    }
+
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+
+    $total = 0.0;
+    $targetId = (int) ($ingredient['ingredient_id'] ?? 0);
+    $targetName = strtolower(trim($ingredient['ingredient_name']));
+    $targetUnit = $ingredient['normalized_unit'];
+
+    foreach ($stmt->fetchAll() as $run) {
+        $requirements = calculateRecipeIngredientRequirements(
+            $db,
+            $run['recipe_id'],
+            $run['planned_quantity'],
+            $run['ingredient_adjustments']
+        );
+
+        foreach ($requirements as $requirement) {
+            $sameId = $targetId > 0 && (int) $requirement['ingredient_id'] === $targetId;
+            $sameName = $targetId <= 0 && strtolower(trim($requirement['ingredient_name'])) === $targetName;
+            if (($sameId || $sameName) && $requirement['normalized_unit'] === $targetUnit) {
+                $total += (float) $requirement['quantity'];
+            }
+        }
+    }
+
+    return $total;
+}
+
+function validateIssuedIngredientsForRun($db, $recipeId, $plannedQuantity, $ingredientAdjustmentsJson) {
+    $requirements = calculateRecipeIngredientRequirements($db, $recipeId, $plannedQuantity, $ingredientAdjustmentsJson);
+    $errors = [];
+    $allocation = [];
+
+    foreach ($requirements as $ingredient) {
+        $issuedStats = getIssuedIngredientStats($db, $ingredient);
+        $issued = $issuedStats['total_issued'];
+        $reserved = getReservedIngredientQuantity($db, $ingredient, null, $issuedStats['earliest_issued_at']);
+        $available = max(0, $issued - $reserved);
+        $needed = (float) $ingredient['quantity'];
+
+        $allocation[] = [
+            'ingredient_id' => $ingredient['ingredient_id'],
+            'ingredient_name' => $ingredient['ingredient_name'],
+            'quantity_reserved' => $needed,
+            'unit' => $ingredient['unit'],
+            'issued_to_production' => $issued,
+            'already_reserved' => $reserved,
+            'available_before_run' => $available
+        ];
+
+        if ($needed > $available) {
+            $errors[] = "{$ingredient['ingredient_name']}: need {$needed} {$ingredient['unit']}, available " . round($available, 3) . " {$ingredient['unit']}";
+        }
+    }
+
+    return [
+        'requirements' => $requirements,
+        'allocation' => $allocation,
+        'errors' => $errors
+    ];
+}
+
+function getUsableIssuedRawMilkStats($db) {
+    $stmt = $db->prepare("
+        SELECT
+            issued.requisition_id,
+            ir.requisition_code,
+            issued.issued_liters,
+            issued.issued_at,
+            trace.earliest_expiry,
+            trace.source_batches
+        FROM (
+            SELECT
+                ri.requisition_id,
+                SUM(COALESCE(ri.issued_quantity, 0)) as issued_liters,
+                MAX(COALESCE(ri.fulfilled_at, ri.updated_at, ri.created_at)) as issued_at
+            FROM requisition_items ri
+            WHERE COALESCE(ri.issued_quantity, 0) > 0
+              AND (
+                  ri.item_type = 'raw_milk'
+                  OR LOWER(ri.item_name) IN ('raw', 'raw milk', 'fresh milk', 'carabao', 'cow milk', 'goat milk', 'whole milk')
+                  OR (
+                      LOWER(ri.item_name) LIKE '%milk%'
+                      AND LOWER(ri.item_name) NOT LIKE '%powder%'
+                      AND LOWER(ri.item_name) NOT LIKE '%chocolate%'
+                  )
+              )
+            GROUP BY ri.requisition_id
+        ) issued
+        JOIN material_requisitions ir ON ir.id = issued.requisition_id
+        LEFT JOIN (
+            SELECT
+                it.reference_id,
+                MIN(rmi.expiry_date) as earliest_expiry,
+                GROUP_CONCAT(DISTINCT rmi.batch_code ORDER BY rmi.expiry_date ASC SEPARATOR ', ') as source_batches
+            FROM inventory_transactions it
+            LEFT JOIN raw_milk_inventory rmi ON rmi.id = it.batch_id
+            WHERE it.item_type = 'raw_milk'
+              AND it.reference_type = 'requisition'
+              AND it.quantity > 0
+            GROUP BY it.reference_id
+        ) trace ON trace.reference_id = issued.requisition_id
+        WHERE issued.issued_liters > 0
+          AND ir.department = 'production'
+        ORDER BY COALESCE(trace.earliest_expiry, '9999-12-31') ASC, issued.issued_at ASC
+    ");
+    $stmt->execute();
+    $sources = $stmt->fetchAll();
+
+    $totalIssued = 0.0;
+    $earliestIssuedAt = null;
+    foreach ($sources as $source) {
+        $totalIssued += (float) $source['issued_liters'];
+        if ($source['issued_at'] && (!$earliestIssuedAt || $source['issued_at'] < $earliestIssuedAt)) {
+            $earliestIssuedAt = $source['issued_at'];
+        }
+    }
+
+    return [
+        'sources' => $sources,
+        'total_issued' => $totalIssued,
+        'earliest_issued_at' => $earliestIssuedAt
+    ];
+}
+
+function getReservedRawMilkLiters($db, $earliestIssuedAt = null) {
+    $statuses = productionRunMaterialStatusesSql();
+    $sql = "
+        SELECT COALESCE(SUM(milk_liters_used), 0) as total_used
+        FROM production_runs
+        WHERE status IN ({$statuses})
+          AND (milk_source_type IS NULL OR milk_source_type = 'raw')
+    ";
+    $params = [];
+
+    if ($earliestIssuedAt) {
+        $sql .= " AND created_at >= ?";
+        $params[] = $earliestIssuedAt;
+    }
+
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    $row = $stmt->fetch();
+
+    return (float) ($row['total_used'] ?? 0);
+}
+
 try {
     $db = Database::getInstance()->getConnection();
     
@@ -56,51 +381,35 @@ try {
                 // 3. Warehouse fulfills/issues milk
                 // 4. Production can now use the issued milk
                 
-                // Get milk issued to production via requisitions (with details)
-                $issuedMilkStmt = $db->prepare("
-                    SELECT 
-                        ri.id,
-                        ir.requisition_code as delivery_code,
-                        ri.issued_quantity as remaining_liters,
-                        ri.fulfilled_at as delivery_date,
-                        'Requisition' as farmer_name,
-                        0 as fat_percentage
-                    FROM requisition_items ri
-                    JOIN material_requisitions ir ON ri.requisition_id = ir.id
-                    WHERE ri.item_type = 'raw_milk'
-                      AND ri.issued_quantity > 0
-                      AND ir.department = 'production'
-                    ORDER BY ri.fulfilled_at DESC
-                ");
-                $issuedMilkStmt->execute();
-                $milkSources = $issuedMilkStmt->fetchAll();
-                
-                $totalIssued = array_sum(array_column($milkSources, 'remaining_liters'));
-                
-                // Get milk already used in production runs (raw milk only)
-                $usedMilkStmt = $db->prepare("
-                    SELECT COALESCE(SUM(milk_liters_used), 0) as total_used
-                    FROM production_runs
-                    WHERE status IN ('in_progress', 'completed', 'pasteurization', 'processing', 'cooling', 'packaging')
-                      AND (milk_source_type IS NULL OR milk_source_type = 'raw')
-                ");
-                $usedMilkStmt->execute();
-                $usedStats = $usedMilkStmt->fetch();
-                
-                $availableLiters = max(0, $totalIssued - ($usedStats['total_used'] ?? 0));
+                $issuedMilkStats = getUsableIssuedRawMilkStats($db);
+                $totalIssued = $issuedMilkStats['total_issued'];
+                $totalReserved = getReservedRawMilkLiters($db, $issuedMilkStats['earliest_issued_at']);
+                $availableLiters = max(0, $totalIssued - $totalReserved);
+                $milkSources = array_map(function($source) {
+                    return [
+                        'id' => $source['requisition_id'],
+                        'delivery_code' => $source['requisition_code'],
+                        'remaining_liters' => (float) $source['issued_liters'],
+                        'delivery_date' => $source['issued_at'],
+                        'expiry_date' => $source['earliest_expiry'],
+                        'source_batches' => $source['source_batches'],
+                        'farmer_name' => 'Warehouse Raw',
+                        'fat_percentage' => 0
+                    ];
+                }, $issuedMilkStats['sources']);
                 
                 // Return in format expected by batches.html frontend
                 Response::success([
                     'total_available_liters' => (float) $availableLiters,
                     'milk_sources' => $milkSources,
                     'total_issued' => (float) $totalIssued,
-                    'total_used' => (float) ($usedStats['total_used'] ?? 0),
+                    'total_used' => (float) $totalReserved,
                     'source' => 'requisition_based',
                     'milk_type' => 'raw',
-                    'freshness_window' => 'Via requisitions',
+                    'freshness_window' => 'Issued through fulfilled requisitions',
                     'message' => $availableLiters > 0 
-                        ? "You have {$availableLiters}L of milk available (issued via requisitions)"
-                        : 'No milk available. Please submit a requisition to Warehouse Raw and wait for approval/fulfillment.'
+                        ? "You have {$availableLiters}L of usable issued milk available"
+                        : 'No issued milk available. Submit a requisition or wait for Warehouse Raw to fulfill it.'
                 ], 'Available milk retrieved');
             }
             
@@ -190,6 +499,7 @@ try {
             
             // List runs
             $status = getParam('status');
+            $statusGroup = getParam('status_group');
             $recipeId = getParam('recipe_id');
             $productType = getParam('product_type');
             $dateFrom = getParam('date_from');
@@ -204,6 +514,8 @@ try {
             if ($status) {
                 $where .= " AND pr.status = ?";
                 $params[] = $status;
+            } elseif ($statusGroup === 'active') {
+                $where .= " AND pr.status IN ('planned', 'in_progress', 'pasteurization', 'processing', 'cooling', 'packaging')";
             }
             
             if ($recipeId) {
@@ -263,6 +575,18 @@ try {
             $milkLitersUsed = getParam('milk_liters_used');
             $notes = trim(getParam('notes', ''));
             $pasteurizedMilkBatchId = getParam('pasteurized_milk_batch_id'); // For yogurt
+            $processTemperature = getParam('process_temperature');
+            $processDurationMins = getParam('process_duration_mins');
+            $ingredientAdjustments = getParam('ingredient_adjustments'); // JSON string
+            $creamOutputKg = getParam('cream_output_kg');
+            $skimMilkOutputLiters = getParam('skim_milk_output_liters');
+            $cheeseState = getParam('cheese_state');
+            $isSalted = getParam('is_salted', 0);
+            $ingredientValidation = [
+                'requirements' => [],
+                'allocation' => [],
+                'errors' => []
+            ];
             
             // Validation
             $errors = [];
@@ -328,34 +652,23 @@ try {
             } else {
                 // OTHER PRODUCTS (bottled_milk, cheese, butter, milk_bar): Use raw milk via requisitions
                 
-                // Get milk issued to production via requisitions
-                $issuedMilkStmt = $db->prepare("
-                    SELECT COALESCE(SUM(ri.issued_quantity), 0) as total_issued
-                    FROM requisition_items ri
-                    JOIN material_requisitions ir ON ri.requisition_id = ir.id
-                    WHERE ri.item_type = 'raw_milk'
-                      AND ri.issued_quantity > 0
-                      AND ir.department = 'production'
-                ");
-                $issuedMilkStmt->execute();
-                $issuedStats = $issuedMilkStmt->fetch();
-                
-                // Get milk already used in production runs
-                $usedMilkStmt = $db->prepare("
-                    SELECT COALESCE(SUM(milk_liters_used), 0) as total_used
-                    FROM production_runs
-                    WHERE status IN ('in_progress', 'completed', 'pasteurization', 'processing', 'cooling', 'packaging')
-                      AND milk_source_type = 'raw'
-                ");
-                $usedMilkStmt->execute();
-                $usedStats = $usedMilkStmt->fetch();
-                
-                $totalAvailableLiters = max(0, ($issuedStats['total_issued'] ?? 0) - ($usedStats['total_used'] ?? 0));
+                $issuedMilkStats = getUsableIssuedRawMilkStats($db);
+                $totalAvailableLiters = max(
+                    0,
+                    $issuedMilkStats['total_issued'] - getReservedRawMilkLiters($db, $issuedMilkStats['earliest_issued_at'])
+                );
                 
                 if ($totalAvailableLiters <= 0) {
-                    $errors['milk_source'] = 'No milk available. Please submit a requisition to Warehouse Raw and wait for approval/fulfillment.';
+                    $errors['milk_source'] = 'No usable issued milk available. Submit a requisition to Warehouse Raw or wait for fresh issued milk.';
                 } else if ($totalAvailableLiters < $requiredMilkLiters) {
-                    $errors['milk_source'] = "Not enough milk available. Required: {$requiredMilkLiters}L, Available: {$totalAvailableLiters}L. Please submit a requisition for more milk.";
+                    $errors['milk_source'] = "Not enough usable issued milk. Required: {$requiredMilkLiters}L, Available: {$totalAvailableLiters}L. Please submit a requisition for more fresh milk.";
+                }
+            }
+
+            if ($recipe) {
+                $ingredientValidation = validateIssuedIngredientsForRun($db, $recipeId, $plannedQuantity, $ingredientAdjustments);
+                if (!empty($ingredientValidation['errors'])) {
+                    $errors['ingredients'] = 'Not enough issued ingredients for this run. Submit/fulfill a Warehouse Raw requisition first: ' . implode('; ', $ingredientValidation['errors']);
                 }
             }
             
@@ -372,15 +685,6 @@ try {
             $codeStmt->execute(["PRD-{$today}-%"]);
             $count = $codeStmt->fetch()['count'] + 1;
             $runCode = "PRD-{$today}-" . str_pad($count, 3, '0', STR_PAD_LEFT);
-            
-            // Get new optional fields
-            $processTemperature = getParam('process_temperature');
-            $processDurationMins = getParam('process_duration_mins');
-            $ingredientAdjustments = getParam('ingredient_adjustments'); // JSON string
-            $creamOutputKg = getParam('cream_output_kg');
-            $skimMilkOutputLiters = getParam('skim_milk_output_liters');
-            $cheeseState = getParam('cheese_state');
-            $isSalted = getParam('is_salted', 0);
             
             try {
                 $db->beginTransaction();
@@ -401,7 +705,8 @@ try {
                     'source' => $milkSourceType === 'pasteurized' ? 'pasteurized_inventory' : 'requisition_based',
                     'available_at_creation' => $totalAvailableLiters,
                     'allocated' => $requiredMilkLiters,
-                    'pasteurized_batch_id' => $pasteurizedBatchId
+                    'pasteurized_batch_id' => $pasteurizedBatchId,
+                    'ingredient_reservations' => $ingredientValidation['allocation']
                 ]);
                 
                 $stmt->execute([
@@ -431,14 +736,19 @@ try {
                         UPDATE pasteurized_milk_inventory 
                         SET remaining_liters = remaining_liters - ?,
                             status = CASE WHEN remaining_liters - ? <= 0 THEN 'exhausted' ELSE status END
-                        WHERE id = ? AND remaining_liters >= ?
+                        WHERE id = ?
                     ");
-                    
-                    // Try to deduct from the primary batch first
-                    $deductStmt->execute([$requiredMilkLiters, $requiredMilkLiters, $pasteurizedBatchId, $requiredMilkLiters]);
+
+                    foreach ($pasteurizedBatches as $batch) {
+                        if ($remainingToDeduct <= 0) break;
+
+                        $deductQty = min((float) $batch['remaining_liters'], $remainingToDeduct);
+                        $deductStmt->execute([$deductQty, $deductQty, $batch['id']]);
+                        $remainingToDeduct -= $deductQty;
+                    }
                     
                     // Log the usage
-                    error_log("Yogurt production {$runCode}: Deducted {$requiredMilkLiters}L from pasteurized batch #{$pasteurizedBatchId}");
+                    error_log("Yogurt production {$runCode}: Deducted {$requiredMilkLiters}L from pasteurized milk inventory");
                 }
                 
                 // If butter production, auto-create skim_milk byproduct from separation
@@ -465,6 +775,7 @@ try {
                     'available_after' => $totalAvailableLiters - $requiredMilkLiters,
                     'product_type' => $recipe['product_type'],
                     'has_ingredient_adjustments' => !empty($ingredientAdjustments),
+                    'ingredient_reservations' => $ingredientValidation['allocation'],
                     'pasteurized_batch_id' => $pasteurizedBatchId
                 ], 'Production run created successfully');
                 
@@ -735,21 +1046,14 @@ try {
                         // vs master recipe for inventory accuracy
                         // =====================================================
                         
-                        // Get recipe ingredients
-                        $ingredientsStmt = $db->prepare("
-                            SELECT ingredient_id, ingredient_name, quantity, unit 
-                            FROM recipe_ingredients 
-                            WHERE recipe_id = ?
-                        ");
-                        $ingredientsStmt->execute([$run['recipe_id']]);
-                        $recipeIngredients = $ingredientsStmt->fetchAll();
+                        $recipeIngredients = calculateRecipeIngredientRequirements(
+                            $db,
+                            $run['recipe_id'],
+                            $run['planned_quantity'],
+                            $run['ingredient_adjustments'] ?? null
+                        );
                         
                         if (!empty($recipeIngredients)) {
-                            // Calculate scaling factor based on actual vs planned production
-                            $scaleFactor = $run['planned_quantity'] > 0 
-                                ? $totalPieces / $run['planned_quantity'] 
-                                : 1;
-                            
                             // Insert consumption records for each ingredient
                             $consumptionStmt = $db->prepare("
                                 INSERT INTO ingredient_consumption 
@@ -758,17 +1062,14 @@ try {
                             ");
                             
                             foreach ($recipeIngredients as $ingredient) {
-                                // Scale quantity based on actual production
-                                $actualQuantity = round($ingredient['quantity'] * $scaleFactor, 3);
-                                
                                 $consumptionStmt->execute([
                                     $runId,
                                     $ingredient['ingredient_id'],
                                     $ingredient['ingredient_name'],
-                                    $actualQuantity,
+                                    $ingredient['quantity'],
                                     $ingredient['unit'],
                                     $batchCode,
-                                    "Auto-recorded on run completion. Scale factor: {$scaleFactor}"
+                                    "Auto-recorded from materials reserved when the run was created."
                                 ]);
                             }
                             

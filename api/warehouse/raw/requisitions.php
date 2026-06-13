@@ -12,12 +12,36 @@
  */
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
+require_once __DIR__ . '/ingredient_stock_helpers.php';
 
 // Require Warehouse Raw role
 $currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'production_staff', 'maintenance_head']);
 
+function ensureWarehouseRequisitionQuantityPrecision($db) {
+    $precisionStmt = $db->prepare("
+        SELECT COLUMN_NAME, COLUMN_TYPE
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'requisition_items'
+          AND COLUMN_NAME IN ('requested_quantity', 'issued_quantity')
+    ");
+    $precisionStmt->execute();
+    $columnTypes = [];
+    foreach ($precisionStmt->fetchAll() as $column) {
+        $columnTypes[$column['COLUMN_NAME']] = strtolower($column['COLUMN_TYPE']);
+    }
+
+    if (($columnTypes['requested_quantity'] ?? '') !== 'decimal(10,3)') {
+        $db->exec("ALTER TABLE requisition_items MODIFY requested_quantity DECIMAL(10,3) NOT NULL");
+    }
+    if (($columnTypes['issued_quantity'] ?? '') !== 'decimal(10,3)') {
+        $db->exec("ALTER TABLE requisition_items MODIFY issued_quantity DECIMAL(10,3) DEFAULT 0.000");
+    }
+}
+
 try {
     $db = Database::getInstance()->getConnection();
+    ensureWarehouseRequisitionQuantityPrecision($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -51,6 +75,9 @@ function handleGet($db, $currentUser) {
             $sql = "
                 SELECT 
                     ir.*,
+                    pmr.recipe_code as planned_recipe_code,
+                    pmr.product_name as planned_product_name,
+                    pmr.variant as planned_variant,
                     u.first_name as requested_by_first,
                     u.last_name as requested_by_last,
                     ua.first_name as approved_by_first,
@@ -64,6 +91,7 @@ function handleGet($db, $currentUser) {
                      WHERE ri.requisition_id = ir.id AND ri.status = 'fulfilled') as fulfilled_count
                 FROM material_requisitions ir
                 JOIN users u ON ir.requested_by = u.id
+                LEFT JOIN master_recipes pmr ON ir.planned_recipe_id = pmr.id
                 LEFT JOIN users ua ON ir.approved_by = ua.id
                 LEFT JOIN users uf ON ir.fulfilled_by = uf.id
                 WHERE 1=1
@@ -123,6 +151,9 @@ function handleGet($db, $currentUser) {
             $requisition = $db->prepare("
                 SELECT 
                     ir.*,
+                    pmr.recipe_code as planned_recipe_code,
+                    pmr.product_name as planned_product_name,
+                    pmr.variant as planned_variant,
                     u.first_name as requested_by_first,
                     u.last_name as requested_by_last,
                     ua.first_name as approved_by_first,
@@ -131,6 +162,7 @@ function handleGet($db, $currentUser) {
                     uf.last_name as fulfilled_by_last
                 FROM material_requisitions ir
                 JOIN users u ON ir.requested_by = u.id
+                LEFT JOIN master_recipes pmr ON ir.planned_recipe_id = pmr.id
                 LEFT JOIN users ua ON ir.approved_by = ua.id
                 LEFT JOIN users uf ON ir.fulfilled_by = uf.id
                 WHERE ir.id = ?
@@ -153,7 +185,20 @@ function handleGet($db, $currentUser) {
                         WHEN ri.item_type = 'raw_milk' OR LOWER(ri.item_name) IN ('raw', 'raw milk', 'fresh milk', 'carabao', 'cow milk', 'goat milk', 'whole milk')
                             OR (LOWER(ri.item_name) LIKE '%milk%' AND LOWER(ri.item_name) NOT LIKE '%powder%' AND LOWER(ri.item_name) NOT LIKE '%chocolate%')
                         THEN (SELECT COALESCE(SUM(remaining_liters), 0) FROM raw_milk_inventory WHERE status IN ('available', 'reserved') AND remaining_liters > 0)
-                        WHEN ri.item_type = 'ingredient' THEN (SELECT COALESCE(current_stock, 0) FROM ingredients WHERE id = ri.item_id)
+                        WHEN ri.item_type = 'ingredient' THEN (
+                            SELECT GREATEST(
+                                COALESCE(i.current_stock, 0),
+                                COALESCE((
+                                    SELECT SUM(ib.remaining_quantity)
+                                    FROM ingredient_batches ib
+                                    WHERE ib.ingredient_id = i.id
+                                      AND ib.status IN ('available', 'partially_used')
+                                      AND ib.remaining_quantity > 0
+                                ), 0)
+                            )
+                            FROM ingredients i
+                            WHERE i.id = ri.item_id
+                        )
                         WHEN ri.item_type = 'mro' THEN (SELECT COALESCE(current_stock, 0) FROM mro_items WHERE id = ri.item_id)
                         ELSE 0
                     END as available_stock,
@@ -638,7 +683,7 @@ function issueMilk($db, $liters, $requisitionId, $currentUser) {
             (transaction_code, transaction_type, item_type, item_id, batch_id,
              quantity, unit_of_measure, reference_type, reference_id,
              from_location, performed_by, reason)
-            VALUES (?, 'issue', 'raw_milk', ?, ?, ?, 'L', 'requisition', ?, ?, ?, 'Requisition fulfillment')
+            VALUES (?, 'production_issue', 'raw_milk', ?, ?, ?, 'L', 'requisition', ?, ?, ?, 'Requisition fulfillment')
         ");
         $stmt->execute([
             $txCode,
@@ -670,7 +715,7 @@ function issueIngredient($db, $ingredientId, $quantity, $requisitionId, $current
         throw new Exception("Invalid ingredient ID");
     }
     
-    $ingredient = $db->prepare("SELECT * FROM ingredients WHERE id = ?");
+    $ingredient = $db->prepare("SELECT * FROM ingredients WHERE id = ? AND is_active = 1 FOR UPDATE");
     $ingredient->execute([$ingredientId]);
     $ingredientData = $ingredient->fetch();
     
@@ -678,16 +723,8 @@ function issueIngredient($db, $ingredientId, $quantity, $requisitionId, $current
         throw new Exception("Ingredient not found (ID: {$ingredientId})");
     }
     
-    // Get available batches
-    $batches = $db->prepare("
-        SELECT * FROM ingredient_batches
-        WHERE ingredient_id = ?
-        AND status IN ('available', 'partially_used')
-        AND remaining_quantity > 0
-        ORDER BY expiry_date ASC, received_date ASC, id ASC
-    ");
-    $batches->execute([$ingredientId]);
-    $batchList = $batches->fetchAll();
+    ensureIngredientBatchesForIssue($db, $ingredientData, $quantity, $currentUser);
+    $batchList = getUsableIngredientBatches($db, $ingredientId, true);
     
     $totalAvailable = array_sum(array_column($batchList, 'remaining_quantity'));
     
@@ -720,7 +757,7 @@ function issueIngredient($db, $ingredientId, $quantity, $requisitionId, $current
             (transaction_code, transaction_type, item_type, item_id, batch_id,
              quantity, unit_of_measure, reference_type, reference_id,
              from_location, performed_by, reason)
-            VALUES (?, 'issue', 'ingredient', ?, ?, ?, ?, 'requisition', ?, ?, ?, 'Requisition fulfillment')
+            VALUES (?, 'production_issue', 'ingredient', ?, ?, ?, ?, 'requisition', ?, ?, ?, 'Requisition fulfillment')
         ");
         $stmt->execute([
             $txCode,
@@ -743,7 +780,7 @@ function issueIngredient($db, $ingredientId, $quantity, $requisitionId, $current
     
     // Update ingredient current stock
     $stmt = $db->prepare("
-        UPDATE ingredients SET current_stock = current_stock - ?, updated_at = NOW() WHERE id = ?
+        UPDATE ingredients SET current_stock = GREATEST(current_stock - ?, 0), updated_at = NOW() WHERE id = ?
     ");
     $stmt->execute([$quantity, $ingredientId]);
     
@@ -800,7 +837,7 @@ function issueMRO($db, $mroItemId, $quantity, $requisitionId, $currentUser) {
             (transaction_code, transaction_type, item_type, item_id, batch_id,
              quantity, unit_of_measure, reference_type, reference_id,
              from_location, performed_by, reason)
-            VALUES (?, 'issue', 'mro', ?, ?, ?, ?, 'requisition', ?, ?, ?, 'Requisition fulfillment')
+            VALUES (?, 'production_issue', 'mro', ?, ?, ?, ?, 'requisition', ?, ?, ?, 'Requisition fulfillment')
         ");
         $stmt->execute([
             $txCode,
