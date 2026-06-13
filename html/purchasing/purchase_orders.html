@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en" data-theme="emerald">
 
 <head>
@@ -241,10 +241,23 @@
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                             <div class="form-control">
+                                <label class="label">
+                                    <span class="label-text">Supplier Mode</span>
+                                    <span class="label-text-alt text-base-content/50">For multi-supplier PRs, choose Split per Supplier</span>
+                                </label>
+                                <select id="poSupplierMode" class="select select-bordered w-full" onchange="onSupplierModeChange()">
+                                    <option value="split" selected>Split per Supplier (recommended)</option>
+                                    <option value="single">Single Supplier (legacy)</option>
+                                </select>
+                            </div>
+                            <div class="form-control" id="singleSupplierWrapper" style="display:none">
                                 <label class="label"><span class="label-text">Supplier *</span></label>
-                                <select id="poSupplier" class="select select-bordered w-full" required onchange="renderSelectedSupplierDetails()">
+                                <select id="poSupplier" class="select select-bordered w-full" onchange="renderSelectedSupplierDetails(); applySingleSupplierToAllLines();">
                                     <option value="">Select supplier...</option>
                                 </select>
+                                <label class="label">
+                                    <span class="label-text-alt text-base-content/50">All line items will be assigned to this supplier.</span>
+                                </label>
                             </div>
                             <div class="form-control">
                                 <label class="label"><span class="label-text">Order Date</span></label>
@@ -318,11 +331,20 @@
                                 <h3 class="font-semibold">Line Items</h3>
                                 <span class="badge badge-primary badge-outline">From approved PR</span>
                             </div>
+                            <div id="supplierGroupingPreview" class="hidden alert bg-secondary/5 border border-secondary/20 mb-3">
+                                <i class="fas fa-layer-group text-secondary"></i>
+                                <div class="w-full">
+                                    <h4 class="font-semibold text-sm">PO Grouping Preview</h4>
+                                    <p class="text-xs text-base-content/60">Items with the same supplier are consolidated into one PO. Different suppliers become separate POs.</p>
+                                    <div id="supplierGroupingList" class="mt-2"></div>
+                                </div>
+                            </div>
                             <div class="overflow-x-auto">
                                 <table class="table table-sm">
                                     <thead>
                                         <tr>
                                             <th class="w-1/3">Description</th>
+                                            <th>Supplier *</th>
                                             <th>Qty</th>
                                             <th>Unit</th>
                                             <th>Current Unit Price</th>
@@ -335,8 +357,8 @@
                                     </tbody>
                                     <tfoot>
                                         <tr>
-                                            <td colspan="4" class="text-right font-semibold">Total:</td>
-                                            <td class="font-bold text-lg" id="poTotal">₱0.00</td>
+                                            <td colspan="5" class="text-right font-semibold">Total:</td>
+                                            <td class="font-bold text-lg" id="poTotal">â‚±0.00</td>
                                             <td></td>
                                         </tr>
                                     </tfoot>
@@ -363,7 +385,7 @@
 
         <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
             <div>
-                <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+                <p class="text-sm text-base-content/60">Â© 2026 Highland Fresh Dairy. All rights reserved.</p>
             </div>
         </footer>
     </div>
@@ -375,7 +397,7 @@
     <dialog id="itemRequestModal" class="modal">
         <div class="modal-box max-w-lg">
             <form method="dialog">
-                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">âœ•</button>
             </form>
             <h3 class="font-bold text-lg mb-2"><i class="fas fa-box-open text-indigo-500 mr-2"></i>Request New Item</h3>
             <p class="text-sm text-base-content/60 mb-4">Submit a request for a new item. GM approval is required before it can be added to POs.</p>
@@ -650,6 +672,7 @@
                 select.innerHTML = '<option value="">Select supplier...</option>' +
                     suppliers.map(s => `<option value="${s.id}">${escapeHtml(s.supplier_name)} (${escapeHtml(s.supplier_code)})</option>`).join('');
                 renderSelectedSupplierDetails();
+                populateAllLineSuppliers();
             } catch (e) { console.error('Failed to load suppliers:', e); }
 
             // Load pending requisitions
@@ -832,15 +855,21 @@
                         ${itemOptionsHtml || '<option value="">Loading items...</option>'}
                     </select>
                 </td>
+                <td>
+                    <select class="select select-bordered select-sm w-full line-supplier" id="supplier-${lineItemCounter}" data-row-id="${lineItemCounter}" onchange="onLineSupplierChange(${lineItemCounter})">
+                        <option value="">Select supplier...</option>
+                    </select>
+                </td>
                 <td><input type="number" class="input input-bordered input-sm w-20" id="qty-${lineItemCounter}" value="1" min="0.01" step="0.01" readonly></td>
                 <td><input type="text" class="input input-bordered input-sm w-20 item-unit" id="unit-${lineItemCounter}" value="" placeholder="Unit" readonly></td>
                 <td><input type="number" class="input input-bordered input-sm w-28" id="price-${lineItemCounter}" value="0" min="0" step="0.01" oninput="calcLineTotal(${lineItemCounter})"></td>
-                <td class="font-semibold" id="total-${lineItemCounter}">₱0.00</td>
+                <td class="font-semibold" id="total-${lineItemCounter}">â‚±0.00</td>
                 <td><span class="badge badge-ghost badge-sm">PR</span></td>
             `;
             tbody.appendChild(row);
 
             populateLineItem(lineItemCounter, item);
+            populateLineSupplier(lineItemCounter);
         }
 
         function populateLineItem(rowId, item) {
@@ -869,6 +898,121 @@
             calcLineTotal(rowId);
         }
 
+        // ========================================
+        // Phase 1: Supplier per line + grouping preview
+        // ========================================
+
+        /**
+         * Build the <option> list for a per-line supplier dropdown.
+         */
+        function buildLineSupplierOptions() {
+            return '<option value="">Select supplier...</option>' +
+                availableSuppliers.map(s =>
+                    `<option value="${s.id}">${escapeHtml(s.supplier_name)} (${escapeHtml(s.supplier_code || '')})</option>`
+                ).join('');
+        }
+
+        function populateLineSupplier(rowId) {
+            const select = document.getElementById(`supplier-${rowId}`);
+            if (!select) return;
+            const previous = select.value;
+            select.innerHTML = buildLineSupplierOptions();
+            if (previous) select.value = previous;
+        }
+
+        function populateAllLineSuppliers() {
+            document.querySelectorAll('.line-supplier').forEach(sel => {
+                const rowId = sel.dataset.rowId;
+                if (rowId) populateLineSupplier(parseInt(rowId, 10));
+            });
+            renderSupplierGroupingPreview();
+        }
+
+        function onLineSupplierChange(rowId) {
+            renderSupplierGroupingPreview();
+        }
+
+        /**
+         * Group the current line items by supplier_id. Lines without
+         * a supplier or a positive unit price are skipped (incomplete).
+         */
+        function collectSupplierGroups() {
+            const groups = {};
+            document.querySelectorAll('#lineItemsBody tr').forEach(row => {
+                const id = row.id.split('-')[1];
+                if (!id) return;
+                const supplierSel = document.getElementById(`supplier-${id}`);
+                if (!supplierSel || !supplierSel.value) return;
+                const price = parseFloat(document.getElementById(`price-${id}`)?.value) || 0;
+                if (price <= 0) return;
+                const sid = String(supplierSel.value);
+                if (!groups[sid]) {
+                    groups[sid] = { supplierId: parseInt(sid, 10), supplierName: null, lineCount: 0, total: 0 };
+                }
+                const qty = parseFloat(document.getElementById(`qty-${id}`)?.value) || 0;
+                groups[sid].lineCount += 1;
+                groups[sid].total += qty * price;
+            });
+            Object.values(groups).forEach(g => {
+                const s = availableSuppliers.find(x => String(x.id) === String(g.supplierId));
+                g.supplierName = s ? s.supplier_name : `Supplier #${g.supplierId}`;
+            });
+            return Object.values(groups);
+        }
+
+        function renderSupplierGroupingPreview() {
+            const card = document.getElementById('supplierGroupingPreview');
+            const body = document.getElementById('supplierGroupingList');
+            if (!card || !body) return;
+
+            const groups = collectSupplierGroups();
+            if (groups.length === 0) {
+                card.classList.add('hidden');
+                body.innerHTML = '';
+                return;
+            }
+
+            const list = groups.map(g => {
+                return `<li class="flex items-center justify-between text-sm py-1">`
+                    + `<span><i class="fas fa-truck mr-2 text-base-content/50"></i>${escapeHtml(g.supplierName)}`
+                    + ` <span class="text-base-content/50">(${g.lineCount} line${g.lineCount === 1 ? '' : 's'})</span></span>`
+                    + `<span class="font-semibold">${formatCurrency(g.total)}</span></li>`;
+            }).join('');
+
+            const total = groups.reduce((s, g) => s + g.total, 0);
+            body.innerHTML = `<ul class="divide-y divide-base-300">${list}</ul>`
+                + `<div class="flex items-center justify-between mt-2 pt-2 border-t border-base-300 text-sm font-semibold">`
+                + `<span>Total across ${groups.length} PO${groups.length === 1 ? '' : 's'}</span>`
+                + `<span>${formatCurrency(total)}</span></div>`;
+            card.classList.remove('hidden');
+        }
+
+
+        function onSupplierModeChange() {
+            const mode = document.getElementById('poSupplierMode')?.value;
+            const wrapper = document.getElementById('singleSupplierWrapper');
+            const mainSupplier = document.getElementById('poSupplier');
+            if (mode === 'single') {
+                if (wrapper) wrapper.style.display = '';
+                if (mainSupplier && mainSupplier.value) {
+                    applySingleSupplierToAllLines();
+                }
+            } else {
+                if (wrapper) wrapper.style.display = 'none';
+                // Don't clear per-line selections; user explicitly switched.
+            }
+            renderSupplierGroupingPreview();
+        }
+
+        function applySingleSupplierToAllLines() {
+            const supplierId = document.getElementById('poSupplier')?.value;
+            if (!supplierId) return;
+            document.querySelectorAll('.line-supplier').forEach(sel => {
+                sel.value = supplierId;
+            });
+            renderSupplierGroupingPreview();
+        }
+
         function applySelectedPurchaseRequest() {
             const prId = document.getElementById('poPurchaseRequest').value;
             const selectedPr = approvedPurchaseRequests.find(pr => String(pr.id) === String(prId));
@@ -891,6 +1035,8 @@
             }
 
             renderSelectedPurchaseRequestSummary(selectedPr);
+            populateAllLineSuppliers();
+            renderSupplierGroupingPreview();
             calcGrandTotal();
         }
 
@@ -956,9 +1102,8 @@
         }
 
         async function createPurchaseOrder() {
-            const supplierId = document.getElementById('poSupplier').value;
+            const mode = document.getElementById('poSupplierMode')?.value || 'split';
             const purchaseRequestId = document.getElementById('poPurchaseRequest').value;
-            if (!supplierId) { showToast('Please select a supplier', 'error'); return; }
             if (!purchaseRequestId) { showToast('Please select an approved Purchase Request (PR).', 'error'); return; }
 
             const selectedPr = approvedPurchaseRequests.find(pr => String(pr.id) === String(purchaseRequestId));
@@ -967,63 +1112,100 @@
                 return;
             }
 
-            const items = [];
-            let hasInvalid = false;
-
+            // Build the per-line assignments (supplier + price + qty)
+            const lines = [];
+            let hasInvalidSupplier = false;
+            let hasInvalidPrice = false;
             document.querySelectorAll('#lineItemsBody tr').forEach(row => {
                 const id = row.id.split('-')[1];
-                const price = parseFloat(document.getElementById(`price-${id}`)?.value) || 0;
+                if (!id) return;
+                const supplierSel = document.getElementById(`supplier-${id}`);
+                const supplierId = supplierSel ? supplierSel.value : '';
                 const prItemId = parseInt(row.dataset.prItemId || '0', 10);
-
-                if (!prItemId) {
-                    hasInvalid = true;
-                    return;
-                }
-
-                items.push({
+                const price = parseFloat(document.getElementById(`price-${id}`)?.value) || 0;
+                const qty = parseFloat(document.getElementById(`qty-${id}`)?.value) || 0;
+                if (!prItemId) return;
+                if (!supplierId) hasInvalidSupplier = true;
+                if (price <= 0) hasInvalidPrice = true;
+                lines.push({
                     purchase_request_item_id: prItemId,
-                    unit_price: price
+                    supplier_id: parseInt(supplierId || 0, 10),
+                    unit_price: price,
+                    quantity: qty,
                 });
             });
 
-            if (hasInvalid) {
+            if (lines.length === 0) {
                 showToast('PO items must come from the selected approved PR.', 'error');
                 return;
             }
-
-            if (items.length !== (selectedPr.items || []).length) {
-                showToast('Every approved PR item must be included in the PO.', 'error');
+            if (hasInvalidSupplier) {
+                showToast('Please pick a supplier for every line item.', 'error');
                 return;
             }
-
-            if (items.some(item => item.unit_price <= 0)) {
+            if (hasInvalidPrice) {
                 showToast('Enter the current unit price for every PO item.', 'error');
                 return;
             }
 
-            try {
-                const data = {
-                    supplier_id: supplierId,
-                    order_date: document.getElementById('poOrderDate').value,
-                    expected_delivery: document.getElementById('poExpectedDelivery').value || null,
-                    delivery_details: document.getElementById('poDeliveryDetails').value.trim() || null,
-                    payment_terms: document.getElementById('poPaymentTerms').value,
-                    purchase_request_id: purchaseRequestId,
-                    requisition_id: document.getElementById('poRequisition').value || null,
-                    notes: document.getElementById('poNotes').value.trim() || null,
-                    items: items
-                };
+            // Single-supplier mode: enforce that all lines share the same supplier.
+            const distinctSuppliers = [...new Set(lines.map(l => l.supplier_id))];
+            if (mode === 'single' && distinctSuppliers.length !== 1) {
+                showToast('Single Supplier mode requires every line to have the same supplier. Switch to Split per Supplier mode, or assign the same supplier to all lines.', 'error');
+                return;
+            }
 
-                const response = await PurchasingService.createPurchaseOrder(data);
-                showToast(`PO ${response?.data?.po_number} created successfully!`, 'success');
-                cancelCreate();
-                await loadPurchaseOrders();
-                await loadApprovedPurchaseRequestNotice();
+            const baseData = {
+                order_date: document.getElementById('poOrderDate').value,
+                expected_delivery: document.getElementById('poExpectedDelivery').value || null,
+                delivery_details: document.getElementById('poDeliveryDetails').value.trim() || null,
+                payment_terms: document.getElementById('poPaymentTerms').value,
+                notes: document.getElementById('poNotes').value.trim() || null,
+            };
+
+            try {
+                if (mode === 'split') {
+                    const data = {
+                        ...baseData,
+                        purchase_request_id: parseInt(purchaseRequestId, 10),
+                        items: lines.map(l => ({
+                            purchase_request_item_id: l.purchase_request_item_id,
+                            supplier_id: l.supplier_id,
+                            unit_price: l.unit_price,
+                            quantity: l.quantity,
+                        })),
+                    };
+                    const response = await PurchasingService.createPurchaseOrdersFromPR(data);
+                    const pos = response?.data?.purchase_orders || [];
+                    const poCount = pos.length;
+                    const poNumbers = pos.map(p => p.po_number).join(', ');
+                    const prStatus = response?.data?.pr_status;
+                    showToast(`Generated ${poCount} PO(s) from PR ${response?.data?.pr_number} -> ${poNumbers} (PR status: ${prStatus})`, 'success');
+                    cancelCreate();
+                    await loadPurchaseOrders();
+                    await loadApprovedPurchaseRequestNotice();
+                } else {
+                    // Single-supplier mode: keep legacy behavior (action=create).
+                    const data = {
+                        ...baseData,
+                        supplier_id: distinctSuppliers[0],
+                        purchase_request_id: parseInt(purchaseRequestId, 10),
+                        requisition_id: document.getElementById('poRequisition').value || null,
+                        items: lines.map(l => ({
+                            purchase_request_item_id: l.purchase_request_item_id,
+                            unit_price: l.unit_price,
+                        })),
+                    };
+                    const response = await PurchasingService.createPurchaseOrder(data);
+                    showToast(`PO ${response?.data?.po_number} created successfully!`, 'success');
+                    cancelCreate();
+                    await loadPurchaseOrders();
+                    await loadApprovedPurchaseRequestNotice();
+                }
             } catch (error) {
                 showToast(error?.message || 'Failed to create PO', 'error');
             }
         }
-
         function openItemRequestModal() {
             document.getElementById('itemRequestForm').reset();
             document.getElementById('itemRequestModal').showModal();
@@ -1403,7 +1585,7 @@
         // ========================================
 
         function formatCurrency(amount) {
-            return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            return 'â‚±' + parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         }
 
         function formatPOStatus(status) {

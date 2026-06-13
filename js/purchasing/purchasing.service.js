@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Highland Fresh System - Purchasing Service
  *
  * API client for the Purchasing module
@@ -90,6 +90,25 @@ const PurchasingService = {
     async createPurchaseOrder(data) {
         return await api.post('/purchasing/purchase_orders.php?action=create', data);
     },
+
+    /**
+     * Phase 1 (multi-supplier): create one or more POs from a single approved PR.
+     * Items with the same supplier are consolidated into a single PO;
+     * items with different suppliers yield separate POs in one transaction.
+     * Backend route: POST /purchasing/purchase_orders.php?action=create_from_pr
+     * Expected payload:
+     *   {
+     *     purchase_request_id: <int>,
+     *     payment_terms, order_date, expected_delivery, delivery_details, notes,
+     *     items: [
+     *       { purchase_request_item_id, supplier_id, unit_price, quantity?, is_vat_item?, notes? }, ...
+     *     ]
+     *   }
+     */
+    async createPurchaseOrdersFromPR(data) {
+        return await api.post('/purchasing/purchase_orders.php?action=create_from_pr', data);
+    },
+
 
     async submitPO(id) {
         return await api.put(`/purchasing/purchase_orders.php?action=submit&id=${id}`, {});
