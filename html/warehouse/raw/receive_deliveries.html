@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en" data-theme="emerald">
 
 <head>
@@ -240,7 +240,7 @@
 
         <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
             <div>
-                <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+                <p class="text-sm text-base-content/60">Â© 2026 Highland Fresh Dairy. All rights reserved.</p>
             </div>
         </footer>
     </div>
@@ -251,8 +251,8 @@
     <!-- Receive PO Modal -->
     <dialog id="receiveModal" class="modal">
         <div class="modal-box max-w-6xl max-h-[92vh]">
-            <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button></form>
-            <h3 class="font-bold text-lg mb-2"><i class="fas fa-box-open text-success mr-2"></i>Receive Delivery — <span id="receivePONumber">PO</span></h3>
+            <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">âœ•</button></form>
+            <h3 class="font-bold text-lg mb-2"><i class="fas fa-box-open text-success mr-2"></i>Receive Delivery â€” <span id="receivePONumber">PO</span></h3>
             <p class="text-sm text-base-content/70 mb-4">Inspect each item and enter how many were accepted and rejected. Only accepted items are added to inventory.</p>
 
             <div class="alert alert-info mb-4 py-2 text-sm">
@@ -296,11 +296,16 @@
                 <!-- Items populated by JS -->
             </div>
 
+            <div id="recvShortageWarning" class="hidden alert alert-warning mb-3 py-2 text-sm">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span id="recvShortageWarningText">This delivery will leave units unreceived.</span>
+            </div>
             <div class="bg-base-200 rounded-xl p-4 mb-4">
-                <div class="grid grid-cols-3 gap-4 text-center">
+                <div class="grid grid-cols-4 gap-3 text-center">
                     <div><p class="text-xs text-base-content/60">Total Ordered</p><p class="text-lg font-bold" id="recvTotalOrdered">0</p></div>
-                    <div><p class="text-xs text-base-content/60">Total Accepted</p><p class="text-lg font-bold text-success" id="recvTotalAccepted">0</p></div>
-                    <div><p class="text-xs text-base-content/60">Total Rejected</p><p class="text-lg font-bold text-error" id="recvTotalRejected">0</p></div>
+                    <div><p class="text-xs text-base-content/60">Total Received</p><p class="text-lg font-bold text-primary" id="recvTotalReceived">0</p></div>
+                    <div><p class="text-xs text-base-content/60">Net Accepted</p><p class="text-lg font-bold text-success" id="recvTotalAccepted">0</p></div>
+                    <div><p class="text-xs text-base-content/60">Short by</p><p class="text-lg font-bold text-warning" id="recvTotalShort">0</p></div>
                 </div>
             </div>
 
@@ -635,86 +640,128 @@
                                             <p class="font-semibold">${item.item_description}</p>
                                             <p class="text-xs text-base-content/60">System lot: ${itemCode}-Lot-###${isPerishable ? ' - Expiry required' : ' - Non-perishable'}</p>
                                             <p class="text-sm text-base-content/60">${ordered.toFixed(2)} ${item.unit} ordered @ ${formatCurrency(item.unit_price)}</p>
-                                            ${prevAccepted > 0 || prevRejected > 0 ? `<p class="text-xs mt-1"><span class="text-success">Previously accepted: ${prevAccepted.toFixed(2)}</span>${prevRejected > 0 ? ` · <span class="text-error">Previously rejected: ${prevRejected.toFixed(2)}</span>` : ''}</p>` : ''}
+                                            ${prevAccepted > 0 || prevRejected > 0 ? `<p class="text-xs mt-1"><span class="text-success">Previously accepted: ${prevAccepted.toFixed(2)}</span>${prevRejected > 0 ? ` Â· <span class="text-error">Previously rejected: ${prevRejected.toFixed(2)}</span>` : ''}</p>` : ''}
                                         </div>
                                         ${alreadyDone ? '<span class="badge badge-success badge-sm">Fully Received</span>' : `<span class="badge badge-warning badge-sm">Accepted Needed: ${remaining.toFixed(2)}</span>`}
                                     </div>
                                     ${!alreadyDone ? `
-                                    <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
-                                        <div class="form-control">
-                                            <label class="label py-0"><span class="label-text-alt text-success font-semibold">Accepted</span></label>
-                                            <input type="number" step="0.01" min="0" max="${remaining}"
-                                                   class="input input-bordered input-sm w-full recv-accepted"
-                                                   id="recvAccepted-${idx}" value="0"
-                                                   data-remaining="${remaining}" data-idx="${idx}"
-                                                   oninput="updateRecvTotals()">
+                                    <div class="space-y-3">
+                                        <!-- Primary input: physically received (counted at the door) -->
+                                        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                            <div class="form-control">
+                                                <label class="label py-0"><span class="label-text-alt text-primary font-semibold">Physically Received *</span></label>
+                                                <input type="number" step="0.01" min="0" max="${ordered}"
+                                                       class="input input-bordered input-sm w-full recv-received"
+                                                       id="recvReceived-${idx}" value="0"
+                                                       data-ordered="${ordered}" data-prev="${prevAccepted}" data-idx="${idx}"
+                                                       oninput="updateRecvTotals()">
+                                                <label class="label py-0"><span class="label-text-alt text-base-content/50">What you actually counted at the door</span></label>
+                                            </div>
+                                            <div class="form-control">
+                                                <label class="label py-0"><span class="label-text-alt text-base-content/60">Net accepted to inventory</span></label>
+                                                <p class="input input-bordered input-sm w-full bg-base-200 text-success font-semibold flex items-center px-3" id="recvNetAccepted-${idx}">0.00 ${item.unit}</p>
+                                            </div>
+                                            <div class="form-control">
+                                                <label class="label py-0"><span class="label-text-alt text-base-content/60">Short by</span></label>
+                                                <p class="input input-bordered input-sm w-full bg-base-200 text-warning font-semibold flex items-center px-3" id="recvShortBy-${idx}">0.00 ${item.unit}</p>
+                                            </div>
+                                            <div class="form-control">
+                                                <label class="label py-0"><span class="label-text-alt text-base-content/60">Remaining after this</span></label>
+                                                <p class="input input-bordered input-sm w-full bg-base-200 flex items-center px-3" id="recvRemainingAfter-${idx}">${remaining.toFixed(2)} ${item.unit}</p>
+                                            </div>
                                         </div>
-                                        <div class="form-control">
-                                            <label class="label py-0"><span class="label-text-alt text-error font-semibold">Rejected</span></label>
-                                            <input type="number" step="0.01" min="0" max="${remaining}"
-                                                   class="input input-bordered input-sm w-full recv-rejected"
-                                                   id="recvRejected-${idx}" value="0"
-                                                   data-idx="${idx}"
-                                                   oninput="updateRecvTotals(); toggleRejectReason(${idx})">
+
+                                        <!-- Quality issues: collapsed by default, expanded with + buttons -->
+                                        <div class="flex items-center gap-2">
+                                            <button type="button" class="btn btn-xs btn-outline btn-error" onclick="toggleQualitySection(${idx}, 'damaged')" id="recvAddDamagedBtn-${idx}">
+                                                <i class="fas fa-plus"></i> Damaged / spoiled
+                                            </button>
+                                            <button type="button" class="btn btn-xs btn-outline btn-warning" onclick="toggleQualitySection(${idx}, 'wrong')" id="recvAddWrongBtn-${idx}">
+                                                <i class="fas fa-plus"></i> Wrong item
+                                            </button>
+                                            <span class="text-xs text-base-content/50 ml-2">Click only if some items are not usable</span>
                                         </div>
-                                        <div class="form-control md:col-span-2">
-                                            <label class="label py-0"><span class="label-text-alt font-semibold">Supplier Lot Ref</span></label>
-                                            <input type="text" class="input input-bordered input-sm w-full"
-                                                   id="recvLot-${idx}" placeholder="Optional label reference">
+
+                                        <div id="recvQualitySection-${idx}" style="display:none" class="border border-warning/30 rounded-lg p-3 bg-warning/5">
+                                            <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
+                                                <div class="form-control">
+                                                    <label class="label py-0"><span class="label-text-alt text-error font-semibold">Damaged qty</span></label>
+                                                    <input type="number" step="0.01" min="0"
+                                                           class="input input-bordered input-sm w-full recv-damaged"
+                                                           id="recvDamaged-${idx}" value="0"
+                                                           data-idx="${idx}"
+                                                           oninput="updateRecvTotals()">
+                                                </div>
+                                                <div class="form-control">
+                                                    <label class="label py-0"><span class="label-text-alt text-error font-semibold">Wrong item qty</span></label>
+                                                    <input type="number" step="0.01" min="0"
+                                                           class="input input-bordered input-sm w-full recv-wrong"
+                                                           id="recvWrong-${idx}" value="0"
+                                                           data-idx="${idx}"
+                                                           oninput="updateRecvTotals()">
+                                                </div>
+                                                <div class="form-control md:col-span-2">
+                                                    <label class="label py-0"><span class="label-text-alt">Rejection Category</span></label>
+                                                    <select class="select select-bordered select-sm w-full" id="recvCategory-${idx}">
+                                                        <option value="spoiled">Spoiled</option>
+                                                        <option value="defective">Defective</option>
+                                                        <option value="wrong_item">Wrong Item</option>
+                                                        <option value="expired">Expired</option>
+                                                        <option value="damaged_packaging">Damaged packaging</option>
+                                                        <option value="other">Other</option>
+                                                    </select>
+                                                </div>
+                                                <div class="form-control md:col-span-2">
+                                                    <label class="label py-0"><span class="label-text-alt">Rejection Reason *</span></label>
+                                                    <input type="text" class="input input-bordered input-sm w-full"
+                                                           id="recvReason-${idx}" placeholder="e.g. Damaged packaging">
+                                                </div>
+                                            </div>
                                         </div>
-                                        ${isPerishable ? `
-                                        <div class="form-control">
-                                            <label class="label py-0"><span class="label-text-alt font-semibold">Expiry Date</span></label>
-                                            <input type="date" class="input input-bordered input-sm w-full"
-                                                   id="recvExpiry-${idx}">
-                                        </div>
-                                        ` : `
-                                        <div class="form-control">
-                                            <label class="label py-0"><span class="label-text-alt font-semibold">Expiry Date</span></label>
-                                            <input type="text" class="input input-bordered input-sm w-full" value="Not required" disabled>
-                                        </div>
-                                        `}
-                                        <div class="form-control md:col-span-2">
-                                            <label class="label py-0"><span class="label-text-alt font-semibold">Condition</span></label>
-                                            <select class="select select-bordered select-sm w-full" id="recvCondition-${idx}">
-                                                <option value="acceptable">Acceptable</option>
-                                                <option value="damaged_packaging">Damaged packaging</option>
-                                                <option value="temperature_issue">Temperature issue</option>
-                                                <option value="short_delivery">Short delivery</option>
-                                                <option value="requires_qc_review">Requires QC review</option>
-                                            </select>
-                                        </div>
-                                        <div class="form-control md:col-span-2" id="recvCategoryGroup-${idx}" style="display:none">
-                                            <label class="label py-0"><span class="label-text-alt">Category</span></label>
-                                            <select class="select select-bordered select-sm w-full" id="recvCategory-${idx}">
-                                                <option value="spoiled">Spoiled</option>
-                                                <option value="defective">Defective</option>
-                                                <option value="wrong_item">Wrong Item</option>
-                                                <option value="short_delivery">Short Delivery</option>
-                                                <option value="expired">Expired</option>
-                                                <option value="other">Other</option>
-                                            </select>
-                                        </div>
-                                        <div class="form-control md:col-span-4" id="recvReasonGroup-${idx}" style="display:none">
-                                            <label class="label py-0"><span class="label-text-alt">Rejection Reason</span></label>
-                                            <input type="text" class="input input-bordered input-sm w-full"
-                                                   id="recvReason-${idx}" placeholder="e.g. Damaged packaging">
-                                        </div>
-                                    </div>
-                                    <div class="grid grid-cols-1 md:grid-cols-6 gap-3 mt-3">
-                                        <div class="form-control md:col-span-2">
-                                            <label class="label py-0"><span class="label-text-alt">New Price (if changed)</span></label>
-                                            <input type="number" step="0.01" min="0"
-                                                   class="input input-bordered input-sm w-full"
-                                                   id="recvPrice-${idx}"
-                                                   placeholder="${parseFloat(item.unit_price).toFixed(2)}"
-                                                   data-item-id="${item.ingredient_id || item.mro_item_id || ''}"
-                                                   data-item-type="${item.ingredient_id ? 'ingredient' : (item.mro_item_id ? 'mro' : '')}">
-                                        </div>
-                                        <div class="form-control md:col-span-4">
-                                            <label class="label py-0"><span class="label-text-alt">Line Notes</span></label>
-                                            <input type="text" class="input input-bordered input-sm w-full"
-                                                   id="recvLineNotes-${idx}" placeholder="Optional inspection note">
+
+                                        <!-- Other supporting fields (kept from the legacy form) -->
+                                        <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
+                                            <div class="form-control">
+                                                <label class="label py-0"><span class="label-text-alt font-semibold">Supplier Lot Ref</span></label>
+                                                <input type="text" class="input input-bordered input-sm w-full"
+                                                       id="recvLot-${idx}" placeholder="Optional label reference">
+                                            </div>
+                                            ${isPerishable ? `
+                                            <div class="form-control">
+                                                <label class="label py-0"><span class="label-text-alt font-semibold">Expiry Date</span></label>
+                                                <input type="date" class="input input-bordered input-sm w-full"
+                                                       id="recvExpiry-${idx}">
+                                            </div>
+                                            ` : `
+                                            <div class="form-control">
+                                                <label class="label py-0"><span class="label-text-alt font-semibold">Expiry Date</span></label>
+                                                <input type="text" class="input input-bordered input-sm w-full" value="Not required" disabled>
+                                            </div>
+                                            `}
+                                            <div class="form-control md:col-span-2">
+                                                <label class="label py-0"><span class="label-text-alt font-semibold">Condition</span></label>
+                                                <select class="select select-bordered select-sm w-full" id="recvCondition-${idx}">
+                                                    <option value="acceptable">Acceptable</option>
+                                                    <option value="damaged_packaging">Damaged packaging</option>
+                                                    <option value="temperature_issue">Temperature issue</option>
+                                                    <option value="short_delivery">Short delivery</option>
+                                                    <option value="requires_qc_review">Requires QC review</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-control md:col-span-2">
+                                                <label class="label py-0"><span class="label-text-alt">New Price (if changed)</span></label>
+                                                <input type="number" step="0.01" min="0"
+                                                       class="input input-bordered input-sm w-full"
+                                                       id="recvPrice-${idx}"
+                                                       placeholder="${parseFloat(item.unit_price).toFixed(2)}"
+                                                       data-item-id="${item.ingredient_id || item.mro_item_id || ''}"
+                                                       data-item-type="${item.ingredient_id ? 'ingredient' : (item.mro_item_id ? 'mro' : '')}">
+                                            </div>
+                                            <div class="form-control md:col-span-6">
+                                                <label class="label py-0"><span class="label-text-alt">Line Notes</span></label>
+                                                <input type="text" class="input input-bordered input-sm w-full"
+                                                       id="recvLineNotes-${idx}" placeholder="Optional inspection note">
+                                            </div>
                                         </div>
                                     </div>
                                     ` : ''}
@@ -731,31 +778,102 @@
             }
         }
 
-        function toggleRejectReason(idx) {
-            const rejected = parseFloat(document.getElementById(`recvRejected-${idx}`)?.value) || 0;
-            const show = rejected > 0;
-            const catGroup = document.getElementById(`recvCategoryGroup-${idx}`);
-            const reasonGroup = document.getElementById(`recvReasonGroup-${idx}`);
-            if (catGroup) catGroup.style.display = show ? '' : 'none';
-            if (reasonGroup) reasonGroup.style.display = show ? '' : 'none';
+        /**
+         * Show or hide the per-line quality (damaged/wrong) section.
+         */
+        function toggleQualitySection(idx, kind) {
+            const section = document.getElementById(`recvQualitySection-${idx}`);
+            if (!section) return;
+            const isHidden = section.style.display === 'none' || !section.style.display;
+            section.style.display = isHidden ? '' : 'none';
+            if (isHidden) {
+                const target = kind === 'wrong' ? `recvWrong-${idx}` : `recvDamaged-${idx}`;
+                setTimeout(() => {
+                    const el = document.getElementById(target);
+                    if (el) el.focus();
+                }, 50);
+            }
+            updateRecvTotals();
+        }
+
+        /**
+         * Per-line live calculations. The user types one number: physically received.
+         * The system derives Net accepted (Received - Damaged - Wrong) and Short by
+         * (Ordered - Previously received - Received) and Remaining after this delivery.
+         */
+        function updateLineDerived(idx) {
+            const item = currentReceiveItems[idx];
+            if (!item) return;
+            const ordered = parseFloat(item.quantity);
+            const prevAccepted = parseFloat(item.quantity_received || 0);
+            const remainingBefore = Math.max(0, ordered - prevAccepted);
+
+            const received = parseFloat(document.getElementById(`recvReceived-${idx}`)?.value) || 0;
+            const damaged = parseFloat(document.getElementById(`recvDamaged-${idx}`)?.value) || 0;
+            const wrong = parseFloat(document.getElementById(`recvWrong-${idx}`)?.value) || 0;
+
+            const netAccepted = Math.max(0, received - damaged - wrong);
+            const shortBy = Math.max(0, remainingBefore - received);
+            const remainingAfter = Math.max(0, remainingBefore - netAccepted);
+
+            const unit = item.unit || '';
+            const netEl = document.getElementById(`recvNetAccepted-${idx}`);
+            if (netEl) netEl.textContent = `${netAccepted.toFixed(2)} ${unit}`.trim();
+            const shortEl = document.getElementById(`recvShortBy-${idx}`);
+            if (shortEl) shortEl.textContent = `${shortBy.toFixed(2)} ${unit}`.trim();
+            const remEl = document.getElementById(`recvRemainingAfter-${idx}`);
+            if (remEl) remEl.textContent = `${remainingAfter.toFixed(2)} ${unit}`.trim();
+
+            // Color the "Net accepted" cell by health.
+            if (netEl) {
+                netEl.classList.remove('text-success', 'text-error', 'text-warning');
+                if (netAccepted <= 0 && (damaged + wrong) > 0) {
+                    netEl.classList.add('text-error');
+                } else if (netAccepted <= 0) {
+                    netEl.classList.add('text-warning');
+                } else {
+                    netEl.classList.add('text-success');
+                }
+            }
         }
 
         function updateRecvTotals() {
-            let totalOrdered = 0, totalAccepted = 0, totalRejected = 0;
+            let totalOrdered = 0, totalReceived = 0, totalNetAccepted = 0, totalShort = 0;
             currentReceiveItems.forEach((item, idx) => {
                 const ordered = parseFloat(item.quantity);
                 const prevAccepted = parseFloat(item.quantity_received || 0);
-                const remaining = Math.max(0, ordered - prevAccepted);
-                totalOrdered += remaining;
+                const remainingBefore = Math.max(0, ordered - prevAccepted);
+                totalOrdered += remainingBefore;
 
-                const accEl = document.getElementById(`recvAccepted-${idx}`);
-                const rejEl = document.getElementById(`recvRejected-${idx}`);
-                if (accEl) totalAccepted += parseFloat(accEl.value) || 0;
-                if (rejEl) totalRejected += parseFloat(rejEl.value) || 0;
+                const received = parseFloat(document.getElementById(`recvReceived-${idx}`)?.value) || 0;
+                const damaged = parseFloat(document.getElementById(`recvDamaged-${idx}`)?.value) || 0;
+                const wrong = parseFloat(document.getElementById(`recvWrong-${idx}`)?.value) || 0;
+                const netAccepted = Math.max(0, received - damaged - wrong);
+                const shortBy = Math.max(0, remainingBefore - received);
+
+                totalReceived += received;
+                totalNetAccepted += Math.min(netAccepted, remainingBefore);
+                totalShort += shortBy;
+
+                updateLineDerived(idx);
             });
+
             document.getElementById('recvTotalOrdered').textContent = totalOrdered.toFixed(2);
-            document.getElementById('recvTotalAccepted').textContent = totalAccepted.toFixed(2);
-            document.getElementById('recvTotalRejected').textContent = totalRejected.toFixed(2);
+            document.getElementById('recvTotalReceived').textContent = totalReceived.toFixed(2);
+            document.getElementById('recvTotalAccepted').textContent = totalNetAccepted.toFixed(2);
+            document.getElementById('recvTotalShort').textContent = totalShort.toFixed(2);
+
+            // Live warning banner when there is a shortage.
+            const warning = document.getElementById('recvShortageWarning');
+            const warningText = document.getElementById('recvShortageWarningText');
+            if (warning && warningText) {
+                if (totalShort > 0.001) {
+                    warning.classList.remove('hidden');
+                    warningText.textContent = `This delivery will leave ${totalShort.toFixed(2)} unit(s) unreceived. You can submit now and receive the rest in a future delivery.`;
+                } else {
+                    warning.classList.add('hidden');
+                }
+            }
         }
 
         async function confirmReceive() {
@@ -771,20 +889,40 @@
 
                 if (remaining <= 0) return;
 
-                const accepted = parseFloat(document.getElementById(`recvAccepted-${idx}`)?.value) || 0;
-                const rejected = parseFloat(document.getElementById(`recvRejected-${idx}`)?.value) || 0;
+                // Read the new single-input values.
+                const received = parseFloat(document.getElementById(`recvReceived-${idx}`)?.value) || 0;
+                const damaged = parseFloat(document.getElementById(`recvDamaged-${idx}`)?.value) || 0;
+                const wrong = parseFloat(document.getElementById(`recvWrong-${idx}`)?.value) || 0;
 
-                if (accepted + rejected > remaining + 0.01) {
-                    showToast(`${item.item_description}: Accepted + Rejected exceeds remaining (${remaining.toFixed(2)})`, 'error');
+                // Validate: cannot receive more than what was ordered (across the whole PO).
+                if (received > remaining + 0.01) {
+                    showToast(`${item.item_description}: Physically Received (${received.toFixed(2)}) exceeds remaining (${remaining.toFixed(2)})`, 'error');
                     hasError = true;
                     return;
                 }
 
-                if (rejected > 0 && !document.getElementById(`recvReason-${idx}`)?.value?.trim()) {
-                    showToast(`${item.item_description}: Rejection reason is required`, 'error');
+                // Validate: damaged + wrong cannot exceed received (cannot reject more than physically present).
+                if (damaged + wrong > received + 0.01) {
+                    showToast(`${item.item_description}: Damaged + Wrong (${(damaged + wrong).toFixed(2)}) cannot exceed Physically Received (${received.toFixed(2)})`, 'error');
                     hasError = true;
                     return;
                 }
+
+                // Validate: damaged or wrong requires a rejection reason.
+                const reason = document.getElementById(`recvReason-${idx}`)?.value?.trim();
+                if ((damaged + wrong) > 0 && !reason) {
+                    showToast(`${item.item_description}: Rejection reason is required when damaged/wrong qty > 0`, 'error');
+                    hasError = true;
+                    return;
+                }
+
+                // Derive the legacy accepted/rejected values for the server.
+                // Server semantics: "accepted" = good stock, "rejected" = bad stock (quality issue).
+                const accepted = Math.max(0, received - damaged - wrong);
+                const rejected = damaged + wrong;
+
+                // Skip lines where the user entered nothing for this delivery.
+                if (received <= 0) return;
 
                 const isPerishable = item.ingredient_id
                     ? String(item.ingredient_is_perishable ?? '1') === '1'
@@ -795,8 +933,6 @@
                     hasError = true;
                     return;
                 }
-
-                if (accepted === 0 && rejected === 0) return;
 
                 const entry = {
                     item_id: item.id,
@@ -809,7 +945,7 @@
                 };
 
                 if (rejected > 0) {
-                    entry.rejection_reason = document.getElementById(`recvReason-${idx}`)?.value?.trim();
+                    entry.rejection_reason = reason;
                     entry.rejection_category = document.getElementById(`recvCategory-${idx}`)?.value;
                 }
 
@@ -881,3 +1017,4 @@
 </body>
 
 </html>
+
