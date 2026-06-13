@@ -31,26 +31,37 @@ try {
             
             // Get available raw milk for pasteurization
             if ($action === 'available_raw_milk') {
-                // Get milk issued to production via requisitions
+                // Get usable milk issued to production via requisitions.
+                // Issued milk is usable only while its original Warehouse Raw batch is not expired.
                 $issuedMilkStmt = $db->prepare("
-                    SELECT COALESCE(SUM(ri.issued_quantity), 0) as total_issued
-                    FROM requisition_items ri
-                    JOIN material_requisitions ir ON ri.requisition_id = ir.id
-                    WHERE ri.item_type = 'raw_milk'
-                      AND ri.issued_quantity > 0
+                    SELECT COALESCE(SUM(it.quantity), 0) as total_issued,
+                           MIN(it.created_at) as earliest_issued_at
+                    FROM inventory_transactions it
+                    JOIN material_requisitions ir ON ir.id = it.reference_id
+                    JOIN raw_milk_inventory rmi ON rmi.id = it.batch_id
+                    WHERE it.item_type = 'raw_milk'
+                      AND it.reference_type = 'requisition'
+                      AND it.quantity > 0
                       AND ir.department = 'production'
+                      AND rmi.expiry_date >= CURDATE()
                 ");
                 $issuedMilkStmt->execute();
                 $issuedStats = $issuedMilkStmt->fetch();
                 
                 // Get milk already used in production runs (raw milk only)
-                $usedMilkStmt = $db->prepare("
+                $usedMilkSql = "
                     SELECT COALESCE(SUM(milk_liters_used), 0) as total_used
                     FROM production_runs
-                    WHERE status IN ('in_progress', 'completed', 'pasteurization', 'processing', 'cooling', 'packaging')
+                    WHERE status IN ('planned', 'in_progress', 'completed', 'pasteurization', 'processing', 'cooling', 'packaging')
                       AND (milk_source_type IS NULL OR milk_source_type = 'raw')
-                ");
-                $usedMilkStmt->execute();
+                ";
+                $usedMilkParams = [];
+                if (!empty($issuedStats['earliest_issued_at'])) {
+                    $usedMilkSql .= " AND created_at >= ?";
+                    $usedMilkParams[] = $issuedStats['earliest_issued_at'];
+                }
+                $usedMilkStmt = $db->prepare($usedMilkSql);
+                $usedMilkStmt->execute($usedMilkParams);
                 $usedStats = $usedMilkStmt->fetch();
                 
                 // Get milk used in pasteurization runs
@@ -155,23 +166,33 @@ try {
             
             // Check available raw milk
             $issuedMilkStmt = $db->prepare("
-                SELECT COALESCE(SUM(ri.issued_quantity), 0) as total_issued
-                FROM requisition_items ri
-                JOIN material_requisitions ir ON ri.requisition_id = ir.id
-                WHERE ri.item_type = 'raw_milk'
-                  AND ri.issued_quantity > 0
+                SELECT COALESCE(SUM(it.quantity), 0) as total_issued,
+                       MIN(it.created_at) as earliest_issued_at
+                FROM inventory_transactions it
+                JOIN material_requisitions ir ON ir.id = it.reference_id
+                JOIN raw_milk_inventory rmi ON rmi.id = it.batch_id
+                WHERE it.item_type = 'raw_milk'
+                  AND it.reference_type = 'requisition'
+                  AND it.quantity > 0
                   AND ir.department = 'production'
+                  AND rmi.expiry_date >= CURDATE()
             ");
             $issuedMilkStmt->execute();
             $issuedStats = $issuedMilkStmt->fetch();
             
-            $usedMilkStmt = $db->prepare("
+            $usedMilkSql = "
                 SELECT COALESCE(SUM(milk_liters_used), 0) as total_used
                 FROM production_runs
-                WHERE status IN ('in_progress', 'completed', 'pasteurization', 'processing', 'cooling', 'packaging')
+                WHERE status IN ('planned', 'in_progress', 'completed', 'pasteurization', 'processing', 'cooling', 'packaging')
                   AND (milk_source_type IS NULL OR milk_source_type = 'raw')
-            ");
-            $usedMilkStmt->execute();
+            ";
+            $usedMilkParams = [];
+            if (!empty($issuedStats['earliest_issued_at'])) {
+                $usedMilkSql .= " AND created_at >= ?";
+                $usedMilkParams[] = $issuedStats['earliest_issued_at'];
+            }
+            $usedMilkStmt = $db->prepare($usedMilkSql);
+            $usedMilkStmt->execute($usedMilkParams);
             $usedStats = $usedMilkStmt->fetch();
             
             $pastUsedStmt = $db->prepare("

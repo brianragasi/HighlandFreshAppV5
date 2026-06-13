@@ -555,6 +555,17 @@
                 document.getElementById('detailModal').close();
                 await loadPRs();
             }catch(e){
+                const duplicateId=e?.response?.data?.errors?.duplicate_pr_id;
+                const duplicateNumber=e?.response?.data?.errors?.duplicate_pr_number;
+                if(duplicateId){
+                    showToastAction(
+                        `Duplicate pending PR already exists (${duplicateNumber||'PR'}).`,
+                        'error',
+                        'View PR',
+                        ()=>{document.getElementById('detailModal').close();viewPR(duplicateId);}
+                    );
+                    return;
+                }
                 showToast(e?.response?.data?.message||e?.message||'Failed to submit PR','error');
             }
         }
@@ -1005,6 +1016,17 @@
                 document.getElementById('createModal').close();
                 await loadPRs();
             }catch(e){
+                const duplicateId=e?.response?.data?.errors?.duplicate_pr_id;
+                const duplicateNumber=e?.response?.data?.errors?.duplicate_pr_number;
+                if(duplicateId){
+                    showToastAction(
+                        `Duplicate pending PR already exists (${duplicateNumber||'PR'}).`,
+                        'error',
+                        'View PR',
+                        ()=>{document.getElementById('createModal').close();viewPR(duplicateId);}
+                    );
+                    return;
+                }
                 showToast(e?.response?.data?.message||e?.message||'Failed to create PR','error');
             }finally{
                 submitBtn.disabled=false;
@@ -1049,6 +1071,37 @@
             t.innerHTML=`<i class="fas fa-${icon}"></i><span>${msg}</span>`;
             c.appendChild(t);
             setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(()=>t.remove(),300);},3000);
+        }
+
+        function showToastAction(msg,type='info',actionLabel=null,actionHandler=null){
+            const c=document.getElementById('toastContainer');
+            const cls=type==='success'?'alert-success':type==='error'?'alert-error':'alert-info';
+            const icon=type==='success'?'check-circle':type==='error'?'exclamation-circle':'info-circle';
+            const t=document.createElement('div');
+            t.className=`alert ${cls} shadow-lg text-sm flex items-center gap-2`;
+
+            const iconEl=document.createElement('i');
+            iconEl.className=`fas fa-${icon}`;
+            const textEl=document.createElement('span');
+            textEl.textContent=msg;
+
+            t.appendChild(iconEl);
+            t.appendChild(textEl);
+
+            if(actionLabel&&typeof actionHandler==='function'){
+                const btn=document.createElement('button');
+                btn.type='button';
+                btn.className='btn btn-xs btn-outline';
+                btn.textContent=actionLabel;
+                btn.addEventListener('click',()=>{
+                    actionHandler();
+                    t.remove();
+                });
+                t.appendChild(btn);
+            }
+
+            c.appendChild(t);
+            setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(()=>t.remove(),300);},4000);
         }
     </script>
 </body>

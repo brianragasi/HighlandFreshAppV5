@@ -257,7 +257,7 @@
             <!-- Stats Cards -->
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                 <div class="card bg-base-100 border border-base-300 cursor-pointer hover:shadow-md transition-shadow"
-                    onclick="document.getElementById('statusFilter').value='in_progress';loadRuns();">
+                    onclick="setRunStatusFilter('in_progress')">
                     <div class="card-body p-4">
                         <div class="flex items-center gap-3">
                             <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -271,7 +271,7 @@
                     </div>
                 </div>
                 <div class="card bg-base-100 border border-base-300 cursor-pointer hover:shadow-md transition-shadow"
-                    onclick="document.getElementById('statusFilter').value='completed';loadRuns();">
+                    onclick="setRunStatusFilter('completed_today')">
                     <div class="card-body p-4">
                         <div class="flex items-center gap-3">
                             <div class="w-12 h-12 rounded-xl bg-success/10 flex items-center justify-center">
@@ -285,7 +285,7 @@
                     </div>
                 </div>
                 <div class="card bg-base-100 border border-base-300 cursor-pointer hover:shadow-md transition-shadow"
-                    onclick="document.getElementById('statusFilter').value='planned';loadRuns();">
+                    onclick="setRunStatusFilter('planned')">
                     <div class="card-body p-4">
                         <div class="flex items-center gap-3">
                             <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center">
@@ -322,8 +322,9 @@
                                 <span class="label-text text-xs">Status</span>
                             </label>
                             <select class="select select-bordered select-sm w-full sm:w-40" id="statusFilter"
-                                onchange="loadRuns()">
-                                <option value="">All Status</option>
+                                onchange="handleStatusFilterChange()">
+                                <option value="active" selected>Active Work</option>
+                                <option value="">All History</option>
                                 <option value="planned">Planned</option>
                                 <option value="in_progress">In Progress</option>
                                 <option value="pasteurization">Pasteurization</option>
@@ -383,7 +384,7 @@
                     <div class="flex items-center justify-between p-4 border-b border-base-300">
                         <h3 class="font-semibold flex items-center gap-2">
                             <i class="fas fa-list text-primary"></i>
-                            Production Runs
+                            <span id="runsTableTitle">Active Production Runs</span>
                         </h3>
                         <span class="text-sm text-base-content/60" id="totalRecords">0 records</span>
                     </div>
@@ -439,7 +440,7 @@
                     <!-- Milk Availability Check -->
                     <div id="milkAvailabilitySection">
                         <div id="milkCheckLoading" class="bg-base-200 p-4 rounded-xl text-center">
-                            <i class="fas fa-spinner fa-spin"></i> Checking available milk from QC...
+                            <i class="fas fa-spinner fa-spin"></i> Checking materials issued to Production...
                         </div>
                         <div id="milkCheckResult" class="hidden"></div>
                     </div>
@@ -447,7 +448,7 @@
                     <!-- Step indicator -->
                     <div class="alert alert-info">
                         <i class="fas fa-info-circle"></i>
-                        <span class="text-sm">Fill in the details below to start a new production batch</span>
+                        <span class="text-sm">Production runs use only materials that Warehouse Raw has already issued. If nothing has been issued yet, create a material requisition first.</span>
                     </div>
 
                     <div class="form-control">
@@ -485,8 +486,7 @@
                                 <i class="fas fa-mortar-pestle text-primary"></i>
                                 Recipe Ingredients
                                 <span class="badge badge-primary badge-sm" id="ingredientCount">0</span>
-                                <span class="text-xs text-base-content/60 font-normal">(Click to adjust
-                                    quantities)</span>
+                                <span class="text-xs text-base-content/60 font-normal">(checked when the run is created)</span>
                             </div>
                             <div class="collapse-content">
                                 <div class="overflow-x-auto">
@@ -494,7 +494,7 @@
                                         <thead>
                                             <tr>
                                                 <th>Ingredient</th>
-                                                <th class="text-right">Recipe Qty</th>
+                                                <th class="text-right">Required Qty</th>
                                                 <th class="text-right">Actual Qty</th>
                                                 <th>Unit</th>
                                             </tr>
@@ -509,8 +509,7 @@
                                 </div>
                                 <div class="alert alert-info mt-3">
                                     <i class="fas fa-info-circle"></i>
-                                    <span class="text-xs">Adjust quantities if actual usage differs from recipe. This
-                                        helps track efficiency.</span>
+                                    <span class="text-xs">These are scaled quantities for this planned run. Warehouse Raw must issue them through a fulfilled requisition before the run can be created.</span>
                                 </div>
                             </div>
                         </div>
@@ -853,9 +852,16 @@
             }
         });
 
+        function getLocalDateString(date = new Date()) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
         async function loadStats() {
             try {
-                const today = new Date().toISOString().split('T')[0];
+                const today = getLocalDateString();
 
                 const [inProgressRes, completedRes, plannedRes, allRes] = await Promise.all([
                     ProductionService.getRuns({ status: 'in_progress', limit: 1 }),
@@ -887,10 +893,29 @@
         }
 
         function resetFilters() {
-            document.getElementById('statusFilter').value = '';
+            document.getElementById('statusFilter').value = 'active';
             document.getElementById('productTypeFilter').value = '';
             document.getElementById('dateFrom').value = '';
             document.getElementById('dateTo').value = '';
+            currentPage = 1;
+            loadRuns();
+        }
+
+        function setRunStatusFilter(status) {
+            const today = getLocalDateString();
+            document.getElementById('statusFilter').value = status === 'completed_today' ? 'completed' : status;
+            document.getElementById('dateFrom').value = status === 'completed_today' ? today : '';
+            document.getElementById('dateTo').value = status === 'completed_today' ? today : '';
+            currentPage = 1;
+            loadRuns();
+        }
+
+        function handleStatusFilterChange() {
+            const status = document.getElementById('statusFilter').value;
+            if (status !== 'completed') {
+                document.getElementById('dateFrom').value = '';
+                document.getElementById('dateTo').value = '';
+            }
             currentPage = 1;
             loadRuns();
         }
@@ -913,6 +938,25 @@
         // Available milk data from QC
         let availableMilkData = null;
         let selectedRecipeData = null;
+
+        function setNewRunMaterialGate(isOpen) {
+            const blocked = !isOpen;
+            ['recipeSelect', 'plannedQuantity', 'milkLiters', 'runNotes'].forEach(id => {
+                const field = document.getElementById(id);
+                if (field) field.disabled = blocked;
+            });
+
+            const submitBtn = document.querySelector('#newRunForm button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = blocked;
+
+            if (blocked) {
+                selectedRecipeData = null;
+                document.getElementById('recipeSelect').value = '';
+                document.getElementById('recipeDetails').classList.add('hidden');
+                document.getElementById('ingredientsSection').classList.add('hidden');
+                document.getElementById('milkRequirementCheck').classList.add('hidden');
+            }
+        }
 
         async function updateRecipeDetails() {
             const recipeId = document.getElementById('recipeSelect').value;
@@ -1042,6 +1086,42 @@
             }
         }
 
+        function getScaledIngredientQuantity(ingredient) {
+            const plannedQty = parseFloat(document.getElementById('plannedQuantity').value) || 0;
+            const expectedYield = parseFloat(selectedRecipeData?.expected_yield) || 1;
+            const recipeQty = parseFloat(ingredient.quantity) || 0;
+            return Math.round(((recipeQty * plannedQty) / expectedYield) * 1000) / 1000;
+        }
+
+        function formatIngredientQuantity(quantity) {
+            return Number.isFinite(quantity) ? quantity.toFixed(3) : '0.000';
+        }
+
+        function refreshScaledIngredientRows() {
+            if (!selectedRecipeData?.ingredients?.length) return;
+
+            selectedRecipeData.ingredients.forEach((ing, idx) => {
+                const required = getScaledIngredientQuantity(ing);
+                const requiredText = formatIngredientQuantity(required);
+                const requiredCell = document.querySelector(`[data-ingredient-required="${idx}"]`);
+                const input = document.querySelector(`input[name="ingredient_actual_${idx}"]`);
+
+                if (requiredCell) {
+                    requiredCell.textContent = requiredText;
+                }
+
+                if (input) {
+                    const previousRequired = parseFloat(input.dataset.requiredQty || input.value || 0);
+                    const currentActual = parseFloat(input.value || 0);
+                    if (!Number.isFinite(currentActual) || Math.abs(currentActual - previousRequired) < 0.0005) {
+                        input.value = requiredText;
+                    }
+                    input.dataset.requiredQty = required;
+                    input.dataset.recipeQty = ing.quantity;
+                }
+            });
+        }
+
         async function loadRecipeIngredients(recipeId) {
             const ingredientsSection = document.getElementById('ingredientsSection');
             const ingredientsList = document.getElementById('ingredientsList');
@@ -1050,31 +1130,37 @@
                 // Fetch full recipe with ingredients
                 const response = await ProductionService.getRecipe(recipeId);
                 if (response.success && response.data.ingredients) {
+                    selectedRecipeData = { ...selectedRecipeData, ...response.data };
                     const ingredients = response.data.ingredients;
 
                     if (ingredients.length > 0) {
                         ingredientsSection.classList.remove('hidden');
                         document.getElementById('ingredientCount').textContent = ingredients.length;
 
-                        ingredientsList.innerHTML = ingredients.map((ing, idx) => `
-                            <tr>
-                                <td>
-                                    <div class="font-medium">${ing.ingredient_name}</div>
-                                    <div class="text-xs text-base-content/60">${ing.ingredient_category || ''}</div>
-                                </td>
-                                <td class="text-right font-mono text-sm">${ing.quantity}</td>
-                                <td class="text-right">
-                                    <input type="number" 
-                                        class="input input-bordered input-xs w-20 text-right" 
-                                        value="${ing.quantity}" 
-                                        step="0.01"
-                                        data-ingredient-id="${ing.id}"
-                                        data-recipe-qty="${ing.quantity}"
-                                        name="ingredient_actual_${idx}">
-                                </td>
-                                <td class="text-xs">${ing.unit || ''}</td>
-                            </tr>
-                        `).join('');
+                        ingredientsList.innerHTML = ingredients.map((ing, idx) => {
+                            const required = getScaledIngredientQuantity(ing);
+                            const requiredText = formatIngredientQuantity(required);
+                            return `
+                                <tr>
+                                    <td>
+                                        <div class="font-medium">${ing.ingredient_name}</div>
+                                        <div class="text-xs text-base-content/60">${ing.ingredient_category || ''}</div>
+                                    </td>
+                                    <td class="text-right font-mono text-sm" data-ingredient-required="${idx}">${requiredText}</td>
+                                    <td class="text-right">
+                                        <input type="number" 
+                                            class="input input-bordered input-xs w-24 text-right" 
+                                            value="${requiredText}" 
+                                            step="0.001"
+                                            data-ingredient-id="${ing.ingredient_id || ing.id}"
+                                            data-recipe-qty="${ing.quantity}"
+                                            data-required-qty="${required}"
+                                            name="ingredient_actual_${idx}">
+                                    </td>
+                                    <td class="text-xs">${ing.unit || ''}</td>
+                                </tr>
+                            `;
+                        }).join('');
 
                         // Store ingredients for later submission
                         selectedRecipeData.ingredients = ingredients;
@@ -1090,14 +1176,20 @@
 
         async function loadRuns() {
             try {
+                const selectedStatus = document.getElementById('statusFilter').value;
                 const params = {
                     page: currentPage,
                     limit: 20,
-                    status: document.getElementById('statusFilter').value,
                     product_type: document.getElementById('productTypeFilter').value,
                     date_from: document.getElementById('dateFrom').value,
                     date_to: document.getElementById('dateTo').value
                 };
+
+                if (selectedStatus === 'active') {
+                    params.status_group = 'active';
+                } else {
+                    params.status = selectedStatus;
+                }
 
                 const response = await ProductionService.getRuns(params);
 
@@ -1107,11 +1199,32 @@
 
                     const total = response.pagination?.total || response.data.length;
                     document.getElementById('totalRecords').textContent = `${total} record${total !== 1 ? 's' : ''}`;
+                    updateRunsTableTitle();
                 }
             } catch (error) {
                 console.error('Error loading runs:', error);
                 showToast('Failed to load production runs', 'error');
             }
+        }
+
+        function updateRunsTableTitle() {
+            const status = document.getElementById('statusFilter').value;
+            const dateFrom = document.getElementById('dateFrom').value;
+            const dateTo = document.getElementById('dateTo').value;
+            const titles = {
+                active: 'Active Production Runs',
+                planned: 'Planned Production Runs',
+                in_progress: 'Runs In Progress',
+                pasteurization: 'Runs In Pasteurization',
+                processing: 'Runs In Processing',
+                cooling: 'Runs In Cooling',
+                packaging: 'Runs In Packaging',
+                completed: dateFrom && dateFrom === dateTo ? 'Completed Runs Today' : 'Completed Run History',
+                cancelled: 'Cancelled Runs',
+                '': 'All Production History'
+            };
+
+            document.getElementById('runsTableTitle').textContent = titles[status] || 'Production Runs';
         }
 
         function renderRuns(runs) {
@@ -1230,6 +1343,7 @@
 
         async function showNewRunModal() {
             document.getElementById('newRunForm').reset();
+            setNewRunMaterialGate(false);
             document.getElementById('recipeDetails').classList.add('hidden');
             document.getElementById('milkCheckLoading').classList.remove('hidden');
             document.getElementById('milkCheckResult').classList.add('hidden');
@@ -1252,27 +1366,28 @@
                     resultDiv.classList.remove('hidden');
 
                     if (totalLiters > 0) {
+                        setNewRunMaterialGate(true);
                         resultDiv.innerHTML = `
                             <div class="alert alert-success">
                                 <div class="flex items-start gap-3 w-full">
                                     <span class="text-2xl"><i class="fas fa-tint text-primary"></i></span>
                                     <div class="flex-1">
                                         <div class="font-semibold">
-                                            <i class="fas fa-check-circle mr-1"></i> QC-Approved Milk Available: ${Math.round(totalLiters).toLocaleString()} L
+                                            <i class="fas fa-check-circle mr-1"></i> Issued Milk Available: ${Math.round(totalLiters).toLocaleString()} L
                                         </div>
                                         <div class="text-sm opacity-80 mt-1">
-                                            From ${sources.length} delivery${sources.length !== 1 ? 's' : ''} in the last 2 days
+                                            From ${sources.length} fulfilled requisition item${sources.length !== 1 ? 's' : ''}
                                         </div>
                                     </div>
                                 </div>
                                 ${sources.length > 0 ? `
                                     <details class="mt-2 w-full">
-                                        <summary class="cursor-pointer text-sm"><i class="fas fa-clipboard-list mr-1"></i> View milk source details</summary>
+                                        <summary class="cursor-pointer text-sm"><i class="fas fa-clipboard-list mr-1"></i> View requisition source details</summary>
                                         <div class="mt-2 bg-base-100 rounded-lg p-2 text-xs">
                                             ${sources.map(s => `
                                                 <div class="p-2 border-b border-base-300 last:border-0">
-                                                    <strong>${s.delivery_code}</strong> - ${parseFloat(s.remaining_liters).toFixed(1)}L available
-                                                    <br><span class="opacity-70">Farmer: ${s.farmer_name || 'Unknown'} | Fat: ${s.fat_percentage}% | Date: ${s.delivery_date}</span>
+                                                    <strong>${s.delivery_code}</strong> - ${parseFloat(s.remaining_liters).toFixed(1)}L issued
+                                                    <br><span class="opacity-70">Source: ${s.source_batches || 'Warehouse Raw'} | Issued: ${s.delivery_date || 'Not recorded'} | Expires: ${s.expiry_date || 'Not recorded'}</span>
                                                 </div>
                                             `).join('')}
                                         </div>
@@ -1281,23 +1396,28 @@
                             </div>
                         `;
                     } else {
+                        setNewRunMaterialGate(false);
                         resultDiv.innerHTML = `
                             <div class="alert alert-error">
                                 <div class="flex items-start gap-3 w-full">
                                     <span class="text-2xl"><i class="fas fa-exclamation-triangle text-error"></i></span>
                                     <div>
-                                        <div class="font-semibold">No QC-Approved Milk Available</div>
+                                        <div class="font-semibold">No Issued Milk Available</div>
                                         <div class="text-sm opacity-80 mt-1">
-                                            You cannot start production until milk deliveries are tested and approved by QC.
+                                            You cannot start production until Warehouse Raw fulfills a milk requisition for Production.
                                         </div>
                                         <div class="text-xs opacity-60 mt-2">
-                                            <i class="fas fa-phone mr-1"></i> Contact the QC team to check if there are deliveries waiting to be graded.
+                                            <i class="fas fa-clipboard-list mr-1"></i> Create a requisition, wait for GM approval, then have Warehouse Raw fulfill it.
+                                        </div>
+                                        <div class="mt-3">
+                                            <a href="requisitions.html?action=new&item=raw_milk" class="btn btn-primary btn-sm">
+                                                <i class="fas fa-clipboard-list mr-1"></i> Request Raw Milk
+                                            </a>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         `;
-                        document.querySelector('#newRunForm button[type="submit"]').disabled = true;
                     }
                 }
             } catch (error) {
@@ -1307,16 +1427,19 @@
                 document.getElementById('milkCheckResult').innerHTML = `
                     <div class="alert alert-warning">
                         <i class="fas fa-exclamation-triangle"></i>
-                        <span>Could not check milk availability. You may proceed, but the system will validate again on submission.</span>
+                        <span>Could not check issued material availability. The system will validate again on submission.</span>
                     </div>
                 `;
+                setNewRunMaterialGate(true);
             }
         }
 
         function checkMilkRequirement() {
             if (!selectedRecipeData || !availableMilkData) return;
 
-            const plannedQty = parseInt(document.getElementById('plannedQuantity').value) || 0;
+            refreshScaledIngredientRows();
+
+            const plannedQty = parseFloat(document.getElementById('plannedQuantity').value) || 0;
             const customMilk = parseFloat(document.getElementById('milkLiters').value) || 0;
 
             const baseMilk = selectedRecipeData.base_milk_liters || 0;
@@ -1333,7 +1456,7 @@
                     checkDiv.innerHTML = `
                         <div class="alert alert-success py-2">
                             <i class="fas fa-check-circle"></i>
-                            <span>Milk OK: Need ${requiredMilk.toFixed(1)}L, Have ${availableLiters.toFixed(1)}L available</span>
+                            <span>Issued milk OK: Need ${requiredMilk.toFixed(1)}L, Have ${availableLiters.toFixed(1)}L available</span>
                         </div>
                     `;
                     document.querySelector('#newRunForm button[type="submit"]').disabled = false;
@@ -1342,8 +1465,8 @@
                         <div class="alert alert-error py-2">
                             <i class="fas fa-times-circle"></i>
                             <div>
-                                <div>Not enough milk: Need ${requiredMilk.toFixed(1)}L, Only ${availableLiters.toFixed(1)}L available</div>
-                                <div class="text-xs opacity-80">Reduce quantity or wait for more QC-approved milk.</div>
+                                <div>Not enough issued milk: Need ${requiredMilk.toFixed(1)}L, Only ${availableLiters.toFixed(1)}L available</div>
+                                <div class="text-xs opacity-80">Reduce quantity or request more milk through Warehouse Raw.</div>
                             </div>
                         </div>
                     `;
@@ -1358,6 +1481,8 @@
             event.preventDefault();
 
             try {
+                refreshScaledIngredientRows();
+
                 // Base data
                 const data = {
                     recipe_id: document.getElementById('recipeSelect').value,
@@ -1377,12 +1502,12 @@
                         const input = document.querySelector(`input[name="ingredient_actual_${idx}"]`);
                         if (input) {
                             const actual = parseFloat(input.value);
-                            const recipe = parseFloat(ing.quantity);
-                            if (actual !== recipe) {
+                            const required = parseFloat(input.dataset.requiredQty || getScaledIngredientQuantity(ing));
+                            if (Number.isFinite(actual) && Math.abs(actual - required) > 0.0005) {
                                 ingredientAdjustments.push({
-                                    ingredient_id: ing.id,
+                                    ingredient_id: ing.ingredient_id || ing.id,
                                     ingredient_name: ing.ingredient_name,
-                                    recipe_quantity: recipe,
+                                    recipe_quantity: required,
                                     actual_quantity: actual,
                                     unit: ing.unit
                                 });

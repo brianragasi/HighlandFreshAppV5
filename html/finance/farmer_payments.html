@@ -190,8 +190,8 @@
             <div class="bg-gradient-to-r from-primary to-primary/80 rounded-2xl p-5 mb-6 text-primary-content">
                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div>
-                        <h2 class="text-xl font-bold mb-1"><i class="fas fa-tractor mr-2"></i>Milk Procurement
-                            Payments</h2>
+                        <h2 class="text-xl font-bold mb-1"><i class="fas fa-tractor mr-2"></i>Unpaid Milk
+                            Payouts</h2>
                         <p class="text-primary-content/80 text-sm">Payment computation based on QC test results:
                             fat %, acidity, and sediment grade.</p>
                     </div>
@@ -216,7 +216,7 @@
                             <div class="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
                                 <i class="fas fa-users text-blue-500 text-sm"></i>
                             </div>
-                            <span class="text-sm text-base-content/60">Active Farmers</span>
+                            <span class="text-sm text-base-content/60">Farmers Due</span>
                         </div>
                         <p class="text-2xl font-bold" id="statActiveFarmers">
                             <span class="loading loading-dots loading-sm"></span>
@@ -229,7 +229,7 @@
                             <div class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
                                 <i class="fas fa-peso-sign text-emerald-500 text-sm"></i>
                             </div>
-                            <span class="text-sm text-base-content/60">Total Procurement</span>
+                            <span class="text-sm text-base-content/60">Unpaid Balance</span>
                         </div>
                         <p class="text-2xl font-bold" id="statTotalProcurement">
                             <span class="loading loading-dots loading-sm"></span>
@@ -242,7 +242,7 @@
                             <div class="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center">
                                 <i class="fas fa-droplet text-cyan-500 text-sm"></i>
                             </div>
-                            <span class="text-sm text-base-content/60">Total Liters</span>
+                            <span class="text-sm text-base-content/60">Unpaid Liters</span>
                         </div>
                         <p class="text-2xl font-bold" id="statTotalLiters">
                             <span class="loading loading-dots loading-sm"></span>
@@ -255,7 +255,7 @@
                             <div class="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
                                 <i class="fas fa-truck text-amber-500 text-sm"></i>
                             </div>
-                            <span class="text-sm text-base-content/60">Total Deliveries</span>
+                            <span class="text-sm text-base-content/60">Unpaid Deliveries</span>
                         </div>
                         <p class="text-2xl font-bold" id="statTotalDeliveries">
                             <span class="loading loading-dots loading-sm"></span>
@@ -282,17 +282,20 @@
                                     <th>Farmer</th>
                                     <th>Milk Type</th>
                                     <th>Membership</th>
-                                    <th>Deliveries</th>
-                                    <th>Total Liters</th>
+                                    <th>Unpaid Deliveries</th>
+                                    <th>Unpaid Liters</th>
                                     <th>Avg Fat %</th>
                                     <th>Avg Price/L</th>
-                                    <th>Total Amount</th>
+                                    <th>Unpaid Amount</th>
+                                    <th>Unpaid Period</th>
+                                    <th>Last Payment</th>
                                     <th>Bank Info</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="farmerTableBody">
                                 <tr>
-                                    <td colspan="9" class="text-center py-12 text-base-content/60">
+                                    <td colspan="12" class="text-center py-12 text-base-content/60">
                                         <span class="loading loading-spinner loading-md"></span>
                                         <p class="mt-2">Loading farmer payment data...</p>
                                     </td>
@@ -401,6 +404,118 @@
         </footer>
     </div>
 
+    <!-- Farmer Payout Modal -->
+    <dialog id="payoutModal" class="modal">
+        <div class="modal-box max-w-2xl">
+            <h3 class="font-bold text-lg mb-4">
+                <i class="fas fa-money-bill-transfer text-primary mr-2"></i>
+                Disburse Farmer Funds
+            </h3>
+            <form id="payoutForm">
+                <input type="hidden" id="payoutFarmerId">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                    <div class="bg-base-200 rounded-xl p-4">
+                        <div class="text-sm text-base-content/60 mb-1">Farmer</div>
+                        <div class="font-bold text-lg" id="payoutFarmerName">-</div>
+                        <div class="text-sm text-base-content/60" id="payoutFarmerCode">-</div>
+                    </div>
+                    <div class="bg-base-200 rounded-xl p-4">
+                        <div class="text-sm text-base-content/60 mb-1">Payee Account</div>
+                        <div class="font-semibold" id="payoutBankName">-</div>
+                        <div class="text-sm text-base-content/60" id="payoutBankAccount">-</div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                    <div class="bg-base-200 rounded-xl p-3">
+                        <div class="text-xs text-base-content/60">Amount</div>
+                        <div class="font-bold text-primary" id="payoutAmount">PHP 0.00</div>
+                    </div>
+                    <div class="bg-base-200 rounded-xl p-3">
+                        <div class="text-xs text-base-content/60">Deliveries</div>
+                        <div class="font-bold" id="payoutDeliveryCount">0</div>
+                    </div>
+                    <div class="bg-base-200 rounded-xl p-3">
+                        <div class="text-xs text-base-content/60">Liters</div>
+                        <div class="font-bold" id="payoutLiters">0 L</div>
+                    </div>
+                    <div class="bg-base-200 rounded-xl p-3">
+                        <div class="text-xs text-base-content/60">Avg Price/L</div>
+                        <div class="font-bold" id="payoutAvgPrice">PHP 0.00</div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Covered From</span></label>
+                        <input type="date" id="payoutCoveredFrom" class="input input-bordered w-full"
+                            onchange="queuePayoutPreview()">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Covered To</span></label>
+                        <input type="date" id="payoutCoveredTo" class="input input-bordered w-full"
+                            onchange="queuePayoutPreview()">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Payment Date</span></label>
+                        <input type="date" id="payoutDate" class="input input-bordered w-full">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Payment Method</span></label>
+                        <select id="payoutMethod" class="select select-bordered w-full">
+                            <option value="bank_transfer">Bank Transfer</option>
+                            <option value="e_wallet">E-Wallet</option>
+                            <option value="check">Check</option>
+                            <option value="cash">Cash</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Reference Number</span></label>
+                        <input type="text" id="payoutReference" class="input input-bordered w-full"
+                            placeholder="Transfer / check / wallet reference">
+                    </div>
+                </div>
+
+                <div class="bg-base-200 rounded-xl p-3 mb-3 text-xs">
+                    <div class="font-semibold mb-2">Verification Checklist</div>
+                    <label class="label cursor-pointer justify-start gap-3">
+                        <input type="checkbox" id="verifyDeliveries" class="checkbox checkbox-sm checkbox-primary">
+                        <span class="label-text">Accepted deliveries and QC amounts are verified.</span>
+                    </label>
+                    <label class="label cursor-pointer justify-start gap-3">
+                        <input type="checkbox" id="verifyBankInfo" class="checkbox checkbox-sm checkbox-primary">
+                        <span class="label-text">Farmer payee details are verified.</span>
+                    </label>
+                    <label class="label cursor-pointer justify-start gap-3">
+                        <input type="checkbox" id="verifyTransfer" class="checkbox checkbox-sm checkbox-primary">
+                        <span class="label-text">Funds have been released through the selected channel.</span>
+                    </label>
+                </div>
+
+                <div class="form-control mb-4">
+                    <label class="label"><span class="label-text">Notes</span></label>
+                    <textarea id="payoutNotes" class="textarea textarea-bordered w-full" rows="2"
+                        placeholder="Optional notes..."></textarea>
+                </div>
+
+                <div id="payoutPreviewHint" class="text-sm text-base-content/60 mb-2"></div>
+
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost"
+                        onclick="document.getElementById('payoutModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="payoutSubmitBtn">
+                        <i class="fas fa-check mr-1"></i> Record Payout
+                    </button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
     <!-- Toast Container -->
     <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
 
@@ -413,6 +528,9 @@
     <script>
         let allFarmers = [];
         let searchTimeout;
+        let currentFarmer = null;
+        let currentPayoutPreview = null;
+        let payoutPreviewTimeout;
 
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -457,7 +575,7 @@
                 renderFarmers();
             } catch (error) {
                 console.error('Error loading farmer payments:', error);
-                document.getElementById('farmerTableBody').innerHTML = `<tr><td colspan="9" class="text-center py-8 text-error">
+                document.getElementById('farmerTableBody').innerHTML = `<tr><td colspan="12" class="text-center py-8 text-error">
                     <i class="fas fa-exclamation-circle mr-2"></i> Error loading farmer data</td></tr>`;
             }
         }
@@ -489,7 +607,7 @@
             const tbody = document.getElementById('farmerTableBody');
 
             if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="9" class="text-center py-12 text-base-content/60">
+                tbody.innerHTML = `<tr><td colspan="12" class="text-center py-12 text-base-content/60">
                     <i class="fas fa-inbox text-4xl mb-2"></i><p>No farmers found</p></td></tr>`;
                 return;
             }
@@ -498,12 +616,33 @@
 
             tbody.innerHTML = filtered.map((f, i) => {
                 const avatarColor = colors[i % colors.length];
+                const farmerName = escapeHtml(f.farmer_name || '-');
+                const farmerCode = escapeHtml(f.farmer_code || '-');
+                const milkType = escapeHtml(f.milk_type || '-');
+                const bankName = (f.bank_name || '').trim();
+                const bankAccount = (f.bank_account_number || '').trim();
                 const initials = (f.farmer_name || '').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
                 const memberBadge = f.membership_type === 'member'
                     ? '<span class="badge badge-success badge-xs">Member</span>'
                     : '<span class="badge badge-ghost badge-xs">Non-member</span>';
                 const avgFat = parseFloat(f.avg_fat || 0);
                 const fatColor = avgFat >= 3.5 ? 'text-success' : avgFat >= 2.5 ? 'text-warning' : 'text-error';
+                const totalAmount = parseFloat(f.total_amount || 0);
+                const deliveryCount = parseInt(f.delivery_count || 0);
+                const period = f.first_delivery && f.last_delivery
+                    ? `${formatDateValue(f.first_delivery)} - ${formatDateValue(f.last_delivery)}`
+                    : '-';
+                const lastPayment = f.last_payment_date
+                    ? `<div class="text-xs">
+                            <span class="font-medium">${formatDateValue(f.last_payment_date)}</span>
+                            <br><span class="text-base-content/50">${formatCurrency(f.last_payment_amount)}</span>
+                        </div>`
+                    : '<span class="text-xs text-base-content/30">None</span>';
+                const actionButton = totalAmount > 0
+                    ? `<button class="btn btn-primary btn-xs whitespace-nowrap" onclick="openPayoutModal(${parseInt(f.farmer_id)})">
+                            <i class="fas fa-money-bill-transfer"></i> Disburse
+                        </button>`
+                    : '<span class="badge badge-success badge-sm">Paid</span>';
 
                 return `
                     <tr class="hover">
@@ -511,33 +650,189 @@
                             <div class="flex items-center gap-3">
                                 <div class="avatar placeholder">
                                     <div class="w-9 rounded-lg ${avatarColor} text-white">
-                                        <span class="text-xs font-bold">${initials}</span>
+                                        <span class="text-xs font-bold">${escapeHtml(initials || '?')}</span>
                                     </div>
                                 </div>
                                 <div>
-                                    <div class="font-semibold">${f.farmer_name}</div>
-                                    <div class="text-xs text-base-content/50">${f.farmer_code}</div>
+                                    <div class="font-semibold">${farmerName}</div>
+                                    <div class="text-xs text-base-content/50">${farmerCode}</div>
                                 </div>
                             </div>
                         </td>
-                        <td><span class="badge badge-outline badge-sm">${f.milk_type || '-'}</span></td>
+                        <td><span class="badge badge-outline badge-sm">${milkType}</span></td>
                         <td>${memberBadge}</td>
-                        <td class="text-center font-semibold">${f.delivery_count}</td>
+                        <td class="text-center font-semibold">${deliveryCount}</td>
                         <td class="font-semibold">${parseFloat(f.total_liters || 0).toLocaleString()} L</td>
                         <td class="${fatColor} font-semibold">${avgFat.toFixed(2)}%</td>
                         <td>${formatCurrency(f.avg_price_per_liter)}</td>
                         <td class="font-bold text-primary">${formatCurrency(f.total_amount)}</td>
+                        <td class="text-xs">${period}</td>
+                        <td>${lastPayment}</td>
                         <td>
-                            ${f.bank_name ? `
+                            ${bankName ? `
                             <div class="text-xs">
-                                <span class="font-medium">${f.bank_name}</span>
-                                <br><span class="text-base-content/50">${f.bank_account_number || '-'}</span>
+                                <span class="font-medium">${escapeHtml(bankName)}</span>
+                                <br><span class="text-base-content/50">${escapeHtml(bankAccount || '-')}</span>
                             </div>` : '<span class="text-xs text-base-content/30">No bank info</span>'}
                         </td>
+                        <td>${actionButton}</td>
                     </tr>
                 `;
             }).join('');
         }
+
+        function openPayoutModal(farmerId) {
+            const farmer = allFarmers.find(f => parseInt(f.farmer_id) === parseInt(farmerId));
+            if (!farmer) return;
+
+            currentFarmer = farmer;
+            currentPayoutPreview = null;
+
+            document.getElementById('payoutFarmerId').value = farmer.farmer_id;
+            document.getElementById('payoutFarmerName').textContent = farmer.farmer_name || '-';
+            document.getElementById('payoutFarmerCode').textContent = farmer.farmer_code || '-';
+            document.getElementById('payoutBankName').textContent = farmer.bank_name || 'No bank name';
+            document.getElementById('payoutBankAccount').textContent = farmer.bank_account_number || 'No account number';
+            document.getElementById('payoutCoveredFrom').value = farmer.first_delivery || '';
+            document.getElementById('payoutCoveredTo').value = farmer.last_delivery || '';
+            document.getElementById('payoutDate').value = todayDateString();
+            document.getElementById('payoutMethod').value = 'bank_transfer';
+            document.getElementById('payoutReference').value = '';
+            document.getElementById('payoutNotes').value = '';
+            document.getElementById('verifyDeliveries').checked = false;
+            document.getElementById('verifyBankInfo').checked = false;
+            document.getElementById('verifyTransfer').checked = false;
+
+            updatePayoutPreview({
+                delivery_count: farmer.delivery_count,
+                total_liters: farmer.total_liters,
+                total_amount: farmer.total_amount,
+                avg_price_per_liter: farmer.avg_price_per_liter
+            });
+
+            document.getElementById('payoutModal').showModal();
+            refreshPayoutPreview();
+        }
+
+        function queuePayoutPreview() {
+            clearTimeout(payoutPreviewTimeout);
+            payoutPreviewTimeout = setTimeout(refreshPayoutPreview, 250);
+        }
+
+        async function refreshPayoutPreview() {
+            if (!currentFarmer) return;
+
+            const hint = document.getElementById('payoutPreviewHint');
+            const submitBtn = document.getElementById('payoutSubmitBtn');
+            hint.innerHTML = '<span class="loading loading-spinner loading-xs mr-1"></span> Refreshing payout amount...';
+            submitBtn.disabled = true;
+
+            try {
+                const filters = getPayoutFilters();
+                const response = await FinanceService.getFarmerUnpaidDeliveries(currentFarmer.farmer_id, filters);
+                currentPayoutPreview = response?.data?.summary || null;
+                updatePayoutPreview(currentPayoutPreview);
+            } catch (error) {
+                hint.textContent = error.message || 'Unable to refresh payout amount';
+                showToast(error.message || 'Unable to refresh payout amount', 'error');
+            }
+        }
+
+        function getPayoutFilters() {
+            const filters = {};
+            const coveredFrom = document.getElementById('payoutCoveredFrom').value;
+            const coveredTo = document.getElementById('payoutCoveredTo').value;
+            if (coveredFrom) filters.covered_from = coveredFrom;
+            if (coveredTo) filters.covered_to = coveredTo;
+            return filters;
+        }
+
+        function updatePayoutPreview(summary) {
+            const safeSummary = summary || {};
+            const deliveryCount = parseInt(safeSummary.delivery_count || 0);
+            const totalLiters = parseFloat(safeSummary.total_liters || 0);
+            const totalAmount = parseFloat(safeSummary.total_amount || 0);
+            const avgPrice = parseFloat(safeSummary.avg_price_per_liter || 0);
+
+            document.getElementById('payoutAmount').textContent = formatCurrency(totalAmount);
+            document.getElementById('payoutDeliveryCount').textContent = deliveryCount.toLocaleString('en-PH');
+            document.getElementById('payoutLiters').textContent = totalLiters.toLocaleString('en-PH') + ' L';
+            document.getElementById('payoutAvgPrice').textContent = formatCurrency(avgPrice);
+            document.getElementById('payoutPreviewHint').textContent = deliveryCount > 0
+                ? `${deliveryCount} unpaid accepted deliver${deliveryCount === 1 ? 'y' : 'ies'} selected.`
+                : 'No unpaid accepted deliveries in the selected range.';
+            document.getElementById('payoutSubmitBtn').disabled = totalAmount <= 0;
+        }
+
+        document.getElementById('payoutForm').addEventListener('submit', async function (e) {
+            e.preventDefault();
+            const btn = document.getElementById('payoutSubmitBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Recording...';
+
+            try {
+                if (!currentFarmer) {
+                    showToast('No farmer selected', 'error');
+                    return;
+                }
+
+                const summary = currentPayoutPreview || {};
+                const payoutAmount = parseFloat(summary.total_amount || 0);
+                const paymentDate = document.getElementById('payoutDate').value;
+                const paymentMethod = document.getElementById('payoutMethod').value;
+                const referenceNumber = document.getElementById('payoutReference').value.trim();
+                const verifyDeliveries = document.getElementById('verifyDeliveries').checked;
+                const verifyBankInfo = document.getElementById('verifyBankInfo').checked;
+                const verifyTransfer = document.getElementById('verifyTransfer').checked;
+
+                if (!paymentDate) {
+                    showToast('Payment date is required', 'error');
+                    return;
+                }
+
+                if (!Number.isFinite(payoutAmount) || payoutAmount <= 0) {
+                    showToast('No unpaid accepted deliveries selected', 'error');
+                    return;
+                }
+
+                if (paymentMethod !== 'cash' && !referenceNumber) {
+                    showToast('Reference number is required for non-cash payouts', 'error');
+                    return;
+                }
+
+                if (!verifyDeliveries || !verifyBankInfo || !verifyTransfer) {
+                    showToast('Please complete the verification checklist', 'error');
+                    return;
+                }
+
+                const stepUpToken = await AuthService.promptStepUp('payment_release', 'farmer payout release');
+                if (!stepUpToken) {
+                    return;
+                }
+
+                await FinanceService.recordFarmerPayment({
+                    farmer_id: currentFarmer.farmer_id,
+                    ...getPayoutFilters(),
+                    payment_date: paymentDate,
+                    payment_method: paymentMethod,
+                    reference_number: referenceNumber,
+                    notes: document.getElementById('payoutNotes').value,
+                    verify_deliveries: verifyDeliveries,
+                    verify_bank_info: verifyBankInfo,
+                    verify_transfer: verifyTransfer,
+                    step_up_token: stepUpToken
+                });
+
+                document.getElementById('payoutModal').close();
+                showToast('Farmer payout recorded successfully!', 'success');
+                await loadFarmerPayments();
+            } catch (error) {
+                showToast(error.message || 'Failed to record farmer payout', 'error');
+            } finally {
+                btn.disabled = parseFloat(currentPayoutPreview?.total_amount || 0) <= 0;
+                btn.innerHTML = '<i class="fas fa-check mr-1"></i> Record Payout';
+            }
+        });
 
         // ========================================
         // HELPERS
@@ -545,6 +840,31 @@
 
         function formatCurrency(amount) {
             return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatDateValue(value) {
+            if (!value) return '-';
+            return new Date(value + 'T00:00:00').toLocaleDateString('en-PH', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
+        }
+
+        function todayDateString() {
+            const today = new Date();
+            today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+            return today.toISOString().slice(0, 10);
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[char]));
         }
 
         function showToast(message, type = 'info') {

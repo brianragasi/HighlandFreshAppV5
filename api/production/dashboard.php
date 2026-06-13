@@ -163,31 +163,52 @@ try {
     $tankMilk->execute();
     $tankStats = $tankMilk->fetch();
     
-    // Get milk ISSUED TO PRODUCTION through fulfilled requisitions
-    // This is what production actually has available to use
-    // Milk issued = requisition items fulfilled for raw_milk type
-    // Minus milk already used in production runs
+    // Get milk issued to Production through fulfilled requisitions.
+    // This is not a Production tank; it is Warehouse Raw-issued milk already transferred to production.
     $productionMilk = $db->prepare("
         SELECT 
-            COALESCE(SUM(ri.issued_quantity), 0) as total_issued,
-            COUNT(DISTINCT ri.id) as issued_batches
-        FROM requisition_items ri
-        JOIN material_requisitions ir ON ri.requisition_id = ir.id
-        WHERE ri.item_type = 'raw_milk'
-          AND ri.issued_quantity > 0
+            COALESCE(SUM(issued.issued_liters), 0) as total_issued,
+            COUNT(*) as issued_batches,
+            MIN(issued.issued_at) as earliest_issued_at
+        FROM (
+            SELECT
+                ri.requisition_id,
+                SUM(COALESCE(ri.issued_quantity, 0)) as issued_liters,
+                MAX(COALESCE(ri.fulfilled_at, ri.updated_at, ri.created_at)) as issued_at
+            FROM requisition_items ri
+            WHERE COALESCE(ri.issued_quantity, 0) > 0
+              AND (
+                  ri.item_type = 'raw_milk'
+                  OR LOWER(ri.item_name) IN ('raw', 'raw milk', 'fresh milk', 'carabao', 'cow milk', 'goat milk', 'whole milk')
+                  OR (
+                      LOWER(ri.item_name) LIKE '%milk%'
+                      AND LOWER(ri.item_name) NOT LIKE '%powder%'
+                      AND LOWER(ri.item_name) NOT LIKE '%chocolate%'
+                  )
+              )
+            GROUP BY ri.requisition_id
+        ) issued
+        JOIN material_requisitions ir ON ir.id = issued.requisition_id
+        WHERE issued.issued_liters > 0
           AND ir.department = 'production'
     ");
     $productionMilk->execute();
     $prodMilkStats = $productionMilk->fetch();
     
-    // Get milk already used in production runs (from production_runs table directly)
-    $usedMilk = $db->prepare("
+    // Get milk already reserved/used in production runs (from production_runs table directly)
+    $usedMilkSql = "
         SELECT COALESCE(SUM(milk_liters_used), 0) as total_used
         FROM production_runs
         WHERE status IN ('planned', 'in_progress', 'pasteurization', 'processing', 'cooling', 'packaging', 'completed')
-          AND milk_source_type = 'raw'
-    ");
-    $usedMilk->execute();
+          AND (milk_source_type IS NULL OR milk_source_type = 'raw')
+    ";
+    $usedMilkParams = [];
+    if (!empty($prodMilkStats['earliest_issued_at'])) {
+        $usedMilkSql .= " AND created_at >= ?";
+        $usedMilkParams[] = $prodMilkStats['earliest_issued_at'];
+    }
+    $usedMilk = $db->prepare($usedMilkSql);
+    $usedMilk->execute($usedMilkParams);
     $usedStats = $usedMilk->fetch();
     
     // Production's available milk = issued - used

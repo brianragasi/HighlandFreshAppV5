@@ -145,8 +145,12 @@ function handleGet($db, $action, $currentUser) {
             $stmt = $db->query("
                 SELECT 
                     mr.*,
+                    pmr.recipe_code as planned_recipe_code,
+                    pmr.product_name as planned_product_name,
+                    pmr.variant as planned_variant,
                     u.full_name as requested_by_name
                 FROM material_requisitions mr
+                LEFT JOIN master_recipes pmr ON mr.planned_recipe_id = pmr.id
                 LEFT JOIN users u ON mr.requested_by = u.id
                 WHERE mr.status = 'pending'
                 ORDER BY 
@@ -158,7 +162,7 @@ function handleGet($db, $action, $currentUser) {
             // Get items for each requisition
             foreach ($requisitions as &$req) {
                 $itemsStmt = $db->prepare("
-                    SELECT item_name, quantity, unit, notes
+                    SELECT item_name, requested_quantity as quantity, unit_of_measure as unit, notes
                     FROM requisition_items WHERE requisition_id = ?
                 ");
                 $itemsStmt->execute([$req['id']]);

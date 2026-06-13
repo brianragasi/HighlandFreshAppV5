@@ -230,7 +230,8 @@ function getPayablesList($db) {
                 WHEN 'approved' THEN 4
                 ELSE 5
             END,
-            po.order_date ASC
+            po.order_date DESC,
+            po.id DESC
         LIMIT ? OFFSET ?
     ");
     $stmt->execute($dataParams);

@@ -633,14 +633,14 @@ function addPRStatusHistory($db, $prId, $fromStatus, $toStatus, $userId, $notes 
 }
 
 function getCurrentGeneralManagerName($db) {
-    $stmt = $db->query("
-        SELECT full_name
-        FROM users
-        WHERE role = 'general_manager'
-          AND is_active = 1
-        ORDER BY updated_at DESC, created_at DESC, id DESC
-        LIMIT 1
-    ");
+        $stmt = $db->query("
+                SELECT full_name
+                FROM users
+                WHERE is_active = 1
+                    AND REPLACE(LOWER(role), ' ', '_') = 'general_manager'
+                ORDER BY updated_at DESC, created_at DESC, id DESC
+                LIMIT 1
+        ");
     $name = $stmt->fetchColumn();
     return $name ?: null;
 }

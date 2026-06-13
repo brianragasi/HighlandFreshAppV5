@@ -44,29 +44,67 @@ try {
 // ========================================
 
 /**
+ * Check if an optional table exists in the current database.
+ * @param PDO $db Database connection
+ * @param string $tableName Table name
+ * @return bool
+ */
+function fgInventoryTableExists($db, $tableName) {
+    static $cache = [];
+
+    if (isset($cache[$tableName])) {
+        return $cache[$tableName];
+    }
+
+    $stmt = $db->prepare("
+        SELECT 1
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = ?
+        LIMIT 1
+    ");
+    $stmt->execute([$tableName]);
+    $cache[$tableName] = (bool) $stmt->fetchColumn();
+
+    return $cache[$tableName];
+}
+
+/**
  * Get product unit configuration
  * @param PDO $db Database connection
  * @param int $productId Product ID
  * @return array Unit config with pieces_per_box, base_unit, box_unit
  */
 function getProductUnitConfig($db, $productId) {
-    // First try product_units table
-    $stmt = $db->prepare("
-        SELECT pu.*, p.product_name
-        FROM product_units pu
-        JOIN products p ON pu.product_id = p.id
-        WHERE pu.product_id = ? AND pu.is_active = 1
-    ");
-    $stmt->execute([$productId]);
-    $unitConfig = $stmt->fetch();
-    
-    if ($unitConfig) {
-        return $unitConfig;
+    $defaultConfig = [
+        'base_unit' => 'piece',
+        'box_unit' => 'box',
+        'pieces_per_box' => 1
+    ];
+
+    if (empty($productId)) {
+        return $defaultConfig;
+    }
+
+    // Some installs use the products table only; newer installs may also have product_units.
+    if (fgInventoryTableExists($db, 'product_units')) {
+        $stmt = $db->prepare("
+            SELECT pu.*, p.product_name
+            FROM product_units pu
+            JOIN products p ON pu.product_id = p.id
+            WHERE pu.product_id = ? AND pu.is_active = 1
+        ");
+        $stmt->execute([$productId]);
+        $unitConfig = $stmt->fetch();
+
+        if ($unitConfig) {
+            return $unitConfig;
+        }
     }
     
     // Fallback to products table columns
     $stmt = $db->prepare("
-        SELECT id, name as product_name, 
+        SELECT id, product_name,
                COALESCE(base_unit, 'piece') as base_unit,
                COALESCE(box_unit, 'box') as box_unit,
                COALESCE(pieces_per_box, 1) as pieces_per_box
@@ -74,11 +112,7 @@ function getProductUnitConfig($db, $productId) {
         WHERE id = ?
     ");
     $stmt->execute([$productId]);
-    return $stmt->fetch() ?: [
-        'base_unit' => 'piece',
-        'box_unit' => 'box',
-        'pieces_per_box' => 1
-    ];
+    return $stmt->fetch() ?: $defaultConfig;
 }
 
 /**
@@ -1120,57 +1154,87 @@ function handlePost($db, $action, $currentUser) {
             // Convert total pieces to boxes/pieces for display and stock tracking
             $unitConfig = getProductUnitConfig($db, $fgItem['product_id']);
             $piecesPerBox = (int) ($unitConfig['pieces_per_box'] ?? 1);
-            $totalPieces = (int) ($fgItem['quantity_available'] ?? $fgItem['remaining_quantity'] ?? 0);
+            $totalPieces = (int) ($fgItem['quantity_available'] ?? 0);
+            if ($totalPieces <= 0) {
+                $totalPieces = (int) ($fgItem['remaining_quantity'] ?? 0);
+            }
+            if ($totalPieces <= 0) {
+                $totalPieces = boxesToPieces(
+                    $fgItem['boxes_available'] ?? 0,
+                    $fgItem['pieces_available'] ?? 0,
+                    $piecesPerBox
+                );
+            }
             $converted = piecesToBoxes($totalPieces, $piecesPerBox);
 
-            // Update the inventory item with chiller assignment
-            $updateStmt = $db->prepare("
-                UPDATE finished_goods_inventory
-                SET chiller_id = ?,
-                    chiller_location = ?,
-                    quantity_boxes = ?,
-                    quantity_pieces = ?,
-                    boxes_available = ?,
-                    pieces_available = ?,
-                    last_movement_at = NOW(),
-                    notes = CONCAT(COALESCE(notes, ''), '\n', ?)
-                WHERE id = ?
-            ");
-            $updateStmt->execute([
-                $chillerId,
-                $chiller['chiller_name'],
-                $converted['boxes'],
-                $converted['pieces'],
-                $converted['boxes'],
-                $converted['pieces'],
-                "Assigned to {$chiller['chiller_name']} by warehouse on " . date('Y-m-d H:i:s') . ($notes ? " - {$notes}" : ''),
-                $inventoryId
-            ]);
-            
-            // Log transaction
-            $transStmt = $db->prepare("
-                INSERT INTO fg_inventory_transactions
-                    (inventory_id, product_id, transaction_type, to_chiller_id, 
-                     pieces_quantity, boxes_quantity, performed_by, reason, created_at)
-                SELECT 
-                    id, product_id, 'receive', ?,
-                    remaining_quantity, ?, ?, ?, NOW()
-                FROM finished_goods_inventory
-                WHERE id = ?
-            ");
-            $transStmt->execute([
-                $chillerId, 
-                $converted['boxes'],
-                $currentUser['user_id'], 
-                $notes ?: 'Warehouse receiving - assigned to chiller', 
-                $inventoryId
-            ]);
-            
-            Response::success([
-                'inventory_id' => $inventoryId,
-                'chiller_id' => $chillerId,
-                'chiller_name' => $chiller['chiller_name']
-            ], 'Item successfully assigned to chiller');
+            $db->beginTransaction();
+
+            try {
+                // Update the inventory item with chiller assignment
+                $updateStmt = $db->prepare("
+                    UPDATE finished_goods_inventory
+                    SET chiller_id = ?,
+                        chiller_location = ?,
+                        quantity_boxes = ?,
+                        quantity_pieces = ?,
+                        boxes_available = ?,
+                        pieces_available = ?,
+                        last_movement_at = NOW(),
+                        notes = CONCAT(COALESCE(notes, ''), '\n', ?)
+                    WHERE id = ?
+                ");
+                $updateStmt->execute([
+                    $chillerId,
+                    $chiller['chiller_name'],
+                    $converted['boxes'],
+                    $converted['pieces'],
+                    $converted['boxes'],
+                    $converted['pieces'],
+                    "Assigned to {$chiller['chiller_name']} by warehouse on " . date('Y-m-d H:i:s') . ($notes ? " - {$notes}" : ''),
+                    $inventoryId
+                ]);
+
+                $db->prepare("UPDATE chiller_locations SET current_count = current_count + ? WHERE id = ?")
+                   ->execute([$totalPieces, $chillerId]);
+
+                // Log transaction when the inventory is linked to a product record.
+                if (!empty($fgItem['product_id'])) {
+                    $logStmt = $db->prepare("
+                        INSERT INTO fg_inventory_transactions
+                        (transaction_code, transaction_type, inventory_id, product_id, quantity,
+                         boxes_quantity, pieces_quantity, quantity_before, quantity_after,
+                         boxes_before, pieces_before, boxes_after, pieces_after,
+                         to_chiller_id, performed_by, reason, created_at)
+                        VALUES (?, 'receive', ?, ?, ?, ?, ?, 0, ?, 0, 0, ?, ?, ?, ?, ?, NOW())
+                    ");
+                    $logStmt->execute([
+                        'FGT-' . date('Ymd') . '-' . uniqid(),
+                        $inventoryId,
+                        $fgItem['product_id'],
+                        $totalPieces,
+                        $converted['boxes'],
+                        $converted['pieces'],
+                        $totalPieces,
+                        $converted['boxes'],
+                        $converted['pieces'],
+                        $chillerId,
+                        $currentUser['user_id'],
+                        $notes ?: 'Warehouse receiving - assigned to chiller'
+                    ]);
+                }
+
+                $db->commit();
+
+                Response::success([
+                    'inventory_id' => $inventoryId,
+                    'chiller_id' => $chillerId,
+                    'chiller_name' => $chiller['chiller_name'],
+                    'transaction_logged' => !empty($fgItem['product_id'])
+                ], 'Item successfully assigned to chiller');
+            } catch (Exception $e) {
+                $db->rollBack();
+                Response::error($e->getMessage(), 400);
+            }
             break;
             
         case 'receive_batch':

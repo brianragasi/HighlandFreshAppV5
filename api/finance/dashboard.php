@@ -9,6 +9,7 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once __DIR__ . '/farmer_payment_helpers.php';
 
 $currentUser = Auth::requireRole(['finance_officer', 'general_manager']);
 
@@ -17,6 +18,7 @@ $action = getParam('action', 'stats');
 try {
     $db = Database::getInstance()->getConnection();
     ensureProcurementNotificationSupport($db);
+    ensureFarmerPaymentTables($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -131,6 +133,14 @@ function getDashboardStats($db) {
         AND MONTH(updated_at) = MONTH(CURDATE())
     ");
     $stats['monthly_disbursements'] = (float) $stmt->fetch()['total'];
+
+    $stmt = $db->query("
+        SELECT COALESCE(SUM(amount_paid), 0) as total
+        FROM farmer_payments
+        WHERE YEAR(payment_date) = YEAR(CURDATE())
+        AND MONTH(payment_date) = MONTH(CURDATE())
+    ");
+    $stats['monthly_disbursements'] += (float) $stmt->fetch()['total'];
     
     // === COLLECTIONS (What company is owed - read-only from Cashier) ===
     
@@ -171,15 +181,19 @@ function getDashboardStats($db) {
     // === FARMER PAYMENTS ===
     
     // Pending farmer payments (accepted milk deliveries not yet paid)
-    // We track this by checking milk_receiving entries that are accepted
     $stmt = $db->query("
         SELECT 
             COUNT(DISTINCT mr.farmer_id) as farmer_count,
             COALESCE(SUM(qmt.total_amount), 0) as total_amount,
             COALESCE(SUM(mr.accepted_liters), 0) as total_liters
         FROM milk_receiving mr
-        JOIN qc_milk_tests qmt ON qmt.receiving_id = mr.id AND qmt.is_accepted = 1
+        " . farmerPaymentLatestAcceptedTestJoin() . "
         WHERE mr.status = 'accepted'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM farmer_payment_receipts fpr
+              WHERE fpr.receiving_id = mr.id
+          )
     ");
     $farmerPayments = $stmt->fetch();
     $stats['active_farmers'] = (int) $farmerPayments['farmer_count'];
@@ -270,58 +284,50 @@ function getCollectionsSummary($db) {
 }
 
 function getFarmerPaymentSummary($db) {
-    // Get aggregated farmer payment data from milk receiving + QC
-    $stmt = $db->query("
-        SELECT 
-            f.id as farmer_id,
-            f.farmer_code,
-            CONCAT(f.first_name, ' ', f.last_name) as farmer_name,
-            f.membership_type,
-            f.bank_name,
-            f.bank_account_number,
-            mt.type_name as milk_type,
-            COUNT(mr.id) as delivery_count,
-            COALESCE(SUM(mr.accepted_liters), 0) as total_liters,
-            COALESCE(AVG(qmt.fat_percentage), 0) as avg_fat,
-            COALESCE(AVG(qmt.titratable_acidity), 0) as avg_acidity,
-            COALESCE(AVG(qmt.final_price_per_liter), 0) as avg_price_per_liter,
-            COALESCE(SUM(qmt.total_amount), 0) as total_amount,
-            MIN(mr.receiving_date) as first_delivery,
-            MAX(mr.receiving_date) as last_delivery
-        FROM farmers f
-        LEFT JOIN milk_receiving mr ON mr.farmer_id = f.id AND mr.status = 'accepted'
-        LEFT JOIN qc_milk_tests qmt ON qmt.receiving_id = mr.id AND qmt.is_accepted = 1
-        LEFT JOIN milk_types mt ON f.milk_type_id = mt.id
-        WHERE f.is_active = 1
-        GROUP BY f.id, mt.type_name
-        ORDER BY total_amount DESC
-    ");
-    $farmers = $stmt->fetchAll();
+    $farmers = getFarmerPaymentSummaryRows($db);
     
     Response::success($farmers, 'Farmer payment summary retrieved');
 }
 
 function getRecentDisbursements($db) {
     $limit = getParam('limit', 10);
-    
-    // Recent paid POs (supplier disbursements)
+
     $stmt = $db->prepare("
-        SELECT 
-            po.id,
-            po.po_number,
-            po.order_date,
-            po.total_amount,
-            po.payment_status,
-            po.status,
-            po.updated_at as payment_date,
-            s.supplier_name,
-            s.supplier_code,
-            'supplier_payment' as transaction_type
-        FROM purchase_orders po
-        JOIN suppliers s ON po.supplier_id = s.id
-        WHERE po.payment_status = 'paid'
-        AND po.status != 'cancelled'
-        ORDER BY po.updated_at DESC
+        SELECT *
+        FROM (
+            SELECT
+                po.id,
+                po.po_number,
+                po.order_date,
+                po.total_amount,
+                po.payment_status,
+                po.status,
+                po.updated_at as payment_date,
+                s.supplier_name,
+                s.supplier_code,
+                'supplier_payment' as transaction_type
+            FROM purchase_orders po
+            JOIN suppliers s ON po.supplier_id = s.id
+            WHERE po.payment_status = 'paid'
+            AND po.status != 'cancelled'
+
+            UNION ALL
+
+            SELECT
+                fp.id,
+                fp.payment_code as po_number,
+                fp.covered_from as order_date,
+                fp.amount_paid as total_amount,
+                'paid' as payment_status,
+                'paid' as status,
+                fp.payment_date,
+                CONCAT(f.first_name, ' ', f.last_name) as supplier_name,
+                f.farmer_code as supplier_code,
+                'farmer_payment' as transaction_type
+            FROM farmer_payments fp
+            JOIN farmers f ON fp.farmer_id = f.id
+        ) recent
+        ORDER BY payment_date DESC, id DESC
         LIMIT ?
     ");
     $stmt->execute([(int) $limit]);
