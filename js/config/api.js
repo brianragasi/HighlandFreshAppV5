@@ -25,7 +25,12 @@ const ApiConfig = {
         };
         const token = localStorage.getItem('highland_token');
         if (token) {
+            // PHP-FPM (InfinityFree) does NOT forward the Authorization
+            // request header to PHP, so also send the token in X-Auth-Token
+            // (a custom header that PHP-FPM forwards as HTTP_X_AUTH_TOKEN).
+            // Backend (Auth::extractBearerToken) reads from either.
             headers['Authorization'] = `Bearer ${token}`;
+            headers['X-Auth-Token'] = token;
         }
         return headers;
     }
@@ -49,7 +54,10 @@ if (typeof axios !== 'undefined') {
         (config) => {
             const token = localStorage.getItem('highland_token');
             if (token) {
+                // See ApiConfig.getHeaders comment for why both Authorization
+                // and X-Auth-Token are sent (PHP-FPM workaround).
                 config.headers.Authorization = `Bearer ${token}`;
+                config.headers['X-Auth-Token'] = token;
             }
             
             // Convert PUT/DELETE to POST with X-HTTP-Method-Override for nginx compatibility

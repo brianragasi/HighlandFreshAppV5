@@ -141,7 +141,10 @@ class Auth {
 
         $authHeader = $headers['Authorization']
             ?? $headers['authorization']
+            ?? $headers['X-Auth-Token']
+            ?? $headers['x-auth-token']
             ?? $_SERVER['HTTP_AUTHORIZATION']
+            ?? $_SERVER['HTTP_X_AUTH_TOKEN']
             ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
             ?? '';
 
