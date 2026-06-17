@@ -28,7 +28,8 @@ const ApiConfig = {
             // PHP-FPM (InfinityFree) does NOT forward the Authorization
             // request header to PHP, so also send the token in X-Auth-Token
             // (a custom header that PHP-FPM forwards as HTTP_X_AUTH_TOKEN).
-            // Backend (Auth::extractBearerToken) reads from either.
+            // Backend (Auth::extractBearerToken) reads from either, or the
+            // highland_token cookie as a last-resort fallback.
             headers['Authorization'] = `Bearer ${token}`;
             headers['X-Auth-Token'] = token;
         }
@@ -87,10 +88,12 @@ if (typeof axios !== 'undefined') {
                 // Unauthorized - redirect to login
                 localStorage.removeItem('highland_token');
                 localStorage.removeItem('highland_user');
+                localStorage.removeItem('highland_must_change_password');
                 localStorage.removeItem('highland_session_started_at');
                 localStorage.removeItem('highland_session_expires_at');
                 localStorage.removeItem('highland_last_activity_at');
                 localStorage.removeItem('highland_idle_timeout_ms');
+                document.cookie = 'highland_token=; path=/; SameSite=Lax; Max-Age=0';
                 window.location.href = APP_BASE + '/html/login.html';
             } else if (status === 403) {
                 // Forbidden - show access denied
