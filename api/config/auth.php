@@ -113,7 +113,32 @@ class Auth {
      * Extract bearer token from request
      */
     public static function extractBearerToken() {
-        $headers = getallheaders();
+        // getallheaders() is only available under mod_php, NOT under FPM/CGI
+        // (which InfinityFree uses). Build the headers array from $_SERVER
+        // instead, which is universal.
+        $headers = [];
+        if (function_exists('getallheaders')) {
+            $headers = getallheaders();
+        } else {
+            foreach ($_SERVER as $key => $value) {
+                if (strpos($key, 'HTTP_') === 0) {
+                    // HTTP_AUTHORIZATION -> Authorization
+                    $name = str_replace('_', '-', substr($key, 5));
+                    $name = ucwords(strtolower($name), '-');
+                    $headers[$name] = $value;
+                } elseif (in_array($key, ['CONTENT_TYPE', 'CONTENT_LENGTH'], true)) {
+                    $name = str_replace('_', '-', $key);
+                    $name = ucwords(strtolower($name), '-');
+                    $headers[$name] = $value;
+                }
+            }
+            // PHP-FPM exposes the Authorization header in a non-standard
+            // variable when running behind Apache with mod_rewrite/PHP-FPM
+            if (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+                $headers['Authorization'] = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+            }
+        }
+
         $authHeader = $headers['Authorization']
             ?? $headers['authorization']
             ?? $_SERVER['HTTP_AUTHORIZATION']
