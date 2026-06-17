@@ -78,8 +78,18 @@ function loadLocalEnvFiles() {
 loadLocalEnvFiles();
 
 function envOrDefault($name, $default) {
+    // Check all three storage locations. Some shared hosts (notably
+    // InfinityFree) disable putenv() for security, so the .env loader
+    // falls back to populating $_ENV / $_SERVER only — envOrDefault
+    // needs to look in all of them.
     $value = getenv($name);
-    return $value === false ? $default : $value;
+    if ($value === false || $value === '') {
+        $value = $_ENV[$name] ?? $_SERVER[$name] ?? false;
+    }
+    if ($value === false || $value === '') {
+        $value = $default;
+    }
+    return $value;
 }
 
 // Database Configuration
