@@ -6,21 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Products Management | Highland Fresh Admin</title>
 
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
-
-    <script>
-        tailwind.config = {
-            theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } }
-        }
-    </script>
+    <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
+    <link rel="stylesheet" href="../../css/tailwind.css">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/vendor/axios.min.js"></script>
 
     <style>
         body {
@@ -752,7 +746,7 @@
             renderGroups();
         }
 
-        /* ─────────── Render ─────────── */
+        /* ─────────── Render (flat SKU table) ─────────── */
         function renderGroups() {
             const container = document.getElementById('productsContainer');
 
@@ -768,69 +762,109 @@
                 return;
             }
 
-            container.innerHTML = filteredGroups.map(g => {
+            // Flatten: one row per SKU. The first SKU of each product group
+            // gets the "Edit base" + "Add Size" actions in the Product cell;
+            // subsequent SKUs share the cell content but without the actions.
+            const rows = [];
+            filteredGroups.forEach(g => {
                 const color = CATEGORY_COLORS[g.category] || 'primary';
                 const icon = CATEGORY_ICONS[g.category] || 'fa-box';
                 const label = CATEGORY_LABELS[g.category] || g.category;
+                const safeName = escapeJs(g.name);
+                const safeCat = g.category;
 
-                const skuChips = g.skus.map(s => {
+                g.skus.forEach((s, idx) => {
                     const rawSize = parseFloat(s.unit_size);
                     const cleanSize = s.unit_size ? (rawSize % 1 === 0 ? Math.round(rawSize) : rawSize) : null;
                     const sizeLabel = cleanSize !== null ? `${cleanSize} ${s.unit_measure || 'ml'}` : null;
                     const noSize = !sizeLabel;
-                    return `
-                    <div class="sku-chip ${noSize ? 'border-warning/60 bg-warning/10' : ''}" onclick="editSku(${s.id})" title="Click to edit">
-                        ${noSize
-                            ? `<span class="text-warning font-medium"><i class="fas fa-exclamation-triangle"></i> No size — click to fix</span>`
-                            : `<span class="font-medium">${sizeLabel}</span>`
-                        }
-                        ${s.variant ? `<span class="text-base-content/50">· ${s.variant}</span>` : ''}
-                        <span class="font-semibold text-${color}">${formatCurrency(s.selling_price || s.unit_price)}</span>
-                        <span class="badge badge-xs ${s.is_active == 1 ? 'badge-success' : 'badge-error'}">${s.is_active == 1 ? '●' : '○'}</span>
-                        <span class="chip-actions" onclick="event.stopPropagation()">
-                            <button class="chip-btn chip-delete" onclick="deleteSku(${s.id},'${escapeJs(s.product_name)} ${sizeLabel || '(no size)'}')" title="Delete this size"><i class="fas fa-times"></i></button>
-                        </span>
-                    </div>`;
-                }).join('');
+                    const isFirst = idx === 0;
 
-                return `
-                <div class="bg-base-100 rounded-2xl border border-base-300 parent-card overflow-hidden" style="border-left-color: oklch(var(--${color}))">
-                    <div class="p-4">
-                        <div class="flex items-start justify-between gap-4">
-                            <div class="flex items-center gap-3">
-                                <div class="w-12 h-12 bg-${color}/10 rounded-xl flex items-center justify-center flex-shrink-0">
-                                    <i class="fas ${icon} text-${color} text-xl"></i>
-                                </div>
-                                <div>
-                                    <h3 class="font-bold text-base-content text-base">${g.name}</h3>
-                                    <div class="flex items-center gap-2 mt-0.5">
-                                        <span class="badge badge-sm badge-ghost">${label}</span>
-                                        ${g.milk_type_name ? `<span class="text-xs text-base-content/50">· ${g.milk_type_name}</span>` : ''}
-                                        <span class="text-xs text-base-content/40">· Shelf life: ${g.shelf_life_days || 7}d · ${g.storage_temp_min || 2}–${g.storage_temp_max || 6}°C</span>
-                                    </div>
-                                </div>
+                    const productCell = `
+                        <div class="flex items-start gap-3">
+                            <div class="w-8 h-8 bg-${color}/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <i class="fas ${icon} text-${color} text-sm"></i>
                             </div>
-                            <div class="flex gap-2 flex-shrink-0">
-                                <button class="btn btn-ghost btn-xs" onclick="editBaseProduct('${escapeJs(g.name)}', '${g.category}')" title="Edit base product">
-                                    <i class="fas fa-edit text-primary"></i>
-                                </button>
-                                <button class="btn btn-primary btn-xs gap-1" onclick="openAddSkuModal('${escapeJs(g.name)}', '${g.category}')" title="Add new size/SKU">
-                                    <i class="fas fa-plus"></i> Add Size
-                                </button>
+                            <div class="min-w-0 flex-1">
+                                <div class="font-semibold text-base-content truncate">${escapeHtml(g.name)}</div>
+                                <div class="text-xs text-base-content/60 mt-0.5">
+                                    <span class="badge badge-xs badge-ghost">${label}</span>
+                                    ${g.milk_type_name ? `<span class="ml-1">· ${escapeHtml(g.milk_type_name)}</span>` : ''}
+                                    <span class="text-base-content/40"> · ${g.shelf_life_days || 7}d shelf · ${g.storage_temp_min || 2}–${g.storage_temp_max || 6}°C</span>
+                                </div>
+                                ${isFirst ? `
+                                <div class="flex gap-1 mt-1">
+                                    <button class="btn btn-ghost btn-xs h-6 min-h-0 px-2 text-base-content/60" onclick="editBaseProduct('${safeName}', '${safeCat}')" title="Edit base product (name, category, shelf life, storage)">
+                                        <i class="fas fa-pen text-xs"></i> Edit base
+                                    </button>
+                                    <button class="btn btn-ghost btn-xs h-6 min-h-0 px-2 text-primary" onclick="openAddSkuModal('${safeName}', '${safeCat}')" title="Add another size/SKU to this product">
+                                        <i class="fas fa-plus text-xs"></i> Add size
+                                    </button>
+                                </div>` : ''}
                             </div>
-                        </div>
+                        </div>`;
 
-                        <!-- SKU chips row -->
-                        <div class="mt-3 flex flex-wrap gap-2 items-center">
-                            <span class="text-xs text-base-content/40 mr-1">Sizes:</span>
-                            ${skuChips || '<span class="text-xs text-base-content/40 italic">No sizes — add one above</span>'}
-                        </div>
+                    const sizeCell = noSize
+                        ? `<span class="inline-flex items-center gap-1 text-warning text-sm"><i class="fas fa-exclamation-triangle"></i> No size</span>`
+                        : `<span class="font-medium">${escapeHtml(sizeLabel)}</span>${s.variant ? `<div class="text-xs text-base-content/50">${escapeHtml(s.variant)}</div>` : ''}`;
+
+                    const priceCell = `<span class="font-mono font-semibold text-${color}">${formatCurrency(s.selling_price || s.unit_price)}</span>`;
+
+                    const statusCell = s.is_active == 1
+                        ? `<span class="badge badge-success badge-sm gap-1"><span class="w-1.5 h-1.5 rounded-full bg-success-content"></span>Active</span>`
+                        : `<span class="badge badge-ghost badge-sm gap-1"><span class="w-1.5 h-1.5 rounded-full bg-base-content/40"></span>Inactive</span>`;
+
+                    const actionsCell = `
+                        <div class="flex items-center gap-1 justify-end">
+                            <button class="btn btn-ghost btn-xs" onclick="editSku(${s.id})" title="Edit this size">
+                                <i class="fas fa-pen text-primary"></i>
+                            </button>
+                            <button class="btn btn-ghost btn-xs" onclick="deleteSku(${s.id}, '${safeName} ${sizeLabel || '(no size)'}')" title="Delete this size">
+                                <i class="fas fa-trash text-error"></i>
+                            </button>
+                        </div>`;
+
+                    const rowClass = noSize ? 'bg-warning/5' : '';
+
+                    rows.push(`
+                        <tr class="hover ${rowClass}">
+                            <td class="align-top">${productCell}</td>
+                            <td class="align-top">${sizeCell}</td>
+                            <td class="align-top">${priceCell}</td>
+                            <td class="align-top">${statusCell}</td>
+                            <td class="align-top text-right">${actionsCell}</td>
+                        </tr>`);
+                });
+            });
+
+            container.innerHTML = `
+                <div class="bg-base-100 border border-base-300 rounded-lg overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead class="bg-base-200">
+                                <tr>
+                                    <th class="font-semibold">Product</th>
+                                    <th class="font-semibold">Size</th>
+                                    <th class="font-semibold">Price</th>
+                                    <th class="font-semibold">Status</th>
+                                    <th class="font-semibold text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows.join('')}</tbody>
+                        </table>
                     </div>
                 </div>`;
-            }).join('');
         }
 
         function escapeJs(s) { return (s || '').replace(/'/g, "\\'").replace(/"/g, '\\"'); }
+        function escapeHtml(s) {
+            return String(s ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
 
         /* ─────────── Open Add Base Product Modal ─────────── */
         function openAddModal() {

@@ -165,8 +165,15 @@ try {
     
     // Get milk issued to Production through fulfilled requisitions.
     // This is not a Production tank; it is Warehouse Raw-issued milk already transferred to production.
+    //
+    // V4.0 (Issue A follow-up) — same fix as api/production/runs.php:
+    // previously summed ALL issued raw milk regardless of batch expiry, so
+    // the dashboard would say "1,213 L Usable Issued Milk" when in fact
+    // every batch had expired (the pasteurization page correctly excluded
+    // them). Now we INNER JOIN to the inventory_transactions trace and
+    // require earliest_expiry >= CURDATE() before counting the requisition.
     $productionMilk = $db->prepare("
-        SELECT 
+        SELECT
             COALESCE(SUM(issued.issued_liters), 0) as total_issued,
             COUNT(*) as issued_batches,
             MIN(issued.issued_at) as earliest_issued_at
@@ -189,6 +196,18 @@ try {
             GROUP BY ri.requisition_id
         ) issued
         JOIN material_requisitions ir ON ir.id = issued.requisition_id
+        JOIN (
+            SELECT
+                it.reference_id,
+                MIN(rmi.expiry_date) as earliest_expiry
+            FROM inventory_transactions it
+            JOIN raw_milk_inventory rmi ON rmi.id = it.batch_id
+            WHERE it.item_type = 'raw_milk'
+              AND it.reference_type = 'requisition'
+              AND it.quantity > 0
+            GROUP BY it.reference_id
+            HAVING MIN(rmi.expiry_date) >= CURDATE()
+        ) trace ON trace.reference_id = issued.requisition_id
         WHERE issued.issued_liters > 0
           AND ir.department = 'production'
     ");

@@ -129,6 +129,18 @@ function auditColumnExists($db, $tableName, $columnName) {
     return (bool) $stmt->fetchColumn();
 }
 
+function auditTableExists($db, $tableName) {
+    $stmt = $db->prepare("
+        SELECT 1
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = ?
+        LIMIT 1
+    ");
+    $stmt->execute([$tableName]);
+    return (bool) $stmt->fetchColumn();
+}
+
 function ensureAuditLogIntegrityColumns($db) {
     static $checked = false;
     static $hasIntegrityColumns = false;

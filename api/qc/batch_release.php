@@ -89,7 +89,9 @@ try {
                 if ($status === 'pending') {
                     $where .= " AND (pb.qc_status = 'pending' OR pb.qc_status = 'on_hold')";
                 } elseif ($status === 'released') {
-                    $where .= " AND pb.qc_status = 'released'";
+                    // Only return released batches that are still in their valid date range.
+                    // Expired batches should not be available for new label printing.
+                    $where .= " AND pb.qc_status = 'released' AND pb.expiry_date >= CURDATE()";
                 } elseif ($status === 'rejected') {
                     $where .= " AND pb.qc_status = 'rejected'";
                 }

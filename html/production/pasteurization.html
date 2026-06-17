@@ -7,20 +7,8 @@
     <title>Pasteurization - Production | Highland Fresh</title>
 
     <!-- Tailwind CSS + DaisyUI CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
-
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'system-ui', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
+    <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
+    <link rel="stylesheet" href="../../css/tailwind.css">
 
     <!-- Inter Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -349,12 +337,21 @@
             </h3>
 
             <form id="newPastForm" onsubmit="createRun(event)">
-                <!-- Available Raw Milk -->
-                <div class="alert alert-success mb-4" id="rawMilkAvailable">
-                    <i class="fas fa-tint text-lg"></i>
-                    <div>
-                        <div class="font-semibold">Raw Milk Available: <span id="modalAvailableMilk">0</span>L</div>
-                        <div class="text-sm">From approved requisitions</div>
+                <!-- Available Raw Milk — flips between success (has milk) and
+                     warning (no milk). When no milk, the form fields are
+                     disabled and a link to the requisitions page is shown
+                     so the user has a clear next step. -->
+                <div class="alert mb-4" id="rawMilkAvailable">
+                    <i class="fas fa-tint text-lg" id="rawMilkIcon"></i>
+                    <div class="flex-1">
+                        <div class="font-semibold" id="rawMilkHeadline">Raw Milk Available: <span id="modalAvailableMilk">0</span>L</div>
+                        <div class="text-sm" id="rawMilkSubtext">From approved requisitions</div>
+                        <div class="mt-1 hidden" id="rawMilkLinkWrap">
+                            <a href="requisitions.html" class="link link-hover text-sm font-semibold inline-flex items-center gap-1">
+                                <i class="fas fa-arrow-right text-xs"></i>
+                                Request raw milk in Requisitions
+                            </a>
+                        </div>
                     </div>
                 </div>
 
@@ -363,8 +360,26 @@
                     <label class="label">
                         <span class="label-text font-medium">Input Milk Volume (Liters) *</span>
                     </label>
-                    <input type="number" id="inputLiters" class="input input-bordered" step="0.1" min="1" required
+                    <!-- V4.0 — step="any" so any decimal value is accepted.
+                         Previously step="0.01" was rejecting values like
+                         1.111 L (3-decimal precision), which is what the
+                         system auto-calculates for a 2-cup yogurt run
+                         (100 * 2/180 = 1.111 L). The browser showed
+                         "The two nearest valid values are 1.11 and 1.12"
+                         and refused to submit. step="any" removes the
+                         step constraint entirely; the server still
+                         enforces > 0 in pasteurization.php. min="0.1"
+                         is the practical lower bound (a 100 mL
+                         pasteurization run is too small to be useful). -->
+                    <input type="number" id="inputLiters" class="input input-bordered" step="any" min="0.1" required
                         placeholder="e.g., 100">
+                    <!-- V4.0 — hidden by default. When the user arrives via the
+                         "Go to Pasteurization" link from a fulfilled yogurt
+                         requisition, this is shown and pre-filled with the
+                         planned_quantity. The user can still override. -->
+                    <div class="label hidden" id="fromReqHint">
+                        <span class="label-text-alt text-primary"></span>
+                    </div>
                     <label class="label">
                         <span class="label-text-alt">Amount of raw milk to pasteurize</span>
                     </label>
@@ -480,7 +495,7 @@
     <div class="toast toast-end" id="toastContainer"></div>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js"></script>
     <script src="../../js/production/production.service.js"></script>
@@ -509,6 +524,141 @@
         // API base URL for pasteurization (relative to api baseURL)
         const PAST_API = 'production/pasteurization.php';
 
+        // Minimal escape helper for the from-requisition banner.
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        // V4.0 — when arrived from a fulfilled yogurt requisition via the
+        // next-step banner, show a small context strip AND a clear
+        // "click to start" card. The card shows the pre-filled value
+        // so the user can verify it before clicking. The auto-open
+        // approach was failing silently in some browser conditions
+        // (the modal element wasn't ready in time, or the auth check
+        // redirected before the IIFE completed), so we use an explicit
+        // user-driven click instead. The user still gets one click
+        // total: requisition → "Go to Pasteurization" → "Start".
+        let fromReqContext = null;
+        const fromReqId = new URLSearchParams(window.location.search).get('from_requisition');
+        (async () => {
+            if (!fromReqId) return;
+            try {
+                const res = await api.get('production/requisitions.php', { params: { id: fromReqId } });
+                if (res.success && res.data) {
+                    const r = res.data;
+                    fromReqContext = r;
+
+                    // Context strip — what requisition this is from.
+                    const banner = document.createElement('div');
+                    banner.className = 'alert alert-info mb-4';
+                    banner.innerHTML = `
+                        <i class="fas fa-info-circle text-lg"></i>
+                        <div class="flex-1">
+                            <div class="font-semibold">From requisition ${escapeHtml(r.requisition_code || '')}</div>
+                            <div class="text-sm">Plan: ${escapeHtml(r.planned_product_name || 'Unknown')} (${escapeHtml(String(r.planned_quantity || '?'))} ${escapeHtml(r.planned_yield_unit || 'units')}). Pasteurize the raw milk from this requisition, then return to start the production run.</div>
+                        </div>
+                        <a href="requisitions.html" class="btn btn-ghost btn-sm">
+                            <i class="fas fa-arrow-left"></i> Back
+                        </a>
+                    `;
+                    const main = document.querySelector('main');
+                    main.insertBefore(banner, main.firstChild);
+
+                    // Compute the prefill value. For yogurt recipes,
+                    // planned_quantity is the YIELD in cups, not the
+                    // raw milk INPUT in liters. The actual raw milk to
+                    // pasteurize lives in requisition_items. Using
+                    // planned_quantity directly would put "1" in the
+                    // field for a 1-cup yogurt run, but production
+                    // actually has 5.556 L issued.
+                    let prefilledInput = null;
+                    const rawMilkItem = (r.items || []).find(it => it.item_type === 'raw_milk');
+                    if (rawMilkItem) {
+                        const issued = parseFloat(rawMilkItem.issued_quantity ?? rawMilkItem.quantity_issued ?? 0);
+                        const requested = parseFloat(rawMilkItem.requested_quantity ?? rawMilkItem.quantity ?? 0);
+                        prefilledInput = issued > 0 ? issued : requested;
+                    }
+                    if (!prefilledInput && r.planned_quantity && r.planned_yield_unit === 'L') {
+                        prefilledInput = parseFloat(r.planned_quantity);
+                    }
+
+                    // V4.0 — visible "Start pasteurization" card. The
+                    // user sees the pre-filled value, then clicks one
+                    // button to open the modal with that value. No
+                    // auto-open, no race conditions with loadStats().
+                    // The whole flow is now visible-and-explicit instead
+                    // of invisible-and-magical.
+                    const card = document.createElement('div');
+                    card.id = 'quickPasteurizeCard';
+                    card.className = 'card bg-primary text-primary-content shadow-md mb-4';
+                    const prefillDisplay = prefilledInput
+                        ? `${parseFloat(prefilledInput).toFixed(2)} L`
+                        : '? L';
+                    card.innerHTML = `
+                        <div class="card-body p-4 flex-row items-center gap-4">
+                            <div class="w-12 h-12 rounded-xl bg-primary-content/20 flex items-center justify-center">
+                                <i class="fas fa-fire-alt text-2xl"></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="font-semibold text-lg">Start pasteurization from ${escapeHtml(r.requisition_code || 'this requisition')}</div>
+                                <div class="text-sm opacity-90">
+                                    ${prefillDisplay} raw milk issued and ready to pasteurize.
+                                    Click below to open the run form with the liters pre-filled.
+                                </div>
+                            </div>
+                            <button id="quickStartBtn" class="btn btn-accent btn-lg">
+                                <i class="fas fa-play"></i> Start Pasteurization
+                            </button>
+                        </div>
+                    `;
+                    main.insertBefore(card, main.children[1] || null);
+
+                    // Wire the button: pre-fill + open the modal. Both
+                    // happen in one click. We bind on the inline button
+                    // (not the global "New Pasteurization" button) so
+                    // the user always sees the pre-fill card first.
+                    const quickBtn = document.getElementById('quickStartBtn');
+                    const applyPrefill = () => {
+                        const input = document.getElementById('inputLiters');
+                        if (input && prefilledInput) {
+                            input.value = parseFloat(prefilledInput);
+                        }
+                        const hint = document.getElementById('fromReqHint');
+                        if (hint) {
+                            hint.innerHTML = `Pre-filled from <span class="font-mono font-semibold">${escapeHtml(r.requisition_code || '')}</span>. Adjust if you only want to pasteurize a portion.`;
+                            hint.classList.remove('hidden');
+                        }
+                    };
+                    if (quickBtn) {
+                        quickBtn.addEventListener('click', () => {
+                            applyPrefill();
+                            const modal = document.getElementById('newPastModal');
+                            if (modal && typeof modal.showModal === 'function') {
+                                modal.showModal();
+                            }
+                        });
+                    }
+                    // Also pre-apply on the global "New Pasteurization"
+                    // button so if the user clicks that instead, the
+                    // value is also pre-filled.
+                    const newBtn = document.querySelector('button[onclick*="newPastModal"]');
+                    if (newBtn) {
+                        newBtn.addEventListener('click', applyPrefill);
+                    }
+                }
+            } catch (e) {
+                // Non-fatal: log so the user can see it in DevTools
+                // if they're debugging. The page still works — they
+                // just lose the pre-fill convenience.
+                console.error('Pre-fill from requisition failed:', e);
+            }
+        })();
+
         // Check authentication
         document.addEventListener('DOMContentLoaded', async () => {
             if (!AuthService.isAuthenticated()) {
@@ -527,22 +677,129 @@
         async function loadStats() {
             try {
                 // Get available raw milk
+                // V4.0 — hoist availableRaw to function scope so the
+                // pasteurized-milk hint below can read it without crashing
+                // when the raw-milk API call failed.
+                let availableRaw = 0;
                 const rawResponse = await api.get(PAST_API, { params: { action: 'available_raw_milk' } });
                 if (rawResponse.success) {
-                    const availableRaw = Math.round(rawResponse.data.available_liters || 0);
-                    document.getElementById('statAvailableRaw').textContent = availableRaw.toLocaleString();
-                    document.getElementById('modalAvailableMilk').textContent = availableRaw.toLocaleString();
+                // V4.0 — preserve the fractional value. Previously
+                // `Math.round(0.106) === 0`, so a 0.106 L balance
+                // (e.g., "used 2 of 2.106 L") was reported as "no
+                // milk available" and the form was disabled. The
+                // server is the source of truth for "is the user
+                // trying to pasteurize more than they have?" — the
+                // UI just needs to show the real number and let
+                // the user decide.
+                availableRaw = Number(rawResponse.data.available_liters || 0);
+                    // V4.0.1 — show 3 decimals so the UI matches the API's
+                    // precise available value. The previous toFixed(2)
+                    // rounded 0.107 to "0.11" and the user typed 0.11
+                    // based on the UI hint, only to be blocked by the
+                    // server with "Required: 0.11, Available: 0.107".
+                    // 3 decimals (L -> mL precision) is enough for the
+                    // dairy workflow and matches what the API actually
+                    // has on hand.
+                    const availableRawDisplay = availableRaw.toFixed(3);
+                    document.getElementById('statAvailableRaw').textContent = availableRawDisplay;
+                    document.getElementById('modalAvailableMilk').textContent = availableRawDisplay;
+
+                    // V4.0 — three-state UI: useful milk (>0.5 L, form
+                    // enabled), tiny milk (0 < x <= 0.5, form enabled
+                    // with a soft warning), no milk (0, form disabled
+                    // with a hard warning + link to requisitions).
+                    // The previous binary check was too aggressive.
+                    const alertEl = document.getElementById('rawMilkAvailable');
+                    const headlineEl = document.getElementById('rawMilkHeadline');
+                    const subtextEl = document.getElementById('rawMilkSubtext');
+                    const iconEl = document.getElementById('rawMilkIcon');
+                    const linkWrap = document.getElementById('rawMilkLinkWrap');
+                    const formFields = [
+                        document.getElementById('inputLiters'),
+                        document.getElementById('temperature'),
+                        document.getElementById('durationMins'),
+                        document.querySelector('#newPastForm button[type="submit"]')
+                    ].filter(Boolean);
 
                     if (availableRaw <= 0) {
-                        document.getElementById('rawMilkAvailable').className = 'alert alert-error mb-4';
+                        // No raw milk. Hard block + link to requisitions.
+                        alertEl.className = 'alert alert-warning mb-4';
+                        headlineEl.innerHTML = `No raw milk in production's hands`;
+                        subtextEl.innerHTML = `Issue raw milk from Warehouse Raw first, then come back here.`;
+                        if (iconEl) iconEl.className = 'fas fa-exclamation-triangle text-lg';
+                        linkWrap.classList.remove('hidden');
+                        formFields.forEach(el => el.setAttribute('disabled', 'disabled'));
+                    } else if (availableRaw < 0.5) {
+                        // Tiny amount left. Form enabled (the user might
+                        // want to use it for a small test or partial run)
+                        // but the alert warns it's not much. The server
+                        // will still reject any over-issuance.
+                        alertEl.className = 'alert alert-info mb-4';
+                        headlineEl.innerHTML = `Only <span id="modalAvailableMilk">${availableRawDisplay}</span>L raw milk left`;
+                        subtextEl.innerHTML = `This is a small amount — you can still pasteurize it, but consider requesting more from Warehouse Raw if you need a full batch.`;
+                        if (iconEl) iconEl.className = 'fas fa-info-circle text-lg';
+                        linkWrap.classList.add('hidden');
+                        formFields.forEach(el => el.removeAttribute('disabled'));
+                    } else {
+                        // Useful amount. Form enabled, green alert.
+                        alertEl.className = 'alert alert-success mb-4';
+                        headlineEl.innerHTML = `Raw Milk Available: <span id="modalAvailableMilk">${availableRawDisplay}</span>L`;
+                        subtextEl.innerHTML = `From approved requisitions`;
+                        if (iconEl) iconEl.className = 'fas fa-tint text-lg';
+                        linkWrap.classList.add('hidden');
+                        formFields.forEach(el => el.removeAttribute('disabled'));
                     }
                 }
 
                 // Get pasteurized milk available
                 const pastResponse = await ProductionService.getAvailablePasteurizedMilk();
+                let pasteurizedLiters = 0;
                 if (pastResponse.success) {
+                    // V4.0 — preserve fractional value, same fix as the
+                    // raw milk stat above.
+                    pasteurizedLiters = Number(pastResponse.data.total_available_liters || 0);
+                    // V4.0.1 — 3 decimals, same reasoning as the raw-milk
+                    // stat above. "0.107 L" matches what the API returns
+                    // so the user can request it without a rounding
+                    // mismatch blocking the run.
                     document.getElementById('statPasteurizedMilk').textContent =
-                        Math.round(pastResponse.data.total_available_liters || 0).toLocaleString();
+                        pasteurizedLiters.toFixed(3);
+
+                    // V4.0 — if the user has pasteurized milk sitting in
+                    // inventory but no raw milk to pasteurize, the page
+                    // should point them at the right next step: start a
+                    // production run from Batches. Previously the page
+                    // just said "no raw milk" and left them stuck.
+                    const existingHint = document.getElementById('havePasteurizedHint');
+                    if (existingHint) existingHint.remove();
+                    if (pasteurizedLiters > 0 && availableRaw < 0.5) {
+                        const hint = document.createElement('div');
+                        hint.id = 'havePasteurizedHint';
+                        hint.className = 'alert alert-success mb-4';
+                        hint.innerHTML = `
+                            <i class="fas fa-check-circle text-lg"></i>
+                            <div class="flex-1">
+                                <div class="font-semibold">You have ${pasteurizedLiters.toFixed(3)}L of pasteurized milk ready to use</div>
+                                <div class="text-sm">If you don't need to pasteurize more, go to <a href="batches.html" class="link link-hover font-semibold">Production Batches</a> to start your run from this pasteurized milk.</div>
+                            </div>
+                            <a href="batches.html" class="btn btn-success btn-sm">
+                                <i class="fas fa-arrow-right"></i> Go to Batches
+                            </a>
+                        `;
+                        const main = document.querySelector('main');
+                        // Insert after the Info Banner (first child) but
+                        // before the stats grid. The from-requisition
+                        // banner (if any) is also prepended; insert after
+                        // whichever comes first.
+                        const afterMe = document.getElementById('havePasteurizedHint')?.previousElementSibling
+                            || document.querySelector('main .alert')
+                            || main.firstChild;
+                        if (afterMe && afterMe.nextSibling) {
+                            main.insertBefore(hint, afterMe.nextSibling);
+                        } else {
+                            main.appendChild(hint);
+                        }
+                    }
                 }
 
                 // Count in-progress runs

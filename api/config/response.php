@@ -98,4 +98,24 @@ class Response {
     public static function created($data = null, $message = 'Created successfully') {
         self::success($data, $message, 201);
     }
+
+    /**
+     * Stream a file as the response (used for inline evidence photos).
+     * Drops the default JSON Content-Type set by the bootstrap.
+     */
+    public static function file($absolutePath, $mime = 'application/octet-stream', $disposition = 'inline') {
+        if (!is_file($absolutePath) || !is_readable($absolutePath)) {
+            self::notFound('File not found');
+        }
+        if (function_exists('http_response_code')) {
+            http_response_code(200);
+        }
+        header('Content-Type: ' . $mime);
+        header('Content-Length: ' . filesize($absolutePath));
+        header('Content-Disposition: ' . $disposition . '; filename="' . basename($absolutePath) . '"');
+        header('Cache-Control: private, max-age=300');
+        header('X-Content-Type-Options: nosniff');
+        readfile($absolutePath);
+        exit;
+    }
 }

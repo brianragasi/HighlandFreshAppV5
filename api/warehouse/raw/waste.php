@@ -13,7 +13,7 @@ try {
     ensureRawMaterialWasteSupport($db);
 
     if ($requestMethod === 'GET') {
-        handleWasteGet($db, $action);
+        handleWasteGet($db, $action, $currentUser);
     } elseif ($requestMethod === 'POST') {
         requireActionRole($currentUser, ['warehouse_raw', 'general_manager'], 'Only Warehouse Raw or GM can record waste');
         createWasteRecord($db, $currentUser);
@@ -63,6 +63,7 @@ function ensureRawMaterialWasteSupport($db) {
             `total_value` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
             `reason_category` VARCHAR(50) NOT NULL,
             `reason` TEXT NOT NULL,
+            `evidence_photo_path` VARCHAR(500) DEFAULT NULL,
             `waste_date` DATE NOT NULL,
             `status` VARCHAR(30) NOT NULL DEFAULT 'approved',
             `recorded_by` INT(11) NOT NULL,
@@ -76,6 +77,10 @@ function ensureRawMaterialWasteSupport($db) {
             KEY `idx_raw_material_waste_date` (`waste_date`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     ");
+
+    if (!auditColumnExists($db, 'raw_material_waste', 'evidence_photo_path')) {
+        $db->exec("ALTER TABLE `raw_material_waste` ADD COLUMN `evidence_photo_path` VARCHAR(500) DEFAULT NULL AFTER `reason`");
+    }
 }
 
 function wasteTableExists($db, $tableName) {
@@ -90,7 +95,7 @@ function wasteTableExists($db, $tableName) {
     return (bool)$stmt->fetchColumn();
 }
 
-function handleWasteGet($db, $action) {
+function handleWasteGet($db, $action, $currentUser) {
     switch ($action) {
         case 'available_items':
             getWasteAvailableItems($db);
@@ -100,6 +105,9 @@ function handleWasteGet($db, $action) {
             break;
         case 'reports':
             getWasteReports($db);
+            break;
+        case 'evidence':
+            streamEvidencePhoto($db, $currentUser);
             break;
         case 'list':
         default:
@@ -163,7 +171,11 @@ function getWasteBatches($db) {
 
 function getWasteRecords($db) {
     $stmt = $db->query("
-        SELECT w.*, u.full_name AS recorded_by_name, po.po_number, rr.rr_number, s.supplier_name
+        SELECT w.id, w.waste_code, w.item_type, w.item_id, w.batch_id, w.rr_id, w.po_id,
+               w.supplier_id, w.batch_code, w.item_name, w.quantity, w.unit, w.unit_cost,
+               w.total_value, w.reason_category, w.reason, w.evidence_photo_path,
+               w.waste_date, w.status, w.recorded_by, w.recorded_at, w.approved_by, w.approved_at,
+               u.full_name AS recorded_by_name, po.po_number, rr.rr_number, s.supplier_name
         FROM raw_material_waste w
         LEFT JOIN users u ON u.id = w.recorded_by
         LEFT JOIN purchase_orders po ON po.id = w.po_id
@@ -194,8 +206,8 @@ function getWasteReports($db) {
         ORDER BY expiry_date ASC
     ")->fetchAll();
 
-    $spoiled = $db->query("SELECT * FROM raw_material_waste WHERE reason_category = 'spoiled' ORDER BY waste_date DESC LIMIT 100")->fetchAll();
-    $wasted = $db->query("SELECT * FROM raw_material_waste ORDER BY waste_date DESC, id DESC LIMIT 100")->fetchAll();
+    $spoiled = $db->query("SELECT id, waste_code, item_type, item_name, batch_code, quantity, unit, reason_category, reason, evidence_photo_path, waste_date, status, recorded_by, recorded_at FROM raw_material_waste WHERE reason_category = 'spoiled' ORDER BY waste_date DESC LIMIT 100")->fetchAll();
+    $wasted = $db->query("SELECT id, waste_code, item_type, item_name, batch_code, quantity, unit, reason_category, reason, evidence_photo_path, waste_date, status, recorded_by, recorded_at FROM raw_material_waste ORDER BY waste_date DESC, id DESC LIMIT 100")->fetchAll();
     $rejected = [];
     if (wasteTableExists($db, 'supplier_rejections')) {
         $hasReceivingReports = wasteTableExists($db, 'receiving_reports');
@@ -248,6 +260,26 @@ function createWasteRecord($db, $currentUser) {
         Response::error('Item, quantity, and reason are required', 400);
     }
 
+    $photoRequires = ['damaged', 'contaminated', 'spoiled', 'handling_loss'];
+    $photoRequired = in_array($reasonCategory, $photoRequires, true);
+    $evidenceFile = isset($_FILES['evidence_photo']) ? $_FILES['evidence_photo'] : null;
+    $hasEvidence = $evidenceFile && (int)$evidenceFile['error'] !== UPLOAD_ERR_NO_FILE;
+
+    if ($photoRequired && !$hasEvidence) {
+        Response::error('Photo evidence is required for damage / contamination / spoilage / handling loss reasons', 400);
+    }
+
+    $evidencePath = null;
+    $savedFileAbs = null;
+
+    if ($hasEvidence) {
+        $evidencePath = saveWasteEvidenceFile($evidenceFile, $reasonCategory);
+        if ($evidencePath === false) {
+            Response::error('Invalid photo upload. Use JPEG, PNG, WebP, or HEIC up to 5 MB.', 400);
+        }
+        $savedFileAbs = dirname(dirname(__DIR__)) . '/' . $evidencePath;
+    }
+
     $db->beginTransaction();
     try {
         $batch = $batchId > 0
@@ -285,15 +317,30 @@ function createWasteRecord($db, $currentUser) {
             INSERT INTO raw_material_waste
             (waste_code, item_type, item_id, batch_id, rr_id, po_id, supplier_id, batch_code,
              item_name, quantity, unit, unit_cost, total_value, reason_category, reason,
+             evidence_photo_path,
              waste_date, status, recorded_by, approved_by, approved_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?, NOW())
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?, NOW())
         ")->execute([
             $wasteCode, $itemType, $itemId, $batchId > 0 ? $batchId : null, $batch['rr_id'] ?? null, $batch['po_id'] ?? null,
             $batch['supplier_id'] ?? null, $batch['batch_code'] ?? null, $batch['item_name'],
             $quantity, $batch['unit'], $unitCost, $quantity * $unitCost, $reasonCategory, $reason,
+            $evidencePath,
             $wasteDate, $currentUser['user_id'], $currentUser['user_id']
         ]);
         $wasteId = (int)$db->lastInsertId();
+
+        if ($evidencePath !== null) {
+            $finalName = 'wst_' . $wasteId . '_' . substr(bin2hex(random_bytes(3)), 0, 6) . '.jpg';
+            $finalRel = dirname($evidencePath) . '/' . $finalName;
+            $finalAbs = dirname(dirname(__DIR__)) . '/' . $finalRel;
+            if (!@rename($savedFileAbs, $finalAbs)) {
+                throw new Exception('Failed to finalize evidence file');
+            }
+            $db->prepare("UPDATE raw_material_waste SET evidence_photo_path = ? WHERE id = ?")
+                ->execute([$finalRel, $wasteId]);
+            $evidencePath = $finalRel;
+            $savedFileAbs = $finalAbs;
+        }
 
         $txCode = generateCode('TX');
         $db->prepare("
@@ -314,17 +361,161 @@ function createWasteRecord($db, $currentUser) {
             'item_id' => $itemId,
             'batch_id' => $batchId > 0 ? $batchId : null,
             'quantity' => $quantity,
-            'reason_category' => $reasonCategory
+            'reason_category' => $reasonCategory,
+            'evidence_photo_path' => $evidencePath
         ]);
+        if ($evidencePath !== null) {
+            logAudit($currentUser['user_id'], 'UPLOAD_EVIDENCE', 'raw_material_waste', $wasteId, null, [
+                'waste_code' => $wasteCode,
+                'evidence_photo_path' => $evidencePath,
+                'reason_category' => $reasonCategory
+            ]);
+        }
 
         $db->commit();
-        Response::created(['id' => $wasteId, 'waste_code' => $wasteCode, 'transaction_code' => $txCode], 'Waste recorded and deducted from inventory');
+        Response::created([
+            'id' => $wasteId,
+            'waste_code' => $wasteCode,
+            'transaction_code' => $txCode,
+            'evidence_photo_path' => $evidencePath
+        ], 'Waste recorded and deducted from inventory');
     } catch (Throwable $e) {
         if ($db->inTransaction()) {
             $db->rollBack();
         }
+        if ($savedFileAbs && file_exists($savedFileAbs)) {
+            @unlink($savedFileAbs);
+        }
         Response::error($e->getMessage(), 400);
     }
+}
+
+/**
+ * Save an evidence photo for a waste record.
+ * Returns the relative path on success, or false on validation failure.
+ *
+ * If the GD extension is available, the image is re-encoded as JPEG (max
+ * 1600px, ~82% quality) and EXIF is stripped. Otherwise we fall back to a
+ * raw move_uploaded_file() with a stricter 5 MB cap.
+ */
+function saveWasteEvidenceFile($file, $reasonCategory) {
+    if (!isset($file['error']) || $file['error'] !== UPLOAD_ERR_OK) {
+        return false;
+    }
+    if (!is_uploaded_file($file['tmp_name'])) {
+        return false;
+    }
+
+    $maxBytes = 5 * 1024 * 1024;
+    if ((int)$file['size'] > $maxBytes) {
+        return false;
+    }
+
+    $allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+    $finfo = function_exists('finfo_open') ? finfo_open(FILEINFO_MIME_TYPE) : null;
+    $detectedMime = $finfo ? finfo_file($finfo, $file['tmp_name']) : ($file['type'] ?? '');
+    if ($finfo) {
+        finfo_close($finfo);
+    }
+    if (!in_array($detectedMime, $allowedMimes, true)) {
+        return false;
+    }
+
+    $projectRoot = dirname(dirname(__DIR__));
+    $year = date('Y');
+    $month = date('m');
+    $targetDir = $projectRoot . '/uploads/waste/' . $year . '/' . $month;
+    if (!is_dir($targetDir)) {
+        if (!@mkdir($targetDir, 0755, true) && !is_dir($targetDir)) {
+            return false;
+        }
+        $htaccess = $targetDir . '/.htaccess';
+        if (!file_exists($htaccess)) {
+            @file_put_contents($htaccess, "Options -Indexes\n<FilesMatch \"\\.(php|phtml|phar|cgi|pl|py|sh)$\">\n  Require all denied\n</FilesMatch>\n");
+        }
+    }
+
+    $tempName = 'wst_tmp_' . bin2hex(random_bytes(6)) . '.jpg';
+    $tempAbs = $targetDir . '/' . $tempName;
+    $tempRel = 'uploads/waste/' . $year . '/' . $month . '/' . $tempName;
+
+    $saved = false;
+    if (extension_loaded('gd') && function_exists('getimagesize')) {
+        $image = @imagecreatefromstring(file_get_contents($file['tmp_name']));
+        if ($image !== false) {
+            $w = imagesx($image);
+            $h = imagesy($image);
+            $maxSide = 1600;
+            if ($w > $maxSide || $h > $maxSide) {
+                $scale = $maxSide / max($w, $h);
+                $newW = (int)round($w * $scale);
+                $newH = (int)round($h * $scale);
+                $resized = imagecreatetruecolor($newW, $newH);
+                imagecopyresampled($resized, $image, 0, 0, 0, 0, $newW, $newH, $w, $h);
+                imagedestroy($image);
+                $image = $resized;
+            }
+            if (imageinterlace($image, true) && function_exists('imagejpeg')) {
+                $saved = @imagejpeg($image, $tempAbs, 82);
+            }
+            imagedestroy($image);
+        }
+    }
+
+    if (!$saved) {
+        if ((int)$file['size'] > $maxBytes) {
+            return false;
+        }
+        $saved = @move_uploaded_file($file['tmp_name'], $tempAbs);
+    }
+
+    if (!$saved || !file_exists($tempAbs)) {
+        return false;
+    }
+
+    return $tempRel;
+}
+
+/**
+ * Stream a stored evidence photo with the ?token= query fallback for <img src>.
+ */
+function streamEvidencePhoto($db, $currentUser) {
+    $wasteId = (int)getParam('id', 0);
+    if ($wasteId <= 0) {
+        Response::notFound('Waste record not found');
+    }
+    $token = $_GET['token'] ?? null;
+    if ($token && !Auth::getCurrentUser()) {
+        $user = Auth::verifyToken($token);
+        if (!$user) {
+            Response::unauthorized('Invalid or expired token');
+        }
+        if (!in_array($user['role'] ?? '', ['warehouse_raw', 'general_manager', 'purchaser'], true)) {
+            Response::forbidden('You do not have permission to view this evidence');
+        }
+    }
+
+    $stmt = $db->prepare("SELECT evidence_photo_path FROM raw_material_waste WHERE id = ?");
+    $stmt->execute([$wasteId]);
+    $row = $stmt->fetch();
+    if (!$row || empty($row['evidence_photo_path'])) {
+        Response::notFound('No evidence photo for this record');
+    }
+
+    $projectRoot = dirname(dirname(__DIR__));
+    $rel = ltrim($row['evidence_photo_path'], '/');
+    $abs = $projectRoot . '/' . $rel;
+    if (strpos($rel, 'uploads/waste/') !== 0 || !file_exists($abs)) {
+        Response::notFound('Evidence file missing on disk');
+    }
+
+    $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+    $mime = 'image/jpeg';
+    if ($ext === 'png') $mime = 'image/png';
+    elseif ($ext === 'webp') $mime = 'image/webp';
+    elseif ($ext === 'heic' || $ext === 'heif') $mime = 'image/heic';
+
+    Response::file($abs, $mime, 'inline');
 }
 
 function loadWasteItemForUpdate($db, $itemType, $itemId) {

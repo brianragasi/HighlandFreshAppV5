@@ -64,11 +64,22 @@ try {
                 $usedMilkStmt->execute($usedMilkParams);
                 $usedStats = $usedMilkStmt->fetch();
                 
-                // Get milk used in pasteurization runs
+                // Get milk used in pasteurization runs. V4.0: only count runs that
+                // have actual backing inventory_transactions rows debiting raw
+                // milk. A "completed" run that has no matching transaction (e.g.
+                // it was created from a deleted batch) is a phantom debit and
+                // would otherwise lock up real raw milk that was never actually
+                // consumed. We count it via EXISTS to keep the query simple.
                 $pastUsedStmt = $db->prepare("
-                    SELECT COALESCE(SUM(input_milk_liters), 0) as pasteurization_used
-                    FROM pasteurization_runs
-                    WHERE status IN ('in_progress', 'completed')
+                    SELECT COALESCE(SUM(pr.input_milk_liters), 0) as pasteurization_used
+                    FROM pasteurization_runs pr
+                    WHERE pr.status IN ('in_progress', 'completed')
+                      AND EXISTS (
+                          SELECT 1 FROM inventory_transactions it
+                          WHERE it.item_type = 'raw_milk'
+                            AND it.reference_type = 'pasteurization_run'
+                            AND it.reference_id = pr.id
+                      )
                 ");
                 $pastUsedStmt->execute();
                 $pastStats = $pastUsedStmt->fetch();
@@ -196,9 +207,15 @@ try {
             $usedStats = $usedMilkStmt->fetch();
             
             $pastUsedStmt = $db->prepare("
-                SELECT COALESCE(SUM(input_milk_liters), 0) as pasteurization_used
-                FROM pasteurization_runs
-                WHERE status IN ('in_progress', 'completed')
+                SELECT COALESCE(SUM(pr.input_milk_liters), 0) as pasteurization_used
+                FROM pasteurization_runs pr
+                WHERE pr.status IN ('in_progress', 'completed')
+                  AND EXISTS (
+                      SELECT 1 FROM inventory_transactions it
+                      WHERE it.item_type = 'raw_milk'
+                        AND it.reference_type = 'pasteurization_run'
+                        AND it.reference_id = pr.id
+                  )
             ");
             $pastUsedStmt->execute();
             $pastStats = $pastUsedStmt->fetch();
@@ -220,19 +237,81 @@ try {
             $count = $codeStmt->fetch()['count'] + 1;
             $runCode = "PAST-{$today}-" . str_pad($count, 3, '0', STR_PAD_LEFT);
             
-            // Create pasteurization run
-            $stmt = $db->prepare("
-                INSERT INTO pasteurization_runs (
-                    run_code, input_milk_liters, output_milk_liters, 
-                    temperature, duration_mins, 
-                    started_at, performed_by, status, notes
-                ) VALUES (?, ?, 0, ?, ?, NOW(), ?, 'in_progress', ?)
-            ");
-            $stmt->execute([
-                $runCode, $inputLiters, $temperature, $durationMins, $currentUser['user_id'], $notes
-            ]);
-            
-            $runId = $db->lastInsertId();
+            // V4.0 — wrap the run creation + inventory debit in a transaction
+            // so they're atomic. Previously the system only inserted into
+            // pasteurization_runs with no inventory_transactions debit, which
+            // made the available_raw_milk calculation (and the "is the user
+            // trying to pasteurize more than they have?" check) unreliable.
+            $db->beginTransaction();
+            try {
+                // Find the source batch. Pick the most recently issued-to-
+                // production raw milk batch that still has unconsumed issued
+                // quantity. For the common case (one batch issued, one
+                // pasteurization run) this is correct. For multi-batch
+                // production the system is best-effort — a real factory would
+                // need explicit batch reservation, but that's out of scope.
+                $sourceBatchStmt = $db->prepare("
+                    SELECT it.batch_id, SUM(it.quantity) as issued
+                    FROM inventory_transactions it
+                    JOIN material_requisitions ir ON ir.id = it.reference_id
+                    JOIN raw_milk_inventory rmi ON rmi.id = it.batch_id
+                    WHERE it.item_type = 'raw_milk'
+                      AND it.reference_type = 'requisition'
+                      AND it.quantity > 0
+                      AND ir.department = 'production'
+                      AND rmi.expiry_date >= CURDATE()
+                    GROUP BY it.batch_id
+                    ORDER BY MAX(it.created_at) DESC
+                    LIMIT 1
+                ");
+                $sourceBatchStmt->execute();
+                $sourceBatch = $sourceBatchStmt->fetch();
+                $sourceBatchId = $sourceBatch ? (int) $sourceBatch['batch_id'] : null;
+
+                // Create pasteurization run
+                $stmt = $db->prepare("
+                    INSERT INTO pasteurization_runs (
+                        run_code, input_milk_liters, output_milk_liters,
+                        temperature, duration_mins,
+                        started_at, performed_by, status, notes
+                    ) VALUES (?, ?, 0, ?, ?, NOW(), ?, 'in_progress', ?)
+                ");
+                $stmt->execute([
+                    $runCode, $inputLiters, $temperature, $durationMins, $currentUser['user_id'], $notes
+                ]);
+                $runId = $db->lastInsertId();
+
+                // Debit inventory_transactions. Same shape that the
+                // warehouse_raw fulfillment uses for raw_milk: item_id and
+                // batch_id both point at the source batch, reference_type is
+                // 'pasteurization_run' (which the available_raw_milk EXISTS
+                // check on line 67 keys off of), and the reason is a clear
+                // audit string.
+                if ($sourceBatchId) {
+                    $txCode = 'TX-' . date('Ymd') . '-' . str_pad($runId, 4, '0', STR_PAD_LEFT);
+                    $txStmt = $db->prepare("
+                        INSERT INTO inventory_transactions (
+                            transaction_code, transaction_type, item_type, item_id, batch_id,
+                            quantity, unit_of_measure, reference_type, reference_id,
+                            performed_by, reason
+                        ) VALUES (?, 'production_issue', 'raw_milk', ?, ?, ?, 'L', 'pasteurization_run', ?, ?, ?)
+                    ");
+                    $txStmt->execute([
+                        $txCode,
+                        $sourceBatchId,
+                        $sourceBatchId,
+                        $inputLiters,
+                        $runId,
+                        $currentUser['user_id'],
+                        "Raw milk consumed by pasteurization run {$runCode}"
+                    ]);
+                }
+
+                $db->commit();
+            } catch (Exception $e) {
+                $db->rollBack();
+                throw $e;
+            }
             
             Response::created([
                 'id' => $runId,
@@ -277,28 +356,33 @@ try {
                 $shrinkagePercent = round((1 - ($outputLiters / $run['input_milk_liters'])) * 100, 2);
                 
                 $db->beginTransaction();
-                
+
                 try {
-                    // Update pasteurization run
+                    // Update pasteurization run. NOTE: the `shrinkage_percent`
+                    // is computed in the response only — the table doesn't
+                    // have that column (and we're not adding it to avoid a
+                    // schema migration). The auditor can derive it from
+                    // (input - output) / input * 100.
                     $updateStmt = $db->prepare("
-                        UPDATE pasteurization_runs 
+                        UPDATE pasteurization_runs
                         SET status = 'completed',
                             output_milk_liters = ?,
-                            shrinkage_percent = ?,
                             completed_at = NOW()
                         WHERE id = ?
                     ");
-                    $updateStmt->execute([$outputLiters, $shrinkagePercent, $runId]);
-                    
+                    $updateStmt->execute([$outputLiters, $runId]);
+
                     // Generate batch code for pasteurized milk
                     $batchCode = "PAST-" . date('Ymd') . "-" . str_pad($runId, 3, '0', STR_PAD_LEFT);
                     $expiryDate = date('Y-m-d', strtotime("+{$expiryDays} days"));
-                    
-                    // Create pasteurized milk inventory record
+
+                    // Create pasteurized milk inventory record. Column names
+                    // match the actual schema: pasteurization_run_id (not
+                    // source_run_id) and volume_liters (not quantity_liters).
                     $insertStmt = $db->prepare("
                         INSERT INTO pasteurized_milk_inventory (
-                            batch_code, source_type, source_run_id,
-                            quantity_liters, remaining_liters,
+                            batch_code, source_type, pasteurization_run_id,
+                            volume_liters, remaining_liters,
                             pasteurization_temp, pasteurization_duration_mins,
                             pasteurized_at, pasteurized_by, expiry_date,
                             status, notes
@@ -315,7 +399,7 @@ try {
                         $expiryDate,
                         "From pasteurization run {$run['run_code']}"
                     ]);
-                    
+
                     $db->commit();
                     
                     Response::success([

@@ -946,8 +946,12 @@ Material request records.
 | `needed_by_date` | DATE | Required by date |
 | `purpose` | TEXT | Requisition purpose |
 | `total_items` | INT | Number of items |
-| `status` | ENUM | draft, pending, approved, rejected, fulfilled |
-| `approved_by` | INT | FK to users |
+| `status` | ENUM | draft, pending, partial, fulfilled, cancelled (legacy: approved, rejected) |
+| `stock_override_acknowledged` | TINYINT | 1 = requester self-acknowledged a stock shortage on submit (V4.0) |
+| `stock_override_by` | INT | FK to users — who acknowledged the shortage (V4.0) |
+| `stock_override_reason` | VARCHAR | Free-text reason for the override (V4.0) |
+| `stock_override_at` | DATETIME | When the override was acknowledged (V4.0) |
+| `approved_by` | INT | FK to users (legacy — empty for new rows) |
 | `fulfilled_by` | INT | FK to users |
 
 #### `requisition_items`
@@ -961,11 +965,209 @@ Individual items in a requisition.
 | `item_type` | VARCHAR | raw_milk, ingredient, packaging |
 | `item_id` | INT | FK to ingredient/inventory |
 | `item_name` | VARCHAR | Item name |
-| `requested_quantity` | DECIMAL | Quantity requested |
+| `requested_quantity` | DECIMAL | Quantity requested (in base units, e.g. kg, L) |
+| `requested_quantity_in_packs` | DECIMAL | Pack count the requester asked for, NULL if requested in base units (V4.0) |
+| `pack_size_at_submit` | DECIMAL | Snapshot of `ingredients.pack_size_value` at submit time, used to convert the pack count to base (V4.0) |
+| `break_pack_acknowledged` | TINYINT | 1 = requester explicitly chose to submit a fractional pack count and acknowledged the break (V4.0 Option B) |
+| `break_pack_acknowledged_reason` | VARCHAR | Free-text reason for the pack break; surfaced to the warehouse in the fulfill modal (V4.0 Option B) |
 | `issued_quantity` | DECIMAL | Quantity actually issued |
 | `unit_of_measure` | VARCHAR | Unit |
 | `fulfilled_at` | DATETIME | Fulfillment timestamp |
 | `notes` | TEXT | Item notes |
+
+#### `requisition_stock_warnings` (V4.0)
+
+Per-item audit trail of every stock-validation decision made when a production
+requisition is submitted. Written when the requester submits a request that
+exceeds available warehouse stock (and acknowledges the override), or when the
+server blocks a submit attempt entirely.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INT | Primary key |
+| `requisition_id` | INT | FK to material_requisitions.id |
+| `requisition_item_id` | INT | FK to requisition_items.id (nullable for pre-submit block attempts) |
+| `ingredient_id` | INT | FK to ingredients.id (null for raw_milk and MRO rows) |
+| `item_name` | VARCHAR | Denormalized for audit readability even if ingredient is renamed |
+| `requested_qty` | DECIMAL | What production asked for |
+| `available_qty` | DECIMAL | What the warehouse had at submit time |
+| `shortage` | DECIMAL | requested - available (always >= 0) |
+| `decision` | ENUM | `blocked` (422 returned, requester did not acknowledge) or `overridden` (acknowledged and submitted) |
+| `decided_by` | INT | FK to users — who made the decision |
+| `decided_role` | VARCHAR | Role at time of decision — production_staff, general_manager, etc. |
+| `override_reason` | VARCHAR | Free-text reason when decision = `overridden` |
+| `created_at` | DATETIME | Timestamp |
+
+Query examples for the prof's review:
+
+```sql
+-- All overridden requests in the last 30 days, with who/why
+SELECT ir.requisition_code, ir.created_at,
+       CONCAT(u.first_name,' ',u.last_name) AS by_user, w.decided_role,
+       w.item_name, w.requested_qty, w.available_qty, w.shortage, w.override_reason
+FROM requisition_stock_warnings w
+JOIN material_requisitions ir ON ir.id = w.requisition_id
+LEFT JOIN users u ON u.id = w.decided_by
+WHERE w.decision = 'overridden'
+  AND w.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+ORDER BY w.created_at DESC;
+
+-- Most-overridden ingredients
+SELECT w.item_name, COUNT(*) AS override_count, SUM(w.shortage) AS total_shortage
+FROM requisition_stock_warnings w
+WHERE w.decision = 'overridden'
+GROUP BY w.item_name
+ORDER BY override_count DESC
+LIMIT 10;
+```
+
+### Pack Integrity (V4.0 Option B)
+
+Some ingredients ship from suppliers in sealed packs (e.g., Chocolate Powder
+in 1-kg bags, Cellophane Wrap in 100-mL packets) that physically cannot be
+broken open and partially used without inventory loss. The system enforces
+whole-pack submission for any ingredient the warehouse team has flagged
+with `enforce_whole_packs = 1`, so the requested qty on a requisition always
+matches a whole number of physical packs sitting on the shelf.
+
+#### The math
+
+For each ingredient flagged with `enforce_whole_packs = 1`, the server
+computes the effective pack count for every submission:
+
+```
+effective_packs = quantity_in_packs          (if requester used pack mode)
+                 = quantity / pack_size_value  (if they used base mode)
+```
+
+`pack_count = (int) ceil(effective_packs)` is what the recipe auto-fill
+locks the requester's qty input to, so the recipe never runs short of the
+ingredient. (We use `ceil`, not `floor` or `round`, because rounding down
+or to-nearest could yield zero bags for a non-zero recipe need — the
+prof's "AFTER" requirement is "system must force exact, whole packets".)
+
+The cost of `ceil` is a small amount of excess per recipe, which is
+unavoidable when working with sealed physical packaging.
+
+#### Per-ingredient opt-in (the flag)
+
+| Column on `ingredients` | Type | Default | What it means |
+|---|---|---|---|
+| `enforce_whole_packs` | TINYINT(1) | 0 | When 1, the server gates any fractional submission for this ingredient. When 0, today's behavior (any qty accepted). |
+
+The Warehouse Raw team flips this on per ingredient once the
+`pack_size_value` is configured. There is no global setting — each
+ingredient decides its own policy.
+
+#### The override path
+
+If a requester (typically `production_staff`) needs a fractional pack count
+for a legitimate reason (half-batch test, exact recipe match, recipe
+needs less than a full pack), they can:
+
+  1. Click **Override** in the form to unlock the qty field
+  2. Type the fractional value
+  3. Submit — the server returns `HTTP 422` with `error_code: pack_fractional`
+  4. The UI opens a "Pack Integrity Check" modal with one card per offender:
+     - **Round up to N packs** — the form rewrites qty to `ceil_packs` and
+       re-submits. Clean: no audit row written, no break flag set.
+     - **Acknowledge pack break** — requester ticks the box, types a
+       reason, re-submits with `break_pack_acknowledged = true` and
+       `break_pack_acknowledged_reason = "..."`. The server accepts.
+       An audit row is **not** written by this flow; the row's own
+       `break_pack_acknowledged` + `break_pack_acknowledged_reason`
+       columns are the audit trail.
+
+The form's submit button in the modal is disabled until every offender
+has been resolved (rounded up OR acked with a non-empty reason).
+
+#### The 422 payload shape
+
+```json
+{
+  "success": false,
+  "message": "One or more ingredients require whole packs. Round up or acknowledge the pack break per item.",
+  "errors": {
+    "error_code": "pack_fractional",
+    "pack_check": {
+      "fractional_count": 1,
+      "unacked_count": 1,
+      "items": [{
+        "item_index": 0,
+        "item_id": 11,
+        "item_name": "Chocolate Powder X",
+        "kind": "fractional",
+        "pack_size": 1,
+        "pack_size_unit": "kg",
+        "pack_label": "1 kg bag",
+        "enforce_whole_packs": true,
+        "effective_packs": 1.5,
+        "ceil_packs": 2,
+        "ceil_base": 2,
+        "extra_packs_to_round_up": 0.5,
+        "unit": "kg",
+        "message": "Chocolate Powder X requests 1.5 packs but each pack is 1 kg. Round up to 2 packs (2 kg) or acknowledge the pack break."
+      }],
+      "all_offenders": [/* same shape, includes 'misconfigured' kind for catalog misconfig */]
+    }
+  }
+}
+```
+
+#### Audit trail (for prof / auditor review)
+
+Per row, the columns `break_pack_acknowledged` and
+`break_pack_acknowledged_reason` are the record of who made the override
+decision and why. There is currently no separate `pack_overrides` audit
+table — the row itself is the audit row.
+
+Query examples for review:
+
+```sql
+-- All pack breaks in the last 30 days, with who / when / why
+SELECT ir.requisition_code, ir.created_at AS req_created,
+       CONCAT(req.first_name, ' ', req.last_name) AS requester,
+       ri.item_name, ri.requested_quantity_in_packs AS packs_asked,
+       ri.requested_quantity AS base_asked,
+       ri.pack_size_at_submit AS pack_size,
+       ri.break_pack_acknowledged_reason AS reason
+FROM requisition_items ri
+JOIN material_requisitions ir ON ir.id = ri.requisition_id
+JOIN users req ON req.id = ir.requested_by
+WHERE ri.break_pack_acknowledged = 1
+  AND ir.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+ORDER BY ir.created_at DESC;
+
+-- Most-broken ingredients
+SELECT item_name, COUNT(*) AS break_count
+FROM requisition_items
+WHERE break_pack_acknowledged = 1
+GROUP BY item_name
+ORDER BY break_count DESC
+LIMIT 10;
+
+-- Misconfigured ingredients (enforce_whole_packs on but no pack_size_value)
+SELECT id, ingredient_name, pack_size_value, enforce_whole_packs
+FROM ingredients
+WHERE enforce_whole_packs = 1
+  AND (pack_size_value IS NULL OR pack_size_value <= 0);
+```
+
+#### Known limitation (logged for a follow-up task)
+
+The current design lets the requester themselves acknowledge a pack break
+in the same form submission. For tighter segregation of duties, a
+follow-up task should require the break to be confirmed by
+`warehouse_raw` or `general_manager` as a separate workflow step
+(production submits a fractional request as `pending_warehouse_confirmation`,
+the warehouse sees it in their queue and either rounds up or confirms
+the break with their own reason). The schema already supports this
+(the `decided_by` / `decided_role` fields in `requisition_stock_warnings`
+could be extended to a new `requisition_pack_breaks` audit table); only
+the role-gating in `checkRequisitionPackIntegrity` and the corresponding
+UI changes are pending.
+
+---
 
 #### `production_byproducts`
 
@@ -993,33 +1195,36 @@ Byproduct tracking records.
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           PRODUCTION FLOW                                │
 ├─────────────────────────────────────────────────────────────────────────┤
-                                                                          
-   QC-APPROVED RAW MILK                                                    
-   (from milk_receiving)                                                   
-            │                                                              
-            ▼                                                              
-   ┌─────────────────────┐                                                
-   │  MATERIAL           │                                                
-   │  REQUISITION        │ ◄── Production requests milk from Warehouse   
-   │  (Pending GM)       │                                                
-   └─────────┬───────────┘                                                
-             │                                                             
-             ▼                                                             
-   ┌─────────────────────┐                                                
-   │  GM APPROVAL        │                                                
-   │  (approve/reject)   │                                                
-   └─────────┬───────────┘                                                
-             │                                                             
-             ▼                                                             
-   ┌─────────────────────┐                                                
-   │  WAREHOUSE FULFILLS │                                                
-   │  (Issues materials) │                                                
-   └─────────┬───────────┘                                                
-             │                                                             
-    ┌────────┴────────┐                                                   
-    │                 │                                                   
-    ▼                 ▼                                                   
-BOTTLING           YOGURT                                                 
+
+   QC-APPROVED RAW MILK
+   (from milk_receiving)
+            │
+            ▼
+   ┌─────────────────────┐
+   │  MATERIAL           │
+   │  REQUISITION        │ ◄── Production submits request for milk
+   │  (Pending)          │     + ingredients. Warehouse Raw sees it
+   └─────────┬───────────┘     immediately — no GM gate.
+             │
+             │   Server-side stock validation runs on every submit:
+             │   • If every line has enough stock → 201 Created.
+             │   • If any line is short and client did not send
+             │     stock_override_acknowledged=true → 422 with the
+             │     stock_check payload. UI shows a confirmation modal
+             │     that lists the actual shortages.
+             │   • If client acknowledges the override → 201 Created,
+             │     audit row written to requisition_stock_warnings
+             │     with decision='overridden'.
+             ▼
+   ┌─────────────────────┐
+   │  WAREHOUSE FULFILLS │ ◄── Warehouse Raw fulfills directly from
+   │  (Issues materials) │     'pending' (or 'partial' for top-up).
+   └─────────┬───────────┘     No more 'approve' step in this flow.
+             │
+    ┌────────┴────────┐
+    │                 │
+    ▼                 ▼
+BOTTLING           YOGURT
 CHEESE             PRODUCTION                                             
 BUTTER                 │                                                  
     │                  │                                                  

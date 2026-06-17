@@ -79,13 +79,15 @@ function handleGet($db, $currentUser) {
                         WHEN i.current_stock <= i.minimum_stock THEN 'low_stock'
                         ELSE 'ok'
                     END as stock_status,
-                    (SELECT COUNT(*) FROM ingredient_batches ib 
-                     WHERE ib.ingredient_id = i.id 
-                     AND ib.status IN ('available', 'partially_used')) as batch_count,
-                    (SELECT MIN(expiry_date) FROM ingredient_batches ib 
-                     WHERE ib.ingredient_id = i.id 
+                    (SELECT COUNT(*) FROM ingredient_batches ib
+                     WHERE ib.ingredient_id = i.id
                      AND ib.status IN ('available', 'partially_used')
-                     AND ib.expiry_date IS NOT NULL) as earliest_expiry
+                     AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())) as batch_count,
+                    (SELECT MIN(expiry_date) FROM ingredient_batches ib
+                     WHERE ib.ingredient_id = i.id
+                     AND ib.status IN ('available', 'partially_used')
+                     AND ib.expiry_date IS NOT NULL
+                     AND ib.expiry_date >= CURDATE()) as earliest_expiry
                 FROM ingredients i
                 LEFT JOIN ingredient_categories ic ON i.category_id = ic.id
                 WHERE i.is_active = 1
@@ -146,6 +148,7 @@ function handleGet($db, $currentUser) {
                 JOIN users u ON ib.received_by = u.id
                 WHERE ib.ingredient_id = ?
                 AND ib.status IN ('available', 'partially_used')
+                AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())
                 ORDER BY ib.expiry_date ASC, ib.received_date ASC, ib.id ASC
             ");
             $batches->execute([$id]);
@@ -397,7 +400,7 @@ function handlePost($db, $currentUser) {
             if (!in_array($currentUser['role'], ['general_manager', 'purchaser'])) {
                 Response::error('Only GM or Purchaser can create ingredients', 403);
             }
-            
+
             $ingredientCode = getParam('ingredient_code');
             $ingredientName = getParam('ingredient_name');
             $categoryId = getParam('category_id');
@@ -408,29 +411,49 @@ function handlePost($db, $currentUser) {
             $storageRequirements = getParam('storage_requirements');
             $shelfLifeDays = getParam('shelf_life_days');
             $isPerishable = getParam('is_perishable', 1);
-            
+            $packSizeValue = getParam('pack_size_value');
+            $packSizeUnit = getParam('pack_size_unit');
+            $packLabel = getParam('pack_label');
+
             if (!$ingredientCode || !$ingredientName || !$unitOfMeasure) {
                 Response::error('Ingredient code, name, and unit of measure are required', 400);
             }
-            
+
+            // Pack size sanity: if any pack field is provided, value+unit must both be present and positive.
+            $hasAnyPack = ($packSizeValue !== null && $packSizeValue !== '')
+                       || ($packSizeUnit !== null && $packSizeUnit !== '')
+                       || ($packLabel !== null && $packLabel !== '');
+            $hasAllPack = $packSizeValue !== null && $packSizeValue !== ''
+                       && $packSizeUnit !== null && $packSizeUnit !== '';
+            if ($hasAnyPack && !$hasAllPack) {
+                Response::error('Pack size requires both a value and a unit', 400);
+            }
+            if ($hasAllPack && floatval($packSizeValue) <= 0) {
+                Response::error('Pack size value must be greater than 0', 400);
+            }
+
             // Check duplicate
             $check = $db->prepare("SELECT id FROM ingredients WHERE ingredient_code = ?");
             $check->execute([$ingredientCode]);
             if ($check->fetch()) {
                 Response::error('Ingredient code already exists', 400);
             }
-            
+
             $stmt = $db->prepare("
-                INSERT INTO ingredients 
+                INSERT INTO ingredients
                 (ingredient_code, ingredient_name, category_id, unit_of_measure,
+                 pack_size_value, pack_size_unit, pack_label,
                  minimum_stock, maximum_stock, storage_location, storage_requirements, shelf_life_days, is_perishable)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
             $stmt->execute([
                 $ingredientCode,
                 $ingredientName,
                 $categoryId,
                 $unitOfMeasure,
+                $hasAllPack ? floatval($packSizeValue) : null,
+                $hasAllPack ? $packSizeUnit : null,
+                $packLabel ?: null,
                 $minimumStock,
                 $maximumStock !== null && $maximumStock !== '' ? $maximumStock : null,
                 $storageLocation,
@@ -438,7 +461,7 @@ function handlePost($db, $currentUser) {
                 $shelfLifeDays,
                 $isPerishable ? 1 : 0
             ]);
-            
+
             Response::success(['id' => $db->lastInsertId()], 'Ingredient created successfully');
             break;
             
@@ -662,13 +685,27 @@ function handlePut($db, $currentUser) {
             $params = [];
             
             $allowedFields = ['ingredient_name', 'category_id', 'minimum_stock', 'maximum_stock',
-                             'storage_location', 'storage_requirements', 'shelf_life_days', 'is_perishable'];
-            
+                             'storage_location', 'storage_requirements', 'shelf_life_days', 'is_perishable',
+                             'pack_size_value', 'pack_size_unit', 'pack_label'];
+
             foreach ($allowedFields as $field) {
                 $value = getParam($field);
                 if ($value !== null) {
                     if ($field === 'is_perishable') {
                         $value = $value ? 1 : 0;
+                    }
+                    if ($field === 'pack_size_value') {
+                        // Empty string clears the pack size; positive number sets it.
+                        $value = ($value === '' || $value === null) ? null : floatval($value);
+                        if ($value !== null && $value <= 0) {
+                            Response::error('Pack size value must be greater than 0', 400);
+                        }
+                    }
+                    if ($field === 'pack_size_unit' && $value === '') {
+                        $value = null;
+                    }
+                    if ($field === 'pack_label' && $value === '') {
+                        $value = null;
                     }
                     $updateFields[] = "$field = ?";
                     $params[] = $value;

@@ -6,14 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ingredients Management | Highland Fresh Admin</title>
 
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
-
-    <script>
-        tailwind.config = {
-            theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } }
-        }
-    </script>
+    <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
+    <link rel="stylesheet" href="../../css/tailwind.css">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,7 +15,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
     <!-- Axios -->
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/vendor/axios.min.js"></script>
 
     <style>
         body {
@@ -433,6 +427,42 @@
                     </div>
                 </div>
 
+                <!-- Supplier pack size: lets the requisition form auto-suggest how many
+                     packs to issue when a recipe needs a fractional quantity. Leave
+                     blank for ingredients that don't arrive in pre-defined packs. -->
+                <div class="rounded-lg border border-info/30 bg-info/5 px-4 py-3">
+                    <div class="flex items-start gap-2 mb-2">
+                        <i class="fas fa-boxes-stacked text-info mt-0.5"></i>
+                        <div>
+                            <p class="font-medium text-sm text-base-content">Supplier Pack Size <span class="text-xs text-base-content/60">(optional)</span></p>
+                            <p class="text-xs text-base-content/60">Used to suggest how many packs to issue from the warehouse when a recipe calls for a fractional quantity (e.g. "0.11 L" of cultures becomes "2 packets").</p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text text-xs">Pack Value</span></label>
+                            <input type="number" id="pack_size_value" class="input input-bordered input-sm" step="0.001" min="0" placeholder="e.g. 100">
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text text-xs">Pack Unit</span></label>
+                            <select id="pack_size_unit" class="select select-bordered select-sm">
+                                <option value="">— Same as Unit of Measure —</option>
+                                <option value="kg">Kilograms (kg)</option>
+                                <option value="g">Grams (g)</option>
+                                <option value="L">Liters (L)</option>
+                                <option value="ml">Milliliters (ml)</option>
+                                <option value="pcs">Pieces (pcs)</option>
+                                <option value="pack">Pack</option>
+                                <option value="bottle">Bottle</option>
+                            </select>
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text text-xs">Display Label <span class="text-base-content/50">(optional)</span></span></label>
+                            <input type="text" id="pack_label" class="input input-bordered input-sm" placeholder="e.g. 100 mL packet">
+                        </div>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div class="form-control">
                         <label class="label">
@@ -719,6 +749,10 @@
                     document.getElementById('ingredient_name').value = i.ingredient_name;
                     document.getElementById('category_id').value = i.category_id || '';
                     document.getElementById('unit_of_measure').value = i.unit_of_measure;
+                    // Supplier pack size fields (optional — leave blank for ingredients without one).
+                    document.getElementById('pack_size_value').value = i.pack_size_value != null ? i.pack_size_value : '';
+                    document.getElementById('pack_size_unit').value = i.pack_size_unit || '';
+                    document.getElementById('pack_label').value = i.pack_label || '';
                     // Display whole numbers — DB stores DECIMAL(10,2) but we track in whole units
                     document.getElementById('minimum_stock').value = parseInt(i.minimum_stock, 10) || 0;
                     document.getElementById('reorder_point').value = parseInt(i.reorder_point, 10) || 0;
@@ -772,6 +806,9 @@
                 ingredient_name: document.getElementById('ingredient_name').value,
                 category_id: document.getElementById('category_id').value || null,
                 unit_of_measure: document.getElementById('unit_of_measure').value,
+                pack_size_value: document.getElementById('pack_size_value').value || null,
+                pack_size_unit: document.getElementById('pack_size_unit').value || null,
+                pack_label: document.getElementById('pack_label').value || null,
                 minimum_stock: document.getElementById('minimum_stock').value,
                 reorder_point: document.getElementById('reorder_point').value,
                 maximum_stock: document.getElementById('maximum_stock').value,

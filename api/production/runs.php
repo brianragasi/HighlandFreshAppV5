@@ -153,8 +153,21 @@ function getIssuedIngredientStats($db, $ingredient) {
         $params[] = strtolower(trim($ingredient['ingredient_name']));
     }
 
+    // V4.0.1 — also pull the pack_size_at_submit snapshot from the row.
+    // The requisition system stores the value already converted to the
+    // base unit (see $storedBaseQty = $requestedPacks * $packSizeAtSubmit
+    // in api/production/requisitions.php line 1164) but the unit_of_measure
+    // column can still be the pack container word (e.g., "sack" for Sugar
+    // with pack_size 25 kg, or "packet" for Cultures with pack_size 1 kg).
+    // So a row like (issued=1, unit="packet", pack_size_at_submit=1)
+    // is actually "1 kg", not "1 packet" — the value is in the base unit.
+    // Without this snapshot check, the exact-unit filter below would
+    // silently drop these rows and the production run page would say
+    // "0 kg available" even though the requisition was fulfilled.
     $stmt = $db->prepare("
-        SELECT ri.issued_quantity, ri.unit_of_measure, COALESCE(ri.fulfilled_at, ri.updated_at, ri.created_at) AS issued_at
+        SELECT ri.issued_quantity, ri.unit_of_measure,
+               ri.pack_size_at_submit,
+               COALESCE(ri.fulfilled_at, ri.updated_at, ri.created_at) AS issued_at
         FROM requisition_items ri
         JOIN material_requisitions ir ON ri.requisition_id = ir.id
         WHERE {$where}
@@ -164,7 +177,18 @@ function getIssuedIngredientStats($db, $ingredient) {
     $total = 0.0;
     $earliestIssuedAt = null;
     foreach ($stmt->fetchAll() as $row) {
-        if (normalizeProductionUnit($row['unit_of_measure']) === $normalizedUnit) {
+        $rowUnit = normalizeProductionUnit($row['unit_of_measure']);
+        // Accept the row when EITHER:
+        //   (a) the unit label matches the recipe's base unit (the
+        //       requester typed the qty in kg/L directly, no pack
+        //       conversion at submit time), OR
+        //   (b) the row has a pack_size_at_submit snapshot, which
+        //       means the value was already converted to the base
+        //       unit at requisition-create time and is in kg/L
+        //       regardless of what unit_of_measure is labeled.
+        $isBaseUnit = ($rowUnit === $normalizedUnit);
+        $hasPackSizeSnapshot = $row['pack_size_at_submit'] !== null;
+        if ($isBaseUnit || $hasPackSizeSnapshot) {
             $total += (float) $row['issued_quantity'];
             if ($row['issued_at'] && (!$earliestIssuedAt || $row['issued_at'] < $earliestIssuedAt)) {
                 $earliestIssuedAt = $row['issued_at'];
@@ -260,6 +284,14 @@ function validateIssuedIngredientsForRun($db, $recipeId, $plannedQuantity, $ingr
 }
 
 function getUsableIssuedRawMilkStats($db) {
+    // V4.0 (Issue A fix) — only count raw milk that is still usable. The
+    // previous version summed ALL issued_quantity from requisition_items
+    // regardless of batch expiry, which made the batches page report
+    // "1,213 L available" when in fact every batch had expired (the
+    // pasteurization page correctly excluded them, so the two pages
+    // disagreed about the same number). Now we INNER JOIN to the
+    // inventory_transactions → raw_milk_inventory trace and require
+    // earliest_expiry >= CURDATE() before counting the requisition.
     $stmt = $db->prepare("
         SELECT
             issued.requisition_id,
@@ -287,17 +319,21 @@ function getUsableIssuedRawMilkStats($db) {
             GROUP BY ri.requisition_id
         ) issued
         JOIN material_requisitions ir ON ir.id = issued.requisition_id
-        LEFT JOIN (
+        -- INNER JOIN (was LEFT) so a requisition with no inventory
+        -- transactions, or only expired batches, is excluded entirely.
+        JOIN (
             SELECT
                 it.reference_id,
                 MIN(rmi.expiry_date) as earliest_expiry,
                 GROUP_CONCAT(DISTINCT rmi.batch_code ORDER BY rmi.expiry_date ASC SEPARATOR ', ') as source_batches
             FROM inventory_transactions it
-            LEFT JOIN raw_milk_inventory rmi ON rmi.id = it.batch_id
+            JOIN raw_milk_inventory rmi ON rmi.id = it.batch_id
             WHERE it.item_type = 'raw_milk'
               AND it.reference_type = 'requisition'
               AND it.quantity > 0
             GROUP BY it.reference_id
+            -- Only count requisitions whose milk is still in date.
+            HAVING MIN(rmi.expiry_date) >= CURDATE()
         ) trace ON trace.reference_id = issued.requisition_id
         WHERE issued.issued_liters > 0
           AND ir.department = 'production'
@@ -448,18 +484,26 @@ try {
             }
             
             if ($runId) {
-                // Get single run with details
+                // Get single run with details. LEFT JOIN material_requisitions so the
+                // detail view can render a "From REQ-XXX" badge for runs started from
+                // a pre-run requisition.
                 $stmt = $db->prepare("
-                    SELECT pr.*, 
+                    SELECT pr.*,
                            mr.recipe_code, mr.product_name, mr.product_type, mr.variant,
                            mr.base_milk_liters, mr.expected_yield, mr.yield_unit,
                            mr.pasteurization_temp, mr.pasteurization_time_mins, mr.cooling_temp,
                            u1.first_name as started_by_first, u1.last_name as started_by_last,
-                           u2.first_name as completed_by_first, u2.last_name as completed_by_last
+                           u2.first_name as completed_by_first, u2.last_name as completed_by_last,
+                           mrq.id as linked_requisition_id,
+                           mrq.requisition_code as linked_requisition_code,
+                           mrq.status as linked_requisition_status,
+                           mrq.planned_quantity as linked_requisition_planned_quantity,
+                           mrq.planned_yield_unit as linked_requisition_yield_unit
                     FROM production_runs pr
                     JOIN master_recipes mr ON pr.recipe_id = mr.id
                     LEFT JOIN users u1 ON pr.started_by = u1.id
                     LEFT JOIN users u2 ON pr.completed_by = u2.id
+                    LEFT JOIN material_requisitions mrq ON mrq.production_run_id = pr.id
                     WHERE pr.id = ?
                 ");
                 $stmt->execute([$runId]);
@@ -582,22 +626,89 @@ try {
             $skimMilkOutputLiters = getParam('skim_milk_output_liters');
             $cheeseState = getParam('cheese_state');
             $isSalted = getParam('is_salted', 0);
+            // Optional: when this run is being started from a fulfilled pre-run requisition,
+            // the frontend passes the requisition ID. We validate the requisition and link
+            // the new run back to it so the lineage (REQ -> RUN) is preserved.
+            $materialRequisitionId = getParam('material_requisition_id');
+            $linkedRequisitionCode = null;
             $ingredientValidation = [
                 'requirements' => [],
                 'allocation' => [],
                 'errors' => []
             ];
-            
+
             // Validation
             $errors = [];
             if (!$recipeId) $errors['recipe_id'] = 'Recipe is required';
             if ($plannedQuantity <= 0) $errors['planned_quantity'] = 'Planned quantity must be greater than 0';
-            
+
+            // If a source requisition is provided, validate it up front so the rest of
+            // the flow can assume the link is legitimate.
+            $sourceRequisition = null;
+            if ($materialRequisitionId) {
+                // Fetch the planned fields too so we can enforce a 1:1 match
+                // between the run's planned_quantity and the requisition's plan.
+                // See the "planned_quantity must match" check below.
+                $reqStmt = $db->prepare("
+                    SELECT id, requisition_code, status, planned_recipe_id, planned_quantity,
+                           planned_yield_unit, production_run_id
+                    FROM material_requisitions
+                    WHERE id = ?
+                ");
+                $reqStmt->execute([$materialRequisitionId]);
+                $sourceRequisition = $reqStmt->fetch();
+
+                if (!$sourceRequisition) {
+                    $errors['material_requisition_id'] = 'Source requisition not found';
+                } elseif (!in_array($sourceRequisition['status'], ['fulfilled', 'partial'], true)) {
+                    $errors['material_requisition_id'] = 'Source requisition is not ready for production (status: ' . $sourceRequisition['status'] . ')';
+                } elseif (!empty($sourceRequisition['production_run_id'])) {
+                    $errors['material_requisition_id'] = 'Source requisition is already linked to a production run';
+                } elseif (!empty($sourceRequisition['planned_recipe_id']) && (int)$sourceRequisition['planned_recipe_id'] !== (int)$recipeId) {
+                    $errors['material_requisition_id'] = 'Recipe does not match the source requisition';
+                } else {
+                    // Requisition-driven runs must respect the requisition's plan
+                    // exactly. The requisition is the GM-approved production plan,
+                    // and the warehouse issued materials specifically for that qty.
+                    // If production staff want a different batch size, the right
+                    // path is to edit the requisition (which forces re-approval +
+                    // re-fulfillment with the right amounts), not to silently
+                    // scale the run. This protects the REQ -> RUN traceability
+                    // chain and prevents silent over-issues from the shared pool.
+                    //
+                    // Legacy requisitions (pre plan-guard) may have NULL or 0
+                    // planned_quantity; those skip the equality check and are
+                    // allowed through with whatever the run supplies.
+                    $reqPlanned = (float)($sourceRequisition['planned_quantity'] ?? 0);
+                    if ($reqPlanned > 0 && abs((float)$plannedQuantity - $reqPlanned) > 0.001) {
+                        $errors['planned_quantity'] = sprintf(
+                            'Planned volume must match the source requisition (%s %s). ' .
+                            'Edit the requisition to change the batch size.',
+                            number_format($reqPlanned, 3),
+                            $sourceRequisition['planned_yield_unit'] ?? ''
+                        );
+                    } elseif ($reqPlanned > 0) {
+                        // Snap the run's planned_quantity to the requisition's
+                        // exact value to avoid float drift (e.g. user sent 50.0001
+                        // and the requisition is 50.00).
+                        $plannedQuantity = $reqPlanned;
+                    }
+                }
+
+                // Set the lineage code on the success path. The error branches
+                // above leave $errors populated and this is never reached, but
+                // we guard with a no-errors check so the response payload is
+                // clean.
+                if (empty($errors['material_requisition_id']) && empty($errors['planned_quantity'])) {
+                    $linkedRequisitionCode = $sourceRequisition['requisition_code'];
+                }
+            }
+
             // Verify recipe exists
             $recipeStmt = $db->prepare("SELECT * FROM master_recipes WHERE id = ? AND is_active = 1");
             $recipeStmt->execute([$recipeId]);
             $recipe = $recipeStmt->fetch();
-            
+
             if (!$recipe) {
                 $errors['recipe_id'] = 'Recipe not found or inactive';
             }
@@ -730,12 +841,30 @@ try {
                 // YOGURT: Deduct from pasteurized milk inventory (FIFO)
                 if ($milkSourceType === 'pasteurized' && $pasteurizedBatchId) {
                     $remainingToDeduct = $requiredMilkLiters;
-                    
+
                     // Deduct from batches in FIFO order
+                    // V4.0 — fixed two bugs in this query:
+                    //   1. The original `status = CASE WHEN remaining_liters - ? <= 0
+                    //      THEN 'exhausted' ELSE status END` re-subtracted the
+                    //      quantity a second time, so a batch that ended up
+                    //      with any positive remaining (e.g. 1.97 - 1.11 = 0.86)
+                    //      was being marked as exhausted because (0.86 - 1.11 = -0.25)
+                    //      is <= 0. The check should look at the NEW value of
+                    //      remaining_liters (after the first SET clause), not
+                    //      subtract again.
+                    //   2. 'exhausted' is not a valid value in the status ENUM
+                    //      ('available','reserved','used','expired','disposed').
+                    //      MySQL silently stored it as the empty string '',
+                    //      which then failed the `WHERE status = 'available'`
+                    //      filter in available_pasteurized_milk, hiding
+                    //      partially-used batches from the stock check.
+                    //      Now uses 'used' (a valid ENUM value) for fully
+                    //      consumed batches and leaves 'available' alone for
+                    //      partially-used ones.
                     $deductStmt = $db->prepare("
-                        UPDATE pasteurized_milk_inventory 
+                        UPDATE pasteurized_milk_inventory
                         SET remaining_liters = remaining_liters - ?,
-                            status = CASE WHEN remaining_liters - ? <= 0 THEN 'exhausted' ELSE status END
+                            status = CASE WHEN remaining_liters <= 0 THEN 'used' ELSE status END
                         WHERE id = ?
                     ");
 
@@ -743,7 +872,9 @@ try {
                         if ($remainingToDeduct <= 0) break;
 
                         $deductQty = min((float) $batch['remaining_liters'], $remainingToDeduct);
-                        $deductStmt->execute([$deductQty, $deductQty, $batch['id']]);
+                        // V4.0 — only 2 params now (qty, id) since the
+                        // status CASE no longer needs the qty twice.
+                        $deductStmt->execute([$deductQty, $batch['id']]);
                         $remainingToDeduct -= $deductQty;
                     }
                     
@@ -765,7 +896,15 @@ try {
                 }
                 
                 $db->commit();
-                
+
+                // If this run was started from a pre-run requisition, link the new
+                // run back to it so the lineage REQ -> RUN is preserved. We do this
+                // AFTER commit so a failure here doesn't roll back the run creation.
+                if ($sourceRequisition && empty($sourceRequisition['production_run_id'])) {
+                    $linkStmt = $db->prepare("UPDATE material_requisitions SET production_run_id = ? WHERE id = ?");
+                    $linkStmt->execute([$runId, $materialRequisitionId]);
+                }
+
                 Response::created([
                     'id' => $runId,
                     'run_code' => $runCode,
@@ -776,9 +915,11 @@ try {
                     'product_type' => $recipe['product_type'],
                     'has_ingredient_adjustments' => !empty($ingredientAdjustments),
                     'ingredient_reservations' => $ingredientValidation['allocation'],
-                    'pasteurized_batch_id' => $pasteurizedBatchId
+                    'pasteurized_batch_id' => $pasteurizedBatchId,
+                    'material_requisition_id' => $materialRequisitionId ?: null,
+                    'linked_requisition_code' => $linkedRequisitionCode
                 ], 'Production run created successfully');
-                
+
             } catch (Exception $e) {
                 $db->rollBack();
                 throw $e;

@@ -6,21 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Expiry Management - Quality Control | Highland Fresh</title>
 
-    <!-- Tailwind CSS + DaisyUI CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
-
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'system-ui', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
+    <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
+    <link rel="stylesheet" href="../../css/tailwind.css">
 
     <!-- Inter Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -66,6 +53,11 @@
         .expiry-warning {
             @apply border-l-4 border-warning;
         }
+
+        /* Row-level urgency tints for the Expiring Soon table */
+        .expiry-row-expired { @apply bg-error/5; }
+        .expiry-row-critical > td:first-child { box-shadow: inset 4px 0 0 0 oklch(var(--er)); }
+        .expiry-row-warning  > td:first-child { box-shadow: inset 4px 0 0 0 oklch(var(--wa)); }
 
         /* Grade badges */
         .grade-a {
@@ -379,8 +371,32 @@
 
             <!-- Expiring Products Section -->
             <div id="expiringSection" class="tab-panel">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="expiringProducts">
-                    <!-- Expiring product cards will be loaded here -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-0">
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr class="bg-base-200/50 text-base-content/70">
+                                        <th>Status</th>
+                                        <th>Product</th>
+                                        <th class="text-right">Available Qty</th>
+                                        <th>Location</th>
+                                        <th>Expiry Date</th>
+                                        <th class="text-right">Days Left</th>
+                                        <th class="text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="expiringProducts">
+                                    <tr>
+                                        <td colspan="7" class="text-center py-8 text-base-content/40">
+                                            <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                                            <p>Loading...</p>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -582,7 +598,7 @@
     <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js"></script>
     <script src="../../js/qc/dashboard.service.js"></script>
@@ -623,6 +639,10 @@
         function formatDate(dateStr) {
             if (!dateStr) return '-';
             return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function escapeHtml(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         }
 
         function formatDateTime(dateStr) {
@@ -708,12 +728,14 @@
         }
 
         async function loadExpiringProducts() {
-            const container = document.getElementById('expiringProducts');
-            container.innerHTML = `
-                <div class="col-span-2 text-center py-8 text-base-content/40">
-                    <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-                    <p>Loading...</p>
-                </div>
+            const tbody = document.getElementById('expiringProducts');
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="text-center py-8 text-base-content/40">
+                        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                        <p>Loading...</p>
+                    </td>
+                </tr>
             `;
 
             try {
@@ -746,67 +768,58 @@
                     }
 
                     if (products.length > 0) {
-                        container.innerHTML = products.map(p => {
+                        tbody.innerHTML = products.map(p => {
                             const daysLeft = getDaysUntilExpiry(p.expiry_date);
                             const urgency = getUrgencyClass(daysLeft);
+                            const rowClass = daysLeft < 0 ? 'expiry-row-expired'
+                                : daysLeft <= 2 ? 'expiry-row-critical'
+                                : daysLeft <= 7 ? 'expiry-row-warning' : '';
+
+                            const qty = p.remaining_liters || p.quantity_available || p.quantity_remaining || 0;
+                            const unit = p.unit_measure || p.unit || 'units';
+                            const location = p.location || p.storage_location || 'Warehouse';
 
                             return `
-                                <div class="card bg-base-100 border border-base-300 ${urgency.cardClass}">
-                                    <div class="card-body p-4">
-                                        <div class="flex justify-between items-start mb-3">
-                                            <div>
-                                                <span class="badge ${urgency.badgeClass} badge-sm">${urgency.label}</span>
-                                                <h4 class="font-semibold mt-2">${p.product_name || p.type || 'Unknown'}</h4>
-                                                <p class="text-xs text-base-content/60">${p.batch_number || '-'}</p>
-                                            </div>
-                                            <div class="text-right">
-                                                <div class="text-2xl font-bold ${urgency.textClass}">
-                                                    ${daysLeft < 0 ? 'EXPIRED' : daysLeft + ' days'}
-                                                </div>
-                                                <p class="text-xs text-base-content/60">${formatDate(p.expiry_date)}</p>
-                                            </div>
-                                        </div>
-                                        
-                                        <div class="grid grid-cols-2 gap-3 mb-4">
-                                            <div class="bg-base-200 rounded-lg p-2">
-                                                <p class="text-xs text-base-content/60">Available Qty</p>
-                                                <p class="font-semibold text-sm">${(p.remaining_liters || p.quantity_available || p.quantity_remaining || 0).toLocaleString()} ${p.unit_measure || p.unit || 'units'}</p>
-                                            </div>
-                                            <div class="bg-base-200 rounded-lg p-2">
-                                                <p class="text-xs text-base-content/60">Location</p>
-                                                <p class="font-semibold text-sm">${p.location || p.storage_location || 'Warehouse'}</p>
-                                            </div>
-                                        </div>
-                                        
-                                        <div class="flex gap-2">
+                                <tr class="${rowClass} hover">
+                                    <td><span class="badge ${urgency.badgeClass} badge-sm">${urgency.label}</span></td>
+                                    <td>
+                                        <div class="font-semibold text-sm">${escapeHtml(p.product_name || p.type || 'Unknown')}</div>
+                                        <div class="text-xs text-base-content/50 font-mono">${escapeHtml(p.batch_number || '-')}</div>
+                                    </td>
+                                    <td class="text-right font-semibold">${qty.toLocaleString()} ${escapeHtml(unit)}</td>
+                                    <td class="text-sm">${escapeHtml(location)}</td>
+                                    <td class="text-sm">${formatDate(p.expiry_date)}</td>
+                                    <td class="text-right font-bold ${urgency.textClass}">${daysLeft < 0 ? 'EXPIRED' : daysLeft + 'd'}</td>
+                                    <td class="text-center">
+                                        <div class="flex justify-center gap-1">
                                             ${p.can_transform ? `
-                                                <button class="btn btn-primary btn-sm flex-1" onclick="openTransformModal('${p.type || 'finished_goods'}', ${p.id})">
+                                                <button class="btn btn-primary btn-xs" onclick="openTransformModal('${escapeHtml(p.type || 'finished_goods')}', ${p.id})" title="Transform to Yogurt">
                                                     <i class="fas fa-blender"></i>
-                                                    Transform to Yogurt
                                                 </button>
                                             ` : ''}
-                                            <button class="btn ${daysLeft < 0 ? 'btn-error' : 'btn-outline btn-error'} btn-sm" onclick="openDisposeModal('${p.type || 'finished_goods'}', ${p.id})" title="Create disposal request (requires GM approval)">
+                                            <button class="btn ${daysLeft < 0 ? 'btn-error' : 'btn-outline btn-error'} btn-xs" onclick="openDisposeModal('${escapeHtml(p.type || 'finished_goods')}', ${p.id})" title="Create disposal request (requires GM approval)">
                                                 <i class="fas fa-trash"></i>
-                                                ${daysLeft < 0 ? 'Dispose' : ''}
                                             </button>
                                         </div>
-                                    </div>
-                                </div>
+                                    </td>
+                                </tr>
                             `;
                         }).join('');
                     } else {
-                        container.innerHTML = `
-                            <div class="col-span-2 text-center py-12">
-                                <i class="fas fa-check-circle text-success text-5xl mb-4"></i>
-                                <h4 class="font-semibold text-lg">All Clear!</h4>
-                                <p class="text-base-content/60">No products expiring in the next 7 days</p>
-                            </div>
+                        tbody.innerHTML = `
+                            <tr>
+                                <td colspan="7" class="text-center py-12">
+                                    <i class="fas fa-check-circle text-success text-5xl mb-4 block"></i>
+                                    <h4 class="font-semibold text-lg">All Clear!</h4>
+                                    <p class="text-base-content/60">No products expiring in the next 7 days</p>
+                                </td>
+                            </tr>
                         `;
                     }
                 }
             } catch (error) {
                 console.error('Failed to load expiring products:', error);
-                container.innerHTML = '<div class="col-span-2 text-center py-8 text-error">Failed to load expiring products</div>';
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-error">Failed to load expiring products</td></tr>';
             }
         }
 

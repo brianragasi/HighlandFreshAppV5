@@ -202,6 +202,36 @@ const WarehouseRawService = {
     },
 
     /**
+     * Record waste with an attached evidence photo (multipart upload).
+     * Use this when the rejection reason is damage/contamination/spoilage/handling loss.
+     * @param {Object} wasteData - Same payload as recordWaste()
+     * @param {File|null} evidenceFile - Optional photo (camera capture from <input type="file" capture="environment">)
+     */
+    async recordWasteWithEvidence(wasteData, evidenceFile) {
+        const formData = new FormData();
+        Object.entries(wasteData || {}).forEach(([key, value]) => {
+            if (value !== undefined && value !== null) {
+                formData.append(key, value);
+            }
+        });
+        if (evidenceFile) {
+            formData.append('evidence_photo', evidenceFile);
+        }
+        return await api.post(`${this.baseUrl}/waste.php`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+    },
+
+    /**
+     * Build the URL for the evidence photo of a waste record. The auth token
+     * is appended as ?token= so the URL works as <img src>.
+     */
+    getWasteEvidenceUrl(wasteId) {
+        const token = localStorage.getItem('highland_token') || '';
+        return `${API_BASE_URL}${this.baseUrl}/waste.php?action=evidence&id=${encodeURIComponent(wasteId)}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+    },
+
+    /**
      * Check stock availability for multiple ingredients
      * @param {Array} items - Array of {ingredient_id, quantity}
      */
@@ -457,6 +487,34 @@ const WarehouseRawService = {
             id: requisitionId,
             item_id: itemId,
             reason
+        });
+    },
+
+    // ========================================
+    // Reports
+    // ========================================
+
+    /**
+     * Get aggregated inventory report (ingredients + MRO items)
+     * @param {Object} params - { type, category_id, status, search }
+     *   type: 'all' | 'ingredient' | 'mro'
+     *   status: 'all' | 'out' | 'critical' | 'low' | 'ok'
+     */
+    async getInventoryReport(params = {}) {
+        return await api.get(`${this.baseUrl}/reports.php`, {
+            params: { action: 'inventory', ...params }
+        });
+    },
+
+    /**
+     * Get stock movements report (from inventory_transactions)
+     * @param {Object} params - { from, to, type, item_type, search }
+     *   type: 'all' | 'receive' | 'issue' | 'adjust' | 'waste' | 'transfer'
+     *   item_type: 'all' | 'ingredient' | 'mro' | 'raw_milk'
+     */
+    async getStockMovements(params = {}) {
+        return await api.get(`${this.baseUrl}/reports.php`, {
+            params: { action: 'movements', ...params }
         });
     }
 };
