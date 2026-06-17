@@ -1,0 +1,63 @@
+name: Deploy to InfinityFree
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # allow manual runs from the Actions tab
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: FTP deploy to InfinityFree /htdocs
+        uses: SamKirkland/ftp-deploy-action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./
+          server-dir: /htdocs/
+          # Do NOT delete server files that aren't in the repo (protects .env, etc.)
+          dangerous-clean-slate: false
+          # Same excludes we used for the deploy zip
+          exclude: |
+            .git/**
+            .github/**
+            tests/**
+            docs/**
+            cron/**
+            config/**
+            .playwright-mcp/**
+            system_context/**
+            **/node_modules/**
+            **/vendor/**
+            **/*.log
+            **/.DS_Store
+            **/Thumbs.db
+            setup.php
+            test_evidence.jpg
+            highland_fresh_azure.sql
+            package.json
+            package-lock.json
+            tailwind.config.js
+            tailwind.config.json
+            web.config
+            .gitignore
+            .env
+            .env.local
+            css/input.css
+            temp_schema.txt
+            api/config/DigiCertGlobalRootCA.crt.pem
+            html/production/_autologin.html
+            *.zip
+            *.tar.gz
+            server_dot_env.txt
+            highland_fresh_no_triggers.sql
+            HighlandFreshAppV4_deploy*
+            C:/Users/**
