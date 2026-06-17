@@ -12,7 +12,11 @@ RewriteRule ^ - [L]
 # Handle API requests - ensure .php extension works
 RewriteRule ^api/(.*)$ api/$1 [L]
 
-# Fallback to index.php for SPA-style routing
+# Fallback to index.php for SPA-style routing.
+# Skip asset paths (js/css/images/fonts) so missing asset files 404 cleanly
+# instead of being silently rewritten to index.php -> login.html (which the
+# browser then refuses to execute as JavaScript due to MIME type mismatch).
+RewriteCond %{REQUEST_URI} !\.(js|css|map|jpg|jpeg|png|gif|svg|ico|webp|woff|woff2|ttf|eot|otf|pdf|mp4|webm|ogg|wav|mp3)$
 RewriteRule ^ index.php [L]
 
 # Security headers
