@@ -456,15 +456,33 @@ class Auth {
             return false;
         }
 
+        // CRITICAL: MySQL stores NOW() in the SERVER's timezone (UTC on
+        // InfinityFree), but PHP's date_default_timezone_set() may be set to
+        // something else (e.g. Asia/Manila). strtotime() interprets the
+        // datetime string in PHP's timezone, which produces a Unix timestamp
+        // off by the timezone difference. That made a freshly-created
+        // session immediately look "idle" and get revoked.
+        //
+        // Fix: parse the MySQL datetime with an EXPLICIT UTC timezone, so
+        // the resulting Unix timestamp matches time() (which is always UTC).
+        $utc = new DateTimeZone('UTC');
+        try {
+            $expiresDt = new DateTime($session['expires_at'], $utc);
+            $lastActivityDt = new DateTime($session['last_activity'], $utc);
+        } catch (Exception $e) {
+            return false;
+        }
+
         $now = time();
-        $expiresAt = strtotime($session['expires_at']);
-        if ($expiresAt === false || $expiresAt <= $now) {
+        $expiresAt = $expiresDt->getTimestamp();
+        $lastActivity = $lastActivityDt->getTimestamp();
+
+        if ($expiresAt <= $now) {
             self::markSessionRevoked($db, $session['id'], 'absolute_timeout');
             return false;
         }
 
-        $lastActivity = strtotime($session['last_activity']);
-        if ($lastActivity === false || ($lastActivity + SESSION_IDLE_TIMEOUT) <= $now) {
+        if (($lastActivity + SESSION_IDLE_TIMEOUT) <= $now) {
             self::markSessionRevoked($db, $session['id'], 'idle_timeout');
             return false;
         }
