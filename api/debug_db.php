@@ -13,6 +13,13 @@ require_once __DIR__ . '/config/database.php';
 header('Content-Type: text/plain; charset=UTF-8');
 
 echo "=== DB config that PHP resolved ===\n";
+echo "putenv() enabled: " . (false === getenv('PATH') ? 'unknown (no PATH set)' : (ini_get('safe_mode') ? 'NO (safe_mode)' : 'yes')) . "\n";
+// Probe whether putenv actually works by setting a test value
+$probe = 'highland_test_' . random_int(1000, 9999);
+putenv("TEST_PROBE=$probe");
+$putenvWorks = (getenv('TEST_PROBE') === $probe);
+putenv('TEST_PROBE'); // unset
+echo "putenv() round-trip: " . ($putenvWorks ? 'WORKS' : 'BROKEN (host disables putenv)') . "\n";
 echo "DB_HOST     = " . DB_HOST . "\n";
 echo "DB_PORT     = " . DB_PORT . "\n";
 echo "DB_NAME     = " . DB_NAME . "\n";
