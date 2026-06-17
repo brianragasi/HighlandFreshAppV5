@@ -22,18 +22,25 @@ function loadLocalEnvFiles() {
     }
     $loaded = true;
 
+    // Search several candidate locations because some hosts (notably
+    // InfinityFree) map the document root in a way that makes
+    // dirname(__DIR__, 2) land one level above the actual project root.
     $projectRoot = dirname(__DIR__, 2);
-    $envFiles = [
+    $accountRoot = dirname($projectRoot);
+    $candidates = [
         $projectRoot . '/.env',
         $projectRoot . '/.env.local',
+        $accountRoot . '/.env',
+        $accountRoot . '/.env.local',
+        __DIR__ . '/../.env',
+        __DIR__ . '/../.env.local',
     ];
 
-    foreach ($envFiles as $envFile) {
+    foreach ($candidates as $envFile) {
         if (!is_readable($envFile)) {
             continue;
         }
-
-        $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        $lines = @file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
         if ($lines === false) {
             continue;
         }
@@ -64,7 +71,9 @@ function loadLocalEnvFiles() {
             $_ENV[$name] = $value;
             $_SERVER[$name] = $value;
         }
+        return; // first readable .env wins
     }
+}
 }
 
 loadLocalEnvFiles();
