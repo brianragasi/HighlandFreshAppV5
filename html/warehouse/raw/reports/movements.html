@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Movements - Warehouse Raw | Highland Fresh</title>
+
+    <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
+    <link rel="stylesheet" href="../../../../css/tailwind.css">
+
+    <!-- Fonts & Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .bento-card { @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .stat-value { font-variant-numeric: tabular-nums; }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <img src="../../../images/logo.jpg" alt="Highland Fresh Logo" class="w-10 h-10 rounded-xl object-cover">
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Warehouse Raw</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="../dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-th-large w-5 text-center text-base-content/60"></i><span>Dashboard</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="../milk_storage.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-tint w-5 text-center text-base-content/60"></i><span>Milk Storage</span></a></li>
+                    <li><a href="../ingredients.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-box-open w-5 text-center text-base-content/60"></i><span>Ingredients</span></a></li>
+                    <li><a href="../mro.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-tools w-5 text-center text-base-content/60"></i><span>MRO Supplies</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Operations</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="../requisitions.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-clipboard-check w-5 text-center text-base-content/60"></i><span>Requisitions</span></a></li>
+                    <li><a href="../purchase_requests.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-shopping-cart w-5 text-center text-base-content/60"></i><span>Purchase Requests</span></a></li>
+                    <li><a href="../receive_deliveries.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-truck-ramp-box w-5 text-center text-base-content/60"></i><span>Receive Deliveries</span></a></li>
+                    <li><a href="../waste.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-trash-alt w-5 text-center text-base-content/60"></i><span>Spoilage & Waste</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="../reorder_alerts.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-exclamation-triangle w-5 text-center text-warning"></i><span>Reorder Alerts</span></a></li>
+                    <li><a href="inventory.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-chart-bar w-5 text-center text-base-content/60"></i><span>Inventory Report</span></a></li>
+                    <li><a href="movements.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content"><i class="fas fa-exchange-alt w-5 text-center"></i><span>Stock Movements</span></a></li>
+                </ul>
+            </div>
+        </nav>
+
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder"><div class="w-10 rounded-xl bg-primary text-primary-content"><span class="text-sm font-semibold" id="userInitials">WR</span></div></div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Warehouse Staff</p>
+                    <p class="text-xs text-base-content/60">Warehouse Raw</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square" onclick="AuthService.logout()"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden"><button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button></div>
+            <div class="flex-1">
+                <div class="text-xs text-base-content/60">Warehouse Raw / Reports</div>
+                <h1 class="text-lg lg:text-xl font-bold">Stock Movements</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <button class="btn btn-ghost btn-sm" onclick="loadReport()"><i class="fas fa-sync-alt"></i></button>
+                <button class="btn btn-primary btn-sm gap-2" onclick="exportCSV()"><i class="fas fa-file-csv"></i><span class="hidden sm:inline">Export CSV</span></button>
+            </div>
+        </header>
+
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- Summary Stats -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center"><i class="fas fa-list text-primary"></i></div>
+                            <div>
+                                <p class="text-2xl font-bold stat-value" id="statTotal">0</p>
+                                <p class="text-xs text-base-content/60">Total Movements</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center"><i class="fas fa-arrow-down text-success"></i></div>
+                            <div>
+                                <p class="text-2xl font-bold stat-value" id="statIn">0</p>
+                                <p class="text-xs text-base-content/60">Stock In</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-error/10 flex items-center justify-center"><i class="fas fa-arrow-up text-error"></i></div>
+                            <div>
+                                <p class="text-2xl font-bold stat-value" id="statOut">0</p>
+                                <p class="text-xs text-base-content/60">Stock Out</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-info/10 flex items-center justify-center"><i class="fas fa-sliders text-info"></i></div>
+                            <div>
+                                <p class="text-2xl font-bold stat-value" id="statAdjust">0</p>
+                                <p class="text-xs text-base-content/60">Adjustments</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body p-4">
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+                        <div class="form-control">
+                            <label class="input input-bordered input-sm flex items-center gap-2">
+                                <i class="fas fa-search text-base-content/40"></i>
+                                <input type="text" id="searchInput" class="grow" placeholder="Search code, item, reason..." />
+                            </label>
+                        </div>
+                        <select class="select select-bordered select-sm" id="dateFilter">
+                            <option value="today">Today</option>
+                            <option value="7d" selected>Last 7 days</option>
+                            <option value="30d">Last 30 days</option>
+                            <option value="custom">Custom range</option>
+                        </select>
+                        <div id="customRange" class="contents hidden">
+                            <input type="date" id="fromDate" class="input input-bordered input-sm" />
+                            <input type="date" id="toDate" class="input input-bordered input-sm" />
+                        </div>
+                        <select class="select select-bordered select-sm" id="typeFilter">
+                            <option value="all">All Types</option>
+                            <option value="receive">Receive</option>
+                            <option value="issue">Issue</option>
+                            <option value="adjust">Adjust</option>
+                            <option value="waste">Waste</option>
+                            <option value="transfer">Transfer</option>
+                        </select>
+                        <select class="select select-bordered select-sm" id="itemTypeFilter">
+                            <option value="all">All Items</option>
+                            <option value="ingredient">Ingredients</option>
+                            <option value="mro">MRO</option>
+                            <option value="raw_milk">Raw Milk</option>
+                        </select>
+                    </div>
+                    <div class="flex justify-end mt-3">
+                        <button class="btn btn-ghost btn-sm" onclick="loadReport()">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Date range display -->
+            <div class="text-xs text-base-content/60 mb-2" id="dateRangeDisplay"></div>
+
+            <!-- Table -->
+            <div class="card bg-base-100 border border-base-300">
+                <div class="overflow-x-auto">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr class="bg-base-200/50 text-base-content/70">
+                                <th>Date / Time</th>
+                                <th>Tx Code</th>
+                                <th>Item</th>
+                                <th>Type</th>
+                                <th class="text-right">Quantity</th>
+                                <th>Performed By</th>
+                                <th>Reference</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reportTableBody">
+                            <tr>
+                                <td colspan="7" class="text-center py-12">
+                                    <span class="loading loading-spinner loading-md text-primary"></span>
+                                    <p class="text-base-content/60 mt-2 text-sm">Loading movements...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        function toggleSidebar() {
+            const s = document.getElementById('sidebar');
+            const b = document.getElementById('sidebarBackdrop');
+            s.classList.toggle('-translate-x-full');
+            b.classList.toggle('hidden');
+        }
+    </script>
+    <script src="../../../../js/vendor/axios.min.js"></script>
+    <script src="../../../../js/config/api.js"></script>
+    <script src="../../../../js/config/auth.js"></script>
+    <script src="../../../../js/warehouse/raw.service.js"></script>
+    <script>
+        const state = { movements: [], stats: null, filters: { from: '', to: '', type: 'all', item_type: 'all', search: '' } };
+
+        // Wire filter controls
+        document.getElementById('searchInput').addEventListener('input', debounce((e) => { state.filters.search = e.target.value; loadReport(); }, 300));
+        document.getElementById('typeFilter').addEventListener('change', (e) => { state.filters.type = e.target.value; loadReport(); });
+        document.getElementById('itemTypeFilter').addEventListener('change', (e) => { state.filters.item_type = e.target.value; loadReport(); });
+        document.getElementById('dateFilter').addEventListener('change', (e) => {
+            const preset = e.target.value;
+            const custom = document.getElementById('customRange');
+            if (preset === 'custom') {
+                custom.classList.remove('hidden');
+                // Don't auto-load; let the user pick dates
+            } else {
+                custom.classList.add('hidden');
+                applyDatePreset(preset);
+                loadReport();
+            }
+        });
+        document.getElementById('fromDate').addEventListener('change', (e) => { state.filters.from = e.target.value; if (document.getElementById('dateFilter').value === 'custom') loadReport(); });
+        document.getElementById('toDate').addEventListener('change', (e) => { state.filters.to = e.target.value; if (document.getElementById('dateFilter').value === 'custom') loadReport(); });
+
+        function debounce(fn, wait) { let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); }; }
+
+        function applyDatePreset(preset) {
+            const today = new Date();
+            const fmt = d => d.toISOString().slice(0, 10);
+            let from = new Date(today), to = new Date(today);
+            if (preset === 'today') {
+                // from = to = today
+            } else if (preset === '7d') {
+                from.setDate(today.getDate() - 7);
+            } else if (preset === '30d') {
+                from.setDate(today.getDate() - 30);
+            }
+            state.filters.from = fmt(from);
+            state.filters.to = fmt(to);
+            document.getElementById('fromDate').value = state.filters.from;
+            document.getElementById('toDate').value = state.filters.to;
+        }
+
+        async function loadReport() {
+            const tbody = document.getElementById('reportTableBody');
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center py-12"><span class="loading loading-spinner loading-md text-primary"></span><p class="text-base-content/60 mt-2 text-sm">Loading movements…</p></td></tr>`;
+            try {
+                const response = await WarehouseRawService.getStockMovements(state.filters);
+                if (response.success) {
+                    state.movements = response.data.movements;
+                    state.stats = response.data.stats;
+                    renderStats();
+                    renderTable();
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="7" class="text-center py-12 text-base-content/60">${escapeHtml(response.message || 'Failed to load report')}</td></tr>`;
+                }
+            } catch (err) {
+                console.error(err);
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-12 text-error">Failed to load report: ${escapeHtml(err.message || 'unknown error')}</td></tr>`;
+            }
+        }
+
+        function renderStats() {
+            const s = state.stats;
+            if (!s) return;
+            document.getElementById('statTotal').textContent  = (s.total_movements || 0).toLocaleString();
+            document.getElementById('statIn').textContent     = Number(s.stock_in_total || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+            document.getElementById('statOut').textContent    = Number(s.stock_out_total || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+            document.getElementById('statAdjust').textContent = (s.adjust_count || 0).toLocaleString();
+            const dr = document.getElementById('dateRangeDisplay');
+            dr.textContent = `Showing ${s.total_movements} movements from ${s.from} to ${s.to}`;
+        }
+
+        function typeBadge(t) {
+            const map = {
+                receive:  { cls: 'badge-success', icon: 'fa-arrow-down', text: 'Receive' },
+                issue:    { cls: 'badge-error',   icon: 'fa-arrow-up',   text: 'Issue' },
+                adjust:   { cls: 'badge-info',    icon: 'fa-sliders',    text: 'Adjust' },
+                waste:    { cls: 'badge-warning', icon: 'fa-trash',      text: 'Waste' },
+                transfer: { cls: 'badge-ghost',   icon: 'fa-exchange-alt', text: 'Transfer' },
+            };
+            const m = map[t] || { cls: 'badge-ghost', icon: 'fa-circle', text: t || 'Unknown' };
+            return `<span class="badge ${m.cls} badge-sm gap-1"><i class="fas ${m.icon} text-[10px]"></i>${m.text}</span>`;
+        }
+
+        function directionIcon(direction, qty) {
+            if (direction === 'in')  return `<span class="text-success font-semibold">+${qty.toLocaleString()}</span>`;
+            if (direction === 'out') return `<span class="text-error font-semibold">−${qty.toLocaleString()}</span>`;
+            return `<span class="text-base-content/70">${qty.toLocaleString()}</span>`;
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('reportTableBody');
+            if (!state.movements.length) {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-12 text-base-content/60"><i class="fas fa-inbox text-4xl text-base-content/20 mb-2"></i><h3 class="font-semibold mt-2">No movements in this range</h3><p class="text-sm">Try a wider date range or different filters</p></td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = state.movements.map(m => {
+                const dt = m.created_at ? new Date(m.created_at).toLocaleString() : '—';
+                const performer = [m.first_name, m.last_name].filter(Boolean).join(' ') || '—';
+                const ref = m.reference_type
+                    ? `${escapeHtml(m.reference_type)}${m.reference_id ? ' #' + m.reference_id : ''}`
+                    : '—';
+                const itemLabel = m.item_code
+                    ? `${escapeHtml(m.item_name || '')} <span class="text-base-content/50 font-mono text-xs">(${escapeHtml(m.item_code)})</span>`
+                    : escapeHtml(m.item_name || '—');
+                return `
+                    <tr class="hover:bg-base-200/50">
+                        <td class="text-sm text-base-content/70">${dt}</td>
+                        <td class="font-mono text-xs">${escapeHtml(m.transaction_code || '-')}</td>
+                        <td class="text-sm">${itemLabel}</td>
+                        <td>${typeBadge(m.transaction_type)}</td>
+                        <td class="text-right font-mono">${directionIcon(m.direction, m.quantity)} <span class="text-xs text-base-content/60">${escapeHtml(m.unit_of_measure || '')}</span></td>
+                        <td class="text-sm">${escapeHtml(performer)}</td>
+                        <td class="text-sm text-base-content/70">${ref}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function escapeHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function exportCSV() {
+            if (!state.movements.length) return;
+            const rows = [['Date/Time', 'Tx Code', 'Type', 'Item Type', 'Item Code', 'Item Name', 'Direction', 'Quantity', 'Unit', 'Performed By', 'Reference Type', 'Reference ID', 'Reason']];
+            state.movements.forEach(m => {
+                rows.push([
+                    m.created_at || '',
+                    m.transaction_code || '',
+                    m.transaction_type || '',
+                    m.item_type || '',
+                    m.item_code || '',
+                    m.item_name || '',
+                    m.direction || '',
+                    m.quantity,
+                    m.unit_of_measure || '',
+                    [m.first_name, m.last_name].filter(Boolean).join(' '),
+                    m.reference_type || '',
+                    m.reference_id || '',
+                    m.reason || ''
+                ]);
+            });
+            const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `stock_movements_${state.stats ? state.stats.from : ''}_to_${state.stats ? state.stats.to : ''}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // Initial load with default 7d preset
+        applyDatePreset('7d');
+        loadReport();
+    </script>
+</body>
+</html>

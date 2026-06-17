@@ -6,19 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Receive Deliveries - Warehouse Raw | Highland Fresh</title>
 
-    <!-- Tailwind CSS + DaisyUI CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
-
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] }
-                }
-            }
-        }
-    </script>
+    <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
+    <link rel="stylesheet" href="../../../css/tailwind.css">
 
     <!-- Fonts & Icons -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -29,6 +18,17 @@
     <style>
         body {
             font-family: 'Inter', sans-serif;
+        }
+
+        /* Subtle Highland Fresh grid backdrop on the main area only.
+           The sidebar sits on top with its own bg-base-100, so the pattern
+           only shows in the working canvas — ties the page back to the brand. */
+        .hf-shell {
+            background:
+                linear-gradient(90deg, rgba(31, 122, 77, 0.07) 0 1px, transparent 1px 100%),
+                linear-gradient(180deg, rgba(31, 122, 77, 0.06) 0 1px, transparent 1px 100%),
+                oklch(var(--b2));
+            background-size: 32px 32px;
         }
 
         .scrollbar-thin::-webkit-scrollbar {
@@ -48,6 +48,69 @@
 
         .sidebar-transition {
             transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Numeric stat values get tabular figures so digits don't dance on update. */
+        .stat-value {
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Subtle lift on the bento cards. Mirrors dashboard.html / mro.html. */
+        .bento-card {
+            transition: transform 0.25s ease, box-shadow 0.25s ease;
+        }
+        .bento-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px -10px rgba(22, 39, 30, 0.18);
+        }
+
+        /* Sticky table header with a soft bottom border that survives the page scroll. */
+        .po-table thead th {
+            position: sticky;
+            top: 0;
+            background: oklch(var(--b1));
+            z-index: 1;
+        }
+
+        /* Filter chip styling. Active state uses plain CSS so we don't depend on
+           @apply picking up DaisyUI's .btn (DaisyUI is loaded as a separate
+           stylesheet, not as a Tailwind plugin, so @apply doesn't see its
+           classes). The button itself gets the real DaisyUI .btn .btn-xs
+           classes directly in the JSX to keep base styling out of @apply. */
+        .filter-chip {
+            transition: background-color 0.15s ease, color 0.15s ease,
+                        border-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+        }
+        .filter-chip:hover {
+            background-color: oklch(var(--b2));
+        }
+        .filter-chip:active {
+            transform: scale(0.97);
+        }
+        .filter-chip.is-active {
+            background-color: oklch(var(--p));
+            color: oklch(var(--pc));
+            border-color: transparent;
+        }
+        .filter-chip.is-active:hover {
+            background-color: oklch(var(--p) / 0.9);
+        }
+        .filter-chip.is-active .chip-dot {
+            background-color: oklch(var(--pc)) !important;
+        }
+        .chip-dot {
+            display: inline-block;
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 9999px;
+        }
+
+        /* Make stat cards look like clickable filters but keep cursor correct. */
+        [data-stat-filter] {
+            cursor: pointer;
+        }
+        [data-stat-filter].is-active {
+            @apply border-primary ring-2 ring-primary/30;
         }
     </style>
 </head>
@@ -70,10 +133,29 @@
                 <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
                     <i class="fas fa-times"></i>
                 </button>
-            </div>
-        </div>
+                </div>
+                <!-- Sidebar stats widget (populated by js/warehouse/sidebar.stats.js) -->
+                <div class="grid grid-cols-4 gap-1 mt-3 pt-3 border-t border-base-200">
+                <a href="dashboard.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Raw Milk (L)">
+                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatMilk">0</span>
+                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Milk</span>
+                </a>
+                <a href="requisitions.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Pending Requisitions">
+                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatReq">0</span>
+                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Req</span>
+                </a>
+                <a href="reorder_alerts.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Low Stock Items">
+                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatLow">0</span>
+                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Low</span>
+                </a>
+                <a href="receive_deliveries.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Pending Deliveries">
+                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatDeliv">0</span>
+                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Deliv</span>
+                </a>
+                </div>
+                </div>
 
-        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+                <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
             <div>
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
                 <ul class="menu menu-sm p-0 gap-1">
@@ -156,7 +238,7 @@
     </aside>
 
     <!-- Main Content -->
-    <div class="lg:ml-72 min-h-screen flex flex-col">
+    <div class="lg:ml-72 min-h-screen flex flex-col hf-shell">
 
         <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
             <div class="flex-none lg:hidden">
@@ -171,20 +253,98 @@
             </div>
         </header>
 
-        <main class="flex-1 p-4 lg:p-6">
+        <main class="flex-1 p-4 lg:p-6 space-y-6">
 
             <!-- LIST VIEW -->
             <div id="listView">
-                <div class="card bg-base-100 border border-base-300 mb-6">
+
+                <!-- Hero banner -->
+                <div class="bg-gradient-to-r from-primary to-primary/80 rounded-2xl p-5 lg:p-6 text-primary-content shadow-sm relative overflow-hidden">
+                    <div class="absolute inset-y-0 right-0 w-1/2 opacity-10 pointer-events-none hidden lg:block">
+                        <i class="fas fa-truck-ramp-box text-[160px] absolute -right-4 -bottom-4"></i>
+                    </div>
+                    <div class="relative flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                        <div>
+                            <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary-content/80">Operations</p>
+                            <h2 class="text-2xl lg:text-3xl font-bold mt-1">Receive Deliveries</h2>
+                            <p class="text-sm text-primary-content/80 mt-1 max-w-xl">Inspect each delivery, accept good stock into inventory, and record any quality issues with photo evidence.</p>
+                        </div>
+                        <div class="flex gap-2 flex-wrap">
+                            <button type="button" id="heroRefreshBtn" class="btn btn-sm bg-white/15 border-white/25 text-white hover:bg-white/25 border-0" onclick="loadPurchaseOrders(); loadReceivingStats();">
+                                <i class="fas fa-rotate"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stat cards -->
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <button type="button" data-stat-filter="pending_delivery" onclick="applyStatFilter(this)" class="bento-card card bg-base-100 border border-base-300 text-left">
+                        <div class="card-body p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                                    <i class="fas fa-clock text-amber-500"></i>
+                                </div>
+                                <span class="badge badge-ghost badge-sm">Awaiting</span>
+                            </div>
+                            <p class="text-2xl lg:text-3xl font-bold stat-value" id="statPending">—</p>
+                            <p class="text-sm text-base-content/60">Pending Deliveries</p>
+                        </div>
+                    </button>
+
+                    <button type="button" data-stat-filter="ordered" onclick="applyStatFilter(this)" class="bento-card card bg-base-100 border border-base-300 text-left">
+                        <div class="card-body p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                                    <i class="fas fa-truck text-blue-500"></i>
+                                </div>
+                                <span class="badge badge-info badge-sm">In transit</span>
+                            </div>
+                            <p class="text-2xl lg:text-3xl font-bold stat-value" id="statOrdered">—</p>
+                            <p class="text-sm text-base-content/60">Ordered</p>
+                        </div>
+                    </button>
+
+                    <button type="button" data-stat-filter="partial_received" onclick="applyStatFilter(this)" class="bento-card card bg-base-100 border border-base-300 text-left">
+                        <div class="card-body p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center">
+                                    <i class="fas fa-truck-ramp-box text-orange-500"></i>
+                                </div>
+                                <span class="badge badge-warning badge-sm">Partial</span>
+                            </div>
+                            <p class="text-2xl lg:text-3xl font-bold stat-value" id="statPartial">—</p>
+                            <p class="text-sm text-base-content/60">Partially Received</p>
+                        </div>
+                    </button>
+
+                    <button type="button" data-stat-filter="received" onclick="applyStatFilter(this)" class="bento-card card bg-base-100 border border-base-300 text-left">
+                        <div class="card-body p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                                    <i class="fas fa-circle-check text-emerald-500"></i>
+                                </div>
+                                <span class="badge badge-success badge-sm">Done</span>
+                            </div>
+                            <p class="text-2xl lg:text-3xl font-bold stat-value" id="statReceived">—</p>
+                            <p class="text-sm text-base-content/60">Fully Received</p>
+                        </div>
+                    </button>
+                </div>
+
+                <!-- Search + filter chips card -->
+                <div class="card bg-base-100 border border-base-300">
                     <div class="card-body p-4">
-                        <div class="flex flex-col md:flex-row gap-3">
+                        <div class="flex flex-col lg:flex-row gap-3 lg:items-center">
                             <label class="input input-bordered input-sm flex items-center gap-2 flex-1">
                                 <i class="fas fa-search text-base-content/40"></i>
-                                <input type="text" id="searchInput" placeholder="Search PO# or supplier..." class="grow"
-                                    oninput="debounceSearch()">
+                                <input type="text" id="searchInput" placeholder="Search PO# or supplier..." class="grow" oninput="debounceSearch()">
+                                <kbd class="kbd kbd-xs hidden md:inline-flex">/</kbd>
                             </label>
-                            <select id="statusFilter" class="select select-bordered select-sm w-full md:w-44"
-                                onchange="loadPurchaseOrders()">
+                            <div class="flex items-center gap-2 flex-wrap" id="statusChips" role="tablist" aria-label="Filter by status">
+                                <button type="button" data-chip="" onclick="applyChipFilter(this)" class="filter-chip"></button>
+                            </div>
+                            <select id="statusFilter" class="hidden" onchange="syncChipsFromSelect(); loadPurchaseOrders();">
                                 <option value="pending_delivery" selected>Pending Deliveries</option>
                                 <option value="">All Status</option>
                                 <option value="approved">Approved</option>
@@ -197,27 +357,28 @@
                     </div>
                 </div>
 
+                <!-- PO table -->
                 <div class="card bg-base-100 border border-base-300">
                     <div class="card-body">
-                        <div class="overflow-x-auto">
-                            <table class="table">
+                        <div class="overflow-x-auto max-h-[60vh] scrollbar-thin">
+                            <table class="table table-zebra po-table">
                                 <thead>
-                                    <tr>
+                                    <tr class="text-xs uppercase tracking-wider text-base-content/60">
                                         <th>PO Number</th>
                                         <th>Supplier</th>
                                         <th>Order Date</th>
                                         <th>Expected Delivery</th>
-                                        <th>Items</th>
-                                        <th>Total Amount</th>
+                                        <th class="text-center">Items</th>
+                                        <th class="text-right">Total Amount</th>
                                         <th>Status</th>
-                                        <th></th>
+                                        <th class="text-right"></th>
                                     </tr>
                                 </thead>
                                 <tbody id="poTable">
                                     <tr>
-                                        <td colspan="8" class="text-center py-8"><span
-                                                class="loading loading-spinner loading-md"></span>
-                                            <p class="mt-2 text-base-content/60">Loading...</p>
+                                        <td colspan="8" class="text-center py-12">
+                                            <span class="loading loading-spinner loading-md text-primary"></span>
+                                            <p class="mt-3 text-sm text-base-content/60">Loading purchase orders…</p>
                                         </td>
                                     </tr>
                                 </tbody>
@@ -240,7 +401,7 @@
 
         <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
             <div>
-                <p class="text-sm text-base-content/60">Â© 2026 Highland Fresh Dairy. All rights reserved.</p>
+                <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
             </div>
         </footer>
     </div>
@@ -251,8 +412,8 @@
     <!-- Receive PO Modal -->
     <dialog id="receiveModal" class="modal">
         <div class="modal-box max-w-6xl max-h-[92vh]">
-            <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">âœ•</button></form>
-            <h3 class="font-bold text-lg mb-2"><i class="fas fa-box-open text-success mr-2"></i>Receive Delivery â€” <span id="receivePONumber">PO</span></h3>
+            <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button></form>
+            <h3 class="font-bold text-lg mb-2"><i class="fas fa-box-open text-success mr-2"></i>Receive Delivery — <span id="receivePONumber">PO</span></h3>
             <p class="text-sm text-base-content/70 mb-4">Inspect each item and enter how many were accepted and rejected. Only accepted items are added to inventory.</p>
 
             <div class="alert alert-info mb-4 py-2 text-sm">
@@ -319,10 +480,12 @@
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
 
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../../js/vendor/axios.min.js"></script>
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js"></script>
     <script src="../../../js/purchasing/purchasing.service.js"></script>
+    <script src="../../../js/warehouse/raw.service.js"></script>
+    <script src="../../../js/warehouse/sidebar.stats.js"></script>
 
     <script>
         let searchTimeout;
@@ -330,6 +493,7 @@
         let currentUserRole = '';
         let currentReceivePOId = null;
         let currentReceiveItems = [];
+        let recvPhotoFiles = {};
 
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -353,12 +517,129 @@
             const l = (user.last_name || '').charAt(0).toUpperCase();
             document.getElementById('userInitials').textContent = f + l || 'WR';
 
-            await loadPurchaseOrders();
+            renderStatusChips();
+            syncChipsFromSelect();
+            syncStatCardsFromSelect();
+            await Promise.all([loadPurchaseOrders(), loadReceivingStats()]);
         });
 
         function debounceSearch() {
             clearTimeout(searchTimeout);
             searchTimeout = setTimeout(() => { currentPage = 1; loadPurchaseOrders(); }, 300);
+        }
+
+        // ------------------------------------------------------------------
+        // Status filter chips. The hidden <select id="statusFilter"> is the
+        // single source of truth; chips render based on its value and the
+        // click handlers write back to it before triggering a refresh.
+        // ------------------------------------------------------------------
+        const STATUS_CHIP_DEFS = [
+            { value: '',                  label: 'All',          dot: 'bg-base-content/30' },
+            { value: 'pending_delivery',  label: 'Pending',      dot: 'bg-amber-500' },
+            { value: 'ordered',           label: 'Ordered',      dot: 'bg-blue-500' },
+            { value: 'partial_received',  label: 'Partial',      dot: 'bg-orange-500' },
+            { value: 'received',          label: 'Received',     dot: 'bg-emerald-500' },
+            { value: 'approved',          label: 'Approved',     dot: 'bg-cyan-500' },
+            { value: 'cancelled',         label: 'Cancelled',    dot: 'bg-red-500' }
+        ];
+
+        function renderStatusChips() {
+            const strip = document.getElementById('statusChips');
+            if (!strip) return;
+            strip.innerHTML = STATUS_CHIP_DEFS.map(def => `
+                <button type="button" data-chip="${def.value}" aria-pressed="false"
+                        class="filter-chip btn btn-xs rounded-full gap-1.5 border border-base-300 bg-base-100 text-base-content">
+                    <span class="chip-dot ${def.dot}"></span>${def.label}
+                </button>
+            `).join('');
+        }
+
+        function applyChipFilter(btn) {
+            const value = btn.getAttribute('data-chip') ?? '';
+            const select = document.getElementById('statusFilter');
+            if (!select) return;
+            select.value = value;
+            currentPage = 1;
+            syncChipsFromSelect();
+            syncStatCardsFromSelect();
+            loadPurchaseOrders();
+        }
+
+        function syncChipsFromSelect() {
+            const current = document.getElementById('statusFilter')?.value ?? '';
+            document.querySelectorAll('#statusChips [data-chip]').forEach(btn => {
+                const isActive = (btn.getAttribute('data-chip') ?? '') === current;
+                btn.classList.toggle('is-active', isActive);
+                btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+            });
+        }
+
+        function syncStatCardsFromSelect() {
+            const current = document.getElementById('statusFilter')?.value ?? '';
+            document.querySelectorAll('[data-stat-filter]').forEach(btn => {
+                btn.classList.toggle('is-active', btn.getAttribute('data-stat-filter') === current);
+            });
+        }
+
+        function applyStatFilter(btn) {
+            const value = btn.getAttribute('data-stat-filter') ?? '';
+            const select = document.getElementById('statusFilter');
+            if (!select) return;
+            // Toggle: clicking the already-active card clears the filter back to "All".
+            const next = (select.value === value && value !== '') ? '' : value;
+            select.value = next;
+            currentPage = 1;
+            syncChipsFromSelect();
+            syncStatCardsFromSelect();
+            loadPurchaseOrders();
+        }
+
+        // ------------------------------------------------------------------
+        // Stat cards: fetch the count per status in parallel. Each request
+        // asks for a single record (limit=1) and we just read pagination.total.
+        // When the backend exposes a real /stats endpoint we can collapse
+        // these into one call without changing the rendering code.
+        // ------------------------------------------------------------------
+        async function loadReceivingStats() {
+            const targets = [
+                { id: 'statPending', filter: { receiving_pending: 1 } },
+                { id: 'statOrdered', filter: { status: 'ordered' } },
+                { id: 'statPartial', filter: { status: 'partial_received' } },
+                { id: 'statReceived', filter: { status: 'received' } }
+            ];
+            const prev = { statPending: '—', statOrdered: '—', statPartial: '—', statReceived: '—' };
+            targets.forEach(t => {
+                const el = document.getElementById(t.id);
+                if (el) prev[t.id] = el.textContent;
+            });
+
+            const settled = await Promise.allSettled(
+                targets.map(t => PurchasingService.getPurchaseOrders({ page: 1, limit: 1, ...t.filter }))
+            );
+
+            settled.forEach((res, i) => {
+                const el = document.getElementById(targets[i].id);
+                if (!el) return;
+                if (res.status === 'fulfilled') {
+                    const total = res.value?.pagination?.total;
+                    el.textContent = (typeof total === 'number') ? total.toLocaleString() : '0';
+                } else {
+                    el.textContent = '—';
+                    console.warn(`Stats load failed for ${targets[i].id}`, res.reason);
+                }
+            });
+        }
+
+        // Map a PO status to a small FA icon for inline display inside badges.
+        function statusIconFor(status) {
+            switch (status) {
+                case 'ordered':          return 'fa-truck';
+                case 'partial_received': return 'fa-truck-ramp-box';
+                case 'received':         return 'fa-circle-check';
+                case 'cancelled':        return 'fa-circle-xmark';
+                case 'approved':         return 'fa-thumbs-up';
+                default:                 return 'fa-clock';
+            }
         }
 
         async function loadPurchaseOrders() {
@@ -378,11 +659,18 @@
                 const orders = response?.data || [];
                 const pagination = response?.pagination;
                 const tbody = document.getElementById('poTable');
+                const currentStatus = document.getElementById('statusFilter').value;
 
                 if (orders.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="8" class="text-center py-12 text-base-content/60">
-                        <i class="fas fa-inbox text-5xl mb-3"></i><p class="text-lg font-semibold">No purchase orders found</p>
-                        <p class="text-sm mt-1">Try adjusting your filters.</p></td></tr>`;
+                    const isFiltered = !!currentStatus || !!search;
+                    tbody.innerHTML = `<tr><td colspan="8" class="text-center py-16">
+                        <div class="inline-flex w-16 h-16 rounded-2xl bg-base-200 items-center justify-center mb-4">
+                            <i class="fas ${isFiltered ? 'fa-filter-circle-xmark' : 'fa-truck-ramp-box'} text-3xl text-base-content/40"></i>
+                        </div>
+                        <p class="text-lg font-semibold text-base-content">${isFiltered ? 'No matching purchase orders' : 'You\u2019re all caught up'}</p>
+                        <p class="text-sm text-base-content/60 mt-1">${isFiltered ? 'Try a different status or clear your search.' : 'No deliveries are waiting to be received right now.'}</p>
+                        ${isFiltered ? `<button class="btn btn-sm btn-primary mt-4" onclick="resetFilters()"><i class="fas fa-rotate-left"></i> Show all POs</button>` : ''}
+                    </td></tr>`;
                     document.getElementById('paginationInfo').textContent = 'No results';
                     document.getElementById('paginationControls').innerHTML = '';
                     return;
@@ -390,21 +678,21 @@
 
                 tbody.innerHTML = orders.map(po => {
                     const sBadge = PurchasingService.getStatusBadgeClass(po.status);
-
+                    const sIcon = statusIconFor(po.status);
                     return `
-                        <tr class="hover cursor-pointer" onclick="viewPODetail(${po.id})">
+                        <tr class="hover:bg-base-200/60 transition-colors cursor-pointer" onclick="viewPODetail(${po.id})">
                             <td><span class="font-mono font-semibold text-primary">${po.po_number}</span></td>
                             <td>
-                                <div class="font-medium">${po.supplier_name}</div>
-                                <div class="text-xs text-base-content/50">${po.supplier_code}</div>
+                                <div class="font-medium leading-tight">${po.supplier_name}</div>
+                                <div class="text-xs text-base-content/50 font-mono">${po.supplier_code}</div>
                             </td>
-                            <td class="text-sm">${formatDate(po.order_date)}</td>
-                            <td class="text-sm">${formatDate(po.expected_delivery)}</td>
-                            <td><span class="badge badge-ghost badge-sm">${po.item_count || 0}</span></td>
-                            <td class="font-semibold">${formatCurrency(po.total_amount)}</td>
-                            <td><span class="badge badge-sm ${sBadge}">${PurchasingService.formatStatus(po.status)}</span></td>
-                            <td>
-                                <div class="dropdown dropdown-end" onclick="event.stopPropagation()">
+                            <td class="text-sm whitespace-nowrap">${formatDate(po.order_date)}</td>
+                            <td class="text-sm whitespace-nowrap">${formatDate(po.expected_delivery)}</td>
+                            <td class="text-center"><span class="badge badge-ghost badge-sm font-mono">${po.item_count || 0}</span></td>
+                            <td class="text-right font-semibold stat-value whitespace-nowrap">${formatCurrency(po.total_amount)}</td>
+                            <td><span class="badge badge-sm ${sBadge} gap-1"><i class="fas ${sIcon} text-[10px]"></i>${PurchasingService.formatStatus(po.status)}</span></td>
+                            <td class="text-right" onclick="event.stopPropagation()">
+                                <div class="dropdown dropdown-end">
                                     <label tabindex="0" class="btn btn-ghost btn-xs btn-square"><i class="fas fa-ellipsis-v"></i></label>
                                     <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2 z-10">
                                         <li><a onclick="viewPODetail(${po.id})"><i class="fas fa-eye w-4"></i> View Details</a></li>
@@ -421,7 +709,7 @@
                     const start = (pagination.page - 1) * pagination.limit + 1;
                     const end = Math.min(pagination.page * pagination.limit, pagination.total);
                     document.getElementById('paginationInfo').textContent =
-                        `Showing ${start}-${end} of ${pagination.total} results`;
+                        `Showing ${start.toLocaleString()}\u2013${end.toLocaleString()} of ${pagination.total.toLocaleString()} results`;
 
                     let paginationHTML = '';
                     for (let i = 1; i <= pagination.total_pages; i++) {
@@ -434,8 +722,19 @@
             } catch (error) {
                 console.error('Error loading POs:', error);
                 document.getElementById('poTable').innerHTML = `
-                    <tr><td colspan="8" class="text-center py-8 text-error"><i class="fas fa-exclamation-circle mr-2"></i>Failed to load purchase orders</td></tr>`;
+                    <tr><td colspan="8" class="text-center py-12 text-error"><i class="fas fa-exclamation-circle mr-2"></i>Failed to load purchase orders</td></tr>`;
             }
+        }
+
+        function resetFilters() {
+            const select = document.getElementById('statusFilter');
+            const search = document.getElementById('searchInput');
+            if (select) select.value = '';
+            if (search) search.value = '';
+            currentPage = 1;
+            syncChipsFromSelect();
+            syncStatCardsFromSelect();
+            loadPurchaseOrders();
         }
 
         async function viewPODetail(id) {
@@ -640,7 +939,7 @@
                                             <p class="font-semibold">${item.item_description}</p>
                                             <p class="text-xs text-base-content/60">System lot: ${itemCode}-Lot-###${isPerishable ? ' - Expiry required' : ' - Non-perishable'}</p>
                                             <p class="text-sm text-base-content/60">${ordered.toFixed(2)} ${item.unit} ordered @ ${formatCurrency(item.unit_price)}</p>
-                                            ${prevAccepted > 0 || prevRejected > 0 ? `<p class="text-xs mt-1"><span class="text-success">Previously accepted: ${prevAccepted.toFixed(2)}</span>${prevRejected > 0 ? ` Â· <span class="text-error">Previously rejected: ${prevRejected.toFixed(2)}</span>` : ''}</p>` : ''}
+                                            ${prevAccepted > 0 || prevRejected > 0 ? `<p class="text-xs mt-1"><span class="text-success">Previously accepted: ${prevAccepted.toFixed(2)}</span>${prevRejected > 0 ? ` · <span class="text-error">Previously rejected: ${prevRejected.toFixed(2)}</span>` : ''}</p>` : ''}
                                         </div>
                                         ${alreadyDone ? '<span class="badge badge-success badge-sm">Fully Received</span>' : `<span class="badge badge-warning badge-sm">Accepted Needed: ${remaining.toFixed(2)}</span>`}
                                     </div>
@@ -702,7 +1001,8 @@
                                                 </div>
                                                 <div class="form-control md:col-span-2">
                                                     <label class="label py-0"><span class="label-text-alt">Rejection Category</span></label>
-                                                    <select class="select select-bordered select-sm w-full" id="recvCategory-${idx}">
+                                                    <select class="select select-bordered select-sm w-full" id="recvCategory-${idx}"
+                                                            onchange="updateRecvEvidenceRequiredState(${idx})">
                                                         <option value="spoiled">Spoiled</option>
                                                         <option value="defective">Defective</option>
                                                         <option value="wrong_item">Wrong Item</option>
@@ -715,6 +1015,32 @@
                                                     <label class="label py-0"><span class="label-text-alt">Rejection Reason *</span></label>
                                                     <input type="text" class="input input-bordered input-sm w-full"
                                                            id="recvReason-${idx}" placeholder="e.g. Damaged packaging">
+                                                </div>
+                                                <div class="form-control md:col-span-2">
+                                                    <label class="label py-0">
+                                                        <span class="label-text-alt font-semibold flex items-center gap-2">
+                                                            <span>Photo Evidence</span>
+                                                            <span id="recvEvidenceMark-${idx}" class="text-error hidden">*</span>
+                                                        </span>
+                                                        <span id="recvEvidenceHint-${idx}" class="label-text-alt text-[10px] text-error hidden">Required for damaged / defective / spoiled</span>
+                                                    </label>
+                                                    <div class="flex items-center gap-2">
+                                                        <button type="button" class="btn btn-outline btn-sm gap-2"
+                                                                onclick="document.getElementById('recvPhoto-${idx}').click()">
+                                                            <i class="fas fa-camera"></i> <span id="recvPhotoLabel-${idx}">Add photo</span>
+                                                        </button>
+                                                        <input type="file" id="recvPhoto-${idx}" accept="image/*" capture="environment"
+                                                               class="hidden" onchange="handleRecvPhotoSelected(${idx}, event)">
+                                                        <button type="button" id="recvPhotoClear-${idx}"
+                                                                class="btn btn-ghost btn-sm hidden"
+                                                                onclick="clearRecvPhoto(${idx})">
+                                                            <i class="fas fa-rotate-left"></i> Retake
+                                                        </button>
+                                                    </div>
+                                                    <div id="recvPhotoPreviewWrap-${idx}" class="hidden mt-2 flex items-center gap-2">
+                                                        <img id="recvPhotoPreview-${idx}" class="w-12 h-12 rounded-md object-cover border border-base-300" alt="Evidence preview">
+                                                        <span id="recvPhotoMeta-${idx}" class="text-xs text-base-content/60">—</span>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -835,6 +1161,10 @@
                     netEl.classList.add('text-success');
                 }
             }
+
+            // Re-evaluate the photo-evidence * mark so it appears only when there is an
+            // actual rejection AND the category is one that requires photo evidence.
+            updateRecvEvidenceRequiredState(idx);
         }
 
         function updateRecvTotals() {
@@ -916,6 +1246,17 @@
                     return;
                 }
 
+                // Validate: damaged / defective / spoiled / damaged_packaging categories require a photo.
+                // Only relevant when there is an actual rejection (damaged + wrong > 0). A short
+                // delivery with no quality issues must not be blocked by the default "spoiled" category.
+                const category = document.getElementById(`recvCategory-${idx}`)?.value;
+                const requiresPhoto = ['spoiled', 'defective', 'damaged_packaging'].includes(category);
+                if ((damaged + wrong) > 0 && requiresPhoto && !recvPhotoFiles[idx]) {
+                    showToast(`${item.item_description}: Photo evidence is required for ${category} rejections`, 'error');
+                    hasError = true;
+                    return;
+                }
+
                 // Derive the legacy accepted/rejected values for the server.
                 // Server semantics: "accepted" = good stock, "rejected" = bad stock (quality issue).
                 const accepted = Math.max(0, received - damaged - wrong);
@@ -935,6 +1276,7 @@
                 }
 
                 const entry = {
+                    _idx: idx,
                     item_id: item.id,
                     accepted: accepted,
                     rejected: rejected,
@@ -968,13 +1310,30 @@
                     invoice_number: document.getElementById('invoiceNumber')?.value?.trim() || null,
                     driver_name: document.getElementById('driverName')?.value?.trim() || null,
                     vehicle_plate: document.getElementById('vehiclePlate')?.value?.trim() || null,
-                    received_condition: document.getElementById('receivedCondition')?.value || 'acceptable',
-                    driver_notes: document.getElementById('deliveryNotes')?.value?.trim() || null,
-                    notes: document.getElementById('deliveryNotes')?.value?.trim() || null
+                    notes: document.getElementById('receivingNotes')?.value?.trim() || null
                 };
 
-                const result = await PurchasingService.receivePOWithPrices(currentReceivePOId, [], receivingItems, receivingMeta);
+                // Build the per-line evidence file array, in the same order as receivingItems.
+                // Items with rejected==0 contribute null (server will ignore those slots).
+                const evidenceFiles = receivingItems.map(entry => {
+                    const idx = entry._idx;
+                    return recvPhotoFiles[idx] || null;
+                });
+                const cleanedReceivingItems = receivingItems.map(({ _idx, ...rest }) => rest);
+
+                const hasAnyPhoto = evidenceFiles.some(Boolean);
+                let result;
+                if (hasAnyPhoto) {
+                    result = await PurchasingService.receivePOWithPricesAndEvidence(
+                        currentReceivePOId, [], cleanedReceivingItems, receivingMeta, evidenceFiles
+                    );
+                } else {
+                    result = await PurchasingService.receivePOWithPrices(
+                        currentReceivePOId, [], cleanedReceivingItems, receivingMeta
+                    );
+                }
                 document.getElementById('receiveModal').close();
+                recvPhotoFiles = {};
 
                 const data = result?.data || {};
                 let msg = `Delivery recorded: ${data.total_accepted || 0} accepted`;
@@ -984,6 +1343,8 @@
 
                 showToast(msg, 'success');
                 viewPODetail(currentReceivePOId);
+                // Refresh the list-view counts so the stat cards reflect the new state.
+                loadReceivingStats();
                 currentReceivePOId = null;
                 currentReceiveItems = [];
             } catch (e) {
@@ -992,6 +1353,56 @@
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-check"></i> Confirm Receiving';
             }
+        }
+
+        function updateRecvEvidenceRequiredState(idx) {
+            const category = document.getElementById(`recvCategory-${idx}`)?.value;
+            const damaged = parseFloat(document.getElementById(`recvDamaged-${idx}`)?.value) || 0;
+            const wrong = parseFloat(document.getElementById(`recvWrong-${idx}`)?.value) || 0;
+            const hasRejection = (damaged + wrong) > 0;
+            // The "spoiled / defective / damaged_packaging" badge only appears when the user
+            // is actually reporting rejected units. With no rejection, hide the * mark and hint
+            // so the form doesn't look like it requires a photo for a non-event.
+            const requiresPhoto = hasRejection && ['spoiled', 'defective', 'damaged_packaging'].includes(category);
+            const mark = document.getElementById(`recvEvidenceMark-${idx}`);
+            const hint = document.getElementById(`recvEvidenceHint-${idx}`);
+            if (mark) mark.classList.toggle('hidden', !requiresPhoto);
+            if (hint) hint.classList.toggle('hidden', !requiresPhoto);
+        }
+
+        function handleRecvPhotoSelected(idx, event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            if (file.size > 5 * 1024 * 1024) {
+                showToast('Photo must be 5 MB or smaller', 'error');
+                event.target.value = '';
+                return;
+            }
+            recvPhotoFiles[idx] = file;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const preview = document.getElementById(`recvPhotoPreview-${idx}`);
+                const wrap = document.getElementById(`recvPhotoPreviewWrap-${idx}`);
+                const meta = document.getElementById(`recvPhotoMeta-${idx}`);
+                const clear = document.getElementById(`recvPhotoClear-${idx}`);
+                const label = document.getElementById(`recvPhotoLabel-${idx}`);
+                if (preview) preview.src = e.target.result;
+                if (wrap) wrap.classList.remove('hidden');
+                if (meta) meta.textContent = `${file.name} · ${(file.size / 1024).toFixed(0)} KB`;
+                if (clear) clear.classList.remove('hidden');
+                if (label) label.textContent = 'Replace photo';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function clearRecvPhoto(idx) {
+            delete recvPhotoFiles[idx];
+            const input = document.getElementById(`recvPhoto-${idx}`);
+            if (input) input.value = '';
+            document.getElementById(`recvPhotoPreview-${idx}`).src = '';
+            document.getElementById(`recvPhotoPreviewWrap-${idx}`).classList.add('hidden');
+            document.getElementById(`recvPhotoClear-${idx}`).classList.add('hidden');
+            document.getElementById(`recvPhotoLabel-${idx}`).textContent = 'Add photo';
         }
 
         function formatCurrency(amount) {

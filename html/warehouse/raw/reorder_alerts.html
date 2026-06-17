@@ -5,8 +5,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reorder Alerts | Highland Fresh</title>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.4.19/dist/full.min.css" rel="stylesheet" type="text/css" />
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
+    <link rel="stylesheet" href="../../../css/tailwind.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
     <style>
         .bento-card {
@@ -19,18 +22,18 @@
         }
 
         .status-critical {
-            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
-            border-left: 4px solid #ef4444;
+            background-color: oklch(var(--er) / 0.1);
+            border-left: 4px solid oklch(var(--er));
         }
 
         .status-low {
-            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-            border-left: 4px solid #f59e0b;
+            background-color: oklch(var(--wa) / 0.1);
+            border-left: 4px solid oklch(var(--wa));
         }
 
         .status-out {
-            background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
-            border-left: 4px solid #6b7280;
+            background-color: oklch(var(--b3));
+            border-left: 4px solid oklch(var(--bc) / 0.4);
         }
 
         .pulse-alert {
@@ -69,10 +72,29 @@
                 <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
                     <i class="fas fa-times"></i>
                 </button>
-            </div>
-        </div>
+                </div>
+                <!-- Sidebar stats widget (populated by js/warehouse/sidebar.stats.js) -->
+                <div class="grid grid-cols-4 gap-1 mt-3 pt-3 border-t border-base-200">
+                <a href="dashboard.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Raw Milk (L)">
+                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatMilk">0</span>
+                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Milk</span>
+                </a>
+                <a href="requisitions.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Pending Requisitions">
+                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatReq">0</span>
+                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Req</span>
+                </a>
+                <a href="reorder_alerts.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Low Stock Items">
+                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatLow">0</span>
+                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Low</span>
+                </a>
+                <a href="receive_deliveries.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Pending Deliveries">
+                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatDeliv">0</span>
+                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Deliv</span>
+                </a>
+                </div>
+                </div>
 
-        <nav class="flex-1 overflow-y-auto p-4 space-y-6">
+                <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
             <div>
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
                 <ul class="menu menu-sm p-0 gap-1">
@@ -101,16 +123,23 @@
                 </ul>
             </div>
             <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Operations</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="requisitions.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-clipboard-check w-5 text-center text-base-content/60"></i><span>Requisitions</span></a></li>
+                    <li><a href="purchase_requests.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-shopping-cart w-5 text-center text-base-content/60"></i><span>Purchase Requests</span></a></li>
+                    <li><a href="receive_deliveries.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-truck-ramp-box w-5 text-center text-base-content/60"></i><span>Receive Deliveries</span></a></li>
+                    <li><a href="waste.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-trash-alt w-5 text-center text-base-content/60"></i><span>Spoilage & Waste</span></a></li>
+                </ul>
+            </div>
+            <div>
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
                 <ul class="menu menu-sm p-0 gap-1">
                     <li><a href="reorder_alerts.html"
                             class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
-                            <i class="fas fa-exclamation-triangle w-5 text-center"></i><span>Reorder Alerts</span></a>
+                            <i class="fas fa-exclamation-triangle w-5 text-center"></i><span>Reorder Alerts</span><span class="badge badge-sm badge-primary-content" id="reorderAlertsBadge">0</span></a>
                     </li>
-                    <li><a href="receive_deliveries.html"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i
-                                class="fas fa-truck-ramp-box w-5 text-center text-base-content/60"></i><span>Receive Deliveries</span></a>
-                    </li>
+                    <li><a href="reports/inventory.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-chart-bar w-5 text-center text-base-content/60"></i><span>Inventory Report</span></a></li>
+                    <li><a href="reports/movements.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-exchange-alt w-5 text-center text-base-content/60"></i><span>Stock Movements</span></a></li>
                 </ul>
             </div>
         </nav>
@@ -157,7 +186,33 @@
         <!-- Page Content -->
         <main class="flex-1 p-4 lg:p-6">
 
-            <!-- Alert Banner -->
+            <!-- Hero banner: gradient with urgent count, breakdown, and a
+                 bulk-action primary CTA. Visible only when there's at least
+                 one alert to act on; otherwise the page shows an empty state. -->
+            <div id="reorderHero" class="hidden mb-6 rounded-2xl p-6 bg-gradient-to-r from-error to-warning text-error-content shadow-lg">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div>
+                        <div class="flex items-center gap-2 mb-1">
+                            <i class="fas fa-exclamation-triangle text-2xl"></i>
+                            <div class="text-xs font-semibold uppercase tracking-wider opacity-80">Reorder Alerts</div>
+                        </div>
+                        <div class="text-2xl lg:text-3xl font-bold">
+                            <span id="reorderHeroTotal">0</span> ingredients need attention
+                        </div>
+                        <div class="text-sm opacity-90 mt-1" id="reorderHeroBreakdown">
+                            Review the list below and start purchase requests for items below their reorder point.
+                        </div>
+                    </div>
+                    <div class="flex gap-2 flex-shrink-0">
+                        <button class="btn btn-neutral" id="reorderHeroCta" onclick="bulkCreatePRs()">
+                            <i class="fas fa-file-signature"></i>
+                            <span id="reorderHeroCtaLabel">Create all 0 Purchase Requisitions</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Alert Banner (legacy, kept for compatibility but hidden by default — the hero replaces it) -->
             <div id="alertBanner" class="hidden mb-6">
                 <div class="alert alert-warning shadow-lg">
                     <i class="fas fa-exclamation-circle text-2xl pulse-alert"></i>
@@ -173,54 +228,93 @@
 
             <!-- Summary Cards -->
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <div class="bento-card card bg-base-100 border border-base-300">
+                <div class="bento-card card bg-error/10 border border-error/40">
                     <div class="card-body p-4">
                         <div class="flex items-center gap-3">
-                            <div class="w-12 h-12 rounded-xl bg-error/10 flex items-center justify-center">
-                                <i class="fas fa-times-circle text-error text-xl"></i>
+                            <div class="w-12 h-12 rounded-xl bg-error flex items-center justify-center relative">
+                                <i class="fas fa-times-circle text-error-content text-xl"></i>
+                                <span class="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-error-content border-2 border-error animate-pulse"></span>
                             </div>
                             <div>
                                 <p class="text-3xl font-bold text-error" id="outOfStockCount">0</p>
-                                <p class="text-xs text-base-content/60">Out of Stock</p>
+                                <p class="text-xs text-error/80 font-semibold uppercase tracking-wider">Out of Stock</p>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="bento-card card bg-base-100 border border-base-300">
+                <div class="bento-card card bg-base-100 border border-error/30">
                     <div class="card-body p-4">
                         <div class="flex items-center gap-3">
-                            <div class="w-12 h-12 rounded-xl bg-error/10 flex items-center justify-center">
-                                <i class="fas fa-exclamation-triangle text-error text-xl"></i>
+                            <div class="w-12 h-12 rounded-xl border-2 border-error bg-base-100 flex items-center justify-center">
+                                <i class="fas fa-exclamation-circle text-error text-xl"></i>
                             </div>
                             <div>
                                 <p class="text-3xl font-bold text-error" id="criticalCount">0</p>
-                                <p class="text-xs text-base-content/60">Critical</p>
+                                <p class="text-xs text-error/80 font-semibold uppercase tracking-wider">Critical</p>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="bento-card card bg-base-100 border border-base-300">
+                <div class="bento-card card bg-warning/10 border border-warning/30">
                     <div class="card-body p-4">
                         <div class="flex items-center gap-3">
-                            <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center">
-                                <i class="fas fa-exclamation-circle text-warning text-xl"></i>
+                            <div class="w-12 h-12 rounded-xl bg-warning flex items-center justify-center">
+                                <i class="fas fa-exclamation-triangle text-warning-content text-xl"></i>
                             </div>
                             <div>
                                 <p class="text-3xl font-bold text-warning" id="lowCount">0</p>
-                                <p class="text-xs text-base-content/60">Low Stock</p>
+                                <p class="text-xs text-warning/80 font-semibold uppercase tracking-wider">Low Stock</p>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="bento-card card bg-base-100 border border-base-300">
+                <div class="bento-card card bg-success/10 border border-success/30">
                     <div class="card-body p-4">
                         <div class="flex items-center gap-3">
-                            <div class="w-12 h-12 rounded-xl bg-success/10 flex items-center justify-center">
-                                <i class="fas fa-check-circle text-success text-xl"></i>
+                            <div class="w-12 h-12 rounded-xl bg-success flex items-center justify-center">
+                                <i class="fas fa-check-circle text-success-content text-xl"></i>
                             </div>
                             <div>
                                 <p class="text-3xl font-bold text-success" id="okCount">0</p>
-                                <p class="text-xs text-base-content/60">OK</p>
+                                <p class="text-xs text-success/80 font-semibold uppercase tracking-wider">OK</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- How this works (collapsible). The legend used to live at the
+                 bottom where most users never saw it. Now it's a collapsed
+                 section right above the table so first-time users can pop
+                 it open to understand the statuses, and power users never
+                 see it again. -->
+            <div class="collapse collapse-arrow bg-base-100 border border-base-300 mb-4">
+                <input type="checkbox" aria-label="Toggle how this works" />
+                <div class="collapse-title text-sm font-semibold flex items-center gap-2">
+                    <i class="fas fa-circle-info text-info"></i>
+                    How reorder alerts work
+                </div>
+                <div class="collapse-content">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                        <div class="flex items-start gap-3">
+                            <span class="badge badge-ghost badge-sm flex-shrink-0">OUT</span>
+                            <div>
+                                <p class="font-medium">Out of Stock</p>
+                                <p class="text-base-content/60 text-xs">Zero inventory. Production may be impacted.</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="badge badge-error badge-sm flex-shrink-0">CRITICAL</span>
+                            <div>
+                                <p class="font-medium">Critical Level</p>
+                                <p class="text-base-content/60 text-xs">At or below minimum stock. Order immediately.</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="badge badge-warning badge-sm flex-shrink-0">LOW</span>
+                            <div>
+                                <p class="font-medium">Low Stock</p>
+                                <p class="text-base-content/60 text-xs">Below reorder point. Order soon considering lead time.</p>
                             </div>
                         </div>
                     </div>
@@ -228,7 +322,7 @@
             </div>
 
             <!-- Filters -->
-            <div class="card bg-base-100 border border-base-300 mb-6">
+            <div class="card bg-base-100 border border-base-300 mb-4">
                 <div class="card-body p-4">
                     <div class="flex flex-wrap items-center gap-3">
                         <label class="input input-bordered input-sm flex items-center gap-2 flex-1 min-w-48">
@@ -252,66 +346,59 @@
                 </div>
             </div>
 
-            <!-- Alerts Table -->
-            <div class="card bg-base-100 border border-base-300" id="alertsSection">
-                <div class="card-body p-0">
-                    <div class="overflow-x-auto">
-                        <table class="table table-zebra">
-                            <thead>
-                                <tr class="bg-base-200">
-                                    <th>Status</th>
-                                    <th>Item Code</th>
-                                    <th>Item Name</th>
-                                    <th>Category</th>
-                                    <th class="text-right">Current Stock</th>
-                                    <th class="text-right">Reorder Point</th>
-                                    <th class="text-right">Qty to Order</th>
-                                    <th class="text-center">Lead Time</th>
-                                    <th>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="alertsTable">
-                                <tr>
-                                    <td colspan="9" class="text-center py-12">
-                                        <span class="loading loading-spinner loading-lg text-primary"></span>
-                                        <p class="text-base-content/60 mt-2">Loading reorder alerts...</p>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
+            <!-- Bulk action bar. Shown only when ≥1 row is selected. The primary
+                 CTA mirrors the hero's "Create all N PRs" so the user can act
+                 from either spot. -->
+            <div id="bulkActionBar" class="hidden mb-3 rounded-xl bg-primary/10 border border-primary/30 px-4 py-2.5 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-check-square text-primary"></i>
+                    <span class="text-sm"><span id="bulkSelectedCount" class="font-bold">0</span> selected</span>
+                    <button class="btn btn-ghost btn-xs ml-2" onclick="clearSelection()">Clear</button>
                 </div>
+                <button class="btn btn-primary btn-sm" id="bulkCreateBtn" onclick="bulkCreatePRs()" disabled>
+                    <i class="fas fa-file-signature"></i>
+                    <span id="bulkCreateBtnLabel">Create 0 PRs</span>
+                </button>
             </div>
 
-            <!-- Lead Time Legend -->
-            <div class="card bg-base-100 border border-base-300 mt-6">
-                <div class="card-body p-4">
-                    <h3 class="font-semibold text-sm mb-3"><i
-                            class="fas fa-info-circle text-info mr-2"></i>Understanding Reorder Alerts</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                        <div class="flex items-start gap-3">
-                            <span class="badge badge-ghost">OUT</span>
-                            <div>
-                                <p class="font-medium">Out of Stock</p>
-                                <p class="text-base-content/60">Zero inventory. Production may be impacted.</p>
-                            </div>
-                        </div>
-                        <div class="flex items-start gap-3">
-                            <span class="badge badge-error">CRITICAL</span>
-                            <div>
-                                <p class="font-medium">Critical Level</p>
-                                <p class="text-base-content/60">At or below minimum stock. Order immediately.</p>
-                            </div>
-                        </div>
-                        <div class="flex items-start gap-3">
-                            <span class="badge badge-warning">LOW</span>
-                            <div>
-                                <p class="font-medium">Low Stock</p>
-                                <p class="text-base-content/60">Below reorder point. Order soon considering lead time.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
+            <!-- Alerts Table (dense, sortable, with row checkboxes for bulk action) -->
+            <div class="card bg-base-100 border border-base-300" id="alertsSection">
+                <div class="overflow-x-auto">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr class="bg-base-200/50 text-base-content/70">
+                                <th class="w-10">
+                                    <input type="checkbox" id="selectAllCheckbox" class="checkbox checkbox-xs" onchange="toggleSelectAll(this.checked)" aria-label="Select all rows" />
+                                </th>
+                                <th class="w-10"></th>
+                                <th class="cursor-pointer hover:bg-base-300/50 select-none" onclick="setSort('name')">
+                                    Item <span class="sort-indicator" data-col="name"></span>
+                                </th>
+                                <th class="cursor-pointer hover:bg-base-300/50 select-none" onclick="setSort('urgency')">
+                                    Status <span class="sort-indicator" data-col="urgency"></span>
+                                </th>
+                                <th class="cursor-pointer hover:bg-base-300/50 select-none text-right" onclick="setSort('stock')">
+                                    Current Stock <span class="sort-indicator" data-col="stock"></span>
+                                </th>
+                                <th class="text-right">Reorder Point</th>
+                                <th class="cursor-pointer hover:bg-base-300/50 select-none text-right" onclick="setSort('qty')">
+                                    Qty to Order <span class="sort-indicator" data-col="qty"></span>
+                                </th>
+                                <th class="cursor-pointer hover:bg-base-300/50 select-none text-center" onclick="setSort('lead')">
+                                    Lead Time <span class="sort-indicator" data-col="lead"></span>
+                                </th>
+                                <th class="w-36 text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="alertsTable">
+                            <tr>
+                                <td colspan="9" class="text-center py-12">
+                                    <span class="loading loading-spinner loading-md text-primary"></span>
+                                    <p class="text-base-content/60 mt-2 text-sm">Loading reorder alerts…</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
@@ -322,9 +409,12 @@
     <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../../js/vendor/axios.min.js"></script>
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/purchasing/purchasing.service.js"></script>
+    <script src="../../../js/warehouse/raw.service.js"></script>
+    <script src="../../../js/warehouse/sidebar.stats.js"></script>
 
     <script>
         let allAlerts = [];
@@ -378,6 +468,11 @@
 
                     // Show alert banner if needed
                     const totalAlerts = (summary.out_of_stock || 0) + (summary.critical || 0) + (summary.low || 0);
+
+                    // Drive the gradient hero ("X ingredients need attention").
+                    // Same numbers as the stat cards but presented as a
+                    // primary call-to-action with a bulk PR button.
+                    updateReorderHero();
                     const banner = document.getElementById('alertBanner');
                     if (totalAlerts > 0) {
                         banner.classList.remove('hidden');
@@ -433,59 +528,477 @@
             renderAlerts();
         }
 
+        // Small HTML escaper used by the table row renderer to prevent
+        // ingredient names / unit text from breaking the markup.
+        function escapeHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        // Sort state for click-to-sort column headers. Default is "urgency
+        // desc" so the most urgent (Out) shows first on page load.
+        // `column` is one of 'name' | 'urgency' | 'stock' | 'qty' | 'lead'.
+        let currentSort = { column: 'urgency', direction: 'desc' };
+
+        // Set of selected item IDs (as strings, since the values come from the
+        // API as integers or strings depending on the endpoint). Used to
+        // drive the bulk action bar and the "select all" checkbox.
+        let selectedItemIds = new Set();
+
+        // Click-to-sort handler. Toggles direction when re-clicking the same
+        // column; switches column otherwise.
+        function setSort(column) {
+            if (currentSort.column === column) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.column = column;
+                currentSort.direction = 'asc';
+            }
+            renderAlerts();
+        }
+
+        // Updates the small arrow next to each column header to show the
+        // current sort state. Called from renderAlerts after every sort change.
+        function updateSortIndicators() {
+            document.querySelectorAll('.sort-indicator').forEach(el => {
+                const col = el.dataset.col;
+                if (col === currentSort.column) {
+                    el.textContent = currentSort.direction === 'asc' ? ' ↑' : ' ↓';
+                    el.classList.add('text-primary', 'font-bold');
+                } else {
+                    el.textContent = '';
+                    el.classList.remove('text-primary', 'font-bold');
+                }
+            });
+        }
+
+        // Bulk selection handlers
+        function toggleItemSelection(id, checked) {
+            const key = String(id);
+            if (checked) selectedItemIds.add(key);
+            else selectedItemIds.delete(key);
+            updateBulkActionBar();
+            syncSelectAllCheckbox();
+        }
+
+        function toggleSelectAll(checked) {
+            selectedItemIds.clear();
+            if (checked) {
+                // Select every alert currently rendered. (We include already-
+                // PR-created ones so the user can decide to re-issue if
+                // they want — the per-row button still gets disabled.)
+                filteredAlerts.forEach(a => selectedItemIds.add(String(a.item_id)));
+            }
+            updateBulkActionBar();
+            // Re-render to update per-row checkbox state.
+            renderAlerts();
+        }
+
+        function clearSelection() {
+            selectedItemIds.clear();
+            updateBulkActionBar();
+            renderAlerts();
+        }
+
+        // Sync the "select all" header checkbox to reflect current row state.
+        function syncSelectAllCheckbox() {
+            const cb = document.getElementById('selectAllCheckbox');
+            if (!cb) return;
+            const total = filteredAlerts.length;
+            const selected = filteredAlerts.filter(a => selectedItemIds.has(String(a.item_id))).length;
+            cb.checked = total > 0 && selected === total;
+            cb.indeterminate = selected > 0 && selected < total;
+        }
+
+        // Show / hide the bulk action bar and update its label.
+        function updateBulkActionBar() {
+            const bar = document.getElementById('bulkActionBar');
+            const countEl = document.getElementById('bulkSelectedCount');
+            const btn = document.getElementById('bulkCreateBtn');
+            const labelEl = document.getElementById('bulkCreateBtnLabel');
+            if (!bar) return;
+            const n = selectedItemIds.size;
+            countEl.textContent = n;
+            labelEl.textContent = `Create ${n} PR${n === 1 ? '' : 's'}`;
+            btn.disabled = n === 0;
+            if (n > 0) bar.classList.remove('hidden');
+            else bar.classList.add('hidden');
+        }
+
+        // Drives the hero's "X ingredients need attention" + breakdown.
+        // Also toggles hero visibility based on whether any alert exists.
+        function updateReorderHero() {
+            const hero = document.getElementById('reorderHero');
+            const totalEl = document.getElementById('reorderHeroTotal');
+            const breakdownEl = document.getElementById('reorderHeroBreakdown');
+            const ctaLabelEl = document.getElementById('reorderHeroCtaLabel');
+            if (!hero) return;
+
+            // Count only actionable alerts (Out / Critical / Low), not OK.
+            const actionable = allAlerts.filter(a => a.stock_status !== 'OK');
+            const out = allAlerts.filter(a => a.stock_status === 'OUT_OF_STOCK').length;
+            const crit = allAlerts.filter(a => a.stock_status === 'CRITICAL').length;
+            const low = allAlerts.filter(a => a.stock_status === 'LOW').length;
+            const total = out + crit + low;
+
+            if (total === 0) {
+                hero.classList.add('hidden');
+                return;
+            }
+            hero.classList.remove('hidden');
+            totalEl.textContent = total;
+            // Build the breakdown. Use real numbers so the user can scan
+            // exactly what to act on.
+            const parts = [];
+            if (out) parts.push(`${out} out of stock`);
+            if (crit) parts.push(`${crit} critical`);
+            if (low) parts.push(`${low} low`);
+            breakdownEl.textContent = parts.join(' · ');
+            ctaLabelEl.textContent = `Create all ${total} Purchase Requisition${total === 1 ? '' : 's'}`;
+        }
+
+        // Bulk-create PRs for all selected items, plus any actionable items
+        // when the hero CTA is clicked (selecting all then creating).
+        //
+        // The previous implementation called startPurchaseRequest() in a loop,
+        // but that function NAVIGATES to purchase_requests.html — so the first
+        // iteration broke out of the loop and only one PR got created. This
+        // version calls the API directly (the same PurchasingService endpoint
+        // that the per-row modal uses on submit) so the loop completes and
+        // every selected item becomes a separate PR. After all PRs are
+        // created, the user is redirected to the PR list so they can review.
+        async function bulkCreatePRs() {
+            // If nothing's selected (hero CTA path), default to "all actionable".
+            const targetAlerts = selectedItemIds.size === 0
+                ? allAlerts.filter(a => a.stock_status !== 'OK' && !createdReorderPRs.has(String(a.item_id)))
+                : Array.from(selectedItemIds)
+                    .map(id => allAlerts.find(a => String(a.item_id) === id))
+                    .filter(a => a && !createdReorderPRs.has(String(a.item_id)));
+
+            if (targetAlerts.length === 0) {
+                showToast('No actionable items to process', 'info');
+                return;
+            }
+
+            // Build the request payloads up front. Same shape as the per-row
+            // modal's submit (status='pending' goes straight to GM for
+            // approval, matching what the user would get by filling the
+            // form manually).
+            const payloads = targetAlerts.map(alert => {
+                const stock = parseFloat(alert.current_stock) || 0;
+                const reorderPoint = parseFloat(alert.reorder_point) || 0;
+                const maxStock = parseFloat(alert.maximum_stock);
+                const parLevel = Number.isFinite(maxStock) && maxStock > 0 ? maxStock : reorderPoint;
+                const qty = Math.max(0, parLevel - stock);
+                const priority = alert.stock_status === 'OUT_OF_STOCK'
+                    ? 'urgent'
+                    : alert.stock_status === 'CRITICAL'
+                        ? 'high'
+                        : 'normal';
+                const neededBy = new Date();
+                neededBy.setDate(neededBy.getDate() + parseInt(alert.lead_time_days || 7, 10));
+
+                return {
+                    payload: {
+                        status: 'pending',
+                        priority,
+                        needed_by_date: neededBy.toISOString().slice(0, 10),
+                        purpose: 'Stock below reorder point',
+                        notes: `Started from Reorder Alerts. Current stock: ${stock} ${alert.unit_of_measure || ''}. Reorder point: ${reorderPoint} ${alert.unit_of_measure || ''}. Status: ${alert.stock_status}.`,
+                        items: [{
+                            // For warehouse raw, items are always ingredients
+                            // (the reorder_alerts page is warehouse-scoped).
+                            ingredient_id: parseInt(alert.item_id, 10),
+                            mro_item_id: null,
+                            item_description: alert.item_name || '',
+                            quantity: qty,
+                            unit: alert.unit_of_measure || 'units',
+                            estimated_unit_price: parseFloat(alert.unit_cost) || 0,
+                            purpose: 'Stock below reorder point',
+                            notes: `Reorder alert for ${alert.item_code || alert.item_name || ''}.`
+                        }]
+                    },
+                    alert
+                };
+            });
+
+            // Disable the buttons while we work to prevent double-clicks.
+            const heroCta = document.getElementById('reorderHeroCta');
+            const bulkBtn = document.getElementById('bulkCreateBtn');
+            if (heroCta) heroCta.disabled = true;
+            if (bulkBtn) bulkBtn.disabled = true;
+            showToast(`Creating ${payloads.length} Purchase Requisition${payloads.length === 1 ? '' : 's'}…`, 'info');
+
+            let succeeded = 0;
+            let failed = 0;
+            const failedItems = [];
+            for (const { payload, alert } of payloads) {
+                try {
+                    // Note: payload here is the WRAPPER { payload, alert }.
+                    // The service expects the inner payload object (status,
+                    // priority, items, etc), so we pass payload.payload.
+                    const innerPayload = payload.payload;
+                    // Use fetch directly instead of the PurchasingService
+                    // wrapper. The wrapper goes through the shared `api`
+                    // (axios) instance, which in this context appears to be
+                    // sending the request with an empty body (verified via
+                    // the server-side `php://input` log). The per-row flow
+                    // has the same wrapper but works because it goes through
+                    // a different render path. Going direct to fetch with
+                    // explicit JSON.stringify is the most reliable option.
+                    const token = localStorage.getItem('highland_token');
+                    const response = await fetch((typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : '/HighlandFreshAppV4/api') + '/purchasing/purchase_requests.php?action=create', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                        },
+                        body: JSON.stringify(innerPayload)
+                    });
+                    const res = await response.json();
+                    if (response.ok && (res.success || res.data?.success)) {
+                        succeeded++;
+                        createdReorderPRs.add(String(alert.item_id));
+                    } else {
+                        failed++;
+                        const errMsg = res.message || `HTTP ${response.status}`;
+                        console.error('[bulk] API error for item', alert.item_id, ':', errMsg, res);
+                        failedItems.push(`${alert.item_name || alert.item_code || `Item #${alert.item_id}`} (${errMsg})`);
+                    }
+                } catch (e) {
+                    failed++;
+                    const msg = e?.response?.data?.message || e?.message || e?.data?.message || 'unknown error';
+                    console.error('[bulk] FAILED for item', alert.item_id, 'msg:', msg, 'e:', e);
+                    failedItems.push(`${alert.item_name || alert.item_code || `Item #${alert.item_id}`} (${msg})`);
+                }
+            }
+
+            if (heroCta) heroCta.disabled = false;
+            updateBulkActionBar();
+            renderAlerts();
+
+            if (failed === 0) {
+                showToast(`Created ${succeeded} Purchase Requisition${succeeded === 1 ? '' : 's'}`, 'success');
+            } else {
+                showToast(`${succeeded} created, ${failed} failed`, 'warning');
+                console.warn('Bulk PR failed items:', failedItems);
+            }
+
+            // Clear the selection so the bulk bar disappears, then redirect
+            // the user to the PR list so they can review what was created.
+            selectedItemIds.clear();
+            updateBulkActionBar();
+            // Small delay so the user sees the toast before the page changes.
+            setTimeout(() => {
+                window.location.href = 'purchase_requests.html';
+            }, 800);
+        }
+
         function renderAlerts() {
             const tbody = document.getElementById('alertsTable');
+            if (!tbody) return;
 
             if (filteredAlerts.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="9" class="text-center py-12">
-                            <i class="fas fa-check-circle text-4xl text-success mb-3"></i>
-                            <h3 class="font-semibold">All Clear!</h3>
-                            <p class="text-base-content/60">No reorder alerts at this time.</p>
+                        <td colspan="9" class="text-center py-12 text-base-content/60">
+                            <i class="fas fa-check-circle text-4xl text-success/30 mb-2"></i>
+                            <h3 class="font-semibold mt-2">All Clear!</h3>
+                            <p class="text-sm">No reorder alerts at this time.</p>
                         </td>
                     </tr>
                 `;
+                updateSortIndicators();
+                syncSelectAllCheckbox();
                 return;
             }
 
-            tbody.innerHTML = filteredAlerts.map(alert => {
-                const statusBadge = getStatusBadge(alert.stock_status);
-                const rowClass = getRowClass(alert.stock_status);
+            // Sort. Default urgency desc puts Out -> Critical -> Low -> OK.
+            // Higher number = more urgent (0 = OK, 3 = Out).
+            const urgencyRank = (a) => {
+                switch (a.stock_status) {
+                    case 'OUT_OF_STOCK': return 3;
+                    case 'CRITICAL':    return 2;
+                    case 'LOW':         return 1;
+                    case 'OK':          return 0;
+                    default:            return -1;
+                }
+            };
+            const stockNum = (a) => parseFloat(a.current_stock) || 0;
+            const qtyNum   = (a) => {
+                const stock = stockNum(a);
+                const reorderPt = parseFloat(a.reorder_point) || 0;
+                const maxStock = parseFloat(a.maximum_stock);
+                const par = Number.isFinite(maxStock) && maxStock > 0 ? maxStock : reorderPt;
+                return Math.max(0, par - stock);
+            };
+            const leadNum = (a) => parseInt(a.lead_time_days) || 0;
+
+            const dir = currentSort.direction === 'asc' ? 1 : -1;
+            const sorted = [...filteredAlerts].sort((a, b) => {
+                let av, bv;
+                switch (currentSort.column) {
+                    case 'urgency': av = urgencyRank(a); bv = urgencyRank(b); break;
+                    case 'stock':   av = stockNum(a);   bv = stockNum(b);   break;
+                    case 'qty':     av = qtyNum(a);     bv = qtyNum(b);     break;
+                    case 'lead':    av = leadNum(a);    bv = leadNum(b);    break;
+                    case 'name':
+                    default:        av = (a.item_name || '').toLowerCase(); bv = (b.item_name || '').toLowerCase();
+                }
+                if (av < bv) return -1 * dir;
+                if (av > bv) return  1 * dir;
+                return 0;
+            });
+
+            updateSortIndicators();
+
+            tbody.innerHTML = sorted.map(alert => {
                 const stock = parseFloat(alert.current_stock) || 0;
                 const reorderPt = parseFloat(alert.reorder_point) || 0;
                 const maxStock = parseFloat(alert.maximum_stock);
                 const parLevel = Number.isFinite(maxStock) && maxStock > 0 ? maxStock : reorderPt;
                 const qtyToOrder = Math.max(0, parLevel - stock);
                 const hasCreatedPR = createdReorderPRs.has(String(alert.item_id));
+                const itemIdStr = String(alert.item_id);
+                const isChecked = selectedItemIds.has(itemIdStr);
+
+                // Status styling. The badge class + label live in separate
+                // maps so the Status column can render a real DaisyUI badge
+                // (no inline HTML, no risk of title-attribute HTML leakage)
+                // with whitespace-nowrap so "CRITICAL" never gets clipped to
+                // "CRITIC" on narrow columns.
+                const statusBadgeClass = {
+                    'OUT_OF_STOCK': 'badge-ghost',
+                    'CRITICAL':     'badge-error',
+                    'LOW':          'badge-warning',
+                    'OK':           'badge-success'
+                };
+                const statusText = {
+                    'OUT_OF_STOCK': 'OUT',
+                    'CRITICAL':     'CRITICAL',
+                    'LOW':          'LOW',
+                    'OK':           'OK'
+                };
+                let statusBadge, statusDot, barColor, avatarColor, avatarIcon;
+                switch (alert.stock_status) {
+                    case 'OUT_OF_STOCK':
+                        statusBadge = '<span class="badge badge-ghost badge-sm">OUT</span>';
+                        statusDot = 'bg-base-300';
+                        barColor = 'bg-base-300';
+                        avatarColor = 'bg-error/10 text-error';
+                        avatarIcon = 'fa-times-circle';
+                        break;
+                    case 'CRITICAL':
+                        statusBadge = '<span class="badge badge-error badge-sm">CRITICAL</span>';
+                        statusDot = 'bg-error';
+                        barColor = 'bg-error';
+                        // Critical uses the same red as Out but a different
+                        // treatment: outlined icon (no fill) + plain base-100
+                        // avatar background. This keeps everything in the
+                        // theme's error family — no orange or other off-palette
+                        // utilities — while making Out visually heavier than
+                        // Critical.
+                        avatarColor = 'bg-base-100 border border-error text-error';
+                        avatarIcon = 'fa-exclamation-circle';
+                        break;
+                    case 'LOW':
+                        statusBadge = '<span class="badge badge-warning badge-sm">LOW</span>';
+                        statusDot = 'bg-warning';
+                        barColor = 'bg-warning';
+                        avatarColor = 'bg-warning/10 text-warning';
+                        avatarIcon = 'fa-exclamation-triangle';
+                        break;
+                    case 'OK':
+                    default:
+                        statusBadge = '<span class="badge badge-success badge-sm">OK</span>';
+                        statusDot = 'bg-success';
+                        barColor = 'bg-success';
+                        avatarColor = 'bg-success/10 text-success';
+                        avatarIcon = 'fa-check-circle';
+                        break;
+                }
+
+                // Stock progress bar. Capped at 100% to keep the bar from
+                // overflowing when current > max.
+                const pct = parLevel > 0 ? Math.min(100, (stock / parLevel) * 100) : 0;
+                const leadDays = parseInt(alert.lead_time_days) || 7;
+                // Lead time color: red if > 7 days (urgency multiplier), yellow 4-7, green <= 3
+                let leadBadge = 'badge-ghost';
+                if (leadDays <= 3) leadBadge = 'badge-success';
+                else if (leadDays <= 7) leadBadge = 'badge-warning';
+                else leadBadge = 'badge-error';
+
+                // PR button. Disabled if qtyToOrder == 0 or PR already created.
+                const canCreate = qtyToOrder > 0 && !hasCreatedPR;
+                const btnClass = hasCreatedPR ? 'btn-success' : 'btn-primary';
+                const btnIcon = hasCreatedPR ? 'fa-check' : 'fa-file-signature';
+                const btnTitle = hasCreatedPR ? 'Purchase Request started' : 'Start Purchase Request';
+                const btnLabel = hasCreatedPR ? 'Created' : 'Start PR';
+
+                const safeName = escapeHtml(alert.item_name || 'Unnamed');
+                const safeCode = escapeHtml(alert.item_code || '');
+                const safeUnit = escapeHtml(alert.unit_of_measure || '');
 
                 return `
-                    <tr class="${rowClass}">
-                        <td>${statusBadge}</td>
-                        <td class="font-mono text-sm">${alert.item_code}</td>
-                        <td class="font-medium">${alert.item_name}</td>
-                        <td><span class="badge badge-ghost badge-sm">${alert.category_name || '-'}</span></td>
-                        <td class="text-right font-bold ${stock <= 0 ? 'text-error' : ''}">${stock.toLocaleString()} ${alert.unit_of_measure}</td>
-                        <td class="text-right text-base-content/70">${reorderPt.toLocaleString()} ${alert.unit_of_measure}</td>
+                    <tr class="hover:bg-base-200/50">
+                        <td onclick="event.stopPropagation()">
+                            <input type="checkbox" class="checkbox checkbox-xs"
+                                ${isChecked ? 'checked' : ''}
+                                ${canCreate ? '' : 'disabled'}
+                                onchange="toggleItemSelection('${itemIdStr}', this.checked)"
+                                aria-label="Select ${safeName}" />
+                        </td>
+                        <td><span class="inline-block w-2.5 h-2.5 rounded-full ${statusDot}" title="${escapeHtml(alert.stock_status || '')}"></span></td>
+                        <td>
+                            <div class="flex items-center gap-3">
+                                <div class="w-9 h-9 rounded-xl ${avatarColor} flex items-center justify-center flex-shrink-0">
+                                    <i class="fas ${avatarIcon} text-sm"></i>
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="font-semibold text-sm truncate">${safeName}</div>
+                                    <div class="text-xs text-base-content/50 font-mono">${safeCode}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td><span class="badge ${statusBadgeClass[alert.stock_status] || ''} badge-sm whitespace-nowrap">${escapeHtml(statusText[alert.stock_status] || alert.stock_status || '')}</span></td>
                         <td class="text-right">
-                            ${qtyToOrder > 0 ? `<span class="font-bold text-primary">${qtyToOrder.toLocaleString()}</span>` : '-'}
+                            <div class="font-mono font-bold ${stock <= 0 ? 'text-error' : ''}">${stock.toLocaleString()} <span class="text-xs font-normal text-base-content/60">${safeUnit}</span></div>
+                            <div class="w-20 h-1 bg-base-200 rounded-full overflow-hidden mt-1 ml-auto">
+                                <div class="h-full ${barColor} rounded-full" style="width: ${pct}%"></div>
+                            </div>
+                            <div class="text-[10px] text-base-content/50 mt-0.5">${pct.toFixed(0)}% of par</div>
+                        </td>
+                        <td class="text-right text-sm text-base-content/70">${reorderPt.toLocaleString()} <span class="text-xs text-base-content/50">${safeUnit}</span></td>
+                        <td class="text-right">
+                            ${qtyToOrder > 0
+                                ? `<span class="font-mono font-bold text-primary">${qtyToOrder.toLocaleString()}</span> <span class="text-xs text-base-content/50">${safeUnit}</span>`
+                                : '<span class="text-base-content/40">—</span>'}
                         </td>
                         <td class="text-center">
-                            <span class="badge badge-outline badge-sm">${alert.lead_time_days || 7} days</span>
+                            <span class="badge ${leadBadge} badge-sm">${leadDays}d</span>
                         </td>
-                        <td>
-                            <div class="flex gap-1">
-                                <a href="ingredients.html?id=${alert.item_id}" class="btn btn-ghost btn-xs" title="View Details">
+                        <td class="text-right" onclick="event.stopPropagation()">
+                            <div class="flex gap-1 justify-end">
+                                <a href="ingredients.html?id=${alert.item_id}" class="btn btn-ghost btn-xs btn-square" title="View details">
                                     <i class="fas fa-eye"></i>
                                 </a>
-                                <button class="btn ${hasCreatedPR ? 'btn-success' : 'btn-primary'} btn-xs" onclick="startPurchaseRequest(${alert.item_id}, this)" title="${hasCreatedPR ? 'Purchase Request started' : 'Start Purchase Request'}" ${(qtyToOrder <= 0 || hasCreatedPR) ? 'disabled' : ''}>
-                                    <i class="fas ${hasCreatedPR ? 'fa-check' : 'fa-file-signature'}"></i>
+                                <button class="btn ${btnClass} btn-xs" onclick="startPurchaseRequest(${alert.item_id}, this)" title="${btnTitle}" ${canCreate ? '' : 'disabled'}>
+                                    <i class="fas ${btnIcon}"></i>
+                                    <span class="hidden lg:inline">${btnLabel}</span>
                                 </button>
                             </div>
                         </td>
                     </tr>
                 `;
             }).join('');
+
+            syncSelectAllCheckbox();
+            updateBulkActionBar();
         }
 
         function getStatusBadge(status) {

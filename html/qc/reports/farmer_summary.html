@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farmer Summary - Quality Control | Highland Fresh</title>
+
+    <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
+    <link rel="stylesheet" href="../../../css/tailwind.css">
+
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <!-- Chart.js (self-hosted) -->
+    <script src="../../../js/vendor/chart.umd.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .bento-card { @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .stat-value { font-variant-numeric: tabular-nums; }
+
+        .grade-bar { display: flex; height: 0.5rem; border-radius: 0.25rem; overflow: hidden; background: oklch(var(--b2)); }
+        .grade-bar > span { display: block; height: 100%; transition: width 0.2s; }
+
+        @media print {
+            #sidebar, #sidebarBackdrop, .no-print, header.navbar { display: none !important; }
+            .lg\:ml-72 { margin-left: 0 !important; }
+            body { background: white !important; }
+            .card, .bento-card { box-shadow: none !important; border: 1px solid #e5e7eb !important; page-break-inside: avoid; }
+            main { padding: 0 !important; }
+        }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <img src="../../images/logo.jpg" alt="Highland Fresh Logo" class="w-10 h-10 rounded-xl object-cover">
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Quality Control</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="../dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inbound Milk</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="../milk_receiving.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-truck-loading w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Milk Receiving</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="../milk_grading.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-flask w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Milk Grading</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="../farmers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-users w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Farmers</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Production QC</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="../batch_release.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-check-double w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Batch Release</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="../print-labels.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-barcode w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Print Labels</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory QC</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="../expiry_management.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-calendar-times w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Expiry Management</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="../disposals.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-trash-alt w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Disposals</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="../recalls.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-exclamation-triangle w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Batch Recalls</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="daily.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-chart-bar w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Daily Reports</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="farmer_summary.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-user-chart w-5 text-center"></i>
+                            <span class="flex-1">Farmer Summary</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">QC</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">QC Officer</p>
+                    <p class="text-xs text-base-content/60 truncate">Quality Control</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square" onclick="AuthService.logout()">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6 no-print">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <div class="text-xs text-base-content/60">Quality Control / Reports</div>
+                <h1 class="text-lg lg:text-xl font-bold">Farmer Summary</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <button class="btn btn-ghost btn-sm" onclick="loadReport()" title="Refresh">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+                <button class="btn btn-ghost btn-sm" onclick="window.print()" title="Print">
+                    <i class="fas fa-print"></i>
+                </button>
+            </div>
+        </header>
+
+        <main class="flex-1 p-4 lg:p-6 space-y-6">
+
+            <!-- Filters -->
+            <div class="card bg-base-100 border border-base-300 no-print">
+                <div class="card-body p-4">
+                    <div class="flex flex-col gap-3">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+                            <div class="form-control">
+                                <label class="label py-1">
+                                    <span class="label-text text-xs font-medium">From</span>
+                                </label>
+                                <input type="date" id="fromDate" class="input input-bordered input-sm" />
+                            </div>
+                            <div class="form-control">
+                                <label class="label py-1">
+                                    <span class="label-text text-xs font-medium">To</span>
+                                </label>
+                                <input type="date" id="toDate" class="input input-bordered input-sm" />
+                            </div>
+                            <div class="form-control">
+                                <label class="label py-1">
+                                    <span class="label-text text-xs font-medium">Membership</span>
+                                </label>
+                                <select id="membershipFilter" class="select select-bordered select-sm">
+                                    <option value="">All</option>
+                                    <option value="member">Member</option>
+                                    <option value="non_member">Non-member</option>
+                                </select>
+                            </div>
+                            <div class="form-control sm:col-span-2">
+                                <label class="label py-1">
+                                    <span class="label-text text-xs font-medium">Search</span>
+                                </label>
+                                <input type="text" id="searchInput" class="input input-bordered input-sm" placeholder="Name or code..." />
+                            </div>
+                            <div class="form-control flex items-end gap-2">
+                                <button class="btn btn-primary btn-sm gap-2 flex-1" onclick="loadReport()">
+                                    <i class="fas fa-search"></i> Generate
+                                </button>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-2 text-xs">
+                            <span class="text-base-content/60 self-center">Quick range:</span>
+                            <button class="btn btn-ghost btn-xs" onclick="setRange('week')">This Week</button>
+                            <button class="btn btn-ghost btn-xs" onclick="setRange('month')">This Month</button>
+                            <button class="btn btn-ghost btn-xs" onclick="setRange('last30')">Last 30 Days</button>
+                            <button class="btn btn-ghost btn-xs" onclick="setRange('all')">All Time</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Print header -->
+            <div class="hidden print:block text-center mb-4">
+                <h2 class="text-2xl font-bold">Highland Fresh Dairy — Quality Control Farmer Summary</h2>
+                <p class="text-sm" id="printDateHeader"></p>
+            </div>
+
+            <!-- Summary Cards -->
+            <div>
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-semibold text-base-content/60 uppercase tracking-wider">Summary</h3>
+                    <span class="text-xs text-base-content/60" id="rangeLabel">—</span>
+                </div>
+                <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                    <div class="bento-card card bg-base-100 border border-base-300">
+                        <div class="card-body p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                                    <i class="fas fa-users text-primary"></i>
+                                </div>
+                                <span class="badge badge-ghost badge-sm">Farmers</span>
+                            </div>
+                            <p class="text-2xl lg:text-3xl font-bold stat-value" id="statFarmers">0</p>
+                            <p class="text-sm text-base-content/60">Active Suppliers</p>
+                        </div>
+                    </div>
+                    <div class="bento-card card bg-base-100 border border-base-300">
+                        <div class="card-body p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="w-10 h-10 rounded-xl bg-info/10 flex items-center justify-center">
+                                    <i class="fas fa-truck-loading text-info"></i>
+                                </div>
+                                <span class="badge badge-info badge-sm">Deliveries</span>
+                            </div>
+                            <p class="text-2xl lg:text-3xl font-bold stat-value" id="statDeliveries">0</p>
+                            <p class="text-sm text-base-content/60">Total Deliveries</p>
+                        </div>
+                    </div>
+                    <div class="bento-card card bg-base-100 border border-base-300">
+                        <div class="card-body p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="w-10 h-10 rounded-xl bg-cyan-500/10 flex items-center justify-center">
+                                    <i class="fas fa-tint text-cyan-500"></i>
+                                </div>
+                                <span class="badge badge-ghost badge-sm">Liters</span>
+                            </div>
+                            <p class="text-2xl lg:text-3xl font-bold stat-value" id="statVolume">0</p>
+                            <p class="text-sm text-base-content/60">Total Volume</p>
+                        </div>
+                    </div>
+                    <div class="bento-card card bg-base-100 border border-base-300">
+                        <div class="card-body p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center">
+                                    <i class="fas fa-percentage text-success"></i>
+                                </div>
+                                <span class="badge badge-success badge-sm">Rate</span>
+                            </div>
+                            <p class="text-2xl lg:text-3xl font-bold stat-value text-success" id="statAcceptRate">0%</p>
+                            <p class="text-sm text-base-content/60">Avg Acceptance</p>
+                        </div>
+                    </div>
+                    <div class="bento-card card bg-base-100 border border-base-300">
+                        <div class="card-body p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center">
+                                    <i class="fas fa-coins text-warning"></i>
+                                </div>
+                                <span class="badge badge-warning badge-sm">Earnings</span>
+                            </div>
+                            <p class="text-xl lg:text-2xl font-bold stat-value text-warning" id="statEarnings">₱0</p>
+                            <p class="text-sm text-base-content/60">Total Earnings</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Farmers Table -->
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body p-0">
+                    <div class="flex items-center justify-between p-4 pb-3">
+                        <h3 class="card-title text-base">
+                            <i class="fas fa-table text-primary mr-2"></i> Farmers Performance
+                        </h3>
+                        <span class="text-xs text-base-content/60" id="farmersCount">0 farmers</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr class="bg-base-200/50 text-base-content/70">
+                                    <th>Code</th>
+                                    <th>Farmer</th>
+                                    <th>Membership</th>
+                                    <th>Milk Type</th>
+                                    <th class="text-right">Deliveries</th>
+                                    <th class="text-right">Volume (L)</th>
+                                    <th class="text-right">Acceptance</th>
+                                    <th class="min-w-32">Grade Distribution</th>
+                                    <th class="text-right">Avg Fat%</th>
+                                    <th>Last Delivery</th>
+                                    <th class="text-right">Earnings</th>
+                                </tr>
+                            </thead>
+                            <tbody id="farmersBody">
+                                <tr>
+                                    <td colspan="11" class="text-center py-12 text-base-content/40">
+                                        <span class="loading loading-spinner loading-md text-primary"></span>
+                                        <p class="text-sm mt-2">Loading farmers...</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-center text-xs text-base-content/40 pt-2">
+                <p>Report generated by Highland Fresh QC System • <span id="generatedAt"></span></p>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Drill-down Modal -->
+    <dialog id="farmerDetailModal" class="modal">
+        <div class="modal-box max-w-5xl max-h-[90vh]">
+            <div class="flex items-start justify-between mb-3">
+                <div>
+                    <h3 class="font-bold text-lg" id="detailTitle">Farmer Detail</h3>
+                    <p class="text-xs text-base-content/60" id="detailSubtitle">Lifetime summary</p>
+                </div>
+                <button class="btn btn-sm btn-ghost btn-circle" onclick="closeDetail()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <!-- Lifetime Stats -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                <div class="bg-base-200/40 rounded-lg p-3 text-center">
+                    <p class="text-xs text-base-content/60">Total Deliveries</p>
+                    <p class="text-xl font-bold stat-value" id="detailDeliveries">0</p>
+                </div>
+                <div class="bg-base-200/40 rounded-lg p-3 text-center">
+                    <p class="text-xs text-base-content/60">Accepted Liters</p>
+                    <p class="text-xl font-bold stat-value" id="detailLiters">0</p>
+                </div>
+                <div class="bg-base-200/40 rounded-lg p-3 text-center">
+                    <p class="text-xs text-base-content/60">Acceptance Rate</p>
+                    <p class="text-xl font-bold stat-value text-success" id="detailRate">0%</p>
+                </div>
+                <div class="bg-base-200/40 rounded-lg p-3 text-center">
+                    <p class="text-xs text-base-content/60">Total Earnings</p>
+                    <p class="text-xl font-bold stat-value text-warning" id="detailEarnings">₱0</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
+                <div class="bg-base-200/40 rounded-lg p-3">
+                    <p class="text-xs text-base-content/60 mb-1">Milk Type</p>
+                    <p class="font-semibold" id="detailMilkType">—</p>
+                </div>
+                <div class="bg-base-200/40 rounded-lg p-3">
+                    <p class="text-xs text-base-content/60 mb-1">Base Price/L</p>
+                    <p class="font-semibold" id="detailBasePrice">—</p>
+                </div>
+                <div class="bg-base-200/40 rounded-lg p-3">
+                    <p class="text-xs text-base-content/60 mb-1">Contact</p>
+                    <p class="font-semibold text-sm" id="detailContact">—</p>
+                </div>
+            </div>
+
+            <!-- Quality Trend Chart -->
+            <div class="card bg-base-200/30 border border-base-300 mb-4">
+                <div class="card-body p-4">
+                    <h4 class="text-sm font-semibold mb-2">
+                        <i class="fas fa-chart-line text-primary mr-1"></i>
+                        Quality Trend (last 20 deliveries)
+                    </h4>
+                    <div class="h-40">
+                        <canvas id="trendChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Delivery History -->
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <h4 class="text-sm font-semibold">
+                        <i class="fas fa-list text-primary mr-1"></i>
+                        Delivery History
+                    </h4>
+                    <span class="text-xs text-base-content/60" id="detailHistoryCount">0 deliveries</span>
+                </div>
+                <div class="overflow-x-auto max-h-72 scrollbar-thin">
+                    <table class="table table-sm">
+                        <thead class="sticky top-0 bg-base-100 z-10">
+                            <tr class="text-base-content/60">
+                                <th>Date</th>
+                                <th>RMR #</th>
+                                <th class="text-right">Volume</th>
+                                <th class="text-right">Accepted</th>
+                                <th>Status</th>
+                                <th>Grade</th>
+                                <th class="text-right">Fat%</th>
+                                <th class="text-right">TA%</th>
+                                <th class="text-right">SG</th>
+                                <th class="text-right">Price/L</th>
+                                <th class="text-right">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detailHistoryBody"></tbody>
+                    </table>
+                </div>
+                <div class="flex items-center justify-end gap-2 mt-3 no-print">
+                    <button class="btn btn-ghost btn-sm" id="detailPrevBtn" onclick="loadDetailPage('prev')" disabled>
+                        <i class="fas fa-chevron-left"></i> Prev
+                    </button>
+                    <span class="text-xs text-base-content/60" id="detailPageInfo">Page 1</span>
+                    <button class="btn btn-ghost btn-sm" id="detailNextBtn" onclick="loadDetailPage('next')" disabled>
+                        Next <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+
+    <script>
+        function toggleSidebar() {
+            const s = document.getElementById('sidebar');
+            const b = document.getElementById('sidebarBackdrop');
+            s.classList.toggle('-translate-x-full');
+            b.classList.toggle('hidden');
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `<span class="text-sm">${escapeHtml(message)}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3500);
+        }
+
+        function escapeHtml(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        function formatCurrency(n) {
+            return '₱' + parseFloat(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatNumber(n, digits = 0) {
+            return parseFloat(n || 0).toLocaleString('en-PH', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+        }
+
+        function formatDateShort(s) {
+            if (!s) return '-';
+            return new Date(s + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: '2-digit' });
+        }
+
+        function formatDateLong(s) {
+            if (!s) return '-';
+            return new Date(s + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        }
+
+        function gradeBadge(grade) {
+            const map = {
+                'A': 'badge-success', 'B': 'badge-info', 'C': 'badge-warning',
+                'D': 'badge-warning', 'Rejected': 'badge-error'
+            };
+            return map[grade] || 'badge-ghost';
+        }
+
+        function statusBadge(status) {
+            const map = {
+                'pending_qc': 'badge-warning', 'accepted': 'badge-success',
+                'rejected': 'badge-error', 'partial': 'badge-info'
+            };
+            return map[status] || 'badge-ghost';
+        }
+
+        function statusLabel(status) {
+            const map = {
+                'pending_qc': 'Pending QC', 'accepted': 'Accepted',
+                'rejected': 'Rejected', 'partial': 'Partial'
+            };
+            return map[status] || status || '—';
+        }
+
+        // ============================================
+        // Date range helpers
+        // ============================================
+        function setRange(preset) {
+            const today = new Date();
+            const fromInput = document.getElementById('fromDate');
+            const toInput = document.getElementById('toDate');
+            const fmt = d => d.toISOString().slice(0, 10);
+
+            if (preset === 'week') {
+                const day = today.getDay();
+                const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+                fromInput.value = fmt(new Date(today.getFullYear(), today.getMonth(), diff));
+                toInput.value = fmt(today);
+            } else if (preset === 'month') {
+                fromInput.value = fmt(new Date(today.getFullYear(), today.getMonth(), 1));
+                toInput.value = fmt(today);
+            } else if (preset === 'last30') {
+                const d = new Date(today);
+                d.setDate(d.getDate() - 30);
+                fromInput.value = fmt(d);
+                toInput.value = fmt(today);
+            } else if (preset === 'all') {
+                fromInput.value = '2020-01-01';
+                toInput.value = fmt(today);
+            }
+            loadReport();
+        }
+
+        // ============================================
+        // Load summary
+        // ============================================
+        async function loadReport() {
+            const from = document.getElementById('fromDate').value;
+            const to = document.getElementById('toDate').value;
+            const membership = document.getElementById('membershipFilter').value;
+            const search = document.getElementById('searchInput').value.trim();
+
+            if (!from || !to) { showToast('Please select from/to dates', 'error'); return; }
+            if (from > to) { showToast('From date cannot be after To date', 'error'); return; }
+
+            document.getElementById('rangeLabel').textContent = `${formatDateShort(from)} – ${formatDateShort(to)}`;
+            document.getElementById('printDateHeader').textContent = `${formatDateLong(from)} – ${formatDateLong(to)}`;
+            document.getElementById('generatedAt').textContent = new Date().toLocaleString('en-PH');
+
+            document.getElementById('farmersBody').innerHTML = `
+                <tr><td colspan="11" class="text-center py-12">
+                    <span class="loading loading-spinner loading-md text-primary"></span>
+                    <p class="text-sm mt-2 text-base-content/60">Loading farmers...</p>
+                </td></tr>`;
+
+            try {
+                const response = await api.get('/qc/reports_farmer.php', {
+                    params: { action: 'summary', from, to, membership, search }
+                });
+                if (response.success) renderSummary(response.data);
+                else showToast(response.message || 'Failed to load report', 'error');
+            } catch (err) {
+                showToast(err.message || 'Network error', 'error');
+                console.error('Farmer summary load error:', err);
+            }
+        }
+
+        function renderSummary(data) {
+            const t = data.totals;
+            document.getElementById('statFarmers').textContent = formatNumber(t.farmers_count);
+            document.getElementById('statDeliveries').textContent = formatNumber(t.delivery_count);
+            document.getElementById('statVolume').textContent = formatNumber(t.total_volume, 1);
+            document.getElementById('statAcceptRate').textContent = (t.avg_acceptance_rate || 0) + '%';
+            document.getElementById('statEarnings').textContent = formatCurrency(t.total_earnings);
+            document.getElementById('farmersCount').textContent = `${t.farmers_count} farmer${t.farmers_count !== 1 ? 's' : ''}`;
+
+            const tbody = document.getElementById('farmersBody');
+            if (!data.farmers || data.farmers.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="11" class="text-center py-12 text-base-content/40">
+                    <i class="fas fa-inbox text-2xl mb-2 block"></i>
+                    <p class="text-sm">No farmers found for this filter</p>
+                </td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = data.farmers.map(f => {
+                const totalGraded = f.grade_a_count + f.grade_b_count + f.grade_c_count + f.grade_d_count + f.grade_rejected_count;
+                const pct = n => totalGraded > 0 ? (n / totalGraded) * 100 : 0;
+                const gradeBar = `
+                    <div class="grade-bar" title="A:${f.grade_a_count} B:${f.grade_b_count} C:${f.grade_c_count} D:${f.grade_d_count} R:${f.grade_rejected_count}">
+                        <span style="width:${pct(f.grade_a_count)}%; background:#10b981;" title="A"></span>
+                        <span style="width:${pct(f.grade_b_count)}%; background:#3b82f6;" title="B"></span>
+                        <span style="width:${pct(f.grade_c_count)}%; background:#f59e0b;" title="C"></span>
+                        <span style="width:${pct(f.grade_d_count)}%; background:#f97316;" title="D"></span>
+                        <span style="width:${pct(f.grade_rejected_count)}%; background:#ef4444;" title="Rejected"></span>
+                    </div>
+                `;
+                const memBadge = f.membership_type === 'member'
+                    ? '<span class="badge badge-success badge-xs">Member</span>'
+                    : '<span class="badge badge-ghost badge-xs">Non-member</span>';
+
+                return `
+                    <tr class="hover cursor-pointer" onclick="openDetail(${f.farmer_id})">
+                        <td class="font-mono text-xs font-semibold">${escapeHtml(f.farmer_code || '')}</td>
+                        <td>
+                            <div class="font-semibold text-sm">${escapeHtml(f.full_name || '—')}</div>
+                            <div class="text-xs text-base-content/50">${escapeHtml(f.contact_number || '')}</div>
+                        </td>
+                        <td>${memBadge}</td>
+                        <td class="text-sm">${escapeHtml(f.milk_type_name || '—')}</td>
+                        <td class="text-right">${formatNumber(f.delivery_count)}</td>
+                        <td class="text-right font-semibold">${formatNumber(f.accepted_liters, 1)}</td>
+                        <td class="text-right">
+                            <span class="${f.acceptance_rate >= 80 ? 'text-success' : f.acceptance_rate >= 50 ? 'text-warning' : 'text-error'} font-semibold">
+                                ${(f.acceptance_rate || 0).toFixed(1)}%
+                            </span>
+                        </td>
+                        <td>${gradeBar}</td>
+                        <td class="text-right">${f.avg_fat ? f.avg_fat.toFixed(2) + '%' : '—'}</td>
+                        <td class="text-xs">${formatDateShort(f.last_delivery_date)}</td>
+                        <td class="text-right font-bold text-warning">${formatCurrency(f.total_earnings)}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // ============================================
+        // Drill-down
+        // ============================================
+        let currentFarmerId = null;
+        let currentPage = 0;
+        let currentLimit = 20;
+        let currentHasMore = false;
+        let currentTotal = 0;
+        let trendChart = null;
+
+        async function openDetail(farmerId) {
+            currentFarmerId = farmerId;
+            currentPage = 0;
+            document.getElementById('farmerDetailModal').showModal();
+            await loadDetail();
+        }
+
+        function closeDetail() {
+            document.getElementById('farmerDetailModal').close();
+            if (trendChart) { trendChart.destroy(); trendChart = null; }
+        }
+
+        async function loadDetailPage(direction) {
+            const newPage = direction === 'next' ? currentPage + 1 : currentPage - 1;
+            if (newPage < 0) return;
+            currentPage = newPage;
+            await loadDetail();
+        }
+
+        async function loadDetail() {
+            if (!currentFarmerId) return;
+            const offset = currentPage * currentLimit;
+            const detailHistoryBody = document.getElementById('detailHistoryBody');
+            detailHistoryBody.innerHTML = `<tr><td colspan="11" class="text-center py-8">
+                <span class="loading loading-spinner loading-sm text-primary"></span>
+            </td></tr>`;
+
+            try {
+                const response = await api.get('/qc/reports_farmer.php', {
+                    params: { action: 'detail', farmer_id: currentFarmerId, limit: currentLimit, offset }
+                });
+                if (!response.success) {
+                    showToast(response.message || 'Failed to load detail', 'error');
+                    return;
+                }
+                renderDetail(response.data);
+            } catch (err) {
+                showToast(err.message || 'Network error', 'error');
+                console.error(err);
+            }
+        }
+
+        function renderDetail(data) {
+            const f = data.farmer;
+            const lt = data.lifetime;
+
+            document.getElementById('detailTitle').textContent = `${f.first_name} ${f.last_name}`.trim() || f.farmer_code;
+            document.getElementById('detailSubtitle').textContent = `${f.farmer_code} • ${f.membership_type === 'member' ? 'Member' : 'Non-member'}`;
+            document.getElementById('detailDeliveries').textContent = formatNumber(lt.total_deliveries);
+            document.getElementById('detailLiters').textContent = formatNumber(lt.accepted_liters, 1);
+            document.getElementById('detailRate').textContent = (lt.acceptance_rate || 0) + '%';
+            document.getElementById('detailEarnings').textContent = formatCurrency(lt.total_earnings);
+            document.getElementById('detailMilkType').textContent = f.milk_type_name || '—';
+            document.getElementById('detailBasePrice').textContent = f.base_price_per_liter ? `₱${parseFloat(f.base_price_per_liter).toFixed(2)}` : '—';
+            document.getElementById('detailContact').textContent = f.contact_number || '—';
+
+            // Quality trend chart
+            if (trendChart) trendChart.destroy();
+            const trendData = data.quality_trend || [];
+            if (trendData.length > 0) {
+                const trendCtx = document.getElementById('trendChart');
+                const gradeColor = g => ({ 'A': '#10b981', 'B': '#3b82f6', 'C': '#f59e0b', 'D': '#f97316', 'Rejected': '#ef4444' })[g] || '#94a3b8';
+                trendChart = new Chart(trendCtx, {
+                    type: 'line',
+                    data: {
+                        labels: trendData.map(t => formatDateShort(t.receiving_date)),
+                        datasets: [{
+                            label: 'Fat %',
+                            data: trendData.map(t => parseFloat(t.fat_percentage || 0)),
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            tension: 0.3,
+                            fill: true,
+                            pointBackgroundColor: trendData.map(t => gradeColor(t.grade)),
+                            pointBorderColor: trendData.map(t => gradeColor(t.grade)),
+                            pointRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: { y: { beginAtZero: false } }
+                    }
+                });
+            }
+
+            // Delivery history
+            const tbody = document.getElementById('detailHistoryBody');
+            const deliveries = data.deliveries || [];
+            const pag = data.pagination || {};
+            currentHasMore = pag.has_more || false;
+            currentTotal = pag.total || 0;
+            document.getElementById('detailHistoryCount').textContent = `${currentTotal} total delivery${currentTotal !== 1 ? 'ies' : ''} • showing ${deliveries.length}`;
+
+            if (deliveries.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="11" class="text-center py-8 text-base-content/40">
+                    <i class="fas fa-inbox text-2xl mb-2 block"></i>
+                    <p class="text-sm">No deliveries yet</p>
+                </td></tr>`;
+            } else {
+                tbody.innerHTML = deliveries.map(d => `
+                    <tr class="hover">
+                        <td class="text-xs">${formatDateShort(d.receiving_date)} ${d.receiving_time ? new Date(d.receiving_date + 'T' + d.receiving_time).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : ''}</td>
+                        <td class="font-mono text-xs">${escapeHtml(d.receiving_code || '')}</td>
+                        <td class="text-right">${formatNumber(d.volume_liters, 1)}</td>
+                        <td class="text-right">${formatNumber(d.accepted_liters, 1)}</td>
+                        <td><span class="badge badge-xs ${statusBadge(d.status)}">${statusLabel(d.status)}</span></td>
+                        <td><span class="badge badge-xs ${gradeBadge(d.grade)}">${escapeHtml(d.grade || '—')}</span></td>
+                        <td class="text-right">${d.fat_percentage ? parseFloat(d.fat_percentage).toFixed(2) : '—'}</td>
+                        <td class="text-right">${d.titratable_acidity ? parseFloat(d.titratable_acidity).toFixed(3) : '—'}</td>
+                        <td class="text-right">${d.specific_gravity ? parseFloat(d.specific_gravity).toFixed(3) : '—'}</td>
+                        <td class="text-right">${d.final_price_per_liter ? '₱' + parseFloat(d.final_price_per_liter).toFixed(2) : '—'}</td>
+                        <td class="text-right font-semibold">${formatCurrency(d.total_amount || 0)}</td>
+                    </tr>
+                `).join('');
+            }
+
+            // Pagination buttons
+            const startNum = currentPage * currentLimit + 1;
+            const endNum = Math.min(startNum + deliveries.length - 1, currentTotal);
+            document.getElementById('detailPageInfo').textContent = deliveries.length > 0
+                ? `${startNum}–${endNum} of ${currentTotal}`
+                : 'Page 1';
+            document.getElementById('detailPrevBtn').disabled = currentPage === 0;
+            document.getElementById('detailNextBtn').disabled = !currentHasMore;
+        }
+
+        // ============================================
+        // Initialize
+        // ============================================
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../../login.html';
+                return;
+            }
+
+            const user = AuthService.getCurrentUser();
+            if (user) {
+                document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
+                document.getElementById('userInitials').textContent = (user.first_name[0] + user.last_name[0]).toUpperCase();
+            }
+
+            // Default to current month
+            const today = new Date();
+            const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+            document.getElementById('fromDate').value = monthStart.toISOString().slice(0, 10);
+            document.getElementById('toDate').value = today.toISOString().slice(0, 10);
+            document.getElementById('toDate').max = today.toISOString().slice(0, 10);
+
+            // Debounced search
+            let searchTimer;
+            document.getElementById('searchInput').addEventListener('input', () => {
+                clearTimeout(searchTimer);
+                searchTimer = setTimeout(() => loadReport(), 400);
+            });
+
+            await loadReport();
+
+            // If ?farmer_id=N is in the URL, open that farmer's detail modal automatically
+            const params = new URLSearchParams(window.location.search);
+            const openFarmerId = parseInt(params.get('farmer_id'));
+            if (openFarmerId && !isNaN(openFarmerId)) {
+                setTimeout(() => openDetail(openFarmerId), 500);
+            }
+        });
+    </script>
+
+    <script src="../../../js/vendor/axios.min.js"></script>
+    <script src="../../../js/config/api.js"></script>
+    <script src="../../../js/config/auth.js"></script>
+</body>
+
+</html>

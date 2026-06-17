@@ -5,14 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Orders - Sales Custodian | Highland Fresh</title>
     
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
-    
-    <script>
-        tailwind.config = {
-            theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } }
-        }
-    </script>
+    <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
+    <link rel="stylesheet" href="../../css/tailwind.css">
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -257,107 +251,141 @@
                 <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
             <h3 class="font-bold text-lg mb-4"><i class="fas fa-plus-circle text-primary mr-2"></i>New Order</h3>
-            
+
+            <div class="rounded-lg border border-info/30 bg-info/10 px-3 py-2 mb-4 flex items-center gap-2 text-sm text-base-content/75">
+                <i class="fas fa-magic text-info"></i>
+                Draft order · Warehouse FG will review and prepare for delivery.
+            </div>
+
             <form id="newOrderForm">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Customer *</span></label>
-                        <select id="orderCustomer" class="select select-bordered" required onchange="onCustomerChange()">
-                            <option value="">Select customer...</option>
-                        </select>
-                    </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Customer PO Number</span></label>
-                        <input type="text" id="customerPONumber" class="input input-bordered" placeholder="Enter customer's PO number...">
-                    </div>
-                    <div class="form-control" id="subAccountContainer" style="display: none;">
-                        <label class="label"><span class="label-text" id="subAccountLabel">Branch / Sub-Account</span></label>
-                        <select id="subAccount" class="select select-bordered">
-                            <option value="">Select branch...</option>
-                        </select>
-                        <label class="label"><span class="label-text-alt text-info" id="subAccountHint"></span></label>
-                    </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Delivery Date</span></label>
-                        <input type="date" id="deliveryDate" class="input input-bordered">
-                    </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Payment Mode</span></label>
-                        <select id="paymentMode" class="select select-bordered">
-                            <option value="credit">Credit</option>
-                            <option value="cash">Cash</option>
-                            <option value="hybrid">Hybrid</option>
-                        </select>
-                    </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Credit Info</span></label>
-                        <div class="bg-base-200 rounded-lg p-2 text-sm">
-                            <span id="customerCreditInfo">Select a customer</span>
+                <!-- Section 1: Customer & Delivery -->
+                <div class="mb-4">
+                    <h4 class="font-semibold text-base-content mb-3 pb-1.5 border-b-2 border-base-300 flex items-center gap-2">
+                        <span class="w-6 h-6 bg-primary text-primary-content rounded-full text-xs flex items-center justify-center">1</span>
+                        Customer &amp; Delivery
+                    </h4>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text">Customer *</span></label>
+                            <select id="orderCustomer" class="select select-bordered" required onchange="onCustomerChange()">
+                                <option value="">Select customer...</option>
+                            </select>
+                            <label class="label py-0.5">
+                                <span class="label-text-alt text-base-content/60">Pick the buyer. Branches and credit limits appear after this is set.</span>
+                            </label>
                         </div>
-                    </div>
-                </div>
-                
-                <div class="divider">Order Items</div>
-                
-                <!-- Enhanced Item Selector with Box/Piece Support -->
-                <div class="bg-base-200 rounded-lg p-3 mb-4">
-                    <div class="flex flex-wrap gap-2 items-end">
-                        <div class="form-control flex-1 min-w-[200px]">
-                            <label class="label label-text text-xs">Product</label>
-                            <select id="productSelect" class="select select-bordered select-sm">
-                                <option value="">Select product...</option>
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text">Customer PO Number</span></label>
+                            <input type="text" id="customerPONumber" class="input input-bordered" placeholder="Enter customer's PO number...">
+                        </div>
+                        <div class="form-control" id="subAccountContainer" style="display: none;">
+                            <label class="label py-1">
+                                <span class="label-text" id="subAccountLabel">Branch / Sub-Account</span>
+                            </label>
+                            <select id="subAccount" class="select select-bordered">
+                                <option value="">Select branch...</option>
+                            </select>
+                            <label class="label py-0.5">
+                                <span class="label-text-alt text-info" id="subAccountHint"></span>
+                            </label>
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text">Delivery Date</span></label>
+                            <input type="date" id="deliveryDate" class="input input-bordered">
+                            <label class="label py-0.5">
+                                <span class="label-text-alt text-base-content/60">Leave blank if no specific deadline yet.</span>
+                            </label>
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text">Payment Mode</span></label>
+                            <select id="paymentMode" class="select select-bordered">
+                                <option value="credit">Credit</option>
+                                <option value="cash">Cash</option>
+                                <option value="hybrid">Hybrid</option>
                             </select>
                         </div>
-                        <div class="form-control w-20">
-                            <label class="label label-text text-xs">Boxes</label>
-                            <input type="number" id="itemBoxes" class="input input-bordered input-sm" placeholder="0" min="0" value="0" onchange="updateTotalPieces()">
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text">Credit Info</span></label>
+                            <div id="customerCreditInfo" class="input input-bordered flex items-center bg-base-200 text-sm text-base-content/70 min-h-10 px-3">
+                                Pick a customer to see credit limit and balance
+                            </div>
                         </div>
-                        <div class="form-control w-20">
-                            <label class="label label-text text-xs">Pieces</label>
-                            <input type="number" id="itemPieces" class="input input-bordered input-sm" placeholder="0" min="0" value="0" onchange="updateTotalPieces()">
-                        </div>
-                        <div class="form-control w-32">
-                            <label class="label label-text text-xs">Total Pieces</label>
-                            <input type="text" id="totalPiecesDisplay" class="input input-bordered input-sm bg-base-100" readonly value="0 pcs">
-                        </div>
-                        <button type="button" class="btn btn-primary btn-sm" onclick="addItem()">
-                            <i class="fas fa-plus"></i> Add
-                        </button>
                     </div>
-                    <p class="text-xs text-base-content/60 mt-2" id="piecesPerBoxInfo">Select a product to see pieces per box</p>
                 </div>
-                
-                <div class="overflow-x-auto mb-4 max-h-60">
-                    <table class="table table-sm">
-                        <thead class="bg-base-200 sticky top-0">
-                            <tr>
-                                <th>Product</th>
-                                <th class="text-center">Boxes</th>
-                                <th class="text-center">Pieces</th>
-                                <th class="text-center">Total</th>
-                                <th class="text-right">Price</th>
-                                <th class="text-right">Subtotal</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody id="orderItemsTable">
-                            <tr><td colspan="7" class="text-center py-4 text-base-content/60">No items added</td></tr>
-                        </tbody>
-                        <tfoot class="bg-base-200">
-                            <tr>
-                                <td colspan="5" class="text-right font-semibold">Total:</td>
-                                <td class="text-right font-bold text-primary" id="orderTotal">₱0.00</td>
-                                <td></td>
-                            </tr>
-                        </tfoot>
-                    </table>
+
+                <!-- Section 2: Order Items -->
+                <div class="mb-4">
+                    <h4 class="font-semibold text-base-content mb-3 pb-1.5 border-b-2 border-base-300 flex items-center gap-2">
+                        <span class="w-6 h-6 bg-primary text-primary-content rounded-full text-xs flex items-center justify-center">2</span>
+                        Order Items
+                        <span class="ml-auto text-xs font-normal text-base-content/60" id="itemsCountBadge">0 item(s) added</span>
+                    </h4>
+
+                    <div class="bg-base-200 rounded-lg p-3 mb-3">
+                        <div class="flex flex-wrap gap-3 items-end">
+                            <div class="form-control flex-1 min-w-[200px]">
+                                <label class="label py-1"><span class="label-text text-xs">Product</span></label>
+                                <select id="productSelect" class="select select-bordered select-sm">
+                                    <option value="">Select product...</option>
+                                </select>
+                            </div>
+                            <div class="form-control w-24">
+                                <label class="label py-1"><span class="label-text text-xs">Boxes</span></label>
+                                <input type="number" id="itemBoxes" class="input input-bordered input-sm" placeholder="0" min="0" value="0" onchange="updateTotalPieces()">
+                            </div>
+                            <div class="form-control w-24">
+                                <label class="label py-1"><span class="label-text text-xs">Pieces</span></label>
+                                <input type="number" id="itemPieces" class="input input-bordered input-sm" placeholder="0" min="0" value="0" onchange="updateTotalPieces()">
+                            </div>
+                            <div class="form-control w-36">
+                                <label class="label py-1"><span class="label-text text-xs">Total Pieces</span></label>
+                                <input type="text" id="totalPiecesDisplay" class="input input-bordered input-sm bg-base-100 font-mono" readonly value="0">
+                            </div>
+                            <button type="button" class="btn btn-outline btn-primary btn-sm gap-1" onclick="addItem()">
+                                <i class="fas fa-plus"></i> Add
+                            </button>
+                        </div>
+                        <p class="text-xs text-base-content/60 mt-2" id="piecesPerBoxInfo">Select a product to see pieces per box</p>
+                    </div>
+
+                    <div class="overflow-x-auto mb-3 max-h-60 border border-base-300 rounded-lg">
+                        <table class="table table-sm">
+                            <thead class="bg-base-200 sticky top-0">
+                                <tr>
+                                    <th>Product</th>
+                                    <th class="text-center">Boxes</th>
+                                    <th class="text-center">Pieces</th>
+                                    <th class="text-center">Total</th>
+                                    <th class="text-right">Price</th>
+                                    <th class="text-right">Subtotal</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="orderItemsTable">
+                                <tr>
+                                    <td colspan="7" class="text-center py-6 text-base-content/60">
+                                        <i class="fas fa-box-open text-2xl mb-2 block text-base-content/30"></i>
+                                        No items added yet. Pick a product above and click <span class="font-semibold">Add</span>.
+                                    </td>
+                                </tr>
+                            </tbody>
+                            <tfoot class="bg-base-200">
+                                <tr>
+                                    <td colspan="5" class="text-right font-semibold">Total:</td>
+                                    <td class="text-right font-bold text-primary" id="orderTotal">₱0.00</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
                 </div>
-                
+
                 <div class="form-control">
-                    <label class="label"><span class="label-text">Notes</span></label>
-                    <textarea id="orderNotes" class="textarea textarea-bordered" rows="2" placeholder="Special instructions..."></textarea>
+                    <label class="label py-1"><span class="label-text">Notes</span></label>
+                    <textarea id="orderNotes" class="textarea textarea-bordered" rows="2" placeholder="Special instructions for the warehouse or delivery team..."></textarea>
                 </div>
-                
+
                 <div class="modal-action">
                     <button type="button" class="btn" onclick="document.getElementById('newOrderModal').close()">Cancel</button>
                     <button type="submit" class="btn btn-primary">
@@ -384,7 +412,7 @@
     
     <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
     
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js"></script>
     <script src="../../js/sales/sales.service.js"></script>
@@ -626,12 +654,11 @@
                 console.log('Customer selected:', { id: option.value, type: customerType }); // Debug
                 
                 document.getElementById('customerCreditInfo').innerHTML = `
-                    <div class="flex justify-between">
-                        <span>Limit: ${formatCurrency(credit)}</span>
-                        <span>Outstanding: <span class="${outstanding > 0 ? 'text-warning' : ''}">${formatCurrency(outstanding)}</span></span>
-                    </div>
-                    <div class="font-semibold mt-1">Available: <span class="${available < 0 ? 'text-error' : 'text-success'}">${formatCurrency(available)}</span></div>
-                    <div class="text-xs mt-1 opacity-60">Type: ${customerType}</div>
+                    <span>Limit: <span class="font-mono">${formatCurrency(credit)}</span></span>
+                    <span class="text-base-content/40 mx-1">·</span>
+                    <span>Outstanding: <span class="font-mono ${outstanding > 0 ? 'text-warning' : ''}">${formatCurrency(outstanding)}</span></span>
+                    <span class="text-base-content/40 mx-1">·</span>
+                    <span>Available: <span class="font-mono font-semibold ${available < 0 ? 'text-error' : 'text-success'}">${formatCurrency(available)}</span></span>
                 `;
                 
                 document.getElementById('paymentMode').value = option.dataset.payment || 'credit';
@@ -662,7 +689,7 @@
                     document.getElementById('subAccount').innerHTML = '<option value="">Select branch...</option>';
                 }
             } else {
-                document.getElementById('customerCreditInfo').textContent = 'Select a customer';
+                document.getElementById('customerCreditInfo').textContent = 'Pick a customer to see credit limit and balance';
                 document.getElementById('subAccountContainer').style.display = 'none';
             }
         }
@@ -761,22 +788,30 @@
         
         function renderOrderItems() {
             const tbody = document.getElementById('orderItemsTable');
-            
+            const badge = document.getElementById('itemsCountBadge');
+
             if (orderItems.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-base-content/60">No items added</td></tr>';
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="text-center py-6 text-base-content/60">
+                            <i class="fas fa-box-open text-2xl mb-2 block text-base-content/30"></i>
+                            No items added yet. Pick a product above and click <span class="font-semibold">Add</span>.
+                        </td>
+                    </tr>`;
                 document.getElementById('orderTotal').textContent = '₱0.00';
+                if (badge) badge.textContent = '0 item(s) added';
                 return;
             }
-            
+
             tbody.innerHTML = orderItems.map((item, index) => `
                 <tr>
                     <td>${item.product_name}</td>
                     <td class="text-center">
-                        <input type="number" class="input input-bordered input-xs w-14 text-center" 
+                        <input type="number" class="input input-bordered input-xs w-14 text-center"
                                value="${item.quantity_boxes || 0}" min="0" onchange="updateItemBoxes(${index}, this.value)">
                     </td>
                     <td class="text-center">
-                        <input type="number" class="input input-bordered input-xs w-14 text-center" 
+                        <input type="number" class="input input-bordered input-xs w-14 text-center"
                                value="${item.quantity_pieces || 0}" min="0" onchange="updateItemPieces(${index}, this.value)">
                     </td>
                     <td class="text-center text-sm">${item.quantity} pcs</td>
@@ -789,9 +824,10 @@
                     </td>
                 </tr>
             `).join('');
-            
+
             const total = orderItems.reduce((sum, item) => sum + item.subtotal, 0);
             document.getElementById('orderTotal').textContent = formatCurrency(total);
+            if (badge) badge.textContent = `${orderItems.length} item(s) added`;
         }
         
         function updateItemBoxes(index, boxes) {
@@ -826,7 +862,7 @@
             document.getElementById('newOrderForm').reset();
             orderItems = [];
             renderOrderItems();
-            document.getElementById('customerCreditInfo').textContent = 'Select a customer';
+            document.getElementById('customerCreditInfo').textContent = 'Pick a customer to see credit limit and balance';
             document.getElementById('deliveryDate').value = new Date().toISOString().split('T')[0];
             document.getElementById('newOrderModal').showModal();
         }

@@ -153,6 +153,36 @@ const PurchasingService = {
         });
     },
 
+    /**
+     * Receive a PO with per-line evidence photos attached (multipart upload).
+     * The order of `evidenceFiles` must match `receivingItems[]`; files for
+     * lines with `rejected <= 0` are silently ignored on the server.
+     */
+    async receivePOWithPricesAndEvidence(id, priceUpdates = [], receivingItems = [], receivingMeta = {}, evidenceFiles = []) {
+        const formData = new FormData();
+        formData.append('price_updates', JSON.stringify(priceUpdates || []));
+        formData.append('receiving_items', JSON.stringify(receivingItems || []));
+        formData.append('receiving_meta', JSON.stringify(receivingMeta || {}));
+        (evidenceFiles || []).forEach((file) => {
+            if (file) formData.append('evidence_photos[]', file);
+        });
+        // Use PUT with the X-HTTP-Method-Override trick (matches receivePOWithPrices).
+        // Forcing the method to 'put' lets the global axios interceptor downgrade it to
+        // POST while still sending the X-HTTP-Method-Override header, so the server
+        // routes into handlePut where 'receive_with_prices' is implemented.
+        return await api.put(`/purchasing/purchase_orders.php?action=receive_with_prices&id=${id}`, formData);
+    },
+
+    /**
+     * Build the URL for the evidence photo of a supplier rejection. The auth
+     * token is appended as ?token= so the URL works as <img src>.
+     */
+    getRejectionEvidenceUrl(rejectionId) {
+        const baseUrl = (typeof api !== 'undefined' && api && api.defaults && api.defaults.baseURL) || '';
+        const token = localStorage.getItem('highland_token') || '';
+        return `${baseUrl}/purchasing/purchase_orders.php?action=rejection_evidence&id=${encodeURIComponent(rejectionId)}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+    },
+
     // ========================================
     // PURCHASE REQUESTS (Phase 1 PR Flow)
     // ========================================

@@ -532,12 +532,17 @@ function ensureWarehouseReceivingSupport($db) {
             `resolved_at` DATETIME DEFAULT NULL,
             `resolved_by` INT(11) DEFAULT NULL,
             `notes` TEXT DEFAULT NULL,
+            `evidence_photo_path` VARCHAR(500) DEFAULT NULL,
             PRIMARY KEY (`id`),
             UNIQUE KEY `idx_supplier_rejections_code` (`rejection_code`),
             KEY `idx_supplier_rejections_rr` (`rr_id`),
             KEY `idx_supplier_rejections_supplier` (`supplier_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     ");
+
+    if (!auditColumnExists($db, 'supplier_rejections', 'evidence_photo_path')) {
+        $db->exec("ALTER TABLE `supplier_rejections` ADD COLUMN `evidence_photo_path` VARCHAR(500) DEFAULT NULL AFTER `notes`");
+    }
 }
 
 function ensureProcurementNotificationSupport($db) {
@@ -1355,10 +1360,10 @@ function handlePut($db, $action, $currentUser) {
             $db->beginTransaction();
             try {
                 // Get receiving_items from request body: [{item_id, accepted, rejected, rejection_reason, rejection_category, new_price, lot_number, expiry_date, condition}]
-                $receivingItems = $data['receiving_items'] ?? [];
-                $receivingMeta = $data['receiving_meta'] ?? [];
+                $receivingItems = decodeJsonField($data['receiving_items'] ?? null, []);
+                $receivingMeta = decodeJsonField($data['receiving_meta'] ?? null, []);
 
-                if (empty($receivingItems)) {
+                if (empty($receivingItems) || !is_array($receivingItems)) {
                     Response::error('Receiving requires per-item accepted and rejected quantities.', 400);
                 }
 
@@ -2103,12 +2108,22 @@ function createSupplierRejectionFromReceipt($db, $rrId, $rrItemId, $po, $poItem,
     $rejectionCode = generateUniqueRejectionCode($db);
     $category = mapReceivingRejectionCategory($itemData['rejection_category'] ?? null);
 
+    $evidencePath = null;
+    $pendingFile = consumePendingRejectionEvidence($itemData);
+    if ($pendingFile !== null) {
+        $saved = saveRejectionEvidenceFile($pendingFile, $category);
+        if ($saved === false) {
+            throw new Exception("Item '{$poItem['item_description']}': invalid photo upload. Use JPEG, PNG, WebP, or HEIC up to 5 MB.");
+        }
+        $evidencePath = $saved;
+    }
+
     $stmt = $db->prepare("
         INSERT INTO supplier_rejections
         (rejection_code, rr_id, rr_item_id, supplier_id, ingredient_id, mro_item_id,
          item_description, quantity, unit, unit_price, total_value, rejection_type,
-         rejection_reason, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         rejection_reason, created_by, evidence_photo_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     $stmt->execute([
         $rejectionCode,
@@ -2124,8 +2139,136 @@ function createSupplierRejectionFromReceipt($db, $rrId, $rrItemId, $po, $poItem,
         $quantity * $unitPrice,
         $category,
         cleanOptionalText($itemData['rejection_reason'] ?? null),
-        $currentUser['user_id']
+        $currentUser['user_id'],
+        $evidencePath
     ]);
+    $rejectionId = (int)$db->lastInsertId();
+
+    if ($evidencePath !== null) {
+        $finalName = 'rej_' . $rejectionId . '_' . substr(bin2hex(random_bytes(3)), 0, 6) . '.jpg';
+        $finalRel = dirname($evidencePath) . '/' . $finalName;
+        $projectRoot = dirname(dirname(__DIR__));
+        $finalAbs = $projectRoot . '/' . $finalRel;
+        if (!@rename($projectRoot . '/' . $evidencePath, $finalAbs)) {
+            throw new Exception("Item '{$poItem['item_description']}': failed to finalize evidence file");
+        }
+        $db->prepare("UPDATE supplier_rejections SET evidence_photo_path = ? WHERE id = ?")
+            ->execute([$finalRel, $rejectionId]);
+        $evidencePath = $finalRel;
+
+        logAudit($currentUser['user_id'], 'UPLOAD_EVIDENCE', 'supplier_rejections', $rejectionId, null, [
+            'rejection_code' => $rejectionCode,
+            'rr_id' => $rrId,
+            'item_description' => $poItem['item_description'],
+            'evidence_photo_path' => $finalRel,
+            'rejection_category' => $category
+        ]);
+    }
+}
+
+/**
+ * Pull the next pending evidence file from the global $_FILES queue.
+ * Returns the file array, or null if none remain. The index is removed
+ * from the queue so each rejected line consumes exactly one file.
+ */
+function consumePendingRejectionEvidence(&$itemData) {
+    if (!isset($_FILES['evidence_photos']) || !is_array($_FILES['evidence_photos']['name'])) {
+        return null;
+    }
+    $nameKey = $_FILES['evidence_photos']['name'] ?? [];
+    if (empty($nameKey) || current($nameKey) === '' || (int)($_FILES['evidence_photos']['error'][0] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return null;
+    }
+
+    $file = [
+        'name' => $_FILES['evidence_photos']['name'][0],
+        'type' => $_FILES['evidence_photos']['type'][0],
+        'tmp_name' => $_FILES['evidence_photos']['tmp_name'][0],
+        'error' => $_FILES['evidence_photos']['error'][0],
+        'size' => $_FILES['evidence_photos']['size'][0]
+    ];
+
+    array_shift($_FILES['evidence_photos']['name']);
+    array_shift($_FILES['evidence_photos']['type']);
+    array_shift($_FILES['evidence_photos']['tmp_name']);
+    array_shift($_FILES['evidence_photos']['error']);
+    array_shift($_FILES['evidence_photos']['size']);
+    if (empty($_FILES['evidence_photos']['name'])) {
+        unset($_FILES['evidence_photos']);
+    }
+
+    return (int)$file['error'] === UPLOAD_ERR_NO_FILE ? null : $file;
+}
+
+function saveRejectionEvidenceFile($file, $reasonCategory) {
+    if (!isset($file['error']) || $file['error'] !== UPLOAD_ERR_OK) {
+        return false;
+    }
+    if (!is_uploaded_file($file['tmp_name'])) {
+        return false;
+    }
+    $maxBytes = 5 * 1024 * 1024;
+    if ((int)$file['size'] > $maxBytes) {
+        return false;
+    }
+    $allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+    $finfo = function_exists('finfo_open') ? finfo_open(FILEINFO_MIME_TYPE) : null;
+    $detectedMime = $finfo ? finfo_file($finfo, $file['tmp_name']) : ($file['type'] ?? '');
+    if ($finfo) finfo_close($finfo);
+    if (!in_array($detectedMime, $allowedMimes, true)) {
+        return false;
+    }
+
+    $projectRoot = dirname(dirname(__DIR__));
+    $year = date('Y');
+    $month = date('m');
+    $targetDir = $projectRoot . '/uploads/rejections/' . $year . '/' . $month;
+    if (!is_dir($targetDir)) {
+        if (!@mkdir($targetDir, 0755, true) && !is_dir($targetDir)) {
+            return false;
+        }
+        $htaccess = $targetDir . '/.htaccess';
+        if (!file_exists($htaccess)) {
+            @file_put_contents($htaccess, "Options -Indexes\n<FilesMatch \"\\.(php|phtml|phar|cgi|pl|py|sh)$\">\n  Require all denied\n</FilesMatch>\n");
+        }
+    }
+
+    $tempName = 'rej_tmp_' . bin2hex(random_bytes(6)) . '.jpg';
+    $tempAbs = $targetDir . '/' . $tempName;
+    $tempRel = 'uploads/rejections/' . $year . '/' . $month . '/' . $tempName;
+
+    $saved = false;
+    if (extension_loaded('gd') && function_exists('getimagesize')) {
+        $image = @imagecreatefromstring(file_get_contents($file['tmp_name']));
+        if ($image !== false) {
+            $w = imagesx($image);
+            $h = imagesy($image);
+            $maxSide = 1600;
+            if ($w > $maxSide || $h > $maxSide) {
+                $scale = $maxSide / max($w, $h);
+                $newW = (int)round($w * $scale);
+                $newH = (int)round($h * $scale);
+                $resized = imagecreatetruecolor($newW, $newH);
+                imagecopyresampled($resized, $image, 0, 0, 0, 0, $newW, $newH, $w, $h);
+                imagedestroy($image);
+                $image = $resized;
+            }
+            if (function_exists('imagejpeg')) {
+                $saved = @imagejpeg($image, $tempAbs, 82);
+            }
+            imagedestroy($image);
+        }
+    }
+    if (!$saved) {
+        if ((int)$file['size'] > $maxBytes) {
+            return false;
+        }
+        $saved = @move_uploaded_file($file['tmp_name'], $tempAbs);
+    }
+    if (!$saved || !file_exists($tempAbs)) {
+        return false;
+    }
+    return $tempRel;
 }
 
 function generateReceivingReportNumber($db) {
@@ -2178,6 +2321,29 @@ function mapReceivingRejectionCategory($category) {
 function cleanOptionalText($value) {
     $value = trim((string)($value ?? ''));
     return $value === '' ? null : $value;
+}
+
+/**
+ * Decode a JSON-encoded form field into its native type.
+ * Multipart uploads (FormData on the client) put fields into $_POST as strings,
+ * so the receiving_items / receiving_meta / price_updates arrays arrive as
+ * JSON strings rather than decoded arrays. This helper normalizes both shapes.
+ */
+function decodeJsonField($value, $default = null) {
+    if (is_array($value) || is_object($value)) {
+        return $value;
+    }
+    if (is_string($value)) {
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return $default;
+        }
+        $decoded = json_decode($trimmed, true);
+        if (json_last_error() === JSON_ERROR_NONE) {
+            return $decoded;
+        }
+    }
+    return $default;
 }
 
 function buildReceivingNotes($receivingMeta, $itemData) {

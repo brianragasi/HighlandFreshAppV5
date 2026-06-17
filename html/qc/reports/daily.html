@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Report - Quality Control | Highland Fresh</title>
+
+    <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
+    <link rel="stylesheet" href="../../../css/tailwind.css">
+
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <!-- Chart.js (self-hosted) -->
+    <script src="../../../js/vendor/chart.umd.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .bento-card { @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .stat-value { font-variant-numeric: tabular-nums; }
+
+        /* Print styles */
+        @media print {
+            #sidebar, #sidebarBackdrop, .no-print, header.navbar { display: none !important; }
+            .lg\:ml-72 { margin-left: 0 !important; }
+            body { background: white !important; }
+            .card, .bento-card { box-shadow: none !important; border: 1px solid #e5e7eb !important; page-break-inside: avoid; }
+            main { padding: 0 !important; }
+        }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <img src="../../images/logo.jpg" alt="Highland Fresh Logo" class="w-10 h-10 rounded-xl object-cover">
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Quality Control</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="../dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inbound Milk</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="../milk_receiving.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-truck-loading w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Milk Receiving</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="../milk_grading.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-flask w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Milk Grading</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="../farmers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-users w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Farmers</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Production QC</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="../batch_release.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-check-double w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Batch Release</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="../print-labels.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-barcode w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Print Labels</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory QC</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="../expiry_management.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-calendar-times w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Expiry Management</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="../disposals.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-trash-alt w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Disposals</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="../recalls.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-exclamation-triangle w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Batch Recalls</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li>
+                        <a href="daily.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                            <i class="fas fa-chart-bar w-5 text-center"></i>
+                            <span class="flex-1">Daily Reports</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="farmer_summary.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-file-invoice-dollar w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Farmer Summary</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                        <span class="text-sm font-semibold" id="userInitials">QC</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">QC Officer</p>
+                    <p class="text-xs text-base-content/60 truncate">Quality Control</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square" onclick="AuthService.logout()">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6 no-print">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <div class="text-xs text-base-content/60">Quality Control / Reports</div>
+                <h1 class="text-lg lg:text-xl font-bold">Daily Report</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <button class="btn btn-ghost btn-sm" onclick="loadReport()" title="Refresh">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+                <button class="btn btn-ghost btn-sm" onclick="window.print()" title="Print">
+                    <i class="fas fa-print"></i>
+                </button>
+            </div>
+        </header>
+
+        <main class="flex-1 p-4 lg:p-6 space-y-6">
+
+            <!-- Date Filter -->
+            <div class="card bg-base-100 border border-base-300 no-print">
+                <div class="card-body p-4">
+                    <div class="flex flex-col sm:flex-row sm:items-end gap-3">
+                        <div class="form-control flex-1 max-w-xs">
+                            <label class="label py-1">
+                                <span class="label-text text-xs font-medium">Report Date</span>
+                            </label>
+                            <input type="date" id="reportDate" class="input input-bordered input-sm" />
+                        </div>
+                        <button class="btn btn-primary btn-sm gap-2" onclick="loadReport()">
+                            <i class="fas fa-search"></i> Generate Report
+                        </button>
+                        <div class="text-xs text-base-content/60 sm:ml-auto self-center">
+                            <i class="fas fa-info-circle"></i> Daily snapshot of QC activity for the selected date.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Report Header (visible in print too) -->
+            <div class="hidden print:block text-center mb-4">
+                <h2 class="text-2xl font-bold">Highland Fresh Dairy — Quality Control Daily Report</h2>
+                <p class="text-sm" id="printDateHeader"></p>
+            </div>
+
+            <!-- Summary Cards -->
+            <div>
+                <h3 class="text-sm font-semibold text-base-content/60 uppercase tracking-wider mb-3">Receiving Summary</h3>
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div class="bento-card card bg-base-100 border border-base-300">
+                        <div class="card-body p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                                    <i class="fas fa-truck-loading text-primary"></i>
+                                </div>
+                                <span class="badge badge-ghost badge-sm">Deliveries</span>
+                            </div>
+                            <p class="text-2xl lg:text-3xl font-bold stat-value" id="statTotal">0</p>
+                            <p class="text-sm text-base-content/60">Total Deliveries</p>
+                        </div>
+                    </div>
+                    <div class="bento-card card bg-base-100 border border-base-300">
+                        <div class="card-body p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center">
+                                    <i class="fas fa-check-circle text-success"></i>
+                                </div>
+                                <span class="badge badge-success badge-sm">Accepted</span>
+                            </div>
+                            <p class="text-2xl lg:text-3xl font-bold stat-value text-success" id="statAccepted">0</p>
+                            <p class="text-sm text-base-content/60"><span id="statAcceptedL">0</span> L accepted</p>
+                        </div>
+                    </div>
+                    <div class="bento-card card bg-base-100 border border-base-300">
+                        <div class="card-body p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="w-10 h-10 rounded-xl bg-error/10 flex items-center justify-center">
+                                    <i class="fas fa-times-circle text-error"></i>
+                                </div>
+                                <span class="badge badge-error badge-sm">Rejected</span>
+                            </div>
+                            <p class="text-2xl lg:text-3xl font-bold stat-value text-error" id="statRejected">0</p>
+                            <p class="text-sm text-base-content/60"><span id="statRejectedL">0</span> L rejected</p>
+                        </div>
+                    </div>
+                    <div class="bento-card card bg-base-100 border border-base-300">
+                        <div class="card-body p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="w-10 h-10 rounded-xl bg-info/10 flex items-center justify-center">
+                                    <i class="fas fa-percentage text-info"></i>
+                                </div>
+                                <span class="badge badge-info badge-sm">Rate</span>
+                            </div>
+                            <p class="text-2xl lg:text-3xl font-bold stat-value text-info" id="statRate">0%</p>
+                            <p class="text-sm text-base-content/60">Acceptance rate</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Grading Chart + Top Farmers -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <!-- Grading Chart -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="card-title text-base">
+                                <i class="fas fa-award text-primary mr-2"></i> QC Grading Distribution
+                            </h3>
+                            <span class="text-xs text-base-content/60" id="gradeTestCount">0 tests</span>
+                        </div>
+                        <div class="h-64">
+                            <canvas id="gradingChart"></canvas>
+                        </div>
+                        <div id="gradingTable" class="mt-3 text-xs text-base-content/60 hidden"></div>
+                    </div>
+                </div>
+
+                <!-- Top Farmers -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-4">
+                        <h3 class="card-title text-base mb-3">
+                            <i class="fas fa-trophy text-warning mr-2"></i> Top Farmers Today
+                        </h3>
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr class="text-base-content/60">
+                                        <th>#</th>
+                                        <th>Farmer</th>
+                                        <th class="text-right">Deliveries</th>
+                                        <th class="text-right">Liters</th>
+                                        <th class="text-right">Avg Fat%</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="topFarmersBody">
+                                    <tr>
+                                        <td colspan="5" class="text-center py-8 text-base-content/40">
+                                            <i class="fas fa-inbox text-2xl mb-2 block"></i>
+                                            <p class="text-sm">No deliveries on this date</p>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Disposals Section -->
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="card-title text-base">
+                            <i class="fas fa-trash-alt text-error mr-2"></i> Disposals Activity
+                        </h3>
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="badge badge-ghost badge-sm" id="disposalTotal">0 total</span>
+                            <span class="badge badge-warning badge-sm" id="disposalPendingBadge">0 pending</span>
+                            <span class="badge badge-info badge-sm" id="disposalApprovedBadge">0 approved</span>
+                            <span class="badge badge-success badge-sm" id="disposalCompletedBadge">0 done</span>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+                        <div class="text-center p-3 rounded-lg bg-base-200/40">
+                            <p class="text-xs text-base-content/60">Items Disposed</p>
+                            <p class="text-xl font-bold stat-value" id="disposalQty">0</p>
+                        </div>
+                        <div class="text-center p-3 rounded-lg bg-base-200/40">
+                            <p class="text-xs text-base-content/60">Loss Value (Completed)</p>
+                            <p class="text-xl font-bold stat-value text-error" id="disposalValue">₱0.00</p>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr class="text-base-content/60">
+                                    <th>Code</th>
+                                    <th>Item</th>
+                                    <th class="text-right">Qty</th>
+                                    <th>Category</th>
+                                    <th>Method</th>
+                                    <th>Status</th>
+                                    <th class="text-right">Value</th>
+                                </tr>
+                            </thead>
+                            <tbody id="disposalsBody">
+                                <tr>
+                                    <td colspan="7" class="text-center py-8 text-base-content/40">
+                                        <i class="fas fa-inbox text-2xl mb-2 block"></i>
+                                        <p class="text-sm">No disposal activity on this date</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Batch Releases Section -->
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="card-title text-base">
+                            <i class="fas fa-check-double text-success mr-2"></i> Batch Release Activity
+                        </h3>
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="badge badge-success badge-sm" id="batchReleasedBadge">0 released</span>
+                            <span class="badge badge-error badge-sm" id="batchRejectedBadge">0 rejected</span>
+                            <span class="badge badge-ghost badge-sm" id="batchYieldBadge">0 units</span>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr class="text-base-content/60">
+                                    <th>Batch Code</th>
+                                    <th>Product</th>
+                                    <th>QC Status</th>
+                                    <th>Released By</th>
+                                    <th class="text-right">Planned</th>
+                                    <th class="text-right">Actual</th>
+                                    <th>Released At</th>
+                                </tr>
+                            </thead>
+                            <tbody id="batchReleasesBody">
+                                <tr>
+                                    <td colspan="7" class="text-center py-8 text-base-content/40">
+                                        <i class="fas fa-inbox text-2xl mb-2 block"></i>
+                                        <p class="text-sm">No batch release activity on this date</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Tests Table -->
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="card-title text-base">
+                            <i class="fas fa-vial text-info mr-2"></i> QC Tests Performed
+                        </h3>
+                        <span class="text-xs text-base-content/60" id="testsCount">0 tests on this date</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr class="text-base-content/60">
+                                    <th>Test Code</th>
+                                    <th>Time</th>
+                                    <th>Farmer</th>
+                                    <th class="text-right">Vol (L)</th>
+                                    <th class="text-right">Fat %</th>
+                                    <th class="text-right">TA %</th>
+                                    <th class="text-right">SG</th>
+                                    <th>Grade</th>
+                                    <th class="text-right">Value</th>
+                                </tr>
+                            </thead>
+                            <tbody id="testsBody">
+                                <tr>
+                                    <td colspan="9" class="text-center py-8 text-base-content/40">
+                                        <span class="loading loading-spinner loading-sm text-primary"></span>
+                                        <p class="text-sm mt-2">Loading tests...</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer signature -->
+            <div class="text-center text-xs text-base-content/40 pt-4">
+                <p>Report generated by Highland Fresh QC System • <span id="generatedAt"></span></p>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+
+    <script>
+        function toggleSidebar() {
+            const s = document.getElementById('sidebar');
+            const b = document.getElementById('sidebarBackdrop');
+            s.classList.toggle('-translate-x-full');
+            b.classList.toggle('hidden');
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg`;
+            toast.innerHTML = `<span class="text-sm">${escapeHtml(message)}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3500);
+        }
+
+        function escapeHtml(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        function formatCurrency(n) {
+            return '₱' + parseFloat(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatNumber(n, digits = 0) {
+            return parseFloat(n || 0).toLocaleString('en-PH', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+        }
+
+        function formatDateLong(s) {
+            if (!s) return '-';
+            return new Date(s + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        }
+
+        function formatTime(s) {
+            if (!s) return '-';
+            return new Date(s).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function gradeBadge(grade) {
+            const map = {
+                'A': 'badge-success',
+                'B': 'badge-info',
+                'C': 'badge-warning',
+                'D': 'badge-warning',
+                'Rejected': 'badge-error'
+            };
+            return map[grade] || 'badge-ghost';
+        }
+
+        function statusBadge(status) {
+            const map = {
+                'pending': 'badge-warning',
+                'pending_qc': 'badge-warning',
+                'accepted': 'badge-success',
+                'rejected': 'badge-error',
+                'approved': 'badge-info',
+                'completed': 'badge-success',
+                'released': 'badge-success',
+                'cancelled': 'badge-ghost'
+            };
+            return map[status] || 'badge-ghost';
+        }
+
+        let gradingChart = null;
+
+        // ============================================
+        // Load report
+        // ============================================
+        async function loadReport() {
+            const date = document.getElementById('reportDate').value;
+            if (!date) {
+                showToast('Please select a date', 'error');
+                return;
+            }
+
+            // Update print header
+            document.getElementById('printDateHeader').textContent = formatDateLong(date);
+            document.getElementById('generatedAt').textContent = new Date().toLocaleString('en-PH');
+
+            // Show loading on tests
+            document.getElementById('testsBody').innerHTML = `
+                <tr><td colspan="10" class="text-center py-8">
+                    <span class="loading loading-spinner loading-md text-primary"></span>
+                    <p class="text-sm mt-2 text-base-content/60">Loading report...</p>
+                </td></tr>`;
+
+            try {
+                const response = await api.get('/qc/reports_daily.php', { params: { date } });
+                if (response.success) {
+                    renderReport(response.data);
+                } else {
+                    showToast(response.message || 'Failed to load report', 'error');
+                }
+            } catch (err) {
+                showToast(err.message || 'Network error', 'error');
+                console.error('Report load error:', err);
+            }
+        }
+
+        // ============================================
+        // Render report
+        // ============================================
+        function renderReport(data) {
+            renderSummary(data.receiving);
+            renderGrading(data.grading);
+            renderTopFarmers(data.top_farmers);
+            renderDisposals(data.disposals);
+            renderBatchReleases(data.batch_releases);
+            renderTests(data.recent_tests);
+        }
+
+        function renderSummary(r) {
+            document.getElementById('statTotal').textContent = formatNumber(r.total_deliveries || 0);
+            document.getElementById('statAccepted').textContent = formatNumber(r.accepted || 0);
+            document.getElementById('statAcceptedL').textContent = formatNumber(r.accepted_liters || 0, 1);
+            document.getElementById('statRejected').textContent = formatNumber(r.rejected || 0);
+            document.getElementById('statRejectedL').textContent = formatNumber(r.rejected_liters || 0, 1);
+            document.getElementById('statRate').textContent = (r.acceptance_rate || 0) + '%';
+        }
+
+        function renderGrading(grades) {
+            const order = ['A', 'B', 'C', 'D', 'Rejected'];
+            const present = order.filter(g => grades.some(x => x.grade === g));
+            const counts = present.map(g => {
+                const row = grades.find(x => x.grade === g);
+                return { grade: g, count: parseInt(row?.count || 0), avg_fat: parseFloat(row?.avg_fat || 0) };
+            });
+
+            const totalTests = counts.reduce((sum, x) => sum + x.count, 0);
+            document.getElementById('gradeTestCount').textContent = `${totalTests} test${totalTests !== 1 ? 's' : ''}`;
+
+            // Render chart
+            const ctx = document.getElementById('gradingChart');
+            const colorMap = {
+                'A': '#10b981',
+                'B': '#3b82f6',
+                'C': '#f59e0b',
+                'D': '#f97316',
+                'Rejected': '#ef4444'
+            };
+            const data = {
+                labels: present,
+                datasets: [{
+                    label: 'Tests by Grade',
+                    data: counts.map(c => c.count),
+                    backgroundColor: present.map(g => colorMap[g] || '#94a3b8'),
+                    borderRadius: 6,
+                    borderWidth: 0
+                }]
+            };
+            if (gradingChart) gradingChart.destroy();
+            gradingChart = new Chart(ctx, {
+                type: 'bar',
+                data,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { precision: 0 } }
+                    }
+                }
+            });
+
+            // Render table summary below chart
+            if (totalTests > 0) {
+                document.getElementById('gradingTable').classList.remove('hidden');
+                document.getElementById('gradingTable').innerHTML = counts
+                    .map(c => `<span class="inline-block mr-3"><span class="badge badge-sm ${gradeBadge(c.grade)}">${c.grade}</span> ${c.count} (${c.avg_fat ? c.avg_fat.toFixed(2) + '% fat' : '—'})</span>`)
+                    .join('');
+            } else {
+                document.getElementById('gradingTable').classList.add('hidden');
+            }
+        }
+
+        function renderTopFarmers(farmers) {
+            const tbody = document.getElementById('topFarmersBody');
+            if (!farmers || farmers.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-base-content/40">
+                    <i class="fas fa-inbox text-2xl mb-2 block"></i>
+                    <p class="text-sm">No deliveries on this date</p>
+                </td></tr>`;
+                return;
+            }
+            tbody.innerHTML = farmers.map((f, i) => `
+                <tr class="hover">
+                    <td class="font-bold text-base-content/60">#${i + 1}</td>
+                    <td>
+                        <div class="font-semibold">${escapeHtml(f.farmer_name || '—')}</div>
+                        <div class="text-xs text-base-content/50 font-mono">${escapeHtml(f.farmer_code || '')}</div>
+                    </td>
+                    <td class="text-right">${f.deliveries}</td>
+                    <td class="text-right font-semibold">${formatNumber(f.total_liters || 0, 1)} L</td>
+                    <td class="text-right">${f.avg_fat ? parseFloat(f.avg_fat).toFixed(2) + '%' : '—'}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderDisposals(d) {
+            document.getElementById('disposalTotal').textContent = `${d.total || 0} total`;
+            document.getElementById('disposalPendingBadge').textContent = `${d.pending || 0} pending`;
+            document.getElementById('disposalApprovedBadge').textContent = `${d.approved || 0} approved`;
+            document.getElementById('disposalCompletedBadge').textContent = `${d.completed || 0} done`;
+            document.getElementById('disposalQty').textContent = formatNumber(d.total_quantity || 0, 1);
+            document.getElementById('disposalValue').textContent = formatCurrency(d.total_value || 0);
+
+            const tbody = document.getElementById('disposalsBody');
+            if (!d.list || d.list.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-base-content/40">
+                    <i class="fas fa-inbox text-2xl mb-2 block"></i>
+                    <p class="text-sm">No disposal activity on this date</p>
+                </td></tr>`;
+                return;
+            }
+            tbody.innerHTML = d.list.map(x => `
+                <tr class="hover">
+                    <td class="font-mono text-xs">${escapeHtml(x.disposal_code || '')}</td>
+                    <td>${escapeHtml(x.product_name || '—')}</td>
+                    <td class="text-right">${formatNumber(x.quantity || 0, 1)} ${escapeHtml(x.unit || '')}</td>
+                    <td class="text-xs">${escapeHtml((x.disposal_category || '').replace(/_/g, ' '))}</td>
+                    <td class="text-xs">${escapeHtml((x.disposal_method || '').replace(/_/g, ' '))}</td>
+                    <td><span class="badge badge-sm ${statusBadge(x.status)}">${escapeHtml(x.status || '')}</span></td>
+                    <td class="text-right font-semibold">${formatCurrency(x.total_value || 0)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderBatchReleases(b) {
+            document.getElementById('batchReleasedBadge').textContent = `${b.released || 0} released`;
+            document.getElementById('batchRejectedBadge').textContent = `${b.rejected || 0} rejected`;
+            document.getElementById('batchYieldBadge').textContent = `${formatNumber(b.total_yield || 0)} units`;
+
+            const tbody = document.getElementById('batchReleasesBody');
+            if (!b.list || b.list.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-base-content/40">
+                    <i class="fas fa-inbox text-2xl mb-2 block"></i>
+                    <p class="text-sm">No batch release activity on this date</p>
+                </td></tr>`;
+                return;
+            }
+            tbody.innerHTML = b.list.map(x => `
+                <tr class="hover">
+                    <td class="font-mono text-xs font-semibold">${escapeHtml(x.batch_code || '')}</td>
+                    <td>${escapeHtml(x.product_name || '—')}</td>
+                    <td><span class="badge badge-sm ${statusBadge(x.qc_status)}">${escapeHtml(x.qc_status || '')}</span></td>
+                    <td>${escapeHtml(x.released_by_name || '—')}</td>
+                    <td class="text-right">${formatNumber(x.planned_quantity || 0)}</td>
+                    <td class="text-right font-semibold">${formatNumber(x.actual_quantity || 0)}</td>
+                    <td class="text-xs">${formatTime(x.qc_released_at)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderTests(tests) {
+            const tbody = document.getElementById('testsBody');
+            document.getElementById('testsCount').textContent = `${tests.length} test${tests.length !== 1 ? 's' : ''} on this date`;
+
+            if (!tests || tests.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="10" class="text-center py-8 text-base-content/40">
+                    <i class="fas fa-vial text-2xl mb-2 block"></i>
+                    <p class="text-sm">No QC tests performed on this date</p>
+                </td></tr>`;
+                return;
+            }
+            tbody.innerHTML = tests.map(t => `
+                <tr class="hover">
+                    <td class="font-mono text-xs">${escapeHtml(t.test_code || '')}</td>
+                    <td class="text-xs">${formatTime(t.test_datetime)}</td>
+                    <td>
+                        <div class="font-medium">${escapeHtml(t.farmer_name || '—')}</div>
+                        <div class="text-xs text-base-content/50 font-mono">${escapeHtml(t.farmer_code || '')}</div>
+                    </td>
+                    <td class="text-right">${formatNumber(t.volume_liters || 0, 1)}</td>
+                    <td class="text-right">${t.fat_percentage ? parseFloat(t.fat_percentage).toFixed(2) : '—'}</td>
+                    <td class="text-right">${t.titratable_acidity ? parseFloat(t.titratable_acidity).toFixed(3) : '—'}</td>
+                    <td class="text-right">${t.specific_gravity ? parseFloat(t.specific_gravity).toFixed(3) : '—'}</td>
+                    <td><span class="badge badge-sm ${gradeBadge(t.grade)}">${escapeHtml(t.grade || '—')}</span></td>
+                    <td class="text-sm text-base-content/60">${t.test_datetime ? new Date(t.test_datetime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : '—'}</td>
+                    <td class="text-right font-semibold">${formatCurrency(t.total_amount || 0)}</td>
+                </tr>
+            `).join('');
+        }
+
+        // ============================================
+        // Initialize
+        // ============================================
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../../login.html';
+                return;
+            }
+
+            // Populate user info
+            const user = AuthService.getCurrentUser();
+            if (user) {
+                document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
+                document.getElementById('userInitials').textContent = (user.first_name[0] + user.last_name[0]).toUpperCase();
+            }
+
+            // Default to today
+            const today = new Date().toISOString().slice(0, 10);
+            document.getElementById('reportDate').value = today;
+            document.getElementById('reportDate').max = today;
+
+            await loadReport();
+        });
+    </script>
+
+    <script src="../../../js/vendor/axios.min.js"></script>
+    <script src="../../../js/config/api.js"></script>
+    <script src="../../../js/config/auth.js"></script>
+</body>
+
+</html>

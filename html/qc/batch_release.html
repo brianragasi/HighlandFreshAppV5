@@ -6,21 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Batch Release - Quality Control | Highland Fresh</title>
 
-    <!-- Tailwind CSS + DaisyUI CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
-
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'system-ui', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
+    <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
+    <link rel="stylesheet" href="../../css/tailwind.css">
 
     <!-- Inter Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -185,6 +172,13 @@
                     </li>
                 </ul>
             </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="reports/daily.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-chart-bar w-5 text-center text-base-content/60"></i><span>Daily Report</span></a></li>
+                    <li><a href="reports/farmer_summary.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-user-chart w-5 text-center text-base-content/60"></i><span>Farmer Summary</span></a></li>
+                </ul>
+            </div>
         </nav>
 
         <!-- User Section -->
@@ -251,58 +245,34 @@
         <!-- Page Content -->
         <main class="flex-1 p-4 lg:p-6">
 
-            <!-- Stats Cards -->
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <div class="card bg-base-100 border border-base-300">
-                    <div class="card-body p-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center">
-                                <i class="fas fa-clock text-warning text-xl"></i>
-                            </div>
-                            <div>
-                                <p class="text-2xl font-bold" id="pendingCount">0</p>
-                                <p class="text-xs text-base-content/60">Pending Verification</p>
-                            </div>
-                        </div>
+            <!-- Stats Row (no card borders — flat inline numbers) -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-clock text-warning text-2xl"></i>
+                    <div>
+                        <p class="text-2xl font-bold stat-value" id="pendingCount">0</p>
+                        <p class="text-xs text-base-content/60">Pending Verification</p>
                     </div>
                 </div>
-                <div class="card bg-base-100 border border-base-300">
-                    <div class="card-body p-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-12 h-12 rounded-xl bg-success/10 flex items-center justify-center">
-                                <i class="fas fa-check text-success text-xl"></i>
-                            </div>
-                            <div>
-                                <p class="text-2xl font-bold" id="releasedToday">0</p>
-                                <p class="text-xs text-base-content/60">Released Today</p>
-                            </div>
-                        </div>
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-check text-success text-2xl"></i>
+                    <div>
+                        <p class="text-2xl font-bold stat-value" id="releasedToday">0</p>
+                        <p class="text-xs text-base-content/60">Released Today</p>
                     </div>
                 </div>
-                <div class="card bg-base-100 border border-base-300">
-                    <div class="card-body p-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-12 h-12 rounded-xl bg-error/10 flex items-center justify-center">
-                                <i class="fas fa-times text-error text-xl"></i>
-                            </div>
-                            <div>
-                                <p class="text-2xl font-bold" id="rejectedToday">0</p>
-                                <p class="text-xs text-base-content/60">Rejected Today</p>
-                            </div>
-                        </div>
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-times text-error text-2xl"></i>
+                    <div>
+                        <p class="text-2xl font-bold stat-value" id="rejectedToday">0</p>
+                        <p class="text-xs text-base-content/60">Rejected Today</p>
                     </div>
                 </div>
-                <div class="card bg-base-100 border border-base-300">
-                    <div class="card-body p-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                                <i class="fas fa-boxes text-primary text-xl"></i>
-                            </div>
-                            <div>
-                                <p class="text-2xl font-bold" id="totalBatches">0</p>
-                                <p class="text-xs text-base-content/60">Total Batches</p>
-                            </div>
-                        </div>
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-boxes text-primary text-2xl"></i>
+                    <div>
+                        <p class="text-2xl font-bold stat-value" id="totalBatches">0</p>
+                        <p class="text-xs text-base-content/60">Total Batches</p>
                     </div>
                 </div>
             </div>
@@ -324,12 +294,41 @@
                 </button>
             </div>
 
-            <!-- Pending Batches Section -->
+            <!-- Pending Batches Section (table layout, no cards) -->
             <div id="pendingSection" class="tab-content">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4" id="pendingBatches">
-                    <div class="col-span-2 text-center py-8 text-base-content/40">
-                        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-                        <p>Loading...</p>
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-0">
+                        <div class="flex items-center justify-between p-4 border-b border-base-300">
+                            <h3 class="font-semibold flex items-center gap-2">
+                                <i class="fas fa-clock text-warning"></i>
+                                Pending Verification
+                            </h3>
+                            <span class="text-xs text-base-content/60">Click "Verify" to review a batch</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr class="bg-base-200/50 text-base-content/70">
+                                        <th>Batch #</th>
+                                        <th>Product</th>
+                                        <th>Raw Milk</th>
+                                        <th>Produced</th>
+                                        <th>Expires</th>
+                                        <th>Status</th>
+                                        <th>CCP</th>
+                                        <th class="text-right">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="pendingBatches">
+                                    <tr>
+                                        <td colspan="8" class="text-center py-8 text-base-content/40">
+                                            <span class="loading loading-spinner loading-md text-primary"></span>
+                                            <p class="text-sm mt-2">Loading batches...</p>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -431,18 +430,18 @@
                 <input type="hidden" id="verifyBatchId">
 
                 <div class="space-y-4 overflow-y-auto max-h-[60vh] pr-2">
-                    <!-- Batch Info -->
-                    <div class="grid grid-cols-3 gap-4">
-                        <div class="bg-base-200 rounded-xl p-3">
-                            <p class="text-xs text-base-content/60 mb-1">Product</p>
+                    <!-- Batch Info (flat inline rows, no card tiles) -->
+                    <div class="flex flex-wrap gap-x-8 gap-y-2 py-1">
+                        <div>
+                            <p class="text-xs text-base-content/60">Product</p>
                             <p class="font-semibold" id="verifyProduct">-</p>
                         </div>
-                        <div class="bg-base-200 rounded-xl p-3">
-                            <p class="text-xs text-base-content/60 mb-1">Quantity</p>
+                        <div>
+                            <p class="text-xs text-base-content/60">Quantity</p>
                             <p class="font-semibold" id="verifyQuantity">-</p>
                         </div>
-                        <div class="bg-base-200 rounded-xl p-3">
-                            <p class="text-xs text-base-content/60 mb-1">Produced</p>
+                        <div>
+                            <p class="text-xs text-base-content/60">Produced</p>
                             <p class="font-semibold" id="verifyProduced">-</p>
                         </div>
                     </div>
@@ -572,18 +571,18 @@
                     </div>
                 </div>
 
-                <!-- Batch Info -->
-                <div class="grid grid-cols-3 gap-4">
-                    <div class="bg-base-200 rounded-xl p-3">
-                        <p class="text-xs text-base-content/60 mb-1">Production Date</p>
+                <!-- Batch Info (flat inline rows, no card tiles) -->
+                <div class="flex flex-wrap gap-x-8 gap-y-2 py-1">
+                    <div>
+                        <p class="text-xs text-base-content/60">Production Date</p>
                         <p class="font-semibold" id="viewProdDate">-</p>
                     </div>
-                    <div class="bg-base-200 rounded-xl p-3">
-                        <p class="text-xs text-base-content/60 mb-1">Expiry Date</p>
+                    <div>
+                        <p class="text-xs text-base-content/60">Expiry Date</p>
                         <p class="font-semibold" id="viewExpDate">-</p>
                     </div>
-                    <div class="bg-base-200 rounded-xl p-3">
-                        <p class="text-xs text-base-content/60 mb-1">Produced By</p>
+                    <div>
+                        <p class="text-xs text-base-content/60">Produced By</p>
                         <p class="font-semibold" id="viewProducedBy">-</p>
                     </div>
                 </div>
@@ -641,7 +640,7 @@
     <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js"></script>
     <script src="../../js/qc/batch_release.service.js"></script>
@@ -707,10 +706,12 @@
         async function loadPendingBatches() {
             const container = document.getElementById('pendingBatches');
             container.innerHTML = `
-                <div class="col-span-2 text-center py-8 text-base-content/40">
-                    <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-                    <p>Loading...</p>
-                </div>
+                <tr>
+                    <td colspan="8" class="text-center py-8 text-base-content/40">
+                        <span class="loading loading-spinner loading-md text-primary"></span>
+                        <p class="text-sm mt-2">Loading batches...</p>
+                    </td>
+                </tr>
             `;
 
             try {
@@ -723,88 +724,64 @@
 
                     if (batches.length > 0) {
                         container.innerHTML = batches.map(b => `
-                            <div class="card bg-base-100 border border-base-300 hover:shadow-lg transition-shadow">
-                                <div class="card-body p-4">
-                                    <div class="flex justify-between items-start mb-3">
-                                        <div>
-                                            <code class="text-lg font-mono font-semibold">${b.batch_code}</code>
-                                            <h4 class="font-bold mt-1">${b.product_name || b.product_type || 'Unknown Product'}</h4>
-                                            <p class="text-sm text-base-content/60">${b.product_variant || b.recipe_variant || ''}</p>
-                                        </div>
-                                        <span class="badge badge-warning">${b.qc_status || 'Pending'}</span>
-                                    </div>
-                                    
-                                    <div class="grid grid-cols-3 gap-2 mb-3">
-                                        <div class="bg-base-200 rounded-lg p-2">
-                                            <p class="text-xs text-base-content/60">Raw Milk</p>
-                                            <p class="font-semibold">${b.raw_milk_liters?.toLocaleString() || '-'} L</p>
-                                        </div>
-                                        <div class="bg-base-200 rounded-lg p-2">
-                                            <p class="text-xs text-base-content/60">Produced</p>
-                                            <p class="font-semibold">${b.manufacturing_date ? formatDate(b.manufacturing_date) : '-'}</p>
-                                        </div>
-                                        <div class="bg-base-200 rounded-lg p-2">
-                                            <p class="text-xs text-base-content/60">Expires</p>
-                                            <p class="font-semibold">${b.expiry_date ? formatDate(b.expiry_date) : '-'}</p>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="mb-4">
-                                        <p class="text-xs text-base-content/60 mb-2">CCP Status</p>
-                                        <div class="flex gap-2">
-                                            <span class="badge ${getCCPBadge(b.pasteurization_temp, 72)} gap-1">
-                                                <i class="fas fa-fire text-xs"></i> ${b.pasteurization_temp || '-'}°C
-                                            </span>
-                                            <span class="badge ${getCCPBadge(b.cooling_temp, 6, true)} gap-1">
-                                                <i class="fas fa-snowflake text-xs"></i> ${b.cooling_temp || '-'}°C
-                                            </span>
-                                        </div>
-                                    </div>
-                                    
-                                    <button class="btn btn-primary btn-sm w-full" onclick="openVerifyModal(${b.id})">
-                                        <i class="fas fa-clipboard-check"></i>
-                                        Verify & Release
+                            <tr class="hover:bg-base-200/50">
+                                <td class="font-mono text-xs font-semibold">${b.batch_code}</td>
+                                <td>
+                                    <span class="font-medium">${b.product_name || b.product_type || 'Unknown'}</span>
+                                    <span class="text-xs text-base-content/60 block">${b.product_variant || b.recipe_variant || ''}</span>
+                                </td>
+                                <td>${b.raw_milk_liters?.toLocaleString() || '-'} L</td>
+                                <td>${b.manufacturing_date ? formatDate(b.manufacturing_date) : '-'}</td>
+                                <td>${b.expiry_date ? formatDate(b.expiry_date) : '-'}</td>
+                                <td><span class="badge badge-warning">${b.qc_status || 'Pending'}</span></td>
+                                <td>
+                                    <span class="badge ${getCCPBadge(b.pasteurization_temp, 72)} badge-sm gap-1"><i class="fas fa-fire text-xs"></i> ${b.pasteurization_temp || '-'}°C</span>
+                                    <span class="badge ${getCCPBadge(b.cooling_temp, 6, true)} badge-sm gap-1 ml-1"><i class="fas fa-snowflake text-xs"></i> ${b.cooling_temp || '-'}°C</span>
+                                </td>
+                                <td class="text-right">
+                                    <button class="btn btn-primary btn-xs gap-1" onclick="openVerifyModal(${b.id})">
+                                        <i class="fas fa-clipboard-check"></i> Verify
                                     </button>
-                                </div>
-                            </div>
+                                </td>
+                            </tr>
                         `).join('');
                     } else {
                         container.innerHTML = `
-                            <div class="col-span-2 text-center py-12">
-                                <div class="w-16 h-16 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <i class="fas fa-check-circle text-success text-3xl"></i>
-                                </div>
-                                <h4 class="text-lg font-bold mb-2">All Caught Up!</h4>
-                                <p class="text-base-content/60">No batches pending verification</p>
-                            </div>
+                            <tr>
+                                <td colspan="8" class="text-center py-12 text-base-content/60">
+                                    <i class="fas fa-check-circle text-success text-3xl mb-2"></i>
+                                    <h4 class="text-lg font-bold mb-1 mt-2">All Caught Up!</h4>
+                                    <p class="text-sm">No batches pending verification</p>
+                                </td>
+                            </tr>
                         `;
                     }
                 } else {
                     console.error('API returned error:', response.message);
                     container.innerHTML = `
-                        <div class="col-span-2 text-center py-12">
-                            <div class="w-16 h-16 bg-warning/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <i class="fas fa-exclamation-circle text-warning text-3xl"></i>
-                            </div>
-                            <h4 class="text-lg font-bold mb-2">Could Not Load Batches</h4>
-                            <p class="text-base-content/60">${response.message || 'An error occurred. Please try refreshing the page.'}</p>
-                        </div>
+                        <tr>
+                            <td colspan="8" class="text-center py-12 text-base-content/60">
+                                <i class="fas fa-exclamation-circle text-warning text-3xl mb-2"></i>
+                                <h4 class="text-lg font-bold mb-1 mt-2">Could Not Load Batches</h4>
+                                <p class="text-sm">${response.message || 'An error occurred. Please try refreshing the page.'}</p>
+                            </td>
+                        </tr>
                     `;
                 }
             } catch (error) {
                 console.error('Failed to load pending batches:', error);
                 const errorMessage = error.message || (typeof error === 'string' ? error : 'An unknown error occurred');
                 container.innerHTML = `
-                    <div class="col-span-2 text-center py-12">
-                        <div class="w-16 h-16 bg-error/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <i class="fas fa-exclamation-triangle text-error text-3xl"></i>
-                        </div>
-                        <h4 class="text-lg font-bold mb-2">Failed to Load Batches</h4>
-                        <p class="text-base-content/60 mb-2">${errorMessage}</p>
-                        <button class="btn btn-primary btn-sm" onclick="loadPendingBatches()">
-                            <i class="fas fa-redo"></i> Try Again
-                        </button>
-                    </div>
+                    <tr>
+                        <td colspan="8" class="text-center py-12 text-base-content/60">
+                            <i class="fas fa-exclamation-triangle text-error text-3xl mb-2"></i>
+                            <h4 class="text-lg font-bold mb-1 mt-2">Failed to Load Batches</h4>
+                            <p class="text-sm mb-3">${errorMessage}</p>
+                            <button class="btn btn-primary btn-sm" onclick="loadPendingBatches()">
+                                <i class="fas fa-redo"></i> Try Again
+                            </button>
+                        </td>
+                    </tr>
                 `;
             }
         }
