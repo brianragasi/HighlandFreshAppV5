@@ -74,7 +74,6 @@ function loadLocalEnvFiles() {
         return; // first readable .env wins
     }
 }
-}
 
 loadLocalEnvFiles();
 
