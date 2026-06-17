@@ -21,20 +21,18 @@ echo "DB_PASS set = " . (DB_PASS !== '' ? 'yes' : 'NO (empty!)') . "\n";
 echo "DB_SSL_CERT = " . (defined('DB_SSL_CERT') && DB_SSL_CERT ? DB_SSL_CERT : 'null') . "\n";
 echo "IS_AZURE    = " . (defined('IS_AZURE') ? var_export(IS_AZURE, true) : 'undefined') . "\n\n";
 
-echo "=== .env file status ===\n";
-$envPath = dirname(__DIR__, 2) . '/.env';
-echo "Path checked: $envPath\n";
-echo "Exists:       " . (is_readable($envPath) ? 'YES' : 'NO') . "\n";
-if (is_readable($envPath)) {
-    $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    foreach ($lines as $line) {
-        if ($line === '' || $line[0] === '#') continue;
-        if (strpos($line, 'PASSWORD') !== false) {
-            echo "  " . preg_replace('/=.*/', '=***REDACTED***', $line) . "\n";
-        } else {
-            echo "  $line\n";
-        }
-    }
+echo "=== .env file status (all candidate locations) ===\n";
+$searchDirs = [
+    dirname(__DIR__, 2),
+    dirname(dirname(__DIR__, 2)),
+    __DIR__ . '/..',
+];
+foreach (array_unique($searchDirs) as $dir) {
+    $envFile = $dir . '/.env';
+    $locFile = $envFile . '.local';
+    $envStatus = is_readable($envFile) ? 'READABLE' : (file_exists($envFile) ? 'NOT READABLE' : 'missing');
+    $locStatus = is_readable($locFile) ? 'READABLE' : (file_exists($locFile) ? 'NOT READABLE' : 'missing');
+    echo sprintf("  %-60s  .env=%-12s  .env.local=%s\n", $envFile, $envStatus, $locStatus);
 }
 echo "\n";
 
