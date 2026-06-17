@@ -1,12 +1,18 @@
 <?php
 /**
  * Highland Fresh System - Warehouse Raw Requisitions API
- * 
- * Manages requisition fulfillment from production/maintenance
- * 
+ *
+ * Manages requisition fulfillment from production/maintenance.
+ *
+ * Workflow (V4.0 — no GM approval gate):
+ *   1. Production creates a requisition   -> status 'pending' (see
+ *      api/production/requisitions.php). Warehouse Raw sees it immediately.
+ *   2. Warehouse Raw issues the materials -> status 'fulfilled' (all lines
+ *      full) or 'partial' (some lines issued, top-up expected).
+ *
  * GET    - List requisitions, get details
- * PUT    - Fulfill, partial fulfill, reject requisitions
- * 
+ * PUT    - Fulfill, partial fulfill, reject_individual_item
+ *
  * @package HighlandFresh
  * @version 4.0
  */
@@ -73,7 +79,7 @@ function handleGet($db, $currentUser) {
             $priority = getParam('priority');
             
             $sql = "
-                SELECT 
+                SELECT
                     ir.*,
                     pmr.recipe_code as planned_recipe_code,
                     pmr.product_name as planned_product_name,
@@ -85,10 +91,12 @@ function handleGet($db, $currentUser) {
                     uf.first_name as fulfilled_by_first,
                     uf.last_name as fulfilled_by_last,
                     (SELECT COUNT(*) FROM requisition_items ri WHERE ri.requisition_id = ir.id) as item_count,
-                    (SELECT COUNT(*) FROM requisition_items ri 
+                    (SELECT COUNT(*) FROM requisition_items ri
                      WHERE ri.requisition_id = ir.id AND ri.status IN ('fulfilled', 'partial')) as processed_count,
-                    (SELECT COUNT(*) FROM requisition_items ri 
-                     WHERE ri.requisition_id = ir.id AND ri.status = 'fulfilled') as fulfilled_count
+                    (SELECT COUNT(*) FROM requisition_items ri
+                     WHERE ri.requisition_id = ir.id AND ri.status = 'fulfilled') as fulfilled_count,
+                    (SELECT COUNT(*) FROM requisition_stock_warnings w
+                     WHERE w.requisition_id = ir.id AND w.decision = 'overridden') AS stock_warning_count
                 FROM material_requisitions ir
                 JOIN users u ON ir.requested_by = u.id
                 LEFT JOIN master_recipes pmr ON ir.planned_recipe_id = pmr.id
@@ -97,9 +105,10 @@ function handleGet($db, $currentUser) {
                 WHERE 1=1
             ";
             $params = [];
-            
-            // Warehouse sees pending, approved and fulfilled requisitions
-            // Pending shown so warehouse can prepare, but only approved can be fulfilled
+
+            // V4.0 — no GM approval gate. Warehouse sees 'pending' requests
+            // immediately and can act on them. 'approved' is kept in the
+            // filter for legacy rows that pre-date this change.
             if (!$status) {
                 if (in_array($currentUser['role'], ['warehouse_raw', 'general_manager'])) {
                     $sql .= " AND ir.status IN ('pending', 'approved', 'partial', 'fulfilled')";
@@ -112,24 +121,26 @@ function handleGet($db, $currentUser) {
                 $sql .= " AND ir.status = ?";
                 $params[] = $status;
             }
-            
+
             if ($department) {
                 $sql .= " AND ir.department = ?";
                 $params[] = $department;
             }
-            
+
             if ($priority) {
                 $sql .= " AND ir.priority = ?";
                 $params[] = $priority;
             }
-            
-            $sql .= " ORDER BY 
-                CASE ir.status WHEN 'approved' THEN 1 WHEN 'pending' THEN 2 ELSE 3 END,
-                CASE ir.priority 
-                    WHEN 'urgent' THEN 1 
-                    WHEN 'high' THEN 2 
-                    WHEN 'normal' THEN 3 
-                    ELSE 4 
+
+            // 'pending' is the actionable state now. Sort it first so
+            // warehouse staff see the queue in the right order.
+            $sql .= " ORDER BY
+                CASE ir.status WHEN 'pending' THEN 1 WHEN 'approved' THEN 2 WHEN 'partial' THEN 3 ELSE 4 END,
+                CASE ir.priority
+                    WHEN 'urgent' THEN 1
+                    WHEN 'high' THEN 2
+                    WHEN 'normal' THEN 3
+                    ELSE 4
                 END,
                 ir.needed_by_date ASC,
                 ir.created_at ASC
@@ -146,10 +157,10 @@ function handleGet($db, $currentUser) {
             if (!$id) {
                 Response::error('Requisition ID is required', 400);
             }
-            
+
             // Get requisition details
             $requisition = $db->prepare("
-                SELECT 
+                SELECT
                     ir.*,
                     pmr.recipe_code as planned_recipe_code,
                     pmr.product_name as planned_product_name,
@@ -159,32 +170,36 @@ function handleGet($db, $currentUser) {
                     ua.first_name as approved_by_first,
                     ua.last_name as approved_by_last,
                     uf.first_name as fulfilled_by_first,
-                    uf.last_name as fulfilled_by_last
+                    uf.last_name as fulfilled_by_last,
+                    ovr.first_name as stock_override_first,
+                    ovr.last_name as stock_override_last,
+                    ovr.role as stock_override_role
                 FROM material_requisitions ir
                 JOIN users u ON ir.requested_by = u.id
                 LEFT JOIN master_recipes pmr ON ir.planned_recipe_id = pmr.id
                 LEFT JOIN users ua ON ir.approved_by = ua.id
                 LEFT JOIN users uf ON ir.fulfilled_by = uf.id
+                LEFT JOIN users ovr ON ir.stock_override_by = ovr.id
                 WHERE ir.id = ?
             ");
             $requisition->execute([$id]);
             $requisitionData = $requisition->fetch();
-            
+
             if (!$requisitionData) {
                 Response::error('Requisition not found', 404);
             }
-            
+
             // Get requisition items
             $items = $db->prepare("
-                SELECT 
+                SELECT
                     ri.*,
                     uf.first_name as fulfilled_by_first,
                     uf.last_name as fulfilled_by_last,
-                    CASE 
+                    CASE
                         -- Explicit raw_milk type OR item_name matches raw milk patterns
                         WHEN ri.item_type = 'raw_milk' OR LOWER(ri.item_name) IN ('raw', 'raw milk', 'fresh milk', 'carabao', 'cow milk', 'goat milk', 'whole milk')
                             OR (LOWER(ri.item_name) LIKE '%milk%' AND LOWER(ri.item_name) NOT LIKE '%powder%' AND LOWER(ri.item_name) NOT LIKE '%chocolate%')
-                        THEN (SELECT COALESCE(SUM(remaining_liters), 0) FROM raw_milk_inventory WHERE status IN ('available', 'reserved') AND remaining_liters > 0)
+                        THEN (SELECT COALESCE(SUM(remaining_liters), 0) FROM raw_milk_inventory WHERE status IN ('available', 'reserved') AND remaining_liters > 0 AND expiry_date >= CURDATE())
                         WHEN ri.item_type = 'ingredient' THEN (
                             SELECT GREATEST(
                                 COALESCE(i.current_stock, 0),
@@ -202,7 +217,7 @@ function handleGet($db, $currentUser) {
                         WHEN ri.item_type = 'mro' THEN (SELECT COALESCE(current_stock, 0) FROM mro_items WHERE id = ri.item_id)
                         ELSE 0
                     END as available_stock,
-                    CASE 
+                    CASE
                         WHEN ri.item_type = 'raw_milk' OR LOWER(ri.item_name) IN ('raw', 'raw milk', 'fresh milk', 'carabao', 'cow milk', 'goat milk', 'whole milk')
                             OR (LOWER(ri.item_name) LIKE '%milk%' AND LOWER(ri.item_name) NOT LIKE '%powder%' AND LOWER(ri.item_name) NOT LIKE '%chocolate%')
                         THEN 'raw_milk'
@@ -215,7 +230,53 @@ function handleGet($db, $currentUser) {
             ");
             $items->execute([$id]);
             $itemList = $items->fetchAll();
-            
+
+            // Compute a per-line shortage on the fly from the available_stock
+            // already returned by the items query above. Lets the warehouse UI
+            // show "this line was self-acknowledged as short" without an extra
+            // round trip to requisition_stock_warnings.
+            foreach ($itemList as &$row) {
+                $requested = (float) ($row['requested_quantity'] ?? 0);
+                $available = (float) ($row['available_stock'] ?? 0);
+                $row['stock_shortage'] = $requested > $available ? ($requested - $available) : 0.0;
+                $row['stock_sufficient'] = $requested <= $available;
+            }
+            unset($row);
+
+            // Pull the audit rows for this requisition so the warehouse can see
+            // exactly which lines were self-acknowledged and why.
+            $warningsStmt = $db->prepare("
+                SELECT id, requisition_item_id, ingredient_id, item_name,
+                       requested_qty, available_qty, shortage, decision,
+                       decided_role, override_reason, created_at
+                FROM requisition_stock_warnings
+                WHERE requisition_id = ?
+                ORDER BY id ASC
+            ");
+            $warningsStmt->execute([$id]);
+            $warnings = $warningsStmt->fetchAll();
+
+            $requisitionData['stock_override'] = [
+                'acknowledged' => (bool) ($requisitionData['stock_override_acknowledged'] ?? 0),
+                'reason' => $requisitionData['stock_override_reason'] ?? null,
+                'at' => $requisitionData['stock_override_at'] ?? null,
+                'by' => $requisitionData['stock_override_first'] ? [
+                    'first_name' => $requisitionData['stock_override_first'],
+                    'last_name' => $requisitionData['stock_override_last'],
+                    'role' => $requisitionData['stock_override_role'],
+                ] : null,
+                'warnings' => $warnings,
+            ];
+            unset(
+                $requisitionData['stock_override_acknowledged'],
+                $requisitionData['stock_override_by'],
+                $requisitionData['stock_override_reason'],
+                $requisitionData['stock_override_at'],
+                $requisitionData['stock_override_first'],
+                $requisitionData['stock_override_last'],
+                $requisitionData['stock_override_role']
+            );
+
             Response::success([
                 'requisition' => $requisitionData,
                 'items' => $itemList
@@ -223,19 +284,21 @@ function handleGet($db, $currentUser) {
             break;
             
         case 'pending_count':
-            // Get count of pending requisitions to fulfill
+            // Get count of requisitions awaiting warehouse action.
+            // V4.0 — 'pending' is the actionable state; 'approved' is kept
+            // for legacy rows that pre-date the workflow change.
             $stmt = $db->prepare("
-                SELECT 
+                SELECT
                     COUNT(*) as total,
                     SUM(CASE WHEN priority = 'urgent' THEN 1 ELSE 0 END) as urgent,
                     SUM(CASE WHEN priority = 'high' THEN 1 ELSE 0 END) as high,
                     SUM(CASE WHEN needed_by_date <= CURDATE() THEN 1 ELSE 0 END) as overdue
                 FROM material_requisitions
-                WHERE status = 'approved'
+                WHERE status IN ('pending', 'approved')
             ");
             $stmt->execute();
             $counts = $stmt->fetch();
-            
+
             Response::success($counts, 'Pending count retrieved successfully');
             break;
             
@@ -261,108 +324,53 @@ function handlePut($db, $currentUser) {
     }
     
     switch ($action) {
+        // V4.0 — Approve / Reject are no longer supported on this endpoint.
+        // Production requisitions are visible to warehouse immediately on
+        // submit. Kept as explicit 400 responses so any legacy client that
+        // still POSTs these gets a clear migration message instead of a
+        // silent 404.
         case 'approve':
-            // Approve a pending requisition
-            // Only GM or warehouse_raw (supervisor) can approve
-            if (!in_array($currentUser['role'], ['warehouse_raw', 'general_manager', 'admin'])) {
-                Response::error('Not authorized to approve requisitions', 403);
-            }
-            
-            try {
-                // Get requisition
-                $requisition = $db->prepare("
-                    SELECT * FROM material_requisitions WHERE id = ? AND status = 'pending'
-                ");
-                $requisition->execute([$id]);
-                $reqData = $requisition->fetch();
-                
-                if (!$reqData) {
-                    Response::error('Requisition not found or not pending', 404);
-                }
-                
-                // Update requisition status to approved
-                $stmt = $db->prepare("
-                    UPDATE material_requisitions 
-                    SET status = 'approved',
-                        approved_by = ?,
-                        approved_at = NOW(),
-                        updated_at = NOW()
-                    WHERE id = ?
-                ");
-                $stmt->execute([$currentUser['user_id'], $id]);
-                
-                logAudit($currentUser['user_id'], 'approve_requisition', 'material_requisitions', $id, 
-                    null, ['status' => 'approved']);
-                
-                Response::success([
-                    'id' => $id,
-                    'status' => 'approved'
-                ], 'Requisition approved successfully');
-                
-            } catch (Exception $e) {
-                Response::error('Failed to approve requisition: ' . $e->getMessage(), 500);
-            }
+            Response::error(
+                "The 'approve' action is no longer required. Production requisitions become visible to Warehouse Raw as soon as production submits them (status 'pending').",
+                400
+            );
             break;
-            
+
         case 'reject':
-            // Reject a pending requisition
-            if (!in_array($currentUser['role'], ['warehouse_raw', 'general_manager', 'admin'])) {
-                Response::error('Not authorized to reject requisitions', 403);
-            }
-            
-            $reason = getParam('reason', '');
-            
-            try {
-                // Get requisition
-                $requisition = $db->prepare("
-                    SELECT * FROM material_requisitions WHERE id = ? AND status = 'pending'
-                ");
-                $requisition->execute([$id]);
-                $reqData = $requisition->fetch();
-                
-                if (!$reqData) {
-                    Response::error('Requisition not found or not pending', 404);
-                }
-                
-                // Update requisition status to rejected
-                $stmt = $db->prepare("
-                    UPDATE material_requisitions 
-                    SET status = 'rejected',
-                        notes = CONCAT(COALESCE(notes, ''), '\nRejected: ', ?),
-                        updated_at = NOW()
-                    WHERE id = ?
-                ");
-                $stmt->execute([$reason, $id]);
-                
-                logAudit($currentUser['user_id'], 'reject_requisition', 'material_requisitions', $id, 
-                    null, ['status' => 'rejected', 'reason' => $reason]);
-                
-                Response::success([
-                    'id' => $id,
-                    'status' => 'rejected'
-                ], 'Requisition rejected');
-                
-            } catch (Exception $e) {
-                Response::error('Failed to reject requisition: ' . $e->getMessage(), 500);
-            }
+            Response::error(
+                "The 'reject' action is no longer supported. To refuse a request, do not fulfill it; production can cancel their own pending request, or GM can cancel on their behalf.",
+                400
+            );
             break;
-            
+
         case 'fulfill':
             // Fulfill entire requisition
             $db->beginTransaction();
-            
+
             try {
-                // Get requisition - allow approved or partially fulfilled
+                // V4.0 — no GM approval gate. 'pending' is the new actionable
+                // state; 'approved' and 'in_progress' kept for legacy rows.
                 $requisition = $db->prepare("
-                    SELECT * FROM material_requisitions WHERE id = ? AND status IN ('approved', 'partial', 'in_progress')
+                    SELECT * FROM material_requisitions WHERE id = ? AND status IN ('pending', 'approved', 'partial', 'in_progress')
                 ");
                 $requisition->execute([$id]);
                 $reqData = $requisition->fetch();
-                
+
                 if (!$reqData) {
                     throw new Exception('Requisition not found or not in a fulfillable status');
                 }
-                
+
+                // Plan guard: a requisition must have a planned_recipe_id and
+                // planned_quantity before warehouse raw can issue materials.
+                // Otherwise production staff can't start a run from it after
+                // fulfillment, and the issued materials are stuck in limbo.
+                if (empty($reqData['planned_recipe_id']) || empty($reqData['planned_quantity']) || (float)$reqData['planned_quantity'] <= 0) {
+                    throw new Exception(
+                        'Cannot fulfill: this requisition is missing a planned recipe or planned quantity. ' .
+                        'The requester must open the requisition and set the planned product + planned quantity first.'
+                    );
+                }
+
                 // Get all pending items
                 $items = $db->prepare("
                     SELECT ri.*, 
@@ -424,16 +432,30 @@ function handlePut($db, $currentUser) {
                     }
                     
                     // Update requisition item - accumulate issued quantity
+                    // V4.0.1 — DO NOT let the CASE expression re-add $issuedQty
+                    // to the (newly written) issued_quantity. MySQL evaluates
+                    // SET clauses left-to-right, so the CASE was reading the
+                    // NEW value of issued_quantity and double-adding
+                    // $issuedQty to it. The result: a partial issuance like
+                    // 23.94 against a requested 25 was being marked
+                    // 'fulfilled' because 23.94 + 23.94 >= 25. Same shape
+                    // as the pasteurization phantom-debit pitfall. The fix
+                    // is to compute the new total and the new status in
+                    // PHP and bind them directly.
+                    $newIssued = round((float)($item['issued_quantity'] ?? 0) + $issuedQty, 3);
+                    $newStatus = $newIssued >= (float) $item['requested_quantity']
+                        ? 'fulfilled'
+                        : ($newIssued > 0 ? 'partial' : 'pending');
                     $stmt = $db->prepare("
-                        UPDATE requisition_items 
-                        SET issued_quantity = COALESCE(issued_quantity, 0) + ?, 
-                            status = CASE WHEN (COALESCE(issued_quantity, 0) + ?) >= requested_quantity THEN 'fulfilled' ELSE 'partial' END,
+                        UPDATE requisition_items
+                        SET issued_quantity = ?,
+                            status = ?,
                             fulfilled_by = ?,
                             fulfilled_at = NOW(),
                             updated_at = NOW()
                         WHERE id = ?
                     ");
-                    $stmt->execute([$issuedQty, $issuedQty, $currentUser['user_id'], $item['id']]);
+                    $stmt->execute([$newIssued, $newStatus, $currentUser['user_id'], $item['id']]);
                 }
                 
                 // Check if all items are fulfilled to determine requisition status
@@ -499,21 +521,31 @@ function handlePut($db, $currentUser) {
             try {
                 // Get item
                 $item = $db->prepare("
-                    SELECT ri.*, ir.status as req_status
+                    SELECT ri.*, ir.status as req_status,
+                           ir.planned_recipe_id, ir.planned_quantity
                     FROM requisition_items ri
                     JOIN material_requisitions ir ON ri.requisition_id = ir.id
                     WHERE ri.id = ? AND ri.requisition_id = ?
                 ");
                 $item->execute([$itemId, $id]);
                 $itemData = $item->fetch();
-                
+
                 if (!$itemData) {
                     throw new Exception('Item not found');
                 }
-                
-                // Allow fulfillment for approved, partial, or in_progress requisitions
-                if (!in_array($itemData['req_status'], ['approved', 'partial', 'in_progress'])) {
+
+                // V4.0 — see note in `fulfill` case. 'pending' is the new
+                // actionable state; legacy statuses kept for back-compat.
+                if (!in_array($itemData['req_status'], ['pending', 'approved', 'partial', 'in_progress'])) {
                     throw new Exception('Requisition is not in a fulfillable status');
+                }
+
+                // Plan guard: see the equivalent check in the 'fulfill' case above.
+                if (empty($itemData['planned_recipe_id']) || empty($itemData['planned_quantity']) || (float)$itemData['planned_quantity'] <= 0) {
+                    throw new Exception(
+                        'Cannot fulfill: this requisition is missing a planned recipe or planned quantity. ' .
+                        'The requester must open the requisition and set the planned product + planned quantity first.'
+                    );
                 }
                 
                 // Determine effective item type - detect raw milk from item_name if not explicitly set
@@ -630,13 +662,19 @@ function handlePut($db, $currentUser) {
  * REVISED: Uses raw_milk_inventory instead of tank_milk_batches
  */
 function issueMilk($db, $liters, $requisitionId, $currentUser) {
-    // Get available batches from raw_milk_inventory (FIFO)
+    // Get available batches from raw_milk_inventory (FIFO).
+    // V4.0 — also require expiry_date >= CURDATE() so the warehouse staff
+    // can't issue milk that's past its prime. Previously the system let
+    // requisition REQ-20260614-031 be fulfilled from batch RAW-RCV-000012
+    // whose expiry was 2025-10-23 (8 months ago), leaving production with
+    // an "issued" record but 0L of usable milk.
     $batches = $db->prepare("
         SELECT rmi.*, st.tank_code
         FROM raw_milk_inventory rmi
         LEFT JOIN storage_tanks st ON rmi.tank_id = st.id
         WHERE rmi.status IN ('available', 'reserved')
         AND rmi.remaining_liters > 0
+        AND rmi.expiry_date >= CURDATE()
         ORDER BY rmi.expiry_date ASC, rmi.received_date ASC, rmi.id ASC
     ");
     $batches->execute();

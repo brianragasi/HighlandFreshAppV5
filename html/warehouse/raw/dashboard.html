@@ -6,21 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Warehouse Raw | Highland Fresh</title>
 
-    <!-- Tailwind CSS + DaisyUI CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
-
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'system-ui', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
+    <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
+    <link rel="stylesheet" href="../../../css/tailwind.css">
 
     <!-- Inter Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -84,10 +71,29 @@
                 <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
                     <i class="fas fa-times"></i>
                 </button>
-            </div>
-        </div>
+                </div>
+                <!-- Sidebar stats widget (populated by js/warehouse/sidebar.stats.js) -->
+                <div class="grid grid-cols-4 gap-1 mt-3 pt-3 border-t border-base-200">
+                <a href="dashboard.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Raw Milk (L)">
+                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatMilk">0</span>
+                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Milk</span>
+                </a>
+                <a href="requisitions.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Pending Requisitions">
+                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatReq">0</span>
+                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Req</span>
+                </a>
+                <a href="reorder_alerts.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Low Stock Items">
+                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatLow">0</span>
+                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Low</span>
+                </a>
+                <a href="receive_deliveries.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Pending Deliveries">
+                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatDeliv">0</span>
+                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Deliv</span>
+                </a>
+                </div>
+                </div>
 
-        <!-- Navigation -->
+                <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
         <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
             <!-- Main Menu -->
             <div>
@@ -159,25 +165,9 @@
                         </a>
                     </li>
                     <li>
-                        <a href="waste.html"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <a href="waste.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-trash-alt w-5 text-center text-base-content/60"></i>
                             <span class="flex-1">Spoilage & Waste</span>
-                        </a>
-                    </li>
-                </ul>
-            </div>
-
-            <!-- Disposals -->
-            <div>
-                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Disposals</h2>
-                <ul class="menu menu-sm p-0 gap-1">
-                    <li>
-                        <a href="#pendingDisposalsSection" onclick="scrollToDisposals()"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
-                            <i class="fas fa-trash-alt w-5 text-center text-error"></i>
-                            <span class="flex-1">Pending Disposals</span>
-                            <span class="badge badge-sm badge-error" id="pendingDisposalsBadge">0</span>
                         </a>
                     </li>
                 </ul>
@@ -584,10 +574,11 @@
     <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../../js/vendor/axios.min.js"></script>
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js"></script>
     <script src="../../../js/warehouse/raw.service.js"></script>
+    <script src="../../../js/warehouse/sidebar.stats.js"></script>
 
     <script>
         // Toggle sidebar
@@ -858,7 +849,6 @@
                 if (response.success) {
                     const disposals = response.data || [];
                     renderPendingDisposals(disposals);
-                    document.getElementById('pendingDisposalsBadge').textContent = disposals.length;
                     document.getElementById('disposalsCountBadge').textContent = disposals.length;
                 }
             } catch (error) {

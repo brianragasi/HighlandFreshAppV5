@@ -7,20 +7,8 @@
     <title>Production Batches - Production | Highland Fresh</title>
 
     <!-- Tailwind CSS + DaisyUI CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
-
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'system-ui', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
+    <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
+    <link rel="stylesheet" href="../../css/tailwind.css">
 
     <!-- Inter Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -426,7 +414,7 @@
 
     <!-- New Run Modal -->
     <dialog id="newRunModal" class="modal">
-        <div class="modal-box max-w-xl">
+        <div class="modal-box max-w-3xl">
             <form method="dialog">
                 <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
@@ -435,211 +423,175 @@
                 Create New Production Run
             </h3>
 
+            <!-- From Requisition banner. Full width so the "Clear" button isn't truncated. -->
+            <div id="fromRequisitionBanner" class="hidden alert alert-success mb-4">
+                <i class="fas fa-link text-lg"></i>
+                <div class="flex-1">
+                    <div class="font-semibold">
+                        From Requisition <span id="fromRequisitionCode" class="font-mono"></span>
+                    </div>
+                    <div class="text-xs opacity-80 mt-0.5" id="fromRequisitionSubtext">
+                        All materials have been issued by Warehouse Raw. Review and confirm to start cooking.
+                    </div>
+                </div>
+                <button type="button" class="btn btn-ghost btn-xs" onclick="clearRequisitionPrefill()" title="Start from scratch instead">
+                    <i class="fas fa-xmark"></i> Clear
+                </button>
+            </div>
+
             <form id="newRunForm" onsubmit="createRun(event)">
-                <div class="space-y-4">
-                    <!-- Milk Availability Check -->
-                    <div id="milkAvailabilitySection">
-                        <div id="milkCheckLoading" class="bg-base-200 p-4 rounded-xl text-center">
-                            <i class="fas fa-spinner fa-spin"></i> Checking materials issued to Production...
-                        </div>
-                        <div id="milkCheckResult" class="hidden"></div>
-                    </div>
-
-                    <!-- Step indicator -->
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle"></i>
-                        <span class="text-sm">Production runs use only materials that Warehouse Raw has already issued. If nothing has been issued yet, create a material requisition first.</span>
-                    </div>
-
-                    <div class="form-control">
-                        <label class="label">
-                            <span class="label-text">Select Recipe <span class="text-error">*</span></span>
-                        </label>
-                        <select class="select select-bordered w-full" id="recipeSelect" required
-                            onchange="updateRecipeDetails()">
-                            <option value="">Select a recipe...</option>
-                        </select>
-                    </div>
-
-                    <div id="recipeDetails" class="hidden">
-                        <div class="alert alert-success">
-                            <div class="w-full">
-                                <div class="font-semibold mb-1"><i class="fas fa-check-circle mr-1"></i> Recipe
-                                    Selected:</div>
-                                <div class="font-bold text-lg" id="selectedRecipeName"></div>
-                                <div class="flex flex-wrap gap-2 mt-2">
-                                    <span class="badge badge-ghost"><i class="fas fa-box mr-1"></i> <span
-                                            id="selectedRecipeYield"></span></span>
-                                    <span class="badge badge-ghost"><i class="fas fa-tint mr-1"></i> <span
-                                            id="selectedRecipeMilk"></span> milk needed</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div id="milkRequirementCheck" class="hidden mt-2"></div>
-                    </div>
-
-                    <!-- Editable Ingredients Section -->
-                    <div id="ingredientsSection" class="hidden">
-                        <div class="collapse collapse-arrow bg-base-200 rounded-xl border border-base-300">
-                            <input type="checkbox" />
-                            <div class="collapse-title font-semibold flex items-center gap-2">
-                                <i class="fas fa-mortar-pestle text-primary"></i>
-                                Recipe Ingredients
-                                <span class="badge badge-primary badge-sm" id="ingredientCount">0</span>
-                                <span class="text-xs text-base-content/60 font-normal">(checked when the run is created)</span>
-                            </div>
-                            <div class="collapse-content">
-                                <div class="overflow-x-auto">
-                                    <table class="table table-xs">
-                                        <thead>
-                                            <tr>
-                                                <th>Ingredient</th>
-                                                <th class="text-right">Required Qty</th>
-                                                <th class="text-right">Actual Qty</th>
-                                                <th>Unit</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="ingredientsList">
-                                            <tr>
-                                                <td colspan="4" class="text-center text-base-content/40">No ingredients
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <div class="alert alert-info mt-3">
-                                    <i class="fas fa-info-circle"></i>
-                                    <span class="text-xs">These are scaled quantities for this planned run. Warehouse Raw must issue them through a fulfilled requisition before the run can be created.</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="form-control">
-                        <label class="label">
-                            <span class="label-text">Planned Volume (Liters) <span class="text-error">*</span></span>
-                        </label>
-                        <div class="join w-full">
-                            <input type="number" class="input input-bordered join-item flex-1" id="plannedQuantity"
-                                required min="1" placeholder="e.g. 100" onchange="checkMilkRequirement()">
-                            <span class="btn join-item no-animation" id="yieldUnit">Liters</span>
-                        </div>
-                        <label class="label">
-                            <span class="label-text-alt text-base-content/60">How many liters of base liquid to produce
-                                in this batch</span>
-                        </label>
-                    </div>
-
-                    <div class="form-control">
-                        <label class="label">
-                            <span class="label-text">Milk Amount (Optional Override)</span>
-                        </label>
-                        <input type="number" class="input input-bordered w-full" id="milkLiters" step="0.1"
-                            placeholder="Leave empty to auto-calculate" onchange="checkMilkRequirement()">
-                        <label class="label">
-                            <span class="label-text-alt text-base-content/60">Leave empty to use recipe default</span>
-                        </label>
-                    </div>
-
-                    <!-- Temperature & Duration: Read-only, auto-filled from Recipe -->
-                    <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                    <!-- LEFT: inputs -->
+                    <div class="space-y-3">
                         <div class="form-control">
-                            <label class="label">
-                                <span class="label-text">Pasteurization Temp</span>
-                                <span class="badge badge-ghost badge-xs">from Recipe</span>
+                            <label class="label py-1">
+                                <span class="label-text font-semibold">Recipe <span class="text-error">*</span></span>
                             </label>
-                            <div class="input input-bordered bg-base-200 flex items-center gap-2">
-                                <i class="fas fa-thermometer-half text-base-content/40"></i>
-                                <span id="processTemperature" class="flex-1 font-mono">— Select a recipe first</span>
-                            </div>
-                            <label class="label">
-                                <span class="label-text-alt text-base-content/60" id="tempHint">Auto-filled from
-                                    recipe</span>
-                            </label>
-                        </div>
-                        <div class="form-control">
-                            <label class="label">
-                                <span class="label-text">Process Duration</span>
-                                <span class="badge badge-ghost badge-xs">from Recipe</span>
-                            </label>
-                            <div class="input input-bordered bg-base-200 flex items-center gap-2">
-                                <i class="fas fa-clock text-base-content/40"></i>
-                                <span id="processDuration" class="flex-1 font-mono">— Select a recipe first</span>
-                            </div>
-                            <label class="label">
-                                <span class="label-text-alt text-base-content/60" id="durationHint">Auto-filled from
-                                    recipe</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- Butter-Specific: Separation Fields -->
-                    <div id="butterSeparationSection" class="hidden">
-                        <div class="divider text-xs text-base-content/60"><i class="fas fa-flask mr-1"></i> BUTTER
-                            SEPARATION</div>
-                        <div class="alert alert-warning mb-3">
-                            <i class="fas fa-exclamation-triangle"></i>
-                            <span class="text-sm">Butter requires milk separation. Record cream and skim milk
-                                outputs.</span>
-                        </div>
-                        <div class="grid grid-cols-2 gap-3">
-                            <div class="form-control">
-                                <label class="label">
-                                    <span class="label-text">Cream Output (kg)</span>
-                                </label>
-                                <input type="number" class="input input-bordered w-full" id="creamOutputKg" step="0.1"
-                                    placeholder="~20% of milk">
-                            </div>
-                            <div class="form-control">
-                                <label class="label">
-                                    <span class="label-text">Skim Milk Output (L)</span>
-                                </label>
-                                <input type="number" class="input input-bordered w-full" id="skimMilkOutputL" step="0.1"
-                                    placeholder="~80% of milk">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Cheese-Specific: State Selection -->
-                    <div id="cheeseStateSection" class="hidden">
-                        <div class="divider text-xs text-base-content/60"><i class="fas fa-cheese mr-1"></i> CHEESE
-                            PRODUCTION STATE</div>
-                        <div class="form-control">
-                            <label class="label">
-                                <span class="label-text">Starting State</span>
-                            </label>
-                            <select class="select select-bordered w-full" id="cheeseState">
-                                <option value="cooking">1. Cooking/Steaming (80-87°C)</option>
-                                <option value="stirring">2. Stirring & Pre-Pressing</option>
-                                <option value="pressing">3. Pressing (1 hour)</option>
-                                <option value="resting">4. Resting (24 hours)</option>
-                                <option value="molding">5. Turning & Molding</option>
-                                <option value="weighing">6. Final Weighing</option>
+                            <select class="select select-bordered w-full" id="recipeSelect" required
+                                onchange="updateRecipeDetails()">
+                                <option value="">Select a recipe...</option>
                             </select>
                         </div>
-                        <div class="form-control mt-2">
-                            <label class="cursor-pointer label justify-start gap-3">
-                                <input type="checkbox" class="checkbox checkbox-primary checkbox-sm" id="isSalted">
-                                <span class="label-text">Salted Variant</span>
+
+                        <div class="form-control">
+                            <label class="label py-1">
+                                <span class="label-text font-semibold">Planned Volume <span class="text-error">*</span></span>
+                                <span id="requisitionPlannedHint" class="hidden text-xs text-base-content/60"></span>
                             </label>
+                            <div class="join w-full">
+                                <input type="number" class="input input-bordered join-item flex-1" id="plannedQuantity"
+                                    required min="1" placeholder="e.g. 100" oninput="refreshStatusCard()">
+                                <span class="btn join-item no-animation" id="yieldUnit">units</span>
+                            </div>
+                            <label class="label py-1">
+                                <span class="label-text-alt text-base-content/60" id="plannedVolumeHelper">
+                                    How much base liquid to produce in this batch
+                                </span>
+                            </label>
+                            <!-- V4.0 (Option B) — read-only milk source indicator. Updated
+                                 when a recipe is picked. Yogurt → Pasteurized, everything
+                                 else → Raw. Tells the user what the form will send. -->
+                            <div class="text-xs text-info mt-1 flex items-center gap-1" id="milkSourceIndicator">
+                                <i class="fas fa-info-circle"></i>
+                                <span>Milk source: <span id="milkSourceValue" class="font-semibold">—</span> (auto-selected by recipe type)</span>
+                            </div>
+                        </div>
+
+                        <!-- Temperature + Duration, read-only from recipe -->
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="form-control">
+                                <label class="label py-1">
+                                    <span class="label-text text-xs">Pasteurization Temp</span>
+                                    <span class="badge badge-ghost badge-xs">from recipe</span>
+                                </label>
+                                <div class="input input-bordered input-sm bg-base-200 flex items-center gap-2">
+                                    <i class="fas fa-thermometer-half text-base-content/40"></i>
+                                    <span id="processTemperature" class="flex-1 font-mono text-sm">—</span>
+                                </div>
+                            </div>
+                            <div class="form-control">
+                                <label class="label py-1">
+                                    <span class="label-text text-xs">Process Duration</span>
+                                    <span class="badge badge-ghost badge-xs">from recipe</span>
+                                </label>
+                                <div class="input input-bordered input-sm bg-base-200 flex items-center gap-2">
+                                    <i class="fas fa-clock text-base-content/40"></i>
+                                    <span id="processDuration" class="flex-1 font-mono text-sm">—</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Butter-specific (hidden by default, shown for butter recipes) -->
+                        <div id="butterSeparationSection" class="hidden space-y-2 pt-2">
+                            <div class="divider text-xs text-base-content/60">BUTTER SEPARATION</div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="form-control">
+                                    <label class="label py-0"><span class="label-text text-xs">Cream Output (kg)</span></label>
+                                    <input type="number" class="input input-bordered input-sm w-full" id="creamOutputKg" step="0.1" placeholder="~20% of milk">
+                                </div>
+                                <div class="form-control">
+                                    <label class="label py-0"><span class="label-text text-xs">Skim Milk Output (L)</span></label>
+                                    <input type="number" class="input input-bordered input-sm w-full" id="skimMilkOutputL" step="0.1" placeholder="~80% of milk">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Cheese-specific (hidden by default) -->
+                        <div id="cheeseStateSection" class="hidden space-y-2 pt-2">
+                            <div class="divider text-xs text-base-content/60">CHEESE PRODUCTION STATE</div>
+                            <div class="form-control">
+                                <label class="label py-0"><span class="label-text text-xs">Starting State</span></label>
+                                <select class="select select-bordered select-sm w-full" id="cheeseState">
+                                    <option value="cooking">1. Cooking/Steaming (80-87°C)</option>
+                                    <option value="stirring">2. Stirring &amp; Pre-Pressing</option>
+                                    <option value="pressing">3. Pressing (1 hour)</option>
+                                    <option value="resting">4. Resting (24 hours)</option>
+                                    <option value="molding">5. Turning &amp; Molding</option>
+                                    <option value="weighing">6. Final Weighing</option>
+                                </select>
+                            </div>
+                            <label class="cursor-pointer label justify-start gap-2 py-0">
+                                <input type="checkbox" class="checkbox checkbox-primary checkbox-xs" id="isSalted">
+                                <span class="label-text text-xs">Salted Variant</span>
+                            </label>
+                        </div>
+
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text text-xs">Notes (optional)</span></label>
+                            <textarea class="textarea textarea-bordered w-full" id="runNotes" rows="2" placeholder="Optional notes..."></textarea>
                         </div>
                     </div>
 
-                    <div class="form-control">
-                        <label class="label">
-                            <span class="label-text">Notes</span>
-                        </label>
-                        <textarea class="textarea textarea-bordered w-full" id="runNotes" rows="2"
-                            placeholder="Optional notes..."></textarea>
+                    <!-- RIGHT: single status card with everything the user needs to know -->
+                    <div>
+                        <div class="card bg-base-200/50 border border-base-300 sticky top-0">
+                            <div class="card-body p-4">
+                                <div class="flex items-center gap-2 mb-3">
+                                    <i class="fas fa-clipboard-check text-primary"></i>
+                                    <h4 class="font-semibold text-sm">Readiness</h4>
+                                </div>
+                                <div class="space-y-2 text-sm" id="statusLines">
+                                    <div class="flex items-start gap-2" id="statusMilkLine">
+                                        <i class="fas fa-circle-notch fa-spin text-base-content/40 mt-0.5"></i>
+                                        <span class="text-base-content/60">Checking milk availability…</span>
+                                    </div>
+                                    <div class="flex items-start gap-2" id="statusIngredientsLine">
+                                        <i class="fas fa-clock text-base-content/40 mt-0.5"></i>
+                                        <span class="text-base-content/60">Select a recipe to check ingredients.</span>
+                                    </div>
+                                </div>
+
+                                <!-- Disclosure: only shown after a recipe with ingredients is selected. -->
+                                <div id="statusDetailsWrap" class="mt-3 border-t border-base-300 pt-3 hidden">
+                                    <button type="button"
+                                            class="btn btn-ghost btn-xs w-full justify-start gap-2 normal-case"
+                                            onclick="toggleIngredientDetails()">
+                                        <i class="fas fa-list-ul"></i>
+                                        <span id="statusDetailsLabel">View ingredient details</span>
+                                        <i class="fas fa-chevron-down ml-auto" id="statusDetailsChevron"></i>
+                                    </button>
+                                    <div id="statusDetailsPanel" class="hidden mt-2 max-h-56 overflow-y-auto">
+                                        <table class="table table-xs">
+                                            <thead>
+                                                <tr class="text-base-content/60">
+                                                    <th>Ingredient</th>
+                                                    <th class="text-right">To issue</th>
+                                                    <th>Unit</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="ingredientsList"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="modal-action">
-                    <button type="button" class="btn btn-ghost"
-                        onclick="document.getElementById('newRunModal').close()">Cancel</button>
+                <div class="modal-action bg-base-200 -mx-6 -mb-6 px-6 py-4 border-t border-base-300 mt-5">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('newRunModal').close()">Cancel</button>
                     <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-play"></i>
-                        Create Run
+                        <i class="fas fa-play"></i> Create Run
                     </button>
                 </div>
             </form>
@@ -785,7 +737,7 @@
     <div class="toast toast-end z-50" id="toastContainer"></div>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js"></script>
     <script src="../../js/production/production.service.js"></script>
@@ -939,12 +891,30 @@
         let availableMilkData = null;
         let selectedRecipeData = null;
 
+        // Gating helper for the submit button. `isOpen=true` enables the button
+        // (the form is "ready to submit"); `isOpen=false` disables it.
+        // The visual signal for "is it actually ready" lives in the readiness
+        // card on the right; this button gate is just a coarse "are we in a
+        // state where submitting could even work" check.
         function setNewRunMaterialGate(isOpen) {
             const blocked = !isOpen;
-            ['recipeSelect', 'plannedQuantity', 'milkLiters', 'runNotes'].forEach(id => {
+            ['recipeSelect', 'runNotes'].forEach(id => {
                 const field = document.getElementById(id);
                 if (field) field.disabled = blocked;
             });
+
+            // plannedQuantity is special: if the modal was opened from a
+            // requisition, the input is locked to the requisition's value and
+            // must stay disabled regardless of the gate state. Otherwise
+            // (freeform run) it follows the gate like the other fields.
+            const qtyInput = document.getElementById('plannedQuantity');
+            if (qtyInput) {
+                if (currentRequisitionPlannedQty != null) {
+                    qtyInput.disabled = true;
+                } else {
+                    qtyInput.disabled = blocked;
+                }
+            }
 
             const submitBtn = document.querySelector('#newRunForm button[type="submit"]');
             if (submitBtn) submitBtn.disabled = blocked;
@@ -952,42 +922,53 @@
             if (blocked) {
                 selectedRecipeData = null;
                 document.getElementById('recipeSelect').value = '';
-                document.getElementById('recipeDetails').classList.add('hidden');
-                document.getElementById('ingredientsSection').classList.add('hidden');
-                document.getElementById('milkRequirementCheck').classList.add('hidden');
+                // Reset the status card to its initial "no recipe yet" state.
+                resetStatusCard();
             }
+        }
+
+        // Resets the right-side readiness card to its initial "loading / no recipe" state.
+        // Called when the modal opens or when the recipe is cleared.
+        function resetStatusCard() {
+            const milk = document.getElementById('statusMilkLine');
+            if (milk) {
+                milk.innerHTML = '<i class="fas fa-circle-notch fa-spin text-base-content/40 mt-0.5"></i><span class="text-base-content/60">Checking milk availability…</span>';
+            }
+            const ings = document.getElementById('statusIngredientsLine');
+            if (ings) {
+                ings.innerHTML = '<i class="fas fa-clock text-base-content/40 mt-0.5"></i><span class="text-base-content/60">Select a recipe to check ingredients.</span>';
+            }
+            const wrap = document.getElementById('statusDetailsWrap');
+            if (wrap) wrap.classList.add('hidden');
+            const panel = document.getElementById('statusDetailsPanel');
+            if (panel) panel.classList.add('hidden');
         }
 
         async function updateRecipeDetails() {
             const recipeId = document.getElementById('recipeSelect').value;
-            const detailsDiv = document.getElementById('recipeDetails');
-            const ingredientsSection = document.getElementById('ingredientsSection');
             const butterSection = document.getElementById('butterSeparationSection');
             const cheeseSection = document.getElementById('cheeseStateSection');
             const yogurtSection = document.getElementById('yogurtMilkSection');
 
-            // Hide all sections initially
-            detailsDiv.classList.add('hidden');
-            ingredientsSection.classList.add('hidden');
-            butterSection.classList.add('hidden');
-            cheeseSection.classList.add('hidden');
+            // Hide all product-type specific sections initially
+            if (butterSection) butterSection.classList.add('hidden');
+            if (cheeseSection) cheeseSection.classList.add('hidden');
             if (yogurtSection) yogurtSection.classList.add('hidden');
 
+            // Reset status card until we have a fresh recipe.
             if (!recipeId) {
                 selectedRecipeData = null;
-                document.getElementById('milkRequirementCheck').classList.add('hidden');
+                document.getElementById('processTemperature').textContent = '—';
+                document.getElementById('processDuration').textContent = '—';
+                resetStatusCard();
                 return;
             }
 
             const recipe = recipes.find(r => r.id == recipeId);
             if (recipe) {
                 selectedRecipeData = recipe;
-                document.getElementById('selectedRecipeName').textContent = recipe.product_name;
-                document.getElementById('selectedRecipeYield').textContent = `${recipe.expected_yield} ${recipe.yield_unit} per batch`;
-                document.getElementById('selectedRecipeMilk').textContent = `${recipe.base_milk_liters}L`;
                 // Planned quantity is ALWAYS in Liters (we plan liquid volume, not bottle count)
                 document.getElementById('yieldUnit').textContent = 'Liters';
-                detailsDiv.classList.remove('hidden');
 
                 // Auto-fill temp & duration from recipe (read-only — single source of truth)
                 const tempDisplay = document.getElementById('processTemperature');
@@ -1003,9 +984,6 @@
                     durDisplay.textContent = '—';
                 }
 
-                // Update hint labels based on product type
-                updateProductTypeHints(recipe.product_type);
-
                 // Show product-type specific sections
                 if (recipe.product_type === 'butter') {
                     butterSection.classList.remove('hidden');
@@ -1015,51 +993,56 @@
                     showYogurtMilkWarning();
                 }
 
-                // Load ingredients for this recipe
+                // V4.0 (Option B) — update the read-only milk source indicator
+                // so the user knows what the form will send on submit. Yogurt
+                // gets Pasteurized, everything else gets Raw (matches the
+                // createRun auto-route).
+                const milkSourceValue = document.getElementById('milkSourceValue');
+                if (milkSourceValue) {
+                    const src = (recipe.product_type === 'yogurt') ? 'Pasteurized' : 'Raw';
+                    milkSourceValue.textContent = src;
+                }
+
+                // Load ingredients for this recipe (updates the status card)
                 await loadRecipeIngredients(recipeId);
 
-                checkMilkRequirement();
+                // Re-evaluate milk availability against the (potentially) updated planned qty
+                refreshStatusCard();
             }
         }
 
-        // Show yogurt-specific pasteurized milk warning
+        // Show yogurt-specific pasteurized milk warning. Writes to the readiness card's
+        // milk line (the same line that loadAvailableMilk populates), so the user
+        // sees the yogurt-specific pasteurized-milk check in the same place as the
+        // regular milk availability check.
         async function showYogurtMilkWarning() {
-            const checkDiv = document.getElementById('milkRequirementCheck');
-            checkDiv.classList.remove('hidden');
-            checkDiv.innerHTML = `
-                <div class="alert alert-warning">
-                    <i class="fas fa-flask text-lg"></i>
-                    <div>
-                        <div class="font-semibold">⚠️ Yogurt Requires PASTEURIZED Milk</div>
-                        <div class="text-sm">Checking pasteurized milk inventory...</div>
-                    </div>
-                </div>
-            `;
+            setStatusMilk({ loading: true });
 
             try {
                 const response = await ProductionService.getAvailablePasteurizedMilk();
                 if (response.success) {
                     const data = response.data;
                     const isEnough = data.total_available_liters >= (selectedRecipeData?.base_milk_liters || 0);
-
-                    checkDiv.innerHTML = `
-                        <div class="alert ${isEnough ? 'alert-success' : 'alert-error'}">
-                            <i class="fas ${isEnough ? 'fa-check-circle' : 'fa-exclamation-triangle'} text-lg"></i>
-                            <div>
-                                <div class="font-semibold">${isEnough ? '✅' : '⚠️'} Pasteurized Milk: ${data.total_available_liters}L available</div>
-                                <div class="text-sm">${data.message}</div>
-                                ${data.batch_count > 0 ? `<div class="text-xs opacity-70">From ${data.batch_count} batch(es) - FIFO allocation</div>` : ''}
-                            </div>
-                        </div>
-                    `;
+                    const line = document.getElementById('statusMilkLine');
+                    if (!line) return;
+                    line.innerHTML = isEnough
+                        ? `<i class="fas fa-check-circle text-success mt-0.5"></i>
+                            <div class="flex-1">
+                                <div class="text-success font-semibold">${Math.round(data.total_available_liters).toLocaleString()} L pasteurized milk available</div>
+                                <div class="text-xs text-base-content/60">${data.message || 'Yogurt ready to cook.'}</div>
+                            </div>`
+                        : `<i class="fas fa-exclamation-triangle text-warning mt-0.5"></i>
+                            <div class="flex-1">
+                                <div class="text-warning font-semibold">Yogurt needs pasteurized milk</div>
+                                <div class="text-xs text-base-content/60 mb-1">${data.message || 'Run pasteurization first, then create the yogurt run.'}</div>
+                                <a href="pasteurization.html" class="link link-hover text-xs font-semibold inline-flex items-center gap-1">
+                                    <i class="fas fa-arrow-right text-[10px]"></i>
+                                    Open Pasteurization page
+                                </a>
+                            </div>`;
                 }
             } catch (error) {
-                checkDiv.innerHTML = `
-                    <div class="alert alert-error">
-                        <i class="fas fa-exclamation-circle"></i>
-                        <span>Failed to check pasteurized milk: ${error.message}</span>
-                    </div>
-                `;
+                setStatusMilk({ ok: false, message: 'Failed to check pasteurized milk: ' + (error.message || 'unknown error') });
             }
         }
 
@@ -1086,91 +1069,245 @@
             }
         }
 
-        function getScaledIngredientQuantity(ingredient) {
-            const plannedQty = parseFloat(document.getElementById('plannedQuantity').value) || 0;
-            const expectedYield = parseFloat(selectedRecipeData?.expected_yield) || 1;
-            const recipeQty = parseFloat(ingredient.quantity) || 0;
-            return Math.round(((recipeQty * plannedQty) / expectedYield) * 1000) / 1000;
+        // Renders the "Milk" line on the readiness card. Used after loadAvailableMilk
+        // completes (or fails) so the user sees the up-to-date L available.
+        function setStatusMilk(state) {
+            const line = document.getElementById('statusMilkLine');
+            if (!line) return;
+            if (state.loading) {
+                line.innerHTML = '<i class="fas fa-circle-notch fa-spin text-base-content/40 mt-0.5"></i><span class="text-base-content/60">Checking milk availability…</span>';
+            } else if (state.ok) {
+                line.innerHTML = `<i class="fas fa-check-circle text-success mt-0.5"></i>
+                    <div class="flex-1">
+                        <div class="text-success font-semibold">${Math.round(state.liters || 0).toLocaleString()} L milk available</div>
+                        <div class="text-xs text-base-content/60">From ${state.sources || 0} fulfilled requisition item${state.sources === 1 ? '' : 's'}</div>
+                    </div>`;
+            } else {
+                line.innerHTML = `<i class="fas fa-exclamation-triangle text-error mt-0.5"></i>
+                    <div class="flex-1">
+                        <div class="text-error font-semibold">No issued milk available</div>
+                        <div class="text-xs text-base-content/60">${state.message || 'Submit a requisition and wait for Warehouse Raw to fulfill it.'}</div>
+                    </div>`;
+            }
         }
 
-        function formatIngredientQuantity(quantity) {
-            return Number.isFinite(quantity) ? quantity.toFixed(3) : '0.000';
+        // Renders the "Ingredients" line on the readiness card. Called after a recipe
+        // is selected (and after the planned qty changes) so the user knows whether the
+        // recipe's required ingredients are reserved in the requisition.
+        function setStatusIngredients(state) {
+            const line = document.getElementById('statusIngredientsLine');
+            if (!line) return;
+            if (state.loading) {
+                line.innerHTML = '<i class="fas fa-circle-notch fa-spin text-base-content/40 mt-0.5"></i><span class="text-base-content/60">Reserving ingredients from requisition…</span>';
+            } else if (state.empty) {
+                line.innerHTML = '<i class="fas fa-check-circle text-success mt-0.5"></i><div class="flex-1"><div class="text-success font-semibold">No extra ingredients needed</div><div class="text-xs text-base-content/60">This recipe uses only milk.</div></div>';
+            } else if (state.ok) {
+                line.innerHTML = `<i class="fas fa-check-circle text-success mt-0.5"></i>
+                    <div class="flex-1">
+                        <div class="text-success font-semibold">${state.count} ingredient${state.count === 1 ? '' : 's'} reserved from requisition</div>
+                        <div class="text-xs text-base-content/60">All materials ready to issue for this run.</div>
+                    </div>`;
+            } else {
+                line.innerHTML = `<i class="fas fa-exclamation-triangle text-warning mt-0.5"></i>
+                    <div class="flex-1">
+                        <div class="text-warning font-semibold">Ingredients missing</div>
+                        <div class="text-xs text-base-content/60">${state.message || 'Some ingredients are not yet issued by Warehouse Raw.'}</div>
+                    </div>`;
+            }
         }
 
-        function refreshScaledIngredientRows() {
-            if (!selectedRecipeData?.ingredients?.length) return;
+        // Toggle the ingredient details disclosure (under the readiness card).
+        function toggleIngredientDetails() {
+            const panel = document.getElementById('statusDetailsPanel');
+            const label = document.getElementById('statusDetailsLabel');
+            const chevron = document.getElementById('statusDetailsChevron');
+            if (!panel) return;
+            const opening = panel.classList.contains('hidden');
+            panel.classList.toggle('hidden');
+            if (label) label.textContent = opening ? 'Hide ingredient details' : 'View ingredient details';
+            if (chevron) {
+                chevron.classList.toggle('fa-chevron-down', !opening);
+                chevron.classList.toggle('fa-chevron-up', opening);
+            }
+        }
 
-            selectedRecipeData.ingredients.forEach((ing, idx) => {
-                const required = getScaledIngredientQuantity(ing);
-                const requiredText = formatIngredientQuantity(required);
-                const requiredCell = document.querySelector(`[data-ingredient-required="${idx}"]`);
-                const input = document.querySelector(`input[name="ingredient_actual_${idx}"]`);
+        async function loadAvailableMilk() {
+            // Mark the milk line as loading, then fetch the issued-milk stats.
+            setStatusMilk({ loading: true });
 
-                if (requiredCell) {
-                    requiredCell.textContent = requiredText;
-                }
-
-                if (input) {
-                    const previousRequired = parseFloat(input.dataset.requiredQty || input.value || 0);
-                    const currentActual = parseFloat(input.value || 0);
-                    if (!Number.isFinite(currentActual) || Math.abs(currentActual - previousRequired) < 0.0005) {
-                        input.value = requiredText;
+            try {
+                const response = await ProductionService.getAvailableMilk();
+                if (response.success) {
+                    availableMilkData = response.data;
+                    const totalLiters = availableMilkData.total_available_liters || 0;
+                    const sources = availableMilkData.milk_sources || [];
+                    setStatusMilk({
+                        ok: totalLiters > 0,
+                        liters: totalLiters,
+                        sources: sources.length,
+                        message: totalLiters > 0
+                            ? null
+                            : 'Submit a material requisition and wait for Warehouse Raw to fulfill it.'
+                    });
+                    // Open the submit gate as soon as we know milk is available.
+                    // The user can't pick a recipe yet (we're still in the
+                    // pre-recipe state), but the inputs are unlocked and the
+                    // status card is the source of truth for "are we ready".
+                    if (totalLiters > 0) {
+                        setNewRunMaterialGate(true);
                     }
-                    input.dataset.requiredQty = required;
-                    input.dataset.recipeQty = ing.quantity;
+                } else {
+                    setStatusMilk({ ok: false, message: response.message || 'Could not load milk availability.' });
+                    // API responded but with a failure — let the user try to
+                    // submit anyway; the backend will re-validate.
+                    setNewRunMaterialGate(true);
                 }
-            });
+            } catch (error) {
+                console.error('Error loading available milk:', error);
+                setStatusMilk({ ok: false, message: 'Could not load milk availability. The system will re-check on submit.' });
+                // Network/parse error — also let the user try; backend re-validates.
+                setNewRunMaterialGate(true);
+            }
         }
 
         async function loadRecipeIngredients(recipeId) {
-            const ingredientsSection = document.getElementById('ingredientsSection');
-            const ingredientsList = document.getElementById('ingredientsList');
-
             try {
-                // Fetch full recipe with ingredients
                 const response = await ProductionService.getRecipe(recipeId);
                 if (response.success && response.data.ingredients) {
                     selectedRecipeData = { ...selectedRecipeData, ...response.data };
-                    const ingredients = response.data.ingredients;
-
-                    if (ingredients.length > 0) {
-                        ingredientsSection.classList.remove('hidden');
-                        document.getElementById('ingredientCount').textContent = ingredients.length;
-
-                        ingredientsList.innerHTML = ingredients.map((ing, idx) => {
-                            const required = getScaledIngredientQuantity(ing);
-                            const requiredText = formatIngredientQuantity(required);
-                            return `
-                                <tr>
-                                    <td>
-                                        <div class="font-medium">${ing.ingredient_name}</div>
-                                        <div class="text-xs text-base-content/60">${ing.ingredient_category || ''}</div>
-                                    </td>
-                                    <td class="text-right font-mono text-sm" data-ingredient-required="${idx}">${requiredText}</td>
-                                    <td class="text-right">
-                                        <input type="number" 
-                                            class="input input-bordered input-xs w-24 text-right" 
-                                            value="${requiredText}" 
-                                            step="0.001"
-                                            data-ingredient-id="${ing.ingredient_id || ing.id}"
-                                            data-recipe-qty="${ing.quantity}"
-                                            data-required-qty="${required}"
-                                            name="ingredient_actual_${idx}">
-                                    </td>
-                                    <td class="text-xs">${ing.unit || ''}</td>
-                                </tr>
-                            `;
-                        }).join('');
-
-                        // Store ingredients for later submission
-                        selectedRecipeData.ingredients = ingredients;
-                    } else {
-                        ingredientsList.innerHTML = '<tr><td colspan="4" class="text-center text-base-content/40">No ingredients defined</td></tr>';
-                    }
+                    renderIngredientsTable(response.data.ingredients);
+                    setStatusIngredients({
+                        empty: response.data.ingredients.length === 0,
+                        ok: true,
+                        count: response.data.ingredients.length
+                    });
+                } else {
+                    document.getElementById('ingredientsList').innerHTML =
+                        '<tr><td colspan="3" class="text-center text-error text-xs">Failed to load ingredients</td></tr>';
+                    setStatusIngredients({ ok: false, message: 'Could not load recipe ingredients.' });
                 }
             } catch (error) {
-                console.error('Error loading recipe ingredients:', error);
-                ingredientsList.innerHTML = '<tr><td colspan="4" class="text-center text-error">Failed to load</td></tr>';
+                console.error('Error loading ingredients:', error);
+                document.getElementById('ingredientsList').innerHTML =
+                    '<tr><td colspan="3" class="text-center text-error text-xs">Failed to load</td></tr>';
+                setStatusIngredients({ ok: false, message: 'Could not load recipe ingredients.' });
+            }
+        }
+
+        // Render the read-only "To issue" table under the readiness card disclosure.
+        // The actual qty consumed is recorded separately at run completion.
+        // V4.0 — when the planned quantity is not yet entered (scale === 0),
+        // show the BASE recipe quantity instead of "—". The user can see
+        // what the recipe calls for at full yield even before deciding
+        // how much to make. Once they type a planned qty, the rows
+        // re-scale to the per-batch amounts. Previously every row was "—"
+        // for the entire window between "select recipe" and "type qty",
+        // which looked like missing data.
+        function renderIngredientsTable(ingredients) {
+            const list = document.getElementById('ingredientsList');
+            if (!list) return;
+            if (!ingredients.length) {
+                list.innerHTML = '<tr><td colspan="3" class="text-center text-base-content/40 text-xs">No ingredients in this recipe</td></tr>';
+                document.getElementById('statusDetailsWrap').classList.add('hidden');
+                return;
+            }
+            const plannedQty = parseFloat(document.getElementById('plannedQuantity').value) || 0;
+            const expectedYield = parseFloat(selectedRecipeData?.expected_yield) || 1;
+            const scale = plannedQty > 0 && expectedYield > 0 ? plannedQty / expectedYield : 0;
+            const showingBase = scale === 0;
+
+            list.innerHTML = ingredients.map(ing => {
+                // When the user has typed a planned qty, scale the recipe
+                // quantity to the user's batch. When they haven't yet,
+                // show the base recipe quantity (per expected yield) as a
+                // hint. Either way, never show "—" for a defined ingredient.
+                const baseQty = parseFloat(ing.quantity) || 0;
+                const scaled = scale > 0 ? Math.round(baseQty * scale * 1000) / 1000 : baseQty;
+                const unit = ing.unit || '';
+                const tooltip = showingBase
+                    ? `Per recipe's full yield (${expectedYield} ${escapeHtml(unit)}). Type a planned quantity above to see per-batch amounts.`
+                    : `Scaled to planned quantity ${plannedQty} ${escapeHtml(unit)}`;
+                return `<tr>
+                    <td>
+                        <div class="font-medium text-xs">${escapeHtml(ing.ingredient_name)}</div>
+                        ${ing.ingredient_category ? `<div class="text-[10px] text-base-content/50">${escapeHtml(ing.ingredient_category)}</div>` : ''}
+                    </td>
+                    <td class="text-right font-mono text-xs" title="${tooltip}">${scaled.toFixed(3)}${showingBase ? ' <span class="text-[10px] text-base-content/40">/full batch</span>' : ''}</td>
+                    <td class="text-xs">${escapeHtml(unit)}</td>
+                </tr>`;
+            }).join('');
+
+            // Show the disclosure so the user can expand the table.
+            document.getElementById('statusDetailsWrap').classList.remove('hidden');
+        }
+
+        // Re-evaluates the readiness card. Called when the planned qty changes.
+        // The recipe is already selected at this point, so we re-scale the ingredient
+        // quantities and re-check milk availability against the new planned volume.
+        function refreshStatusCard() {
+            if (selectedRecipeData && Array.isArray(selectedRecipeData.ingredients)) {
+                renderIngredientsTable(selectedRecipeData.ingredients);
+                setStatusIngredients({
+                    empty: selectedRecipeData.ingredients.length === 0,
+                    ok: true,
+                    count: selectedRecipeData.ingredients.length
+                });
+            }
+            // Reflect the planned qty against the requisition's planned qty
+            // (if any) — shows a "Req. planned: X L" hint + warning border.
+            updatePlannedVolumeHint();
+            checkMilkRequirement();
+        }
+
+        // Updates the milk line on the readiness card against the (auto-computed) milk
+        // requirement for the current planned volume. The backend uses the same
+        // auto-calc when createRun is called, so this is a UX preview only.
+        function checkMilkRequirement() {
+            if (!selectedRecipeData || !availableMilkData) return;
+            // V4.0 (Issue C fix) — for yogurt recipes, the milk type is
+            // pasteurized and the readiness line is rendered by
+            // showYogurtMilkWarning(). Without this guard, the raw-milk-based
+            // line below would overwrite the pasteurized-milk warning and
+            // show confusing "1,213 L available" for a recipe that actually
+            // needs pasteurized milk.
+            if (selectedRecipeData.product_type === 'yogurt') return;
+            const plannedQty = parseFloat(document.getElementById('plannedQuantity').value) || 0;
+            if (plannedQty <= 0) return;
+
+            const baseMilk = selectedRecipeData.base_milk_liters || 0;
+            const baseYield = selectedRecipeData.expected_yield || 1;
+            const requiredMilk = baseYield > 0 ? (baseMilk / baseYield) * plannedQty : 0;
+            const availableLiters = availableMilkData.total_available_liters || 0;
+
+            if (requiredMilk > 0) {
+                if (availableLiters >= requiredMilk) {
+                    // Override the existing "ok" milk line with a more specific message
+                    // showing the planned volume vs. what's available.
+                    const line = document.getElementById('statusMilkLine');
+                    if (line) {
+                        line.innerHTML = `<i class="fas fa-check-circle text-success mt-0.5"></i>
+                            <div class="flex-1">
+                                <div class="text-success font-semibold">${Math.round(availableLiters).toLocaleString()} L milk available</div>
+                                <div class="text-xs text-base-content/60">Need ${requiredMilk.toFixed(1)} L for ${plannedQty} ${selectedRecipeData.yield_unit || 'units'} batch — well stocked</div>
+                            </div>`;
+                    }
+                    // Plenty of milk for the planned qty — keep the submit gate open.
+                    setNewRunMaterialGate(true);
+                } else {
+                    const line = document.getElementById('statusMilkLine');
+                    if (line) {
+                        line.innerHTML = `<i class="fas fa-exclamation-triangle text-error mt-0.5"></i>
+                            <div class="flex-1">
+                                <div class="text-error font-semibold">Not enough milk: need ${requiredMilk.toFixed(1)} L</div>
+                                <div class="text-xs text-base-content/60">Only ${availableLiters.toFixed(1)} L available — request more or reduce the planned volume.</div>
+                            </div>`;
+                    }
+                    // The planned volume is too high for what's available. Close
+                    // the submit gate so the user can't try; the form's required
+                    // attribute on plannedQuantity won't catch this (it's a
+                    // business rule, not a syntactic one).
+                    setNewRunMaterialGate(false);
+                }
             }
         }
 
@@ -1341,139 +1478,134 @@
             loadRuns();
         }
 
-        async function showNewRunModal() {
-            document.getElementById('newRunForm').reset();
-            setNewRunMaterialGate(false);
-            document.getElementById('recipeDetails').classList.add('hidden');
-            document.getElementById('milkCheckLoading').classList.remove('hidden');
-            document.getElementById('milkCheckResult').classList.add('hidden');
-            document.getElementById('newRunModal').showModal();
-
-            await loadAvailableMilk();
+        // Small HTML escaper used by the readiness card's table renderer to prevent
+        // ingredient names / unit text from breaking the markup if they contain <, >, &, etc.
+        function escapeHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
 
-        async function loadAvailableMilk() {
-            try {
-                const response = await ProductionService.getAvailableMilk();
+        // Holds the requisition the modal was opened from (if any). Cleared when the
+        // user dismisses the banner, types a different recipe, or after a successful create.
+        let activeRequisitionPrefill = null;
+        // The planned_quantity from the linked requisition, if any. Used to show a
+        // "Requisition planned: X L" hint next to the Planned Volume label and to
+        // highlight the input with a warning color when the user edits it to a
+        // different value.
+        let currentRequisitionPlannedQty = null;
 
-                if (response.success) {
-                    availableMilkData = response.data;
-                    const totalLiters = availableMilkData.total_available_liters || 0;
-                    const sources = availableMilkData.milk_sources || [];
+        function clearRequisitionPrefill() {
+            activeRequisitionPrefill = null;
+            currentRequisitionPlannedQty = null;
+            const banner = document.getElementById('fromRequisitionBanner');
+            if (banner) banner.classList.add('hidden');
+            updatePlannedVolumeHint();
+        }
 
-                    document.getElementById('milkCheckLoading').classList.add('hidden');
-                    const resultDiv = document.getElementById('milkCheckResult');
-                    resultDiv.classList.remove('hidden');
+        // Updates the Planned Volume input state. When the modal was opened from
+        // a requisition, the input is LOCKED to the requisition's planned qty:
+        // the requisition is the GM-approved production plan, the warehouse
+        // already issued materials for that exact amount, and silently letting
+        // production scale the run would break the REQ -> RUN chain (the run
+        // would consume materials from a shared pool that may include other
+        // requisitions' allowances). To change the batch size, edit the
+        // requisition (which forces re-approval + re-fulfillment with the new
+        // amounts). When the user clears the requisition prefill, this is
+        // called again to re-enable the input.
+        function updatePlannedVolumeHint() {
+            const hint = document.getElementById('requisitionPlannedHint');
+            const input = document.getElementById('plannedQuantity');
+            const helper = document.getElementById('plannedVolumeHelper');
+            if (!input) return;
 
-                    if (totalLiters > 0) {
-                        setNewRunMaterialGate(true);
-                        resultDiv.innerHTML = `
-                            <div class="alert alert-success">
-                                <div class="flex items-start gap-3 w-full">
-                                    <span class="text-2xl"><i class="fas fa-tint text-primary"></i></span>
-                                    <div class="flex-1">
-                                        <div class="font-semibold">
-                                            <i class="fas fa-check-circle mr-1"></i> Issued Milk Available: ${Math.round(totalLiters).toLocaleString()} L
-                                        </div>
-                                        <div class="text-sm opacity-80 mt-1">
-                                            From ${sources.length} fulfilled requisition item${sources.length !== 1 ? 's' : ''}
-                                        </div>
-                                    </div>
-                                </div>
-                                ${sources.length > 0 ? `
-                                    <details class="mt-2 w-full">
-                                        <summary class="cursor-pointer text-sm"><i class="fas fa-clipboard-list mr-1"></i> View requisition source details</summary>
-                                        <div class="mt-2 bg-base-100 rounded-lg p-2 text-xs">
-                                            ${sources.map(s => `
-                                                <div class="p-2 border-b border-base-300 last:border-0">
-                                                    <strong>${s.delivery_code}</strong> - ${parseFloat(s.remaining_liters).toFixed(1)}L issued
-                                                    <br><span class="opacity-70">Source: ${s.source_batches || 'Warehouse Raw'} | Issued: ${s.delivery_date || 'Not recorded'} | Expires: ${s.expiry_date || 'Not recorded'}</span>
-                                                </div>
-                                            `).join('')}
-                                        </div>
-                                    </details>
-                                ` : ''}
-                            </div>
-                        `;
-                    } else {
-                        setNewRunMaterialGate(false);
-                        resultDiv.innerHTML = `
-                            <div class="alert alert-error">
-                                <div class="flex items-start gap-3 w-full">
-                                    <span class="text-2xl"><i class="fas fa-exclamation-triangle text-error"></i></span>
-                                    <div>
-                                        <div class="font-semibold">No Issued Milk Available</div>
-                                        <div class="text-sm opacity-80 mt-1">
-                                            You cannot start production until Warehouse Raw fulfills a milk requisition for Production.
-                                        </div>
-                                        <div class="text-xs opacity-60 mt-2">
-                                            <i class="fas fa-clipboard-list mr-1"></i> Create a requisition, wait for GM approval, then have Warehouse Raw fulfill it.
-                                        </div>
-                                        <div class="mt-3">
-                                            <a href="requisitions.html?action=new&item=raw_milk" class="btn btn-primary btn-sm">
-                                                <i class="fas fa-clipboard-list mr-1"></i> Request Raw Milk
-                                            </a>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
-                    }
-                }
-            } catch (error) {
-                console.error('Error loading available milk:', error);
-                document.getElementById('milkCheckLoading').classList.add('hidden');
-                document.getElementById('milkCheckResult').classList.remove('hidden');
-                document.getElementById('milkCheckResult').innerHTML = `
-                    <div class="alert alert-warning">
-                        <i class="fas fa-exclamation-triangle"></i>
-                        <span>Could not check issued material availability. The system will validate again on submission.</span>
-                    </div>
-                `;
-                setNewRunMaterialGate(true);
+            if (currentRequisitionPlannedQty == null) {
+                // Freeform run — input is editable, no hint, default helper.
+                if (hint) hint.classList.add('hidden');
+                input.classList.remove('input-warning');
+                input.disabled = false;
+                if (helper) helper.textContent = 'How much base liquid to produce in this batch';
+                return;
+            }
+
+            // Requisition-driven run — lock the input, show the hint, swap
+            // the helper text to explain the lock.
+            input.value = currentRequisitionPlannedQty;
+            input.disabled = true;
+            input.classList.remove('input-warning');
+            const unit = (document.getElementById('yieldUnit')?.textContent || 'units').toLowerCase();
+            if (hint) {
+                hint.textContent = `Locked to ${currentRequisitionPlannedQty} ${unit} from requisition`;
+                hint.classList.remove('hidden');
+            }
+            if (helper) {
+                helper.innerHTML = `<i class="fas fa-lock text-xs"></i> Locked to the linked requisition. Edit the requisition to change the batch size.`;
             }
         }
 
-        function checkMilkRequirement() {
-            if (!selectedRecipeData || !availableMilkData) return;
+        async function showNewRunModal() {
+            document.getElementById('newRunForm').reset();
+            setNewRunMaterialGate(false);
+            resetStatusCard();
+            clearRequisitionPrefill();
 
-            refreshScaledIngredientRows();
+            // Read pre-fill params from the URL. Used by the "Start Production" handoff
+            // from requisitions.html so the user doesn't re-pick recipe + planned qty.
+            const urlParams = new URLSearchParams(window.location.search);
+            const reqId = urlParams.get('req_id');
+            const recipeId = urlParams.get('recipe_id');
+            const plannedQty = urlParams.get('planned_quantity');
+            const reqCode = urlParams.get('req_code');
 
-            const plannedQty = parseFloat(document.getElementById('plannedQuantity').value) || 0;
-            const customMilk = parseFloat(document.getElementById('milkLiters').value) || 0;
-
-            const baseMilk = selectedRecipeData.base_milk_liters || 0;
-            const baseYield = selectedRecipeData.expected_yield || 1;
-            const requiredMilk = customMilk > 0 ? customMilk : (baseMilk / baseYield) * plannedQty;
-
-            const availableLiters = availableMilkData.total_available_liters || 0;
-            const checkDiv = document.getElementById('milkRequirementCheck');
-
-            if (requiredMilk > 0) {
-                checkDiv.classList.remove('hidden');
-
-                if (requiredMilk <= availableLiters) {
-                    checkDiv.innerHTML = `
-                        <div class="alert alert-success py-2">
-                            <i class="fas fa-check-circle"></i>
-                            <span>Issued milk OK: Need ${requiredMilk.toFixed(1)}L, Have ${availableLiters.toFixed(1)}L available</span>
-                        </div>
-                    `;
-                    document.querySelector('#newRunForm button[type="submit"]').disabled = false;
-                } else {
-                    checkDiv.innerHTML = `
-                        <div class="alert alert-error py-2">
-                            <i class="fas fa-times-circle"></i>
-                            <div>
-                                <div>Not enough issued milk: Need ${requiredMilk.toFixed(1)}L, Only ${availableLiters.toFixed(1)}L available</div>
-                                <div class="text-xs opacity-80">Reduce quantity or request more milk through Warehouse Raw.</div>
-                            </div>
-                        </div>
-                    `;
-                    document.querySelector('#newRunForm button[type="submit"]').disabled = true;
-                }
+            if (reqId) {
+                activeRequisitionPrefill = { id: reqId, code: reqCode || `REQ #${reqId}` };
+                // Track the requisition's planned qty so we can lock the
+                // Planned Volume input to it (the requisition is the
+                // GM-approved plan + the warehouse already issued for this qty).
+                currentRequisitionPlannedQty = plannedQty ? parseFloat(plannedQty) : null;
+                const banner = document.getElementById('fromRequisitionBanner');
+                const codeEl = document.getElementById('fromRequisitionCode');
+                if (codeEl) codeEl.textContent = activeRequisitionPrefill.code;
+                if (banner) banner.classList.remove('hidden');
             } else {
-                checkDiv.classList.add('hidden');
+                currentRequisitionPlannedQty = null;
+            }
+
+            // Apply the input lock immediately so the user can't type into a
+            // disabled box while the milk check is still loading. updatePlannedVolumeHint
+            // is the single source of truth for "is this input locked?".
+            updatePlannedVolumeHint();
+
+            document.getElementById('newRunModal').showModal();
+
+            await loadAvailableMilk();
+
+            // Apply the pre-fill AFTER the milk gate has settled so the recipe dropdown
+            // and quantity input are in their final enabled/disabled state.
+            if (recipeId) {
+                const recipeSelect = document.getElementById('recipeSelect');
+                if (recipeSelect) {
+                    // Make sure the recipes have been loaded before we set the value.
+                    if (recipeSelect.options.length <= 1) {
+                        await loadRecipes();
+                    }
+                    recipeSelect.value = recipeId;
+                    await updateRecipeDetails();
+                }
+            }
+            if (plannedQty) {
+                const qtyInput = document.getElementById('plannedQuantity');
+                if (qtyInput) {
+                    qtyInput.value = plannedQty;
+                    // refreshStatusCard (not just checkMilkRequirement) so the
+                    // ingredients table re-scales to the new planned qty. Without
+                    // this, the table keeps the empty-scale rows that were
+                    // rendered when the recipe was first picked.
+                    await refreshStatusCard();
+                }
             }
         }
 
@@ -1481,13 +1613,12 @@
             event.preventDefault();
 
             try {
-                refreshScaledIngredientRows();
-
-                // Base data
+                // Base data. The backend auto-computes milk_liters_used from the recipe's
+                // base_milk_liters × (planned_quantity / expected_yield) when null is sent,
+                // so we just omit the override entirely.
                 const data = {
                     recipe_id: document.getElementById('recipeSelect').value,
                     planned_quantity: document.getElementById('plannedQuantity').value,
-                    milk_liters_used: document.getElementById('milkLiters').value || null,
                     notes: document.getElementById('runNotes').value,
 
                     // Temp & Duration come from recipe (read-only display — single source of truth)
@@ -1495,28 +1626,24 @@
                     process_duration_mins: selectedRecipeData?.pasteurization_time_mins || null
                 };
 
-                // Collect ingredient adjustments if any were modified
-                if (selectedRecipeData && selectedRecipeData.ingredients) {
-                    const ingredientAdjustments = [];
-                    selectedRecipeData.ingredients.forEach((ing, idx) => {
-                        const input = document.querySelector(`input[name="ingredient_actual_${idx}"]`);
-                        if (input) {
-                            const actual = parseFloat(input.value);
-                            const required = parseFloat(input.dataset.requiredQty || getScaledIngredientQuantity(ing));
-                            if (Number.isFinite(actual) && Math.abs(actual - required) > 0.0005) {
-                                ingredientAdjustments.push({
-                                    ingredient_id: ing.ingredient_id || ing.id,
-                                    ingredient_name: ing.ingredient_name,
-                                    recipe_quantity: required,
-                                    actual_quantity: actual,
-                                    unit: ing.unit
-                                });
-                            }
-                        }
-                    });
-                    if (ingredientAdjustments.length > 0) {
-                        data.ingredient_adjustments = JSON.stringify(ingredientAdjustments);
-                    }
+                // V4.0 (Option B) — auto-route milk source by recipe type so the
+                // form no longer silently defaults to 'raw' for yogurt. Per the
+                // product spec, yogurt uses pasteurized milk; cheese uses raw;
+                // fresh milk, butter, etc. use raw.
+                if (selectedRecipeData && selectedRecipeData.product_type) {
+                    const t = selectedRecipeData.product_type;
+                    data.milk_source_type = (t === 'yogurt') ? 'pasteurized' : 'raw';
+                }
+
+                // If the modal was opened from a pre-run requisition AND the user
+                // hasn't cleared that link via the banner's Clear button, send the
+                // ID so the backend can link the new run back to the requisition.
+                // We use activeRequisitionPrefill (not URL params) as the source of
+                // truth — the URL is set on first load, but Clear is a user choice
+                // to start from scratch and should not be silently overridden by
+                // stale URL state.
+                if (activeRequisitionPrefill) {
+                    data.material_requisition_id = activeRequisitionPrefill.id;
                 }
 
                 // Butter-specific: Separation outputs
@@ -1534,12 +1661,40 @@
                 const response = await ProductionService.createRun(data);
 
                 if (response.success) {
-                    showToast('Production run created successfully!', 'success');
-                    document.getElementById('newRunModal').close();
-                    loadRuns();
-                    loadStats();
+                    const newRunId = response.data?.id;
+                    const linkedReqCode = response.data?.linked_requisition_code;
+                    const isFromRequisition = !!data.material_requisition_id;
+
+                    if (isFromRequisition && newRunId) {
+                        // Strip URL params so a page refresh doesn't reopen the modal.
+                        if (window.history && window.history.replaceState) {
+                            const cleanUrl = window.location.pathname + '?id=' + newRunId;
+                            window.history.replaceState({}, '', cleanUrl);
+                        }
+                        showToast(
+                            linkedReqCode
+                                ? `Production run created and linked to ${linkedReqCode}`
+                                : 'Production run created',
+                            'success'
+                        );
+                        document.getElementById('newRunModal').close();
+                        // Redirect to the new run's detail view so the production
+                        // staff lands on the page they actually need next.
+                        viewRunDetails(newRunId);
+                    } else {
+                        showToast('Production run created successfully!', 'success');
+                        document.getElementById('newRunModal').close();
+                        loadRuns();
+                        loadStats();
+                    }
                 } else {
-                    showToast(response.message || 'Failed to create run', 'error');
+                    // The backend returns 422 validation errors as a JSON object
+                    // (e.g. { planned_quantity: "...must match..." }). Surface the
+                    // first one as a toast so the user knows what to fix.
+                    const firstError = response.errors
+                        ? Object.values(response.errors)[0]
+                        : null;
+                    showToast(firstError || response.message || 'Failed to create run', 'error');
                 }
             } catch (error) {
                 console.error('Error creating run:', error);
@@ -1822,138 +1977,286 @@
         }
 
         function renderRunDetails(run) {
-            const statusConfig = {
-                'planned': 'badge-ghost',
-                'in_progress': 'badge-primary',
-                'pasteurization': 'badge-warning',
-                'processing': 'badge-info',
-                'cooling': 'badge-info',
-                'packaging': 'badge-secondary',
-                'completed': 'badge-success',
-                'cancelled': 'badge-error'
+            // Hero metadata per status: which color, icon, label, and a one-line
+            // description. Drives the big status pill in the header and the
+            // description below it. Tweak the color/icon to match the run's
+            // real semantic state ("cooling" is also info-toned but should
+            // feel like a wait, not an action).
+            const statusHeroConfig = {
+                'planned':        { color: 'text-base-content/70',  bg: 'bg-base-200',          border: 'border-base-300',          icon: 'fa-circle-pause',     label: 'PLANNED',        desc: 'Not started yet — review materials then start' },
+                'in_progress':    { color: 'text-primary-content',   bg: 'bg-primary',           border: 'border-primary',           icon: 'fa-play',            label: 'IN PROGRESS',    desc: 'Active production — log CCP checks as you go' },
+                'pasteurization': { color: 'text-warning-content',  bg: 'bg-warning',           border: 'border-warning',           icon: 'fa-thermometer-half',label: 'PASTEURIZING',  desc: 'Heat-treating — verify 75°C for 15s' },
+                'processing':     { color: 'text-info-content',     bg: 'bg-info',              border: 'border-info',              icon: 'fa-mortar-pestle',   label: 'PROCESSING',     desc: 'Mixing / cooking per recipe' },
+                'cooling':        { color: 'text-info-content',     bg: 'bg-info',              border: 'border-info',              icon: 'fa-snowflake',       label: 'COOLING',        desc: 'Bringing temperature down to ≤ 4°C' },
+                'packaging':      { color: 'text-secondary-content',bg: 'bg-secondary',         border: 'border-secondary',         icon: 'fa-box',             label: 'PACKAGING',      desc: 'Filling and sealing — record actual output' },
+                'completed':      { color: 'text-success-content',  bg: 'bg-success',           border: 'border-success',           icon: 'fa-check-circle',    label: 'COMPLETED',      desc: 'Run finished — ready for handoff' },
+                'cancelled':      { color: 'text-error-content',    bg: 'bg-error',             border: 'border-error',             icon: 'fa-ban',             label: 'CANCELLED',      desc: 'Run was stopped before completion' }
             };
+            const hero = statusHeroConfig[run.status] || statusHeroConfig['planned'];
 
-            document.getElementById('runDetailsContent').innerHTML = `
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                        <h4 class="font-semibold mb-2 flex items-center gap-2">
-                            <i class="fas fa-info-circle text-primary"></i>
-                            Run Information
-                        </h4>
-                        <div class="bg-base-200 rounded-xl p-3 space-y-2 text-sm">
-                            <div class="flex justify-between"><span class="text-base-content/60">Run Code</span><code class="font-semibold">${run.run_code}</code></div>
-                            <div class="flex justify-between"><span class="text-base-content/60">Status</span><span class="badge ${statusConfig[run.status]}">${run.status.replace('_', ' ')}</span></div>
-                            <div class="flex justify-between"><span class="text-base-content/60">Product</span><span>${run.product_name} ${run.variant || ''}</span></div>
-                            <div class="flex justify-between"><span class="text-base-content/60">Recipe Code</span><span>${run.recipe_code}</span></div>
-                            <div class="flex justify-between"><span class="text-base-content/60">Product Type</span><span>${run.product_type}</span></div>
+            // The primary CTA shown in the hero header. This is what the user
+            // most likely came here to do. Each state has a different action.
+            // Freeform: planned → start, in_progress-ish → log CCP, packaging → complete,
+            // completed/cancelled → no primary CTA.
+            const ctaConfig = {
+                'planned':        { kind: 'button', action: `startRun(${run.id})`, icon: 'fa-play',            label: 'Start Run',        classes: 'btn-primary' },
+                'in_progress':    { kind: 'link',   href: `ccp_logging.html?run_id=${run.id}`,  icon: 'fa-clipboard-check', label: 'Log CCP Check', classes: 'btn-primary' },
+                'pasteurization': { kind: 'link',   href: `ccp_logging.html?run_id=${run.id}`,  icon: 'fa-clipboard-check', label: 'Log CCP Check', classes: 'btn-primary' },
+                'processing':     { kind: 'link',   href: `ccp_logging.html?run_id=${run.id}`,  icon: 'fa-clipboard-check', label: 'Log CCP Check', classes: 'btn-primary' },
+                'cooling':        { kind: 'link',   href: `ccp_logging.html?run_id=${run.id}`,  icon: 'fa-clipboard-check', label: 'Log CCP Check', classes: 'btn-primary' },
+                'packaging':      { kind: 'button', action: `showCompleteModal(${run.id}, '${escapeHtml(run.run_code)}', '${escapeHtml(run.product_name)}', ${run.planned_quantity}, '${escapeHtml(run.product_type || '')}')`, icon: 'fa-check-double', label: 'Complete Run', classes: 'btn-success' },
+                'completed':      null,
+                'cancelled':      null
+            };
+            const cta = ctaConfig[run.status];
+
+            // "From REQ-XXX" banner when this run was started from a pre-run requisition.
+            // Built from linked_requisition_id / linked_requisition_code surfaced by the
+            // runs.php GET endpoint via LEFT JOIN material_requisitions.
+            const lineageBanner = run.linked_requisition_id
+                ? `<div class="alert bg-success/10 border border-success/30 text-base-content mb-4">
+                       <i class="fas fa-link text-success text-lg"></i>
+                       <div class="flex-1">
+                           <div class="font-semibold">
+                               Started from Requisition
+                               <a href="requisitions.html?action=view&id=${run.linked_requisition_id}" class="link link-primary font-mono">${escapeHtml(run.linked_requisition_code || ('REQ #' + run.linked_requisition_id))}</a>
+                           </div>
+                           <div class="text-xs opacity-70 mt-0.5">
+                               Materials were issued by Warehouse Raw before this run started.
+                               ${run.linked_requisition_planned_quantity
+                                   ? `Planned: ${run.linked_requisition_planned_quantity} ${escapeHtml(run.linked_requisition_yield_unit || 'units')}`
+                                   : ''}
+                           </div>
+                       </div>
+                   </div>`
+                : '';
+
+            // Hero header: run code (big), product + recipe, status pill, primary CTA.
+            // The CTA is intentionally in the hero (not the footer) so the user
+            // sees "what to do next" at a glance.
+            const ctaHTML = cta
+                ? (cta.kind === 'button'
+                    ? `<button class="btn ${cta.classes}" onclick="${cta.action}"><i class="fas ${cta.icon}"></i> ${cta.label}</button>`
+                    : `<a href="${cta.href}" class="btn ${cta.classes}"><i class="fas ${cta.icon}"></i> ${cta.label}</a>`)
+                : '';
+            const heroHTML = `
+                <div class="flex items-start justify-between gap-4 mb-4">
+                    <div class="min-w-0 flex-1">
+                        <div class="text-xs text-base-content/50 uppercase tracking-wider font-semibold">Production Run</div>
+                        <div class="text-2xl font-mono font-bold mt-0.5">${escapeHtml(run.run_code)}</div>
+                        <div class="text-sm text-base-content/70 mt-1">
+                            ${escapeHtml(run.product_name)} ${run.variant ? `· ${escapeHtml(run.variant)}` : ''} · <span class="font-mono">${escapeHtml(run.recipe_code)}</span>
                         </div>
                     </div>
-                    <div>
-                        <h4 class="font-semibold mb-2 flex items-center gap-2">
-                            <i class="fas fa-calculator text-primary"></i>
-                            Quantities
-                        </h4>
-                        <div class="bg-base-200 rounded-xl p-3 space-y-2 text-sm">
-                            <div class="flex justify-between"><span class="text-base-content/60">Planned</span><span>${run.planned_quantity} ${run.yield_unit}</span></div>
-                            <div class="flex justify-between"><span class="text-base-content/60">Actual Output</span><span>${formatOutputDisplayFull(run)}</span></div>
-                            <div class="flex justify-between"><span class="text-base-content/60">Variance</span><span>${run.yield_variance !== null ? run.yield_variance : '-'}</span></div>
-                            <div class="flex justify-between"><span class="text-base-content/60">Milk Used</span><span>${run.milk_liters_used || '-'} L</span></div>
-                        </div>
+                    <div class="flex flex-col items-end gap-2 flex-shrink-0">
+                        <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ${hero.bg} ${hero.color} font-semibold text-sm border ${hero.border}">
+                            <i class="fas ${hero.icon}"></i> ${hero.label}
+                        </span>
+                        <div class="text-xs text-base-content/60 max-w-[16rem] text-right">${hero.desc}</div>
+                        ${ctaHTML ? `<div class="mt-1">${ctaHTML}</div>` : ''}
                     </div>
                 </div>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                        <h4 class="font-semibold mb-2 flex items-center gap-2">
-                            <i class="fas fa-clock text-primary"></i>
-                            Timeline
-                        </h4>
-                        <div class="bg-base-200 rounded-xl p-3 space-y-2 text-sm">
-                            <div class="flex justify-between"><span class="text-base-content/60">Created</span><span>${formatDate(run.created_at)}</span></div>
-                            <div class="flex justify-between"><span class="text-base-content/60">Started</span><span>${run.start_datetime ? formatDate(run.start_datetime) : '-'}</span></div>
-                            <div class="flex justify-between"><span class="text-base-content/60">Completed</span><span>${run.end_datetime ? formatDate(run.end_datetime) : '-'}</span></div>
-                            <div class="flex justify-between"><span class="text-base-content/60">Started By</span><span>${run.started_by_first ? run.started_by_first + ' ' + run.started_by_last : '-'}</span></div>
-                            <div class="flex justify-between"><span class="text-base-content/60">Completed By</span><span>${run.completed_by_first ? run.completed_by_first + ' ' + run.completed_by_last : '-'}</span></div>
-                        </div>
-                    </div>
-                    <div>
-                        <h4 class="font-semibold mb-2 flex items-center gap-2">
-                            <i class="fas fa-thermometer-half text-primary"></i>
-                            CCP Requirements
-                        </h4>
-                        <div class="bg-base-200 rounded-xl p-3 space-y-2 text-sm">
-                            <div class="flex justify-between"><span class="text-base-content/60">Pasteurization Temp</span><span>${run.pasteurization_temp}°C</span></div>
-                            <div class="flex justify-between"><span class="text-base-content/60">Pasteurization Time</span><span>${run.pasteurization_time_mins} mins</span></div>
-                            <div class="flex justify-between"><span class="text-base-content/60">Cooling Temp</span><span>≤${run.cooling_temp}°C</span></div>
-                        </div>
-                    </div>
-                </div>
-                
-                ${run.ccp_logs && run.ccp_logs.length ? `
-                <div class="mb-4">
-                    <h4 class="font-semibold mb-2 flex items-center gap-2">
-                        <i class="fas fa-list-check text-primary"></i>
-                        CCP Logs
-                    </h4>
-                    <div class="overflow-x-auto bg-base-200 rounded-xl">
-                        <table class="table table-sm">
-                            <thead>
-                                <tr>
-                                    <th>Type</th>
-                                    <th>Temperature</th>
-                                    <th>Target</th>
-                                    <th>Status</th>
-                                    <th>Time</th>
-                                    <th>Verified By</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${run.ccp_logs.map(log => `
-                                    <tr>
-                                        <td>${log.check_type}</td>
-                                        <td>${log.temperature}°C</td>
-                                        <td>${log.target_temp}°C (±${log.temp_tolerance})</td>
-                                        <td><span class="badge ${log.status === 'pass' ? 'badge-success' : 'badge-error'}">${log.status}</span></td>
-                                        <td>${formatDate(log.check_datetime)}</td>
-                                        <td>${log.first_name ? log.first_name + ' ' + log.last_name : '-'}</td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                ` : ''}
-                
-                ${run.notes ? `
-                <div class="mb-4">
-                    <h4 class="font-semibold mb-2 flex items-center gap-2">
-                        <i class="fas fa-sticky-note text-primary"></i>
-                        Notes
-                    </h4>
-                    <div class="bg-base-200 rounded-xl p-3 text-sm">${run.notes}</div>
-                </div>
-                ` : ''}
-                
-                ${run.variance_reason ? `
-                <div class="mb-4">
-                    <h4 class="font-semibold mb-2 flex items-center gap-2">
-                        <i class="fas fa-exclamation-triangle text-warning"></i>
-                        Variance Reason
-                    </h4>
-                    <div class="bg-base-200 rounded-xl p-3 text-sm">${run.variance_reason}</div>
-                </div>
-                ` : ''}
             `;
 
-            // Footer actions
+            // Bento Quantities. Each metric gets its own card with a colored
+            // icon tile. The bottom row is an empty-state note when the run
+            // hasn't produced output yet (planned / in progress), so we don't
+            // fill the page with dashes that look like missing data.
+            const hasOutput = run.actual_quantity !== null && run.actual_quantity !== undefined && run.actual_quantity !== 0;
+            const quantitiesHTML = `
+                <div class="card bg-base-200/50 border border-base-300 mb-4">
+                    <div class="card-body p-4">
+                        <h4 class="font-semibold text-sm flex items-center gap-2 mb-3">
+                            <i class="fas fa-calculator text-primary"></i> Quantities
+                        </h4>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div class="bg-base-100 rounded-xl p-3 text-center">
+                                <div class="text-2xl font-mono font-bold text-base-content">${run.planned_quantity || 0}</div>
+                                <div class="text-xs text-base-content/60 mt-0.5">Planned ${escapeHtml(run.yield_unit || '')}</div>
+                            </div>
+                            <div class="bg-base-100 rounded-xl p-3 text-center">
+                                <div class="text-2xl font-mono font-bold text-base-content">${run.milk_liters_used ? run.milk_liters_used : '—'}</div>
+                                <div class="text-xs text-base-content/60 mt-0.5">Milk Used (L)</div>
+                            </div>
+                            <div class="bg-base-100 rounded-xl p-3 text-center">
+                                <div class="text-2xl font-mono font-bold ${hasOutput ? 'text-base-content' : 'text-base-content/30'}">${hasOutput ? formatOutputDisplayFull(run) : '—'}</div>
+                                <div class="text-xs text-base-content/60 mt-0.5">Actual Output</div>
+                            </div>
+                            <div class="bg-base-100 rounded-xl p-3 text-center">
+                                <div class="text-2xl font-mono font-bold ${(run.yield_variance != null && Math.abs(run.yield_variance) > 5) ? 'text-warning' : (hasOutput ? 'text-base-content' : 'text-base-content/30')}">${run.yield_variance !== null && run.yield_variance !== undefined ? run.yield_variance + '%' : '—'}</div>
+                                <div class="text-xs text-base-content/60 mt-0.5">Variance</div>
+                            </div>
+                        </div>
+                        ${!hasOutput ? `
+                            <div class="text-xs text-base-content/50 mt-3 flex items-start gap-2">
+                                <i class="fas fa-info-circle mt-0.5"></i>
+                                <span>Actual output and variance appear when this run completes.</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+
+            // Bento Process Parameters. Moved up from the bottom because these
+            // are safety-critical for production staff to verify at a glance.
+            const processHTML = `
+                <div class="card bg-base-200/50 border border-base-300 mb-4">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="font-semibold text-sm flex items-center gap-2">
+                                <i class="fas fa-thermometer-half text-primary"></i> Process Parameters
+                            </h4>
+                            <a href="recipes.html?id=${run.recipe_id}" class="link link-primary text-xs"><i class="fas fa-book-open mr-1"></i>View recipe</a>
+                        </div>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div class="bg-base-100 rounded-xl p-3 text-center border border-warning/30">
+                                <div class="text-2xl font-mono font-bold text-warning">${run.pasteurization_temp ? parseFloat(run.pasteurization_temp).toFixed(1) : '—'}°C</div>
+                                <div class="text-xs text-base-content/60 mt-0.5">Pasteurize</div>
+                            </div>
+                            <div class="bg-base-100 rounded-xl p-3 text-center border border-info/30">
+                                <div class="text-2xl font-mono font-bold text-info">${run.pasteurization_time_mins || '—'} min</div>
+                                <div class="text-xs text-base-content/60 mt-0.5">Hold Time</div>
+                            </div>
+                            <div class="bg-base-100 rounded-xl p-3 text-center border border-info/30">
+                                <div class="text-2xl font-mono font-bold text-info">≤ ${run.cooling_temp || '—'}°C</div>
+                                <div class="text-xs text-base-content/60 mt-0.5">Cool To</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Timeline as a horizontal stepper. 3 nodes (Created / Started /
+            // Completed) with a connector whose color reflects progress.
+            // Rejected the "Cancelled" placeholder per design decision — the
+            // hero pill already shows cancelled state, and a 4th node would
+            // clutter the visual.
+            const timelineHTML = `
+                <div class="card bg-base-200/50 border border-base-300 mb-4">
+                    <div class="card-body p-4">
+                        <h4 class="font-semibold text-sm flex items-center gap-2 mb-4">
+                            <i class="fas fa-clock text-primary"></i> Timeline
+                        </h4>
+                        <div class="flex items-start justify-between gap-1">
+                            ${renderStepperNode('Created', run.created_at, null, 'fa-circle', run.created_at ? 'text-base-content' : 'text-base-content/40', !!run.created_at)}
+                            <div class="flex-1 h-0.5 mt-5 ${run.start_datetime ? 'bg-primary' : 'bg-base-300'}"></div>
+                            ${renderStepperNode('Started', run.start_datetime, run.started_by_first ? `${escapeHtml(run.started_by_first)} ${escapeHtml(run.started_by_last)}` : null, 'fa-play', run.start_datetime ? 'text-primary' : 'text-base-content/40', !!run.start_datetime)}
+                            <div class="flex-1 h-0.5 mt-5 ${run.end_datetime ? 'bg-success' : 'bg-base-300'}"></div>
+                            ${renderStepperNode('Completed', run.end_datetime, run.completed_by_first ? `${escapeHtml(run.completed_by_first)} ${escapeHtml(run.completed_by_last)}` : null, 'fa-check-circle', run.end_datetime ? 'text-success' : 'text-base-content/40', !!run.end_datetime)}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // CCP Logs as a collapsible section. Default expanded if there
+            // are logs (the user opened this modal to see them), collapsed if
+            // there are none (just a "no logs yet" placeholder to avoid the
+            // section feeling missing).
+            const ccpLogsCount = (run.ccp_logs && run.ccp_logs.length) || 0;
+            const ccpLogsHTML = `
+                <div class="collapse collapse-arrow bg-base-200/50 border border-base-300 mb-4">
+                    <input type="checkbox" ${ccpLogsCount > 0 ? 'checked' : ''} aria-label="Toggle CCP logs" />
+                    <div class="collapse-title font-semibold flex items-center gap-2 text-sm">
+                        <i class="fas fa-list-check text-primary"></i>
+                        CCP Logs
+                        <span class="badge badge-primary badge-sm">${ccpLogsCount}</span>
+                    </div>
+                    <div class="collapse-content">
+                        ${ccpLogsCount > 0 ? `
+                            <div class="overflow-x-auto">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Type</th>
+                                            <th>Temp</th>
+                                            <th>Target</th>
+                                            <th>Status</th>
+                                            <th>When</th>
+                                            <th>By</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${run.ccp_logs.map(log => `
+                                            <tr>
+                                                <td>${escapeHtml(log.check_type || '')}</td>
+                                                <td>${escapeHtml(String(log.temperature ?? ''))}°C</td>
+                                                <td>${escapeHtml(String(log.target_temp ?? ''))}°C (±${escapeHtml(String(log.temp_tolerance ?? ''))})</td>
+                                                <td><span class="badge ${log.status === 'pass' ? 'badge-success' : 'badge-error'}">${escapeHtml(log.status || '')}</span></td>
+                                                <td>${formatDate(log.check_datetime)}</td>
+                                                <td>${log.first_name ? escapeHtml(log.first_name + ' ' + log.last_name) : '-'}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ` : `
+                            <div class="text-sm text-base-content/50 py-3 text-center">
+                                <i class="fas fa-info-circle mr-1"></i>
+                                No CCP checks recorded yet. They'll appear here once the run starts.
+                            </div>
+                        `}
+                    </div>
+                </div>
+            `;
+
+            // Notes (only when present)
+            const notesHTML = run.notes ? `
+                <div class="card bg-base-200/50 border border-base-300 mb-4">
+                    <div class="card-body p-4">
+                        <h4 class="font-semibold text-sm flex items-center gap-2 mb-2">
+                            <i class="fas fa-sticky-note text-primary"></i> Notes
+                        </h4>
+                        <div class="text-sm whitespace-pre-wrap">${escapeHtml(run.notes)}</div>
+                    </div>
+                </div>
+            ` : '';
+
+            // Assemble the body
+            document.getElementById('runDetailsContent').innerHTML = `
+                ${lineageBanner}
+                ${heroHTML}
+                ${quantitiesHTML}
+                ${processHTML}
+                ${timelineHTML}
+                ${ccpLogsHTML}
+                ${notesHTML}
+            `;
+
+            // Footer actions: Close + secondary actions. The primary CTA
+            // already lives in the hero (decision: don't duplicate). Cancel
+            // is a secondary action for any non-terminal state — it's a
+            // "destructive escape hatch" but the user has to confirm via the
+            // existing confirmAction prompt, so it's not dangerous to surface.
             const footer = document.getElementById('runDetailsFooter');
+            const isTerminal = run.status === 'completed' || run.status === 'cancelled';
             let actions = '<button class="btn btn-ghost" onclick="document.getElementById(\'runDetailsModal\').close()">Close</button>';
-
-            if (['in_progress', 'pasteurization', 'processing', 'cooling', 'packaging'].includes(run.status)) {
-                actions += `<a href="ccp_logging.html?run_id=${run.id}" class="btn btn-primary">Log CCP Check</a>`;
+            if (run.recipe_id) {
+                actions += `<a href="recipes.html?id=${run.recipe_id}" class="btn btn-ghost"><i class="fas fa-book-open"></i> View Recipe</a>`;
             }
-
+            if (run.linked_requisition_id) {
+                actions += `<a href="requisitions.html?action=view&id=${run.linked_requisition_id}" class="btn btn-ghost"><i class="fas fa-link"></i> View Requisition</a>`;
+            }
+            if (!isTerminal) {
+                actions += `<button class="btn btn-ghost text-error" onclick="cancelRun(${run.id})"><i class="fas fa-ban"></i> Cancel Run</button>`;
+            }
             footer.innerHTML = actions;
+        }
+
+        // Renders a single node in the timeline stepper. A node is a circle
+        // with an icon, a label, and an optional datetime + byline. The
+        // circle's border and icon color reflect whether this step is
+        // active (filled) or pending (greyed).
+        function renderStepperNode(label, datetime, byName, icon, colorClass, isActive) {
+            return `
+                <div class="flex flex-col items-center min-w-0" style="min-width: 88px;">
+                    <div class="w-10 h-10 rounded-full flex items-center justify-center mb-2 border-2 ${isActive ? `${colorClass} bg-base-100` : 'border-base-300 bg-base-200'}">
+                        <i class="fas ${icon} text-sm ${isActive ? '' : 'text-base-content/30'}"></i>
+                    </div>
+                    <div class="text-xs font-semibold ${isActive ? colorClass : 'text-base-content/40'}">${escapeHtml(label)}</div>
+                    <div class="text-[10px] text-base-content/60 mt-0.5">${datetime ? formatDate(datetime) : '—'}</div>
+                    ${byName ? `<div class="text-[10px] text-base-content/50 mt-0.5 text-center">${byName}</div>` : ''}
+                </div>
+            `;
         }
 
         function formatDate(dateStr) {

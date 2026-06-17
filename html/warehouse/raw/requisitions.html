@@ -5,19 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Requisitions - Warehouse Raw | Highland Fresh</title>
     
-    <!-- Tailwind CSS + DaisyUI CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
-    
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] }
-                }
-            }
-        }
-    </script>
+    <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
+    <link rel="stylesheet" href="../../../css/tailwind.css">
     
     <!-- Fonts & Icons -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -32,6 +21,15 @@
         .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); }
         .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
         .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .requisition-modal { border-radius: 1.5rem; overflow: hidden; }
+        .requisition-modal::backdrop { backdrop-filter: blur(8px); background: rgba(15, 23, 42, 0.55); }
+        .requisition-modal-header { background: linear-gradient(135deg, oklch(var(--p) / 0.12), oklch(var(--b1))); }
+        .requisition-item-card { transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
+        .requisition-item-card:hover { transform: translateY(-1px); border-color: oklch(var(--p) / 0.45); box-shadow: 0 12px 30px -15px rgba(0, 0, 0, 0.25); }
+        .requisition-scroll::-webkit-scrollbar { width: 8px; }
+        .requisition-scroll::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 999px; }
+        .requisition-scroll::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.22); border-radius: 999px; }
+        .requisition-scroll::-webkit-scrollbar-thumb:hover { background: oklch(var(--bc) / 0.35); }
     </style>
 </head>
 <body class="bg-base-200 min-h-screen">
@@ -51,10 +49,29 @@
                 <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
                     <i class="fas fa-times"></i>
                 </button>
-            </div>
-        </div>
-        
-        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+                </div>
+                <!-- Sidebar stats widget (populated by js/warehouse/sidebar.stats.js) -->
+                <div class="grid grid-cols-4 gap-1 mt-3 pt-3 border-t border-base-200">
+                <a href="dashboard.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Raw Milk (L)">
+                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatMilk">0</span>
+                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Milk</span>
+                </a>
+                <a href="requisitions.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Pending Requisitions">
+                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatReq">0</span>
+                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Req</span>
+                </a>
+                <a href="reorder_alerts.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Low Stock Items">
+                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatLow">0</span>
+                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Low</span>
+                </a>
+                <a href="receive_deliveries.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Pending Deliveries">
+                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatDeliv">0</span>
+                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Deliv</span>
+                </a>
+                </div>
+                </div>
+
+                <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
             <div>
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
                 <ul class="menu menu-sm p-0 gap-1">
@@ -72,9 +89,18 @@
             <div>
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Operations</h2>
                 <ul class="menu menu-sm p-0 gap-1">
-                    <li><a href="requisitions.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content"><i class="fas fa-clipboard-check w-5 text-center"></i><span>Requisitions</span><span class="badge badge-sm" id="pendingReqsBadge">0</span></a></li>
-                        <li><a href="receive_deliveries.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-truck-ramp-box w-5 text-center text-base-content/60"></i><span>Receive Deliveries</span></a></li>
+                    <li><a href="requisitions.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content"><i class="fas fa-clipboard-check w-5 text-center"></i><span>Requisitions</span><span class="badge badge-sm badge-primary-content" id="pendingReqsBadge">0</span></a></li>
                     <li><a href="purchase_requests.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-shopping-cart w-5 text-center text-base-content/60"></i><span>Purchase Requests</span></a></li>
+                    <li><a href="receive_deliveries.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-truck-ramp-box w-5 text-center text-base-content/60"></i><span>Receive Deliveries</span></a></li>
+                    <li><a href="waste.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-trash-alt w-5 text-center text-base-content/60"></i><span>Spoilage & Waste</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="reorder_alerts.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-exclamation-triangle w-5 text-center text-warning"></i><span>Reorder Alerts</span></a></li>
+                    <li><a href="reports/inventory.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-chart-bar w-5 text-center text-base-content/60"></i><span>Inventory Report</span></a></li>
+                    <li><a href="reports/movements.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-exchange-alt w-5 text-center text-base-content/60"></i><span>Stock Movements</span></a></li>
                 </ul>
             </div>
         </nav>
@@ -232,18 +258,28 @@
     
     <!-- Fulfill Modal -->
     <dialog id="fulfillModal" class="modal">
-        <div class="modal-box max-w-3xl max-h-[90vh]">
-            <form method="dialog">
-                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">X</button>
-            </form>
-            <h3 class="font-bold text-lg flex items-center gap-2 mb-4" id="fulfillModalTitle">Fulfill Requisition</h3>
-            <div id="fulfillModalBody" class="py-4 overflow-y-auto max-h-[60vh]">
-                <div class="flex flex-col items-center justify-center py-8">
-                    <span class="loading loading-spinner loading-lg text-primary"></span>
+        <div class="modal-box w-11/12 max-w-6xl max-h-[92vh] requisition-modal border-0 p-0 shadow-2xl">
+            <div class="requisition-modal-header border-b border-base-300 p-5">
+                <form method="dialog">
+                    <button class="btn btn-sm btn-circle btn-ghost absolute right-3 top-3" aria-label="Close">x</button>
+                </form>
+                <div class="pr-10">
+                    <p class="text-xs font-bold uppercase tracking-[0.22em] text-base-content/45">Warehouse Raw</p>
+                    <h3 class="mt-2 flex flex-wrap items-center gap-2 text-xl font-extrabold text-base-content" id="fulfillModalTitle">
+                        <i class="fas fa-clipboard-check text-primary"></i>
+                        Fulfill Requisition
+                    </h3>
+                    <p class="mt-2 text-sm text-base-content/65" id="fulfillModalSubtitle">Review request details, inspect stock, and issue items.</p>
                 </div>
             </div>
-            <div class="modal-action" id="fulfillModalFooter">
-                <button class="btn btn-ghost" onclick="document.getElementById('fulfillModal').close()">Cancel</button>
+            <div id="fulfillModalBody" class="requisition-scroll overflow-y-auto p-5 md:p-6 max-h-[calc(92vh-230px)]">
+                <div class="flex flex-col items-center justify-center py-12">
+                    <span class="loading loading-spinner loading-lg text-primary"></span>
+                    <p class="mt-4 text-sm text-base-content/60">Loading requisition details...</p>
+                </div>
+            </div>
+            <div class="modal-action sticky bottom-0 border-t border-base-300 bg-base-100/95 p-4 backdrop-blur" id="fulfillModalFooter">
+                <button class="btn btn-ghost" onclick="document.getElementById('fulfillModal').close()">Close</button>
             </div>
         </div>
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
@@ -251,22 +287,31 @@
     
     <!-- Reject Item Modal -->
     <dialog id="rejectModal" class="modal">
-        <div class="modal-box max-w-md">
-            <form method="dialog">
-                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">X</button>
-            </form>
-            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
-                <i class="fas fa-times-circle text-error"></i> Reject Item
-            </h3>
-            <form id="rejectForm" onsubmit="submitReject(event)">
+        <div class="modal-box max-w-md rounded-2xl border border-error/20 bg-base-100 p-0 shadow-2xl">
+            <div class="border-b border-error/15 bg-error/10 p-5">
+                <form method="dialog">
+                    <button class="btn btn-sm btn-circle btn-ghost absolute right-3 top-3" aria-label="Close">x</button>
+                </form>
+                <div class="flex items-center gap-3">
+                    <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-error text-error-content shadow-lg shadow-error/20">
+                        <i class="fas fa-times text-lg"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs font-bold uppercase tracking-[0.18em] text-error">Action Required</p>
+                        <h3 class="mt-1 text-lg font-extrabold">Reject Item</h3>
+                    </div>
+                </div>
+            </div>
+            <form id="rejectForm" class="p-5" onsubmit="submitReject(event)">
                 <input type="hidden" id="rejectRequisitionId">
                 <input type="hidden" id="rejectItemId">
-                <div class="alert alert-warning mb-4">
+                <div class="alert alert-warning mb-4 rounded-xl border-warning/20 py-3 text-sm">
+                    <i class="fas fa-exclamation-triangle mt-0.5"></i>
                     <span>You are about to reject: <strong id="rejectItemName">-</strong></span>
                 </div>
                 <div class="form-control mb-3">
-                    <label class="label"><span class="label-text">Reason for Rejection <span class="text-error">*</span></span></label>
-                    <select class="select select-bordered w-full" id="rejectReason" required>
+                    <label class="label px-0 py-1"><span class="label-text font-semibold">Reason for Rejection <span class="text-error">*</span></span></label>
+                    <select class="select select-bordered w-full rounded-xl" id="rejectReason" required>
                         <option value="">Select reason...</option>
                         <option value="Out of stock">Out of stock</option>
                         <option value="Item not available">Item not available</option>
@@ -276,12 +321,12 @@
                     </select>
                 </div>
                 <div class="form-control mb-4 hidden" id="rejectOtherReasonGroup">
-                    <label class="label"><span class="label-text">Specify Reason</span></label>
-                    <textarea class="textarea textarea-bordered" id="rejectOtherReason" rows="2"></textarea>
+                    <label class="label px-0 py-1"><span class="label-text font-semibold">Specify Reason</span></label>
+                    <textarea class="textarea textarea-bordered rounded-xl" id="rejectOtherReason" rows="2" placeholder="Explain why this item cannot be fulfilled..."></textarea>
                 </div>
-                <div class="modal-action">
-                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('rejectModal').close()">Cancel</button>
-                    <button type="submit" class="btn btn-error"><i class="fas fa-times"></i> Reject Item</button>
+                <div class="modal-action p-0">
+                    <button type="button" class="btn btn-ghost rounded-xl" onclick="document.getElementById('rejectModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-error rounded-xl"><i class="fas fa-times"></i> Reject Item</button>
                 </div>
             </form>
         </div>
@@ -290,21 +335,29 @@
     
     <!-- Approve Confirmation Modal -->
     <dialog id="approveModal" class="modal">
-        <div class="modal-box max-w-md">
-            <form method="dialog">
-                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-            </form>
-            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
-                <i class="fas fa-check-circle text-success"></i> Approve Requisition
-            </h3>
-            <input type="hidden" id="approveRequisitionId">
-            <div class="py-4">
-                <p class="text-base-content/80">Are you sure you want to approve requisition <strong id="approveRequisitionCode">-</strong>?</p>
-                <p class="text-sm text-base-content/60 mt-2">Once approved, warehouse staff can fulfill this requisition.</p>
+        <div class="modal-box max-w-md rounded-2xl border border-success/20 bg-base-100 p-0 shadow-2xl">
+            <div class="border-b border-success/15 bg-success/10 p-5">
+                <form method="dialog">
+                    <button class="btn btn-sm btn-circle btn-ghost absolute right-3 top-3" aria-label="Close">x</button>
+                </form>
+                <div class="flex items-center gap-3">
+                    <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-success text-success-content shadow-lg shadow-success/20">
+                        <i class="fas fa-check text-lg"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs font-bold uppercase tracking-[0.18em] text-success">Confirm Approval</p>
+                        <h3 class="mt-1 text-lg font-extrabold">Approve Requisition</h3>
+                    </div>
+                </div>
             </div>
-            <div class="modal-action">
-                <button type="button" class="btn btn-ghost" onclick="document.getElementById('approveModal').close()">Cancel</button>
-                <button type="button" class="btn btn-success" onclick="confirmApprove()">
+            <input type="hidden" id="approveRequisitionId">
+            <div class="p-5">
+                <p class="text-base-content/80">Approve requisition <strong id="approveRequisitionCode" class="font-mono">-</strong>?</p>
+                <p class="mt-3 rounded-xl bg-base-200 p-3 text-sm text-base-content/65">Once approved, warehouse staff can fulfill this requisition.</p>
+            </div>
+            <div class="modal-action border-t border-base-200 bg-base-100 p-5">
+                <button type="button" class="btn btn-ghost rounded-xl" onclick="document.getElementById('approveModal').close()">Cancel</button>
+                <button type="button" class="btn btn-success rounded-xl" onclick="confirmApprove()">
                     <i class="fas fa-check"></i> Approve
                 </button>
             </div>
@@ -314,24 +367,35 @@
     
     <!-- Reject Requisition Modal -->
     <dialog id="rejectRequisitionModal" class="modal">
-        <div class="modal-box max-w-md">
-            <form method="dialog">
-                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-            </form>
-            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
-                <i class="fas fa-times-circle text-error"></i> Reject Requisition
-            </h3>
+        <div class="modal-box max-w-md rounded-2xl border border-error/20 bg-base-100 p-0 shadow-2xl">
+            <div class="border-b border-error/15 bg-error/10 p-5">
+                <form method="dialog">
+                    <button class="btn btn-sm btn-circle btn-ghost absolute right-3 top-3" aria-label="Close">x</button>
+                </form>
+                <div class="flex items-center gap-3">
+                    <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-error text-error-content shadow-lg shadow-error/20">
+                        <i class="fas fa-ban text-lg"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs font-bold uppercase tracking-[0.18em] text-error">Cancel Requisition</p>
+                        <h3 class="mt-1 text-lg font-extrabold">Reject Requisition</h3>
+                    </div>
+                </div>
+            </div>
             <input type="hidden" id="rejectRequisitionModalId">
-            <div class="alert alert-warning mb-4">
-                <span>You are about to reject requisition: <strong id="rejectRequisitionModalCode">-</strong></span>
+            <div class="p-5">
+                <div class="alert alert-warning mb-4 rounded-xl border-warning/20 py-3 text-sm">
+                    <i class="fas fa-exclamation-triangle mt-0.5"></i>
+                    <span>You are about to reject requisition: <strong id="rejectRequisitionModalCode" class="font-mono">-</strong></span>
+                </div>
+                <div class="form-control">
+                    <label class="label px-0 py-1"><span class="label-text font-semibold">Reason for Rejection</span></label>
+                    <textarea class="textarea textarea-bordered rounded-xl" id="rejectRequisitionReason" rows="4" placeholder="Enter reason for rejection..."></textarea>
+                </div>
             </div>
-            <div class="form-control mb-4">
-                <label class="label"><span class="label-text">Reason for Rejection</span></label>
-                <textarea class="textarea textarea-bordered" id="rejectRequisitionReason" rows="3" placeholder="Enter reason for rejection..."></textarea>
-            </div>
-            <div class="modal-action">
-                <button type="button" class="btn btn-ghost" onclick="document.getElementById('rejectRequisitionModal').close()">Cancel</button>
-                <button type="button" class="btn btn-error" onclick="confirmReject()">
+            <div class="modal-action border-t border-base-200 bg-base-100 p-5">
+                <button type="button" class="btn btn-ghost rounded-xl" onclick="document.getElementById('rejectRequisitionModal').close()">Cancel</button>
+                <button type="button" class="btn btn-error rounded-xl" onclick="confirmReject()">
                     <i class="fas fa-times"></i> Reject
                 </button>
             </div>
@@ -343,10 +407,11 @@
     <div id="toastContainer" class="toast toast-end toast-bottom z-50"></div>
     
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../../../js/vendor/axios.min.js"></script>
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js"></script>
     <script src="../../../js/warehouse/raw.service.js"></script>
+    <script src="../../../js/warehouse/sidebar.stats.js"></script>
     <script>
         // Sidebar toggle
         function toggleSidebar() {
@@ -574,9 +639,21 @@
                 const processedItems = req.processed_count || fulfilledItems;
                 
                 const isPending = req.status === 'pending';
-                const canFulfill = req.status === 'approved' || req.status === 'partial';
+                // V4.0 — no GM approval gate. Warehouse Raw can now fulfill
+                // directly from 'pending' (or 'partial' for top-up). 'approved'
+                // is kept for legacy rows that pre-date this change.
+                const canFulfill = ['pending', 'approved', 'partial'].includes(req.status);
                 const plannedProduction = req.planned_product_name
                     ? `${escapeHtml(req.planned_product_name)}${req.planned_variant ? ` (${escapeHtml(req.planned_variant)})` : ''} - ${escapeHtml(req.planned_quantity || '')} ${escapeHtml(req.planned_yield_unit || '')}`
+                    : '';
+                // V4.0 — surface the stock-override warning as a visible
+                // badge on the list card so warehouse staff can spot
+                // self-acknowledged shortages at a glance.
+                const hasOverride = Number(req.stock_override_acknowledged) === 1 || Number(req.stock_warning_count) > 0;
+                const overrideBadge = hasOverride
+                    ? `<span class="badge badge-warning badge-sm gap-1" title="Production acknowledged a stock shortage on submit. Open the requisition to see the per-item list and the reason.">
+                            <i class="fas fa-exclamation-triangle"></i> Stock override${req.stock_warning_count ? ` · ${req.stock_warning_count}` : ''}
+                       </span>`
                     : '';
                 
                 return `
@@ -593,6 +670,7 @@
                                     <span class="badge ${statusBadges[req.status]} badge-sm badge-outline">
                                         ${req.status.toUpperCase()}
                                     </span>
+                                    ${overrideBadge}
                                 </div>
                                 <div>
                                     ${neededByHtml}
@@ -634,11 +712,6 @@
                                     <button class="btn btn-ghost btn-sm" onclick="viewRequisition(${req.id})">
                                         <i class="fas fa-eye"></i> View
                                     </button>
-                                    ${isPending ? `
-                                        <button class="btn btn-success btn-sm" onclick="approveRequisition(${req.id}, '${req.requisition_code}')">
-                                            <i class="fas fa-check"></i> Approve
-                                        </button>
-                                    ` : ''}
                                     ${canFulfill ? `
                                         <button class="btn btn-primary btn-sm" onclick="openFulfillModal(${req.id})">
                                             <i class="fas fa-box"></i> Fulfill
@@ -684,165 +757,263 @@
         function renderFulfillModal(viewOnly = false) {
             const req = currentRequisition;
             const items = req.items || [];
-            
+            const canFulfillItem = item => {
+                const requested = parseFloat(item.requested_quantity || item.quantity_requested || 0);
+                const issued = parseFloat(item.issued_quantity || item.quantity_issued || 0);
+                return requested > issued && item.status !== 'cancelled' && item.status !== 'rejected';
+            };
+
             const priorityBadges = {
                 'urgent': 'badge-error',
                 'high': 'badge-warning',
                 'normal': 'badge-info',
                 'low': 'badge-ghost'
             };
-            
-            document.getElementById('fulfillModalTitle').innerHTML = `
-                ${viewOnly ? '<i class="fas fa-eye text-info"></i>' : '<i class="fas fa-clipboard-check text-primary"></i>'}
-                ${req.requisition_code || 'Requisition'}
-                <span class="badge ${priorityBadges[req.priority] || 'badge-ghost'} badge-sm ml-2">${(req.priority || 'normal').toUpperCase()}</span>
+
+            const statusBadges = {
+                'pending': 'badge-warning',
+                'approved': 'badge-warning',
+                'partial': 'badge-info',
+                'fulfilled': 'badge-success',
+                'cancelled': 'badge-ghost',
+                'rejected': 'badge-ghost'
+            };
+
+            const requester = `${req.requested_by_first || ''} ${req.requested_by_last || ''}`.trim() || 'N/A';
+            const itemStats = items.reduce((stats, item) => {
+                stats.total += 1;
+                if (item.status === 'fulfilled') stats.completed += 1;
+                if (item.status === 'partial') stats.partial += 1;
+                if (canFulfillItem(item)) stats.pending += 1;
+                return stats;
+            }, { total: items.length, completed: 0, partial: 0, pending: 0 });
+
+                    const neededByDays = daysUntil(req.needed_by_date);
+
+                    document.getElementById('fulfillModalTitle').innerHTML = `
+                <i class="fas ${viewOnly ? 'fa-eye text-info' : 'fa-clipboard-check text-primary'}"></i>
+                <span>${escapeHtml(req.requisition_code || 'Requisition')}</span>
+                <span class="badge ${priorityBadges[req.priority] || 'badge-ghost'} badge-sm ml-1 shadow-sm">${escapeHtml((req.priority || 'normal').toUpperCase())}</span>
+                <span class="badge ${statusBadges[req.status] || 'badge-ghost'} badge-sm badge-outline ml-1">${escapeHtml((req.status || 'pending').toUpperCase())}</span>
             `;
-            
+            document.getElementById('fulfillModalSubtitle').textContent = requester === 'N/A'
+                ? 'Review request details, inspect stock, and issue items.'
+                : `Requested by ${requester} � ${req.department || 'N/A'} department`;
+
             let itemsHtml = '';
             if (items.length === 0) {
-                itemsHtml = '<p class="text-base-content/60 text-center py-4">No items in this requisition</p>';
+                itemsHtml = `
+                    <div class="rounded-2xl border border-base-200 bg-base-100 p-8 text-center shadow-sm">
+                        <div class="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-base-200">
+                            <i class="fas fa-box-open text-2xl text-base-content/40"></i>
+                        </div>
+                        <p class="font-semibold">No items in this requisition</p>
+                        <p class="mt-1 text-sm text-base-content/60">This request does not have any line items attached.</p>
+                    </div>
+                `;
             } else {
                 itemsHtml = items.map((item, index) => {
                     const requested = parseFloat(item.requested_quantity || item.quantity_requested || 0);
                     const issued = parseFloat(item.issued_quantity || item.quantity_issued || 0);
-                    const remaining = requested - issued;
+                    const remaining = Math.max(0, requested - issued);
                     const available = parseFloat(item.available_stock || 0);
-                    
-                    let rowClass = '';
-                    let statusBadge = '';
+
+                    let rowClass = 'bg-base-100';
+                    let statusBadge = '<span class="badge badge-warning badge-sm shadow-sm">Pending</span>';
                     if (item.status === 'fulfilled') {
                         rowClass = 'bg-success/10 border-l-4 border-success';
-                        statusBadge = '<span class="badge badge-success badge-sm">Completed</span>';
+                        statusBadge = '<span class="badge badge-success badge-sm shadow-sm">Completed</span>';
                     } else if (item.status === 'partial') {
                         rowClass = 'bg-info/10 border-l-4 border-info';
-                        statusBadge = '<span class="badge badge-info badge-sm">Partial</span>';
+                        statusBadge = '<span class="badge badge-info badge-sm shadow-sm">Partial</span>';
                     } else if (item.status === 'cancelled' || item.status === 'rejected') {
-                        rowClass = 'bg-base-200 border-l-4 border-base-content/20 opacity-60';
+                        rowClass = 'bg-base-200 border-l-4 border-base-content/20 opacity-75';
                         statusBadge = '<span class="badge badge-ghost badge-sm">Rejected</span>';
-                    } else {
-                        rowClass = 'bg-base-200';
-                        statusBadge = '<span class="badge badge-warning badge-sm">Pending</span>';
                     }
-                    
-                    const canFulfill = !viewOnly && remaining > 0 && item.status !== 'cancelled' && item.status !== 'rejected';
-                    const stockWarning = available < remaining && canFulfill ? 
-                        `<p class="text-xs text-error mt-1"><i class="fas fa-exclamation-triangle mr-1"></i>Only ${available} available</p>` : '';
-                    
+
+                    const canFulfill = !viewOnly && canFulfillItem(item);
+                    const stockWarning = available < remaining && canFulfill ?
+                        `<p class="mt-2 text-xs text-error"><i class="fas fa-exclamation-triangle mr-1"></i>Only ${formatPackNumber(available)} available</p>` : '';
+                    const reqPacks = parseFloat(item.requested_quantity_in_packs);
+                    const packSize = parseFloat(item.pack_size_at_submit);
+                    const packInfo = (!Number.isNaN(reqPacks) && reqPacks > 0 && !Number.isNaN(packSize) && packSize > 0)
+                        ? `<p class="mt-2 text-xs text-base-content/60"><i class="fas fa-box mr-1"></i>${formatPackNumber(reqPacks)} pack${reqPacks === 1 ? '' : 's'} (1 pack = ${formatPackNumber(packSize)} ${escapeHtml(item.unit_of_measure || 'units')})</p>`
+                        : '';
+                    const breakAck = Number(item.break_pack_acknowledged) === 1;
+                    const breakReason = (item.break_pack_acknowledged_reason || '').toString();
+                    const breakInfo = breakAck
+                        ? `<div class="mt-2 rounded-xl border border-warning/40 bg-warning/15 px-3 py-2 text-xs">
+                                <i class="fas fa-box-open text-warning mr-1"></i>
+                                <span class="font-semibold text-warning">Pack broken at request.</span>
+                                ${breakReason
+                                    ? `<span class="text-base-content/80">"${escapeHtml(breakReason)}"</span>`
+                                    : '<span class="text-base-content/60 italic">no reason given</span>'}
+                           </div>`
+                        : '';
+
+                    const rejectButton = canFulfill
+                        ? `<button class="btn btn-ghost btn-sm btn-square text-error rounded-xl" onclick="openRejectModal(${req.id}, ${item.id}, ${escapeAttribute(JSON.stringify(item.item_name || item.name || ''))})" title="Reject item">
+                                <i class="fas fa-times"></i>
+                           </button>`
+                        : '';
+
                     return `
-                        <div class="p-3 rounded-lg mb-2 ${rowClass}" data-item-id="${item.id}">
-                            <div class="flex flex-wrap items-center gap-3">
-                                <div class="flex-1 min-w-[200px]">
-                                    <p class="font-semibold">${item.item_name || item.name}</p>
-                                    <p class="text-sm text-base-content/60">${item.item_code || ''} - ${item.item_type || 'Item'}</p>
-                                    ${stockWarning}
-                                </div>
-                                <div class="text-center min-w-[80px]">
-                                    <p class="text-xs text-base-content/60">Requested</p>
-                                    <p class="font-bold">${requested} ${item.unit_of_measure || ''}</p>
-                                </div>
-                                <div class="text-center min-w-[80px]">
-                                    <p class="text-xs text-base-content/60">Issued</p>
-                                    <p class="font-bold ${issued > 0 ? 'text-success' : ''}">${issued}</p>
-                                </div>
-                                ${canFulfill ? `
-                                    <div class="text-center min-w-[100px]">
-                                        <p class="text-xs text-base-content/60">Issue Now</p>
-                                        <input type="number" class="input input-bordered input-sm w-20 text-center" 
-                                               id="fulfill_${item.id}" 
-                                               value="${Math.min(remaining, available)}"
-                                               min="0" max="${Math.min(remaining, available)}"
-                                               step="0.001">
-                                    </div>
-                                    <div>
-                                        <button class="btn btn-ghost btn-sm btn-square text-error" onclick="openRejectModal(${req.id}, ${item.id}, '${item.item_name || item.name}')" title="Reject">
-                                            <i class="fas fa-times"></i>
-                                        </button>
-                                    </div>
-                                ` : `
-                                    <div class="min-w-[120px] text-right">
+                        <div class="requisition-item-card rounded-2xl border border-base-200 p-4 shadow-sm ${rowClass}" data-item-id="${item.id}">
+                            <div class="grid grid-cols-1 gap-4 lg:grid-cols-5 lg:items-center">
+                                <div class="lg:col-span-2">
+                                    <div class="flex flex-wrap items-start gap-2">
+                                        <p class="font-extrabold leading-tight">${escapeHtml(item.item_name || item.name || 'Unnamed Item')}</p>
                                         ${statusBadge}
-                                        ${item.status === 'cancelled' || item.status === 'rejected' ? `<p class="text-xs text-base-content/60 mt-1">${item.rejection_reason || ''}</p>` : ''}
                                     </div>
-                                `}
+                                    <p class="mt-1 text-sm text-base-content/60">
+                                        ${item.item_code ? `<span class="font-mono">${escapeHtml(item.item_code)}</span> � ` : ''}
+                                        ${escapeHtml(item.item_type || 'Item')}
+                                    </p>
+                                    ${stockWarning}
+                                    ${packInfo}
+                                    ${breakInfo}
+                                </div>
+
+                                <div class="rounded-2xl bg-base-200 p-3 text-center">
+                                    <p class="text-xs font-semibold uppercase tracking-[0.12em] text-base-content/50">Requested</p>
+                                    <p class="mt-1 text-lg font-extrabold">${formatPackNumber(requested)} <span class="text-xs text-base-content/55">${escapeHtml(item.unit_of_measure || '')}</span></p>
+                                </div>
+
+                                <div class="rounded-2xl bg-base-200 p-3 text-center">
+                                    <p class="text-xs font-semibold uppercase tracking-[0.12em] text-base-content/50">Issued</p>
+                                    <p class="mt-1 text-lg font-extrabold ${issued > 0 ? 'text-success' : ''}">${formatPackNumber(issued)} <span class="text-xs text-base-content/55">${escapeHtml(item.unit_of_measure || '')}</span></p>
+                                </div>
+
+                                <div class="rounded-2xl bg-base-200 p-3">
+                                    <p class="text-xs font-semibold uppercase tracking-[0.12em] text-base-content/50">Issue Now</p>
+                                    ${canFulfill ? `
+                                        <p class="mt-1 text-sm text-base-content/60">${formatPackNumber(remaining)} ${escapeHtml(item.unit_of_measure || '')} remaining</p>
+                                        <div class="mt-2 flex items-center gap-2">
+                                            <input type="number" class="input input-bordered input-sm w-full rounded-xl text-center"
+                                                   id="fulfill_${item.id}"
+                                                   value="${formatPackNumber(Math.min(remaining, available))}"
+                                                   min="0" max="${formatPackNumber(Math.min(remaining, available))}"
+                                                   step="0.001">
+                                        </div>
+                                    ` : `
+                                        <p class="mt-1 text-sm font-semibold">${item.status === 'fulfilled' ? 'No action needed' : item.status === 'partial' ? 'Partially issued' : 'Unavailable'}</p>
+                                        ${item.status === 'cancelled' || item.status === 'rejected' ? `<p class="mt-1 text-xs text-base-content/60">${escapeHtml(item.rejection_reason || '')}</p>` : ''}
+                                    `}
+                                </div>
+
+                                <div class="flex items-center justify-end gap-2">
+                                    ${rejectButton}
+                                </div>
                             </div>
                         </div>
                     `;
                 }).join('');
             }
-            
+
             const plannedProduction = req.planned_product_name
                 ? `${escapeHtml(req.planned_product_name)}${req.planned_variant ? ` (${escapeHtml(req.planned_variant)})` : ''} - ${escapeHtml(req.planned_quantity || '')} ${escapeHtml(req.planned_yield_unit || '')}`
                 : '';
 
+            const override = req.stock_override || {};
+            const overrideHtml = override.acknowledged
+                ? `<div class="alert alert-warning rounded-2xl border-warning/20 py-4">
+                    <i class="fas fa-exclamation-triangle mt-0.5"></i>
+                    <div class="flex-1">
+                        <div class="font-extrabold">Stock override on this request${override.warnings?.length ? ` � ${override.warnings.length} item${override.warnings.length === 1 ? '' : 's'} flagged` : ''}</div>
+                        ${override.by ? `<div class="mt-1 text-sm">Acknowledged by <span class="font-semibold">${escapeHtml(override.by.first_name + ' ' + override.by.last_name)}</span> (${escapeHtml(override.by.role || 'n/a')})${override.at ? ` on ${formatDate(override.at)}` : ''}</div>` : ''}
+                        ${override.reason ? `<div class="mt-1 text-sm italic">"${escapeHtml(override.reason)}"</div>` : ''}
+                    </div>
+                </div>`
+                : '';
+
             document.getElementById('fulfillModalBody').innerHTML = `
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <div>
-                        <p class="text-xs text-base-content/60">Requested By</p>
-                        <p class="font-semibold">${req.requested_by_first || ''} ${req.requested_by_last || ''}</p>
-                        <p class="text-sm text-base-content/60">${req.department || 'N/A'}</p>
+                <div class="space-y-5">
+                    <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        <div class="rounded-2xl border border-base-200 bg-base-100 p-4 shadow-sm">
+                            <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                                <i class="fas fa-user"></i>
+                            </div>
+                            <p class="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Requested By</p>
+                            <p class="mt-1 truncate font-extrabold">${escapeHtml(requester)}</p>
+                            <p class="mt-1 text-sm text-base-content/60">${escapeHtml(req.department || 'N/A')}</p>
+                        </div>
+
+                        <div class="rounded-2xl border border-base-200 bg-base-100 p-4 shadow-sm">
+                            <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-info/10 text-info">
+                                <i class="fas fa-hashtag"></i>
+                            </div>
+                            <p class="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Requisition Code</p>
+                            <p class="mt-1 truncate font-mono font-extrabold">${escapeHtml(req.requisition_code || '-')}</p>
+                            <p class="mt-1 text-sm text-base-content/60">Created ${formatDate(req.created_at)}</p>
+                        </div>
+
+                        <div class="rounded-2xl border border-base-200 bg-base-100 p-4 shadow-sm">
+                            <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-warning/10 text-warning">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <p class="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Needed By</p>
+                            <p class="mt-1 font-extrabold">${formatDate(req.needed_by_date)}</p>
+                            <p class="mt-1 text-sm text-base-content/60">${neededByDays < 0 ? 'Overdue' : neededByDays === 0 ? 'Due today' : `${neededByDays} days left`}</p>
+                        </div>
+
+                        <div class="rounded-2xl border border-base-200 bg-base-100 p-4 shadow-sm">
+                            <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-success/10 text-success">
+                                <i class="fas fa-list-check"></i>
+                            </div>
+                            <p class="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Items</p>
+                            <p class="mt-1 font-extrabold">${itemStats.total} total</p>
+                            <p class="mt-1 text-sm text-base-content/60">${itemStats.pending} pending � ${itemStats.completed} complete</p>
+                        </div>
                     </div>
-                    <div>
-                        <p class="text-xs text-base-content/60">Needed By</p>
-                        <p class="font-semibold">${req.needed_by_date ? formatDate(req.needed_by_date) : 'Not specified'}</p>
+
+                    ${overrideHtml}
+                    ${plannedProduction ? `
+                        <div class="alert alert-info rounded-2xl border-info/20 py-4">
+                            <i class="fas fa-industry mt-0.5"></i>
+                            <span><strong>Production plan:</strong> ${plannedProduction}</span>
+                        </div>
+                    ` : ''}
+                    ${req.purpose ? `
+                        <div class="rounded-2xl border border-base-200 bg-base-100 p-4 shadow-sm">
+                            <p class="text-xs font-bold uppercase tracking-[0.16em] text-base-content/50">Purpose</p>
+                            <p class="mt-2 text-sm leading-6 text-base-content/75">${escapeHtml(req.purpose)}</p>
+                        </div>
+                    ` : ''}
+                    ${req.notes ? `
+                        <div class="alert alert-info rounded-2xl border-info/20 py-4">
+                            <i class="fas fa-comment mt-0.5"></i>
+                            <span><strong>Notes:</strong> ${escapeHtml(req.notes)}</span>
+                        </div>
+                    ` : ''}
+
+                    <div class="divider my-2"></div>
+
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <h4 class="text-lg font-extrabold"><i class="fas fa-list mr-2 text-primary"></i>Requisition Items</h4>
+                        <div class="flex flex-wrap gap-2">
+                            <span class="badge badge-warning badge-sm gap-1"><i class="fas fa-hourglass-half"></i>${itemStats.pending} pending</span>
+                            <span class="badge badge-success badge-sm gap-1"><i class="fas fa-check"></i>${itemStats.completed} complete</span>
+                        </div>
                     </div>
-                    <div>
-                        <p class="text-xs text-base-content/60">Status</p>
-                        <p class="font-semibold">${(req.status || 'pending').toUpperCase()}</p>
+                    <div class="space-y-3">
+                        ${itemsHtml}
                     </div>
-                </div>
-                ${plannedProduction ? `
-                    <div class="alert alert-info mb-4">
-                        <i class="fas fa-industry"></i>
-                        <span><strong>Production plan:</strong> ${plannedProduction}</span>
-                    </div>
-                ` : ''}
-                ${req.purpose ? `
-                    <div class="alert alert-ghost border border-base-300 mb-4">
-                        <i class="fas fa-bullseye"></i>
-                        <span><strong>Purpose:</strong> ${escapeHtml(req.purpose)}</span>
-                    </div>
-                ` : ''}
-                ${req.notes ? `
-                    <div class="alert alert-info mb-4">
-                        <i class="fas fa-comment"></i>
-                        <span><strong>Notes:</strong> ${escapeHtml(req.notes)}</span>
-                    </div>
-                ` : ''}
-                
-                <div class="divider"></div>
-                <h4 class="font-semibold mb-3"><i class="fas fa-list mr-2"></i>Requisition Items</h4>
-                <div class="max-h-80 overflow-y-auto">
-                    ${itemsHtml}
                 </div>
             `;
-            
-            const canFulfillAny = !viewOnly && items.some(item => 
-                parseFloat(item.requested_quantity || item.quantity_requested || 0) > parseFloat(item.issued_quantity || item.quantity_issued || 0) &&
-                item.status !== 'cancelled' && item.status !== 'rejected'
-            );
-            
-            // Check if requisition is pending and needs approval
-            const needsApproval = req.status === 'pending';
-            const canFulfill = req.status === 'approved' || req.status === 'partial';
-            
+
+            const canFulfill = ['pending', 'approved', 'partial'].includes(req.status);
+            const canFulfillAny = items.some(canFulfillItem);
+
             document.getElementById('fulfillModalFooter').innerHTML = `
-                <button class="btn btn-ghost" onclick="document.getElementById('fulfillModal').close()">Close</button>
-                ${needsApproval ? `
-                    <button class="btn btn-error btn-outline" onclick="rejectRequisition(${req.id}, '${req.requisition_code}')">
-                        <i class="fas fa-times"></i> Reject
-                    </button>
-                    <button class="btn btn-success" onclick="approveRequisition(${req.id}, '${req.requisition_code}')">
-                        <i class="fas fa-check"></i> Approve
-                    </button>
-                ` : ''}
+                <button class="btn btn-ghost rounded-xl" onclick="document.getElementById('fulfillModal').close()">Close</button>
                 ${canFulfill && canFulfillAny ? `
-                    <button class="btn btn-primary" onclick="submitFulfillment()">
+                    <button class="btn btn-primary rounded-xl shadow-lg shadow-primary/20" onclick="submitFulfillment()">
                         <i class="fas fa-check"></i> Fulfill Selected Items
                     </button>
                 ` : ''}
             `;
         }
-        
+
         function approveRequisition(id, code) {
             document.getElementById('approveRequisitionId').value = id;
             document.getElementById('approveRequisitionCode').textContent = code || `#${id}`;
@@ -985,10 +1156,31 @@
         }
         
         // Utility functions
+        // V4.0 — Format a number for display: trim trailing zeros but keep up to 3
+        // decimal places, e.g. 0.110 -> "0.11", 2.000 -> "2", 1.5 -> "1.5".
+        // Same implementation as the production page so the pack display
+        // is consistent across modules.
+        function formatPackNumber(value) {
+            const n = Number(value);
+            if (!Number.isFinite(n)) return '0';
+            if (Number.isInteger(n)) return n.toString();
+            const fixed = n.toFixed(3);
+            return fixed.replace(/\.?0+$/, '');
+        }
+
         function formatDate(dateStr) {
             if (!dateStr) return '-';
             const date = new Date(dateStr);
             return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function escapeAttribute(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
         }
 
         function escapeHtml(value) {

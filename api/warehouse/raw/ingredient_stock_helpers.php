@@ -9,6 +9,10 @@ if (!defined('HIGHLAND_FRESH')) {
 }
 
 function getUsableIngredientBatches($db, $ingredientId, $forUpdate = false) {
+    // V4.0 — also require expiry_date >= CURDATE() (or NULL for non-
+    // perishables). Previously the function returned expired batches,
+    // which meant warehouse_raw could issue rotten ingredients to
+    // production. Mirror of the issueMilk() fix in requisitions.php.
     $lockSql = $forUpdate ? ' FOR UPDATE' : '';
     $stmt = $db->prepare("
         SELECT *
@@ -16,6 +20,7 @@ function getUsableIngredientBatches($db, $ingredientId, $forUpdate = false) {
         WHERE ingredient_id = ?
           AND status IN ('available', 'partially_used')
           AND remaining_quantity > 0
+          AND (expiry_date IS NULL OR expiry_date >= CURDATE())
         ORDER BY expiry_date ASC, received_date ASC, id ASC
         {$lockSql}
     ");
@@ -24,12 +29,16 @@ function getUsableIngredientBatches($db, $ingredientId, $forUpdate = false) {
 }
 
 function getUsableIngredientBatchStock($db, $ingredientId) {
+    // V4.0 — same expiry filter as getUsableIngredientBatches(). Without
+    // this, `current_stock` calculations on the ingredient summary would
+    // count expired batches, leading the page to show phantom stock.
     $stmt = $db->prepare("
         SELECT COALESCE(SUM(remaining_quantity), 0) AS available_quantity
         FROM ingredient_batches
         WHERE ingredient_id = ?
           AND status IN ('available', 'partially_used')
           AND remaining_quantity > 0
+          AND (expiry_date IS NULL OR expiry_date >= CURDATE())
     ");
     $stmt->execute([$ingredientId]);
     return (float) ($stmt->fetch()['available_quantity'] ?? 0);
