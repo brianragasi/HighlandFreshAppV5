@@ -5,10 +5,12 @@
  * @version 4.0
  */
 
-// Detect environment - Azure uses root path, localhost uses subfolder
-const isAzure = window.location.hostname.includes('azurewebsites.net') || 
-                window.location.hostname.includes('highlandfresh.codes');
-const APP_BASE = isAzure ? '' : '/HighlandFreshAppV4';
+// Detect environment - production = anything that's not the local XAMPP dev box.
+// Deploy at the web root (no subfolder) for production; if you need a subfolder
+// (e.g. /HighlandFreshAppV5), override APP_BASE in a <meta> tag or hardcode below.
+const LOCAL_HOSTS = ['localhost', '127.0.0.1'];
+const isLocal = LOCAL_HOSTS.includes(window.location.hostname);
+const APP_BASE = isLocal ? '/HighlandFreshAppV4' : '';
 
 // API Base URL
 const API_BASE_URL = APP_BASE + '/api';
