@@ -1,5 +1,19 @@
 RewriteEngine On
 
+# CRITICAL: Pass the Authorization request header to PHP-FPM.
+#
+# PHP-FPM (which InfinityFree uses) does NOT forward the Authorization
+# request header to PHP by default — it just disappears, so
+# $_SERVER['HTTP_AUTHORIZATION'] is never populated and every JWT-authenticated
+# API call returns 401. The fix: when the browser sends an Authorization
+# header, copy its value into the HTTP_AUTHORIZATION environment variable,
+# which PHP-FPM does expose via $_SERVER.
+#
+# This must come before any other RewriteRule that might handle the request
+# so the env var is set before the PHP handler runs.
+RewriteCond %{HTTP:Authorization} ^(.+)$
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
 # Redirect to HTTPS
 RewriteCond %{HTTPS} off
 RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
