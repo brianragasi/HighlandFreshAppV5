@@ -146,7 +146,7 @@ class Auth {
             ?? $_SERVER['HTTP_AUTHORIZATION']
             ?? $_SERVER['HTTP_X_AUTH_TOKEN']
             ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
-            ?? '';
+            ?? $_COOKIE['highland_token'] ?? '';
 
         if (empty($authHeader)) {
             return null;
@@ -156,7 +156,7 @@ class Auth {
             return $matches[1];
         }
 
-        return null;
+        return $authHeader;
     }
 
     /**

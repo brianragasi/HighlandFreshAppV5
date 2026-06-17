@@ -26,11 +26,12 @@ const AuthService = {
      */
     async login(identifier, password) {
         const response = await api.post('/auth/login.php', { identifier, password });
-        
+
         if (response.success) {
             // Store token and user data
             localStorage.setItem('highland_token', response.data.token);
             localStorage.setItem('highland_user', JSON.stringify(response.data.user));
+            this.persistSessionCookie(response.data.token);
             this.persistSessionWindow(response.data.token, response.data);
 
             // Store must_change_password flag
@@ -41,7 +42,7 @@ const AuthService = {
                 this.startSessionMonitor();
             }
         }
-        
+
         return response;
     },
     
@@ -527,6 +528,18 @@ const AuthService = {
         }
     },
 
+    persistSessionCookie(token) {
+        if (!token) {
+            return;
+        }
+
+        document.cookie = `highland_token=${encodeURIComponent(token)}; path=/; SameSite=Lax`;
+    },
+
+    clearSessionCookie() {
+        document.cookie = 'highland_token=; path=/; SameSite=Lax; Max-Age=0';
+    },
+
     clearSessionData() {
         localStorage.removeItem('highland_token');
         localStorage.removeItem('highland_user');
@@ -535,6 +548,7 @@ const AuthService = {
         localStorage.removeItem(this.SESSION_EXPIRES_KEY);
         localStorage.removeItem(this.LAST_ACTIVITY_KEY);
         localStorage.removeItem(this.IDLE_TIMEOUT_KEY);
+        this.clearSessionCookie();
         this._lastServerSyncAt = 0;
         this.stopSessionMonitor();
     },
@@ -558,7 +572,9 @@ const AuthService = {
             method: 'GET',
             headers: {
                 'Accept': 'application/json',
-                'Authorization': `Bearer ${token}`
+                'Authorization': `Bearer ${token}`,
+                // PHP-FPM workaround: see api.js comment
+                'X-Auth-Token': token
             }
         })
             .then((response) => {
@@ -580,7 +596,8 @@ const AuthService = {
             headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
-                'Authorization': `Bearer ${token}`
+                'Authorization': `Bearer ${token}`,
+                'X-Auth-Token': token
             },
             body: JSON.stringify({ reason }),
             keepalive: true
