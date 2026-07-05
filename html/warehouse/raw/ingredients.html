@@ -855,7 +855,6 @@
                                 <option value="">All Stock Levels</option>
                                 <option value="ok">In Stock</option>
                                 <option value="low">Low Stock</option>
-                                <option value="critical">Critical</option>
                                 <option value="out">Out of Stock</option>
                             </select>
                             <select class="select select-bordered select-sm w-full md:w-40" id="sortBy">
@@ -1538,22 +1537,20 @@
                     switch (currentFilter.stock) {
                         case 'ok': return stock > reorder;
                         case 'low': return stock > 0 && stock <= reorder;
-                        case 'critical': return stock > 0 && stock <= min;
                         case 'out': return stock <= 0;
                         default: return true;
                     }
                 });
             }
 
-            // Sort. We compute a numeric "rank" per status (Out=0, Critical=1,
-            // Low=2, OK=3) so sorting by Status puts the urgent ones first when
-            // asc, OK ones last.
+            // Sort. We compute a numeric "rank" per status (Out=0, Low=1, OK=2)
+            // so sorting by Status puts the urgent ones first when asc, OK ones
+            // last. Below minimum and below reorder are both Low Stock.
             const statusRank = (i) => {
                 const stock = parseFloat(i.current_stock), min = parseFloat(i.minimum_stock);
                 if (stock <= 0) return 0;
-                if (stock <= min) return 1;
-                if (stock <= min * 1.5) return 2;
-                return 3;
+                if (stock <= min * 1.5) return 1;
+                return 2;
             };
             const expiryTime = (i) => i.nearest_expiry ? new Date(i.nearest_expiry).getTime() : Number.POSITIVE_INFINITY;
             const stockNum = (i) => parseFloat(i.current_stock) || 0;
@@ -1604,12 +1601,12 @@
                 const unit = ing.unit_of_measure || 'units';
                 const pct = Math.min(100, (stock / max) * 100);
 
-                // Status row style + label
+                // Status row style + label. Below minimum and below reorder
+                // point are both Low Stock — the single low-inventory tier.
                 let statusText, statusBadge, statusDot, barColor;
-                if (stock <= 0)         { statusText = 'Out';      statusBadge = 'badge-ghost';   statusDot = 'bg-base-300';   barColor = 'bg-base-300'; }
-                else if (stock <= min)  { statusText = 'Critical'; statusBadge = 'badge-error';   statusDot = 'bg-error';      barColor = 'bg-error'; }
-                else if (stock <= min * 1.5) { statusText = 'Low'; statusBadge = 'badge-warning';  statusDot = 'bg-warning';    barColor = 'bg-warning'; }
-                else                    { statusText = 'OK';       statusBadge = 'badge-success';  statusDot = 'bg-success';    barColor = 'bg-success'; }
+                if (stock <= 0)              { statusText = 'Out'; statusBadge = 'badge-ghost';   statusDot = 'bg-base-300'; barColor = 'bg-base-300'; }
+                else if (stock <= min * 1.5) { statusText = 'Low'; statusBadge = 'badge-warning'; statusDot = 'bg-warning';  barColor = 'bg-warning'; }
+                else                         { statusText = 'OK';  statusBadge = 'badge-success'; statusDot = 'bg-success';  barColor = 'bg-success'; }
 
                 const slug = ing.category_slug || 'additive';
                 const avatarColor = catColors[slug] || catColors.additive;

@@ -27,7 +27,6 @@
         .reorder-card.selected{border-color:oklch(var(--p));box-shadow:0 10px 20px -12px oklch(var(--p)/0.5);background:oklch(var(--p)/0.06)}
         .stock-pill{font-size:11px;font-weight:700;padding:4px 8px;border-radius:999px;letter-spacing:.04em}
         .stock-out{background:oklch(var(--er)/0.15);color:oklch(var(--er))}
-        .stock-critical{background:oklch(var(--wa)/0.22);color:oklch(var(--wa))}
         .stock-low{background:oklch(var(--in)/0.2);color:oklch(var(--in))}
         .stock-ok{background:oklch(var(--su)/0.2);color:oklch(var(--su))}
         .muted-hint{color:oklch(var(--bc)/0.6)}
@@ -162,14 +161,10 @@
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
                         <div class="rounded-xl border border-base-300 p-3 bg-base-200">
                             <p class="text-xs muted-hint">Out of Stock</p>
                             <p class="text-xl font-bold" id="reorderOutCount">0</p>
-                        </div>
-                        <div class="rounded-xl border border-base-300 p-3 bg-base-200">
-                            <p class="text-xs muted-hint">Critical</p>
-                            <p class="text-xl font-bold" id="reorderCriticalCount">0</p>
                         </div>
                         <div class="rounded-xl border border-base-300 p-3 bg-base-200">
                             <p class="text-xs muted-hint">Low Stock</p>
@@ -185,7 +180,6 @@
                         <div class="join">
                             <button class="btn btn-sm join-item btn-primary" data-reorder-status="needs" onclick="setReorderStatus('needs')">Needs reorder</button>
                             <button class="btn btn-sm join-item" data-reorder-status="out" onclick="setReorderStatus('out')">Out only</button>
-                            <button class="btn btn-sm join-item" data-reorder-status="critical" onclick="setReorderStatus('critical')">Critical only</button>
                             <button class="btn btn-sm join-item" data-reorder-status="low" onclick="setReorderStatus('low')">Low only</button>
                             <button class="btn btn-sm join-item" data-reorder-status="all" onclick="setReorderStatus('all')">All</button>
                         </div>
@@ -409,7 +403,7 @@
                 });
 
                 prCatalog=[...ingredients,...mroItems].sort((a,b)=>{
-                    const rank={OUT:0,CRITICAL:1,LOW:2,OK:3};
+                    const rank={OUT:0,LOW:1,OK:2};
                     return (rank[a.stock_status]-rank[b.stock_status])||a.name.localeCompare(b.name);
                 });
                 renderReorderSummary();
@@ -425,8 +419,9 @@
 
         function getCatalogStockStatus(currentStock,minimumStock,reorderPoint){
             if(currentStock<=0)return'OUT';
-            if(minimumStock>0&&currentStock<=minimumStock)return'CRITICAL';
-            if(reorderPoint>0&&currentStock<=reorderPoint)return'LOW';
+            // Below minimum stock and below reorder point are both "Low Stock"
+            // — the single low-inventory tier that triggers a Purchase Request.
+            if((minimumStock>0&&currentStock<=minimumStock)||(reorderPoint>0&&currentStock<=reorderPoint))return'LOW';
             return'OK';
         }
 
@@ -709,15 +704,12 @@
 
         function renderReorderSummary(){
             const outCount=prCatalog.filter(i=>i.stock_status==='OUT').length;
-            const criticalCount=prCatalog.filter(i=>i.stock_status==='CRITICAL').length;
             const lowCount=prCatalog.filter(i=>i.stock_status==='LOW').length;
             const okCount=prCatalog.filter(i=>i.stock_status==='OK').length;
             const outEl=document.getElementById('reorderOutCount');
-            const criticalEl=document.getElementById('reorderCriticalCount');
             const lowEl=document.getElementById('reorderLowCount');
             const okEl=document.getElementById('reorderOkCount');
             if(outEl)outEl.textContent=outCount;
-            if(criticalEl)criticalEl.textContent=criticalCount;
             if(lowEl)lowEl.textContent=lowCount;
             if(okEl)okEl.textContent=okCount;
         }
@@ -760,9 +752,8 @@
             const search=reorderFilters.search;
             return prCatalog.map((item,index)=>({item,index})).filter(entry=>{
                 const s=entry.item.stock_status;
-                if(statusFilter==='needs'&&!(s==='OUT'||s==='CRITICAL'||s==='LOW'))return false;
+                if(statusFilter==='needs'&&!(s==='OUT'||s==='LOW'))return false;
                 if(statusFilter==='out'&&s!=='OUT')return false;
-                if(statusFilter==='critical'&&s!=='CRITICAL')return false;
                 if(statusFilter==='low'&&s!=='LOW')return false;
                 if(typeFilter!=='all'&&entry.item.source_type!==typeFilter)return false;
                 if(search){
@@ -839,7 +830,6 @@
 
         function getStockBadgeClass(status){
             if(status==='OUT')return 'stock-out';
-            if(status==='CRITICAL')return 'stock-critical';
             if(status==='LOW')return 'stock-low';
             return 'stock-ok';
         }
