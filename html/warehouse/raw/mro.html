@@ -796,7 +796,6 @@
                             <option value="">All Stock Levels</option>
                             <option value="ok">In Stock</option>
                             <option value="low">Low Stock</option>
-                            <option value="critical">Critical</option>
                             <option value="out">Out of Stock</option>
                         </select>
                         <select class="select select-bordered select-sm" id="criticalFilter">
@@ -1197,7 +1196,8 @@
             const lowStock = mroItems.filter(i => {
                 const stock = parseFloat(i.current_stock);
                 const min = parseFloat(i.minimum_stock);
-                return stock > 0 && stock <= min;
+                const reorder = parseFloat(i.reorder_point || min * 1.5);
+                return stock > 0 && stock <= reorder;
             }).length;
             const critical = mroItems.filter(i => i.is_critical == 1 && parseFloat(i.current_stock) <= parseFloat(i.minimum_stock)).length;
 
@@ -1247,7 +1247,6 @@
                     switch (currentFilter.stock) {
                         case 'ok': return stock > reorder;
                         case 'low': return stock > 0 && stock <= reorder;
-                        case 'critical': return stock > 0 && stock <= min;
                         case 'out': return stock <= 0;
                         default: return true;
                     }
@@ -1307,12 +1306,12 @@
                 // *current stock state* only — the separate "critical item"
                 // flag from the catalog is shown as a small shield icon next
                 // to the item name (see below) so the two signals don't
-                // read as contradictory.
+                // read as contradictory. Below minimum and below reorder are
+                // both "Low Stock" — the single low-inventory tier.
                 let statusText, statusBadge, statusDot, barColor;
-                if (stock <= 0)         { statusText = 'Out';      statusBadge = 'badge-ghost';   statusDot = 'bg-base-300';   barColor = 'bg-base-300'; }
-                else if (stock <= min)  { statusText = 'Critical'; statusBadge = 'badge-error';   statusDot = 'bg-error';      barColor = 'bg-error'; }
-                else if (stock <= min * 1.5) { statusText = 'Low'; statusBadge = 'badge-warning';  statusDot = 'bg-warning';    barColor = 'bg-warning'; }
-                else                    { statusText = 'OK';       statusBadge = 'badge-success';  statusDot = 'bg-success';    barColor = 'bg-success'; }
+                if (stock <= 0)              { statusText = 'Out'; statusBadge = 'badge-ghost';   statusDot = 'bg-base-300'; barColor = 'bg-base-300'; }
+                else if (stock <= min * 1.5) { statusText = 'Low'; statusBadge = 'badge-warning'; statusDot = 'bg-warning';  barColor = 'bg-warning'; }
+                else                         { statusText = 'OK';  statusBadge = 'badge-success'; statusDot = 'bg-success';  barColor = 'bg-success'; }
 
                 const slug = item.category_slug || 'tools';
                 const avatarColor = catColors[slug] || catColors.tools;
@@ -1429,11 +1428,14 @@
             const criticalBadge = item.is_critical == 1
                 ? '<span class="badge badge-error badge-outline badge-sm gap-1"><i class="fas fa-exclamation"></i> CRITICAL ITEM</span>'
                 : '';
+            // Stock-status badge. Below minimum and below reorder are both
+            // "Low Stock" — the single low-inventory tier. (The separate
+            // is_critical flag below is a per-item criticality marker, not a
+            // stock tier.)
             const stockBadge = stock <= 0
                 ? '<span class="badge badge-ghost badge-sm">Out of Stock</span>'
-                : (stock <= min ? '<span class="badge badge-error badge-sm">Critical</span>'
                 : (stock <= min * 1.5 ? '<span class="badge badge-warning badge-sm">Low Stock</span>'
-                : '<span class="badge badge-success badge-sm">In Stock</span>'));
+                : '<span class="badge badge-success badge-sm">In Stock</span>');
 
             const heroHtml = `
                 <div class="item-hero">
