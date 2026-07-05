@@ -21,11 +21,6 @@
             box-shadow: 0 8px 25px -8px rgba(0, 0, 0, 0.15);
         }
 
-        .status-critical {
-            background-color: oklch(var(--er) / 0.1);
-            border-left: 4px solid oklch(var(--er));
-        }
-
         .status-low {
             background-color: oklch(var(--wa) / 0.1);
             border-left: 4px solid oklch(var(--wa));
@@ -226,8 +221,10 @@
                 </div>
             </div>
 
-            <!-- Summary Cards -->
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <!-- Summary Cards. Low Stock is the single low-inventory state;
+                 clicking it filters the table to low-stock rows so the user
+                 can immediately start Purchase Requests. -->
+            <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
                 <div class="bento-card card bg-error/10 border border-error/40">
                     <div class="card-body p-4">
                         <div class="flex items-center gap-3">
@@ -242,20 +239,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="bento-card card bg-base-100 border border-error/30">
-                    <div class="card-body p-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-12 h-12 rounded-xl border-2 border-error bg-base-100 flex items-center justify-center">
-                                <i class="fas fa-exclamation-circle text-error text-xl"></i>
-                            </div>
-                            <div>
-                                <p class="text-3xl font-bold text-error" id="criticalCount">0</p>
-                                <p class="text-xs text-error/80 font-semibold uppercase tracking-wider">Critical</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="bento-card card bg-warning/10 border border-warning/30">
+                <button type="button" onclick="focusLowStock()" class="bento-card card bg-warning/10 border border-warning/30 text-left cursor-pointer hover:-translate-y-0.5 hover:shadow-lg transition-all" title="Show low-stock items and start Purchase Requests">
                     <div class="card-body p-4">
                         <div class="flex items-center gap-3">
                             <div class="w-12 h-12 rounded-xl bg-warning flex items-center justify-center">
@@ -267,7 +251,7 @@
                             </div>
                         </div>
                     </div>
-                </div>
+                </button>
                 <div class="bento-card card bg-success/10 border border-success/30">
                     <div class="card-body p-4">
                         <div class="flex items-center gap-3">
@@ -295,7 +279,7 @@
                     How reorder alerts work
                 </div>
                 <div class="collapse-content">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                         <div class="flex items-start gap-3">
                             <span class="badge badge-ghost badge-sm flex-shrink-0">OUT</span>
                             <div>
@@ -304,17 +288,10 @@
                             </div>
                         </div>
                         <div class="flex items-start gap-3">
-                            <span class="badge badge-error badge-sm flex-shrink-0">CRITICAL</span>
-                            <div>
-                                <p class="font-medium">Critical Level</p>
-                                <p class="text-base-content/60 text-xs">At or below minimum stock. Order immediately.</p>
-                            </div>
-                        </div>
-                        <div class="flex items-start gap-3">
                             <span class="badge badge-warning badge-sm flex-shrink-0">LOW</span>
                             <div>
                                 <p class="font-medium">Low Stock</p>
-                                <p class="text-base-content/60 text-xs">Below reorder point. Order soon considering lead time.</p>
+                                <p class="text-base-content/60 text-xs">At or below the reorder point. Start a Purchase Request now to stay ahead of lead time.</p>
                             </div>
                         </div>
                     </div>
@@ -332,7 +309,6 @@
                         <select class="select select-bordered select-sm w-full md:w-48" id="statusFilter">
                             <option value="">All Alerts</option>
                             <option value="OUT_OF_STOCK">Out of Stock</option>
-                            <option value="CRITICAL">Critical Only</option>
                             <option value="LOW">Low Stock</option>
                         </select>
                         <select class="select select-bordered select-sm w-full md:w-40" id="categoryFilter">
@@ -457,17 +433,26 @@
                 });
 
                 if (response?.success) {
-                    allAlerts = response.data?.alerts || [];
+                    allAlerts = (response.data?.alerts || []).map(a => ({
+                        ...a,
+                        // Collapse the old Critical tier into Low Stock. The
+                        // backend still emits CRITICAL; the frontend treats
+                        // every low-inventory item as Low Stock so ordering
+                        // starts at the reorder point, not at minimum stock.
+                        stock_status: a.stock_status === 'CRITICAL' ? 'LOW' : a.stock_status
+                    }));
                     const summary = response.data?.summary || {};
+                    // Fold the legacy critical count into low so the Low Stock
+                    // card reflects every item that needs a Purchase Request.
+                    const lowTotal = (summary.low || 0) + (summary.critical || 0);
 
                     // Update summary cards
                     document.getElementById('outOfStockCount').textContent = summary.out_of_stock || 0;
-                    document.getElementById('criticalCount').textContent = summary.critical || 0;
-                    document.getElementById('lowCount').textContent = summary.low || 0;
+                    document.getElementById('lowCount').textContent = lowTotal;
                     document.getElementById('okCount').textContent = summary.ok || 0;
 
                     // Show alert banner if needed
-                    const totalAlerts = (summary.out_of_stock || 0) + (summary.critical || 0) + (summary.low || 0);
+                    const totalAlerts = (summary.out_of_stock || 0) + lowTotal;
 
                     // Drive the gradient hero ("X ingredients need attention").
                     // Same numbers as the stat cards but presented as a
@@ -638,12 +623,12 @@
             const ctaLabelEl = document.getElementById('reorderHeroCtaLabel');
             if (!hero) return;
 
-            // Count only actionable alerts (Out / Critical / Low), not OK.
+            // Count only actionable alerts (Out / Low), not OK. Critical items
+            // were folded into Low at ingest.
             const actionable = allAlerts.filter(a => a.stock_status !== 'OK');
             const out = allAlerts.filter(a => a.stock_status === 'OUT_OF_STOCK').length;
-            const crit = allAlerts.filter(a => a.stock_status === 'CRITICAL').length;
             const low = allAlerts.filter(a => a.stock_status === 'LOW').length;
-            const total = out + crit + low;
+            const total = out + low;
 
             if (total === 0) {
                 hero.classList.add('hidden');
@@ -655,7 +640,6 @@
             // exactly what to act on.
             const parts = [];
             if (out) parts.push(`${out} out of stock`);
-            if (crit) parts.push(`${crit} critical`);
             if (low) parts.push(`${low} low`);
             breakdownEl.textContent = parts.join(' · ');
             ctaLabelEl.textContent = `Create all ${total} Purchase Requisition${total === 1 ? '' : 's'}`;
@@ -696,9 +680,7 @@
                 const qty = Math.max(0, parLevel - stock);
                 const priority = alert.stock_status === 'OUT_OF_STOCK'
                     ? 'urgent'
-                    : alert.stock_status === 'CRITICAL'
-                        ? 'high'
-                        : 'normal';
+                    : 'normal';
                 const neededBy = new Date();
                 neededBy.setDate(neededBy.getDate() + parseInt(alert.lead_time_days || 7, 10));
 
@@ -818,12 +800,11 @@
                 return;
             }
 
-            // Sort. Default urgency desc puts Out -> Critical -> Low -> OK.
-            // Higher number = more urgent (0 = OK, 3 = Out).
+            // Sort. Default urgency desc puts Out -> Low -> OK.
+            // Higher number = more urgent (0 = OK, 2 = Out).
             const urgencyRank = (a) => {
                 switch (a.stock_status) {
-                    case 'OUT_OF_STOCK': return 3;
-                    case 'CRITICAL':    return 2;
+                    case 'OUT_OF_STOCK': return 2;
                     case 'LOW':         return 1;
                     case 'OK':          return 0;
                     default:            return -1;
@@ -870,17 +851,15 @@
                 // Status styling. The badge class + label live in separate
                 // maps so the Status column can render a real DaisyUI badge
                 // (no inline HTML, no risk of title-attribute HTML leakage)
-                // with whitespace-nowrap so "CRITICAL" never gets clipped to
-                // "CRITIC" on narrow columns.
+                // with whitespace-nowrap so status text never gets clipped on
+                // narrow columns.
                 const statusBadgeClass = {
                     'OUT_OF_STOCK': 'badge-ghost',
-                    'CRITICAL':     'badge-error',
                     'LOW':          'badge-warning',
                     'OK':           'badge-success'
                 };
                 const statusText = {
                     'OUT_OF_STOCK': 'OUT',
-                    'CRITICAL':     'CRITICAL',
                     'LOW':          'LOW',
                     'OK':           'OK'
                 };
@@ -892,19 +871,6 @@
                         barColor = 'bg-base-300';
                         avatarColor = 'bg-error/10 text-error';
                         avatarIcon = 'fa-times-circle';
-                        break;
-                    case 'CRITICAL':
-                        statusBadge = '<span class="badge badge-error badge-sm">CRITICAL</span>';
-                        statusDot = 'bg-error';
-                        barColor = 'bg-error';
-                        // Critical uses the same red as Out but a different
-                        // treatment: outlined icon (no fill) + plain base-100
-                        // avatar background. This keeps everything in the
-                        // theme's error family — no orange or other off-palette
-                        // utilities — while making Out visually heavier than
-                        // Critical.
-                        avatarColor = 'bg-base-100 border border-error text-error';
-                        avatarIcon = 'fa-exclamation-circle';
                         break;
                     case 'LOW':
                         statusBadge = '<span class="badge badge-warning badge-sm">LOW</span>';
@@ -1004,7 +970,6 @@
         function getStatusBadge(status) {
             switch (status) {
                 case 'OUT_OF_STOCK': return '<span class="badge badge-ghost">OUT</span>';
-                case 'CRITICAL': return '<span class="badge badge-error">CRITICAL</span>';
                 case 'LOW': return '<span class="badge badge-warning">LOW</span>';
                 case 'OK': return '<span class="badge badge-success">OK</span>';
                 default: return '<span class="badge">' + status + '</span>';
@@ -1014,10 +979,22 @@
         function getRowClass(status) {
             switch (status) {
                 case 'OUT_OF_STOCK': return 'status-out';
-                case 'CRITICAL': return 'status-critical';
                 case 'LOW': return 'status-low';
                 default: return '';
             }
+        }
+
+        // Click handler for the Low Stock summary card: filter the table to
+        // low-stock rows and scroll to it so the user can immediately start
+        // Purchase Requests. This is the "Low Stock prompts the PR workflow"
+        // entry point — no separate Critical stage to wait for.
+        function focusLowStock() {
+            const filter = document.getElementById('statusFilter');
+            if (filter) {
+                filter.value = 'LOW';
+            }
+            filterAlerts();
+            document.getElementById('alertsSection')?.scrollIntoView({ behavior: 'smooth' });
         }
 
         function scrollToAlerts() {
@@ -1043,9 +1020,7 @@
 
             const priority = alert.stock_status === 'OUT_OF_STOCK'
                 ? 'urgent'
-                : alert.stock_status === 'CRITICAL'
-                    ? 'high'
-                    : 'normal';
+                : 'normal';
             const neededBy = new Date();
             neededBy.setDate(neededBy.getDate() + parseInt(alert.lead_time_days || 7, 10));
 

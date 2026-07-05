@@ -350,7 +350,6 @@ const PurchasingService = {
 
     getStockStatusBadge(status) {
         const map = {
-            'critical': { class: 'badge-error', label: 'Critical' },
             'low': { class: 'badge-warning', label: 'Low Stock' },
             'reorder': { class: 'badge-info', label: 'Reorder' },
             'ok': { class: 'badge-success', label: 'OK' },
