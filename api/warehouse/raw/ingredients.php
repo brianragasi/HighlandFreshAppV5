@@ -315,9 +315,8 @@ function handleGet($db, $currentUser) {
                     i.maximum_stock,
                     COALESCE(i.lead_time_days, 7) AS lead_time_days,
                     i.unit_cost,
-                    CASE 
+                    CASE
                         WHEN i.current_stock <= 0 THEN 'OUT_OF_STOCK'
-                        WHEN i.current_stock <= i.minimum_stock THEN 'CRITICAL'
                         WHEN i.current_stock <= COALESCE(i.reorder_point, i.minimum_stock * 1.5) THEN 'LOW'
                         ELSE 'OK'
                     END AS stock_status,
@@ -335,12 +334,11 @@ function handleGet($db, $currentUser) {
                 $sql .= " AND i.current_stock <= COALESCE(i.reorder_point, i.minimum_stock * 1.5)";
             }
             
-            $sql .= " ORDER BY 
-                CASE 
+            $sql .= " ORDER BY
+                CASE
                     WHEN i.current_stock <= 0 THEN 1
-                    WHEN i.current_stock <= i.minimum_stock THEN 2
-                    WHEN i.current_stock <= COALESCE(i.reorder_point, i.minimum_stock * 1.5) THEN 3
-                    ELSE 4
+                    WHEN i.current_stock <= COALESCE(i.reorder_point, i.minimum_stock * 1.5) THEN 2
+                    ELSE 3
                 END,
                 i.ingredient_name ASC
             ";
@@ -349,10 +347,10 @@ function handleGet($db, $currentUser) {
             $stmt->execute();
             $alerts = $stmt->fetchAll();
             
-            // Summary counts
+            // Summary counts. Critical was merged into Low Stock — the single
+            // low-inventory tier that triggers a Purchase Request.
             $summary = [
                 'out_of_stock' => 0,
-                'critical' => 0,
                 'low' => 0,
                 'ok' => 0,
                 'total_alerts' => 0

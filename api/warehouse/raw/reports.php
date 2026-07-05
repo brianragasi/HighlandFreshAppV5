@@ -38,12 +38,12 @@ try {
 
 /* ========================================================================
    Inventory report — UNION of ingredients + MRO items, with computed
-   status (Out / Critical / Low / OK) and last-movement timestamp.
+   status (Out / Low / OK) and last-movement timestamp.
    ======================================================================== */
 function handleInventoryReport($db) {
     $type = getParam('type', 'all');                 // all | ingredient | mro
     $categoryId = getParam('category_id', null);
-    $status = getParam('status', 'all');            // all | out | critical | low | ok
+    $status = getParam('status', 'all');            // all | out | low | ok
     $search = trim((string) getParam('search', ''));
 
     // Defensive table/column existence checks so a fresh install doesn't 500
@@ -136,23 +136,23 @@ function handleInventoryReport($db) {
         return true;
     }));
 
-    // Sort by status severity then name (critical items first, OK last)
+    // Sort by status severity then name (out items first, OK last). Critical
+    // was merged into Low Stock.
     usort($filtered, function ($a, $b) {
-        $order = ['out' => 0, 'critical' => 1, 'low' => 2, 'ok' => 3];
-        $oa = $order[$a['status']] ?? 4;
-        $ob = $order[$b['status']] ?? 4;
+        $order = ['out' => 0, 'low' => 1, 'ok' => 2];
+        $oa = $order[$a['status']] ?? 3;
+        $ob = $order[$b['status']] ?? 3;
         if ($oa !== $ob) {
             return $oa <=> $ob;
         }
         return strcasecmp($a['name'], $b['name']);
     });
 
-    // Summary stats
+    // Summary stats. critical_count was merged into low_count.
     $stats = [
         'total_items'   => count($filtered),
         'total_value'   => round(array_sum(array_column($filtered, 'value')), 2),
         'out_count'     => count(array_filter($filtered, fn($r) => $r['status'] === 'out')),
-        'critical_count' => count(array_filter($filtered, fn($r) => $r['status'] === 'critical')),
         'low_count'     => count(array_filter($filtered, fn($r) => $r['status'] === 'low')),
         'ok_count'      => count(array_filter($filtered, fn($r) => $r['status'] === 'ok')),
     ];
@@ -296,9 +296,8 @@ function computeStockStatus($current, $min, $max) {
     if ($current <= 0) {
         return 'out';
     }
-    if ($min > 0 && $current <= $min) {
-        return 'critical';
-    }
+    // Critical was merged into Low Stock — at/below minimum_stock is now Low,
+    // the single low-inventory tier that triggers a Purchase Request.
     if ($min > 0 && $current <= $min * 1.5) {
         return 'low';
     }
