@@ -121,7 +121,6 @@ try {
                i.unit_of_measure,
                CASE
                   WHEN i.current_stock <= 0 THEN 'OUT_OF_STOCK'
-                  WHEN i.current_stock <= i.minimum_stock THEN 'CRITICAL'
                   WHEN i.current_stock <= {$ingredientReorderExpr} THEN 'LOW'
                   ELSE 'OK'
                END as stock_status,
@@ -142,7 +141,6 @@ try {
                m.unit_of_measure,
                CASE
                   WHEN m.current_stock <= 0 THEN 'OUT_OF_STOCK'
-                  WHEN m.current_stock <= m.minimum_stock THEN 'CRITICAL'
                   WHEN m.current_stock <= {$mroReorderExpr} THEN 'LOW'
                   ELSE 'OK'
                END as stock_status,
@@ -154,9 +152,8 @@ try {
          ORDER BY
             CASE stock_status
                WHEN 'OUT_OF_STOCK' THEN 1
-               WHEN 'CRITICAL' THEN 2
-               WHEN 'LOW' THEN 3
-               ELSE 4
+               WHEN 'LOW' THEN 2
+               ELSE 3
             END,
             stock_ratio ASC,
             item_name ASC
