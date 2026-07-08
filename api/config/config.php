@@ -12,8 +12,12 @@ if (!defined('HIGHLAND_FRESH')) {
     exit('Direct access not allowed');
 }
 
-// Detect Azure environment
+// Detect environment
 $isAzure = getenv('WEBSITE_SITE_NAME') !== false;
+$httpHost = $_SERVER['HTTP_HOST'] ?? '';
+$isInfinityFree = (strpos($httpHost, 'infinityfree.io') !== false)
+    || (strpos($httpHost, 'epizy.com') !== false)
+    || (getenv('INFINITYFREE') !== false);
 
 function loadLocalEnvFiles() {
     static $loaded = false;
@@ -101,8 +105,16 @@ if ($isAzure) {
     define('DB_PASS', envOrDefault('DB_PASSWORD', ''));
     define('DB_PORT', (int) envOrDefault('DB_PORT', 3306));
     define('DB_SSL_CERT', '/home/site/wwwroot/api/config/DigiCertGlobalRootCA.crt.pem');
+} elseif ($isInfinityFree) {
+    // InfinityFree Production Configuration
+    define('DB_HOST', envOrDefault('DB_HOST', 'sql112.infinityfree.com'));
+    define('DB_NAME', envOrDefault('DB_NAME', 'if0_42204813_highland_fresh'));
+    define('DB_USER', envOrDefault('DB_USERNAME', 'if0_42204813'));
+    define('DB_PASS', envOrDefault('DB_PASSWORD', 'iB1K56dOBOl4Pht'));
+    define('DB_PORT', (int) envOrDefault('DB_PORT', 3306));
+    define('DB_SSL_CERT', null);
 } else {
-    // Local Development Configuration
+    // Local Development Configuration (XAMPP)
     define('DB_HOST', envOrDefault('DB_HOST', 'localhost'));
     define('DB_NAME', envOrDefault('DB_NAME', 'highland_fresh'));
     define('DB_USER', envOrDefault('DB_USERNAME', 'root'));
@@ -129,9 +141,9 @@ define('PASSWORD_COST', 12);
 // Email / SMTP Settings (Gmail)
 define('SMTP_HOST', envOrDefault('SMTP_HOST', 'smtp.gmail.com'));
 define('SMTP_PORT', (int) envOrDefault('SMTP_PORT', 587));
-define('SMTP_USERNAME', envOrDefault('SMTP_USERNAME', 'highlandfreshdairy@gmail.com'));
-define('SMTP_PASSWORD', envOrDefault('SMTP_PASSWORD', ''));  // Gmail App Password
-define('SMTP_FROM_EMAIL', envOrDefault('SMTP_FROM_EMAIL', 'highlandfreshdairy@gmail.com'));
+define('SMTP_USERNAME', envOrDefault('SMTP_USERNAME', $isInfinityFree ? 'ragasibrian2@gmail.com' : 'highlandfreshdairy@gmail.com'));
+define('SMTP_PASSWORD', envOrDefault('SMTP_PASSWORD', $isInfinityFree ? 'ydtqfhczgchrothw' : ''));
+define('SMTP_FROM_EMAIL', envOrDefault('SMTP_FROM_EMAIL', $isInfinityFree ? 'ragasibrian2@gmail.com' : 'highlandfreshdairy@gmail.com'));
 define('SMTP_FROM_NAME', envOrDefault('SMTP_FROM_NAME', 'Highland Fresh Dairy'));
 define('SMTP_ENCRYPTION', envOrDefault('SMTP_ENCRYPTION', 'tls'));
 
@@ -142,9 +154,12 @@ define('TEMP_CREDENTIAL_LENGTH', 10);      // Length of auto-generated temp pass
 // Application URL (for building invite links)
 if ($isAzure) {
     define('APP_URL', envOrDefault('APP_URL', 'https://highlandfresh.codes'));
+} elseif ($isInfinityFree) {
+    define('APP_URL', envOrDefault('APP_URL', 'https://highlandfresh.infinityfree.io'));
 } else {
     define('APP_URL', envOrDefault('APP_URL', 'http://localhost/HighlandFreshAppV4'));
 }
+define('IS_INFINITYFREE', $isInfinityFree);
 
 // Business Rules
 define('PASTEURIZATION_TEMP', 81.0); // Celsius

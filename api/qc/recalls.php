@@ -683,7 +683,18 @@ function approveRecall($db, $recall, $currentUser, $data) {
         $data['approval_notes'] ?? null,
         $recall['id']
     ]);
-    
+
+    // Log status change (replaces tr_recall_status_change trigger)
+    $stmt = $db->prepare("
+        INSERT INTO recall_activity_log (recall_id, action, action_by, details)
+        VALUES (?, 'approved', ?, ?)
+    ");
+    $stmt->execute([
+        $recall['id'],
+        currentUserId($currentUser),
+        json_encode(['old_status' => $recall['status'], 'new_status' => 'approved'])
+    ]);
+
     Response::success(['status' => 'approved'], 'Recall approved - notifications can now be sent');
 }
 
@@ -785,7 +796,37 @@ function logReturn($db, $recall, $currentUser, $data) {
             $data['condition_notes'] ?? null,
             currentUserId($currentUser)
         ]);
-        
+
+        // Update affected location return counts (replaces tr_recall_return_update trigger)
+        $stmt = $db->prepare("
+            UPDATE recall_affected_locations
+            SET units_returned = units_returned + ?,
+                return_status = CASE
+                    WHEN (units_returned + ?) >= units_dispatched THEN 'complete'
+                    WHEN (units_returned + ?) > 0 THEN 'partial'
+                    ELSE 'pending'
+                END
+            WHERE id = ?
+        ");
+        $stmt->execute([
+            $unitsReturned,
+            $unitsReturned,
+            $unitsReturned,
+            $data['affected_location_id']
+        ]);
+
+        // Update total_recovered on the recall
+        $stmt = $db->prepare("
+            UPDATE batch_recalls
+            SET total_recovered = (
+                SELECT COALESCE(SUM(units_returned), 0)
+                FROM recall_affected_locations
+                WHERE recall_id = ?
+            )
+            WHERE id = ?
+        ");
+        $stmt->execute([$recall['id'], $recall['id']]);
+
         // Update recall status to in_progress if not already
         if ($recall['status'] === 'approved') {
             $stmt = $db->prepare("UPDATE batch_recalls SET status = 'in_progress' WHERE id = ?");
@@ -876,7 +917,18 @@ function completeRecall($db, $recall, $currentUser, $data) {
         $data['completion_notes'] ?? null,
         $recall['id']
     ]);
-    
+
+    // Log status change (replaces tr_recall_status_change trigger)
+    $stmt = $db->prepare("
+        INSERT INTO recall_activity_log (recall_id, action, action_by, details)
+        VALUES (?, 'completed', ?, ?)
+    ");
+    $stmt->execute([
+        $recall['id'],
+        currentUserId($currentUser),
+        json_encode(['old_status' => $recall['status'], 'new_status' => 'completed'])
+    ]);
+
     Response::success(['status' => 'completed'], 'Recall marked as completed');
 }
 
@@ -905,6 +957,17 @@ function handleDeleteRequest($db, $currentUser) {
     
     $stmt = $db->prepare("UPDATE batch_recalls SET status = 'cancelled' WHERE id = ?");
     $stmt->execute([$id]);
-    
+
+    // Log status change (replaces tr_recall_status_change trigger)
+    $stmt = $db->prepare("
+        INSERT INTO recall_activity_log (recall_id, action, action_by, details)
+        VALUES (?, 'cancelled', ?, ?)
+    ");
+    $stmt->execute([
+        $id,
+        currentUserId($currentUser),
+        json_encode(['old_status' => $recall['status'], 'new_status' => 'cancelled'])
+    ]);
+
     Response::success(null, 'Recall cancelled');
 }
