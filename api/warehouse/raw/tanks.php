@@ -63,6 +63,113 @@ function syncAcceptedMilkInventory($db) {
     $stmt->execute();
 }
 
+function expireTankMilkBatches($db, $tankId, $currentUser, $reason = '') {
+    $tank = $db->prepare("SELECT * FROM storage_tanks WHERE id = ? AND is_active = 1 FOR UPDATE");
+    $tank->execute([$tankId]);
+    $tankData = $tank->fetch();
+
+    if (!$tankData) {
+        throw new Exception('Tank not found');
+    }
+
+    $batches = $db->prepare("
+        SELECT rmi.*
+        FROM raw_milk_inventory rmi
+        WHERE rmi.tank_id = ?
+          AND rmi.status IN ('available', 'reserved')
+          AND rmi.remaining_liters > 0
+          AND rmi.expiry_date < CURDATE()
+        ORDER BY rmi.expiry_date ASC, rmi.received_date ASC, rmi.id ASC
+        FOR UPDATE
+    ");
+    $batches->execute([$tankId]);
+    $expiredBatches = $batches->fetchAll();
+
+    if (empty($expiredBatches)) {
+        throw new Exception('No expired milk batches found in this tank');
+    }
+
+    $reason = trim($reason) !== ''
+        ? trim($reason)
+        : 'Expired raw milk removed from tank';
+
+    $totalExpired = 0.0;
+    $cleared = [];
+
+    foreach ($expiredBatches as $batch) {
+        $liters = (float) ($batch['remaining_liters'] ?? 0);
+        if ($liters <= 0) {
+            continue;
+        }
+
+        $db->prepare("
+            UPDATE raw_milk_inventory
+            SET remaining_liters = 0,
+                disposed_liters = COALESCE(disposed_liters, 0) + ?,
+                disposed_at = NOW(),
+                disposal_reason = ?,
+                status = 'expired',
+                updated_at = NOW()
+            WHERE id = ?
+        ")->execute([$liters, $reason, $batch['id']]);
+
+        $txCode = generateCode('TX');
+        $db->prepare("
+            INSERT INTO inventory_transactions
+            (transaction_code, transaction_type, item_type, item_id, batch_id,
+             quantity, unit_of_measure, reference_type, reference_id,
+             from_location, performed_by, reason)
+            VALUES (?, 'dispose', 'raw_milk', ?, ?, ?, 'L', 'tank_expiry', ?, ?, ?, ?)
+        ")->execute([
+            $txCode,
+            $batch['id'],
+            $batch['id'],
+            $liters,
+            $tankId,
+            $tankData['tank_code'],
+            $currentUser['user_id'],
+            $reason . ' (expired ' . $batch['expiry_date'] . ')'
+        ]);
+
+        $totalExpired += $liters;
+        $cleared[] = [
+            'batch_id' => (int) $batch['id'],
+            'batch_code' => $batch['batch_code'],
+            'liters' => $liters,
+            'expiry_date' => $batch['expiry_date'],
+            'transaction_code' => $txCode
+        ];
+    }
+
+    $db->prepare("
+        UPDATE storage_tanks
+        SET current_volume = GREATEST(current_volume - ?, 0),
+            updated_at = NOW()
+        WHERE id = ?
+    ")->execute([$totalExpired, $tankId]);
+
+    $db->prepare("
+        UPDATE storage_tanks
+        SET status = 'available'
+        WHERE id = ? AND current_volume <= 0
+    ")->execute([$tankId]);
+
+    logAudit($currentUser['user_id'], 'expire_tank_milk', 'storage_tanks', $tankId, null, [
+        'tank_code' => $tankData['tank_code'],
+        'total_expired_liters' => $totalExpired,
+        'batch_count' => count($cleared),
+        'reason' => $reason
+    ]);
+
+    return [
+        'tank_id' => (int) $tankId,
+        'tank_code' => $tankData['tank_code'],
+        'total_expired_liters' => $totalExpired,
+        'batch_count' => count($cleared),
+        'batches' => $cleared
+    ];
+}
+
 // Require Warehouse Raw role
 $currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'production_staff']);
 
@@ -111,10 +218,26 @@ function handleGet($db, $currentUser) {
                      FROM raw_milk_inventory rmi
                      WHERE rmi.tank_id = st.id
                      AND rmi.status IN ('available', 'reserved')) as stored_liters,
+                    (SELECT COALESCE(SUM(remaining_liters), 0)
+                     FROM raw_milk_inventory rmi
+                     WHERE rmi.tank_id = st.id
+                     AND rmi.status IN ('available', 'reserved')
+                     AND rmi.expiry_date >= CURDATE()) as usable_liters,
+                    (SELECT COALESCE(SUM(remaining_liters), 0)
+                     FROM raw_milk_inventory rmi
+                     WHERE rmi.tank_id = st.id
+                     AND rmi.status IN ('available', 'reserved')
+                     AND rmi.expiry_date < CURDATE()) as expired_liters,
                     (SELECT COUNT(*)
                      FROM raw_milk_inventory rmi
                      WHERE rmi.tank_id = st.id
                      AND rmi.status IN ('available', 'reserved')) as batch_count,
+                    (SELECT COUNT(*)
+                     FROM raw_milk_inventory rmi
+                     WHERE rmi.tank_id = st.id
+                     AND rmi.status IN ('available', 'reserved')
+                     AND rmi.remaining_liters > 0
+                     AND rmi.expiry_date < CURDATE()) as expired_batch_count,
                     (SELECT MIN(expiry_date)
                      FROM raw_milk_inventory rmi
                      WHERE rmi.tank_id = st.id
@@ -238,6 +361,7 @@ function handleGet($db, $currentUser) {
                 LEFT JOIN milk_types mt ON rmi.milk_type_id = mt.id
                 WHERE rmi.status IN ('available', 'reserved')
                 AND rmi.remaining_liters > 0
+                AND rmi.expiry_date >= CURDATE()
             ";
             $params = [];
 
@@ -303,6 +427,7 @@ function handleGet($db, $currentUser) {
                 LEFT JOIN milk_types mt ON rmi.milk_type_id = mt.id
                 WHERE rmi.status = 'available'
                 AND rmi.tank_id IS NULL
+                AND rmi.expiry_date >= CURDATE()
                 ORDER BY rmi.received_date ASC
             ");
             $stmt->execute();
@@ -378,6 +503,10 @@ function handlePost($db, $currentUser) {
 
                 if (isset($rawMilkData['remaining_liters']) && (float) $rawMilkData['remaining_liters'] <= 0) {
                     throw new Exception('Raw milk inventory has no remaining liters to store');
+                }
+
+                if (!empty($rawMilkData['expiry_date']) && $rawMilkData['expiry_date'] < date('Y-m-d')) {
+                    throw new Exception('Raw milk inventory has expired and cannot be assigned to a tank');
                 }
 
                 if (isset($rawMilkData['qc_status']) && $rawMilkData['qc_status'] !== 'approved') {
@@ -597,6 +726,7 @@ function handlePut($db, $currentUser) {
                     LEFT JOIN storage_tanks st ON rmi.tank_id = st.id
                     WHERE rmi.status IN ('available', 'reserved')
                     AND rmi.remaining_liters > 0
+                    AND rmi.expiry_date >= CURDATE()
                 ";
                 $params = [];
 
@@ -701,6 +831,29 @@ function handlePut($db, $currentUser) {
             }
             break;
 
+        case 'expire_tank_milk':
+            if (!in_array($currentUser['role'], ['warehouse_raw', 'general_manager'], true)) {
+                Response::error('Only Warehouse Raw or GM can clear expired milk from tanks', 403);
+            }
+            if (!$id) {
+                Response::error('Tank ID is required', 400);
+            }
+
+            $reason = getParam('reason', 'Expired raw milk removed from tank');
+
+            $db->beginTransaction();
+            try {
+                $result = expireTankMilkBatches($db, $id, $currentUser, $reason);
+                $db->commit();
+                Response::success($result, 'Expired milk cleared from tank');
+            } catch (Exception $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                Response::error($e->getMessage(), 400);
+            }
+            break;
+
         case 'transfer':
             // Transfer milk between tanks
             $fromTankId = getParam('from_tank_id');
@@ -750,11 +903,20 @@ function handlePut($db, $currentUser) {
                 // Get batches to transfer from raw_milk_inventory (FIFO)
                 $batches = $db->prepare("
                     SELECT * FROM raw_milk_inventory
-                    WHERE tank_id = ? AND status IN ('available', 'reserved')
+                    WHERE tank_id = ?
+                    AND status IN ('available', 'reserved')
+                    AND remaining_liters > 0
+                    AND expiry_date >= CURDATE()
                     ORDER BY expiry_date ASC, received_date ASC, id ASC
+                    FOR UPDATE
                 ");
                 $batches->execute([$fromTankId]);
                 $batchList = $batches->fetchAll();
+
+                $transferableLiters = array_sum(array_column($batchList, 'remaining_liters'));
+                if ($transferableLiters < $liters) {
+                    throw new Exception("Source tank has {$transferableLiters}L of non-expired milk available to transfer. Clear expired milk first if the tank volume is higher.");
+                }
 
                 $remainingToTransfer = $liters;
 

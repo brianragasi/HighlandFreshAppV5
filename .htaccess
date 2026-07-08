@@ -19,8 +19,14 @@ RewriteEngine On
 </IfModule>
 
 # Method 2: mod_headers
+# Only rewrite Authorization when the env var is actually populated.
+# Without the "env=" guard RequestHeader renders an unset %{...}e as the
+# literal string "(null)", which corrupts getallheaders() on mod_php
+# (local XAMPP) and makes every JWT-authenticated API call return 401.
+# Use %{HTTP_AUTHORIZATION}e (the env var set by Method 1/3), not the
+# request header %{Authorization}, which under FPM is the missing piece.
 <IfModule mod_headers.c>
-    RequestHeader set Authorization "%{Authorization}e" env=HTTP_AUTHORIZATION
+    RequestHeader set Authorization "%{HTTP_AUTHORIZATION}e" env=HTTP_AUTHORIZATION
 </IfModule>
 
 # Method 3: mod_rewrite (as a final fallback)

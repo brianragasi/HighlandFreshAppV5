@@ -247,7 +247,7 @@ function getWasteReports($db) {
 }
 
 function createWasteRecord($db, $currentUser) {
-    $data = getRequestBody();
+    $data = getParams();
     $itemType = $data['item_type'] ?? '';
     $itemId = (int)($data['item_id'] ?? 0);
     $batchId = (int)($data['batch_id'] ?? 0);

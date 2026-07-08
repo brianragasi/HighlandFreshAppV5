@@ -382,6 +382,14 @@
         let evidenceFile = null;
 
         const EVIDENCE_REQUIRED_REASONS = new Set(['damaged', 'contaminated', 'spoiled', 'handling_loss']);
+        const DEFAULT_REASON_DETAILS = {
+            expired: 'Expired batch removed from active inventory',
+            damaged: 'Damaged after receiving',
+            contaminated: 'Contamination observed during warehouse handling',
+            spoiled: 'Spoilage observed during warehouse inspection',
+            handling_loss: 'Handling loss recorded during warehouse operations',
+            other: ''
+        };
 
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -467,6 +475,8 @@
                 const hasBatchOption = Array.from(batchSelect.options).some(option => option.value === batchId);
                 if (hasBatchOption) {
                     batchSelect.value = batchId;
+                } else {
+                    showToast('The selected batch is no longer available for waste recording', 'error');
                 }
                 const selected = batchSelect.selectedOptions[0];
                 const maxQty = selected?.dataset?.max || '';
@@ -479,9 +489,9 @@
             const reasonCategory = params.get('reason_category');
             if (reasonCategory) {
                 document.getElementById('wasteReasonCategory').value = reasonCategory;
-                document.getElementById('wasteReason').value = reasonCategory === 'expired'
-                    ? 'Expired batch removed from active inventory'
-                    : '';
+                document.getElementById('wasteReason').value = params.get('reason')
+                    || DEFAULT_REASON_DETAILS[reasonCategory]
+                    || '';
             }
             updateEvidenceRequiredState();
 
@@ -497,7 +507,14 @@
             document.getElementById('wasteModal').showModal();
         }
 
-        document.getElementById('wasteReasonCategory').addEventListener('change', updateEvidenceRequiredState);
+        document.getElementById('wasteReasonCategory').addEventListener('change', () => {
+            const reasonCategory = document.getElementById('wasteReasonCategory').value;
+            const reasonInput = document.getElementById('wasteReason');
+            if (!reasonInput.value.trim()) {
+                reasonInput.value = DEFAULT_REASON_DETAILS[reasonCategory] || '';
+            }
+            updateEvidenceRequiredState();
+        });
 
         function updateEvidenceRequiredState() {
             const reason = document.getElementById('wasteReasonCategory').value;
@@ -543,11 +560,22 @@
 
         document.getElementById('wasteForm').addEventListener('submit', async (event) => {
             event.preventDefault();
+            const form = event.currentTarget;
+            if (!form.reportValidity()) return;
+
             const [itemType, itemId] = document.getElementById('wasteItem').value.split(':');
             const batchValue = document.getElementById('wasteBatch').value;
             const reasonCategory = document.getElementById('wasteReasonCategory').value;
+            const quantity = document.getElementById('wasteQuantity').value;
+            const reason = document.getElementById('wasteReason').value.trim();
             const btn = document.getElementById('saveWasteBtn');
             btn.disabled = true;
+
+            if (!itemType || !itemId || !batchValue || !quantity || parseFloat(quantity) <= 0 || !reason) {
+                showToast('Choose an item, batch, quantity, and reason before saving waste', 'error');
+                btn.disabled = false;
+                return;
+            }
 
             if (EVIDENCE_REQUIRED_REASONS.has(reasonCategory) && !evidenceFile) {
                 showToast('Photo evidence is required for damage / contamination / spoilage / handling loss', 'error');
@@ -560,10 +588,10 @@
                     item_type: itemType,
                     item_id: itemId,
                     batch_id: batchValue === 'item_level' ? null : batchValue,
-                    quantity: document.getElementById('wasteQuantity').value,
+                    quantity,
                     waste_date: document.getElementById('wasteDate').value,
                     reason_category: reasonCategory,
-                    reason: document.getElementById('wasteReason').value.trim()
+                    reason
                 };
                 if (evidenceFile) {
                     await WarehouseRawService.recordWasteWithEvidence(payload, evidenceFile);
