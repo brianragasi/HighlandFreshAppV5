@@ -88,19 +88,19 @@ function getDashboardStats($db) {
     
     // Low stock ingredients count
     $stmt = $db->query("
-        SELECT COUNT(*) as count 
-        FROM ingredients 
-        WHERE is_active = 1 
-        AND current_stock <= reorder_point
+        SELECT COUNT(*) as count
+        FROM ingredients
+        WHERE is_active = 1
+        AND current_stock <= " . StockRule::lowThresholdSql('reorder_point', 'minimum_stock') . "
     ");
     $stats['low_stock_ingredients'] = (int) $stmt->fetch()['count'];
-    
+
     // Low stock MRO items count
     $stmt = $db->query("
-        SELECT COUNT(*) as count 
-        FROM mro_items 
-        WHERE is_active = 1 
-        AND current_stock <= minimum_stock
+        SELECT COUNT(*) as count
+        FROM mro_items
+        WHERE is_active = 1
+        AND current_stock <= " . StockRule::lowThresholdSql('reorder_point', 'minimum_stock') . "
     ");
     $stats['low_stock_mro'] = (int) $stmt->fetch()['count'];
     
@@ -125,9 +125,12 @@ function getDashboardStats($db) {
 }
 
 function getLowStockAlerts($db) {
-    // Get ingredients below reorder point
+    // Get ingredients at/below reorder point (LOW or OUT_OF_STOCK). Uses the
+    // shared StockRule so the threshold matches every other surface instead
+    // of the old per-tier critical/low/reorder breakdown.
+    $ingThreshold = StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock');
     $stmt = $db->query("
-        SELECT 
+        SELECT
             i.id,
             i.ingredient_code,
             i.ingredient_name,
@@ -139,53 +142,45 @@ function getLowStockAlerts($db) {
             i.unit_cost,
             ic.category_name,
             'ingredient' as item_type,
-            CASE 
-                WHEN i.current_stock <= 0 THEN 'critical'
-                WHEN i.current_stock <= i.minimum_stock THEN 'low'
-                WHEN i.current_stock <= i.reorder_point THEN 'reorder'
-                ELSE 'ok'
-            END as stock_status
+            " . StockRule::statusCaseSql('i.current_stock', 'i.reorder_point', 'i.minimum_stock') . " as stock_status
         FROM ingredients i
         LEFT JOIN ingredient_categories ic ON i.category_id = ic.id
-        WHERE i.is_active = 1 
-        AND i.current_stock <= i.reorder_point
-        ORDER BY 
-            CASE 
+        WHERE i.is_active = 1
+        AND i.current_stock <= {$ingThreshold}
+        ORDER BY
+            CASE
                 WHEN i.current_stock <= 0 THEN 1
-                WHEN i.current_stock <= i.minimum_stock THEN 2
-                ELSE 3
+                ELSE 2
             END,
             i.ingredient_name ASC
     ");
     $ingredients = $stmt->fetchAll();
-    
-    // Get MRO items below minimum stock
+
+    // Get MRO items LOW or OUT_OF_STOCK. MRO's reorder_point is usually NULL,
+    // so the rule falls back to minimum_stock — consistent with ingredients.
+    $mroThreshold = StockRule::lowThresholdSql('m.reorder_point', 'm.minimum_stock');
     $stmtMro = $db->query("
-        SELECT 
+        SELECT
             m.id,
             m.item_code,
             m.item_name,
             m.unit_of_measure,
             m.current_stock,
-            m.minimum_stock as reorder_point,
+            m.reorder_point,
             m.minimum_stock,
             m.lead_time_days,
             m.unit_cost,
             mc.category_name,
             'mro' as item_type,
-            CASE 
-                WHEN m.current_stock <= 0 THEN 'critical'
-                WHEN m.current_stock <= m.minimum_stock THEN 'low'
-                ELSE 'ok'
-            END as stock_status
+            " . StockRule::statusCaseSql('m.current_stock', 'm.reorder_point', 'm.minimum_stock') . " as stock_status
         FROM mro_items m
         LEFT JOIN mro_categories mc ON m.category_id = mc.id
-        WHERE m.is_active = 1 
-        AND m.current_stock <= m.minimum_stock
+        WHERE m.is_active = 1
+        AND m.current_stock <= {$mroThreshold}
         ORDER BY m.current_stock ASC
     ");
     $mroItems = $stmtMro->fetchAll();
-    
+
     $allAlerts = array_merge($ingredients, $mroItems);
     
     Response::success($allAlerts, 'Low stock alerts retrieved');

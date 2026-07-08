@@ -14,6 +14,7 @@
  */
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
+require_once __DIR__ . '/mro_stock_helpers.php';
 
 // Require appropriate roles
 $currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'maintenance_head', 'purchaser']);
@@ -69,14 +70,19 @@ function handleGet($db, $currentUser) {
                 SELECT 
                     m.*,
                     mc.category_name,
-                    CASE 
+                    CASE
                         WHEN m.current_stock <= 0 THEN 'out_of_stock'
-                        WHEN m.current_stock <= m.minimum_stock THEN 'low_stock'
+                        WHEN m.current_stock <= " . StockRule::lowThresholdSql('m.reorder_point', 'm.minimum_stock') . " THEN 'low_stock'
                         ELSE 'ok'
                     END as stock_status,
-                    (SELECT COUNT(*) FROM mro_inventory mi 
-                     WHERE mi.mro_item_id = m.id 
-                     AND mi.status IN ('available', 'partially_used')) as batch_count
+                    (SELECT COUNT(*) FROM mro_inventory mi
+                     WHERE mi.mro_item_id = m.id
+                     AND mi.remaining_quantity > 0
+                     AND mi.status IN ('available', 'partially_used')) as batch_count,
+                    (SELECT COALESCE(SUM(mi.remaining_quantity), 0) FROM mro_inventory mi
+                     WHERE mi.mro_item_id = m.id
+                     AND mi.remaining_quantity > 0
+                     AND mi.status IN ('available', 'partially_used')) as batch_stock
                 FROM mro_items m
                 LEFT JOIN mro_categories mc ON m.category_id = mc.id
                 WHERE m.is_active = 1
@@ -89,7 +95,7 @@ function handleGet($db, $currentUser) {
             }
             
             if ($lowStockOnly) {
-                $sql .= " AND m.current_stock <= m.minimum_stock";
+                $sql .= " AND m.current_stock <= " . StockRule::lowThresholdSql('m.reorder_point', 'm.minimum_stock');
             }
             
             if ($criticalOnly) {
@@ -140,10 +146,17 @@ function handleGet($db, $currentUser) {
                 JOIN users u ON mi.received_by = u.id
                 WHERE mi.mro_item_id = ?
                 AND mi.status IN ('available', 'partially_used')
+                AND mi.remaining_quantity > 0
                 ORDER BY mi.received_date ASC, mi.id ASC
             ");
             $batches->execute([$id]);
             $batchList = $batches->fetchAll();
+            $batchStock = array_reduce($batchList, function ($sum, $batch) {
+                return $sum + (float) ($batch['remaining_quantity'] ?? 0);
+            }, 0.0);
+            $itemData['batch_stock'] = $batchStock;
+            $itemData['stock_variance'] = round(((float) ($itemData['current_stock'] ?? 0)) - $batchStock, 3);
+            $itemData['batch_count'] = count($batchList);
             
             // Get recent transactions
             $transactions = $db->prepare("
@@ -188,16 +201,16 @@ function handleGet($db, $currentUser) {
                 SELECT 
                     m.*,
                     mc.category_name,
-                    CASE 
+                    CASE
                         WHEN m.current_stock <= 0 THEN 'out_of_stock'
-                        WHEN m.current_stock <= m.minimum_stock THEN 'low_stock'
+                        WHEN m.current_stock <= " . StockRule::lowThresholdSql('m.reorder_point', 'm.minimum_stock') . " THEN 'low_stock'
                         ELSE 'ok'
                     END as stock_status
                 FROM mro_items m
                 LEFT JOIN mro_categories mc ON m.category_id = mc.id
-                WHERE m.is_active = 1 
+                WHERE m.is_active = 1
                 AND m.is_critical = 1
-                AND m.current_stock <= m.minimum_stock
+                AND m.current_stock <= " . StockRule::lowThresholdSql('m.reorder_point', 'm.minimum_stock') . "
                 ORDER BY m.current_stock ASC
             ");
             $stmt->execute();
@@ -308,13 +321,15 @@ function handlePut($db, $currentUser) {
             
             try {
                 // Get item info
-                $item = $db->prepare("SELECT * FROM mro_items WHERE id = ? AND is_active = 1");
+                $item = $db->prepare("SELECT * FROM mro_items WHERE id = ? AND is_active = 1 FOR UPDATE");
                 $item->execute([$mroItemId]);
                 $itemData = $item->fetch();
                 
                 if (!$itemData) {
                     throw new Exception('MRO item not found');
                 }
+
+                ensureMROBatchesForIssue($db, $itemData, $quantity, $currentUser);
                 
                 // Get available inventory (FIFO)
                 $inventory = $db->prepare("
@@ -323,6 +338,7 @@ function handlePut($db, $currentUser) {
                     AND status IN ('available', 'partially_used')
                     AND remaining_quantity > 0
                     ORDER BY received_date ASC, id ASC
+                    FOR UPDATE
                 ");
                 $inventory->execute([$mroItemId]);
                 $inventoryList = $inventory->fetchAll();
@@ -403,7 +419,46 @@ function handlePut($db, $currentUser) {
                 Response::error($e->getMessage(), 400);
             }
             break;
-            
+
+        case 'repair_batches':
+            if (!in_array($currentUser['role'], ['warehouse_raw', 'general_manager'])) {
+                Response::error('Only Warehouse Raw or GM can repair stock records', 403);
+            }
+
+            $mroItemId = getParam('mro_item_id');
+            if (!$mroItemId) {
+                Response::error('MRO Item ID is required', 400);
+            }
+
+            try {
+                $db->beginTransaction();
+
+                $item = $db->prepare("SELECT * FROM mro_items WHERE id = ? AND is_active = 1 FOR UPDATE");
+                $item->execute([$mroItemId]);
+                $itemData = $item->fetch();
+
+                if (!$itemData) {
+                    throw new Exception('MRO item not found');
+                }
+
+                $repair = repairMROSummaryToInventory($db, $itemData, $currentUser);
+
+                if (!$repair) {
+                    $batchStock = getUsableMROBatchStock($db, $mroItemId);
+                    throw new Exception("No missing FIFO batch to repair. Stock on file: {$itemData['current_stock']}, FIFO stock: {$batchStock}");
+                }
+
+                $db->commit();
+
+                Response::success($repair, 'Missing FIFO batch repaired');
+            } catch (Throwable $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                Response::error($e->getMessage(), 400);
+            }
+            break;
+
         case 'adjust':
             // Adjust stock (physical count correction)
             if (!in_array($currentUser['role'], ['warehouse_raw', 'general_manager'])) {

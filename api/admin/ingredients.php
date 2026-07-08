@@ -172,10 +172,10 @@ function getCategories($conn) {
 function getLowStockIngredients($conn) {
     $stmt = $conn->query("
         SELECT i.*, c.category_name
-        FROM ingredients i 
+        FROM ingredients i
         LEFT JOIN ingredient_categories c ON i.category_id = c.id
-        WHERE i.current_stock <= i.reorder_point AND i.is_active = 1
-        ORDER BY (i.current_stock / NULLIF(i.reorder_point, 0)) ASC
+        WHERE i.current_stock <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . " AND i.is_active = 1
+        ORDER BY (i.current_stock / NULLIF(" . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . ", 0)) ASC
     ");
     $ingredients = $stmt->fetchAll(PDO::FETCH_ASSOC);
     sendSuccess(['ingredients' => $ingredients]);
@@ -196,7 +196,7 @@ function getIngredientStatistics($conn) {
     $stats['active'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
     
     // Low stock count
-    $stmt = $conn->query("SELECT COUNT(*) as count FROM ingredients WHERE current_stock <= reorder_point AND is_active = 1");
+    $stmt = $conn->query("SELECT COUNT(*) as count FROM ingredients WHERE current_stock <= " . StockRule::lowThresholdSql('reorder_point', 'minimum_stock') . " AND is_active = 1");
     $stats['low_stock'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
     
     // By category

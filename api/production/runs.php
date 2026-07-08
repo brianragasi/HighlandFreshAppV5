@@ -271,7 +271,7 @@ function validateIssuedIngredientsForRun($db, $recipeId, $plannedQuantity, $ingr
             'available_before_run' => $available
         ];
 
-        if ($needed > $available) {
+        if ($needed > $available + 0.01) {
             $errors[] = "{$ingredient['ingredient_name']}: need {$needed} {$ingredient['unit']}, available " . round($available, 3) . " {$ingredient['unit']}";
         }
     }
@@ -615,7 +615,7 @@ try {
         case 'POST':
             // Create new production run
             $recipeId = getParam('recipe_id');
-            $plannedQuantity = (int) getParam('planned_quantity', 0);
+            $plannedQuantity = (float) getParam('planned_quantity', 0);
             $milkLitersUsed = getParam('milk_liters_used');
             $notes = trim(getParam('notes', ''));
             $pasteurizedMilkBatchId = getParam('pasteurized_milk_batch_id'); // For yogurt
@@ -754,7 +754,7 @@ try {
                 
                 if (empty($pasteurizedBatches)) {
                     $errors['milk_source'] = '⚠️ YOGURT requires PASTEURIZED MILK. No pasteurized milk available. Please run pasteurization first.';
-                } else if ($totalAvailableLiters < $requiredMilkLiters) {
+                } else if ($totalAvailableLiters < $requiredMilkLiters - 0.01) {
                     $errors['milk_source'] = "⚠️ Not enough PASTEURIZED milk. Required: {$requiredMilkLiters}L, Available: {$totalAvailableLiters}L. Please pasteurize more milk.";
                 } else {
                     // Auto-select batch (FIFO - oldest first)
@@ -771,7 +771,7 @@ try {
                 
                 if ($totalAvailableLiters <= 0) {
                     $errors['milk_source'] = 'No usable issued milk available. Submit a requisition to Warehouse Raw or wait for fresh issued milk.';
-                } else if ($totalAvailableLiters < $requiredMilkLiters) {
+                } else if ($totalAvailableLiters < $requiredMilkLiters - 0.01) {
                     $errors['milk_source'] = "Not enough usable issued milk. Required: {$requiredMilkLiters}L, Available: {$totalAvailableLiters}L. Please submit a requisition for more fresh milk.";
                 }
             }

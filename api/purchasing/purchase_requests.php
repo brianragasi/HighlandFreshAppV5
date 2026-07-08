@@ -343,6 +343,78 @@ function handleGet($db, $action, $currentUser) {
             Response::success($requests, 'Approved PRs for PO creation');
             break;
 
+        case 'requested_items':
+            requireActionRole($currentUser, ['warehouse_raw', 'general_manager'], 'Only Warehouse Raw staff can view requested PR items');
+
+            $where = "pr.department = 'warehouse_raw'";
+            $params = [];
+
+            if ($currentUser['role'] === 'warehouse_raw') {
+                $where .= " AND pr.requested_by = ?";
+                $params[] = $currentUser['user_id'];
+            }
+
+            $stmt = $db->prepare("
+                SELECT
+                    pri.id AS item_row_id,
+                    pri.purchase_request_id AS pr_id,
+                    pr.pr_number,
+                    pr.status,
+                    pr.priority,
+                    pr.created_at,
+                    pr.needed_by_date,
+                    pr.purpose AS pr_purpose,
+                    pri.item_description,
+                    pri.quantity,
+                    pri.unit,
+                    pri.purpose AS item_purpose,
+                    pri.notes,
+                    pri.ingredient_id,
+                    pri.mro_item_id,
+                    i.ingredient_code,
+                    m.item_code AS mro_item_code,
+                    (SELECT COUNT(*) FROM purchase_orders po WHERE po.purchase_request_id = pr.id AND po.status != 'cancelled') AS po_count
+                FROM purchase_request_items pri
+                JOIN purchase_requests pr ON pr.id = pri.purchase_request_id
+                LEFT JOIN ingredients i ON pri.ingredient_id = i.id
+                LEFT JOIN mro_items m ON pri.mro_item_id = m.id
+                WHERE {$where}
+                ORDER BY
+                    CASE pr.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 WHEN 'converted' THEN 2 WHEN 'draft' THEN 3 ELSE 4 END,
+                    pr.created_at DESC,
+                    pri.id ASC
+            ");
+            $stmt->execute($params);
+
+            Response::success($stmt->fetchAll(), 'Requested PR items retrieved');
+            break;
+
+        case 'pending_item_refs':
+            requireActionRole($currentUser, ['warehouse_raw', 'general_manager'], 'Only Warehouse Raw staff can view pending PR item references');
+
+            $stmt = $db->query("
+                SELECT
+                    CASE
+                        WHEN pri.ingredient_id IS NOT NULL THEN 'ingredient'
+                        WHEN pri.mro_item_id IS NOT NULL THEN 'mro'
+                        ELSE 'unknown'
+                    END AS item_type,
+                    COALESCE(pri.ingredient_id, pri.mro_item_id) AS item_id,
+                    pr.id AS pr_id,
+                    pr.pr_number,
+                    pr.status,
+                    pr.created_at
+                FROM purchase_requests pr
+                JOIN purchase_request_items pri ON pri.purchase_request_id = pr.id
+                WHERE pr.department = 'warehouse_raw'
+                  AND pr.status = 'pending'
+                  AND (pri.ingredient_id IS NOT NULL OR pri.mro_item_id IS NOT NULL)
+                ORDER BY pr.created_at DESC, pr.id DESC
+            ");
+
+            Response::success($stmt->fetchAll(), 'Pending PR item references retrieved');
+            break;
+
         default:
             Response::error('Invalid action', 400);
     }

@@ -1053,6 +1053,7 @@
     <script src="../../../js/vendor/axios.min.js"></script>
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/ui/dialogs.js"></script>
     <script src="../../../js/warehouse/raw.service.js"></script>
     <script src="../../../js/warehouse/sidebar.stats.js"></script>
     <script>
@@ -1190,14 +1191,22 @@
             }
         }
 
+        // LOW rule (shared with backend StockRule): LOW when current_stock <=
+        // COALESCE(reorder_point, minimum_stock * 1.5). MRO's reorder_point is
+        // usually NULL, so this falls back to minimum_stock * 1.5 — consistent
+        // with the warehouse ingredients page and Reorder Alerts.
+        const lowStockReorderOf = (i) => {
+            const r = parseFloat(i.reorder_point);
+            const m = parseFloat(i.minimum_stock) || 0;
+            return (Number.isFinite(r) && r > 0) ? r : (m * 1.5);
+        };
+
         function updateStats() {
             const total = mroItems.length;
-            const inStock = mroItems.filter(i => parseFloat(i.current_stock) > parseFloat(i.minimum_stock)).length;
+            const inStock = mroItems.filter(i => parseFloat(i.current_stock) > lowStockReorderOf(i)).length;
             const lowStock = mroItems.filter(i => {
                 const stock = parseFloat(i.current_stock);
-                const min = parseFloat(i.minimum_stock);
-                const reorder = parseFloat(i.reorder_point || min * 1.5);
-                return stock > 0 && stock <= reorder;
+                return stock > 0 && stock <= lowStockReorderOf(i);
             }).length;
             const critical = mroItems.filter(i => i.is_critical == 1 && parseFloat(i.current_stock) <= parseFloat(i.minimum_stock)).length;
 
@@ -1299,19 +1308,21 @@
             tbody.innerHTML = filtered.map(item => {
                 const stock = parseFloat(item.current_stock) || 0;
                 const min = parseFloat(item.minimum_stock) || 0;
-                const max = parseFloat(item.maximum_stock || min * 3) || 1;
-                const stockPercent = Math.min(100, (stock / max) * 100);
+                const reorder = lowStockReorderOf(item);
+                const maxRaw = parseFloat(item.maximum_stock);
+                const max = (Number.isFinite(maxRaw) && maxRaw > 0) ? maxRaw : (reorder * 2);
+                const stockPercent = Math.min(100, (stock / Math.max(max, 1)) * 100);
 
                 // Status row style + label. The status column reflects
                 // *current stock state* only — the separate "critical item"
                 // flag from the catalog is shown as a small shield icon next
                 // to the item name (see below) so the two signals don't
-                // read as contradictory. Below minimum and below reorder are
-                // both "Low Stock" — the single low-inventory tier.
+                // read as contradictory. LOW = at/below reorder_point (with
+                // minimum_stock * 1.5 fallback).
                 let statusText, statusBadge, statusDot, barColor;
-                if (stock <= 0)              { statusText = 'Out'; statusBadge = 'badge-ghost';   statusDot = 'bg-base-300'; barColor = 'bg-base-300'; }
-                else if (stock <= min * 1.5) { statusText = 'Low'; statusBadge = 'badge-warning'; statusDot = 'bg-warning';  barColor = 'bg-warning'; }
-                else                         { statusText = 'OK';  statusBadge = 'badge-success'; statusDot = 'bg-success';  barColor = 'bg-success'; }
+                if (stock <= 0)        { statusText = 'Out'; statusBadge = 'badge-ghost';   statusDot = 'bg-base-300'; barColor = 'bg-base-300'; }
+                else if (stock <= reorder) { statusText = 'Low'; statusBadge = 'badge-warning'; statusDot = 'bg-warning';  barColor = 'bg-warning'; }
+                else                   { statusText = 'OK';  statusBadge = 'badge-success'; statusDot = 'bg-success';  barColor = 'bg-success'; }
 
                 const slug = item.category_slug || 'tools';
                 const avatarColor = catColors[slug] || catColors.tools;
@@ -1406,17 +1417,24 @@
         function renderDetailModal(item) {
             const stock = parseFloat(item.current_stock) || 0;
             const min = parseFloat(item.minimum_stock) || 0;
-            const max = parseFloat(item.maximum_stock || min * 3) || 1;
-            const reorder = parseFloat(item.reorder_point || (min * 1.5));
+            const reorder = lowStockReorderOf(item);
+            const maxRaw = parseFloat(item.maximum_stock);
+            const max = (Number.isFinite(maxRaw) && maxRaw > 0) ? maxRaw : (reorder * 2);
             const unit = item.unit_of_measure || '';
             const inventory = item.inventory || [];
+            const batchStockRaw = parseFloat(item.batch_stock);
+            const batchStock = Number.isFinite(batchStockRaw)
+                ? batchStockRaw
+                : inventory.reduce((sum, inv) => sum + (parseFloat(inv.remaining_quantity || 0) || 0), 0);
+            const variance = stock - batchStock;
+            const hasStockVariance = Math.abs(variance) > 0.0005;
 
             // Stock status
-            const stockPct = Math.min(100, (stock / max) * 100);
+            const stockPct = Math.min(100, (stock / Math.max(max, 1)) * 100);
             let stockColor = 'bg-success';
             if (stock <= 0) stockColor = 'bg-base-300';
             else if (stock <= min) stockColor = 'bg-error';
-            else if (stock <= min * 1.5) stockColor = 'bg-warning';
+            else if (stock <= reorder) stockColor = 'bg-warning';
 
             const categoryIcons = {
                 'spare_parts': 'fa-cogs', 'tools': 'fa-wrench', 'safety': 'fa-hard-hat',
@@ -1428,13 +1446,12 @@
             const criticalBadge = item.is_critical == 1
                 ? '<span class="badge badge-error badge-outline badge-sm gap-1"><i class="fas fa-exclamation"></i> CRITICAL ITEM</span>'
                 : '';
-            // Stock-status badge. Below minimum and below reorder are both
-            // "Low Stock" — the single low-inventory tier. (The separate
-            // is_critical flag below is a per-item criticality marker, not a
-            // stock tier.)
+            // Stock-status badge. LOW = at/below reorder_point (with
+            // minimum_stock * 1.5 fallback). The separate is_critical flag
+            // is a per-item criticality marker, not a stock tier.
             const stockBadge = stock <= 0
                 ? '<span class="badge badge-ghost badge-sm">Out of Stock</span>'
-                : (stock <= min * 1.5 ? '<span class="badge badge-warning badge-sm">Low Stock</span>'
+                : (stock <= reorder ? '<span class="badge badge-warning badge-sm">Low Stock</span>'
                 : '<span class="badge badge-success badge-sm">In Stock</span>');
 
             const heroHtml = `
@@ -1472,25 +1489,36 @@
                             </p>
                         </div>
                         <div class="flex-shrink-0 text-right">
-                            <p class="inventory-qty">${parseInt(inv.remaining_quantity || 0).toLocaleString()} <span class="text-xs font-normal text-base-content/60">${unit}</span></p>
+                            <p class="inventory-qty">${(parseFloat(inv.remaining_quantity || 0) || 0).toLocaleString()} <span class="text-xs font-normal text-base-content/60">${unit}</span></p>
                             ${inv.unit_cost ? `<p class="inventory-cost">@ ${formatCurrency(inv.unit_cost)}</p>` : ''}
                         </div>
                     </div>
                 `).join('');
             }
 
+            const varianceBanner = hasStockVariance ? `
+                <div class="alert alert-warning mb-4 py-2">
+                    <i class="fas fa-triangle-exclamation"></i>
+                    <span>
+                        Stock records do not match: the item file says ${stock.toLocaleString()} ${unit}, but FIFO batches add up to ${batchStock.toLocaleString()} ${unit}.
+                        Check the physical count or add the missing batch record before issuing this stock.
+                    </span>
+                </div>
+            ` : '';
+
             document.getElementById('detailModalTitle').textContent = item.item_name || item.name || 'MRO Item';
             document.getElementById('detailModalBody').innerHTML = `
                 ${heroHtml}
+                ${varianceBanner}
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                     <div class="detail-stat">
-                        <p class="detail-stat-label">Current Stock</p>
+                        <p class="detail-stat-label">Stock on File</p>
                         <p class="detail-stat-value detail-stat-value--xl">${stock.toLocaleString()}</p>
                         <p class="text-xs text-base-content/55 mt-0.5">${unit}</p>
                     </div>
                     <div class="detail-stat">
-                        <p class="detail-stat-label">Minimum</p>
-                        <p class="detail-stat-value">${min.toLocaleString()}</p>
+                        <p class="detail-stat-label">FIFO Stock</p>
+                        <p class="detail-stat-value">${batchStock.toLocaleString()}</p>
                         <p class="text-xs text-base-content/55 mt-0.5">${unit}</p>
                     </div>
                     <div class="detail-stat">
@@ -1537,11 +1565,17 @@
             `;
 
             const escapedName = (item.item_name || item.name || '').replace(/'/g, "\\'");
+            const canRepairStock = variance > 0.0005 && ['warehouse_raw', 'general_manager'].includes(AuthService.getCurrentUser()?.role || '');
 
             document.getElementById('detailModalFooter').innerHTML = `
                 <button class="btn-pro btn-pro--ghost" onclick="document.getElementById('detailModal').close()">
                     <i class="fas fa-xmark"></i> Close
                 </button>
+                ${canRepairStock ? `
+                <button class="btn-pro btn-pro--warning" onclick="repairMROStockRecords(${item.id})">
+                    <i class="fas fa-screwdriver-wrench"></i> Fix FIFO Batch
+                </button>
+                ` : ''}
                 <button class="btn-pro btn-pro--info" onclick="openAdjustModal(${item.id}, '${escapedName}', ${stock}, '${unit}')">
                     <i class="fas fa-pen-to-square"></i> Adjust
                 </button>
@@ -1549,6 +1583,28 @@
                     <i class="fas fa-arrow-up"></i> Issue Stock
                 </button>
             `;
+        }
+
+        async function repairMROStockRecords(id) {
+            const confirmed = await AppDialogs.confirm({
+                title: 'Fix FIFO Batch',
+                message: 'Create a FIFO adjustment batch for the stock already on file?',
+                confirmText: 'Create Batch',
+                variant: 'warning',
+                icon: 'fa-screwdriver-wrench'
+            });
+            if (!confirmed) return;
+            try {
+                const res = await api.put('/warehouse/raw/mro.php', {
+                    action: 'repair_batches',
+                    mro_item_id: id
+                });
+                showToast(res?.message || 'FIFO batch fixed', 'success');
+                await loadMROItems();
+                await openDetailModal(id);
+            } catch (e) {
+                showToast(e?.response?.data?.message || e?.message || 'Failed to fix FIFO batch', 'error');
+            }
         }
 
 
