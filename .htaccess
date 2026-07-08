@@ -36,6 +36,11 @@ RewriteEngine On
 </IfModule>
 
 # Redirect to HTTPS
+# InfinityFree uses a reverse proxy — Apache sees HTTPS as "off" even when
+# the client connected via HTTPS. Check X-Forwarded-Proto first (set by the
+# proxy), falling back to the native %{HTTPS} for hosts that terminate SSL
+# at Apache (e.g. local XAMPP with SSL, Azure).
+RewriteCond %{HTTP:X-Forwarded-Proto} !https
 RewriteCond %{HTTPS} off
 RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
