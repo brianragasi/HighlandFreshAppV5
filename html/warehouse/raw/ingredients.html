@@ -855,7 +855,6 @@
                                 <option value="">All Stock Levels</option>
                                 <option value="ok">In Stock</option>
                                 <option value="low">Low Stock</option>
-                                <option value="critical">Critical</option>
                                 <option value="out">Out of Stock</option>
                             </select>
                             <select class="select select-bordered select-sm w-full md:w-40" id="sortBy">
@@ -1261,6 +1260,7 @@
     <script src="../../../js/vendor/axios.min.js"></script>
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/ui/dialogs.js"></script>
     <script src="../../../js/warehouse/raw.service.js"></script>
     <script src="../../../js/warehouse/sidebar.stats.js"></script>
 
@@ -1461,10 +1461,20 @@
             }
         }
 
+        // LOW rule (shared with backend StockRule): LOW when current_stock <=
+        // COALESCE(reorder_point, minimum_stock * 1.5). Used by the stats
+        // card, the filter dropdown, and the per-row badge so the page agrees
+        // with the Reorder Alerts page and the dashboards.
+        const lowStockReorderOf = (i) => {
+            const r = parseFloat(i.reorder_point);
+            const m = parseFloat(i.minimum_stock) || 0;
+            return (Number.isFinite(r) && r > 0) ? r : (m * 1.5);
+        };
+
         function updateStats() {
             const total = ingredients.length;
-            const inStock = ingredients.filter(i => parseFloat(i.current_stock) > parseFloat(i.minimum_stock)).length;
-            const lowStock = ingredients.filter(i => { const s = parseFloat(i.current_stock), m = parseFloat(i.minimum_stock); return s > 0 && s <= m; }).length;
+            const inStock = ingredients.filter(i => parseFloat(i.current_stock) > lowStockReorderOf(i)).length;
+            const lowStock = ingredients.filter(i => { const s = parseFloat(i.current_stock); return s > 0 && s <= lowStockReorderOf(i); }).length;
             const expiring = ingredients.filter(i => i.nearest_expiry && daysUntil(i.nearest_expiry) <= 7 && daysUntil(i.nearest_expiry) >= 0).length;
 
             document.getElementById('totalIngredients').textContent = total;
@@ -1534,26 +1544,25 @@
             }
             if (currentFilter.stock) {
                 filtered = filtered.filter(i => {
-                    const stock = parseFloat(i.current_stock), min = parseFloat(i.minimum_stock), reorder = min * 1.5;
+                    const stock = parseFloat(i.current_stock);
+                    const reorder = lowStockReorderOf(i);
                     switch (currentFilter.stock) {
                         case 'ok': return stock > reorder;
                         case 'low': return stock > 0 && stock <= reorder;
-                        case 'critical': return stock > 0 && stock <= min;
                         case 'out': return stock <= 0;
                         default: return true;
                     }
                 });
             }
 
-            // Sort. We compute a numeric "rank" per status (Out=0, Critical=1,
-            // Low=2, OK=3) so sorting by Status puts the urgent ones first when
-            // asc, OK ones last.
+            // Sort. We compute a numeric "rank" per status (Out=0, Low=1, OK=2)
+            // so sorting by Status puts the urgent ones first when asc, OK ones
+            // last. Below minimum and below reorder are both Low Stock.
             const statusRank = (i) => {
                 const stock = parseFloat(i.current_stock), min = parseFloat(i.minimum_stock);
                 if (stock <= 0) return 0;
-                if (stock <= min) return 1;
-                if (stock <= min * 1.5) return 2;
-                return 3;
+                if (stock <= min * 1.5) return 1;
+                return 2;
             };
             const expiryTime = (i) => i.nearest_expiry ? new Date(i.nearest_expiry).getTime() : Number.POSITIVE_INFINITY;
             const stockNum = (i) => parseFloat(i.current_stock) || 0;
@@ -1600,16 +1609,20 @@
             tbody.innerHTML = filtered.map(ing => {
                 const stock = parseFloat(ing.current_stock) || 0;
                 const min = parseFloat(ing.minimum_stock) || 0;
-                const max = parseFloat(ing.maximum_stock) || min * 3 || 1;
+                const reorderRaw = parseFloat(ing.reorder_point);
+                const reorder = (Number.isFinite(reorderRaw) && reorderRaw > 0) ? reorderRaw : (min * 1.5);
+                const maxRaw = parseFloat(ing.maximum_stock);
+                const max = (Number.isFinite(maxRaw) && maxRaw > 0) ? maxRaw : (reorder * 2);
                 const unit = ing.unit_of_measure || 'units';
-                const pct = Math.min(100, (stock / max) * 100);
+                const pct = Math.min(100, (stock / Math.max(max, 1)) * 100);
 
-                // Status row style + label
+                // Status row style + label. Par-level denominator for the bar
+                // uses maximum_stock if set, else 2x the reorder threshold
+                // (reorder_point, falling back to minimum_stock * 1.5).
                 let statusText, statusBadge, statusDot, barColor;
-                if (stock <= 0)         { statusText = 'Out';      statusBadge = 'badge-ghost';   statusDot = 'bg-base-300';   barColor = 'bg-base-300'; }
-                else if (stock <= min)  { statusText = 'Critical'; statusBadge = 'badge-error';   statusDot = 'bg-error';      barColor = 'bg-error'; }
-                else if (stock <= min * 1.5) { statusText = 'Low'; statusBadge = 'badge-warning';  statusDot = 'bg-warning';    barColor = 'bg-warning'; }
-                else                    { statusText = 'OK';       statusBadge = 'badge-success';  statusDot = 'bg-success';    barColor = 'bg-success'; }
+                if (stock <= 0)        { statusText = 'Out'; statusBadge = 'badge-ghost';   statusDot = 'bg-base-300'; barColor = 'bg-base-300'; }
+                else if (stock <= reorder) { statusText = 'Low'; statusBadge = 'badge-warning'; statusDot = 'bg-warning';  barColor = 'bg-warning'; }
+                else                   { statusText = 'OK';  statusBadge = 'badge-success'; statusDot = 'bg-success';  barColor = 'bg-success'; }
 
                 const slug = ing.category_slug || 'additive';
                 const avatarColor = catColors[slug] || catColors.additive;
@@ -1711,15 +1724,24 @@
             const stock = parseFloat(ing.current_stock) || 0;
             const unit = ing.unit_of_measure || 'units';
             const minStock = parseFloat(ing.minimum_stock) || 0;
-            const maxStock = parseFloat(ing.maximum_stock) || minStock * 3;
+            const reorderRaw = parseFloat(ing.reorder_point);
+            const reorder = (Number.isFinite(reorderRaw) && reorderRaw > 0) ? reorderRaw : (minStock * 1.5);
+            const maxRaw = parseFloat(ing.maximum_stock);
+            const maxStock = (Number.isFinite(maxRaw) && maxRaw > 0) ? maxRaw : (reorder * 2);
             const batches = ing.batches || [];
+            const batchStockRaw = parseFloat(ing.batch_stock);
+            const batchStock = Number.isFinite(batchStockRaw)
+                ? batchStockRaw
+                : batches.reduce((sum, b) => sum + (parseFloat(b.remaining_quantity || b.quantity_remaining) || 0), 0);
+            const variance = stock - batchStock;
+            const hasStockVariance = Math.abs(variance) > 0.0005;
 
             // Stock status for hero bar
             const stockPct = maxStock > 0 ? Math.min(100, (stock / maxStock) * 100) : 0;
             let stockColor = 'bg-success';
             if (stock <= 0) stockColor = 'bg-base-300';
             else if (stock <= minStock) stockColor = 'bg-error';
-            else if (stock <= minStock * 1.5) stockColor = 'bg-warning';
+            else if (stock <= reorder) stockColor = 'bg-warning';
 
             // Pick an icon for the hero
             const catSlug = ing.category_slug || 'additive';
@@ -1782,19 +1804,29 @@
             }).join('') : '<div class="pro-empty"><i class="fas fa-layer-group"></i><p>No batches in stock</p></div>';
 
             const reorderPoint = ing.reorder_point || (minStock * 1.5).toFixed(1);
+            const varianceBanner = hasStockVariance ? `
+                <div class="alert alert-warning mb-4 py-2">
+                    <i class="fas fa-triangle-exclamation"></i>
+                    <span>
+                        Stock records do not match: the item file says ${stock.toLocaleString()} ${unit}, but FIFO batches add up to ${batchStock.toLocaleString()} ${unit}.
+                        Check the physical count or add the missing batch record before issuing this stock.
+                    </span>
+                </div>
+            ` : '';
 
             document.getElementById('detailModalTitle').textContent = name;
             document.getElementById('detailModalBody').innerHTML = `
                 ${heroHtml}
+                ${varianceBanner}
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                     <div class="detail-stat">
-                        <p class="detail-stat-label">Current Stock</p>
+                        <p class="detail-stat-label">Stock on File</p>
                         <p class="detail-stat-value detail-stat-value--xl">${stock.toLocaleString()}</p>
                         <p class="text-xs text-base-content/55 mt-0.5">${unit}</p>
                     </div>
                     <div class="detail-stat">
-                        <p class="detail-stat-label">Min Stock</p>
-                        <p class="detail-stat-value">${minStock.toLocaleString()}</p>
+                        <p class="detail-stat-label">FIFO Stock</p>
+                        <p class="detail-stat-value">${batchStock.toLocaleString()}</p>
                         <p class="text-xs text-base-content/55 mt-0.5">${unit}</p>
                     </div>
                     <div class="detail-stat">
@@ -1803,9 +1835,9 @@
                         <p class="text-xs text-base-content/55 mt-0.5">${unit}</p>
                     </div>
                     <div class="detail-stat">
-                        <p class="detail-stat-label">Lead Time</p>
-                        <p class="detail-stat-value">${ing.lead_time_days || 7} <span class="text-sm font-normal text-base-content/60">days</span></p>
-                        <p class="text-xs text-base-content/55 mt-0.5">Supplier</p>
+                        <p class="detail-stat-label">Min Stock</p>
+                        <p class="detail-stat-value">${minStock.toLocaleString()}</p>
+                        <p class="text-xs text-base-content/55 mt-0.5">${unit}</p>
                     </div>
                 </div>
 
@@ -1818,11 +1850,17 @@
 
             // Escape the name for use in onclick
             const escapedName = name.replace(/'/g, "\\'");
+            const canRepairStock = variance > 0.0005 && ['warehouse_raw', 'general_manager'].includes(AuthService.getCurrentUser()?.role || '');
 
             document.getElementById('detailModalFooter').innerHTML = `
                 <button class="btn-pro btn-pro--ghost" onclick="document.getElementById('detailModal').close()">
                     <i class="fas fa-xmark"></i> Close
                 </button>
+                ${canRepairStock ? `
+                <button class="btn-pro btn-pro--warning" onclick="repairIngredientStockRecords(${ing.id})">
+                    <i class="fas fa-screwdriver-wrench"></i> Fix FIFO Batch
+                </button>
+                ` : ''}
                 <button class="btn-pro btn-pro--primary" onclick="openSettingsModal(${ing.id}, '${escapedName}', ${minStock}, ${ing.lead_time_days || 7}, ${ing.reorder_point || 'null'}, ${ing.maximum_stock || 'null'})">
                     <i class="fas fa-sliders"></i> Settings
                 </button>
@@ -1833,6 +1871,28 @@
                     <i class="fas fa-arrow-up"></i> Issue Stock
                 </button>
             `;
+        }
+
+        async function repairIngredientStockRecords(id) {
+            const confirmed = await AppDialogs.confirm({
+                title: 'Fix FIFO Batch',
+                message: 'Create a FIFO adjustment batch for the stock already on file?',
+                confirmText: 'Create Batch',
+                variant: 'warning',
+                icon: 'fa-screwdriver-wrench'
+            });
+            if (!confirmed) return;
+            try {
+                const res = await api.put('/warehouse/raw/ingredients.php', {
+                    action: 'repair_batches',
+                    ingredient_id: id
+                });
+                showToast(res?.message || 'FIFO batch fixed', 'success');
+                await loadIngredients();
+                await openDetailModal(id);
+            } catch (e) {
+                showToast(e?.response?.data?.message || e?.message || 'Failed to fix FIFO batch', 'error');
+            }
         }
 
         function openIssueModal(id, name, available, unit) {
