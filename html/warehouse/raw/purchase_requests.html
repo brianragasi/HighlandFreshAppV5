@@ -147,6 +147,26 @@
                 </div>
             </div>
 
+            <!-- Requested Items -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body p-4">
+                    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                        <div>
+                            <h3 class="font-bold text-base">My Purchase Requests</h3>
+                            <p class="text-xs muted-hint">Your PRs grouped by status. Click any to view details.</p>
+                        </div>
+                        <div class="join">
+                            <button class="btn btn-sm join-item btn-primary" data-requested-status="active" onclick="setRequestedStatus('active')">Active</button>
+                            <button class="btn btn-sm join-item" data-requested-status="pending" onclick="setRequestedStatus('pending')">Pending</button>
+                            <button class="btn btn-sm join-item" data-requested-status="all" onclick="setRequestedStatus('all')">All</button>
+                        </div>
+                    </div>
+                    <div id="requestedItemsList" class="space-y-2">
+                        <div class="rounded-lg border border-base-300 bg-base-200 p-4 text-sm text-base-content/60">Loading requested items...</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Reorder Guide -->
             <div class="card bg-base-100 border border-base-300 mb-6">
                 <div class="card-body p-4">
@@ -310,7 +330,7 @@
 
     <!-- Detail Modal -->
     <dialog id="detailModal" class="modal">
-        <div class="modal-box max-w-2xl"><form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button></form>
+        <div class="modal-box max-w-4xl"><form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button></form>
             <div id="detailContent"><div class="text-center py-8"><span class="loading loading-spinner loading-lg"></span></div></div>
         </div>
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
@@ -321,16 +341,20 @@
     <script src="../../../js/vendor/axios.min.js"></script>
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/ui/dialogs.js"></script>
     <script src="../../../js/purchasing/purchasing.service.js"></script>
     <script src="../../../js/warehouse/raw.service.js"></script>
     <script src="../../../js/warehouse/sidebar.stats.js"></script>
     <script>
         let allPRs = [];
+        let requestedItems = [];
         let currentStatus = 'pending';
+        let requestedStatus = 'active';
         let prItemCounter = 0;
         let prCatalog = [];
         let reorderFilters = { status: 'needs', type: 'all', search: '', limit: 12 };
         let selectedReorderItems = new Set();
+        let linkedPRId = null;
 
         function toggleSidebar(){
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -345,11 +369,23 @@
                 document.getElementById('userInitials').textContent=((user.first_name||'W')[0]+(user.last_name||'R')[0]).toUpperCase();
             }
             window.currentUserRole=user?.role||'warehouse_raw';
+            applyInitialPRRoute();
             setupTabs();
             await loadCatalog();
-            await loadPRs();
-            handlePRPrefill();
+            await Promise.all([loadPRs(), loadRequestedItems()]);
+            if(!handlePRPrefill()){
+                handleLinkedPR();
+            }
         });
+
+        function applyInitialPRRoute(){
+            const params=new URLSearchParams(window.location.search);
+            const status=params.get('status');
+            if(['draft','pending','approved','rejected','converted',''].includes(status)){
+                currentStatus=status;
+            }
+            linkedPRId=params.get('pr_id');
+        }
 
         async function loadCatalog(){
             try{
@@ -419,27 +455,36 @@
 
         function getCatalogStockStatus(currentStock,minimumStock,reorderPoint){
             if(currentStock<=0)return'OUT';
-            // Below minimum stock and below reorder point are both "Low Stock"
-            // — the single low-inventory tier that triggers a Purchase Request.
-            if((minimumStock>0&&currentStock<=minimumStock)||(reorderPoint>0&&currentStock<=reorderPoint))return'LOW';
-            return'OK';
+            // LOW rule (shared with backend StockRule): current_stock <=
+            // COALESCE(reorder_point, minimum_stock * 1.5).
+            const reorder=(Number.isFinite(reorderPoint)&&reorderPoint>0)?reorderPoint:(minimumStock*1.5);
+            return currentStock<=reorder?'LOW':'OK';
         }
 
         function setupTabs(){
             document.querySelectorAll('#statusTabs button').forEach(btn=>{
                 btn.addEventListener('click',()=>{
-                    document.querySelectorAll('#statusTabs button').forEach(b=>{b.classList.remove('btn-neutral','btn-warning','btn-success','btn-error','btn-info','btn-primary');b.classList.add('btn-ghost');});
-                    btn.classList.remove('btn-ghost');
-                    const s=btn.dataset.status;
-                    if(s==='draft')btn.classList.add('btn-neutral');
-                    else if(s==='pending')btn.classList.add('btn-warning');
-                    else if(s==='approved')btn.classList.add('btn-success');
-                    else if(s==='rejected')btn.classList.add('btn-error');
-                    else if(s==='converted')btn.classList.add('btn-info');
-                    else btn.classList.add('btn-primary');
-                    currentStatus=s;
+                    currentStatus=btn.dataset.status;
+                    updateStatusTabs();
                     renderPRs();
                 });
+            });
+            updateStatusTabs();
+        }
+
+        function updateStatusTabs(){
+            document.querySelectorAll('#statusTabs button').forEach(btn=>{
+                const s=btn.dataset.status;
+                btn.classList.remove('btn-neutral','btn-warning','btn-success','btn-error','btn-info','btn-primary');
+                btn.classList.add('btn-ghost');
+                if(s!==currentStatus)return;
+                btn.classList.remove('btn-ghost');
+                if(s==='draft')btn.classList.add('btn-neutral');
+                else if(s==='pending')btn.classList.add('btn-warning');
+                else if(s==='approved')btn.classList.add('btn-success');
+                else if(s==='rejected')btn.classList.add('btn-error');
+                else if(s==='converted')btn.classList.add('btn-info');
+                else btn.classList.add('btn-primary');
             });
         }
 
@@ -454,6 +499,97 @@
                 allPRs=[];renderPRs();
                 showToast('Failed to load purchase requests','error');
             }
+        }
+
+        async function loadRequestedItems(){
+            try{
+                const res=await api.get('/purchasing/purchase_requests.php',{params:{action:'requested_items'}});
+                requestedItems=res?.data||[];
+                renderRequestedItems();
+            }catch(e){
+                console.error(e);
+                requestedItems=[];
+                renderRequestedItems();
+            }
+        }
+
+        function setRequestedStatus(status){
+            requestedStatus=status||'active';
+            document.querySelectorAll('[data-requested-status]').forEach(btn=>{
+                btn.classList.toggle('btn-primary',btn.dataset.requestedStatus===requestedStatus);
+            });
+            renderRequestedItems();
+        }
+
+        function renderRequestedItems(){
+            const container=document.getElementById('requestedItemsList');
+            if(!container)return;
+            const activeStatuses=['pending','approved','converted'];
+            const filtered=requestedItems.filter(item=>{
+                if(requestedStatus==='all')return true;
+                if(requestedStatus==='active')return activeStatuses.includes(item.status);
+                return item.status===requestedStatus;
+            });
+
+            if(filtered.length===0){
+                container.innerHTML='<div class="rounded-lg border border-base-300 bg-base-200 p-4 text-sm text-base-content/60">No requested items match this view.</div>';
+                return;
+            }
+
+            const statusBadge={draft:'badge-ghost',pending:'badge-warning',approved:'badge-success',rejected:'badge-error',converted:'badge-info'};
+            const priorityBadge={urgent:'badge-error',high:'badge-warning',normal:'badge-info',low:'badge-ghost'};
+
+            // Group items by PR
+            const grouped=new Map();
+            for(const item of filtered){
+                const key=item.pr_id;
+                if(!grouped.has(key)){
+                    grouped.set(key,{
+                        pr_id:item.pr_id,
+                        pr_number:item.pr_number,
+                        status:item.status,
+                        priority:item.priority,
+                        created_at:item.created_at,
+                        needed_by_date:item.needed_by_date,
+                        purpose:item.pr_purpose||'',
+                        po_count:parseInt(item.po_count||0,10),
+                        items:[]
+                    });
+                }
+                grouped.get(key).items.push(item);
+            }
+
+            const groups=Array.from(grouped.values()).slice(0,10);
+            const totalGroups=grouped.size;
+
+            container.innerHTML=groups.map(pr=>{
+                const poNote=pr.po_count>0?'<span class="badge badge-info badge-xs">Converted to PO</span>':'';
+                const itemRows=pr.items.map(item=>{
+                    const code=item.ingredient_code||item.mro_item_code||'';
+                    return `<div class="flex items-center justify-between gap-2 py-1.5 px-2 text-sm">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <i class="fas fa-box-open text-xs text-base-content/40"></i>
+                            <span class="font-medium truncate">${escapeHtml(item.item_description||'Item')}</span>
+                            ${code?`<span class="font-mono text-xs text-base-content/50">${escapeHtml(code)}</span>`:''}
+                        </div>
+                        <span class="text-xs text-base-content/60 whitespace-nowrap">${parseFloat(item.quantity||0).toLocaleString()} ${escapeHtml(item.unit||'')}</span>
+                    </div>`;
+                }).join('');
+
+                return `<button type="button" class="w-full rounded-lg border border-base-300 bg-base-100 text-left hover:bg-base-200 transition-colors overflow-hidden" onclick="viewPR(${pr.pr_id})">
+                    <div class="flex flex-wrap items-center justify-between gap-2 px-3 pt-3 pb-2">
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-sm">${escapeHtml(pr.pr_number)}</span>
+                            <span class="badge ${priorityBadge[pr.priority]||'badge-ghost'} badge-xs">${(pr.priority||'normal').toUpperCase()}</span>
+                            <span class="badge ${statusBadge[pr.status]||'badge-ghost'} badge-xs">${formatPRStatus(pr.status)}</span>
+                            ${poNote}
+                        </div>
+                        <span class="text-xs text-base-content/55">${formatDate(pr.created_at)}</span>
+                    </div>
+                    <div class="px-3 pb-1 text-xs text-base-content/55">${escapeHtml(pr.purpose||'No purpose specified')} · ${pr.items.length} item${pr.items.length===1?'':'s'}</div>
+                    <div class="border-t border-base-200 mx-2 mb-2 mt-1 divide-y divide-base-200">${itemRows}</div>
+                </button>`;
+            }).join('')+(totalGroups>10?`<div class="text-xs text-base-content/55 px-1 pt-2">Showing latest 10 of ${totalGroups} purchase requests. Use All PRs below for older records.</div>`:'');
         }
 
         function updateStats(){
@@ -489,10 +625,16 @@
                             <span class="text-sm text-base-content/60">${formatDate(pr.created_at)}</span>
                         </div>
                         <p class="text-sm text-base-content/70 mb-2">${pr.purpose||'No purpose specified'}</p>
-                        <div class="flex items-center justify-between text-sm">
-                            <span class="text-base-content/60"><i class="fas fa-boxes mr-1"></i>${pr.item_count||0} items</span>
-                            <span class="font-semibold">${pr.estimated_total>0?'Est. ₱'+parseFloat(pr.estimated_total).toLocaleString('en-PH',{minimumFractionDigits:2}):''}</span>
-                            ${pr.po_count>0?'<span class="badge badge-info badge-sm">Converted to PO</span>':''}
+                        <div class="flex flex-wrap items-center justify-between gap-3 text-sm">
+                            <div class="flex flex-wrap items-center gap-3">
+                                <span class="text-base-content/60"><i class="fas fa-boxes mr-1"></i>${pr.item_count||0} items</span>
+                                <span class="font-semibold">${pr.estimated_total>0?'Est. ₱'+parseFloat(pr.estimated_total).toLocaleString('en-PH',{minimumFractionDigits:2}):''}</span>
+                                ${pr.po_count>0?'<span class="badge badge-info badge-sm">Converted to PO</span>':''}
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2" onclick="event.stopPropagation()">
+                                <span class="text-xs text-base-content/50 hidden sm:inline">Click card for details</span>
+                                <button class="btn btn-primary btn-xs" onclick="openPrintablePR(${pr.id})"><i class="fas fa-print"></i> Print Slip</button>
+                            </div>
                         </div>
                         ${pr.status==='rejected'&&pr.rejection_reason?`<div class="alert alert-error mt-2 py-2 text-sm"><i class="fas fa-info-circle"></i><span>${pr.rejection_reason}</span></div>`:''}
                     </div>
@@ -514,59 +656,76 @@
                 const statusColors={draft:'ghost',pending:'warning',approved:'success',rejected:'error',converted:'info'};
                 const c=statusColors[pr.status]||'ghost';
 
+                const itemsTotal=(pr.items||[]).reduce((sum,i)=>sum+parseFloat(i.estimated_total||0),0);
                 content.innerHTML=`
-                    <h3 class="font-bold text-xl mb-4 flex items-center gap-2">
-                        <i class="fas fa-shopping-cart text-primary"></i> ${pr.pr_number}
-                        <span class="badge badge-${c} badge-sm">${formatPRStatus(pr.status)}</span>
-                    </h3>
-                    <div class="grid grid-cols-2 gap-4 mb-4">
-                        <div><p class="text-xs text-base-content/60">Requested By</p><p class="font-semibold">${pr.requested_by_name||'—'}</p></div>
-                        <div><p class="text-xs text-base-content/60">Priority</p><p class="font-semibold">${(pr.priority||'normal').toUpperCase()}</p></div>
-                        <div><p class="text-xs text-base-content/60">Needed By</p><p class="font-semibold">${pr.needed_by_date?formatDate(pr.needed_by_date):'Not specified'}</p></div>
-                        <div><p class="text-xs text-base-content/60">Created</p><p class="font-semibold">${formatDate(pr.created_at)}</p></div>
+                    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                        <div class="flex items-center gap-2">
+                            <h3 class="font-bold text-xl">${pr.pr_number}</h3>
+                            <span class="badge badge-${c} badge-sm">${formatPRStatus(pr.status)}</span>
+                            <span class="badge badge-outline badge-sm">${(pr.priority||'normal').toUpperCase()}</span>
+                        </div>
+                        <span class="text-sm text-base-content/60">${formatDate(pr.created_at)}</span>
                     </div>
-                    ${pr.purpose?`<div class="bg-base-200 rounded-lg p-3 mb-4"><p class="text-sm"><strong>Purpose:</strong> ${pr.purpose}</p></div>`:''}
-                    ${pr.status==='approved'&&pr.approved_by_name?`<div class="alert alert-success mb-4 py-2"><i class="fas fa-check-circle"></i><span>Approved by ${pr.approved_by_name} on ${formatDate(pr.approved_at)}</span></div>`:''}
-                    ${pr.status==='rejected'?`<div class="alert alert-error mb-4 py-2"><i class="fas fa-times-circle"></i><span>Rejected: ${pr.rejection_reason||'No reason'}</span></div>`:''}
-                    ${pr.status==='converted'?`<div class="alert alert-info mb-4 py-2"><i class="fas fa-lock"></i><span>This PR is locked because it has been converted to a Purchase Order. It must be reopened by an authorized GM before edits are allowed.</span></div>`:''}
-                    <div class="divider">Items</div>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 text-sm">
+                        <div class="bg-base-200 rounded-lg p-2.5"><p class="text-xs text-base-content/50 mb-0.5">Requested By</p><p class="font-semibold">${pr.requested_by_name||'—'}</p></div>
+                        <div class="bg-base-200 rounded-lg p-2.5"><p class="text-xs text-base-content/50 mb-0.5">Needed By</p><p class="font-semibold">${pr.needed_by_date?formatDate(pr.needed_by_date):'—'}</p></div>
+                        <div class="bg-base-200 rounded-lg p-2.5"><p class="text-xs text-base-content/50 mb-0.5">Items</p><p class="font-semibold">${(pr.items||[]).length}</p></div>
+                        <div class="bg-base-200 rounded-lg p-2.5"><p class="text-xs text-base-content/50 mb-0.5">Est. Total</p><p class="font-semibold">${itemsTotal>0?'₱'+itemsTotal.toLocaleString('en-PH',{minimumFractionDigits:2}):'—'}</p></div>
+                    </div>
+
+                    ${pr.purpose?`<p class="text-sm text-base-content/70 mb-3"><i class="fas fa-info-circle text-base-content/40 mr-1"></i>${pr.purpose}</p>`:''}
+                    ${pr.status==='approved'&&pr.approved_by_name?`<div class="alert alert-success mb-3 py-2 text-sm"><i class="fas fa-check-circle"></i><span>Approved by ${pr.approved_by_name} on ${formatDate(pr.approved_at)}</span></div>`:''}
+                    ${pr.status==='rejected'?`<div class="alert alert-error mb-3 py-2 text-sm"><i class="fas fa-times-circle"></i><span>Rejected: ${pr.rejection_reason||'No reason'}</span></div>`:''}
+                    ${pr.status==='converted'?`<div class="alert alert-info mb-3 py-2 text-sm"><i class="fas fa-lock"></i><span>Locked — converted to Purchase Order. GM can reopen if needed.</span></div>`:''}
+
+                    <div class="divider text-xs">Items</div>
                     <div class="overflow-x-auto">
-                        <table class="table table-sm">
-                            <thead><tr><th>Description</th><th>Stock Reference</th><th>Qty</th><th>Unit</th><th>Purpose / Reason</th><th>Remarks</th><th>Est. Price</th><th>Est. Total</th></tr></thead>
+                        <table class="table table-sm table-zebra">
+                            <thead><tr>
+                                <th>Item</th>
+                                <th class="text-right">Qty</th>
+                                <th>Unit</th>
+                                <th class="text-right">Unit Price</th>
+                                <th class="text-right">Total</th>
+                            </tr></thead>
                             <tbody>${(pr.items||[]).map(i=>`
                                 <tr>
-                                    <td>${i.item_description}</td>
-                                    <td>${formatItemStockReference(i)}</td>
-                                    <td>${i.quantity}</td>
-                                    <td>${i.unit}</td>
-                                    <td>${i.purpose||pr.purpose||'—'}</td>
-                                    <td>${i.notes||'—'}</td>
-                                    <td>${i.estimated_unit_price?'₱'+parseFloat(i.estimated_unit_price).toFixed(2):'—'}</td>
-                                    <td class="font-semibold">${i.estimated_total?'₱'+parseFloat(i.estimated_total).toFixed(2):'—'}</td>
+                                    <td>
+                                        <div class="font-medium">${i.item_description}</div>
+                                        <div class="text-xs text-base-content/50">${formatItemStockReference(i)}</div>
+                                    </td>
+                                    <td class="text-right">${parseFloat(i.quantity||0).toLocaleString('en-PH')}</td>
+                                    <td>${i.unit||'—'}</td>
+                                    <td class="text-right">${i.estimated_unit_price?'₱'+parseFloat(i.estimated_unit_price).toLocaleString('en-PH',{minimumFractionDigits:2}):'—'}</td>
+                                    <td class="text-right font-semibold">${i.estimated_total?'₱'+parseFloat(i.estimated_total).toLocaleString('en-PH',{minimumFractionDigits:2}):'—'}</td>
                                 </tr>
                             `).join('')}</tbody>
+                            <tfoot><tr><td colspan="4" class="text-right font-semibold">Total</td><td class="text-right font-bold">₱${itemsTotal.toLocaleString('en-PH',{minimumFractionDigits:2})}</td></tr></tfoot>
                         </table>
                     </div>
+
                     ${pr.linked_pos&&pr.linked_pos.length>0?`
-                        <div class="divider">Linked Purchase Orders</div>
-                        ${pr.linked_pos.map(po=>`<div class="badge badge-info gap-1"><i class="fas fa-file-invoice-dollar"></i>${po.po_number} — ${PurchasingService.formatStatus(po.status)}</div>`).join(' ')}
+                        <div class="divider text-xs">Linked Purchase Orders</div>
+                        <div class="flex flex-wrap gap-2">${pr.linked_pos.map(po=>`<span class="badge badge-info gap-1"><i class="fas fa-file-invoice-dollar"></i>${po.po_number} — ${PurchasingService.formatStatus(po.status)}</span>`).join('')}</div>
                     `:''}
+
                     ${pr.status_history&&pr.status_history.length>0?`
-                        <div class="divider">Status History</div>
-                        <div class="space-y-2">
+                        <div class="divider text-xs">History</div>
+                        <ul class="steps steps-vertical text-sm">
                             ${pr.status_history.map(h=>`
-                                <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-base-200 px-3 py-2 text-sm">
-                                    <span><strong>${formatPRStatus(h.to_status)}</strong>${h.notes?` - ${h.notes}`:''}</span>
-                                    <span class="text-base-content/60">${h.changed_by_name||'System'} - ${formatDateTime(h.changed_at)}</span>
-                                </div>
+                                <li class="step step-primary">
+                                    <div class="text-left"><strong>${formatPRStatus(h.to_status)}</strong>${h.notes?` — ${h.notes}`:''}<br><span class="text-xs text-base-content/50">${h.changed_by_name||'System'} · ${formatDateTime(h.changed_at)}</span></div>
+                                </li>
                             `).join('')}
-                        </div>
+                        </ul>
                     `:''}
+
                     <div class="modal-action">
                         <button class="btn btn-ghost" onclick="document.getElementById('detailModal').close()">Close</button>
-                        ${pr.status==='draft'?`<button class="btn btn-warning" onclick="submitDraftPR(${pr.id})"><i class="fas fa-paper-plane"></i> Submit for GM Approval</button>`:''}
-                        ${pr.status==='converted'&&window.currentUserRole==='general_manager'?`<button class="btn btn-outline" onclick="reopenConvertedPR(${pr.id})"><i class="fas fa-unlock"></i> Reopen PR</button>`:''}
-                        <button class="btn btn-primary" onclick="openPrintablePR(${pr.id})"><i class="fas fa-print"></i> Print PR</button>
+                        ${pr.status==='draft'?`<button class="btn btn-warning" onclick="submitDraftPR(${pr.id})"><i class="fas fa-paper-plane"></i> Submit for Approval</button>`:''}
+                        ${pr.status==='converted'&&window.currentUserRole==='general_manager'?`<button class="btn btn-outline" onclick="reopenConvertedPR(${pr.id})"><i class="fas fa-unlock"></i> Reopen</button>`:''}
+                        <button class="btn btn-primary" onclick="openPrintablePR(${pr.id})"><i class="fas fa-print"></i> Print</button>
                     </div>
                 `;
             }catch(e){content.innerHTML='<p class="text-error text-center py-8">Failed to load details</p>';}
@@ -577,7 +736,7 @@
                 const res=await PurchasingService.submitPR(id);
                 showToast(res?.message||'Purchase Request submitted','success');
                 document.getElementById('detailModal').close();
-                await loadPRs();
+                await Promise.all([loadPRs(), loadRequestedItems()]);
             }catch(e){
                 const duplicateId=e?.response?.data?.errors?.duplicate_pr_id;
                 const duplicateNumber=e?.response?.data?.errors?.duplicate_pr_number;
@@ -595,13 +754,21 @@
         }
 
         async function reopenConvertedPR(id){
-            const reason=prompt('Reason for reopening this converted PR:');
-            if(!reason||!reason.trim())return;
+            const reason=await AppDialogs.prompt({
+                title:'Reopen Purchase Request',
+                message:'Provide the reason for reopening this converted PR.',
+                label:'Reason',
+                placeholder:'Example: Supplier conversion needs correction',
+                confirmText:'Reopen PR',
+                variant:'warning',
+                icon:'fa-unlock'
+            });
+            if(!reason)return;
             try{
-                const res=await PurchasingService.reopenPR(id,reason.trim());
+                const res=await PurchasingService.reopenPR(id,reason);
                 showToast(res?.message||'Purchase Request reopened','success');
                 document.getElementById('detailModal').close();
-                await loadPRs();
+                await Promise.all([loadPRs(), loadRequestedItems()]);
             }catch(e){
                 showToast(e?.response?.data?.message||e?.message||'Failed to reopen PR','error');
             }
@@ -955,7 +1122,7 @@
         function handlePRPrefill(){
             const params=new URLSearchParams(window.location.search);
             const stored=sessionStorage.getItem('highland_pr_prefill');
-            if(!stored&&!params.has('prefill'))return;
+            if(!stored&&!params.has('prefill'))return false;
 
             let prefill=null;
             if(stored){
@@ -965,7 +1132,16 @@
 
             if(prefill){
                 openCreateModal(prefill);
+                return true;
             }
+            return false;
+        }
+
+        function handleLinkedPR(){
+            if(!linkedPRId)return;
+            const id=linkedPRId;
+            linkedPRId=null;
+            viewPR(id);
         }
 
         async function submitPR(status='pending'){
@@ -1033,7 +1209,7 @@
                 });
                 showToast(res?.message||'Purchase Request created!','success');
                 document.getElementById('createModal').close();
-                await loadPRs();
+                await Promise.all([loadPRs(), loadRequestedItems()]);
             }catch(e){
                 const duplicateId=e?.response?.data?.errors?.duplicate_pr_id;
                 const duplicateNumber=e?.response?.data?.errors?.duplicate_pr_number;

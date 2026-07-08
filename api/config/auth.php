@@ -139,14 +139,29 @@ class Auth {
             }
         }
 
-        $authHeader = $headers['Authorization']
-            ?? $headers['authorization']
-            ?? $headers['X-Auth-Token']
-            ?? $headers['x-auth-token']
-            ?? $_SERVER['HTTP_AUTHORIZATION']
-            ?? $_SERVER['HTTP_X_AUTH_TOKEN']
-            ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
-            ?? $_COOKIE['highland_token'] ?? '';
+        // Collect candidates in priority order. PHP's ?? does NOT treat an
+        // empty string as null, so a header that Apache/PHP-FPM strips to ''
+        // (common for Authorization on some hosts) would short-circuit the
+        // chain and mask working fallbacks (X-Auth-Token, $_SERVER, cookie).
+        // Filter empties explicitly so the first NON-empty source wins.
+        $sources = [
+            $headers['Authorization'] ?? null,
+            $headers['authorization'] ?? null,
+            $headers['X-Auth-Token'] ?? null,
+            $headers['x-auth-token'] ?? null,
+            $_SERVER['HTTP_AUTHORIZATION'] ?? null,
+            $_SERVER['HTTP_X_AUTH_TOKEN'] ?? null,
+            $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null,
+            $_COOKIE['highland_token'] ?? null,
+        ];
+
+        $authHeader = '';
+        foreach ($sources as $source) {
+            if (is_string($source) && $source !== '' && $source !== '(null)') {
+                $authHeader = $source;
+                break;
+            }
+        }
 
         if (empty($authHeader)) {
             return null;

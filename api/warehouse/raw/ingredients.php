@@ -74,18 +74,25 @@ function handleGet($db, $currentUser) {
                 SELECT 
                     i.*,
                     ic.category_name,
-                    CASE 
+                    CASE
                         WHEN i.current_stock <= 0 THEN 'out_of_stock'
-                        WHEN i.current_stock <= i.minimum_stock THEN 'low_stock'
+                        WHEN i.current_stock <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . " THEN 'low_stock'
                         ELSE 'ok'
                     END as stock_status,
                     (SELECT COUNT(*) FROM ingredient_batches ib
                      WHERE ib.ingredient_id = i.id
                      AND ib.status IN ('available', 'partially_used')
+                     AND ib.remaining_quantity > 0
                      AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())) as batch_count,
+                    (SELECT COALESCE(SUM(ib.remaining_quantity), 0) FROM ingredient_batches ib
+                     WHERE ib.ingredient_id = i.id
+                     AND ib.status IN ('available', 'partially_used')
+                     AND ib.remaining_quantity > 0
+                     AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())) as batch_stock,
                     (SELECT MIN(expiry_date) FROM ingredient_batches ib
                      WHERE ib.ingredient_id = i.id
                      AND ib.status IN ('available', 'partially_used')
+                     AND ib.remaining_quantity > 0
                      AND ib.expiry_date IS NOT NULL
                      AND ib.expiry_date >= CURDATE()) as earliest_expiry
                 FROM ingredients i
@@ -100,7 +107,7 @@ function handleGet($db, $currentUser) {
             }
             
             if ($lowStockOnly) {
-                $sql .= " AND i.current_stock <= i.minimum_stock";
+                $sql .= " AND i.current_stock <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock');
             }
             
             if ($search) {
@@ -148,11 +155,18 @@ function handleGet($db, $currentUser) {
                 JOIN users u ON ib.received_by = u.id
                 WHERE ib.ingredient_id = ?
                 AND ib.status IN ('available', 'partially_used')
+                AND ib.remaining_quantity > 0
                 AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())
                 ORDER BY ib.expiry_date ASC, ib.received_date ASC, ib.id ASC
             ");
             $batches->execute([$id]);
             $batchList = $batches->fetchAll();
+            $batchStock = array_reduce($batchList, function ($sum, $batch) {
+                return $sum + (float) ($batch['remaining_quantity'] ?? 0);
+            }, 0.0);
+            $ingredientData['batch_stock'] = $batchStock;
+            $ingredientData['stock_variance'] = round(((float) ($ingredientData['current_stock'] ?? 0)) - $batchStock, 3);
+            $ingredientData['batch_count'] = count($batchList);
             
             // Get recent transactions
             $transactions = $db->prepare("
@@ -315,29 +329,25 @@ function handleGet($db, $currentUser) {
                     i.maximum_stock,
                     COALESCE(i.lead_time_days, 7) AS lead_time_days,
                     i.unit_cost,
+                    " . StockRule::statusCaseSql('i.current_stock', 'i.reorder_point', 'i.minimum_stock') . " AS stock_status,
                     CASE
-                        WHEN i.current_stock <= 0 THEN 'OUT_OF_STOCK'
-                        WHEN i.current_stock <= COALESCE(i.reorder_point, i.minimum_stock * 1.5) THEN 'LOW'
-                        ELSE 'OK'
-                    END AS stock_status,
-                    CASE 
                         WHEN i.current_stock <= 0 THEN 0
                         ELSE ROUND((i.current_stock / NULLIF(i.minimum_stock, 0)) * 100, 1)
                     END AS stock_percentage,
-                    GREATEST(0, COALESCE(i.maximum_stock, COALESCE(i.reorder_point, i.minimum_stock * 1.5)) - i.current_stock) AS qty_to_reorder
+                    " . StockRule::reorderQtySql('i.current_stock', 'i.reorder_point', 'i.maximum_stock') . " AS qty_to_reorder
                 FROM ingredients i
                 LEFT JOIN ingredient_categories ic ON i.category_id = ic.id
                 WHERE i.is_active = 1
             ";
             
             if (!$includeOk) {
-                $sql .= " AND i.current_stock <= COALESCE(i.reorder_point, i.minimum_stock * 1.5)";
+                $sql .= " AND i.current_stock <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock');
             }
-            
+
             $sql .= " ORDER BY
                 CASE
                     WHEN i.current_stock <= 0 THEN 1
-                    WHEN i.current_stock <= COALESCE(i.reorder_point, i.minimum_stock * 1.5) THEN 2
+                    WHEN i.current_stock <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . " THEN 2
                     ELSE 3
                 END,
                 i.ingredient_name ASC
@@ -578,6 +588,50 @@ function handlePut($db, $currentUser) {
                 
             } catch (Exception $e) {
                 $db->rollBack();
+                Response::error($e->getMessage(), 400);
+            }
+            break;
+
+        case 'repair_batches':
+            if (!in_array($currentUser['role'], ['warehouse_raw', 'general_manager'])) {
+                Response::error('Only Warehouse Raw or GM can repair stock records', 403);
+            }
+
+            $ingredientId = getParam('ingredient_id');
+            if (!$ingredientId) {
+                Response::error('Ingredient ID is required', 400);
+            }
+
+            try {
+                $db->beginTransaction();
+
+                $ingredient = $db->prepare("SELECT * FROM ingredients WHERE id = ? AND is_active = 1 FOR UPDATE");
+                $ingredient->execute([$ingredientId]);
+                $ingredientData = $ingredient->fetch();
+
+                if (!$ingredientData) {
+                    throw new Exception('Ingredient not found');
+                }
+
+                $repair = reconcileIngredientSummaryToBatches(
+                    $db,
+                    $ingredientData,
+                    $currentUser,
+                    'Created to repair missing FIFO batch from existing stock on file'
+                );
+
+                if (!$repair) {
+                    $batchStock = getUsableIngredientBatchStock($db, $ingredientId);
+                    throw new Exception("No missing FIFO batch to repair. Stock on file: {$ingredientData['current_stock']}, FIFO stock: {$batchStock}");
+                }
+
+                $db->commit();
+
+                Response::success($repair, 'Missing FIFO batch repaired');
+            } catch (Throwable $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
                 Response::error($e->getMessage(), 400);
             }
             break;

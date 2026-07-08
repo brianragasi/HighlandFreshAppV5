@@ -207,16 +207,16 @@
                     </div>
                 </div>
                 
-                <!-- Approved -->
-                <div class="stat-card card bg-base-100 border border-base-300" onclick="filterByStatus('approved')" title="Click to see approved requisitions">
+                <!-- Issues -->
+                <div class="stat-card card bg-base-100 border border-base-300" onclick="filterByWorkflow('issues')" title="Click to see requisitions with missing plans or status mismatches">
                     <div class="card-body p-4">
                         <div class="flex items-center gap-3">
-                            <div class="w-12 h-12 bg-info/20 text-info rounded-xl flex items-center justify-center">
-                                <i class="fas fa-thumbs-up text-xl"></i>
+                            <div class="w-12 h-12 bg-error/20 text-error rounded-xl flex items-center justify-center">
+                                <i class="fas fa-triangle-exclamation text-xl"></i>
                             </div>
                             <div>
-                                <div class="text-2xl font-bold stat-value" id="statApproved">0</div>
-                                <div class="text-sm text-base-content/60">Approved</div>
+                                <div class="text-2xl font-bold stat-value" id="statIssues">0</div>
+                                <div class="text-sm text-base-content/60">Issues</div>
                             </div>
                         </div>
                     </div>
@@ -260,8 +260,21 @@
                         <i class="fas fa-filter text-primary"></i>
                         Filter Requisitions
                     </h3>
-                    <p class="text-sm text-base-content/60 mb-4">Narrow the list by approval status or urgency.</p>
+                    <p class="text-sm text-base-content/60 mb-4">Narrow the list by workflow, warehouse status, or urgency.</p>
                     <div class="flex flex-wrap gap-4 items-end">
+                        <div class="form-control w-full">
+                            <label class="label py-1">
+                                <span class="label-text text-sm">Workflow</span>
+                            </label>
+                            <div class="join flex flex-wrap" role="group" aria-label="Workflow filter">
+                                <button type="button" class="btn btn-sm join-item workflow-filter-btn btn-primary" data-workflow="active" onclick="filterByWorkflow('active')">Active</button>
+                                <button type="button" class="btn btn-sm join-item workflow-filter-btn" data-workflow="all" onclick="filterByWorkflow('all')">All</button>
+                                <button type="button" class="btn btn-sm join-item workflow-filter-btn" data-workflow="issues" onclick="filterByWorkflow('issues')">Issues</button>
+                                <button type="button" class="btn btn-sm join-item workflow-filter-btn" data-workflow="legacy" onclick="filterByWorkflow('legacy')">Legacy</button>
+                                <button type="button" class="btn btn-sm join-item workflow-filter-btn" data-workflow="started" onclick="filterByWorkflow('started')">Started</button>
+                            </div>
+                        </div>
+
                         <div class="form-control w-full sm:w-48">
                             <label class="label py-1">
                                 <span class="label-text text-sm">Status</span>
@@ -269,7 +282,7 @@
                             <select id="statusFilter" class="select select-bordered select-sm" onchange="loadRequisitions()">
                                 <option value="">All Status</option>
                                 <option value="pending">Pending</option>
-                                <option value="approved">Approved</option>
+                                <option value="approved">Approved (legacy)</option>
                                 <option value="partial">Partial</option>
                                 <option value="fulfilled">Fulfilled</option>
                                 <option value="rejected">Rejected</option>
@@ -366,7 +379,7 @@
                         <span class="font-medium text-base-content">Workflow</span>
                         <span><span class="badge badge-primary badge-sm mr-1">1</span> Choose production plan</span>
                         <span><span class="badge badge-primary badge-sm mr-1">2</span> Review materials</span>
-                        <span><span class="badge badge-primary badge-sm mr-1">3</span> Submit for approval</span>
+                        <span><span class="badge badge-primary badge-sm mr-1">3</span> Submit requisition</span>
                     </div>
                 </div>
                 
@@ -482,7 +495,7 @@
                     
                     <div class="rounded-lg border border-info/30 bg-info/10 px-4 py-3 mb-4 flex items-start gap-3">
                         <i class="fas fa-magic text-info mt-0.5"></i>
-                        <span class="text-sm text-base-content/75">Choose a planned recipe before the run exists. The requisition keeps that plan so GM approval and Warehouse Raw issuing remain traceable.</span>
+                        <span class="text-sm text-base-content/75">Choose a planned recipe before the run exists. The requisition keeps that plan so Warehouse Raw issuing and production startup remain traceable.</span>
                     </div>
                     
                     <div class="flex items-center justify-between mb-3">
@@ -703,6 +716,7 @@
     <script>
         let currentPage = 1;
         let currentUser = null;
+        let currentWorkflow = 'active';
         let ingredientOptionsHtml = '';
         let runAutoFillToken = 0;
         let planAutoFillToken = 0;
@@ -737,6 +751,7 @@
                     (currentUser.first_name || '') + ' ' + (currentUser.last_name || '') || 'Production Staff';
             }
             
+            updateWorkflowButtons();
             await loadIngredientCatalog();
             await loadRecipes();
             await loadRuns();
@@ -753,15 +768,15 @@
         
         async function loadStats() {
             try {
-                const [pendingRes, approvedRes, fulfilledRes, urgentRes] = await Promise.all([
-                    ProductionService.getRequisitions({ status: 'pending', limit: 1 }),
-                    ProductionService.getRequisitions({ status: 'approved', limit: 1 }),
-                    ProductionService.getRequisitions({ status: 'fulfilled', limit: 1 }),
-                    ProductionService.getRequisitions({ priority: 'urgent', status: 'pending', limit: 1 })
+                const [pendingRes, issuesRes, fulfilledRes, urgentRes] = await Promise.all([
+                    ProductionService.getRequisitions({ workflow: 'active', status: 'pending', limit: 1 }),
+                    ProductionService.getRequisitions({ workflow: 'issues', limit: 1 }),
+                    ProductionService.getRequisitions({ workflow: 'active', status: 'fulfilled', limit: 1 }),
+                    ProductionService.getRequisitions({ workflow: 'active', priority: 'urgent', status: 'pending', limit: 1 })
                 ]);
                 
                 document.getElementById('statPending').textContent = pendingRes.pagination?.total || 0;
-                document.getElementById('statApproved').textContent = approvedRes.pagination?.total || 0;
+                document.getElementById('statIssues').textContent = issuesRes.pagination?.total || 0;
                 document.getElementById('statFulfilled').textContent = fulfilledRes.pagination?.total || 0;
                 document.getElementById('statUrgent').textContent = urgentRes.pagination?.total || 0;
             } catch (error) {
@@ -770,6 +785,8 @@
         }
         
         function resetFilters() {
+            currentWorkflow = 'active';
+            updateWorkflowButtons();
             document.getElementById('statusFilter').value = '';
             if (document.getElementById('priorityFilter')) {
                 document.getElementById('priorityFilter').value = '';
@@ -778,8 +795,32 @@
             loadRequisitions();
         }
         
+        function updateWorkflowButtons() {
+            document.querySelectorAll('.workflow-filter-btn').forEach(btn => {
+                const isActive = btn.dataset.workflow === currentWorkflow;
+                btn.classList.toggle('btn-primary', isActive);
+                btn.classList.toggle('btn-ghost', !isActive);
+            });
+        }
+
+        function filterByWorkflow(workflow) {
+            currentWorkflow = workflow || 'active';
+            updateWorkflowButtons();
+            if (document.getElementById('statusFilter')) {
+                document.getElementById('statusFilter').value = '';
+            }
+            if (document.getElementById('priorityFilter')) {
+                document.getElementById('priorityFilter').value = '';
+            }
+            currentPage = 1;
+            loadRequisitions();
+            showToast(`Showing ${currentWorkflow} requisitions`, 'info');
+        }
+
         // Quick filter by clicking on stat cards
         function filterByStatus(status) {
+            currentWorkflow = 'all';
+            updateWorkflowButtons();
             document.getElementById('statusFilter').value = status;
             if (document.getElementById('priorityFilter')) {
                 document.getElementById('priorityFilter').value = '';
@@ -790,6 +831,8 @@
         }
         
         function filterByPriority(priority) {
+            currentWorkflow = 'active';
+            updateWorkflowButtons();
             document.getElementById('statusFilter').value = '';
             if (document.getElementById('priorityFilter')) {
                 document.getElementById('priorityFilter').value = priority;
@@ -1556,6 +1599,7 @@
                 const params = {
                     page: currentPage,
                     limit: 20,
+                    workflow: currentWorkflow,
                     status: document.getElementById('statusFilter').value,
                     priority: document.getElementById('priorityFilter')?.value || ''
                 };
@@ -1619,23 +1663,37 @@
             };
             
             tbody.innerHTML = requisitions.map(req => {
-                const statusCfg = statusConfig[req.status] || { badge: 'badge-ghost', icon: 'fa-question' };
-                const priorityCfg = priorityConfig[req.priority] || { badge: 'badge-ghost', icon: '' };
-                const traceabilityLabel = req.run_code
-                    ? `<span class="font-mono text-sm">${escapeHtml(req.run_code)}</span>`
-                    : req.planned_product_name
-                        ? `<div><span class="font-semibold">${escapeHtml(req.planned_product_name)}</span><div class="text-xs text-base-content/60">${escapeHtml(req.planned_quantity || '')} ${escapeHtml(req.planned_yield_unit || '')} planned</div></div>`
-                        : '<span class="text-base-content/40">No plan</span>';
-                const isReadyForProduction = req.status === 'fulfilled';
+                const statusCfg = statusConfig[req.status] || { pill: 'bg-base-content/10 text-base-content/60', icon: 'fa-question' };
+                const priorityCfg = priorityConfig[req.priority] || { dot: 'bg-base-content/30', text: 'text-base-content/50', label: '' };
                 // A requisition becomes "Production started" once it's been linked to
                 // a production run. We hide the Start button in that case and show a
                 // small badge + a direct link to the new run.
                 const hasLinkedRun = !!(req.production_run_id || req.run_code);
-                // "Ready for production" should only show when there's actually a plan
-                // to start from. A fulfilled requisition with no planned_recipe_id or
-                // planned_quantity still needs the plan filled in before a run can start.
-                const hasPlan = !!(req.planned_recipe_id && req.planned_quantity);
-                const needsPlan = isReadyForProduction && !hasPlan;
+                const plannedRecipeId = Number(req.planned_recipe_id || 0);
+                const plannedQuantity = Number(req.planned_quantity || 0);
+                const plannedRecipeExists = Number(req.planned_recipe_exists || 0) > 0 || !!req.planned_product_name;
+                const missingRecipe = plannedRecipeId > 0 && !plannedRecipeExists;
+                const hasUsablePlan = plannedRecipeId > 0 && plannedQuantity > 0 && plannedRecipeExists;
+                const noPlan = !plannedRecipeId || plannedQuantity <= 0;
+                const pendingItems = Number(req.pending_item_count || 0);
+                const partialItems = Number(req.partial_item_count || 0);
+                const fulfilledItems = Number(req.fulfilled_item_count || 0);
+                const itemStatusTotal = pendingItems + partialItems + fulfilledItems;
+                const parentLineMismatch = (req.status === 'fulfilled' && (pendingItems > 0 || partialItems > 0))
+                    || (req.status === 'partial' && itemStatusTotal > 0 && pendingItems === 0 && partialItems === 0);
+                const isReadyForProduction = req.status === 'fulfilled'
+                    && !hasLinkedRun
+                    && hasUsablePlan
+                    && !parentLineMismatch;
+                const needsPlan = req.status === 'fulfilled' && !hasLinkedRun && noPlan;
+                const legacyFulfilled = req.status === 'fulfilled' && !hasLinkedRun && noPlan;
+                const traceabilityLabel = req.run_code
+                    ? `<span class="font-mono text-sm">${escapeHtml(req.run_code)}</span>`
+                    : missingRecipe
+                        ? `<div><span class="font-semibold text-error">Missing recipe #${escapeHtml(req.planned_recipe_id)}</span><div class="text-xs text-base-content/60">${escapeHtml(req.planned_quantity || '')} ${escapeHtml(req.planned_yield_unit || '')} planned</div></div>`
+                        : req.planned_product_name
+                            ? `<div><span class="font-semibold">${escapeHtml(req.planned_product_name)}</span><div class="text-xs text-base-content/60">${escapeHtml(req.planned_quantity || '')} ${escapeHtml(req.planned_yield_unit || '')} planned</div></div>`
+                            : '<span class="text-base-content/40">Legacy / no plan</span>';
 
                 // V4.0 — show a stock-override badge so the row is visually
                 // distinct from a normal request. The badge is a clickable
@@ -1647,6 +1705,12 @@
                             <i class="fas fa-exclamation-triangle"></i> Stock override${req.stock_warning_count ? ` · ${req.stock_warning_count}` : ''}
                        </span>`
                     : '';
+
+                const issueBadges = [
+                    missingRecipe ? '<span class="text-xs text-error font-semibold"><i class="fas fa-triangle-exclamation mr-1"></i>Planned recipe no longer exists</span>' : '',
+                    parentLineMismatch ? '<span class="text-xs text-error font-semibold"><i class="fas fa-triangle-exclamation mr-1"></i>Status disagrees with item lines</span>' : '',
+                    legacyFulfilled ? '<span class="text-xs text-base-content/60 font-semibold"><i class="fas fa-box-archive mr-1"></i>Legacy fulfilled record</span>' : ''
+                ].filter(Boolean).join('');
 
                 return `
                 <tr class="hover">
@@ -1670,7 +1734,8 @@
                                 ${formatStatusLabel(req.status)}
                             </span>
                             ${overrideBadge}
-                            ${isReadyForProduction && !hasLinkedRun && hasPlan ? '<span class="text-xs text-success font-semibold">Ready for production</span>' : ''}
+                            ${issueBadges}
+                            ${isReadyForProduction ? '<span class="text-xs text-success font-semibold">Ready for production</span>' : ''}
                             ${needsPlan && !hasLinkedRun ? '<span class="text-xs text-warning font-semibold"><i class="fas fa-exclamation-triangle mr-1"></i>Needs plan — open to set recipe &amp; qty</span>' : ''}
                             ${hasLinkedRun ? `<span class="text-xs text-primary font-semibold"><i class="fas fa-industry mr-1"></i>Production started${req.run_code ? ` · <a href="batches.html?id=${req.production_run_id}" class="link link-primary font-mono">${escapeHtml(req.run_code)}</a>` : ''}</span>` : ''}
                         </div>
@@ -1682,7 +1747,7 @@
                             <button class="btn btn-ghost btn-xs join-item" onclick="viewRequisition(${req.id})" title="View">
                                 <i class="fas fa-eye"></i>
                             </button>
-                            ${isReadyForProduction && !hasLinkedRun && hasPlan ? `
+                            ${isReadyForProduction ? `
                                 <button class="btn btn-success btn-xs join-item" onclick="startProductionFromRequisition(${req.id})" title="Start production run from this requisition">
                                     <i class="fas fa-industry"></i> Start
                                 </button>
@@ -2205,8 +2270,33 @@
                 'rejected': 'badge-error',
                 'cancelled': 'badge-ghost'
             };
+            const detailPlannedRecipeId = Number(req.planned_recipe_id || 0);
+            const detailPlannedQuantity = Number(req.planned_quantity || 0);
+            const detailRecipeExists = Number(req.planned_recipe_exists || 0) > 0 || !!req.planned_product_name;
+            const detailMissingRecipe = detailPlannedRecipeId > 0 && !detailRecipeExists;
+            const detailNoPlan = !detailPlannedRecipeId || detailPlannedQuantity <= 0;
+            const detailLineMismatch = (req.items || []).some(item => {
+                const requested = Number(item.requested_quantity || 0);
+                const issued = Number(item.issued_quantity || 0);
+                return req.status === 'fulfilled' && (item.status !== 'fulfilled' || issued + 0.0005 < requested);
+            });
+            const issueBlock = (detailMissingRecipe || detailLineMismatch || (req.status === 'fulfilled' && !req.production_run_id && detailNoPlan))
+                ? `<div class="alert alert-error mb-4">
+                    <i class="fas fa-triangle-exclamation"></i>
+                    <div>
+                        <div class="font-semibold">This requisition needs review</div>
+                        <div class="text-sm">
+                            ${detailMissingRecipe ? `Recipe #${escapeHtml(req.planned_recipe_id)} no longer exists. ` : ''}
+                            ${detailLineMismatch ? 'The parent status says fulfilled, but one or more item lines are not fully issued. ' : ''}
+                            ${req.status === 'fulfilled' && !req.production_run_id && detailNoPlan ? 'This is a legacy fulfilled record with no planned recipe or quantity. ' : ''}
+                        </div>
+                    </div>
+                </div>`
+                : '';
             const planRow = req.run_code
                 ? `<tr><td class="text-base-content/60">Production Run</td><td><span class="font-mono">${escapeHtml(req.run_code)}</span></td></tr>`
+                : detailMissingRecipe
+                    ? `<tr><td class="text-base-content/60">Planned Product</td><td><span class="text-error font-semibold">Missing recipe #${escapeHtml(req.planned_recipe_id)}</span><br><span class="text-sm text-base-content/60">${escapeHtml(req.planned_quantity || '')} ${escapeHtml(req.planned_yield_unit || '')} planned before run creation</span></td></tr>`
                 : req.planned_product_name
                     ? `<tr><td class="text-base-content/60">Planned Product</td><td>${escapeHtml(req.planned_product_name)}${req.planned_variant ? ` (${escapeHtml(req.planned_variant)})` : ''}<br><span class="text-sm text-base-content/60">${escapeHtml(req.planned_quantity || '')} ${escapeHtml(req.planned_yield_unit || '')} planned before run creation</span></td></tr>`
                     : '';
@@ -2249,6 +2339,7 @@
                 : '';
 
             document.getElementById('requisitionDetailsContent').innerHTML = `
+                ${issueBlock}
                 ${overrideBlock}
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                     <div>
@@ -2368,6 +2459,14 @@
         function renderNextStepBanner(req) {
             if (req.status !== 'fulfilled') return '';
             if (req.production_run_id || req.run_code) return '';          // already started
+            if (!req.planned_recipe_id || !req.planned_quantity) return '';
+            if (req.planned_recipe_id && !req.planned_recipe_exists && !req.planned_product_name) return '';
+            const hasUnfulfilledLine = (req.items || []).some(item => {
+                const requested = Number(item.requested_quantity || 0);
+                const issued = Number(item.issued_quantity || 0);
+                return item.status !== 'fulfilled' || issued + 0.0005 < requested;
+            });
+            if (hasUnfulfilledLine) return '';
             if (req.planned_product_type !== 'yogurt') return '';
             return `
                 <div class="alert alert-success mt-4">
@@ -2465,12 +2564,21 @@
                 showToast('This requisition is missing a planned recipe or quantity. Open it to add them first.', 'warning');
                 return;
             }
+            if (req.planned_recipe_id && !req.planned_recipe_exists && !req.planned_product_name) {
+                showToast('This requisition points to a recipe that no longer exists. Create a new requisition from an active recipe.', 'warning');
+                return;
+            }
             if (req.production_run_id) {
                 showToast('This requisition is already linked to a production run.', 'warning');
                 loadRequisitions();
                 return;
             }
-            if (!['fulfilled', 'partial'].includes(req.status)) {
+            const itemMismatch = (req.items || []).some(item => {
+                const requested = Number(item.requested_quantity || 0);
+                const issued = Number(item.issued_quantity || 0);
+                return item.status !== 'fulfilled' || issued + 0.0005 < requested;
+            });
+            if (req.status !== 'fulfilled' || itemMismatch) {
                 showToast(`Requisition is not ready (status: ${req.status}). Wait for Warehouse Raw to fulfill it.`, 'warning');
                 return;
             }

@@ -397,6 +397,7 @@
         let filteredAlerts = [];
         let categories = new Set();
         let createdReorderPRs = new Set();
+        let pendingReorderPRs = new Map();
 
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -441,6 +442,7 @@
                         // starts at the reorder point, not at minimum stock.
                         stock_status: a.stock_status === 'CRITICAL' ? 'LOW' : a.stock_status
                     }));
+                    await loadPendingReorderPRs();
                     const summary = response.data?.summary || {};
                     // Fold the legacy critical count into low so the Low Stock
                     // card reflects every item that needs a Purchase Request.
@@ -524,6 +526,79 @@
                 .replace(/'/g, '&#39;');
         }
 
+        function finiteNumber(value) {
+            const n = parseFloat(value);
+            return Number.isFinite(n) ? n : null;
+        }
+
+        function getParLevel(alert) {
+            const maxStock = finiteNumber(alert.maximum_stock);
+            const reorderPoint = finiteNumber(alert.reorder_point) || 0;
+            return maxStock && maxStock > 0 ? maxStock : reorderPoint * 2;
+        }
+
+        function getOrderQty(alert) {
+            const apiQty = finiteNumber(alert.qty_to_reorder);
+            if (apiQty !== null) {
+                return Math.max(0, apiQty);
+            }
+            const stock = finiteNumber(alert.current_stock) || 0;
+            return Math.max(0, getParLevel(alert) - stock);
+        }
+
+        function pendingPRKey(itemType, itemId) {
+            return `${itemType || 'ingredient'}:${String(itemId)}`;
+        }
+
+        async function loadPendingReorderPRs() {
+            pendingReorderPRs.clear();
+            try {
+                const response = await api.get('/purchasing/purchase_requests.php', {
+                    params: { action: 'pending_item_refs' }
+                });
+                (response?.data || []).forEach(ref => {
+                    if (!ref.item_id || ref.item_type !== 'ingredient') return;
+                    const key = pendingPRKey(ref.item_type, ref.item_id);
+                    if (!pendingReorderPRs.has(key)) {
+                        pendingReorderPRs.set(key, ref);
+                    }
+                });
+            } catch (error) {
+                console.warn('Could not load pending PR item references:', error);
+            }
+        }
+
+        function getPendingPR(alert) {
+            return pendingReorderPRs.get(pendingPRKey(alert.item_type || 'ingredient', alert.item_id));
+        }
+
+        function hasCoveredPR(alert) {
+            return createdReorderPRs.has(String(alert.item_id)) || Boolean(getPendingPR(alert));
+        }
+
+        function rememberPendingPR(alert, prInfo) {
+            if (!alert || !prInfo?.duplicate_pr_number) return;
+            pendingReorderPRs.set(pendingPRKey(alert.item_type || 'ingredient', alert.item_id), {
+                item_type: alert.item_type || 'ingredient',
+                item_id: alert.item_id,
+                pr_id: prInfo.duplicate_pr_id || null,
+                pr_number: prInfo.duplicate_pr_number,
+                status: 'pending'
+            });
+        }
+
+        function openPendingPR(ref) {
+            if (!ref) {
+                window.location.href = 'purchase_requests.html?status=pending';
+                return;
+            }
+            const params = new URLSearchParams({ status: ref.status || 'pending' });
+            if (ref.pr_id) {
+                params.set('pr_id', ref.pr_id);
+            }
+            window.location.href = `purchase_requests.html?${params.toString()}`;
+        }
+
         // Sort state for click-to-sort column headers. Default is "urgency
         // desc" so the most urgent (Out) shows first on page load.
         // `column` is one of 'name' | 'urgency' | 'stock' | 'qty' | 'lead'.
@@ -576,7 +651,9 @@
                 // Select every alert currently rendered. (We include already-
                 // PR-created ones so the user can decide to re-issue if
                 // they want — the per-row button still gets disabled.)
-                filteredAlerts.forEach(a => selectedItemIds.add(String(a.item_id)));
+                filteredAlerts
+                    .filter(a => a.stock_status !== 'OK' && getOrderQty(a) > 0 && !hasCoveredPR(a))
+                    .forEach(a => selectedItemIds.add(String(a.item_id)));
             }
             updateBulkActionBar();
             // Re-render to update per-row checkbox state.
@@ -593,10 +670,12 @@
         function syncSelectAllCheckbox() {
             const cb = document.getElementById('selectAllCheckbox');
             if (!cb) return;
-            const total = filteredAlerts.length;
-            const selected = filteredAlerts.filter(a => selectedItemIds.has(String(a.item_id))).length;
+            const selectable = filteredAlerts.filter(a => a.stock_status !== 'OK' && getOrderQty(a) > 0 && !hasCoveredPR(a));
+            const total = selectable.length;
+            const selected = selectable.filter(a => selectedItemIds.has(String(a.item_id))).length;
             cb.checked = total > 0 && selected === total;
             cb.indeterminate = selected > 0 && selected < total;
+            cb.disabled = total === 0;
         }
 
         // Show / hide the bulk action bar and update its label.
@@ -608,7 +687,7 @@
             if (!bar) return;
             const n = selectedItemIds.size;
             countEl.textContent = n;
-            labelEl.textContent = `Create ${n} PR${n === 1 ? '' : 's'}`;
+            labelEl.textContent = n === 1 ? `Create PR` : `Create PR (${n} items)`;
             btn.disabled = n === 0;
             if (n > 0) bar.classList.remove('hidden');
             else bar.classList.add('hidden');
@@ -641,8 +720,21 @@
             const parts = [];
             if (out) parts.push(`${out} out of stock`);
             if (low) parts.push(`${low} low`);
+            const pendingCount = actionable.filter(a => getOrderQty(a) > 0 && hasCoveredPR(a)).length;
+            if (pendingCount) parts.push(`${pendingCount} already pending`);
             breakdownEl.textContent = parts.join(' · ');
-            ctaLabelEl.textContent = `Create all ${total} Purchase Requisition${total === 1 ? '' : 's'}`;
+            // The CTA count is the number of items that can actually have a
+            // PR created — those with a positive orderable quantity
+            // (below par). Items flagged Low but already at par (qty == 0)
+            // are skipped by bulkCreatePRs, so showing the raw actionable
+            // total here would mislead the user into expecting more to be
+            // created than actually are.
+            const orderableCount = actionable.filter(a => {
+                return getOrderQty(a) > 0 && !hasCoveredPR(a);
+            }).length;
+            ctaLabelEl.textContent = orderableCount === 1
+                ? `Create Purchase Requisition`
+                : `Create Purchase Requisition (${orderableCount} items)`;
         }
 
         // Bulk-create PRs for all selected items, plus any actionable items
@@ -656,129 +748,133 @@
         // every selected item becomes a separate PR. After all PRs are
         // created, the user is redirected to the PR list so they can review.
         async function bulkCreatePRs() {
+            // Compute the orderable quantity for an alert using the same
+            // par-level rule as the row renderer: max_stock if set, else
+            // reorder_point. Returns 0 when at/above par — those items are
+            // shown as "—" in the table and their Start PR button is
+            // disabled, so the bulk path must skip them too (the backend
+            // rejects quantity <= 0 with "requested quantity must be greater
+            // than zero").
+            const orderableQty = getOrderQty;
+
             // If nothing's selected (hero CTA path), default to "all actionable".
             const targetAlerts = selectedItemIds.size === 0
-                ? allAlerts.filter(a => a.stock_status !== 'OK' && !createdReorderPRs.has(String(a.item_id)))
+                ? allAlerts.filter(a => a.stock_status !== 'OK' && !hasCoveredPR(a))
                 : Array.from(selectedItemIds)
                     .map(id => allAlerts.find(a => String(a.item_id) === id))
-                    .filter(a => a && !createdReorderPRs.has(String(a.item_id)));
+                    .filter(a => a && !hasCoveredPR(a));
 
             if (targetAlerts.length === 0) {
-                showToast('No actionable items to process', 'info');
+                const coveredCount = allAlerts.filter(a => a.stock_status !== 'OK' && getOrderQty(a) > 0 && hasCoveredPR(a)).length;
+                showToast(
+                    coveredCount > 0
+                        ? 'All orderable alerts already have pending Purchase Requests.'
+                        : 'No actionable items to process',
+                    'info'
+                );
                 return;
             }
 
-            // Build the request payloads up front. Same shape as the per-row
-            // modal's submit (status='pending' goes straight to GM for
-            // approval, matching what the user would get by filling the
-            // form manually).
-            const payloads = targetAlerts.map(alert => {
+            // Split out items that are flagged Low/Out but are already at/above
+            // par (qty == 0). The backend cannot create a PR with qty 0, so we
+            // surface them as skipped instead of letting them show up as
+            // failures. This matches the per-row Start PR button, which is
+            // disabled for the same rows.
+            const skippable = targetAlerts.filter(a => orderableQty(a) <= 0);
+            const orderable = targetAlerts.filter(a => orderableQty(a) > 0);
+
+            if (orderable.length === 0) {
+                const names = skippable.map(a => a.item_name || a.item_code).join(', ');
+                showToast(`No items need ordering (all at/above par): ${names}`, 'warning');
+                return;
+            }
+            if (skippable.length > 0) {
+                const names = skippable.map(a => a.item_name || a.item_code).join(', ');
+                showToast(`Skipping ${skippable.length} already at/above par: ${names}`, 'info');
+            }
+
+            // Build a single consolidated payload with all items bundled
+            // into one PR. The backend supports multi-item PRs natively.
+            const hasUrgent = orderable.some(a => a.stock_status === 'OUT_OF_STOCK');
+            const priority = hasUrgent ? 'urgent' : 'normal';
+
+            // Use the shortest lead time so the PR arrives before the most
+            // urgent item runs out.
+            let earliestNeededBy = null;
+            const items = orderable.map(alert => {
                 const stock = parseFloat(alert.current_stock) || 0;
                 const reorderPoint = parseFloat(alert.reorder_point) || 0;
-                const maxStock = parseFloat(alert.maximum_stock);
-                const parLevel = Number.isFinite(maxStock) && maxStock > 0 ? maxStock : reorderPoint;
-                const qty = Math.max(0, parLevel - stock);
-                const priority = alert.stock_status === 'OUT_OF_STOCK'
-                    ? 'urgent'
-                    : 'normal';
+                const qty = getOrderQty(alert);
                 const neededBy = new Date();
                 neededBy.setDate(neededBy.getDate() + parseInt(alert.lead_time_days || 7, 10));
-
+                if (!earliestNeededBy || neededBy < earliestNeededBy) {
+                    earliestNeededBy = neededBy;
+                }
                 return {
-                    payload: {
-                        status: 'pending',
-                        priority,
-                        needed_by_date: neededBy.toISOString().slice(0, 10),
-                        purpose: 'Stock below reorder point',
-                        notes: `Started from Reorder Alerts. Current stock: ${stock} ${alert.unit_of_measure || ''}. Reorder point: ${reorderPoint} ${alert.unit_of_measure || ''}. Status: ${alert.stock_status}.`,
-                        items: [{
-                            // For warehouse raw, items are always ingredients
-                            // (the reorder_alerts page is warehouse-scoped).
-                            ingredient_id: parseInt(alert.item_id, 10),
-                            mro_item_id: null,
-                            item_description: alert.item_name || '',
-                            quantity: qty,
-                            unit: alert.unit_of_measure || 'units',
-                            estimated_unit_price: parseFloat(alert.unit_cost) || 0,
-                            purpose: 'Stock below reorder point',
-                            notes: `Reorder alert for ${alert.item_code || alert.item_name || ''}.`
-                        }]
-                    },
-                    alert
+                    ingredient_id: parseInt(alert.item_id, 10),
+                    mro_item_id: null,
+                    item_description: alert.item_name || '',
+                    quantity: qty,
+                    unit: alert.unit_of_measure || 'units',
+                    estimated_unit_price: parseFloat(alert.unit_cost) || 0,
+                    purpose: 'Stock below reorder point',
+                    notes: `Current stock: ${stock} ${alert.unit_of_measure || ''}. Reorder point: ${reorderPoint} ${alert.unit_of_measure || ''}. Status: ${alert.stock_status}.`
                 };
             });
+
+            const payload = {
+                status: 'pending',
+                priority,
+                needed_by_date: earliestNeededBy.toISOString().slice(0, 10),
+                purpose: 'Stock below reorder point',
+                notes: `Bulk reorder from Reorder Alerts — ${items.length} item${items.length === 1 ? '' : 's'}.`,
+                items
+            };
 
             // Disable the buttons while we work to prevent double-clicks.
             const heroCta = document.getElementById('reorderHeroCta');
             const bulkBtn = document.getElementById('bulkCreateBtn');
             if (heroCta) heroCta.disabled = true;
             if (bulkBtn) bulkBtn.disabled = true;
-            showToast(`Creating ${payloads.length} Purchase Requisition${payloads.length === 1 ? '' : 's'}…`, 'info');
+            showToast(`Creating Purchase Requisition with ${items.length} item${items.length === 1 ? '' : 's'}…`, 'info');
 
-            let succeeded = 0;
-            let failed = 0;
-            const failedItems = [];
-            for (const { payload, alert } of payloads) {
-                try {
-                    // Note: payload here is the WRAPPER { payload, alert }.
-                    // The service expects the inner payload object (status,
-                    // priority, items, etc), so we pass payload.payload.
-                    const innerPayload = payload.payload;
-                    // Use fetch directly instead of the PurchasingService
-                    // wrapper. The wrapper goes through the shared `api`
-                    // (axios) instance, which in this context appears to be
-                    // sending the request with an empty body (verified via
-                    // the server-side `php://input` log). The per-row flow
-                    // has the same wrapper but works because it goes through
-                    // a different render path. Going direct to fetch with
-                    // explicit JSON.stringify is the most reliable option.
-                    const token = localStorage.getItem('highland_token');
-                    const response = await fetch(API_BASE_URL + '/purchasing/purchase_requests.php?action=create', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json',
-                            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-                        },
-                        body: JSON.stringify(innerPayload)
-                    });
-                    const res = await response.json();
-                    if (response.ok && (res.success || res.data?.success)) {
-                        succeeded++;
-                        createdReorderPRs.add(String(alert.item_id));
-                    } else {
-                        failed++;
-                        const errMsg = res.message || `HTTP ${response.status}`;
-                        console.error('[bulk] API error for item', alert.item_id, ':', errMsg, res);
-                        failedItems.push(`${alert.item_name || alert.item_code || `Item #${alert.item_id}`} (${errMsg})`);
-                    }
-                } catch (e) {
-                    failed++;
-                    const msg = e?.response?.data?.message || e?.message || e?.data?.message || 'unknown error';
-                    console.error('[bulk] FAILED for item', alert.item_id, 'msg:', msg, 'e:', e);
-                    failedItems.push(`${alert.item_name || alert.item_code || `Item #${alert.item_id}`} (${msg})`);
+            try {
+                const token = localStorage.getItem('highland_token');
+                const response = await fetch(API_BASE_URL + '/purchasing/purchase_requests.php?action=create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    },
+                    body: JSON.stringify(payload)
+                });
+                const res = await response.json();
+
+                if (response.ok && (res.success || res.data?.success)) {
+                    orderable.forEach(a => createdReorderPRs.add(String(a.item_id)));
+                    showToast(`Created Purchase Requisition with ${items.length} item${items.length === 1 ? '' : 's'}`, 'success');
+                    selectedItemIds.clear();
+                    updateBulkActionBar();
+                    renderAlerts();
+                    setTimeout(() => { window.location.href = 'purchase_requests.html'; }, 800);
+                } else if (response.status === 409 && res?.errors?.duplicate_pr_number) {
+                    showToast(`A pending PR already covers these items (${res.errors.duplicate_pr_number})`, 'info');
+                    orderable.forEach(a => rememberPendingPR(a, res.errors));
+                    renderAlerts();
+                } else {
+                    const errMsg = res.message || `HTTP ${response.status}`;
+                    console.error('[bulk] API error:', errMsg, res);
+                    showToast(`Failed to create PR: ${errMsg}`, 'error');
                 }
+            } catch (e) {
+                const msg = e?.message || 'Network error';
+                console.error('[bulk] FAILED:', msg, e);
+                showToast(`Failed to create PR: ${msg}`, 'error');
             }
 
             if (heroCta) heroCta.disabled = false;
             updateBulkActionBar();
-            renderAlerts();
-
-            if (failed === 0) {
-                showToast(`Created ${succeeded} Purchase Requisition${succeeded === 1 ? '' : 's'}`, 'success');
-            } else {
-                showToast(`${succeeded} created, ${failed} failed`, 'warning');
-                console.warn('Bulk PR failed items:', failedItems);
-            }
-
-            // Clear the selection so the bulk bar disappears, then redirect
-            // the user to the PR list so they can review what was created.
-            selectedItemIds.clear();
-            updateBulkActionBar();
-            // Small delay so the user sees the toast before the page changes.
-            setTimeout(() => {
-                window.location.href = 'purchase_requests.html';
-            }, 800);
         }
 
         function renderAlerts() {
@@ -811,13 +907,7 @@
                 }
             };
             const stockNum = (a) => parseFloat(a.current_stock) || 0;
-            const qtyNum   = (a) => {
-                const stock = stockNum(a);
-                const reorderPt = parseFloat(a.reorder_point) || 0;
-                const maxStock = parseFloat(a.maximum_stock);
-                const par = Number.isFinite(maxStock) && maxStock > 0 ? maxStock : reorderPt;
-                return Math.max(0, par - stock);
-            };
+            const qtyNum   = getOrderQty;
             const leadNum = (a) => parseInt(a.lead_time_days) || 0;
 
             const dir = currentSort.direction === 'asc' ? 1 : -1;
@@ -841,10 +931,11 @@
             tbody.innerHTML = sorted.map(alert => {
                 const stock = parseFloat(alert.current_stock) || 0;
                 const reorderPt = parseFloat(alert.reorder_point) || 0;
-                const maxStock = parseFloat(alert.maximum_stock);
-                const parLevel = Number.isFinite(maxStock) && maxStock > 0 ? maxStock : reorderPt;
-                const qtyToOrder = Math.max(0, parLevel - stock);
+                const parLevel = getParLevel(alert);
+                const qtyToOrder = getOrderQty(alert);
+                const pendingPR = getPendingPR(alert);
                 const hasCreatedPR = createdReorderPRs.has(String(alert.item_id));
+                const hasCoveredPRForRow = hasCreatedPR || Boolean(pendingPR);
                 const itemIdStr = String(alert.item_id);
                 const isChecked = selectedItemIds.has(itemIdStr);
 
@@ -899,12 +990,22 @@
                 else if (leadDays <= 7) leadBadge = 'badge-warning';
                 else leadBadge = 'badge-error';
 
-                // PR button. Disabled if qtyToOrder == 0 or PR already created.
-                const canCreate = qtyToOrder > 0 && !hasCreatedPR;
-                const btnClass = hasCreatedPR ? 'btn-success' : 'btn-primary';
-                const btnIcon = hasCreatedPR ? 'fa-check' : 'fa-file-signature';
-                const btnTitle = hasCreatedPR ? 'Purchase Request started' : 'Start Purchase Request';
-                const btnLabel = hasCreatedPR ? 'Created' : 'Start PR';
+                // PR action. Pending rows should take Warehouse Raw to the PR
+                // they already created instead of becoming a dead-end label.
+                const canCreate = qtyToOrder > 0 && !hasCoveredPRForRow;
+                const actionDisabled = !canCreate && !pendingPR;
+                const actionHandler = pendingPR
+                    ? `openPendingPR(${JSON.stringify({
+                        pr_id: pendingPR.pr_id || '',
+                        status: pendingPR.status || 'pending'
+                    }).replace(/"/g, '&quot;')})`
+                    : `startPurchaseRequest(${alert.item_id}, this)`;
+                const btnClass = pendingPR ? 'btn-outline btn-warning' : (hasCreatedPR ? 'btn-success' : 'btn-primary');
+                const btnIcon = pendingPR ? 'fa-hourglass-half' : (hasCreatedPR ? 'fa-check' : 'fa-file-signature');
+                const btnTitle = pendingPR
+                    ? `${pendingPR.pr_number || 'This item'} is already requested`
+                    : (hasCreatedPR ? 'Purchase Request started' : 'Start Purchase Request');
+                const btnLabel = pendingPR ? 'Pending' : (hasCreatedPR ? 'Created' : 'Start PR');
 
                 const safeName = escapeHtml(alert.item_name || 'Unnamed');
                 const safeCode = escapeHtml(alert.item_code || '');
@@ -953,7 +1054,7 @@
                                 <a href="ingredients.html?id=${alert.item_id}" class="btn btn-ghost btn-xs btn-square" title="View details">
                                     <i class="fas fa-eye"></i>
                                 </a>
-                                <button class="btn ${btnClass} btn-xs" onclick="startPurchaseRequest(${alert.item_id}, this)" title="${btnTitle}" ${canCreate ? '' : 'disabled'}>
+                                <button class="btn ${btnClass} btn-xs" onclick="${actionHandler}" title="${escapeHtml(btnTitle)}" ${actionDisabled ? 'disabled' : ''}>
                                     <i class="fas ${btnIcon}"></i>
                                     <span class="hidden lg:inline">${btnLabel}</span>
                                 </button>
@@ -1010,9 +1111,12 @@
 
             const stock = parseFloat(alert.current_stock) || 0;
             const reorderPoint = parseFloat(alert.reorder_point) || 0;
-            const maxStock = parseFloat(alert.maximum_stock);
-            const parLevel = Number.isFinite(maxStock) && maxStock > 0 ? maxStock : reorderPoint;
-            const qty = Math.max(0, parLevel - stock);
+            const pendingPR = getPendingPR(alert);
+            if (pendingPR) {
+                showToast(`${alert.item_name} already has pending ${pendingPR.pr_number}.`, 'info');
+                return;
+            }
+            const qty = getOrderQty(alert);
             if (qty <= 0) {
                 showToast(`${alert.item_name} does not need reordering right now.`, 'info');
                 return;
@@ -1063,8 +1167,8 @@
                 a.category_name || '',
                 a.current_stock,
                 a.reorder_point,
-                a.maximum_stock || '',
-                Math.max(0, (parseFloat(a.maximum_stock) || parseFloat(a.reorder_point)) - parseFloat(a.current_stock)),
+                getParLevel(a),
+                getOrderQty(a),
                 a.lead_time_days || 7
             ]);
 
