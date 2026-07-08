@@ -155,7 +155,7 @@ define('TEMP_CREDENTIAL_LENGTH', 10);      // Length of auto-generated temp pass
 if ($isAzure) {
     define('APP_URL', envOrDefault('APP_URL', 'https://highlandfresh.codes'));
 } elseif ($isInfinityFree) {
-    define('APP_URL', envOrDefault('APP_URL', 'https://highlandfresh.infinityfree.io'));
+    define('APP_URL', envOrDefault('APP_URL', 'http://highlandfresh.infinityfree.io'));
 } else {
     define('APP_URL', envOrDefault('APP_URL', 'http://localhost/HighlandFreshAppV4'));
 }
