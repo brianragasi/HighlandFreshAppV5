@@ -116,6 +116,19 @@ const WarehouseRawService = {
     },
 
     /**
+     * Clear expired raw milk batches from a tank.
+     * @param {number} tankId - Tank ID
+     * @param {string} reason - Optional disposal reason
+     */
+    async expireTankMilk(tankId, reason = 'Expired raw milk removed from tank') {
+        return await api.put(`${this.baseUrl}/tanks.php`, {
+            action: 'expire_tank_milk',
+            id: tankId,
+            reason
+        });
+    },
+
+    /**
      * Update tank temperature
      * @param {number} tankId - Tank ID
      * @param {number} temperature - Temperature in Celsius

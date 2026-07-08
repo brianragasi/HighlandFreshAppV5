@@ -85,6 +85,7 @@ try {
         FROM raw_milk_inventory
         WHERE status IN ('available', 'reserved')
         AND qc_status = 'approved'
+        AND expiry_date >= CURDATE()
     ");
     $milkStats->execute();
     $milkData = $milkStats->fetch();
@@ -109,7 +110,7 @@ try {
         SELECT COUNT(*) as count, COALESCE(SUM(remaining_liters), 0) as liters
         FROM raw_milk_inventory
         WHERE status IN ('available', 'reserved')
-        AND expiry_date <= DATE_ADD(CURDATE(), INTERVAL 2 DAY)
+        AND expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 2 DAY)
     ");
     $expiringMilk->execute();
     $expiringMilkData = $expiringMilk->fetch();
@@ -120,7 +121,7 @@ try {
     $lowStockIngredients = $db->prepare("
         SELECT COUNT(*) as count
         FROM ingredients
-        WHERE is_active = 1 AND current_stock <= minimum_stock
+        WHERE is_active = 1 AND current_stock <= " . StockRule::lowThresholdSql('reorder_point', 'minimum_stock') . "
     ");
     $lowStockIngredients->execute();
     $lowStockData = $lowStockIngredients->fetch();
@@ -150,7 +151,7 @@ try {
     $lowStockMRO = $db->prepare("
         SELECT COUNT(*) as count
         FROM mro_items
-        WHERE is_active = 1 AND current_stock <= minimum_stock
+        WHERE is_active = 1 AND current_stock <= " . StockRule::lowThresholdSql('reorder_point', 'minimum_stock') . "
     ");
     $lowStockMRO->execute();
     $lowStockMROData = $lowStockMRO->fetch();
@@ -159,7 +160,7 @@ try {
     $criticalMRO = $db->prepare("
         SELECT COUNT(*) as count
         FROM mro_items
-        WHERE is_active = 1 AND is_critical = 1 AND current_stock <= minimum_stock
+        WHERE is_active = 1 AND is_critical = 1 AND current_stock <= " . StockRule::lowThresholdSql('reorder_point', 'minimum_stock') . "
     ");
     $criticalMRO->execute();
     $criticalMROData = $criticalMRO->fetch();
@@ -291,7 +292,7 @@ try {
             minimum_stock,
             unit_of_measure
         FROM ingredients
-        WHERE is_active = 1 AND current_stock <= minimum_stock
+        WHERE is_active = 1 AND current_stock <= " . StockRule::lowThresholdSql('reorder_point', 'minimum_stock') . "
         UNION ALL
         SELECT
             'mro' as type,
@@ -301,7 +302,7 @@ try {
             minimum_stock,
             unit_of_measure
         FROM mro_items
-        WHERE is_active = 1 AND current_stock <= minimum_stock
+        WHERE is_active = 1 AND current_stock <= " . StockRule::lowThresholdSql('reorder_point', 'minimum_stock') . "
         ORDER BY (current_stock / NULLIF(minimum_stock, 0)) ASC
         LIMIT 10
     ");
@@ -330,6 +331,7 @@ try {
         LEFT JOIN milk_types mt ON rmi.milk_type_id = mt.id
         WHERE rmi.status = 'available'
         AND rmi.tank_id IS NULL
+        AND rmi.expiry_date >= CURDATE()
         ORDER BY rmi.received_date ASC
         LIMIT 10
     ");
@@ -357,6 +359,7 @@ try {
         FROM milk_types mt
         LEFT JOIN raw_milk_inventory rmi ON mt.id = rmi.milk_type_id
             AND rmi.status IN ('available', 'reserved')
+            AND rmi.expiry_date >= CURDATE()
         GROUP BY mt.id, mt.type_code, mt.type_name
     ");
     $milkByType->execute();

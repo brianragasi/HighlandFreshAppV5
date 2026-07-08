@@ -173,7 +173,6 @@
                         <select class="select select-bordered select-sm" id="statusFilter">
                             <option value="all">All Statuses</option>
                             <option value="out">Out of Stock</option>
-                            <option value="critical">Critical</option>
                             <option value="low">Low Stock</option>
                             <option value="ok">In Stock</option>
                         </select>
@@ -243,7 +242,13 @@
             try {
                 const response = await WarehouseRawService.getInventoryReport(state.filters);
                 if (response.success) {
-                    state.items = response.data.items;
+                    // Collapse the legacy Critical tier into Low Stock. The
+                    // backend report still emits status='critical'; the
+                    // frontend treats every low-inventory row as Low Stock.
+                    state.items = (response.data.items || []).map(it => ({
+                        ...it,
+                        status: it.status === 'critical' ? 'low' : it.status
+                    }));
                     state.stats = response.data.stats;
                     renderStats();
                     renderTable();
@@ -261,23 +266,22 @@
             if (!s) return;
             document.getElementById('statTotal').textContent = (s.total_items || 0).toLocaleString();
             document.getElementById('statValue').textContent = '₱' + Number(s.total_value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            document.getElementById('statLow').textContent = (s.low_count || 0).toLocaleString();
+            document.getElementById('statLow').textContent = ((s.low_count || 0) + (s.critical_count || 0)).toLocaleString();
             document.getElementById('statOut').textContent = (s.out_count || 0).toLocaleString();
         }
 
         function statusBadge(status) {
             const map = {
-                out:      { cls: 'badge-ghost',   text: 'Out' },
-                critical: { cls: 'badge-error',   text: 'Critical' },
-                low:      { cls: 'badge-warning', text: 'Low' },
-                ok:       { cls: 'badge-success', text: 'OK' },
+                out: { cls: 'badge-ghost',   text: 'Out' },
+                low: { cls: 'badge-warning', text: 'Low' },
+                ok:  { cls: 'badge-success', text: 'OK' },
             };
             const s = map[status] || { cls: 'badge-ghost', text: status };
             return `<span class="badge ${s.cls} badge-sm">${s.text}</span>`;
         }
 
         function statusDot(status) {
-            const map = { out: 'bg-base-300', critical: 'bg-error', low: 'bg-warning', ok: 'bg-success' };
+            const map = { out: 'bg-base-300', low: 'bg-warning', ok: 'bg-success' };
             return `<span class="inline-block w-2.5 h-2.5 rounded-full ${map[status] || 'bg-base-300'}"></span>`;
         }
 

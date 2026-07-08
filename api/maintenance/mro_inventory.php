@@ -84,8 +84,8 @@ try {
                                (mi.minimum_stock - mi.current_stock) as deficit
                         FROM mro_items mi
                         LEFT JOIN mro_categories mc ON mi.category_id = mc.id
-                        WHERE mi.is_active = 1 
-                          AND mi.current_stock <= mi.minimum_stock
+                        WHERE mi.is_active = 1
+                          AND mi.current_stock <= " . StockRule::lowThresholdSql('mi.reorder_point', 'mi.minimum_stock') . "
                         ORDER BY mi.is_critical DESC, (mi.minimum_stock - mi.current_stock) DESC
                     ");
                     Response::success($stmt->fetchAll(), 'Low stock items retrieved');
@@ -115,7 +115,7 @@ try {
                     }
                     
                     if ($lowStockOnly) {
-                        $where .= " AND mi.current_stock <= mi.minimum_stock";
+                        $where .= " AND mi.current_stock <= " . StockRule::lowThresholdSql('mi.reorder_point', 'mi.minimum_stock');
                     }
                     
                     // Count
@@ -126,7 +126,7 @@ try {
                     // Get items
                     $stmt = $db->prepare("
                         SELECT mi.*, mc.category_name,
-                               CASE WHEN mi.current_stock <= mi.minimum_stock THEN 1 ELSE 0 END as is_low_stock
+                               CASE WHEN mi.current_stock <= " . StockRule::lowThresholdSql('mi.reorder_point', 'mi.minimum_stock') . " THEN 1 ELSE 0 END as is_low_stock
                         FROM mro_items mi
                         LEFT JOIN mro_categories mc ON mi.category_id = mc.id
                         {$where}

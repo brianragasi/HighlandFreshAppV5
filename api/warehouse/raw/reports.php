@@ -38,12 +38,12 @@ try {
 
 /* ========================================================================
    Inventory report — UNION of ingredients + MRO items, with computed
-   status (Out / Critical / Low / OK) and last-movement timestamp.
+   status (Out / Low / OK) and last-movement timestamp.
    ======================================================================== */
 function handleInventoryReport($db) {
     $type = getParam('type', 'all');                 // all | ingredient | mro
     $categoryId = getParam('category_id', null);
-    $status = getParam('status', 'all');            // all | out | critical | low | ok
+    $status = getParam('status', 'all');            // all | out | low | ok
     $search = trim((string) getParam('search', ''));
 
     // Defensive table/column existence checks so a fresh install doesn't 500
@@ -65,6 +65,7 @@ function handleInventoryReport($db) {
                     i.unit_of_measure AS unit,
                     i.current_stock,
                     i.minimum_stock,
+                    i.reorder_point,
                     i.maximum_stock,
                     i.unit_cost,
                     " . ($hasMro ? "0" : "0") . " AS is_critical,
@@ -87,6 +88,7 @@ function handleInventoryReport($db) {
                     m.unit_of_measure AS unit,
                     m.current_stock,
                     m.minimum_stock,
+                    m.reorder_point,
                     m.maximum_stock,
                     m.unit_cost,
                     m.is_critical,
@@ -102,15 +104,19 @@ function handleInventoryReport($db) {
     foreach ($rows as &$row) {
         $row['current_stock'] = (float) ($row['current_stock'] ?? 0);
         $row['minimum_stock'] = (float) ($row['minimum_stock'] ?? 0);
+        $row['reorder_point'] = (float) ($row['reorder_point'] ?? 0);
         $row['maximum_stock'] = (float) ($row['maximum_stock'] ?? 0);
         $row['unit_cost']     = (float) ($row['unit_cost'] ?? 0);
         $row['is_critical']   = (int) ($row['is_critical'] ?? 0);
         $row['value']         = round($row['current_stock'] * $row['unit_cost'], 2);
-        $row['status']        = computeStockStatus(
+        // reports/inventory.html renders short 'out'|'low'|'ok' tokens, so
+        // map the canonical StockRule status strings to those short forms.
+        $canonical = StockRule::status(
             $row['current_stock'],
-            $row['minimum_stock'],
-            $row['maximum_stock']
+            $row['reorder_point'],
+            $row['minimum_stock']
         );
+        $row['status'] = $canonical === 'OUT_OF_STOCK' ? 'out' : strtolower($canonical);
         if ($row['last_movement']) {
             $row['last_movement'] = date('Y-m-d H:i:s', strtotime($row['last_movement']));
         } else {
@@ -136,23 +142,23 @@ function handleInventoryReport($db) {
         return true;
     }));
 
-    // Sort by status severity then name (critical items first, OK last)
+    // Sort by status severity then name (out items first, OK last). Critical
+    // was merged into Low Stock.
     usort($filtered, function ($a, $b) {
-        $order = ['out' => 0, 'critical' => 1, 'low' => 2, 'ok' => 3];
-        $oa = $order[$a['status']] ?? 4;
-        $ob = $order[$b['status']] ?? 4;
+        $order = ['out' => 0, 'low' => 1, 'ok' => 2];
+        $oa = $order[$a['status']] ?? 3;
+        $ob = $order[$b['status']] ?? 3;
         if ($oa !== $ob) {
             return $oa <=> $ob;
         }
         return strcasecmp($a['name'], $b['name']);
     });
 
-    // Summary stats
+    // Summary stats. critical_count was merged into low_count.
     $stats = [
         'total_items'   => count($filtered),
         'total_value'   => round(array_sum(array_column($filtered, 'value')), 2),
         'out_count'     => count(array_filter($filtered, fn($r) => $r['status'] === 'out')),
-        'critical_count' => count(array_filter($filtered, fn($r) => $r['status'] === 'critical')),
         'low_count'     => count(array_filter($filtered, fn($r) => $r['status'] === 'low')),
         'ok_count'      => count(array_filter($filtered, fn($r) => $r['status'] === 'ok')),
     ];
@@ -290,16 +296,16 @@ function handleMovementsReport($db) {
    Helpers
    ======================================================================== */
 function computeStockStatus($current, $min, $max) {
-    $current = (float) $current;
-    $min = (float) $min;
-    $max = (float) $max > 0 ? (float) $max : ($min * 3);
-    if ($current <= 0) {
+    // Retained for backward compatibility with older callers. The canonical
+    // rule lives in StockRule (see api/config/stock.php); this legacy helper
+    // has no reorder_point input, so it falls back to minimum_stock * 1.5 as
+    // the LOW threshold — the same fallback StockRule uses when reorder_point
+    // is unset. The $max argument does not affect status here (it only sets
+    // the par/refill-to level, not the LOW threshold).
+    if ((float) $current <= 0) {
         return 'out';
     }
-    if ($min > 0 && $current <= $min) {
-        return 'critical';
-    }
-    if ($min > 0 && $current <= $min * 1.5) {
+    if ((float) $current <= (float) $min * 1.5) {
         return 'low';
     }
     return 'ok';

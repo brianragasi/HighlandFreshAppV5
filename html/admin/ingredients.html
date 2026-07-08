@@ -390,163 +390,186 @@
             </form>
             <h3 class="font-bold text-lg mb-4" id="modalTitle">Add Ingredient</h3>
 
-            <form id="dataForm" class="space-y-4">
+            <form id="dataForm" class="space-y-5">
                 <input type="hidden" id="recordId">
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Ingredient Code</span></label>
-                        <input type="text" id="ingredient_code" class="input input-bordered"
-                            placeholder="Auto-generated" readonly>
-                    </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Ingredient Name *</span></label>
-                        <input type="text" id="ingredient_name" class="input input-bordered" required>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Category</span></label>
-                        <select id="category_id" class="select select-bordered">
-                            <option value="">Select Category</option>
-                        </select>
-                    </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Unit of Measure *</span></label>
-                        <select id="unit_of_measure" class="select select-bordered" required>
-                            <option value="">Select Unit</option>
-                            <option value="kg">Kilograms (kg)</option>
-                            <option value="g">Grams (g)</option>
-                            <option value="L">Liters (L)</option>
-                            <option value="ml">Milliliters (ml)</option>
-                            <option value="pcs">Pieces (pcs)</option>
-                            <option value="pack">Pack</option>
-                            <option value="bottle">Bottle</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- Supplier pack size: lets the requisition form auto-suggest how many
-                     packs to issue when a recipe needs a fractional quantity. Leave
-                     blank for ingredients that don't arrive in pre-defined packs. -->
-                <div class="rounded-lg border border-info/30 bg-info/5 px-4 py-3">
-                    <div class="flex items-start gap-2 mb-2">
-                        <i class="fas fa-boxes-stacked text-info mt-0.5"></i>
-                        <div>
-                            <p class="font-medium text-sm text-base-content">Supplier Pack Size <span class="text-xs text-base-content/60">(optional)</span></p>
-                            <p class="text-xs text-base-content/60">Used to suggest how many packs to issue from the warehouse when a recipe calls for a fractional quantity (e.g. "0.11 L" of cultures becomes "2 packets").</p>
+                <!-- Section: Basic Info -->
+                <fieldset class="border border-base-300 rounded-xl p-4">
+                    <legend class="text-sm font-semibold px-2 text-base-content/70">Basic Information</legend>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="form-control">
+                            <label class="label"><span class="label-text font-medium">Ingredient Code</span></label>
+                            <input type="text" id="ingredient_code" class="input input-bordered bg-base-200"
+                                placeholder="Auto-generated" readonly>
+                        </div>
+                        <div class="form-control">
+                            <label class="label"><span class="label-text font-medium">Ingredient Name *</span></label>
+                            <input type="text" id="ingredient_name" class="input input-bordered" required placeholder="e.g. Sugar, Rennet, Vanilla Extract">
                         </div>
                     </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
+                        <div class="form-control">
+                            <label class="label"><span class="label-text font-medium">Category</span></label>
+                            <select id="category_id" class="select select-bordered">
+                                <option value="">Select Category</option>
+                            </select>
+                        </div>
+                        <div class="form-control">
+                            <label class="label"><span class="label-text font-medium">Unit of Measure *</span></label>
+                            <select id="unit_of_measure" class="select select-bordered" required onchange="updateUnitBadges()">
+                                <option value="">Select Unit</option>
+                                <option value="kg">Kilograms (kg)</option>
+                                <option value="g">Grams (g)</option>
+                                <option value="L">Liters (L)</option>
+                                <option value="ml">Milliliters (ml)</option>
+                                <option value="liter">Liter</option>
+                                <option value="pcs">Pieces (pcs)</option>
+                                <option value="pack">Pack</option>
+                                <option value="bottle">Bottle</option>
+                                <option value="packet">Packet</option>
+                                <option value="roll">Roll</option>
+                            </select>
+                        </div>
+                        <div class="form-control">
+                            <label class="label"><span class="label-text font-medium">Status</span></label>
+                            <select id="is_active" class="select select-bordered">
+                                <option value="1">Active</option>
+                                <option value="0">Inactive</option>
+                            </select>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <!-- Section: Stock Levels -->
+                <fieldset class="border border-base-300 rounded-xl p-4">
+                    <legend class="text-sm font-semibold px-2 text-base-content/70">Stock Levels</legend>
+                    <p class="text-xs text-base-content/50 mb-3">Controls when reorder alerts fire. All values in the ingredient's unit of measure.</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text font-medium">Minimum Stock</span></label>
+                            <div class="join">
+                                <input type="number" id="minimum_stock" class="input input-bordered join-item w-full" step="1" min="0" value="0">
+                                <span class="btn btn-ghost join-item no-animation text-xs ingredient-unit-badge">units</span>
+                            </div>
+                            <label class="label py-0.5"><span class="label-text-alt text-error/80 text-xs">Critical low — immediate alert</span></label>
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text font-medium">Reorder Point</span></label>
+                            <div class="join">
+                                <input type="number" id="reorder_point" class="input input-bordered join-item w-full" step="1" min="0" value="0">
+                                <span class="btn btn-ghost join-item no-animation text-xs ingredient-unit-badge">units</span>
+                            </div>
+                            <label class="label py-0.5"><span class="label-text-alt text-warning/80 text-xs">Time to create a purchase request</span></label>
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text font-medium">Par Level (Max)</span></label>
+                            <div class="join">
+                                <input type="number" id="maximum_stock" class="input input-bordered join-item w-full" step="1" min="0" value="0">
+                                <span class="btn btn-ghost join-item no-animation text-xs ingredient-unit-badge">units</span>
+                            </div>
+                            <label class="label py-0.5"><span class="label-text-alt text-base-content/50 text-xs">Target quantity after restocking</span></label>
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text font-medium">Lead Time</span></label>
+                            <div class="join">
+                                <input type="number" id="lead_time_days" class="input input-bordered join-item w-full" value="7" min="1">
+                                <span class="btn btn-ghost join-item no-animation text-xs">days</span>
+                            </div>
+                            <label class="label py-0.5"><span class="label-text-alt text-base-content/50 text-xs">Days from order to delivery</span></label>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <!-- Section: Supplier Pack Size -->
+                <fieldset class="border border-info/30 rounded-xl p-4 bg-info/5">
+                    <legend class="text-sm font-semibold px-2 text-info">Supplier Pack Size <span class="text-xs font-normal text-base-content/50">(optional)</span></legend>
+                    <p class="text-xs text-base-content/55 mb-3">How does this arrive from the supplier? Controls pack rounding when production requests materials (e.g. "need 0.11 L" becomes "1 bottle").</p>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div class="form-control">
-                            <label class="label py-1"><span class="label-text text-xs">Pack Value</span></label>
-                            <input type="number" id="pack_size_value" class="input input-bordered input-sm" step="0.001" min="0" placeholder="e.g. 100">
+                            <label class="label py-1"><span class="label-text text-xs font-medium">Size per Pack</span></label>
+                            <input type="number" id="pack_size_value" class="input input-bordered input-sm" step="0.001" min="0" placeholder="e.g. 25">
+                            <label class="label py-0.5"><span class="label-text-alt text-xs text-base-content/50">How much is in 1 pack?</span></label>
                         </div>
                         <div class="form-control">
-                            <label class="label py-1"><span class="label-text text-xs">Pack Unit</span></label>
+                            <label class="label py-1"><span class="label-text text-xs font-medium">Pack Unit</span></label>
                             <select id="pack_size_unit" class="select select-bordered select-sm">
                                 <option value="">— Same as Unit of Measure —</option>
                                 <option value="kg">Kilograms (kg)</option>
                                 <option value="g">Grams (g)</option>
                                 <option value="L">Liters (L)</option>
                                 <option value="ml">Milliliters (ml)</option>
+                                <option value="liter">Liter</option>
                                 <option value="pcs">Pieces (pcs)</option>
                                 <option value="pack">Pack</option>
                                 <option value="bottle">Bottle</option>
+                                <option value="packet">Packet</option>
                             </select>
                         </div>
                         <div class="form-control">
-                            <label class="label py-1"><span class="label-text text-xs">Display Label <span class="text-base-content/50">(optional)</span></span></label>
-                            <input type="text" id="pack_label" class="input input-bordered input-sm" placeholder="e.g. 100 mL packet">
+                            <label class="label py-1"><span class="label-text text-xs font-medium">Display Label</span></label>
+                            <input type="text" id="pack_label" class="input input-bordered input-sm" placeholder="e.g. 25 kg sack, 1 L bottle">
+                            <label class="label py-0.5"><span class="label-text-alt text-xs text-base-content/50">Shown to warehouse staff</span></label>
                         </div>
                     </div>
-                </div>
+                </fieldset>
 
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div class="form-control">
-                        <label class="label">
-                            <span class="label-text font-medium">Minimum Stock</span>
-                        </label>
-                        <input type="number" id="minimum_stock" class="input input-bordered" step="1" min="0" value="0">
-                        <label class="label">
-                            <span class="label-text-alt text-base-content/50">🔴 Danger zone — alert manager
-                                immediately</span>
-                        </label>
+                <!-- Section: Cost & Shelf Life -->
+                <fieldset class="border border-base-300 rounded-xl p-4">
+                    <legend class="text-sm font-semibold px-2 text-base-content/70">Cost & Shelf Life</legend>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text font-medium">Unit Cost</span></label>
+                            <div class="join">
+                                <span class="btn btn-ghost join-item no-animation text-xs">₱</span>
+                                <input type="number" id="unit_cost" class="input input-bordered join-item w-full" step="0.01" placeholder="0.00">
+                            </div>
+                            <label class="label py-0.5"><span class="label-text-alt text-xs text-base-content/50">Price per 1 unit of measure</span></label>
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text font-medium">Shelf Life</span></label>
+                            <div class="join">
+                                <input type="number" id="shelf_life_days" class="input input-bordered join-item w-full" min="1" placeholder="e.g. 180">
+                                <span class="btn btn-ghost join-item no-animation text-xs">days</span>
+                            </div>
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text font-medium">Expiry Handling</span></label>
+                            <select id="is_perishable" class="select select-bordered">
+                                <option value="1">Perishable (require expiry date)</option>
+                                <option value="0">Non-perishable (no expiry needed)</option>
+                            </select>
+                        </div>
                     </div>
-                    <div class="form-control">
-                        <label class="label">
-                            <span class="label-text font-medium">Reorder Point</span>
-                        </label>
-                        <input type="number" id="reorder_point" class="input input-bordered" step="1" min="0" value="0">
-                        <label class="label">
-                            <span class="label-text-alt text-base-content/50">🟡 Standard trigger — time to
-                                purchase</span>
-                        </label>
-                    </div>
-                    <div class="form-control">
-                        <label class="label">
-                            <span class="label-text font-medium">Par Level (Max Stock)</span>
-                        </label>
-                        <input type="number" id="maximum_stock" class="input input-bordered" step="1" min="0" value="0">
-                        <label class="label">
-                            <span class="label-text-alt text-base-content/50">Target level after reorder</span>
-                        </label>
-                    </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text font-medium">Lead Time (days)</span></label>
-                        <input type="number" id="lead_time_days" class="input input-bordered" value="7" min="1">
-                        <label class="label">
-                            <span class="label-text-alt text-base-content/50">Days from order to delivery</span>
-                        </label>
-                    </div>
-                </div>
+                </fieldset>
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="form-control">
-                        <label class="label"><span class="label-text font-medium">Unit Cost (₱)</span></label>
-                        <input type="number" id="unit_cost" class="input input-bordered" step="0.01" placeholder="0.00">
-                        <label class="label"><span class="label-text-alt text-base-content/50">Cost per 1 unit of
-                                measure</span></label>
+                <!-- Section: Storage -->
+                <fieldset class="border border-base-300 rounded-xl p-4">
+                    <legend class="text-sm font-semibold px-2 text-base-content/70">Storage</legend>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text font-medium">Storage Location</span></label>
+                            <select id="storage_location" class="select select-bordered">
+                                <option value="">Select Location</option>
+                                <option value="Cold Storage">Cold Storage</option>
+                                <option value="Dry Storage">Dry Storage</option>
+                                <option value="Freezer">Freezer</option>
+                                <option value="Chemical Storage">Chemical Storage</option>
+                                <option value="Room Temperature">Room Temperature</option>
+                            </select>
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text font-medium">Storage Notes</span></label>
+                            <input type="text" id="storage_requirements" class="input input-bordered"
+                                placeholder="e.g. Keep refrigerated at 4°C, avoid sunlight">
+                        </div>
                     </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text font-medium">Shelf Life (days)</span></label>
-                        <input type="number" id="shelf_life_days" class="input input-bordered" min="1">
-                    </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text font-medium">Expiry Handling</span></label>
-                        <select id="is_perishable" class="select select-bordered">
-                            <option value="1">Perishable - require expiry</option>
-                            <option value="0">Non-perishable - no expiry</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Storage Location</span></label>
-                        <input type="text" id="storage_location" class="input input-bordered">
-                    </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Status</span></label>
-                        <select id="is_active" class="select select-bordered">
-                            <option value="1">Active</option>
-                            <option value="0">Inactive</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-control">
-                    <label class="label"><span class="label-text">Storage Requirements</span></label>
-                    <textarea id="storage_requirements" class="textarea textarea-bordered" rows="2"
-                        placeholder="e.g., Keep refrigerated, avoid direct sunlight"></textarea>
-                </div>
+                </fieldset>
 
                 <div class="modal-action">
                     <button type="button" class="btn" onclick="closeModal()">Cancel</button>
                     <button type="submit" class="btn btn-primary" id="saveBtn">
                         <span class="loading loading-spinner loading-sm hidden"></span>
-                        Save
+                        Save Ingredient
                     </button>
                 </div>
             </form>
@@ -610,6 +633,13 @@
             } catch (error) {
                 console.error('Error loading categories:', error);
             }
+        }
+
+        function updateUnitBadges() {
+            const unit = document.getElementById('unit_of_measure').value || 'units';
+            document.querySelectorAll('.ingredient-unit-badge').forEach(el => {
+                el.textContent = unit;
+            });
         }
 
         async function loadData() {
@@ -732,6 +762,7 @@
             document.getElementById('modalTitle').textContent = id ? 'Edit Ingredient' : 'Add Ingredient';
             document.getElementById('dataForm').reset();
             document.getElementById('recordId').value = '';
+            updateUnitBadges();
             document.getElementById('formModal').showModal();
         }
 
@@ -761,9 +792,18 @@
                     document.getElementById('unit_cost').value = i.unit_cost ? parseFloat(i.unit_cost).toFixed(2) : '';
                     document.getElementById('shelf_life_days').value = i.shelf_life_days || '';
                     document.getElementById('is_perishable').value = String(i.is_perishable ?? 1);
-                    document.getElementById('storage_location').value = i.storage_location || '';
+                    const storageSelect = document.getElementById('storage_location');
+                    const storageVal = i.storage_location || '';
+                    if (storageVal && !Array.from(storageSelect.options).some(o => o.value === storageVal)) {
+                        const opt = document.createElement('option');
+                        opt.value = storageVal;
+                        opt.textContent = storageVal;
+                        storageSelect.appendChild(opt);
+                    }
+                    storageSelect.value = storageVal;
                     document.getElementById('storage_requirements').value = i.storage_requirements || '';
                     document.getElementById('is_active').value = i.is_active;
+                    updateUnitBadges();
 
                     document.getElementById('modalTitle').textContent = 'Edit Ingredient';
                     document.getElementById('formModal').showModal();
