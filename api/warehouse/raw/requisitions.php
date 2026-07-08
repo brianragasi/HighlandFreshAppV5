@@ -19,6 +19,7 @@
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
 require_once __DIR__ . '/ingredient_stock_helpers.php';
+require_once __DIR__ . '/mro_stock_helpers.php';
 
 // Require Warehouse Raw role
 $currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'production_staff', 'maintenance_head']);
@@ -135,6 +136,7 @@ function handleGet($db, $currentUser) {
             // 'pending' is the actionable state now. Sort it first so
             // warehouse staff see the queue in the right order.
             $sql .= " ORDER BY
+                ir.created_at DESC,
                 CASE ir.status WHEN 'pending' THEN 1 WHEN 'approved' THEN 2 WHEN 'partial' THEN 3 ELSE 4 END,
                 CASE ir.priority
                     WHEN 'urgent' THEN 1
@@ -143,7 +145,7 @@ function handleGet($db, $currentUser) {
                     ELSE 4
                 END,
                 ir.needed_by_date ASC,
-                ir.created_at ASC
+                ir.id DESC
             ";
             
             $stmt = $db->prepare($sql);
@@ -829,9 +831,15 @@ function issueIngredient($db, $ingredientId, $quantity, $requisitionId, $current
  * Issue MRO item (FIFO)
  */
 function issueMRO($db, $mroItemId, $quantity, $requisitionId, $currentUser) {
-    $item = $db->prepare("SELECT * FROM mro_items WHERE id = ?");
+    $item = $db->prepare("SELECT * FROM mro_items WHERE id = ? AND is_active = 1 FOR UPDATE");
     $item->execute([$mroItemId]);
     $itemData = $item->fetch();
+
+    if (!$itemData) {
+        throw new Exception("MRO item not found (ID: {$mroItemId})");
+    }
+
+    ensureMROBatchesForIssue($db, $itemData, $quantity, $currentUser);
     
     // Get available inventory
     $inventory = $db->prepare("
@@ -840,6 +848,7 @@ function issueMRO($db, $mroItemId, $quantity, $requisitionId, $currentUser) {
         AND status IN ('available', 'partially_used')
         AND remaining_quantity > 0
         ORDER BY received_date ASC, id ASC
+        FOR UPDATE
     ");
     $inventory->execute([$mroItemId]);
     $inventoryList = $inventory->fetchAll();

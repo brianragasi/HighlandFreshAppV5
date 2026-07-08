@@ -759,6 +759,9 @@ try {
                 // Get single requisition with items
                 $stmt = $db->prepare("
                     SELECT ir.*,
+                           pr.run_code,
+                           pr.status as run_status,
+                           pmr.id as planned_recipe_exists,
                            pmr.recipe_code as planned_recipe_code,
                            pmr.product_name as planned_product_name,
                            pmr.variant as planned_variant,
@@ -767,6 +770,7 @@ try {
                            u2.first_name as approved_by_first, u2.last_name as approved_by_last,
                            u3.first_name as fulfilled_by_first, u3.last_name as fulfilled_by_last
                     FROM material_requisitions ir
+                    LEFT JOIN production_runs pr ON ir.production_run_id = pr.id
                     LEFT JOIN master_recipes pmr ON ir.planned_recipe_id = pmr.id
                     LEFT JOIN users u1 ON ir.requested_by = u1.id
                     LEFT JOIN users u2 ON ir.approved_by = u2.id
@@ -853,6 +857,7 @@ try {
             
             // List requisitions
             $status = getParam('status');
+            $workflow = getParam('workflow', 'active');
             $productionRunId = getParam('run_id');
             $dateFrom = getParam('date_from');
             $dateTo = getParam('date_to');
@@ -860,8 +865,70 @@ try {
             $limit = (int) getParam('limit', 20);
             $offset = ($page - 1) * $limit;
             
+            $joins = "
+                LEFT JOIN production_runs pr ON ir.production_run_id = pr.id
+                LEFT JOIN master_recipes pmr ON ir.planned_recipe_id = pmr.id
+            ";
             $where = "WHERE 1=1";
             $params = [];
+
+            switch ($workflow) {
+                case 'active':
+                    $where .= "
+                        AND ir.status IN ('pending', 'partial', 'fulfilled')
+                        AND NOT (ir.status = 'fulfilled' AND ir.production_run_id IS NOT NULL)
+                        AND NOT (ir.planned_recipe_id IS NOT NULL AND pmr.id IS NULL)
+                        AND NOT (
+                            ir.status = 'fulfilled'
+                            AND ir.production_run_id IS NULL
+                            AND (ir.planned_recipe_id IS NULL OR ir.planned_quantity IS NULL OR ir.planned_quantity <= 0)
+                        )
+                    ";
+                    break;
+                case 'issues':
+                    $where .= "
+                        AND (
+                            (ir.planned_recipe_id IS NOT NULL AND pmr.id IS NULL)
+                            OR (
+                                ir.status IN ('fulfilled', 'partial')
+                                AND ir.production_run_id IS NULL
+                                AND (ir.planned_recipe_id IS NULL OR ir.planned_quantity IS NULL OR ir.planned_quantity <= 0)
+                            )
+                            OR EXISTS (
+                                SELECT 1
+                                FROM requisition_items ri_issue
+                                WHERE ri_issue.requisition_id = ir.id
+                                  AND (
+                                      (ri_issue.status = 'fulfilled' AND ri_issue.issued_quantity + 0.0005 < ri_issue.requested_quantity)
+                                      OR (ri_issue.status = 'partial' AND ri_issue.issued_quantity + 0.0005 >= ri_issue.requested_quantity)
+                                      OR (ir.status = 'fulfilled' AND ri_issue.status <> 'fulfilled')
+                                  )
+                            )
+                            OR (
+                                ir.status = 'partial'
+                                AND EXISTS (
+                                    SELECT 1 FROM requisition_items ri_any
+                                    WHERE ri_any.requisition_id = ir.id
+                                )
+                                AND NOT EXISTS (
+                                    SELECT 1 FROM requisition_items ri_open
+                                    WHERE ri_open.requisition_id = ir.id
+                                      AND ri_open.status <> 'fulfilled'
+                                )
+                            )
+                        )
+                    ";
+                    break;
+                case 'legacy':
+                    $where .= " AND ir.production_run_id IS NULL AND ir.planned_recipe_id IS NULL";
+                    break;
+                case 'started':
+                    $where .= " AND ir.production_run_id IS NOT NULL";
+                    break;
+                case 'all':
+                default:
+                    break;
+            }
             
             if ($status) {
                 $where .= " AND ir.status = ?";
@@ -884,7 +951,7 @@ try {
             }
             
             // Get total count
-            $countStmt = $db->prepare("SELECT COUNT(*) as total FROM material_requisitions ir {$where}");
+            $countStmt = $db->prepare("SELECT COUNT(*) as total FROM material_requisitions ir {$joins} {$where}");
             $countStmt->execute($params);
             $total = $countStmt->fetch()['total'];
             
@@ -894,27 +961,39 @@ try {
                        ir.planned_quantity, ir.planned_yield_unit, ir.status,
                        ir.priority, ir.needed_by_date, ir.purpose, ir.total_items, ir.created_at,
                        ir.stock_override_acknowledged, ir.stock_override_at,
+                       (SELECT COALESCE(SUM(ri.requested_quantity), 0)
+                          FROM requisition_items ri WHERE ri.requisition_id = ir.id) AS total_requested_quantity,
+                       (SELECT COALESCE(SUM(ri.issued_quantity), 0)
+                          FROM requisition_items ri WHERE ri.requisition_id = ir.id) AS total_issued_quantity,
+                       (SELECT COUNT(*) FROM requisition_items ri
+                          WHERE ri.requisition_id = ir.id AND ri.status = 'pending') AS pending_item_count,
+                       (SELECT COUNT(*) FROM requisition_items ri
+                          WHERE ri.requisition_id = ir.id AND ri.status = 'partial') AS partial_item_count,
+                       (SELECT COUNT(*) FROM requisition_items ri
+                          WHERE ri.requisition_id = ir.id AND ri.status = 'fulfilled') AS fulfilled_item_count,
                        (SELECT COUNT(*) FROM requisition_stock_warnings w
                          WHERE w.requisition_id = ir.id AND w.decision = 'overridden') AS stock_warning_count,
                        u1.first_name as requested_by_first, u1.last_name as requested_by_last,
                        pr.run_code,
+                       pr.status as run_status,
+                       pmr.id as planned_recipe_exists,
                        pmr.recipe_code as planned_recipe_code,
                        pmr.product_name as planned_product_name,
                        pmr.variant as planned_variant,
                        pmr.product_type as planned_product_type
                 FROM material_requisitions ir
                 LEFT JOIN users u1 ON ir.requested_by = u1.id
-                LEFT JOIN production_runs pr ON ir.production_run_id = pr.id
-                LEFT JOIN master_recipes pmr ON ir.planned_recipe_id = pmr.id
+                {$joins}
                 {$where}
                 ORDER BY
+                    ir.created_at DESC,
                     CASE ir.priority
                         WHEN 'urgent' THEN 1
                         WHEN 'high' THEN 2
                         WHEN 'normal' THEN 3
                         WHEN 'low' THEN 4
                     END,
-                    ir.created_at DESC
+                    ir.id DESC
                 LIMIT ? OFFSET ?
             ");
             $params[] = $limit;
@@ -953,6 +1032,14 @@ try {
             }
             if (!$productionRunId && (!$plannedQuantity || (float) $plannedQuantity <= 0)) {
                 $errors['planned_quantity'] = 'Planned quantity must be greater than 0';
+            }
+
+            if (!$productionRunId && $plannedRecipeId) {
+                $recipeCheck = $db->prepare("SELECT id FROM master_recipes WHERE id = ? AND is_active = 1");
+                $recipeCheck->execute([$plannedRecipeId]);
+                if (!$recipeCheck->fetch()) {
+                    $errors['planned_recipe_id'] = 'Choose an active planned recipe';
+                }
             }
             
             if (!empty($errors)) {
@@ -1096,11 +1183,13 @@ try {
                         $ingredientIdsForPackLookup[$pItemId] = true;
                     }
                 }
+                $ingredientUnitLookup = [];
                 if (!empty($ingredientIdsForPackLookup)) {
                     $idList = implode(',', array_map('intval', array_keys($ingredientIdsForPackLookup)));
-                    $packStmt = $db->query("SELECT id, pack_size_value FROM ingredients WHERE id IN ({$idList})");
+                    $packStmt = $db->query("SELECT id, pack_size_value, unit_of_measure FROM ingredients WHERE id IN ({$idList})");
                     foreach ($packStmt->fetchAll() as $row) {
                         $packSizeLookup[(int) $row['id']] = $row['pack_size_value'] !== null ? (float) $row['pack_size_value'] : null;
+                        $ingredientUnitLookup[(int) $row['id']] = $row['unit_of_measure'] ?: null;
                     }
                 }
 
@@ -1192,6 +1281,15 @@ try {
                         ? trim((string) ($item['break_pack_acknowledged_reason'] ?? '')) ?: null
                         : null;
 
+                    // When pack-converted, use the ingredient's base unit (kg, liter)
+                    // instead of the display pack word (sack, bottle) so warehouse
+                    // stock comparisons use consistent units.
+                    $unitOfMeasure = $item['unit'] ?? 'units';
+                    if ($requestedPacks !== null && $itemType === 'ingredient' && $itemId > 0
+                        && isset($ingredientUnitLookup[$itemId]) && $ingredientUnitLookup[$itemId]) {
+                        $unitOfMeasure = $ingredientUnitLookup[$itemId];
+                    }
+
                     $itemStmt->execute([
                         $requisitionId,
                         $itemType,
@@ -1202,7 +1300,7 @@ try {
                         $packSizeAtSubmit,
                         $breakPackAck,
                         $breakPackReason,
-                        $item['unit'] ?? 'units',
+                        $unitOfMeasure,
                         $item['notes'] ?? ''
                     ]);
                 }

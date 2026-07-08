@@ -87,12 +87,12 @@ try {
                     ");
                     $overdueMaintenance = $overdueStmt->fetch()['count'];
                     
-                    // Critical MRO Items (below minimum stock)
+                    // Critical MRO Items (LOW or OUT_OF_STOCK)
                     $criticalStmt = $db->query("
                         SELECT COUNT(*) as count
                         FROM mro_items
-                        WHERE is_active = 1 
-                          AND current_stock <= minimum_stock
+                        WHERE is_active = 1
+                          AND current_stock <= " . StockRule::lowThresholdSql('reorder_point', 'minimum_stock') . "
                     ");
                     $criticalItems = $criticalStmt->fetch()['count'];
                     
@@ -166,8 +166,8 @@ try {
                                (mi.minimum_stock - mi.current_stock) as deficit
                         FROM mro_items mi
                         LEFT JOIN mro_categories mc ON mi.category_id = mc.id
-                        WHERE mi.is_active = 1 
-                          AND mi.current_stock <= mi.minimum_stock
+                        WHERE mi.is_active = 1
+                          AND mi.current_stock <= " . StockRule::lowThresholdSql('mi.reorder_point', 'mi.minimum_stock') . "
                         ORDER BY (mi.minimum_stock - mi.current_stock) DESC
                     ");
                     Response::success($stmt->fetchAll(), 'Low stock MRO items retrieved');

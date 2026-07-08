@@ -145,23 +145,17 @@ try {
     $availableMilk->execute();
     $milkStats = $availableMilk->fetch();
     
-    // Also get raw_milk_inventory for total stored milk (for informational purposes)
+    // Also get usable raw_milk_inventory for total stored milk (for informational purposes)
     $storedMilk = $db->prepare("
         SELECT COALESCE(SUM(remaining_liters), 0) as total_liters
         FROM raw_milk_inventory
-        WHERE status = 'available' AND remaining_liters > 0
+        WHERE status IN ('available', 'reserved')
+          AND qc_status = 'approved'
+          AND expiry_date >= CURDATE()
+          AND remaining_liters > 0
     ");
     $storedMilk->execute();
     $storedStats = $storedMilk->fetch();
-    
-    // Get tank-based milk inventory (what warehouse actually has - for reference only)
-    $tankMilk = $db->prepare("
-        SELECT COALESCE(SUM(current_volume), 0) as total_liters, COUNT(*) as tank_count
-        FROM storage_tanks
-        WHERE current_volume > 0
-    ");
-    $tankMilk->execute();
-    $tankStats = $tankMilk->fetch();
     
     // Get milk issued to Production through fulfilled requisitions.
     // This is not a Production tank; it is Warehouse Raw-issued milk already transferred to production.
@@ -249,11 +243,11 @@ try {
         // Production's available milk (issued via requisitions minus used in runs)
         'available_milk' => (float) $productionAvailableMilk,
         'available_milk_sources' => (int) ($prodMilkStats['issued_batches'] ?? 0),
-        // Warehouse tank inventory (for reference - production must requisition to get this)
-        'warehouse_tank_milk' => (float) ($tankStats['total_liters'] ?? 0),
+        // Usable Warehouse Raw milk (production must requisition to get this)
+        'warehouse_tank_milk' => (float) ($storedStats['total_liters'] ?? 0),
         // Legacy: delivery-based allocation tracking
         'delivery_based_milk' => (float) ($milkStats['total_liters'] ?? 0),
-        // Total stored raw milk (for informational purposes - may be older than 2 days)
+        // Total usable stored raw milk.
         'stored_milk' => (float) ($storedStats['total_liters'] ?? 0),
         'recent_runs' => $recentRunsList
     ], 'Dashboard data retrieved successfully');
