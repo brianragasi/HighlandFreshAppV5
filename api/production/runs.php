@@ -15,6 +15,7 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once __DIR__ . '/helpers/yield_helpers.php';
 
 // Require Production role
 $currentUser = Auth::requireRole(['production_staff', 'general_manager', 'qc_officer']);
@@ -950,29 +951,95 @@ try {
                     if ($run['status'] !== 'planned') {
                         Response::error('Can only start a planned run', 400);
                     }
-                    
-                    $stmt = $db->prepare("
-                        UPDATE production_runs 
-                        SET status = 'in_progress', start_datetime = NOW(), started_by = ?
-                        WHERE id = ?
-                    ");
-                    $stmt->execute([$currentUser['user_id'], $runId]);
-                    
-                    Response::success(['status' => 'in_progress'], 'Production run started');
+
+                    $initialVolumeMl = getParam('initial_volume_ml');
+
+                    $db->beginTransaction();
+
+                    if ($initialVolumeMl && (float)$initialVolumeMl > 0) {
+                        // Set initial volume and net yield (net = initial at start, no losses yet)
+                        $stmt = $db->prepare("
+                            UPDATE production_runs
+                            SET status = 'in_progress', start_datetime = NOW(), started_by = ?,
+                                initial_volume_ml = ?, net_yield_ml = ?
+                            WHERE id = ?
+                        ");
+                        $stmt->execute([$currentUser['user_id'], (float)$initialVolumeMl, (float)$initialVolumeMl, $runId]);
+
+                        // Auto-trigger Stage 1 packaging estimate
+                        $estimateResult = generatePackagingEstimate($db, $runId, 'initial', (float)$initialVolumeMl);
+                    } else {
+                        $stmt = $db->prepare("
+                            UPDATE production_runs
+                            SET status = 'in_progress', start_datetime = NOW(), started_by = ?
+                            WHERE id = ?
+                        ");
+                        $stmt->execute([$currentUser['user_id'], $runId]);
+                        $estimateResult = null;
+                    }
+
+                    $db->commit();
+
+                    $responseData = ['status' => 'in_progress'];
+                    if ($initialVolumeMl) {
+                        $responseData['initial_volume_ml'] = (float)$initialVolumeMl;
+                    }
+                    if ($estimateResult && $estimateResult['success']) {
+                        $responseData['packaging_estimate'] = $estimateResult;
+                    }
+
+                    Response::success($responseData, 'Production run started');
                     break;
                     
+                case 'set_volume':
+                    // Set or update initial volume (and trigger/refresh packaging estimate)
+                    $initialVolumeMl = getParam('initial_volume_ml');
+                    if (!$initialVolumeMl || (float)$initialVolumeMl <= 0) {
+                        Response::error('initial_volume_ml must be positive', 400);
+                    }
+
+                    if ($run['status'] === 'completed' || $run['status'] === 'cancelled') {
+                        Response::error('Cannot set volume on a completed/cancelled run', 400);
+                    }
+
+                    $db->beginTransaction();
+
+                    $netYield = (float)$initialVolumeMl - (float)($run['total_loss_ml'] ?? 0) - (float)($run['total_byproduct_ml'] ?? 0);
+                    $stmt = $db->prepare("
+                        UPDATE production_runs
+                        SET initial_volume_ml = ?, net_yield_ml = ?
+                        WHERE id = ?
+                    ");
+                    $stmt->execute([(float)$initialVolumeMl, max(0, $netYield), $runId]);
+
+                    // Generate initial packaging estimate
+                    $estimateResult = generatePackagingEstimate($db, $runId, 'initial', (float)$initialVolumeMl);
+
+                    $db->commit();
+
+                    $responseData = [
+                        'initial_volume_ml' => (float)$initialVolumeMl,
+                        'net_yield_ml' => max(0, $netYield)
+                    ];
+                    if ($estimateResult && $estimateResult['success']) {
+                        $responseData['packaging_estimate'] = $estimateResult;
+                    }
+
+                    Response::success($responseData, 'Initial volume set and packaging estimate generated');
+                    break;
+
                 case 'update_status':
                     // Update status during production
                     $newStatus = getParam('status');
                     $validStatuses = ['pasteurization', 'processing', 'cooling', 'packaging'];
-                    
+
                     if (!in_array($newStatus, $validStatuses)) {
                         Response::error('Invalid status', 400);
                     }
-                    
+
                     $stmt = $db->prepare("UPDATE production_runs SET status = ? WHERE id = ?");
                     $stmt->execute([$newStatus, $runId]);
-                    
+
                     Response::success(['status' => $newStatus], 'Status updated');
                     break;
                     
