@@ -542,18 +542,62 @@
                     'pending': 'badge-warning',
                     'approved': 'badge-info',
                     'preparing': 'badge-secondary',
+                    'picking': 'badge-secondary',
+                    'ready': 'badge-accent',
                     'dispatched': 'badge-accent',
                     'delivered': 'badge-success',
-                    'cancelled': 'badge-error'
+                    'accepted': 'badge-success',
+                    'partially_accepted': 'badge-warning',
+                    'partially_fulfilled': 'badge-warning',
+                    'cancelled': 'badge-error',
+                    'rejected': 'badge-error'
                 };
-                
+
+                const statusLabel = order.status_label || (order.status || 'unknown');
+                const hasReturns = !!order.has_returns;
+                const fulfillmentVerified = !!order.fulfillment_verified;
+                const originalTotal = order.original_total != null ? order.original_total : order.total_amount;
+                const billableTotal = order.billable_total != null ? order.billable_total : order.total_amount;
+                const returnCredit = order.return_credit_total != null ? order.return_credit_total : 0;
+
+                const itemRows = (order.items || []).map(item => {
+                    const ordered = parseInt(item.quantity_ordered ?? item.quantity, 10) || 0;
+                    const returned = parseInt(item.quantity_returned, 10) || 0;
+                    const accepted = parseInt(item.quantity_accepted ?? item.final_billable_qty ?? item.quantity, 10) || 0;
+                    const unitPrice = parseFloat(item.unit_price) || 0;
+                    const originalSub = parseFloat(item.original_subtotal) || (ordered * unitPrice);
+                    const billableSub = parseFloat(item.billable_subtotal ?? item.subtotal) || (accepted * unitPrice);
+                    const credit = parseFloat(item.return_credit) || Math.max(0, originalSub - billableSub);
+                    const rowReturn = item.has_returns || returned > 0 || (fulfillmentVerified && accepted < ordered);
+                    return `
+                        <tr class="${rowReturn ? 'bg-warning/10' : ''}">
+                            <td>
+                                <div class="font-medium">${item.product_name || 'Unknown'}</div>
+                                <div class="text-xs text-base-content/60">${item.pieces_per_box || 1} pcs/box</div>
+                                ${rowReturn ? '<div class="text-xs text-warning mt-0.5"><i class="fas fa-undo mr-1"></i>Return applied</div>' : ''}
+                            </td>
+                            <td class="text-center font-medium">${ordered}</td>
+                            <td class="text-center ${returned > 0 ? 'text-error font-semibold' : ''}">${returned > 0 ? '−' + returned : '0'}</td>
+                            <td class="text-center font-bold">${accepted}</td>
+                            <td class="text-right">${formatCurrency(unitPrice)}</td>
+                            <td class="text-right font-semibold">
+                                ${formatCurrency(billableSub)}
+                                ${rowReturn ? `<div class="text-xs text-base-content/45 line-through">${formatCurrency(originalSub)}</div>` : ''}
+                                ${credit > 0 ? `<div class="text-xs text-error">−${formatCurrency(credit)}</div>` : ''}
+                            </td>
+                        </tr>`;
+                }).join('') || `<tr><td colspan="6" class="text-center text-base-content/50 py-4">No items</td></tr>`;
+
                 document.getElementById('orderDetailContent').innerHTML = `
-                    <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center justify-between mb-4 gap-2 flex-wrap">
                         <h3 class="font-bold text-xl">
                             <i class="fas fa-shopping-cart text-primary mr-2"></i>
                             ${order.order_number || 'Order #' + order.id}
                         </h3>
-                        <span class="badge ${statusBadges[order.status] || 'badge-ghost'} badge-lg">${(order.status || 'unknown').toUpperCase()}</span>
+                        <div class="flex items-center gap-2">
+                            <span class="badge ${statusBadges[order.status] || 'badge-ghost'} badge-lg" title="${order.status}">${statusLabel}</span>
+                            ${hasReturns ? '<span class="badge badge-warning">With returns</span>' : ''}
+                        </div>
                     </div>
                     
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -572,7 +616,7 @@
                         </div>
                         <div class="bg-base-200 rounded-lg p-3">
                             <p class="text-xs text-base-content/60">Payment Mode</p>
-                            <p class="font-semibold">${order.payment_mode || 'Credit'}</p>
+                            <p class="font-semibold">${order.payment_mode || order.payment_type || 'Credit'}</p>
                         </div>
                     </div>
                     
@@ -583,43 +627,47 @@
                         </div>
                     ` : ''}
                     
-                    <div class="divider">Order Items</div>
+                    <div class="divider">Order Items${fulfillmentVerified ? ' · Fulfillment' : ''}</div>
                     
-                    <div class="overflow-x-auto mb-4">
+                    <div class="overflow-x-auto mb-2">
                         <table class="table table-sm">
                             <thead class="bg-base-200">
                                 <tr>
                                     <th>Product</th>
-                                    <th class="text-center">Qty (Boxes)</th>
-                                    <th class="text-center">Qty (Pcs)</th>
-                                    <th class="text-center">Total Qty</th>
+                                    <th class="text-center">Ordered</th>
+                                    <th class="text-center">Returned</th>
+                                    <th class="text-center">Accepted</th>
                                     <th class="text-right">Unit Price</th>
-                                    <th class="text-right">Subtotal</th>
+                                    <th class="text-right">Billable</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                ${(order.items || []).map(item => `
-                                    <tr>
-                                        <td>
-                                            <div class="font-medium">${item.product_name}</div>
-                                            <div class="text-xs text-base-content/60">${item.pieces_per_box || 1} pcs/box</div>
-                                        </td>
-                                        <td class="text-center">${item.quantity_boxes || 0}</td>
-                                        <td class="text-center">${item.quantity_pieces || 0}</td>
-                                        <td class="text-center font-medium">${item.quantity_ordered} pcs</td>
-                                        <td class="text-right">${formatCurrency(item.unit_price)}</td>
-                                        <td class="text-right font-semibold">${formatCurrency(item.subtotal)}</td>
-                                    </tr>
-                                `).join('')}
+                                ${itemRows}
                             </tbody>
                             <tfoot class="bg-base-200">
                                 <tr>
-                                    <td colspan="5" class="text-right font-bold">Total Amount:</td>
-                                    <td class="text-right font-bold text-primary text-lg">${formatCurrency(order.total_amount)}</td>
+                                    <td colspan="5" class="text-right font-bold">${fulfillmentVerified && hasReturns ? 'Billable Total:' : 'Total Amount:'}</td>
+                                    <td class="text-right font-bold text-primary text-lg">${formatCurrency(billableTotal)}</td>
                                 </tr>
                             </tfoot>
                         </table>
                     </div>
+                    ${fulfillmentVerified ? `
+                        <div class="grid grid-cols-3 gap-3 mb-4 text-sm">
+                            <div class="rounded-lg bg-base-200 p-3">
+                                <div class="text-xs text-base-content/50 uppercase">Original</div>
+                                <div class="font-semibold">${formatCurrency(originalTotal)}</div>
+                            </div>
+                            <div class="rounded-lg bg-base-200 p-3">
+                                <div class="text-xs text-base-content/50 uppercase">Return credit</div>
+                                <div class="font-semibold ${returnCredit > 0 ? 'text-error' : ''}">${returnCredit > 0 ? '−' + formatCurrency(returnCredit) : formatCurrency(0)}</div>
+                            </div>
+                            <div class="rounded-lg bg-primary/10 p-3">
+                                <div class="text-xs text-base-content/50 uppercase">Billable</div>
+                                <div class="font-bold text-primary">${formatCurrency(billableTotal)}</div>
+                            </div>
+                        </div>
+                    ` : ''}
                     
                     ${order.notes ? `
                         <div class="bg-base-200 rounded-lg p-3 mb-4">

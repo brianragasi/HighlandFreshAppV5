@@ -161,8 +161,9 @@ if ($isAzure) {
 }
 define('IS_INFINITYFREE', $isInfinityFree);
 
-// Business Rules
-define('PASTEURIZATION_TEMP', 81.0); // Celsius
+// Business Rules — HTST pasteurization (production_staff.md / ccp_standards.php)
+// 75°C for 15 seconds, NOT 81°C for 15 minutes
+define('PASTEURIZATION_TEMP', 75.0); // Celsius
 define('MAX_COOLING_TEMP', 4.0); // Celsius
 define('MEMBER_PRICE', 40.00);
 define('NON_MEMBER_PRICE', 38.00);

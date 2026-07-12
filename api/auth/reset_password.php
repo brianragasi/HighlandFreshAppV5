@@ -51,19 +51,27 @@ function handleValidateResetToken() {
     $reset = $stmt->fetch();
 
     if (!$reset) {
-        Response::error('Invalid or expired reset link. Please request a new one.', 404);
+        Response::error('Invalid reset link. Please request a new one from the forgot-password page.', 404);
     }
 
     if ($reset['used_at'] !== null) {
-        Response::error('This reset link has already been used. Please request a new one.', 410);
+        Response::error('This reset link is no longer valid (already used or replaced). Request a new link.', 410);
     }
 
     if (strtotime($reset['expires_at']) <= time()) {
         Response::error('This reset link has expired. Please request a new one.', 410);
     }
 
+    $fullName = trim((string)($reset['full_name'] ?? ''));
+    if ($fullName === '') {
+        $fullName = trim(($reset['first_name'] ?? '') . ' ' . ($reset['last_name'] ?? ''));
+    }
+    if ($fullName === '') {
+        $fullName = (string)($reset['username'] ?? 'User');
+    }
+
     Response::success([
-        'full_name' => $reset['full_name'] ?: trim(($reset['first_name'] ?? '') . ' ' . ($reset['last_name'] ?? '')),
+        'full_name' => $fullName,
         'username' => $reset['username'],
         'email' => $reset['email']
     ], 'Reset token is valid');
@@ -101,7 +109,9 @@ function handleResetPassword() {
         ensurePasswordResetsTableExists($db);
         $tokenHash = hash('sha256', $token);
 
-        // Find and validate reset record
+        $db->beginTransaction();
+
+        // Lock the reset row to prevent double-submit races
         $stmt = $db->prepare("
             SELECT r.id, r.user_id, r.expires_at, r.used_at,
                    u.username, u.is_active
@@ -109,59 +119,64 @@ function handleResetPassword() {
             JOIN users u ON u.id = r.user_id
             WHERE r.token_hash = ?
             LIMIT 1
+            FOR UPDATE
         ");
         $stmt->execute([$tokenHash]);
         $reset = $stmt->fetch();
 
         if (!$reset) {
+            $db->rollBack();
             Response::error('Invalid reset link. Please request a new one.', 404);
         }
 
         if ($reset['used_at'] !== null) {
-            Response::error('This reset link has already been used.', 410);
+            $db->rollBack();
+            Response::error('This reset link is no longer valid (already used or replaced). Request a new link.', 410);
         }
 
         if (strtotime($reset['expires_at']) <= time()) {
+            $db->rollBack();
             Response::error('This reset link has expired. Please request a new one.', 410);
         }
 
         if (!(int) $reset['is_active']) {
+            $db->rollBack();
             Response::error('Your account has been deactivated. Please contact your administrator.', 403);
         }
 
         $userId = (int) $reset['user_id'];
         $resetId = (int) $reset['id'];
 
-        // Transaction
-        $db->beginTransaction();
+        // Hash and set new password
+        $hashedPassword = Auth::hashPassword($newPassword);
 
+        $updateStmt = $db->prepare("
+            UPDATE users
+            SET password = ?,
+                must_change_password = 0,
+                password_set_at = NOW(),
+                updated_at = NOW()
+            WHERE id = ?
+        ");
+        $updateStmt->execute([$hashedPassword, $userId]);
+
+        // Mark this token used; expire any other open tokens for the user
+        $db->prepare("UPDATE auth_password_resets SET used_at = NOW() WHERE id = ?")->execute([$resetId]);
+        $db->prepare("
+            UPDATE auth_password_resets
+            SET used_at = COALESCE(used_at, NOW())
+            WHERE user_id = ? AND used_at IS NULL AND id != ?
+        ")->execute([$userId, $resetId]);
+
+        $db->commit();
+
+        // Session revoke is best-effort (must not fail the password update)
         try {
-            // Hash and set new password
-            $hashedPassword = Auth::hashPassword($newPassword);
-
-            $updateStmt = $db->prepare("
-                UPDATE users 
-                SET password = ?,
-                    must_change_password = 0,
-                    password_set_at = NOW(),
-                    updated_at = NOW()
-                WHERE id = ?
-            ");
-            $updateStmt->execute([$hashedPassword, $userId]);
-
-            // Mark reset token as used
-            $db->prepare("UPDATE auth_password_resets SET used_at = NOW() WHERE id = ?")->execute([$resetId]);
-
-            // Revoke all active sessions (security — force re-login with new password)
             Auth::revokeAllSessionsByUserId($userId, 'password_reset_via_email');
-
-            $db->commit();
-        } catch (Exception $e) {
-            $db->rollBack();
-            throw $e;
+        } catch (Throwable $e) {
+            error_log("Password reset session revoke warning: " . $e->getMessage());
         }
 
-        // Audit log
         try {
             logAudit($userId, 'PASSWORD_RESET_COMPLETED', 'users', $userId, [
                 'must_change_password' => 1
@@ -170,7 +185,7 @@ function handleResetPassword() {
                 'reset_id' => $resetId,
                 'method' => 'email_token'
             ]);
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             error_log("Password reset audit warning: " . $e->getMessage());
         }
 
@@ -178,9 +193,12 @@ function handleResetPassword() {
             'username' => $reset['username']
         ], 'Password reset successfully! You can now log in with your new password.');
 
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
+        if (isset($db) && $db instanceof PDO && $db->inTransaction()) {
+            $db->rollBack();
+        }
         error_log("Reset password error: " . $e->getMessage());
-        Response::error('An error occurred. Please try again.', 500);
+        Response::error('An error occurred while resetting your password. Please request a new link and try again.', 500);
     }
 }
 

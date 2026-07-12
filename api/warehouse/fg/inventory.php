@@ -472,31 +472,35 @@ function handleGet($db, $action) {
                          )
                         THEN 1 ELSE 0
                     END as is_dispatchable,
-                    -- Multi-unit calculated fields.
-                    -- CASE logic: if new-style columns (boxes/pieces) have data, use them directly.
-                    -- Only fall back to legacy quantity_available when both are zero.
-                    GREATEST(0, COALESCE(NULLIF(fg.boxes_available, 0), NULLIF(fg.quantity_boxes, 0), 0)) as quantity_boxes,
+                    -- Multi-unit: keep raw (may be negative) for integrity UI.
+                    -- If multi-unit columns are both zero, fall back to legacy base qty.
+                    COALESCE(fg.boxes_available, fg.quantity_boxes, 0) as quantity_boxes_raw,
+                    COALESCE(fg.pieces_available, fg.quantity_pieces, 0) as quantity_pieces_raw,
                     CASE
-                        WHEN fg.boxes_available > 0 OR fg.pieces_available > 0
-                        THEN fg.pieces_available
-                        ELSE GREATEST(0, COALESCE(
-                            NULLIF(fg.quantity_pieces, 0),
-                            fg.quantity_available,
-                            fg.remaining_quantity,
-                            0
-                        ))
+                        WHEN COALESCE(fg.boxes_available, 0) <> 0 OR COALESCE(fg.pieces_available, 0) <> 0
+                             OR COALESCE(fg.quantity_boxes, 0) <> 0 OR COALESCE(fg.quantity_pieces, 0) <> 0
+                        THEN COALESCE(fg.boxes_available, fg.quantity_boxes, 0)
+                        ELSE 0
+                    END as quantity_boxes,
+                    CASE
+                        WHEN COALESCE(fg.boxes_available, 0) <> 0 OR COALESCE(fg.pieces_available, 0) <> 0
+                             OR COALESCE(fg.quantity_boxes, 0) <> 0 OR COALESCE(fg.quantity_pieces, 0) <> 0
+                        THEN COALESCE(fg.pieces_available, fg.quantity_pieces, 0)
+                        ELSE COALESCE(fg.quantity_available, fg.remaining_quantity, 0)
                     END as quantity_pieces,
-                    GREATEST(0, COALESCE(NULLIF(fg.boxes_available, 0), NULLIF(fg.quantity_boxes, 0), 0)) as boxes_available,
                     CASE
-                        WHEN fg.boxes_available > 0 OR fg.pieces_available > 0
-                        THEN fg.pieces_available
-                        ELSE GREATEST(0, COALESCE(
-                            NULLIF(fg.quantity_pieces, 0),
-                            fg.quantity_available,
-                            fg.remaining_quantity,
-                            0
-                        ))
-                    END as pieces_available
+                        WHEN COALESCE(fg.boxes_available, 0) <> 0 OR COALESCE(fg.pieces_available, 0) <> 0
+                             OR COALESCE(fg.quantity_boxes, 0) <> 0 OR COALESCE(fg.quantity_pieces, 0) <> 0
+                        THEN COALESCE(fg.boxes_available, fg.quantity_boxes, 0)
+                        ELSE 0
+                    END as boxes_available,
+                    CASE
+                        WHEN COALESCE(fg.boxes_available, 0) <> 0 OR COALESCE(fg.pieces_available, 0) <> 0
+                             OR COALESCE(fg.quantity_boxes, 0) <> 0 OR COALESCE(fg.quantity_pieces, 0) <> 0
+                        THEN COALESCE(fg.pieces_available, fg.quantity_pieces, 0)
+                        ELSE COALESCE(fg.quantity_available, fg.remaining_quantity, 0)
+                    END as pieces_available,
+                    CASE WHEN fg.chiller_id IS NULL THEN 1 ELSE 0 END as awaiting_putaway
                 FROM finished_goods_inventory fg
                 LEFT JOIN products p ON fg.product_id = p.id
                 LEFT JOIN chiller_locations c ON fg.chiller_id = c.id
@@ -531,32 +535,70 @@ function handleGet($db, $action) {
             $stmt->execute($params);
             $inventory = $stmt->fetchAll();
             
-            // Add formatted display strings
+            // Add formatted display strings + integrity flags
             foreach ($inventory as &$item) {
-                $piecesPerBox = (int) ($item['pieces_per_box'] ?? 1);
+                $piecesPerBox = max(1, (int) ($item['pieces_per_box'] ?? 1));
                 $boxesAvailable = (int) ($item['boxes_available'] ?? 0);
                 $piecesAvailable = (int) ($item['pieces_available'] ?? 0);
+                $booked = (int) ($item['quantity_available'] ?? $item['remaining_quantity'] ?? 0);
 
+                $rawBoxes = (int) ($item['quantity_boxes_raw'] ?? $boxesAvailable);
+                $rawPieces = (int) ($item['quantity_pieces_raw'] ?? $piecesAvailable);
+
+                $integrityIssues = [];
+                if ($rawBoxes < 0) {
+                    $integrityIssues[] = "Negative boxes_available ({$rawBoxes})";
+                }
+                if ($rawPieces < 0) {
+                    $integrityIssues[] = "Negative pieces_available ({$rawPieces})";
+                }
+                if ((int)($item['quantity_available'] ?? 0) < 0) {
+                    $integrityIssues[] = 'Negative quantity_available';
+                }
+
+                // Display split: if only loose base units and pack configured, split for presentation
+                $displayBoxes = $boxesAvailable;
+                $displayPieces = $piecesAvailable;
                 if ($boxesAvailable === 0 && $piecesAvailable > 0 && $piecesPerBox > 1) {
                     $converted = piecesToBoxes($piecesAvailable, $piecesPerBox);
-                    $item['boxes_available'] = $converted['boxes'];
-                    $item['pieces_available'] = $converted['pieces'];
-                    $item['quantity_boxes'] = $converted['boxes'];
-                    $item['quantity_pieces'] = $converted['pieces'];
+                    $displayBoxes = $converted['boxes'];
+                    $displayPieces = $converted['pieces'];
+                    $item['boxes_available'] = $displayBoxes;
+                    $item['pieces_available'] = $displayPieces;
+                    $item['quantity_boxes'] = $displayBoxes;
+                    $item['quantity_pieces'] = $displayPieces;
+                }
+
+                $multiTotal = boxesToPieces($displayBoxes, $displayPieces, $piecesPerBox);
+                if ($multiTotal > 0 && $booked > 0 && $multiTotal !== $booked && ($rawBoxes !== 0 || $rawPieces !== 0)) {
+                    // Only flag when multi-unit columns were actually used (not pure legacy)
+                    if ($rawBoxes != 0 || ($item['boxes_available'] !== null && $rawPieces != $booked && $rawBoxes != 0)) {
+                        if ($rawBoxes != 0 || (isset($item['quantity_boxes_raw']) && (int)$item['quantity_boxes_raw'] != 0)) {
+                            $integrityIssues[] = "Booked {$booked} base units vs multi-unit {$multiTotal}";
+                        }
+                    }
+                }
+                if ($booked === 0 && $displayBoxes > 0) {
+                    $integrityIssues[] = "quantity_available is 0 but {$displayBoxes} pack(s) still shown";
                 }
 
                 $item['inventory_display'] = formatMultiUnitDisplay(
-                    $item['boxes_available'],
-                    $item['pieces_available'],
+                    max(0, $displayBoxes),
+                    max(0, $displayPieces),
                     $item['box_unit'],
                     $item['base_unit']
                 );
-                $item['total_pieces'] = boxesToPieces(
-                    $item['boxes_available'],
-                    $item['pieces_available'],
-                    $item['pieces_per_box']
-                );
+                $item['total_pieces'] = max(0, $multiTotal > 0 ? $multiTotal : $booked);
+                $item['pack_config_label'] = $piecesPerBox > 1
+                    ? ('1 ' . rtrim($item['box_unit'] ?? 'box', 's') . ' = ' . $piecesPerBox . ' ' . ($item['base_unit'] ?? 'piece') . ( $piecesPerBox == 1 ? '' : 's'))
+                    : ('Stored as individual ' . ($item['base_unit'] ?? 'piece') . 's (no pack size configured)');
+                $item['has_negative_qty'] = ($rawBoxes < 0 || $rawPieces < 0 || (int)($item['quantity_available'] ?? 0) < 0);
+                $item['integrity_ok'] = empty($integrityIssues);
+                $item['integrity_issues'] = $integrityIssues;
+                $item['integrity_message'] = empty($integrityIssues) ? null : implode('; ', $integrityIssues);
+                $item['integrity_error'] = !empty($integrityIssues);
             }
+            unset($item);
             
             Response::success($inventory, 'Inventory retrieved successfully');
             break;
@@ -807,13 +849,13 @@ function handleGet($db, $action) {
             break;
             
         case 'pending_batches':
-            // Get packaged items from production awaiting warehouse chiller assignment
-            // These are finished_goods_inventory records created by packaging but not yet assigned to a chiller
+            // Packaged FG rows awaiting put-away (chiller assignment) — already in FG books
             $stmt = $db->prepare("
                 SELECT 
                     fgi.id,
                     fgi.id as inventory_id,
                     fgi.batch_id,
+                    fgi.product_id,
                     pb.batch_code,
                     pb.batch_code as batch_number,
                     fgi.product_type,
@@ -825,10 +867,27 @@ function handleGet($db, $action) {
                     fgi.quantity_available,
                     fgi.quantity_available as total_pieces,
                     fgi.quantity_available as actual_yield,
-                    0 as quantity_boxes,
-                    fgi.quantity_available as quantity_pieces,
+                    COALESCE(fgi.boxes_available, fgi.quantity_boxes, 0) as quantity_boxes,
+                    COALESCE(
+                        NULLIF(fgi.pieces_available, 0),
+                        NULLIF(fgi.quantity_pieces, 0),
+                        fgi.quantity_available,
+                        fgi.remaining_quantity,
+                        0
+                    ) as quantity_pieces,
+                    COALESCE(fgi.boxes_available, fgi.quantity_boxes, 0) as boxes_available,
+                    COALESCE(
+                        NULLIF(fgi.pieces_available, 0),
+                        NULLIF(fgi.quantity_pieces, 0),
+                        fgi.quantity_available,
+                        fgi.remaining_quantity,
+                        0
+                    ) as pieces_available,
                     COALESCE(p.pieces_per_box, 1) as pieces_per_box,
+                    COALESCE(p.base_unit, 'piece') as base_unit,
+                    COALESCE(p.box_unit, 'box') as box_unit,
                     fgi.unit,
+                    fgi.notes,
                     fgi.manufacturing_date as production_date,
                     fgi.expiry_date,
                     fgi.status,
@@ -845,16 +904,41 @@ function handleGet($db, $action) {
                 LEFT JOIN master_recipes mr ON pb.recipe_id = mr.id
                 WHERE fgi.status = 'available'
                   AND fgi.chiller_id IS NULL
-                  AND fgi.remaining_quantity > 0
+                  AND (
+                    COALESCE(fgi.remaining_quantity, 0) > 0
+                    OR COALESCE(fgi.quantity_available, 0) > 0
+                    OR COALESCE(fgi.pieces_available, 0) > 0
+                    OR COALESCE(fgi.boxes_available, 0) > 0
+                  )
                 ORDER BY fgi.received_at ASC
             ");
             $stmt->execute();
             $pendingItems = $stmt->fetchAll();
+
+            foreach ($pendingItems as &$pending) {
+                $ppb = max(1, (int)($pending['pieces_per_box'] ?? 1));
+                $boxes = (int)($pending['boxes_available'] ?? 0);
+                $pieces = (int)($pending['pieces_available'] ?? 0);
+                $multi = ($boxes * $ppb) + $pieces;
+                $booked = (int)($pending['quantity_available'] ?? $pending['remaining_quantity'] ?? 0);
+                $pending['total_pieces'] = $multi > 0 ? $multi : $booked;
+                $pending['inventory_display'] = formatMultiUnitDisplay(
+                    $boxes > 0 || $ppb <= 1 ? $boxes : intdiv(max($booked, $multi), $ppb),
+                    $boxes > 0 || $ppb <= 1 ? $pieces : (max($booked, $multi) % $ppb),
+                    $pending['box_unit'] ?? 'box',
+                    $pending['base_unit'] ?? 'piece'
+                );
+                $pending['pack_config_label'] = $ppb > 1
+                    ? ('1 ' . rtrim($pending['box_unit'] ?? 'box', 's') . ' = ' . $ppb . ' ' . ($pending['base_unit'] ?? 'piece') . 's')
+                    : ('Stored as individual ' . ($pending['base_unit'] ?? 'piece') . 's (no pack size configured)');
+                $pending['awaiting_putaway'] = true;
+            }
+            unset($pending);
             
             Response::success([
                 'batches' => $pendingItems,
                 'count' => count($pendingItems)
-            ], 'Pending items for warehouse receiving retrieved');
+            ], 'Items awaiting put-away retrieved');
             break;
             
         case 'transactions':
@@ -874,6 +958,8 @@ function handleGet($db, $action) {
                     t.boxes_quantity as quantity_boxes,
                     t.pieces_quantity as quantity_pieces,
                     COALESCE(p.pieces_per_box, 1) as pieces_per_box,
+                    COALESCE(p.base_unit, 'piece') as base_unit,
+                    COALESCE(p.box_unit, 'box') as box_unit,
                     COALESCE(c.chiller_name, c2.chiller_name, 'N/A') as chiller_name,
                     c.chiller_code as from_chiller,
                     c2.chiller_code as to_chiller,
@@ -1197,7 +1283,8 @@ function handlePost($db, $action, $currentUser) {
                 $db->prepare("UPDATE chiller_locations SET current_count = current_count + ? WHERE id = ?")
                    ->execute([$totalPieces, $chillerId]);
 
-                // Log transaction when the inventory is linked to a product record.
+                // Log put-away (location assignment). Type remains 'receive' for schema compat;
+                // reason text clarifies internal put-away.
                 if (!empty($fgItem['product_id'])) {
                     $logStmt = $db->prepare("
                         INSERT INTO fg_inventory_transactions
@@ -1219,18 +1306,32 @@ function handlePost($db, $action, $currentUser) {
                         $converted['pieces'],
                         $chillerId,
                         $currentUser['user_id'],
-                        $notes ?: 'Warehouse receiving - assigned to chiller'
+                        $notes ?: 'Put-away: assigned packaged stock to chiller'
                     ]);
                 }
 
                 $db->commit();
 
+                $display = formatMultiUnitDisplay(
+                    $converted['boxes'],
+                    $converted['pieces'],
+                    $unitConfig['box_unit'] ?? 'box',
+                    $unitConfig['base_unit'] ?? 'piece'
+                );
+
                 Response::success([
                     'inventory_id' => $inventoryId,
                     'chiller_id' => $chillerId,
                     'chiller_name' => $chiller['chiller_name'],
+                    'boxes' => $converted['boxes'],
+                    'pieces' => $converted['pieces'],
+                    'total_pieces' => $totalPieces,
+                    'pieces_per_box' => $piecesPerBox,
+                    'base_unit' => $unitConfig['base_unit'] ?? 'piece',
+                    'box_unit' => $unitConfig['box_unit'] ?? 'box',
+                    'display' => $display,
                     'transaction_logged' => !empty($fgItem['product_id'])
-                ], 'Item successfully assigned to chiller');
+                ], 'Put-away complete: assigned to chiller');
             } catch (Exception $e) {
                 $db->rollBack();
                 Response::error($e->getMessage(), 400);

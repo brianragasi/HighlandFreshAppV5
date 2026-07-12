@@ -81,23 +81,122 @@ try {
             $countStmt->execute($params);
             $total = $countStmt->fetch()['total'];
             
-            // Get recipes
+            // Detect bulk-architecture columns (base product / bulk liters)
+            $hasBaseProduct = false;
+            $hasBulkYield = false;
+            try {
+                $db->query('SELECT base_product_id FROM master_recipes LIMIT 0');
+                $hasBaseProduct = true;
+            } catch (Throwable $e) { /* legacy */ }
+            try {
+                $db->query('SELECT bulk_yield_liters FROM master_recipes LIMIT 0');
+                $hasBulkYield = true;
+            } catch (Throwable $e) { /* legacy */ }
+
+            $baseSelect = $hasBaseProduct
+                ? ', mr.base_product_id, mr.product_id AS legacy_sku_product_id,
+                   bp.code AS base_product_code, bp.name AS base_product_name, bp.category AS base_product_category'
+                : ', mr.product_id AS legacy_sku_product_id';
+            $bulkSelect = $hasBulkYield
+                ? ', mr.bulk_yield_liters'
+                : ', NULL AS bulk_yield_liters';
+            $baseJoin = $hasBaseProduct
+                ? ' LEFT JOIN base_products bp ON bp.id = mr.base_product_id '
+                : '';
+
+            // Get recipes (bulk-batch aware: recipe → base liquid, not bottle SKU)
             $stmt = $db->prepare("
                 SELECT mr.id, mr.recipe_code, mr.product_name, mr.product_type, mr.variant,
                        mr.description, mr.base_milk_liters, mr.expected_yield,
                        mr.yield_unit, mr.shelf_life_days, mr.is_active, mr.created_at,
                        mr.pasteurization_temp, mr.pasteurization_time_mins, mr.cooling_temp,
                        (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = mr.id) as ingredient_count
+                       {$baseSelect}
+                       {$bulkSelect}
                 FROM master_recipes mr
+                {$baseJoin}
                 {$where}
-                ORDER BY mr.product_type, mr.product_name
+                ORDER BY COALESCE(bp.name, mr.product_name), mr.recipe_code
                 LIMIT ? OFFSET ?
             ");
+            // ORDER BY bp.name fails when no join — fix for legacy
+            if (!$hasBaseProduct) {
+                $stmt = $db->prepare("
+                    SELECT mr.id, mr.recipe_code, mr.product_name, mr.product_type, mr.variant,
+                           mr.description, mr.base_milk_liters, mr.expected_yield,
+                           mr.yield_unit, mr.shelf_life_days, mr.is_active, mr.created_at,
+                           mr.pasteurization_temp, mr.pasteurization_time_mins, mr.cooling_temp,
+                           (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = mr.id) as ingredient_count,
+                           mr.product_id AS legacy_sku_product_id,
+                           NULL AS bulk_yield_liters
+                    FROM master_recipes mr
+                    {$where}
+                    ORDER BY mr.product_type, mr.product_name
+                    LIMIT ? OFFSET ?
+                ");
+            }
+
             $params[] = $limit;
             $params[] = $offset;
             $stmt->execute($params);
             $recipes = $stmt->fetchAll();
-            
+
+            // Attach packaging SKUs for each recipe's base product (for packaging phase UI)
+            $skuStmt = null;
+            if ($hasBaseProduct) {
+                try {
+                    $db->query('SELECT base_product_id FROM products LIMIT 0');
+                    $skuStmt = $db->prepare("
+                        SELECT id, product_code, product_name, variant, unit_size, unit_measure,
+                               base_unit, box_unit, pieces_per_box, selling_price, is_active
+                        FROM products
+                        WHERE base_product_id = ? AND is_active = 1
+                        ORDER BY unit_size ASC, product_code ASC
+                    ");
+                } catch (Throwable $e) {
+                    $skuStmt = null;
+                }
+            }
+
+            foreach ($recipes as &$recipe) {
+                // Canonical bulk scale for requisitions / runs
+                $bulk = isset($recipe['bulk_yield_liters']) && $recipe['bulk_yield_liters'] !== null
+                    ? (float) $recipe['bulk_yield_liters']
+                    : null;
+                if ($bulk === null || $bulk <= 0) {
+                    $yu = strtolower((string) ($recipe['yield_unit'] ?? ''));
+                    if (in_array($yu, ['liter', 'liters', 'l', 'lt'], true)) {
+                        $bulk = (float) ($recipe['expected_yield'] ?? 0);
+                    } else {
+                        $bulk = (float) ($recipe['base_milk_liters'] ?? 0);
+                    }
+                }
+                $recipe['bulk_yield_liters'] = $bulk > 0 ? $bulk : null;
+                $recipe['plan_unit'] = 'liters'; // requisitions plan by bulk liquid
+                $recipe['display_name'] = $recipe['base_product_name']
+                    ?: $recipe['product_name'];
+                // Prefer showing bulk identity in lists (hide bottle-size recipe noise)
+                $recipe['label'] = trim(
+                    ($recipe['recipe_code'] ?? '') . ' — ' .
+                    ($recipe['display_name'] ?? 'Recipe') .
+                    ($recipe['bulk_yield_liters'] ? (' · bulk ' . rtrim(rtrim(number_format((float) $recipe['bulk_yield_liters'], 2, '.', ''), '0'), '.') . ' L') : '')
+                );
+
+                $recipe['packaging_skus'] = [];
+                if ($skuStmt && !empty($recipe['base_product_id'])) {
+                    $skuStmt->execute([(int) $recipe['base_product_id']]);
+                    $recipe['packaging_skus'] = $skuStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+                }
+            }
+            unset($recipe);
+
+            // Optional: for_requisition=1 returns only active recipes with a bulk scale
+            if (getParam('for_requisition') || getParam('for_requisition') === '1' || getParam('for_requisition') === 1) {
+                $recipes = array_values(array_filter($recipes, function ($r) {
+                    return (int) ($r['is_active'] ?? 0) === 1;
+                }));
+            }
+
             Response::paginated($recipes, $total, $page, $limit, 'Recipes retrieved successfully');
             break;
             
@@ -117,7 +216,8 @@ try {
             $expectedYield = getParam('expected_yield', 0);
             $yieldUnit = getParam('yield_unit', 'units');
             $shelfLifeDays = getParam('shelf_life_days', 7);
-            $pasteurizationTemp = getParam('pasteurization_temp', 81);
+            // HTST: 75°C (hold time is tracked in production_ccp_logs as seconds, not recipe minutes)
+            $pasteurizationTemp = getParam('pasteurization_temp', 75);
             $pasteurizationTimeMins = getParam('pasteurization_time_mins', 15);
             $coolingTemp = getParam('cooling_temp', 4);
             $specialInstructions = trim(getParam('special_instructions', ''));

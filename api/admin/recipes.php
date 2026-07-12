@@ -236,7 +236,7 @@ function createRecipe($conn) {
             $data['base_milk_liters'],
             $data['expected_yield'],
             $data['yield_unit'] ?? 'liters',
-            $data['pasteurization_temp'] ?? 81.00,
+            $data['pasteurization_temp'] ?? 75.00,
             $data['pasteurization_time_mins'] ?? 15,
             $data['cooling_temp'] ?? 4.00,
             $data['special_instructions'] ?? null,

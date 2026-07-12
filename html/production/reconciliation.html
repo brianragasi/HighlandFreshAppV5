@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reconciliation — Production | Highland Fresh</title>
+    <link rel="stylesheet" href="../../css/tailwind.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Backdrop -->
+    <!-- Mobile Sidebar Backdrop (filled/used by ProductionSidebar) -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar shell — content filled by ProductionSidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col"></aside>
+
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button>
+            </div>
+            <div class="flex-1">
+                <div class="breadcrumbs text-sm">
+                    <ul>
+                        <li><a href="dashboard.html">Production</a></li>
+                        <li class="font-semibold">Material Reconciliation</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="flex-none">
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle">
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- Page Header -->
+            <div class="mb-6">
+                <h1 class="text-2xl font-bold text-base-content flex items-center gap-3">
+                    <span class="w-10 h-10 bg-accent/10 rounded-xl flex items-center justify-center"><i class="fas fa-balance-scale text-accent"></i></span>
+                    Material Reconciliation
+                </h1>
+                <p class="text-base-content/60 mt-1">Verify that all materials are accounted for before completing a production run.</p>
+            </div>
+
+            <!-- Run Selector -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body p-4">
+                    <div class="flex flex-col md:flex-row md:items-center gap-4">
+                        <div class="flex-1">
+                            <label class="label pb-1"><span class="label-text font-semibold">Select Run (Packaging Stage)</span></label>
+                            <select id="runSelector" class="select select-bordered w-full max-w-md" onchange="onRunSelected()">
+                                <option value="">— Select a run —</option>
+                            </select>
+                        </div>
+                        <div class="self-end">
+                            <button class="btn btn-ghost btn-sm" onclick="loadRuns()" title="Refresh"><i class="fas fa-sync-alt"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Reconciliation Content -->
+            <div id="reconContent" class="hidden">
+
+                <!-- Material Balance Card -->
+                <div class="card bg-base-100 border border-base-300 mb-6">
+                    <div class="card-body p-5">
+                        <h3 class="card-title text-base mb-4">
+                            <i class="fas fa-balance-scale text-accent"></i> Full Material Balance
+                        </h3>
+
+                        <!-- Waterfall breakdown -->
+                        <div class="space-y-3" id="balanceBreakdown">
+                            <div class="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
+                                <span class="font-medium"><i class="fas fa-tint text-blue-500 mr-2"></i>Initial Volume</span>
+                                <span class="font-bold text-lg" id="reconInitial">—</span>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 rounded-xl">
+                                <span class="font-medium"><i class="fas fa-box text-green-500 mr-2"></i>Finished Product</span>
+                                <span class="font-bold text-lg" id="reconFinished">—</span>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-red-50 dark:bg-red-900/20 rounded-xl">
+                                <span class="font-medium"><i class="fas fa-exclamation-triangle text-red-500 mr-2"></i>Total Losses</span>
+                                <span class="font-bold text-lg" id="reconLosses">—</span>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl">
+                                <span class="font-medium"><i class="fas fa-recycle text-amber-500 mr-2"></i>Byproducts</span>
+                                <span class="font-bold text-lg" id="reconByproducts">—</span>
+                            </div>
+                            <div class="divider my-1"></div>
+                            <div class="flex items-center justify-between p-3 bg-base-200 rounded-xl">
+                                <span class="font-medium"><i class="fas fa-calculator text-base-content/60 mr-2"></i>Total Accounted</span>
+                                <span class="font-bold text-lg" id="reconAccounted">—</span>
+                            </div>
+                            <div id="reconUnaccountedRow" class="flex items-center justify-between p-3 rounded-xl">
+                                <span class="font-medium"><i class="fas fa-question-circle mr-2"></i>Unaccounted</span>
+                                <span class="font-bold text-lg" id="reconUnaccounted">—</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Losses Breakdown -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <div class="card bg-base-100 border border-base-300">
+                        <div class="card-body p-5">
+                            <h3 class="card-title text-sm mb-3"><i class="fas fa-exclamation-triangle text-error mr-1"></i> Loss Breakdown</h3>
+                            <div id="lossBreakdown" class="space-y-2">
+                                <p class="text-sm text-base-content/40">No loss data</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card bg-base-100 border border-base-300">
+                        <div class="card-body p-5">
+                            <h3 class="card-title text-sm mb-3"><i class="fas fa-recycle text-warning mr-1"></i> Byproduct Breakdown</h3>
+                            <div id="byproductBreakdown" class="space-y-2">
+                                <p class="text-sm text-base-content/40">No byproduct data</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tolerance Check & Actions -->
+                <div class="card bg-base-100 border border-base-300 mb-6">
+                    <div class="card-body p-5">
+                        <h3 class="card-title text-base mb-4"><i class="fas fa-clipboard-check text-info mr-1"></i> Reconciliation Status</h3>
+
+                        <div id="toleranceStatus" class="mb-5">
+                            <!-- Filled by JS -->
+                        </div>
+
+                        <div class="flex flex-wrap gap-3" id="reconActions">
+                            <!-- Filled by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Empty state -->
+            <div id="emptyState" class="text-center py-16">
+                <i class="fas fa-balance-scale text-6xl text-base-content/10 mb-4"></i>
+                <p class="text-xl font-semibold text-base-content/40">Select a Run at Packaging Stage</p>
+                <p class="text-sm text-base-content/30 mt-1">Choose a production run to view its full material reconciliation.</p>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Override Note Modal -->
+    <dialog id="overrideModal" class="modal">
+        <div class="modal-box max-w-md">
+            <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button></form>
+            <h3 class="font-bold text-lg mb-3"><i class="fas fa-exclamation-circle text-warning mr-2"></i>Material Discrepancy Override</h3>
+            <p class="text-sm text-base-content/60 mb-4">The unaccounted volume exceeds tolerance. Please provide a reason to proceed.</p>
+            <div class="form-control mb-4">
+                <label class="label"><span class="label-text font-medium">Reconciliation Notes <span class="text-error">*</span></span></label>
+                <textarea id="overrideNotes" class="textarea textarea-bordered" rows="3" placeholder="Explain the discrepancy..."></textarea>
+            </div>
+            <div class="modal-action">
+                <button class="btn btn-ghost" onclick="document.getElementById('overrideModal').close()">Cancel</button>
+                <button id="overrideSubmitBtn" class="btn btn-warning gap-2" onclick="submitOverrideComplete()">
+                    <i class="fas fa-check"></i> Complete with Override
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Toast -->
+    <div class="toast toast-end" id="toastContainer"></div>
+
+    <!-- Scripts -->
+    <script src="../../js/vendor/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script>window.PRODUCTION_ACTIVE_PAGE = "reconciliation";</script>
+    <script src="../../js/production/sidebar.js"></script>
+    <script src="../../js/production/production.service.js"></script>
+<script>
+        let selectedRunId = null;
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!AuthService.isAuthenticated()) { window.location.href = '../login.html'; return; }
+            const user = AuthService.getCurrentUser();
+            document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
+            document.getElementById('userInitials').textContent = (user.first_name[0] + user.last_name[0]).toUpperCase();
+
+            const t = localStorage.getItem('theme');
+            if (t === 'dark') { document.documentElement.setAttribute('data-theme', 'dark'); document.getElementById('themeToggle').checked = true; }
+            document.getElementById('themeToggle').addEventListener('change', e => {
+                const th = e.target.checked ? 'dark' : 'emerald';
+                document.documentElement.setAttribute('data-theme', th);
+                localStorage.setItem('theme', th);
+            });
+
+            await loadRuns();
+        });
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('-translate-x-full');
+            document.getElementById('sidebarBackdrop').classList.toggle('hidden');
+        }
+
+        async function loadRuns() {
+            try {
+                const r = await ProductionService.getRuns({ status_group: 'active', limit: 50 });
+                const runs = Array.isArray(r.data) ? r.data : (r.data?.runs || []);
+                const select = document.getElementById('runSelector');
+                const current = select.value;
+                select.innerHTML = '<option value="">— Select a run —</option>';
+
+                // Prefer packaging stage; also allow cooling/processing for late-stage checks
+                const eligibleStatuses = ['packaging', 'cooling', 'processing'];
+                const eligible = runs.filter(run => eligibleStatuses.includes(run.status));
+
+                eligible.forEach(run => {
+                    const opt = document.createElement('option');
+                    opt.value = run.id;
+                    opt.dataset.status = run.status;
+                    opt.textContent = `${run.run_code} — ${run.product_name} (${run.status})`;
+                    select.appendChild(opt);
+                });
+
+                if (current && eligible.find(run => run.id == current)) {
+                    select.value = current;
+                }
+
+                // Deep-link support
+                const pre = new URLSearchParams(window.location.search).get('run_id');
+                if (pre && eligible.find(run => run.id == pre)) {
+                    select.value = pre;
+                    await onRunSelected();
+                }
+            } catch (e) {
+                showToast('Failed to load runs', 'error');
+            }
+        }
+
+        async function onRunSelected() {
+            const runId = document.getElementById('runSelector').value;
+            if (!runId) {
+                selectedRunId = null;
+                document.getElementById('reconContent').classList.add('hidden');
+                document.getElementById('emptyState').classList.remove('hidden');
+                return;
+            }
+            selectedRunId = runId;
+            document.getElementById('reconContent').classList.remove('hidden');
+            document.getElementById('emptyState').classList.add('hidden');
+            await loadReconciliation();
+        }
+
+        async function loadReconciliation() {
+            try {
+                const r = await ProductionService.getReconciliation(selectedRunId);
+                if (!r.success) throw new Error(r.message);
+                const d = r.data;
+                const b = d.breakdown;
+                const rec = d.reconciliation;
+
+                document.getElementById('reconInitial').textContent = Number(d.initial_volume_ml).toLocaleString() + ' mL';
+                document.getElementById('reconFinished').textContent = Number(b.finished_product_ml).toLocaleString() + ' mL';
+                document.getElementById('reconLosses').textContent = Number(b.losses_total_ml).toLocaleString() + ' mL';
+                document.getElementById('reconByproducts').textContent = Number(b.byproducts_total_ml).toLocaleString() + ' mL';
+                document.getElementById('reconAccounted').textContent = Number(b.total_accounted_ml).toLocaleString() + ' mL';
+
+                const unaccounted = b.unaccounted_ml;
+                document.getElementById('reconUnaccounted').textContent = Number(unaccounted).toLocaleString() + ' mL';
+
+                const unaccRow = document.getElementById('reconUnaccountedRow');
+                if (rec.within_tolerance) {
+                    unaccRow.className = 'flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 rounded-xl';
+                    unaccRow.querySelector('i').className = 'fas fa-check-circle text-green-500 mr-2';
+                } else {
+                    unaccRow.className = 'flex items-center justify-between p-3 bg-red-50 dark:bg-red-900/20 rounded-xl';
+                    unaccRow.querySelector('i').className = 'fas fa-times-circle text-red-500 mr-2';
+                }
+
+                // Loss breakdown
+                const lossDiv = document.getElementById('lossBreakdown');
+                const losses = b.losses || {};
+                if (Object.keys(losses).length) {
+                    lossDiv.innerHTML = Object.entries(losses).map(([type, ml]) => `
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm capitalize">${type.replace('_', ' ')}</span>
+                            <span class="font-semibold text-sm text-error">${Number(ml).toLocaleString()} mL</span>
+                        </div>
+                    `).join('');
+                } else {
+                    lossDiv.innerHTML = '<p class="text-sm text-base-content/40">No losses recorded</p>';
+                }
+
+                // Byproduct breakdown
+                const bpDiv = document.getElementById('byproductBreakdown');
+                const byproducts = b.byproducts || {};
+                if (Object.keys(byproducts).length) {
+                    bpDiv.innerHTML = Object.entries(byproducts).map(([type, ml]) => `
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm capitalize">${type.replace('_', ' ')}</span>
+                            <span class="font-semibold text-sm text-warning">${Number(ml).toLocaleString()} mL</span>
+                        </div>
+                    `).join('');
+                } else {
+                    bpDiv.innerHTML = '<p class="text-sm text-base-content/40">No byproducts recorded</p>';
+                }
+
+                // Tolerance status
+                const statusDiv = document.getElementById('toleranceStatus');
+                if (rec.within_tolerance) {
+                    statusDiv.innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle text-2xl"></i>
+                            <div>
+                                <h4 class="font-bold">Within Tolerance</h4>
+                                <p class="text-sm">Unaccounted volume (${Number(unaccounted).toLocaleString()} mL) is within the ${Number(rec.tolerance_ml).toLocaleString()} mL tolerance. Ready to complete.</p>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    statusDiv.innerHTML = `
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle text-2xl"></i>
+                            <div>
+                                <h4 class="font-bold">Exceeds Tolerance</h4>
+                                <p class="text-sm">Unaccounted volume (${Number(unaccounted).toLocaleString()} mL) exceeds the ${Number(rec.tolerance_ml).toLocaleString()} mL tolerance. Record additional losses or request override.</p>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Actions
+                const actionsDiv = document.getElementById('reconActions');
+                if (rec.reconciled) {
+                    actionsDiv.innerHTML = `<div class="badge badge-success badge-lg gap-2"><i class="fas fa-check"></i> Already Reconciled</div>`;
+                } else if (rec.within_tolerance) {
+                    actionsDiv.innerHTML = `
+                        <button class="btn btn-success btn-lg gap-2" onclick="completeRun()">
+                            <i class="fas fa-check-double"></i> Complete Run
+                        </button>
+                        <a href="yield-tracking.html" class="btn btn-ghost btn-lg gap-2">
+                            <i class="fas fa-plus"></i> Record Additional Loss
+                        </a>
+                    `;
+                } else {
+                    actionsDiv.innerHTML = `
+                        <a href="yield-tracking.html" class="btn btn-warning btn-lg gap-2">
+                            <i class="fas fa-plus"></i> Record Additional Loss
+                        </a>
+                        <button class="btn btn-outline btn-lg gap-2" onclick="document.getElementById('overrideModal').showModal()">
+                            <i class="fas fa-exclamation-circle"></i> Request Override
+                        </button>
+                    `;
+                }
+            } catch (e) {
+                showToast(e.message || 'Failed to load reconciliation', 'error');
+            }
+        }
+
+        async function resolveCompleteQuantity() {
+            // Prefer packaging actual/estimated units; fall back to planned/0 for API default
+            try {
+                const er = await ProductionService.getEstimates(selectedRunId);
+                if (er.success) {
+                    const items = er.data.has_revision
+                        ? (er.data.revised_estimate.items || [])
+                        : (er.data.initial_estimate.items || []);
+                    const total = items.reduce((sum, e) => sum + Number(e.actual_units ?? e.estimated_units ?? 0), 0);
+                    if (total > 0) return total;
+                }
+            } catch (e) { /* fall through */ }
+            try {
+                const runRes = await ProductionService.getRun(selectedRunId);
+                if (runRes.success && runRes.data.planned_quantity) {
+                    return Number(runRes.data.planned_quantity);
+                }
+            } catch (e) { /* fall through */ }
+            return 0; // API will try estimate/planned fallbacks
+        }
+
+        async function completeRun() {
+            if (!selectedRunId) return;
+            try {
+                // Mark reconciled first (within tolerance path)
+                await ProductionService.reconcileRun(selectedRunId, 'Within tolerance — completed via reconciliation screen');
+                const qty = await resolveCompleteQuantity();
+                const r = await ProductionService.completeRun(
+                    selectedRunId,
+                    qty,
+                    '',
+                    'Within tolerance — completed via reconciliation screen'
+                );
+                if (r.success) {
+                    showToast('Production run completed successfully!', 'success');
+                    await loadRuns();
+                    await loadReconciliation();
+                } else {
+                    showToast(r.message || 'Failed to complete run', 'error');
+                }
+            } catch (e) {
+                const msg = e?.errors
+                    ? Object.values(e.errors).flat().join('; ')
+                    : (e.message || 'Error completing run');
+                showToast(msg, 'error');
+            }
+        }
+
+        async function submitOverrideComplete() {
+            const notes = document.getElementById('overrideNotes').value.trim();
+            if (!notes) {
+                showToast('Please provide reconciliation notes.', 'warning');
+                return;
+            }
+
+            const btn = document.getElementById('overrideSubmitBtn');
+            btn.classList.add('loading');
+            btn.disabled = true;
+
+            try {
+                // Force reconcile with override notes, then complete
+                await ProductionService.reconcileRun(selectedRunId, notes, true);
+                const qty = await resolveCompleteQuantity();
+                const r = await ProductionService.completeRun(selectedRunId, qty, notes, notes);
+                if (r.success) {
+                    showToast('Run completed with override.', 'success');
+                    document.getElementById('overrideModal').close();
+                    await loadRuns();
+                    await loadReconciliation();
+                } else {
+                    showToast(r.message || 'Failed', 'error');
+                }
+            } catch (e) {
+                const msg = e?.errors
+                    ? Object.values(e.errors).flat().join('; ')
+                    : (e.message || 'Error');
+                showToast(msg, 'error');
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+
+        function showToast(msg, type = 'info') {
+            const icons = { success: 'check-circle', error: 'exclamation-circle', warning: 'exclamation-triangle', info: 'info-circle' };
+            const colors = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' };
+            const el = document.createElement('div');
+            el.className = `alert ${colors[type]} shadow-lg max-w-sm text-sm`;
+            el.innerHTML = `<i class="fas fa-${icons[type]}"></i><span>${msg}</span>`;
+            document.getElementById('toastContainer').appendChild(el);
+            setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 300); }, 4000);
+        }
+    </script>
+</body>
+
+</html>

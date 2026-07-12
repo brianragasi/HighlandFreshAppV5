@@ -1,0 +1,1645 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Active Runs — Production | Highland Fresh</title>
+    <link rel="stylesheet" href="../../css/tailwind.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        :root {
+            /* Default reserve; JS updates to measured sticky bar height when visible */
+            --wb-sticky-h: 0px;
+            --wb-sticky-pad: 1rem;
+        }
+        body.wb-sticky-on {
+            /* Fallback if measure fails: ~bar + safe area + breathing room */
+            --wb-sticky-h: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+        }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .panel-btn.active { background: oklch(var(--p)); color: oklch(var(--pc)); border-color: oklch(var(--p)); }
+        .panel-btn.locked { opacity: 0.45; cursor: not-allowed; }
+        .panel-btn.done:not(.active) { border-color: oklch(var(--su)); }
+        .touch-btn { min-height: 2.75rem; }
+        .wizard-step {
+            flex: 1 1 0;
+            min-width: 4.5rem;
+            text-align: center;
+            position: relative;
+        }
+        .wizard-step .bubble {
+            width: 2rem;
+            height: 2rem;
+            border-radius: 9999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.8rem;
+            border: 2px solid oklch(var(--bc) / 0.15);
+            background: oklch(var(--b1));
+            margin: 0 auto 0.25rem;
+        }
+        .wizard-step.done .bubble {
+            background: oklch(var(--su));
+            color: oklch(var(--suc));
+            border-color: oklch(var(--su));
+        }
+        .wizard-step.current .bubble {
+            background: oklch(var(--p));
+            color: oklch(var(--pc));
+            border-color: oklch(var(--p));
+            box-shadow: 0 0 0 3px oklch(var(--p) / 0.2);
+        }
+        .wizard-step.locked .bubble {
+            background: oklch(var(--b2));
+            color: oklch(var(--bc) / 0.4);
+        }
+        .wizard-step .wlabel { font-size: 0.65rem; line-height: 1.15; color: oklch(var(--bc) / 0.55); }
+        .wizard-step.current .wlabel { color: oklch(var(--p)); font-weight: 600; }
+        .wizard-step.done .wlabel { color: oklch(var(--su)); }
+
+        /* Viewport shell: header fixed in flow, main scrolls, footer never covers content */
+        .wb-shell {
+            min-height: 100dvh;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .wb-main {
+            flex: 1 1 auto;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            /* Reserve space so last loss rows clear the fixed sticky footer */
+            padding-bottom: calc(var(--wb-sticky-h) + var(--wb-sticky-pad) + env(safe-area-inset-bottom, 0px));
+        }
+        #stickyBar {
+            padding-bottom: max(0.625rem, env(safe-area-inset-bottom, 0px));
+        }
+        #stickyBar.is-hidden {
+            display: none !important;
+        }
+        /* Loss list: keep last items clear of footer even if padding lag */
+        #lossList {
+            padding-bottom: 0.5rem;
+            margin-bottom: 0.25rem;
+        }
+    </style>
+</head>
+
+<body class="bg-base-200">
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col"></aside>
+
+    <div class="wb-shell lg:ml-72">
+        <header class="navbar bg-base-100 border-b border-base-300 shrink-0 z-30 px-4 lg:px-6 min-h-14">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button>
+            </div>
+            <div class="flex-1">
+                <div class="breadcrumbs text-sm py-0">
+                    <ul>
+                        <li><a href="dashboard.html">Production</a></li>
+                        <li class="font-semibold">My Active Runs</li>
+                    </ul>
+                </div>
+                <h1 class="text-base lg:text-lg font-bold leading-tight">Active Run Workbench</h1>
+            </div>
+            <div class="flex-none">
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle">
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <main id="wbMain" class="wb-main p-3 lg:p-4 space-y-3">
+            <!-- Run picker -->
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body p-4 gap-3">
+                    <div class="flex flex-col md:flex-row md:items-end gap-3">
+                        <div class="flex-1 form-control">
+                            <label class="label py-1"><span class="label-text font-semibold">Select production run</span></label>
+                            <select id="runSelector" class="select select-bordered select-lg w-full" onchange="onRunPicked()">
+                                <option value="">Loading runs…</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-ghost touch-btn" onclick="refreshAll()" title="Refresh">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </button>
+                        <a href="batches.html?action=new" class="btn btn-outline touch-btn gap-2">
+                            <i class="fas fa-plus"></i> New Run
+                        </a>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <p class="text-xs text-base-content/50">
+                            Guided wizard keeps steps in order. Unlock Free mode only if you need to jump around.
+                        </p>
+                        <label class="label cursor-pointer gap-2 justify-start py-0">
+                            <span class="label-text text-sm font-medium">Wizard mode</span>
+                            <input type="checkbox" id="wizardModeToggle" class="toggle toggle-primary" checked>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Empty state -->
+            <div id="emptyState" class="text-center py-16">
+                <i class="fas fa-screwdriver-wrench text-6xl text-base-content/10 mb-4"></i>
+                <p class="text-xl font-semibold text-base-content/40">Pick an active run</p>
+                <p class="text-sm text-base-content/30 mt-1">Or start a new one from Production Batches.</p>
+            </div>
+
+            <!-- Workbench -->
+            <div id="workbench" class="hidden space-y-4">
+                <!-- Header card -->
+                <div class="card bg-base-100 border border-base-300">
+                    <div class="card-body p-4 lg:p-5">
+                        <div class="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
+                            <div>
+                                <div class="flex flex-wrap items-center gap-2 mb-1">
+                                    <h2 class="text-xl font-bold font-mono" id="wbRunCode">—</h2>
+                                    <span class="badge badge-lg" id="wbStatusBadge">—</span>
+                                </div>
+                                <p class="text-base font-semibold" id="wbProduct">—</p>
+                                <p class="text-sm text-base-content/60" id="wbMeta">—</p>
+                            </div>
+                            <div class="stats stats-horizontal shadow-none bg-base-200 rounded-xl">
+                                <div class="stat py-3 px-4">
+                                    <div class="stat-title text-xs">Start volume</div>
+                                    <div class="stat-value text-lg" id="wbInitial">—</div>
+                                    <div class="stat-desc">liters</div>
+                                </div>
+                                <div class="stat py-3 px-4">
+                                    <div class="stat-title text-xs">Net yield</div>
+                                    <div class="stat-value text-lg text-success" id="wbNet">—</div>
+                                    <div class="stat-desc">liters</div>
+                                </div>
+                                <div class="stat py-3 px-4">
+                                    <div class="stat-title text-xs">Efficiency</div>
+                                    <div class="stat-value text-lg" id="wbEff">—</div>
+                                    <div class="stat-desc">%</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Production stage strip -->
+                        <ul class="steps steps-horizontal w-full text-xs mt-4" id="wbStages">
+                            <li class="step" data-stage="in_progress">Start</li>
+                            <li class="step" data-stage="pasteurization">Past.</li>
+                            <li class="step" data-stage="processing">Process</li>
+                            <li class="step" data-stage="cooling">Cool</li>
+                            <li class="step" data-stage="packaging">Pack</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Linear wizard progress -->
+                <div class="card bg-base-100 border border-base-300" id="wizardCard">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-3 gap-2">
+                            <h3 class="font-semibold text-sm flex items-center gap-2">
+                                <i class="fas fa-shoe-prints text-primary"></i>
+                                Guided production steps
+                            </h3>
+                            <span class="badge badge-outline badge-sm" id="wizardProgressBadge">Step 1 of 5</span>
+                        </div>
+                        <div class="flex gap-1 md:gap-2" id="wizardSteps"></div>
+                        <p class="text-xs text-base-content/50 mt-3" id="wizardHint">Complete steps in order. Locked steps unlock automatically.</p>
+                    </div>
+                </div>
+
+                <!-- Compact next-step strip (primary action also in sticky footer) -->
+                <div id="nextStepBanner" class="flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm">
+                    <i class="fas fa-arrow-right text-primary shrink-0"></i>
+                    <div class="flex-1 min-w-0">
+                        <p class="font-semibold truncate leading-tight" id="nextStepTitle">—</p>
+                        <p class="text-xs text-base-content/60 truncate leading-tight" id="nextStepDetail">—</p>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-primary shrink-0" id="nextStepBtn" onclick="doPrimaryAction()">Continue</button>
+                </div>
+
+                <!-- Lock notice -->
+                <div id="lockNotice" class="flex items-center gap-2 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-sm hidden">
+                    <i class="fas fa-lock text-warning shrink-0"></i>
+                    <span id="lockNoticeText" class="flex-1 min-w-0">This step is locked.</span>
+                    <button type="button" class="btn btn-xs btn-warning shrink-0" onclick="goToCurrentWizardStep()">Current step</button>
+                </div>
+
+                <!-- Panel nav (mobile horizontal scroll) -->
+                <div class="flex gap-2 overflow-x-auto pb-1" id="panelNav">
+                    <button type="button" class="btn btn-sm panel-btn active" data-panel="overview" onclick="showPanel('overview')">1 · Volume</button>
+                    <button type="button" class="btn btn-sm panel-btn" data-panel="ccp" onclick="showPanel('ccp')">2 · CCP</button>
+                    <button type="button" class="btn btn-sm panel-btn" data-panel="stages" onclick="showPanel('stages')">3 · Process &amp; losses</button>
+                    <button type="button" class="btn btn-sm panel-btn" data-panel="yield" onclick="showPanel('yield')">4 · Yield</button>
+                    <button type="button" class="btn btn-sm panel-btn" data-panel="reconcile" onclick="showPanel('reconcile')">5 · Finish</button>
+                </div>
+
+                <!-- Panels -->
+                <div id="panel-overview" class="panel-section card bg-base-100 border border-base-300">
+                    <div class="card-body p-5 space-y-5">
+                        <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                            <div>
+                                <h3 class="card-title text-base mb-1">
+                                    <i class="fas fa-tint text-info"></i> Starting milk volume
+                                </h3>
+                                <p class="text-sm text-base-content/60 max-w-xl">
+                                    <strong>Initial volume</strong> is how much milk this run starts with.
+                                    The system uses it to track losses, net yield, and packaging estimates.
+                                    It should match the milk already planned / issued for this run — not a second guess.
+                                </p>
+                            </div>
+                            <div class="badge badge-info badge-outline badge-lg gap-1 shrink-0" id="volumeSourceBadge">—</div>
+                        </div>
+
+                        <!-- Suggested volume card -->
+                        <div id="suggestedVolumeCard" class="rounded-2xl border border-info/30 bg-info/5 p-4 hidden">
+                            <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                <div>
+                                    <p class="text-xs uppercase tracking-wide text-info font-semibold mb-1">System suggestion</p>
+                                    <p class="text-2xl font-bold" id="suggestedVolumeDisplay">—</p>
+                                    <p class="text-sm text-base-content/60" id="suggestedVolumeExplain">—</p>
+                                </div>
+                                <button type="button" class="btn btn-info touch-btn gap-2" id="useSuggestedBtn" onclick="useSuggestedVolume()">
+                                    <i class="fas fa-magic"></i> Use this volume
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 items-end">
+                            <div class="form-control lg:col-span-1">
+                                <label class="label py-1">
+                                    <span class="label-text font-medium">Volume (liters)</span>
+                                    <span class="label-text-alt text-base-content/50" id="volumeMlHint">= — mL</span>
+                                </label>
+                                <input type="number" id="volumeInputLiters" class="input input-bordered input-lg font-bold text-2xl"
+                                    min="0.001" step="0.001" placeholder="e.g. 50"
+                                    oninput="onVolumeLitersInput()">
+                                <!-- hidden mL value used by existing API calls -->
+                                <input type="hidden" id="volumeInput" value="">
+                                <label class="label py-1">
+                                    <span class="label-text-alt text-base-content/50">
+                                        Only adjust if actual milk on the floor differs from what warehouse issued.
+                                    </span>
+                                </label>
+                            </div>
+                            <div class="flex flex-col sm:flex-row gap-2 lg:col-span-2">
+                                <button class="btn btn-outline touch-btn gap-2 flex-1" onclick="saveVolume()">
+                                    <i class="fas fa-save"></i> Save volume only
+                                </button>
+                                <button class="btn btn-success touch-btn gap-2 flex-1" id="startRunBtn" onclick="startRun()">
+                                    <i class="fas fa-play"></i> Start run with this volume
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="overviewNotes" class="text-sm"></div>
+
+                        <div class="rounded-xl bg-base-200 p-4 text-sm space-y-1">
+                            <p class="font-semibold flex items-center gap-2"><i class="fas fa-lightbulb text-warning"></i> Why this step exists</p>
+                            <ul class="list-disc ml-5 text-base-content/70 space-y-1">
+                                <li>Warehouse issues milk via requisition (e.g. 50 L).</li>
+                                <li>That amount becomes the run’s <em>starting</em> volume for yield tracking.</li>
+                                <li>You should not re-type it unless the real milk on the floor is different.</li>
+                                <li>Losses (spillage, evaporation) are recorded later and subtracted from this start volume.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="panel-ccp" class="panel-section card bg-base-100 border border-base-300 hidden">
+                    <div class="card-body p-5 space-y-4">
+                        <h3 class="card-title text-base"><i class="fas fa-thermometer-half text-error"></i> Critical Control Points</h3>
+                        <div id="ccpSummary" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+                        <div class="divider text-sm">Quick log</div>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div class="form-control">
+                                <label class="label py-1"><span class="label-text">Check type</span></label>
+                                <select id="ccpType" class="select select-bordered">
+                                    <option value="pasteurization">Pasteurization (75°C / 15s)</option>
+                                    <option value="cooling">Cooling (≤4°C)</option>
+                                    <option value="preheating">Pre-heating (65°C)</option>
+                                    <option value="chilling">Chilling (≤4°C)</option>
+                                    <option value="storage">Storage (≤4°C)</option>
+                                    <option value="homogenization">Homogenization (psi)</option>
+                                </select>
+                            </div>
+                            <div class="form-control" id="ccpTempGroup">
+                                <label class="label py-1"><span class="label-text">Temperature (°C)</span></label>
+                                <input type="number" id="ccpTemp" class="input input-bordered input-lg font-bold" step="0.1" placeholder="75">
+                            </div>
+                            <div class="form-control hidden" id="ccpPsiGroup">
+                                <label class="label py-1"><span class="label-text">Pressure (psi)</span></label>
+                                <input type="number" id="ccpPsi" class="input input-bordered input-lg font-bold" step="1" placeholder="1200">
+                            </div>
+                            <div class="form-control" id="ccpHoldGroup">
+                                <label class="label py-1"><span class="label-text">Hold time (sec)</span></label>
+                                <input type="number" id="ccpHold" class="input input-bordered" value="15" min="0">
+                            </div>
+                        </div>
+                        <button class="btn btn-error touch-btn gap-2" onclick="submitCcp()"><i class="fas fa-plus"></i> Record CCP</button>
+                        <a href="#" id="ccpFullLink" class="link link-primary text-sm">Open full CCP logging page →</a>
+                    </div>
+                </div>
+
+                <!-- Losses panel kept for deep-links; content is mirrored in Process step -->
+                <div id="panel-losses" class="panel-section card bg-base-100 border border-base-300 hidden">
+                    <div class="card-body p-5">
+                        <p class="text-sm text-base-content/60 mb-3">
+                            Losses are recorded during the <strong>Process</strong> step (not by clicking stage labels).
+                        </p>
+                        <button class="btn btn-primary touch-btn gap-2" onclick="showPanel('stages', { force: true })">
+                            <i class="fas fa-stream"></i> Go to Process &amp; losses
+                        </button>
+                    </div>
+                </div>
+
+                <div id="panel-stages" class="panel-section card bg-base-100 border border-base-300 hidden">
+                    <div class="card-body p-5 space-y-5">
+                        <div>
+                            <h3 class="card-title text-base mb-1">
+                                <i class="fas fa-stream text-info"></i> Process &amp; losses
+                            </h3>
+                            <p class="text-sm text-base-content/60 max-w-2xl">
+                                This is <strong>not</strong> random buttons. You mark where the batch is on the floor
+                                (one step forward at a time). <strong>Losses are not auto-calculated</strong> —
+                                if milk was lost (evaporation, spillage, sampling), record it below so yield stays honest.
+                            </p>
+                        </div>
+
+                        <!-- Live material balance -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3" id="processBalance">
+                            <div class="rounded-xl bg-base-200 p-3 text-center">
+                                <p class="text-xs text-base-content/50">Start</p>
+                                <p class="text-lg font-bold" id="procStart">—</p>
+                                <p class="text-xs text-base-content/40">L</p>
+                            </div>
+                            <div class="rounded-xl bg-error/10 p-3 text-center">
+                                <p class="text-xs text-base-content/50">Losses so far</p>
+                                <p class="text-lg font-bold text-error" id="procLoss">—</p>
+                                <p class="text-xs text-base-content/40">L</p>
+                            </div>
+                            <div class="rounded-xl bg-success/10 p-3 text-center">
+                                <p class="text-xs text-base-content/50">Remaining</p>
+                                <p class="text-lg font-bold text-success" id="procNet">—</p>
+                                <p class="text-xs text-base-content/40">L</p>
+                            </div>
+                            <div class="rounded-xl bg-base-200 p-3 text-center">
+                                <p class="text-xs text-base-content/50">Efficiency</p>
+                                <p class="text-lg font-bold" id="procEff">—</p>
+                                <p class="text-xs text-base-content/40">%</p>
+                            </div>
+                        </div>
+
+                        <!-- Current stage + one next action -->
+                        <div class="rounded-2xl border border-base-300 p-4 space-y-3">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <div>
+                                    <p class="text-xs uppercase tracking-wide text-base-content/50">Current floor stage</p>
+                                    <p class="text-xl font-bold" id="stageCurrent">—</p>
+                                </div>
+                                <span class="badge badge-lg badge-outline" id="stageNextBadge">Next: —</span>
+                            </div>
+                            <div id="stageGateAlert" class="alert alert-info text-sm py-2">
+                                <i class="fas fa-info-circle"></i>
+                                <span id="stageGateText">Advance only when this stage is finished on the floor.</span>
+                            </div>
+                            <button type="button" class="btn btn-primary btn-lg touch-btn w-full gap-2" id="advanceStageBtn" onclick="advanceToNextStage()">
+                                <i class="fas fa-forward"></i>
+                                <span id="advanceStageLabel">Advance to next stage</span>
+                            </button>
+                            <p class="text-xs text-base-content/50" id="stagePathHint">
+                                Path: Start → Pasteurize → Process → Cool → Floor pack stage → Complete (then QC)
+                            </p>
+                            <!-- Hidden free-mode stage buttons (only if free mode) -->
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 hidden" id="stageButtons">
+                                <button class="btn btn-outline btn-sm" data-stage-btn="pasteurization" onclick="setStage('pasteurization')">Pasteurization</button>
+                                <button class="btn btn-outline btn-sm" data-stage-btn="processing" onclick="setStage('processing')">Processing</button>
+                                <button class="btn btn-outline btn-sm" data-stage-btn="cooling" onclick="setStage('cooling')">Cooling</button>
+                                <button class="btn btn-outline btn-sm" data-stage-btn="packaging" onclick="setStage('packaging')">Floor pack</button>
+                            </div>
+                        </div>
+
+                        <!-- Record loss HERE (this is the calculation input) -->
+                        <div class="rounded-2xl border border-warning/40 bg-warning/5 p-4 space-y-3">
+                            <div class="flex items-start gap-2">
+                                <i class="fas fa-exclamation-triangle text-warning mt-1"></i>
+                                <div>
+                                    <h4 class="font-semibold">Record milk loss at this stage</h4>
+                                    <p class="text-sm text-base-content/60">
+                                        Losses are entered by staff (measured or estimated), then the system
+                                        <strong>recalculates</strong> net yield and packaging estimate automatically.
+                                        Stage buttons do not invent losses.
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                                <div class="form-control">
+                                    <label class="label py-1"><span class="label-text">When (stage)</span></label>
+                                    <select id="lossStage" class="select select-bordered">
+                                        <option value="pasteurization">Pasteurization</option>
+                                        <option value="processing">Processing</option>
+                                        <option value="cooling">Cooling</option>
+                                        <option value="packaging">Floor packaging</option>
+                                    </select>
+                                </div>
+                                <div class="form-control">
+                                    <label class="label py-1"><span class="label-text">Loss type</span></label>
+                                    <select id="lossType" class="select select-bordered">
+                                        <option value="evaporation">Evaporation</option>
+                                        <option value="spillage">Spillage</option>
+                                        <option value="sampling">Sampling (QC)</option>
+                                        <option value="equipment_retention">Equipment retention</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                </div>
+                                <div class="form-control">
+                                    <label class="label py-1"><span class="label-text">Lost volume (liters)</span></label>
+                                    <input type="number" id="lossVolumeLiters" class="input input-bordered input-lg font-bold" min="0.001" step="0.001" placeholder="e.g. 0.5">
+                                    <input type="hidden" id="lossVolume" value="">
+                                </div>
+                                <div class="form-control">
+                                    <label class="label py-1"><span class="label-text">Notes</span></label>
+                                    <input type="text" id="lossNotes" class="input input-bordered" placeholder="Optional">
+                                </div>
+                            </div>
+                            <button class="btn btn-warning touch-btn gap-2" onclick="submitLoss()">
+                                <i class="fas fa-plus"></i> Add loss &amp; recalculate yield
+                            </button>
+                            <div id="lossList" class="text-sm space-y-1 pt-1"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="panel-yield" class="panel-section card bg-base-100 border border-base-300 hidden">
+                    <div class="card-body p-5 space-y-5">
+                        <div>
+                            <h3 class="card-title text-base mb-1"><i class="fas fa-chart-line text-success"></i> Yield & packaging estimate</h3>
+                            <p class="text-sm text-base-content/60">
+                                Start milk − losses = remaining milk, then bottle counts. Small losses (a few mL) may not change whole bottles.
+                            </p>
+                        </div>
+                        <div id="yieldBalanceBox" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+                        <div id="yieldLossBox" class="space-y-1"></div>
+                        <div id="estimateBox" class="space-y-3"></div>
+                        <button type="button" class="btn btn-primary touch-btn w-full gap-2" onclick="showPanel('reconcile', { force: true })">
+                            Looks good — go to Finish <i class="fas fa-arrow-right"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="panel-reconcile" class="panel-section card bg-base-100 border border-base-300 hidden">
+                    <div class="card-body p-5 space-y-5">
+                        <div>
+                            <h3 class="card-title text-base mb-1"><i class="fas fa-balance-scale text-warning"></i> Finish this run</h3>
+                            <p class="text-sm text-base-content/60">
+                                Review the material balance, then complete once. QC still has to release the batch before finished-goods packaging.
+                            </p>
+                        </div>
+                        <div id="reconBox" class="space-y-2 text-sm"></div>
+                        <div id="reconLossBox" class="space-y-1"></div>
+                        <div class="form-control">
+                            <label class="label"><span class="label-text">Notes (required if over tolerance)</span></label>
+                            <textarea id="reconNotes" class="textarea textarea-bordered" rows="2" placeholder="Optional override notes"></textarea>
+                        </div>
+                        <!-- Single complete control lives here (sticky bar is navigation only on this step) -->
+                        <button id="completeRunBtn" class="btn btn-success btn-lg touch-btn w-full gap-2" onclick="completeFromWorkbench()">
+                            <i class="fas fa-check-double"></i> Complete run (send to QC)
+                        </button>
+                        <button type="button" class="btn btn-outline touch-btn w-full gap-2" onclick="showPanel('stages', { force: true })">
+                            <i class="fas fa-plus"></i> Go back to record more losses
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Sticky wizard bar — space reserved via --wb-sticky-h on .wb-main -->
+    <div id="stickyBar" class="fixed bottom-0 left-0 right-0 lg:left-72 z-40 bg-base-100/95 backdrop-blur border-t border-base-300 px-3 py-2 shadow-lg is-hidden" aria-hidden="true">
+        <div class="flex items-center gap-2 max-w-5xl mx-auto">
+            <button type="button" class="btn btn-ghost btn-md min-h-11" id="stickyBackBtn" onclick="wizardBack()" title="Previous step">
+                <i class="fas fa-arrow-left"></i>
+            </button>
+            <div class="flex-1 min-w-0 px-1">
+                <p class="text-xs text-base-content/50 leading-tight" id="stickyLabel">Next step</p>
+                <p class="font-semibold truncate text-sm sm:text-base leading-tight" id="stickyTitle">—</p>
+            </div>
+            <button type="button" class="btn btn-primary btn-md min-h-11 gap-2 shrink-0" id="stickyBtn" onclick="doPrimaryAction()">
+                Continue <i class="fas fa-arrow-right"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="toast toast-end z-50" id="toastContainer"></div>
+
+    <script src="../../js/vendor/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script>window.PRODUCTION_ACTIVE_PAGE = "workbench";</script>
+    <script src="../../js/production/sidebar.js"></script>
+    <script src="../../js/production/run-flow.js"></script>
+    <script src="../../js/production/production.service.js"></script>
+    <script>
+        let selectedRunId = null;
+        let wb = null; // { run, yieldData, estimates, reconciliation, nextStep }
+        let wizardState = null;
+        let wizardMode = localStorage.getItem('hf_wizard_mode') !== '0'; // default ON
+        let currentPanel = 'overview';
+
+        /** Keep main content clear of the fixed sticky footer */
+        function syncStickyFooterSpace() {
+            const bar = document.getElementById('stickyBar');
+            const root = document.documentElement;
+            if (!bar) return;
+            const visible = !bar.classList.contains('is-hidden') && !bar.classList.contains('hidden');
+            document.body.classList.toggle('wb-sticky-on', visible);
+            bar.setAttribute('aria-hidden', visible ? 'false' : 'true');
+            if (visible) {
+                // Measure actual bar height (includes safe-area padding)
+                const h = Math.ceil(bar.getBoundingClientRect().height);
+                root.style.setProperty('--wb-sticky-h', `${Math.max(h, 56)}px`);
+            } else {
+                root.style.setProperty('--wb-sticky-h', '0px');
+            }
+        }
+
+        function setStickyVisible(show) {
+            const bar = document.getElementById('stickyBar');
+            if (!bar) return;
+            bar.classList.toggle('is-hidden', !show);
+            bar.classList.toggle('hidden', !show);
+            // Double rAF so layout is final before measure
+            requestAnimationFrame(() => requestAnimationFrame(syncStickyFooterSpace));
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            window.addEventListener('resize', () => syncStickyFooterSpace());
+            if (!AuthService.isAuthenticated()) { window.location.href = '../login.html'; return; }
+            try {
+                const user = AuthService.getCurrentUser() || {};
+                const nameEl = document.getElementById('sidebarUserName');
+                const initEl = document.getElementById('userInitials');
+                if (nameEl) nameEl.textContent = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Production';
+                if (initEl) initEl.textContent = ((user.first_name || 'P')[0] + (user.last_name || 'S')[0]).toUpperCase();
+            } catch (e) {}
+
+            const t = localStorage.getItem('theme');
+            const themeToggle = document.getElementById('themeToggle');
+            if (t === 'dark' && themeToggle) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                themeToggle.checked = true;
+            }
+            themeToggle?.addEventListener('change', e => {
+                const th = e.target.checked ? 'dark' : 'emerald';
+                document.documentElement.setAttribute('data-theme', th);
+                localStorage.setItem('theme', th);
+            });
+
+            document.getElementById('ccpType').addEventListener('change', onCcpTypeChange);
+
+            const wizToggle = document.getElementById('wizardModeToggle');
+            if (wizToggle) {
+                wizToggle.checked = wizardMode;
+                wizToggle.addEventListener('change', (e) => {
+                    wizardMode = !!e.target.checked;
+                    localStorage.setItem('hf_wizard_mode', wizardMode ? '1' : '0');
+                    if (wb) {
+                        renderWizard();
+                        applyPanelLocks();
+                        updateStageGates();
+                        if (wizardMode) goToCurrentWizardStep();
+                        showToast(wizardMode ? 'Wizard mode ON — steps locked in order' : 'Free mode — all panels open', 'info');
+                    }
+                });
+            }
+
+            await loadRunList();
+            const params = new URLSearchParams(window.location.search);
+            const pre = params.get('run_id');
+            const panel = params.get('panel');
+            const forceFree = params.get('free') === '1';
+            if (forceFree) {
+                wizardMode = false;
+                localStorage.setItem('hf_wizard_mode', '0');
+                if (wizToggle) wizToggle.checked = false;
+            }
+            if (pre) {
+                document.getElementById('runSelector').value = pre;
+                await onRunPicked();
+                if (panel && !wizardMode) showPanel(panel);
+                // wizard mode auto-opens current step in onRunPicked/renderWorkbench
+            }
+        });
+
+        function toggleSidebar() {
+            document.getElementById('sidebar')?.classList.toggle('-translate-x-full');
+            document.getElementById('sidebarBackdrop')?.classList.toggle('hidden');
+        }
+
+        function showToast(msg, type = 'info') {
+            const colors = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' };
+            const el = document.createElement('div');
+            el.className = `alert ${colors[type] || 'alert-info'} shadow-lg max-w-sm text-sm`;
+            el.innerHTML = `<span>${msg}</span>`;
+            document.getElementById('toastContainer').appendChild(el);
+            setTimeout(() => el.remove(), 4000);
+        }
+
+        async function loadRunList() {
+            const sel = document.getElementById('runSelector');
+            try {
+                const r = await ProductionService.getRuns({ status_group: 'active', limit: 50 });
+                const runs = Array.isArray(r.data) ? r.data : (r.data?.runs || []);
+                const active = runs.filter(x => !['completed', 'cancelled'].includes(x.status));
+                // also include recently completed for packaging handoff
+                const completed = runs.filter(x => x.status === 'completed').slice(0, 5);
+                const list = [...active, ...completed];
+
+                sel.innerHTML = '<option value="">— Select a run —</option>';
+                list.forEach(run => {
+                    const opt = document.createElement('option');
+                    opt.value = run.id;
+                    const st = (run.status || '').replace(/_/g, ' ');
+                    opt.textContent = `${run.run_code} — ${run.product_name || ''} (${st})`;
+                    sel.appendChild(opt);
+                });
+                if (!list.length) {
+                    sel.innerHTML = '<option value="">No active runs — create one in Batches</option>';
+                }
+                if (window.ProductionSidebar) {
+                    ProductionSidebar.showBadge('activeRunsBadge', active.length);
+                }
+            } catch (e) {
+                sel.innerHTML = '<option value="">Failed to load runs</option>';
+                showToast(e.message || 'Failed to load runs', 'error');
+            }
+        }
+
+        async function onRunPicked() {
+            const id = document.getElementById('runSelector').value;
+            selectedRunId = id || null;
+            if (!selectedRunId) {
+                document.getElementById('workbench').classList.add('hidden');
+                document.getElementById('emptyState').classList.remove('hidden');
+                setStickyVisible(false);
+                return;
+            }
+            document.getElementById('emptyState').classList.add('hidden');
+            document.getElementById('workbench').classList.remove('hidden');
+            await refreshAll();
+        }
+
+        async function refreshAll(opts = {}) {
+            if (!selectedRunId) return;
+            const stayOnPanel = opts.stayOnPanel;
+            try {
+                const r = await ProductionService.getRunWorkbenchData(selectedRunId);
+                if (!r.success) throw new Error(r.message || 'Failed to load run');
+                wb = r.data;
+                wb.nextStep = ProductionRunFlow.getNextStep(wb.run, {
+                    yieldData: wb.yieldData,
+                    estimates: wb.estimates,
+                });
+                wizardState = ProductionRunFlow.getWizardState(wb.run, {
+                    yieldData: wb.yieldData,
+                    estimates: wb.estimates,
+                    reconciliation: wb.reconciliation,
+                });
+                renderWorkbench({ stayOnPanel });
+            } catch (e) {
+                showToast(e.message || 'Failed to load workbench', 'error');
+            }
+        }
+
+        function renderWorkbench(opts = {}) {
+            const run = wb.run;
+            const y = wb.yieldData || {};
+            document.getElementById('wbRunCode').textContent = run.run_code;
+            document.getElementById('wbProduct').textContent = run.product_name || run.product_type || '—';
+            document.getElementById('wbMeta').textContent = [
+                run.recipe_code ? `Recipe ${run.recipe_code}` : null,
+                run.planned_quantity != null ? `Planned ${run.planned_quantity} ${run.yield_unit || 'units'}` : null,
+            ].filter(Boolean).join(' · ') || '—';
+
+            const st = run.status || 'planned';
+            const badge = document.getElementById('wbStatusBadge');
+            badge.textContent = ProductionRunFlow.STAGE_LABELS[st] || st;
+            badge.className = 'badge badge-lg ' + (st === 'completed' ? 'badge-success' : st === 'packaging' ? 'badge-warning' : 'badge-primary');
+
+            const initial = y.initial_volume_ml ?? run.initial_volume_ml;
+            const net = y.net_yield_ml ?? run.net_yield_ml;
+            const eff = y.yield_efficiency_percent;
+            document.getElementById('wbInitial').textContent = initial != null
+                ? (Number(initial) / 1000).toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' L'
+                : '—';
+            document.getElementById('wbNet').textContent = net != null
+                ? (Number(net) / 1000).toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' L'
+                : '—';
+            document.getElementById('wbEff').textContent = eff != null ? Number(eff).toFixed(1) : '—';
+            // Prefer saved volume; else auto-fill suggested (issued / recipe plan)
+            const suggestedMl = run.suggested_initial_volume_ml;
+            const fillMl = initial != null && Number(initial) > 0 ? Number(initial) : (suggestedMl || null);
+            setVolumeFields(fillMl);
+            renderVolumeSuggestion(run, initial);
+
+            const order = ['in_progress', 'pasteurization', 'processing', 'cooling', 'packaging'];
+            document.querySelectorAll('#wbStages .step').forEach((el, i) => {
+                const stage = order[i];
+                const si = ProductionRunFlow.stageIndex(stage);
+                const cur = ProductionRunFlow.stageIndex(st === 'planned' ? 'planned' : st);
+                el.classList.toggle('step-primary', cur >= si && st !== 'planned');
+            });
+
+            document.getElementById('startRunBtn').classList.toggle('hidden', st !== 'planned');
+            document.getElementById('stageCurrent').textContent = ProductionRunFlow.STAGE_LABELS[st] || st;
+            document.getElementById('ccpFullLink').href = `ccp_logging.html?run_id=${run.id}`;
+
+            const lossStage = document.getElementById('lossStage');
+            if (lossStage && ['pasteurization', 'processing', 'cooling', 'packaging'].includes(st)) {
+                lossStage.value = st;
+            }
+
+            renderProcessBalance();
+            renderWizard();
+            renderNextStep();
+            renderCcp();
+            renderLosses();
+            renderEstimates();
+            renderRecon();
+            applyPanelLocks();
+            updateStageGates();
+
+            // Auto-open current wizard step (unless staying after an action)
+            if (!opts.stayOnPanel) {
+                if (wizardMode) {
+                    goToCurrentWizardStep();
+                } else if (!currentPanel) {
+                    showPanel('overview');
+                } else {
+                    showPanel(currentPanel, { force: true });
+                }
+            } else {
+                showPanel(currentPanel || 'overview', { force: true });
+            }
+        }
+
+        function renderWizard() {
+            wizardState = ProductionRunFlow.getWizardState(wb.run, {
+                yieldData: wb.yieldData,
+                estimates: wb.estimates,
+            });
+            const box = document.getElementById('wizardSteps');
+            const card = document.getElementById('wizardCard');
+            if (!box) return;
+
+            card.style.opacity = wizardMode ? '1' : '0.55';
+            document.getElementById('wizardHint').textContent = wizardMode
+                ? 'Complete steps in order. Locked steps unlock automatically when requirements are met.'
+                : 'Free mode is on — you can open any panel. Toggle Wizard mode to re-lock the path.';
+
+            const doneCount = wizardState.steps.filter(s => s.done).length;
+            document.getElementById('wizardProgressBadge').textContent =
+                wizardState.allDone ? 'All steps complete' : `Step ${wizardState.currentIndex + 1} of ${wizardState.steps.length} · ${doneCount} done`;
+
+            box.innerHTML = wizardState.steps.map((s) => {
+                const cls = s.done ? 'done' : s.current ? 'current' : s.locked ? 'locked' : '';
+                const bubble = s.done
+                    ? '<i class="fas fa-check text-xs"></i>'
+                    : s.locked
+                        ? '<i class="fas fa-lock text-xs"></i>'
+                        : s.number;
+                return `
+                    <button type="button" class="wizard-step ${cls}" data-wizard-id="${s.id}"
+                        onclick="onWizardStepClick('${s.id}')"
+                        title="${s.locked ? (s.lockReason || 'Locked') : s.description}">
+                        <div class="bubble">${bubble}</div>
+                        <div class="wlabel">${s.short}</div>
+                    </button>`;
+            }).join('');
+        }
+
+        function onWizardStepClick(stepId) {
+            const step = wizardState?.steps?.find(s => s.id === stepId);
+            if (!step) return;
+            if (wizardMode && step.locked) {
+                showToast(step.lockReason || 'Finish previous steps first', 'warning');
+                goToCurrentWizardStep();
+                return;
+            }
+            showPanel(step.panel, { force: true });
+        }
+
+        function goToCurrentWizardStep() {
+            if (!wizardState) return;
+            const step = wizardState.steps[wizardState.currentIndex] || wizardState.steps[0];
+            if (step) showPanel(step.panel, { force: true });
+        }
+
+        function wizardBack() {
+            if (!wizardState) return;
+            // Go to previous done/current step
+            let idx = wizardState.steps.findIndex(s => s.panel === currentPanel);
+            if (idx < 0) idx = wizardState.currentIndex;
+            for (let i = idx - 1; i >= 0; i--) {
+                if (!wizardMode || !wizardState.steps[i].locked) {
+                    showPanel(wizardState.steps[i].panel, { force: true });
+                    return;
+                }
+            }
+            showToast('Already at the first step', 'info');
+        }
+
+        function applyPanelLocks() {
+            document.querySelectorAll('.panel-btn').forEach(btn => {
+                const panel = btn.dataset.panel;
+                const check = ProductionRunFlow.canOpenPanel(panel, wizardState, wizardMode);
+                btn.classList.toggle('locked', !check.ok);
+                btn.disabled = false; // keep clickable to show toast
+                // mark done wizard panels
+                const step = wizardState?.steps?.find(s => s.panel === panel);
+                btn.classList.toggle('done', !!(step && step.done));
+            });
+        }
+
+        function renderProcessBalance() {
+            if (!wb?.run) return;
+            const y = wb.yieldData || {};
+            const start = y.initial_volume_ml ?? wb.run.initial_volume_ml;
+            const loss = y.total_loss_ml ?? wb.run.total_loss_ml ?? 0;
+            const net = y.net_yield_ml ?? wb.run.net_yield_ml;
+            const eff = y.yield_efficiency_percent;
+            const fmtL = (ml) => ml == null || ml === '' ? '—' : (Number(ml) / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 });
+            const el = (id, v) => { const n = document.getElementById(id); if (n) n.textContent = v; };
+            el('procStart', fmtL(start));
+            el('procLoss', fmtL(loss));
+            el('procNet', fmtL(net));
+            el('procEff', eff != null ? Number(eff).toFixed(1) : '—');
+        }
+
+        function updateStageGates() {
+            const gate = ProductionRunFlow.allowedStageTransitions(wb?.run, wizardMode);
+            const freeBox = document.getElementById('stageButtons');
+            if (freeBox) freeBox.classList.toggle('hidden', wizardMode);
+
+            document.querySelectorAll('[data-stage-btn]').forEach(btn => {
+                const st = btn.getAttribute('data-stage-btn');
+                const allowed = gate.allowed.includes(st);
+                btn.disabled = !allowed;
+                btn.classList.toggle('btn-disabled', !allowed);
+            });
+
+            const next = gate.next || ProductionRunFlow.getNextStage(wb?.run?.status);
+            const nextBadge = document.getElementById('stageNextBadge');
+            const advanceBtn = document.getElementById('advanceStageBtn');
+            const advanceLabel = document.getElementById('advanceStageLabel');
+            if (nextBadge) {
+                nextBadge.textContent = next
+                    ? `Next: ${ProductionRunFlow.STAGE_LABELS[next] || next}`
+                    : 'No next stage';
+            }
+            if (advanceBtn && advanceLabel) {
+                if (next && gate.allowed.includes(next)) {
+                    advanceBtn.disabled = false;
+                    advanceBtn.classList.remove('btn-disabled');
+                    advanceLabel.textContent = `Mark stage done → go to ${ProductionRunFlow.STAGE_LABELS[next] || next}`;
+                } else if (wb?.run?.status === 'packaging') {
+                    advanceBtn.disabled = false;
+                    advanceBtn.classList.remove('btn-disabled');
+                    advanceLabel.textContent = 'Floor process done → Review yield';
+                    advanceBtn.onclick = () => showPanel('yield', { force: true });
+                } else {
+                    advanceBtn.disabled = true;
+                    advanceBtn.classList.add('btn-disabled');
+                    advanceLabel.textContent = gate.reason || 'Cannot advance yet';
+                    advanceBtn.onclick = () => advanceToNextStage();
+                }
+            }
+
+            const alert = document.getElementById('stageGateAlert');
+            const text = document.getElementById('stageGateText');
+            if (!alert || !text) return;
+            if (gate.reason && !(next && gate.allowed.includes(next))) {
+                alert.className = 'alert alert-warning text-sm py-2';
+                text.textContent = gate.reason;
+            } else if (gate.blockPackaging) {
+                alert.className = 'alert alert-warning text-sm py-2';
+                text.textContent = gate.reason;
+            } else {
+                alert.className = 'alert alert-info text-sm py-2';
+                text.textContent = wizardMode
+                    ? 'One step forward only. Record losses below if milk was lost during this stage, then advance.'
+                    : 'Free mode: you can jump stages (packaging still needs CCP). Prefer wizard on the floor.';
+            }
+        }
+
+        function advanceToNextStage() {
+            if (!wb?.run) return;
+            if (wb.run.status === 'packaging') {
+                showPanel('yield', { force: true });
+                return;
+            }
+            const gate = ProductionRunFlow.allowedStageTransitions(wb.run, wizardMode);
+            const next = gate.next || ProductionRunFlow.getNextStage(wb.run.status);
+            if (!next) {
+                showToast(gate.reason || 'No next stage', 'info');
+                return;
+            }
+            if (!gate.allowed.includes(next)) {
+                showToast(gate.reason || 'Cannot advance yet', 'warning');
+                if (gate.blockPackaging) showPanel('ccp', { force: true });
+                return;
+            }
+            setStage(next);
+        }
+
+        function renderNextStep() {
+            const step = wb.nextStep || ProductionRunFlow.getNextStep(wb.run);
+            const tones = ProductionRunFlow.toneClasses(step.tone);
+            const banner = document.getElementById('nextStepBanner');
+            if (banner) {
+                banner.className = `flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${
+                    step.tone === 'error' ? 'border-error/30 bg-error/5'
+                    : step.tone === 'warning' ? 'border-warning/30 bg-warning/5'
+                    : step.tone === 'success' ? 'border-success/30 bg-success/5'
+                    : 'border-base-300 bg-base-100'
+                }`;
+            }
+
+            // Prefer wizard current step messaging when in wizard mode
+            let title = step.title;
+            let detail = step.detail;
+            let cta = step.cta;
+            if (wizardMode && wizardState && !wizardState.allDone) {
+                const ws = wizardState.steps[wizardState.currentIndex];
+                if (ws) {
+                    title = `Step ${ws.number}: ${ws.title}`;
+                    detail = ws.description;
+                    cta = ws.done ? 'Continue' : (ws.id === 'complete' ? 'Complete run' : 'Do this step');
+                }
+            }
+            if (wizardState?.allDone || wb.run.status === 'completed') {
+                title = 'Run complete';
+                detail = 'This run is finished. QC can release for packaging.';
+                cta = 'Done';
+            }
+
+            document.getElementById('nextStepTitle').textContent = title;
+            document.getElementById('nextStepDetail').textContent = detail;
+            const btn = document.getElementById('nextStepBtn');
+            if (btn) {
+                btn.className = `btn btn-sm shrink-0 ${tones.btn}`;
+                btn.textContent = cta;
+            }
+
+            const sbtn = document.getElementById('stickyBtn');
+            setStickyVisible(true);
+            // On Finish panel: sticky is navigation only — Complete lives on the panel
+            if (currentPanel === 'reconcile') {
+                document.getElementById('stickyLabel').textContent = 'Finish step';
+                document.getElementById('stickyTitle').textContent = 'Use Complete run above · bar stays clear of content';
+                sbtn.className = 'btn btn-ghost btn-md min-h-11 gap-2 shrink-0';
+                sbtn.innerHTML = 'Focus complete <i class="fas fa-arrow-up"></i>';
+                sbtn.onclick = () => {
+                    document.getElementById('completeRunBtn')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    document.getElementById('completeRunBtn')?.focus();
+                };
+            } else {
+                document.getElementById('stickyLabel').textContent = wizardMode ? 'Wizard · next action' : 'Next step';
+                document.getElementById('stickyTitle').textContent = title;
+                sbtn.className = `btn btn-md min-h-11 gap-2 shrink-0 ${tones.btn}`;
+                sbtn.innerHTML = `${cta} <i class="fas fa-arrow-right"></i>`;
+                sbtn.onclick = () => doPrimaryAction();
+            }
+            syncStickyFooterSpace();
+        }
+
+        function doPrimaryAction() {
+            if (!wb?.run) return;
+
+            // Wizard-aware primary action
+            if (wizardMode && wizardState) {
+                const ws = wizardState.steps[wizardState.currentIndex];
+                if (!ws) return;
+
+                if (ws.id === 'volume') {
+                    showPanel('overview', { force: true });
+                    if (wb.run.status === 'planned') {
+                        // One-tap path: use suggested issued/planned milk and start
+                        const sug = Number(wb.run.suggested_initial_volume_ml || 0);
+                        const cur = Number(document.getElementById('volumeInput').value || 0);
+                        if (!cur && sug > 0) useSuggestedVolume();
+                        startRun();
+                    }
+                    return;
+                }
+                if (ws.id === 'ccp') {
+                    showPanel('ccp', { force: true });
+                    return;
+                }
+                if (ws.id === 'process') {
+                    showPanel('stages', { force: true });
+                    // One legal step forward (or yield if already at packaging)
+                    advanceToNextStage();
+                    return;
+                }
+                if (ws.id === 'yield') {
+                    showPanel('yield', { force: true });
+                    // Mark progression by advancing panel to complete if already reviewed
+                    if (ws.done) showPanel('reconcile', { force: true });
+                    return;
+                }
+                if (ws.id === 'complete') {
+                    // Open finish panel only — do NOT auto-complete (avoids double Complete buttons / accidents)
+                    showPanel('reconcile', { force: true });
+                    setTimeout(() => {
+                        document.getElementById('completeRunBtn')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }, 100);
+                    return;
+                }
+            }
+
+            const step = wb.nextStep || ProductionRunFlow.getNextStep(wb.run);
+            const panelMap = {
+                start: 'overview',
+                set_volume: 'overview',
+                ccp: 'ccp',
+                advance_process: 'stages',
+                advance_cool: 'stages',
+                advance_pack: 'stages',
+                reconcile: 'reconcile',
+                complete: 'reconcile',
+            };
+            if (panelMap[step.key]) {
+                showPanel(panelMap[step.key], { force: true });
+                return;
+            }
+            if (step.href) window.location.href = step.href;
+        }
+
+        function showPanel(name, opts = {}) {
+            // Wizard lock: block jumping ahead unless force (used by goToCurrentWizardStep)
+            if (wizardMode && wizardState && !opts.force) {
+                const gate = ProductionRunFlow.canOpenPanel(name, wizardState, true);
+                if (!gate.ok) {
+                    document.getElementById('lockNotice')?.classList.remove('hidden');
+                    document.getElementById('lockNoticeText').textContent = gate.reason || 'Step locked';
+                    showToast(gate.reason || 'Complete previous steps first', 'warning');
+                    goToCurrentWizardStep();
+                    return;
+                }
+            }
+            document.getElementById('lockNotice')?.classList.add('hidden');
+
+            currentPanel = name;
+            document.querySelectorAll('.panel-section').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`panel-${name}`)?.classList.remove('hidden');
+            document.querySelectorAll('.panel-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.panel === name);
+            });
+            if (selectedRunId) {
+                const u = new URL(window.location.href);
+                u.searchParams.set('run_id', selectedRunId);
+                u.searchParams.set('panel', name);
+                if (!wizardMode) u.searchParams.set('free', '1');
+                else u.searchParams.delete('free');
+                history.replaceState({}, '', u);
+            }
+            // Refresh sticky bar mode (finish vs navigate)
+            if (wb) renderNextStep();
+            // When opening yield, refresh estimates from current losses
+            if (name === 'yield' && selectedRunId && wb?.run?.initial_volume_ml) {
+                ProductionService.recalculateYield(selectedRunId).then(async () => {
+                    const est = await ProductionService.getEstimates(selectedRunId);
+                    const y = await ProductionService.getYield(selectedRunId);
+                    if (est.success) wb.estimates = est.data;
+                    if (y.success) wb.yieldData = y.data;
+                    renderEstimates();
+                    renderProcessBalance();
+                }).catch(() => {});
+            }
+            // Keep sticky footer clearance in sync (loss list can grow)
+            syncStickyFooterSpace();
+            // Scroll within main only — do not jump body under fixed footer
+            setTimeout(() => {
+                const main = document.getElementById('wbMain');
+                const panel = document.getElementById(`panel-${name}`);
+                if (main && panel) {
+                    const top = panel.offsetTop - main.offsetTop - 8;
+                    main.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+                }
+            }, 50);
+        }
+
+        function renderCcp() {
+            const ccp = ProductionRunFlow.ccpStatus(wb.run);
+            const box = document.getElementById('ccpSummary');
+            const rows = [
+                { key: 'pasteurization', label: 'Pasteurization', ok: ccp.pastOk, fail: ccp.pastFail, log: ccp.byType.pasteurization },
+                { key: 'cooling', label: 'Cooling', ok: ccp.coolOk, fail: ccp.coolFail, log: ccp.byType.cooling },
+            ];
+            box.innerHTML = rows.map(r => {
+                const status = !r.log ? 'No data' : r.fail ? 'Fail' : r.log.status === 'warning' ? 'Warning' : 'Pass';
+                const cls = !r.log ? 'badge-ghost' : r.fail ? 'badge-error' : r.log.status === 'warning' ? 'badge-warning' : 'badge-success';
+                const val = r.log
+                    ? (r.log.temperature != null ? `${r.log.temperature}°C` : (r.log.pressure_psi != null ? `${r.log.pressure_psi} psi` : '—'))
+                    : '—';
+                return `
+                    <div class="bg-base-200 rounded-xl p-4">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="font-semibold">${r.label}</span>
+                            <span class="badge ${cls}">${status}</span>
+                        </div>
+                        <p class="text-2xl font-bold">${val}</p>
+                        <p class="text-xs text-base-content/50">${r.log?.check_datetime ? new Date(r.log.check_datetime).toLocaleString() : 'Not logged yet'}</p>
+                    </div>`;
+            }).join('');
+        }
+
+        function onCcpTypeChange() {
+            const t = document.getElementById('ccpType').value;
+            document.getElementById('ccpPsiGroup').classList.toggle('hidden', t !== 'homogenization');
+            document.getElementById('ccpTempGroup').classList.toggle('hidden', t === 'homogenization');
+            document.getElementById('ccpHoldGroup').classList.toggle('hidden', t !== 'pasteurization');
+        }
+
+        async function submitCcp() {
+            if (!selectedRunId) return;
+            const checkType = document.getElementById('ccpType').value;
+            const payload = {
+                run_id: selectedRunId,
+                check_type: checkType,
+                hold_time_secs: checkType === 'pasteurization' ? Number(document.getElementById('ccpHold').value || 0) : 0,
+                notes: 'Logged from Active Run Workbench',
+            };
+            if (checkType === 'homogenization') {
+                payload.pressure_psi = Number(document.getElementById('ccpPsi').value);
+                if (!payload.pressure_psi) { showToast('Enter pressure', 'warning'); return; }
+            } else {
+                payload.temperature = Number(document.getElementById('ccpTemp').value);
+                if (Number.isNaN(payload.temperature)) { showToast('Enter temperature', 'warning'); return; }
+            }
+            try {
+                const r = await ProductionService.recordCCPCheck(payload);
+                if (r.success === false) throw new Error(r.message || 'CCP failed');
+                showToast(r.message || 'CCP recorded', r.data?.status === 'fail' ? 'error' : 'success');
+                await refreshAll(); // auto-advances wizard to next unlocked step
+            } catch (e) {
+                showToast(e.message || 'Failed to log CCP', 'error');
+            }
+        }
+
+        async function renderLosses() {
+            const box = document.getElementById('lossList');
+            if (!box) return;
+            if (!selectedRunId) { box.innerHTML = ''; return; }
+            try {
+                const r = await ProductionService.getLosses(selectedRunId);
+                const losses = r.data?.losses || [];
+                if (!losses.length) {
+                    box.innerHTML = '<p class="text-base-content/40">No losses recorded yet — remaining milk = start volume.</p>';
+                    return;
+                }
+                box.innerHTML = '<p class="font-semibold text-xs uppercase tracking-wide text-base-content/50 mb-1">Recorded losses</p>' +
+                    '<div class="space-y-1">' +
+                    losses.map(l =>
+                        `<div class="flex justify-between bg-base-100 border border-base-300 rounded-lg px-3 py-2">
+                            <span>${l.stage} · ${String(l.loss_type || '').replace(/_/g, ' ')}</span>
+                            <span class="font-bold text-error">${(Number(l.loss_volume_ml) / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 })} L</span>
+                        </div>`
+                    ).join('') +
+                    '</div>';
+                // Ensure footer space still correct after list grows
+                syncStickyFooterSpace();
+            } catch (e) {
+                box.innerHTML = `<p class="text-error text-sm">${e.message || 'Could not load losses'}</p>`;
+            }
+        }
+
+        async function submitLoss() {
+            if (!selectedRunId) return;
+            // Prefer liters field (UI); convert to mL for API
+            const litersEl = document.getElementById('lossVolumeLiters');
+            const liters = litersEl ? Number(litersEl.value) : 0;
+            let volumeMl = 0;
+            if (liters > 0) {
+                volumeMl = Math.round(liters * 1000);
+                const hidden = document.getElementById('lossVolume');
+                if (hidden) hidden.value = String(volumeMl);
+            } else {
+                volumeMl = Number(document.getElementById('lossVolume')?.value || 0);
+            }
+            if (!volumeMl || volumeMl <= 0) {
+                showToast('Enter how many liters were lost', 'warning');
+                return;
+            }
+            try {
+                const r = await ProductionService.recordLoss({
+                    production_run_id: selectedRunId,
+                    stage: document.getElementById('lossStage').value,
+                    loss_type: document.getElementById('lossType').value,
+                    loss_volume_ml: volumeMl,
+                    notes: document.getElementById('lossNotes').value || null,
+                });
+                if (!r.success) throw new Error(r.message || 'Failed');
+                showToast(`Loss recorded (${(volumeMl / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 })} L) — yield recalculated`, 'success');
+                if (litersEl) litersEl.value = '';
+                const hidden = document.getElementById('lossVolume');
+                if (hidden) hidden.value = '';
+                document.getElementById('lossNotes').value = '';
+                // Stay on Process panel so staff see updated Start / Losses / Remaining
+                await refreshAll({ stayOnPanel: true });
+                showPanel('stages', { force: true });
+            } catch (e) {
+                showToast(e.message || 'Failed to record loss', 'error');
+            }
+        }
+
+        function fmtLitersFromMl(ml) {
+            if (ml == null || ml === '') return '—';
+            return (Number(ml) / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 });
+        }
+
+        function renderEstimates() {
+            const box = document.getElementById('estimateBox');
+            const bal = document.getElementById('yieldBalanceBox');
+            const lossBox = document.getElementById('yieldLossBox');
+            if (!box) return;
+
+            const y = wb.yieldData || {};
+            const run = wb.run || {};
+            const start = y.initial_volume_ml ?? run.initial_volume_ml;
+            const loss = y.total_loss_ml ?? run.total_loss_ml ?? 0;
+            const net = y.net_yield_ml ?? run.net_yield_ml;
+            const eff = y.yield_efficiency_percent;
+
+            if (bal) {
+                bal.innerHTML = `
+                    <div class="rounded-xl bg-base-200 p-3 text-center">
+                        <p class="text-xs text-base-content/50">Start</p>
+                        <p class="text-lg font-bold">${fmtLitersFromMl(start)}</p>
+                        <p class="text-xs text-base-content/40">L</p>
+                    </div>
+                    <div class="rounded-xl bg-error/10 p-3 text-center">
+                        <p class="text-xs text-base-content/50">Losses</p>
+                        <p class="text-lg font-bold text-error">${fmtLitersFromMl(loss)}</p>
+                        <p class="text-xs text-base-content/40">L</p>
+                    </div>
+                    <div class="rounded-xl bg-success/10 p-3 text-center">
+                        <p class="text-xs text-base-content/50">Remaining</p>
+                        <p class="text-lg font-bold text-success">${fmtLitersFromMl(net)}</p>
+                        <p class="text-xs text-base-content/40">L</p>
+                    </div>
+                    <div class="rounded-xl bg-base-200 p-3 text-center">
+                        <p class="text-xs text-base-content/50">Efficiency</p>
+                        <p class="text-lg font-bold">${eff != null ? Number(eff).toFixed(1) : '—'}%</p>
+                    </div>`;
+            }
+
+            // Load losses list for yield panel (async ok)
+            if (lossBox && selectedRunId) {
+                ProductionService.getLosses(selectedRunId).then(r => {
+                    const losses = r.data?.losses || [];
+                    if (!losses.length) {
+                        lossBox.innerHTML = '<p class="text-sm text-base-content/40">No losses recorded — bottle counts use full start volume.</p>';
+                        return;
+                    }
+                    const totalL = losses.reduce((s, l) => s + Number(l.loss_volume_ml || 0), 0) / 1000;
+                    lossBox.innerHTML = `
+                        <p class="font-semibold text-sm mb-1">Losses recorded (${totalL.toLocaleString(undefined, { maximumFractionDigits: 3 })} L total)</p>
+                        <div class="space-y-1 max-h-40 overflow-y-auto">
+                            ${losses.map(l => `
+                                <div class="flex justify-between text-sm bg-base-200 rounded-lg px-3 py-2">
+                                    <span>${l.stage} · ${String(l.loss_type || '').replace(/_/g, ' ')}</span>
+                                    <span class="font-bold text-error">${fmtLitersFromMl(l.loss_volume_ml)} L</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                        ${totalL < 0.05 ? `<p class="text-xs text-warning mt-2"><i class="fas fa-info-circle"></i> Total loss is only ${totalL.toLocaleString(undefined,{maximumFractionDigits:3})} L — too small to change whole-bottle counts (needs ≥ bottle size, e.g. 0.5 L or 1 L).</p>` : ''}`;
+                }).catch(() => {
+                    lossBox.innerHTML = '';
+                });
+            }
+
+            const est = wb.estimates;
+            if (!est || (!est.initial_estimate?.items?.length && !est.revised_estimate?.items?.length)) {
+                box.innerHTML = '<p class="text-base-content/40">No packaging estimate yet. Set volume first.</p>';
+                return;
+            }
+
+            const initialItems = est.initial_estimate?.items || [];
+            const revisedItems = est.revised_estimate?.items || [];
+            const hasRev = est.has_revision && revisedItems.length;
+            const basisInit = est.initial_estimate?.basis_volume_ml;
+            const basisRev = est.revised_estimate?.basis_volume_ml;
+            const showItems = hasRev ? revisedItems : initialItems;
+
+            // Map initial units by size for before/after
+            const initBySize = {};
+            initialItems.forEach(e => { initBySize[e.packaging_size_ml] = e; });
+
+            box.innerHTML = `
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="badge ${hasRev ? 'badge-warning' : 'badge-info'} badge-sm">${hasRev ? 'Revised (after losses)' : 'Initial estimate'}</span>
+                    <span class="text-xs text-base-content/50">
+                        Based on ${fmtLitersFromMl(hasRev ? basisRev : basisInit)} L remaining milk
+                        ${hasRev && basisInit != null ? ` (was ${fmtLitersFromMl(basisInit)} L at start)` : ''}
+                    </span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    ${showItems.map(e => {
+                        const before = initBySize[e.packaging_size_ml];
+                        const beforeU = before ? Number(before.estimated_units) : null;
+                        const afterU = Number(e.estimated_units);
+                        const changed = beforeU != null && beforeU !== afterU;
+                        return `
+                        <div class="bg-base-200 rounded-xl p-4 text-center border ${changed ? 'border-warning' : 'border-transparent'}">
+                            <p class="text-3xl font-bold text-primary">${afterU}</p>
+                            <p class="font-medium">${e.packaging_label}</p>
+                            <p class="text-xs text-base-content/50">${e.packaging_size_ml} mL each</p>
+                            ${hasRev && beforeU != null ? `<p class="text-xs mt-1 ${changed ? 'text-warning font-semibold' : 'text-base-content/40'}">was ${beforeU} at start</p>` : ''}
+                        </div>`;
+                    }).join('')}
+                </div>
+                <p class="text-xs text-base-content/50">
+                    Bottle sizes are filled in priority order (largest first). Remaining milk that cannot fill a whole bottle is leftover, not double-counted across sizes.
+                </p>`;
+        }
+
+        function renderRecon() {
+            const box = document.getElementById('reconBox');
+            const lossBox = document.getElementById('reconLossBox');
+            if (!box) return;
+            const rec = wb.reconciliation;
+            const y = wb.yieldData || {};
+            const run = wb.run || {};
+
+            if (!rec && !(y.initial_volume_ml || run.initial_volume_ml)) {
+                box.innerHTML = '<p class="text-base-content/40">Set volume and log production data to see material balance.</p>';
+                if (lossBox) lossBox.innerHTML = '';
+                return;
+            }
+
+            const initial = rec?.initial_volume_ml ?? y.initial_volume_ml ?? run.initial_volume_ml ?? 0;
+            const losses = rec?.breakdown?.losses_total_ml ?? y.total_loss_ml ?? run.total_loss_ml ?? 0;
+            const byprod = rec?.breakdown?.byproducts_total_ml ?? y.total_byproduct_ml ?? 0;
+            const finished = rec?.breakdown?.finished_product_ml ?? 0;
+            const accounted = finished + losses + byprod;
+            const unaccounted = rec?.breakdown?.unaccounted_ml ?? (initial - accounted);
+            const ok = rec?.reconciliation?.within_tolerance ?? (Math.abs(unaccounted) <= Math.max(50, initial * 0.01));
+
+            box.innerHTML = `
+                <div class="rounded-xl bg-base-200 p-4 space-y-2">
+                    <div class="flex justify-between"><span>Start milk</span><span class="font-bold">${fmtLitersFromMl(initial)} L</span></div>
+                    <div class="flex justify-between"><span>Losses</span><span class="font-bold text-error">− ${fmtLitersFromMl(losses)} L</span></div>
+                    <div class="flex justify-between"><span>Byproducts</span><span class="font-bold">− ${fmtLitersFromMl(byprod)} L</span></div>
+                    <div class="flex justify-between"><span>Finished goods (packaged)</span><span class="font-bold">${fmtLitersFromMl(finished)} L</span></div>
+                    <div class="divider my-1"></div>
+                    <div class="flex justify-between text-base"><span class="font-semibold">Unaccounted</span>
+                        <span class="font-bold ${ok ? 'text-success' : 'text-error'}">${fmtLitersFromMl(unaccounted)} L</span></div>
+                </div>
+                <div class="alert ${ok ? 'alert-success' : 'alert-warning'} mt-2 text-sm">
+                    <i class="fas ${ok ? 'fa-check-circle' : 'fa-exclamation-triangle'}"></i>
+                    <span>${ok ? 'Within tolerance — you can complete the run.' : 'Over tolerance — record more losses or add notes before completing.'}</span>
+                </div>
+            `;
+
+            if (lossBox && selectedRunId) {
+                ProductionService.getLosses(selectedRunId).then(r => {
+                    const lossesList = r.data?.losses || [];
+                    if (!lossesList.length) {
+                        lossBox.innerHTML = '<p class="text-sm text-base-content/40">No loss lines recorded.</p>';
+                        return;
+                    }
+                    lossBox.innerHTML = `
+                        <p class="font-semibold text-sm">Loss detail</p>
+                        <div class="space-y-1 max-h-36 overflow-y-auto">
+                            ${lossesList.map(l => `
+                                <div class="flex justify-between text-sm bg-base-200 rounded-lg px-3 py-2">
+                                    <span>${l.stage} · ${String(l.loss_type || '').replace(/_/g, ' ')}</span>
+                                    <span class="font-bold text-error">${fmtLitersFromMl(l.loss_volume_ml)} L</span>
+                                </div>
+                            `).join('')}
+                        </div>`;
+                }).catch(() => { lossBox.innerHTML = ''; });
+            }
+        }
+
+        function setVolumeFields(ml) {
+            const hidden = document.getElementById('volumeInput');
+            const litersInput = document.getElementById('volumeInputLiters');
+            const hint = document.getElementById('volumeMlHint');
+            if (ml == null || Number.isNaN(Number(ml)) || Number(ml) <= 0) {
+                if (hidden) hidden.value = '';
+                if (litersInput) litersInput.value = '';
+                if (hint) hint.textContent = '= — mL';
+                return;
+            }
+            const n = Number(ml);
+            if (hidden) hidden.value = String(Math.round(n));
+            if (litersInput) litersInput.value = (n / 1000).toFixed(3).replace(/\.?0+$/, '');
+            if (hint) hint.textContent = `= ${Math.round(n).toLocaleString()} mL`;
+        }
+
+        function onVolumeLitersInput() {
+            const liters = Number(document.getElementById('volumeInputLiters').value);
+            if (!liters || liters <= 0) {
+                document.getElementById('volumeInput').value = '';
+                document.getElementById('volumeMlHint').textContent = '= — mL';
+                return;
+            }
+            const ml = Math.round(liters * 1000);
+            document.getElementById('volumeInput').value = String(ml);
+            document.getElementById('volumeMlHint').textContent = `= ${ml.toLocaleString()} mL`;
+        }
+
+        function renderVolumeSuggestion(run, savedMl) {
+            const card = document.getElementById('suggestedVolumeCard');
+            const badge = document.getElementById('volumeSourceBadge');
+            const display = document.getElementById('suggestedVolumeDisplay');
+            const explain = document.getElementById('suggestedVolumeExplain');
+            const notes = document.getElementById('overviewNotes');
+            const suggestedMl = run.suggested_initial_volume_ml;
+            const source = run.suggested_volume_source;
+            const sourceLabels = {
+                requisition_issued: 'From warehouse issue',
+                recipe_plan: 'From recipe plan',
+                recipe_scaled: 'From recipe scale',
+            };
+
+            if (savedMl != null && Number(savedMl) > 0) {
+                badge.textContent = 'Volume locked in';
+                badge.className = 'badge badge-success badge-outline badge-lg gap-1';
+            } else if (suggestedMl) {
+                badge.textContent = sourceLabels[source] || 'Suggested';
+                badge.className = 'badge badge-info badge-outline badge-lg gap-1';
+            } else {
+                badge.textContent = 'Enter volume';
+                badge.className = 'badge badge-warning badge-outline badge-lg gap-1';
+            }
+
+            if (suggestedMl && !(savedMl != null && Number(savedMl) > 0)) {
+                card.classList.remove('hidden');
+                const L = Number(suggestedMl) / 1000;
+                display.textContent = `${L.toLocaleString(undefined, { maximumFractionDigits: 3 })} L`;
+                if (source === 'requisition_issued') {
+                    explain.textContent = run.linked_requisition_code
+                        ? `Warehouse already issued this milk on ${run.linked_requisition_code}. Use it — no need to re-type.`
+                        : 'Warehouse already issued this milk on the linked requisition. Use it — no need to re-type.';
+                } else if (source === 'recipe_plan') {
+                    explain.textContent = `Planned milk for this run (${run.milk_liters_used} L from recipe × planned qty). Confirmed when you start.`;
+                } else {
+                    explain.textContent = 'Calculated from recipe base milk scaled to planned quantity.';
+                }
+            } else {
+                card.classList.add('hidden');
+            }
+
+            if (notes) {
+                if (savedMl != null && Number(savedMl) > 0) {
+                    notes.innerHTML = `<div class="alert alert-success text-sm"><i class="fas fa-check-circle"></i>
+                        Starting volume is set to <strong>${(Number(savedMl)/1000).toLocaleString(undefined,{maximumFractionDigits:3})} L</strong>.
+                        Only change it if floor reality differs.</div>`;
+                } else if (suggestedMl) {
+                    notes.innerHTML = `<div class="alert alert-info text-sm"><i class="fas fa-info-circle"></i>
+                        You do <strong>not</strong> need to invent a number. Use the system suggestion, then Start.
+                        Adjust only if actual milk on the floor is different.</div>`;
+                } else {
+                    notes.innerHTML = `<div class="alert alert-warning text-sm"><i class="fas fa-exclamation-triangle"></i>
+                        No planned/issued milk found for this run. Enter the real liters on the floor, or link a fulfilled requisition.</div>`;
+                }
+            }
+        }
+
+        function useSuggestedVolume() {
+            const ml = wb?.run?.suggested_initial_volume_ml;
+            if (!ml) {
+                showToast('No suggestion available', 'warning');
+                return;
+            }
+            setVolumeFields(ml);
+            showToast('Using system volume — press Start run (or Save if already started)', 'success');
+        }
+
+        async function saveVolume() {
+            if (!selectedRunId) return;
+            onVolumeLitersInput();
+            let v = Number(document.getElementById('volumeInput').value);
+            if (!v || v <= 0) {
+                // last resort: suggested
+                v = Number(wb?.run?.suggested_initial_volume_ml || 0);
+                if (v > 0) setVolumeFields(v);
+            }
+            if (!v || v <= 0) { showToast('Enter a positive volume in liters', 'warning'); return; }
+            try {
+                const r = await ProductionService.setRunVolume(selectedRunId, v);
+                if (!r.success) throw new Error(r.message || 'Failed');
+                showToast('Volume saved — packaging estimate generated', 'success');
+                await refreshAll({ stayOnPanel: true });
+                if (wb.run.status === 'planned') {
+                    showToast('Now press Start run to unlock CCP logging', 'info');
+                } else if (wizardMode) {
+                    goToCurrentWizardStep();
+                }
+            } catch (e) {
+                showToast(e.message || 'Failed to set volume', 'error');
+            }
+        }
+
+        async function startRun() {
+            if (!selectedRunId) return;
+            onVolumeLitersInput();
+            let v = Number(document.getElementById('volumeInput').value);
+            // Auto-use suggested volume — production should not re-type issued milk
+            if (!v || v <= 0) {
+                v = Number(wb?.run?.suggested_initial_volume_ml || 0);
+                if (v > 0) setVolumeFields(v);
+            }
+            try {
+                let r;
+                if (v > 0) {
+                    r = await ProductionService.startRunWithVolume(selectedRunId, v);
+                } else {
+                    // Backend will also try milk_liters_used * 1000
+                    r = await ProductionService.startRun(selectedRunId);
+                }
+                if (!r.success) throw new Error(r.message || 'Failed to start');
+                const used = r.data?.initial_volume_ml;
+                showToast(
+                    used
+                        ? `Run started with ${(Number(used)/1000).toLocaleString(undefined,{maximumFractionDigits:3})} L — next: log CCPs`
+                        : 'Run started — next: log required CCPs',
+                    'success'
+                );
+                await refreshAll();
+            } catch (e) {
+                showToast(e.message || 'Failed to start run', 'error');
+            }
+        }
+
+        async function setStage(status) {
+            if (!selectedRunId) return;
+            const gate = ProductionRunFlow.allowedStageTransitions(wb?.run, wizardMode);
+            if (!gate.allowed.includes(status)) {
+                showToast(gate.reason || 'Stage not allowed yet', 'warning');
+                if (gate.blockPackaging && status === 'packaging') {
+                    showPanel('ccp', { force: true });
+                }
+                return;
+            }
+            try {
+                const r = await ProductionService.updateRunStatus(selectedRunId, status);
+                if (!r.success) throw new Error(r.message || 'Failed');
+                showToast(`Stage → ${ProductionRunFlow.STAGE_LABELS[status] || status}`, 'success');
+                await refreshAll();
+            } catch (e) {
+                showToast(e.message || 'Could not update stage', 'error');
+            }
+        }
+
+        async function completeFromWorkbench() {
+            if (!selectedRunId) return;
+            const ccp = ProductionRunFlow.ccpStatus(wb.run);
+            if (!ccp.requiredMet) {
+                showToast('Cannot complete: ' + ccp.message, 'error');
+                showPanel('ccp', { force: true });
+                return;
+            }
+            if (wizardMode && !['packaging', 'completed'].includes(wb.run.status)) {
+                showToast('Advance to packaging stage before completing the run', 'warning');
+                showPanel('stages', { force: true });
+                return;
+            }
+            const notes = document.getElementById('reconNotes').value.trim();
+            try {
+                try {
+                    await ProductionService.reconcileRun(selectedRunId, notes || 'Completed from workbench', !!notes);
+                } catch (e) { /* continue */ }
+                let qty = 0;
+                if (wb.estimates) {
+                    const items = wb.estimates.has_revision
+                        ? (wb.estimates.revised_estimate.items || [])
+                        : (wb.estimates.initial_estimate.items || []);
+                    qty = items.reduce((s, e) => s + Number(e.actual_units ?? e.estimated_units ?? 0), 0);
+                }
+                if (!qty) qty = Number(wb.run.planned_quantity || 0);
+                const r = await ProductionService.completeRun(selectedRunId, qty, notes, notes);
+                if (!r.success) throw new Error(r.message || 'Complete failed');
+                showToast('Run completed — QC can release for packaging', 'success');
+                await loadRunList();
+                await refreshAll();
+            } catch (e) {
+                const msg = e?.errors ? Object.values(e.errors).flat().join('; ') : (e.message || 'Complete failed');
+                showToast(msg, 'error');
+            }
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yield Tracking — Production | Highland Fresh</title>
+    <link rel="stylesheet" href="../../css/tailwind.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .yield-bar { transition: width 0.6s ease; }
+        .loss-row { animation: fadeIn 0.2s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Backdrop -->
+    <!-- Mobile Sidebar Backdrop (filled/used by ProductionSidebar) -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar shell — content filled by ProductionSidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col"></aside>
+
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button>
+            </div>
+            <div class="flex-1">
+                <div class="breadcrumbs text-sm">
+                    <ul>
+                        <li><a href="dashboard.html">Production</a></li>
+                        <li class="font-semibold">Yield Tracking</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle">
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- Page Header -->
+            <div class="mb-6">
+                <h1 class="text-2xl font-bold text-base-content flex items-center gap-3">
+                    <span class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center"><i class="fas fa-chart-line text-primary"></i></span>
+                    Yield Tracking & Loss Recording
+                </h1>
+                <p class="text-base-content/60 mt-1">Monitor material balance, record losses at each stage, and see live packaging estimates.</p>
+            </div>
+
+            <!-- Run Selector -->
+            <div class="card bg-base-100 border border-base-300 mb-6">
+                <div class="card-body p-4">
+                    <div class="flex flex-col md:flex-row md:items-center gap-4">
+                        <div class="flex-1">
+                            <label class="label pb-1"><span class="label-text font-semibold">Select Active Production Run</span></label>
+                            <select id="runSelector" class="select select-bordered w-full max-w-md" onchange="onRunSelected()">
+                                <option value="">— Select a run —</option>
+                            </select>
+                        </div>
+                        <div class="flex gap-2 self-end">
+                            <button class="btn btn-ghost btn-sm" onclick="loadActiveRuns()" title="Refresh runs list">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                            <button class="btn btn-ghost btn-sm" onclick="refreshAll()" title="Refresh yield data" id="refreshYieldBtn" disabled>
+                                <i class="fas fa-redo"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content (hidden until run selected) -->
+            <div id="yieldContent" class="hidden">
+
+                <!-- Production stage flow indicator -->
+                <div class="card bg-base-100 border border-base-300 mb-6">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="text-sm font-semibold text-base-content/70">
+                                <i class="fas fa-stream text-primary mr-1"></i> Production Stage
+                            </h3>
+                            <span class="badge badge-outline badge-sm" id="currentStageBadge">—</span>
+                        </div>
+                        <ul class="steps steps-horizontal w-full text-xs" id="stageSteps">
+                            <li class="step" data-stage="in_progress">Start</li>
+                            <li class="step" data-stage="pasteurization">Pasteurize</li>
+                            <li class="step" data-stage="processing">Process</li>
+                            <li class="step" data-stage="cooling">Cool</li>
+                            <li class="step" data-stage="packaging">Package</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Live Yield Panel -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                    <!-- Material Balance Card -->
+                    <div class="lg:col-span-2 card bg-base-100 border border-base-300">
+                        <div class="card-body p-5">
+                            <h3 class="card-title text-base mb-4">
+                                <i class="fas fa-flask text-primary"></i> Material Balance
+                            </h3>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                                <div class="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 text-center">
+                                    <p class="text-xs text-base-content/60 mb-1">Initial Volume</p>
+                                    <p class="text-xl font-bold text-blue-600" id="yieldInitial">—</p>
+                                    <p class="text-xs text-base-content/40">mL</p>
+                                </div>
+                                <div class="bg-red-50 dark:bg-red-900/20 rounded-xl p-3 text-center">
+                                    <p class="text-xs text-base-content/60 mb-1">Total Losses</p>
+                                    <p class="text-xl font-bold text-red-600" id="yieldLoss">—</p>
+                                    <p class="text-xs text-base-content/40">mL</p>
+                                </div>
+                                <div class="bg-green-50 dark:bg-green-900/20 rounded-xl p-3 text-center">
+                                    <p class="text-xs text-base-content/60 mb-1">Net Yield</p>
+                                    <p class="text-xl font-bold text-green-600" id="yieldNet">—</p>
+                                    <p class="text-xs text-base-content/40">mL</p>
+                                </div>
+                                <div class="bg-purple-50 dark:bg-purple-900/20 rounded-xl p-3 text-center">
+                                    <p class="text-xs text-base-content/60 mb-1">Efficiency</p>
+                                    <p class="text-xl font-bold text-purple-600" id="yieldPercent">—</p>
+                                    <p class="text-xs text-base-content/40">%</p>
+                                </div>
+                            </div>
+                            <!-- Progress bar -->
+                            <div class="w-full bg-base-200 rounded-full h-4 overflow-hidden">
+                                <div id="yieldBar" class="yield-bar h-full rounded-full bg-gradient-to-r from-green-500 to-emerald-400" style="width: 100%"></div>
+                            </div>
+                            <div class="flex justify-between text-xs text-base-content/50 mt-1">
+                                <span>0%</span>
+                                <span id="yieldBarLabel">100% yield</span>
+                                <span>100%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Packaging Estimate Widget -->
+                    <div class="card bg-base-100 border border-base-300">
+                        <div class="card-body p-5">
+                            <h3 class="card-title text-base mb-3">
+                                <i class="fas fa-boxes text-success"></i> Packaging Estimate
+                            </h3>
+                            <div id="estimateWidget">
+                                <p class="text-sm text-base-content/50 text-center py-4">No estimate yet</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Loss Recording Section -->
+                <div class="card bg-base-100 border border-base-300 mb-6">
+                    <div class="card-body p-5">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="card-title text-base">
+                                <i class="fas fa-exclamation-triangle text-warning"></i> Recorded Losses
+                            </h3>
+                            <button class="btn btn-warning btn-sm gap-2" onclick="openLossModal()">
+                                <i class="fas fa-plus"></i> Record Loss
+                            </button>
+                        </div>
+
+                        <!-- Summary badges -->
+                        <div id="lossSummary" class="flex flex-wrap gap-2 mb-4"></div>
+
+                        <!-- Loss table -->
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm">
+                                <thead class="bg-base-200">
+                                    <tr>
+                                        <th>Stage</th>
+                                        <th>Type</th>
+                                        <th class="text-right">Volume (mL)</th>
+                                        <th class="text-right">% of Initial</th>
+                                        <th>Notes</th>
+                                        <th>Recorded</th>
+                                        <th class="text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="lossTable">
+                                    <tr><td colspan="7" class="text-center py-8 text-base-content/40">Select a run to see losses</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Empty state (before run selected) -->
+            <div id="emptyState" class="text-center py-16">
+                <i class="fas fa-chart-line text-6xl text-base-content/10 mb-4"></i>
+                <p class="text-xl font-semibold text-base-content/40">Select an Active Run</p>
+                <p class="text-sm text-base-content/30 mt-1">Choose a production run from the dropdown above to view yield data and record losses.</p>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Record Loss Modal -->
+    <dialog id="lossModal" class="modal">
+        <div class="modal-box w-11/12 max-w-lg">
+            <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button></form>
+            <h3 class="font-bold text-xl mb-1 flex items-center gap-2">
+                <i class="fas fa-exclamation-triangle text-warning"></i> Record Production Loss
+            </h3>
+            <p class="text-sm text-base-content/60 mb-5">Enter loss details for the current production run.</p>
+
+            <div class="form-control mb-4">
+                <label class="label"><span class="label-text font-medium">Stage <span class="text-error">*</span></span></label>
+                <select id="lossStage" class="select select-bordered w-full">
+                    <option value="pasteurization">Pasteurization</option>
+                    <option value="processing">Processing</option>
+                    <option value="cooling">Cooling</option>
+                    <option value="packaging">Packaging</option>
+                </select>
+            </div>
+
+            <div class="form-control mb-4">
+                <label class="label"><span class="label-text font-medium">Loss Type <span class="text-error">*</span></span></label>
+                <select id="lossType" class="select select-bordered w-full">
+                    <option value="evaporation">Evaporation</option>
+                    <option value="spillage">Spillage</option>
+                    <option value="sampling">Sampling (QC)</option>
+                    <option value="equipment_retention">Equipment Retention</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+
+            <div class="form-control mb-4">
+                <label class="label"><span class="label-text font-medium">Loss Volume (mL) <span class="text-error">*</span></span></label>
+                <input type="number" id="lossVolume" class="input input-bordered w-full text-lg font-bold" min="1" step="1" placeholder="e.g. 500">
+                <label class="label"><span class="label-text-alt text-base-content/50" id="lossVolumeHint">Remaining volume: —</span></label>
+            </div>
+
+            <div class="form-control mb-5">
+                <label class="label"><span class="label-text font-medium">Notes (optional)</span></label>
+                <textarea id="lossNotes" class="textarea textarea-bordered" rows="2" placeholder="Describe the loss..."></textarea>
+            </div>
+
+            <div class="modal-action">
+                <button type="button" class="btn btn-ghost" onclick="document.getElementById('lossModal').close()">Cancel</button>
+                <button type="button" id="lossSubmitBtn" class="btn btn-warning gap-2" onclick="submitLoss()">
+                    <i class="fas fa-save"></i> Record Loss
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Confirm Delete Modal -->
+    <dialog id="deleteModal" class="modal">
+        <div class="modal-box max-w-sm">
+            <h3 class="font-bold text-lg">Delete Loss Record?</h3>
+            <p class="py-4 text-base-content/70">This will remove the loss entry and recalculate the yield. This action cannot be undone.</p>
+            <div class="modal-action">
+                <button class="btn btn-ghost" onclick="document.getElementById('deleteModal').close()">Cancel</button>
+                <button id="confirmDeleteBtn" class="btn btn-error gap-2" onclick="confirmDeleteLoss()">
+                    <i class="fas fa-trash-alt"></i> Delete
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Toast -->
+    <div class="toast toast-end" id="toastContainer"></div>
+
+    <!-- Scripts -->
+    <script src="../../js/vendor/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script>window.PRODUCTION_ACTIVE_PAGE = "yield_tracking";</script>
+    <script src="../../js/production/sidebar.js"></script>
+    <script src="../../js/production/production.service.js"></script>
+<script>
+        let selectedRunId = null;
+        let currentYield = null;
+        let currentRun = null;
+        let deleteLossId = null;
+        const STAGE_ORDER = ['in_progress', 'pasteurization', 'processing', 'cooling', 'packaging'];
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                if (!AuthService.isAuthenticated()) { window.location.href = '../login.html'; return; }
+                const user = AuthService.getCurrentUser() || {};
+                const nameEl = document.getElementById('sidebarUserName');
+                const initEl = document.getElementById('userInitials');
+                if (nameEl) nameEl.textContent = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username || 'Production Staff';
+                if (initEl) {
+                    const a = (user.first_name || '')[0] || '';
+                    const b = (user.last_name || '')[0] || '';
+                    initEl.textContent = ((a + b) || (user.username || 'PS').slice(0, 2)).toUpperCase();
+                }
+
+                const t = localStorage.getItem('theme');
+                const themeToggle = document.getElementById('themeToggle');
+                if (t === 'dark' && themeToggle) {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                    themeToggle.checked = true;
+                }
+                if (themeToggle) {
+                    themeToggle.addEventListener('change', e => {
+                        const th = e.target.checked ? 'dark' : 'emerald';
+                        document.documentElement.setAttribute('data-theme', th);
+                        localStorage.setItem('theme', th);
+                    });
+                }
+            } catch (bootErr) {
+                console.error('Boot UI error (continuing):', bootErr);
+            }
+
+            // Deep-link: yield-tracking.html?run_id=X
+            const params = new URLSearchParams(window.location.search);
+            const preselect = params.get('run_id');
+            await loadActiveRuns();
+            if (preselect) {
+                const sel = document.getElementById('runSelector');
+                if (sel) {
+                    sel.value = preselect;
+                    await onRunSelected();
+                }
+            }
+        });
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('-translate-x-full');
+            document.getElementById('sidebarBackdrop').classList.toggle('hidden');
+        }
+
+        async function loadActiveRuns() {
+            const select = document.getElementById('runSelector');
+            if (!select) return;
+            try {
+                const r = await Promise.race([
+                    ProductionService.getRuns({ status_group: 'active', limit: 50 }),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Timed out loading runs')), 20000)),
+                ]);
+                const runs = Array.isArray(r.data) ? r.data : (r.data?.runs || []);
+                const current = select.value;
+                select.innerHTML = '<option value="">— Select a run —</option>';
+
+                const activeStatuses = ['in_progress', 'pasteurization', 'processing', 'cooling', 'packaging'];
+                const activeRuns = runs.filter(run => activeStatuses.includes(run.status));
+
+                activeRuns.forEach(run => {
+                    const opt = document.createElement('option');
+                    opt.value = run.id;
+                    opt.dataset.status = run.status;
+                    const vol = run.initial_volume_ml ? ` · ${Number(run.initial_volume_ml).toLocaleString()} mL` : '';
+                    const statusLabel = (run.status || '').replace(/_/g, ' ');
+                    opt.textContent = `${run.run_code} — ${run.product_name || 'Product'} (${statusLabel})${vol}`;
+                    select.appendChild(opt);
+                });
+
+                if (current && activeRuns.find(run => run.id == current)) {
+                    select.value = current;
+                }
+
+                if (!activeRuns.length) {
+                    const emptyOpt = document.createElement('option');
+                    emptyOpt.disabled = true;
+                    emptyOpt.textContent = 'No active production runs';
+                    select.appendChild(emptyOpt);
+                }
+            } catch (e) {
+                console.error('Failed to load runs:', e);
+                showToast(e.message || 'Failed to load production runs', 'error');
+                select.innerHTML = '<option value="">— Failed to load runs —</option>';
+            }
+        }
+
+        function updateStageSteps(status) {
+            const idx = STAGE_ORDER.indexOf(status);
+            document.querySelectorAll('#stageSteps .step').forEach((el, i) => {
+                el.classList.toggle('step-primary', idx >= 0 && i <= idx);
+            });
+            const badge = document.getElementById('currentStageBadge');
+            badge.textContent = status ? status.replace('_', ' ') : '—';
+            badge.className = 'badge badge-sm ' + (status === 'packaging' ? 'badge-success' : 'badge-primary');
+        }
+
+        function lossStageFromRunStatus(status) {
+            const map = {
+                pasteurization: 'pasteurization',
+                processing: 'processing',
+                cooling: 'cooling',
+                packaging: 'packaging',
+                in_progress: 'pasteurization',
+            };
+            return map[status] || 'processing';
+        }
+
+        async function onRunSelected() {
+            const runId = document.getElementById('runSelector').value;
+            if (!runId) {
+                selectedRunId = null;
+                currentRun = null;
+                document.getElementById('yieldContent').classList.add('hidden');
+                document.getElementById('emptyState').classList.remove('hidden');
+                document.getElementById('refreshYieldBtn').disabled = true;
+                return;
+            }
+
+            selectedRunId = runId;
+            document.getElementById('yieldContent').classList.remove('hidden');
+            document.getElementById('emptyState').classList.add('hidden');
+            document.getElementById('refreshYieldBtn').disabled = false;
+            await refreshAll();
+        }
+
+        async function refreshAll() {
+            if (!selectedRunId) return;
+            await Promise.all([loadYield(), loadLosses(), loadEstimates()]);
+        }
+
+        async function loadYield() {
+            try {
+                // Prefer full run detail for status + yield endpoint for metrics
+                let status = null;
+                try {
+                    const runRes = await ProductionService.getRun(selectedRunId);
+                    if (runRes.success) {
+                        currentRun = runRes.data;
+                        status = currentRun.status;
+                    }
+                } catch (e) { /* ignore */ }
+
+                const r = await ProductionService.getYield(selectedRunId);
+                if (!r.success) {
+                    if (!status) showToast(r.message || 'Yield data unavailable', 'warning');
+                    return;
+                }
+                const d = r.data;
+                currentYield = d;
+                status = status || d.status;
+                updateStageSteps(status);
+
+                document.getElementById('yieldInitial').textContent = Number(d.initial_volume_ml || 0).toLocaleString();
+                document.getElementById('yieldLoss').textContent = Number(d.total_loss_ml || 0).toLocaleString();
+                document.getElementById('yieldNet').textContent = Number(d.net_yield_ml || 0).toLocaleString();
+                document.getElementById('yieldPercent').textContent = (d.yield_efficiency_percent || 0).toFixed(1);
+
+                const pct = Number(d.yield_efficiency_percent || 0);
+                document.getElementById('yieldBar').style.width = Math.min(100, Math.max(0, pct)) + '%';
+                document.getElementById('yieldBarLabel').textContent = pct.toFixed(1) + '% yield';
+
+                const bar = document.getElementById('yieldBar');
+                bar.className = 'yield-bar h-full rounded-full';
+                if (pct >= 90) bar.classList.add('bg-gradient-to-r', 'from-green-500', 'to-emerald-400');
+                else if (pct >= 75) bar.classList.add('bg-gradient-to-r', 'from-yellow-500', 'to-amber-400');
+                else bar.classList.add('bg-gradient-to-r', 'from-red-500', 'to-orange-400');
+
+                const remaining = (d.initial_volume_ml || 0) - (d.total_loss_ml || 0) - (d.total_byproduct_ml || 0);
+                document.getElementById('lossVolumeHint').textContent = `Remaining volume: ${Number(remaining).toLocaleString()} mL`;
+
+                if (!d.initial_volume_ml) {
+                    showToast('Initial volume not set for this run. Set volume when starting the run.', 'warning');
+                }
+            } catch (e) {
+                console.error('Yield load error:', e);
+                showToast(e.message || 'Failed to load yield', 'error');
+            }
+        }
+
+        async function loadLosses() {
+            const tbody = document.getElementById('lossTable');
+            const summary = document.getElementById('lossSummary');
+            try {
+                const r = await ProductionService.getLosses(selectedRunId);
+                if (!r.success) throw new Error(r.message);
+
+                const losses = r.data.losses || [];
+                const summaryData = r.data.summary || [];
+
+                // Render summary badges
+                if (summaryData.length) {
+                    summary.innerHTML = summaryData.map(s => `
+                        <span class="badge badge-outline gap-1">
+                            <span class="font-semibold">${s.stage}</span> · ${s.loss_type}: ${Number(s.total_ml).toLocaleString()} mL (${s.entries}×)
+                        </span>
+                    `).join('');
+                } else {
+                    summary.innerHTML = '';
+                }
+
+                if (!losses.length) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-base-content/40">No losses recorded yet. Click "Record Loss" to begin.</td></tr>';
+                    return;
+                }
+
+                const stageColors = { pasteurization: 'badge-warning', processing: 'badge-info', cooling: 'badge-primary', packaging: 'badge-success' };
+                const typeLabels = { evaporation: 'Evaporation', spillage: 'Spillage', sampling: 'Sampling (QC)', equipment_retention: 'Equipment Retention', other: 'Other' };
+
+                tbody.innerHTML = losses.map(l => `
+                    <tr class="loss-row hover">
+                        <td><span class="badge ${stageColors[l.stage] || 'badge-ghost'} badge-sm">${l.stage}</span></td>
+                        <td class="font-medium">${typeLabels[l.loss_type] || l.loss_type}</td>
+                        <td class="text-right font-bold text-error">${Number(l.loss_volume_ml).toLocaleString()}</td>
+                        <td class="text-right">${l.loss_percentage}%</td>
+                        <td class="max-w-[200px] truncate text-base-content/60 text-sm">${l.notes || '—'}</td>
+                        <td class="text-xs text-base-content/50">${new Date(l.recorded_at).toLocaleString()}</td>
+                        <td class="text-center">
+                            <button class="btn btn-ghost btn-xs text-error" onclick="promptDeleteLoss(${l.id})" title="Delete">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-error">${e.message}</td></tr>`;
+            }
+        }
+
+        async function loadEstimates() {
+            const widget = document.getElementById('estimateWidget');
+            try {
+                const r = await ProductionService.getEstimates(selectedRunId);
+                if (!r.success) throw new Error(r.message);
+
+                const data = r.data;
+                const estimates = data.has_revision ? data.revised_estimate.items : data.initial_estimate.items;
+                const label = data.has_revision ? 'Revised' : 'Initial';
+                const basisVol = data.has_revision ? data.revised_estimate.basis_volume_ml : data.initial_estimate.basis_volume_ml;
+
+                if (!estimates || !estimates.length) {
+                    widget.innerHTML = '<p class="text-sm text-base-content/50 text-center py-4">No packaging rules configured for this product.</p>';
+                    return;
+                }
+
+                widget.innerHTML = `
+                    <div class="mb-2">
+                        <span class="badge ${data.has_revision ? 'badge-warning' : 'badge-info'} badge-sm">${label} Estimate</span>
+                        <span class="text-xs text-base-content/50 ml-2">Based on ${Number(basisVol).toLocaleString()} mL</span>
+                    </div>
+                    <div class="space-y-2">
+                        ${estimates.map(e => `
+                            <div class="flex items-center justify-between bg-base-200 rounded-lg p-2.5">
+                                <div>
+                                    <span class="font-semibold text-sm">${e.packaging_label}</span>
+                                    <span class="text-xs text-base-content/50 ml-1">(${e.packaging_size_ml} mL)</span>
+                                </div>
+                                <span class="font-bold text-lg text-primary">${e.estimated_units}×</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } catch (e) {
+                widget.innerHTML = '<p class="text-sm text-base-content/40 text-center py-4">Could not load estimate</p>';
+            }
+        }
+
+        // Loss Modal
+        function openLossModal() {
+            if (!selectedRunId) {
+                showToast('Select a production run first', 'warning');
+                return;
+            }
+            if (currentYield && !currentYield.initial_volume_ml) {
+                showToast('Set initial volume on the run before recording losses', 'warning');
+                return;
+            }
+            document.getElementById('lossVolume').value = '';
+            document.getElementById('lossNotes').value = '';
+            // Auto-select stage from current run status
+            const stage = lossStageFromRunStatus(currentRun?.status || currentYield?.status);
+            const stageSelect = document.getElementById('lossStage');
+            if ([...stageSelect.options].some(o => o.value === stage)) {
+                stageSelect.value = stage;
+            }
+            document.getElementById('lossModal').showModal();
+            setTimeout(() => document.getElementById('lossVolume').focus(), 100);
+        }
+
+        async function submitLoss() {
+            const stage = document.getElementById('lossStage').value;
+            const lossType = document.getElementById('lossType').value;
+            const volume = parseFloat(document.getElementById('lossVolume').value);
+            const notes = document.getElementById('lossNotes').value.trim();
+
+            if (!volume || volume <= 0) {
+                showToast('Please enter a valid loss volume.', 'warning');
+                return;
+            }
+
+            const btn = document.getElementById('lossSubmitBtn');
+            btn.classList.add('loading');
+            btn.disabled = true;
+
+            try {
+                const r = await ProductionService.recordLoss({
+                    production_run_id: selectedRunId,
+                    stage,
+                    loss_type: lossType,
+                    loss_volume_ml: volume,
+                    notes: notes || null
+                });
+
+                if (r.success) {
+                    showToast('Loss recorded successfully. Yield recalculated.', 'success');
+                    document.getElementById('lossModal').close();
+                    await refreshAll();
+                } else {
+                    showToast(r.message || 'Failed to record loss', 'error');
+                }
+            } catch (e) {
+                showToast(e.message || 'Error recording loss', 'error');
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+
+        // Delete
+        function promptDeleteLoss(id) {
+            deleteLossId = id;
+            document.getElementById('deleteModal').showModal();
+        }
+
+        async function confirmDeleteLoss() {
+            if (!deleteLossId) return;
+            const btn = document.getElementById('confirmDeleteBtn');
+            btn.classList.add('loading');
+            btn.disabled = true;
+
+            try {
+                const r = await ProductionService.deleteLoss(deleteLossId);
+                if (r.success) {
+                    showToast('Loss record deleted.', 'success');
+                    document.getElementById('deleteModal').close();
+                    await refreshAll();
+                } else {
+                    showToast(r.message || 'Failed to delete', 'error');
+                }
+            } catch (e) {
+                showToast(e.message || 'Error deleting loss', 'error');
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+                deleteLossId = null;
+            }
+        }
+
+        function showToast(msg, type = 'info') {
+            const icons = { success: 'check-circle', error: 'exclamation-circle', warning: 'exclamation-triangle', info: 'info-circle' };
+            const colors = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' };
+            const el = document.createElement('div');
+            el.className = `alert ${colors[type]} shadow-lg max-w-sm text-sm`;
+            el.innerHTML = `<i class="fas fa-${icons[type]}"></i><span>${msg}</span>`;
+            document.getElementById('toastContainer').appendChild(el);
+            setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 300); }, 4000);
+        }
+    </script>
+</body>
+
+</html>

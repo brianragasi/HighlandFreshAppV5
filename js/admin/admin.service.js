@@ -77,15 +77,27 @@ const AdminService = {
     },
 
     async unlockUserLogin(id) {
+        return this.userAction('unlock_login', id);
+    },
+
+    /**
+     * Unified row actions:
+     * deactivate | activate | unlock_login | reset_password | resend_invite | temp_credentials
+     */
+    async userAction(action, userId, extra = {}) {
         try {
-            const response = await fetch(`${ApiConfig.baseUrl}/admin/users.php?action=unlock_login&id=${id}`, {
+            const response = await fetch(`${ApiConfig.baseUrl}/admin/process_user_action.php`, {
                 method: 'POST',
                 headers: ApiConfig.getHeaders(),
-                body: JSON.stringify({})
+                body: JSON.stringify({
+                    action,
+                    user_id: Number(userId),
+                    ...extra
+                })
             });
             return await response.json();
         } catch (error) {
-            console.error('Error unlocking user login:', error);
+            console.error('Error running user action:', action, error);
             throw error;
         }
     },
@@ -94,34 +106,14 @@ const AdminService = {
      * Send email invitation to a user
      */
     async sendInvite(userId) {
-        try {
-            const response = await fetch(`${ApiConfig.baseUrl}/auth/invite.php`, {
-                method: 'POST',
-                headers: ApiConfig.getHeaders(),
-                body: JSON.stringify({ user_id: userId, method: 'email' })
-            });
-            return await response.json();
-        } catch (error) {
-            console.error('Error sending invite:', error);
-            throw error;
-        }
+        return this.userAction('resend_invite', userId);
     },
 
     /**
      * Generate temporary credentials for a user (no-email fallback)
      */
     async generateTempCredential(userId) {
-        try {
-            const response = await fetch(`${ApiConfig.baseUrl}/auth/invite.php`, {
-                method: 'POST',
-                headers: ApiConfig.getHeaders(),
-                body: JSON.stringify({ user_id: userId, method: 'manual' })
-            });
-            return await response.json();
-        } catch (error) {
-            console.error('Error generating temp credentials:', error);
-            throw error;
-        }
+        return this.userAction('temp_credentials', userId);
     },
     
     // ========================

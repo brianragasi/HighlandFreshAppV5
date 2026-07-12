@@ -11,6 +11,7 @@
  */
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
+require_once __DIR__ . '/inventory_helpers.php';
 
 // Different roles for different operations:
 // - GET: Sales can view DRs (to track delivery status)
@@ -124,21 +125,45 @@ function handleGet($db, $action) {
                 Response::error('Delivery receipt not found', 404);
             }
             
-            // Get line items with batch info
+            // Get line items with batch info.
+            // Batch may live on dri.batch_id (release flow) OR via inventory_id (picking flow).
+            // Also fall back to fg_dispatch_log for multi-batch dispatches.
             $itemsStmt = $db->prepare("
                 SELECT dri.*,
                        dri.quantity_ordered as quantity,
                        p.product_name,
                        p.product_code as product_sku,
-                       pb.batch_code,
-                       pb.barcode as batch_barcode
+                       COALESCE(dri.batch_id, fgi.batch_id) as batch_id,
+                       COALESCE(
+                           pb_direct.batch_code,
+                           pb_inv.batch_code,
+                           dl.batch_codes,
+                           fgi.barcode
+                       ) as batch_code,
+                       COALESCE(pb_direct.barcode, pb_inv.barcode) as batch_barcode,
+                       COALESCE(pb_direct.expiry_date, pb_inv.expiry_date) as batch_expiry
                 FROM delivery_receipt_items dri
                 LEFT JOIN products p ON dri.product_id = p.id
-                LEFT JOIN production_batches pb ON dri.batch_id = pb.id
+                LEFT JOIN production_batches pb_direct ON dri.batch_id = pb_direct.id
+                LEFT JOIN finished_goods_inventory fgi ON dri.inventory_id = fgi.id
+                LEFT JOIN production_batches pb_inv ON fgi.batch_id = pb_inv.id
+                LEFT JOIN (
+                    SELECT dr_id, product_id,
+                           GROUP_CONCAT(DISTINCT batch_code ORDER BY batch_code SEPARATOR ', ') as batch_codes
+                    FROM fg_dispatch_log
+                    WHERE batch_code IS NOT NULL AND batch_code <> ''
+                    GROUP BY dr_id, product_id
+                ) dl ON dl.dr_id = dri.delivery_receipt_id AND dl.product_id = dri.product_id
                 WHERE dri.delivery_receipt_id = ?
             ");
             $itemsStmt->execute([$id]);
             $dr['items'] = $itemsStmt->fetchAll();
+
+            // Print is for physical driver/customer signatures — allowed pre-delivery
+            $printable = ['ready', 'dispatched', 'delivered'];
+            $dr['print_allowed'] = in_array($dr['status'], $printable, true);
+            $dr['is_printed'] = !empty($dr['printed_at']);
+            $dr['requires_print_before_dispatch'] = ($dr['status'] === 'ready' && empty($dr['printed_at']));
             
             Response::success($dr, 'Delivery receipt details retrieved');
             break;
@@ -166,8 +191,95 @@ function handleGet($db, $action) {
     }
 }
 
+/**
+ * Flag a DR as printed (paper form generated for driver/customer signatures).
+ * Callable from POST or PUT so nginx method-override clients always work.
+ *
+ * @return array Success payload for Response::success
+ */
+function markDeliveryReceiptPrinted(PDO $db, array $current, $currentUser) {
+    if (!in_array($currentUser['role'], ['warehouse_fg', 'general_manager'], true)) {
+        Response::error('Only Warehouse FG can mark a DR as printed', 403);
+    }
+
+    $printableStatuses = ['ready', 'dispatched', 'delivered'];
+    if (!in_array($current['status'], $printableStatuses, true)) {
+        Response::error(
+            'DR can only be printed when status is Ready, Dispatched, or Delivered (current: ' .
+            $current['status'] . '). Complete picking first.',
+            400
+        );
+    }
+
+    $id = (int)$current['id'];
+
+    // Ensure columns exist (idempotent)
+    try {
+        $db->exec("ALTER TABLE delivery_receipts ADD COLUMN printed_at DATETIME NULL DEFAULT NULL");
+    } catch (Exception $e) { /* exists */ }
+    try {
+        $db->exec("ALTER TABLE delivery_receipts ADD COLUMN printed_by INT NULL DEFAULT NULL");
+    } catch (Exception $e) { /* exists */ }
+
+    // Always stamp print time (re-print refreshes the audit timestamp)
+    $stmt = $db->prepare("
+        UPDATE delivery_receipts
+        SET printed_at = NOW(),
+            printed_by = ?
+        WHERE id = ?
+    ");
+    $stmt->execute([(int)$currentUser['user_id'], $id]);
+
+    if ($stmt->rowCount() < 1) {
+        // Row exists but values identical — still treat as success; re-read
+        $check = $db->prepare("SELECT printed_at FROM delivery_receipts WHERE id = ?");
+        $check->execute([$id]);
+        if (!$check->fetchColumn()) {
+            Response::error('Failed to update print status for this Delivery Receipt', 500);
+        }
+    }
+
+    $read = $db->prepare("SELECT printed_at, status, dr_number FROM delivery_receipts WHERE id = ?");
+    $read->execute([$id]);
+    $row = $read->fetch(PDO::FETCH_ASSOC);
+
+    return [
+        'id' => $id,
+        'dr_number' => $row['dr_number'] ?? null,
+        'status' => $row['status'] ?? $current['status'],
+        'printed_at' => $row['printed_at'] ?? date('Y-m-d H:i:s'),
+        'is_printed' => true,
+        'print_allowed' => true
+    ];
+}
+
 function handlePost($db, $action, $currentUser) {
     $data = getRequestBody();
+
+    // Print status flag (also available via PUT mark_printed)
+    if ($action === 'mark_printed') {
+        $id = getParam('id') ?? ($data['id'] ?? null);
+        $drNumber = getParam('dr_number') ?? ($data['dr_number'] ?? null);
+
+        if (!$id && $drNumber) {
+            $find = $db->prepare("SELECT id FROM delivery_receipts WHERE dr_number = ? LIMIT 1");
+            $find->execute([$drNumber]);
+            $id = $find->fetchColumn();
+        }
+        if (!$id) {
+            Response::error('DR id or dr_number is required', 400);
+        }
+
+        $check = $db->prepare("SELECT * FROM delivery_receipts WHERE id = ?");
+        $check->execute([$id]);
+        $current = $check->fetch(PDO::FETCH_ASSOC);
+        if (!$current) {
+            Response::error('Delivery receipt not found', 404);
+        }
+
+        $payload = markDeliveryReceiptPrinted($db, $current, $currentUser);
+        Response::success($payload, 'Delivery Receipt marked as printed. Dispatch is now unlocked.');
+    }
     
     if ($action === 'create_from_order') {
         // Create DR from an approved sales order
@@ -316,11 +428,12 @@ function handlePost($db, $action, $currentUser) {
             
             $db->commit();
             
-            // Redirect to dispatch page with picking ticket
+            // Relative path only — frontend resolves under app base (e.g. /HighlandFreshAppV4/)
+            // Absolute /html/... breaks when the app is not at domain root.
             Response::success([
-                'id' => $drId, 
+                'id' => (int)$drId,
                 'picking_number' => $pickingNumber,
-                'redirect_url' => '/html/warehouse/fg/dispatch.html?pick=' . $drId
+                'redirect_url' => 'dispatch.html?pick=' . (int)$drId
             ], 'Picking ticket created. Proceed to scan items.', 201);
             
         } catch (Exception $e) {
@@ -441,49 +554,167 @@ function handlePut($db, $action, $currentUser) {
             
             $db->beginTransaction();
             try {
-                // Update delivery_receipt_items with picked quantities
+                // Lock ticket line items and load ordered quantities (never trust frontend alone)
+                $orderedStmt = $db->prepare("
+                    SELECT dri.id, dri.product_id, dri.quantity_ordered,
+                           p.product_name
+                    FROM delivery_receipt_items dri
+                    LEFT JOIN products p ON dri.product_id = p.id
+                    WHERE dri.delivery_receipt_id = ?
+                    FOR UPDATE
+                ");
+                $orderedStmt->execute([$id]);
+                $drLines = $orderedStmt->fetchAll();
+
+                if (empty($drLines)) {
+                    throw new Exception('Picking ticket has no line items.');
+                }
+
+                $orderedByProduct = [];
+                $productNames = [];
+                foreach ($drLines as $line) {
+                    $pid = (int)$line['product_id'];
+                    $orderedByProduct[$pid] = (int)$line['quantity_ordered'];
+                    $productNames[$pid] = $line['product_name'] ?? ('Product #' . $pid);
+                }
+
+                // Tally unique inventory rows / bottles submitted (and total pieces per product)
+                $scannedByProduct = [];   // product_id => total pieces
+                $seenInventoryIds = [];   // inventory_id => qty (detect double-submit of same row)
+                $lastInventoryByProduct = [];
+                $lastBatchByProduct = []; // production_batches.id resolved from FG inventory
+
+                $invLookup = $db->prepare("
+                    SELECT fgi.id, fgi.product_id, fgi.batch_id, p.product_name, pb.batch_code
+                    FROM finished_goods_inventory fgi
+                    LEFT JOIN products p ON fgi.product_id = p.id
+                    LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
+                    WHERE fgi.id = ?
+                ");
+
                 foreach ($scannedItems as $scanned) {
-                    // Get the product_id from the inventory item
-                    $invStmt = $db->prepare("SELECT product_id FROM finished_goods_inventory WHERE id = ?");
-                    $invStmt->execute([$scanned['inventory_id']]);
-                    $inv = $invStmt->fetch();
-                    
-                    if ($inv) {
-                        // Update the delivery_receipt_item for this product
-                        $updateItem = $db->prepare("
-                            UPDATE delivery_receipt_items 
-                            SET quantity_picked = COALESCE(quantity_picked, 0) + ?,
-                                inventory_id = ?,
-                                picked_at = NOW()
-                            WHERE delivery_receipt_id = ? AND product_id = ?
-                        ");
-                        $updateItem->execute([
-                            $scanned['total_pieces'] ?? $scanned['quantity'] ?? 0,
-                            $scanned['inventory_id'],
-                            $id,
-                            $inv['product_id']
-                        ]);
+                    $inventoryId = (int)($scanned['inventory_id'] ?? 0);
+                    $qty = (int)($scanned['total_pieces'] ?? $scanned['quantity'] ?? 0);
+
+                    if ($inventoryId <= 0 || $qty <= 0) {
+                        throw new Exception('Each scanned item must include a valid inventory_id and positive quantity.');
+                    }
+
+                    // Same FG inventory row cannot be submitted twice in one finalize payload
+                    if (isset($seenInventoryIds[$inventoryId])) {
+                        throw new Exception(
+                            "Duplicate scan for inventory row #{$inventoryId}. " .
+                            "Each unique bottle/batch scan may only be counted once per Generate DR."
+                        );
+                    }
+                    $seenInventoryIds[$inventoryId] = $qty;
+
+                    $invLookup->execute([$inventoryId]);
+                    $inv = $invLookup->fetch();
+                    if (!$inv) {
+                        throw new Exception("Inventory item #{$inventoryId} not found.");
+                    }
+
+                    $productId = (int)$inv['product_id'];
+                    $productName = $inv['product_name'] ?? $productNames[$productId] ?? 'Unknown product';
+
+                    if (!isset($orderedByProduct[$productId])) {
+                        throw new Exception(
+                            "Product '{$productName}' is NOT on this picking ticket. " .
+                            "Only ordered products may be picked."
+                        );
+                    }
+
+                    if (!isset($scannedByProduct[$productId])) {
+                        $scannedByProduct[$productId] = 0;
+                    }
+                    $scannedByProduct[$productId] += $qty;
+                    $lastInventoryByProduct[$productId] = $inventoryId;
+                    if (!empty($inv['batch_id'])) {
+                        $lastBatchByProduct[$productId] = (int)$inv['batch_id'];
+                    }
+
+                    // Per-product hard cap: total unique bottles/pieces vs ordered
+                    if ($scannedByProduct[$productId] > $orderedByProduct[$productId]) {
+                        $required = $orderedByProduct[$productId];
+                        $attempted = $scannedByProduct[$productId];
+                        throw new Exception(
+                            "Cannot exceed ordered quantity for '{$productName}': " .
+                            "scanned {$attempted}, ordered {$required}."
+                        );
                     }
                 }
-                
-                // Re-check pick status after updating
+
+                // Absolute guard: overall total scanned must not exceed overall ordered
+                $totalScanned = array_sum($scannedByProduct);
+                $totalOrdered = array_sum($orderedByProduct);
+                if ($totalScanned > $totalOrdered) {
+                    throw new Exception(
+                        "Cannot exceed ordered quantity: scanned {$totalScanned}, ordered {$totalOrdered}."
+                    );
+                }
+                if ($totalScanned <= 0) {
+                    throw new Exception('Failed to record picked items.');
+                }
+
+                // SET (not +=) picked qty from this submission — avoids double-count on retry
+                // Persist batch_id so DR Details can show printed production batch codes
+                $resetPicked = $db->prepare("
+                    UPDATE delivery_receipt_items
+                    SET quantity_picked = 0, inventory_id = NULL, batch_id = NULL, picked_at = NULL
+                    WHERE delivery_receipt_id = ?
+                ");
+                $resetPicked->execute([$id]);
+
+                $updateItem = $db->prepare("
+                    UPDATE delivery_receipt_items
+                    SET quantity_picked = ?,
+                        inventory_id = ?,
+                        batch_id = ?,
+                        picked_at = NOW()
+                    WHERE delivery_receipt_id = ? AND product_id = ?
+                ");
+                foreach ($scannedByProduct as $productId => $pickedQty) {
+                    $updateItem->execute([
+                        $pickedQty,
+                        $lastInventoryByProduct[$productId] ?? null,
+                        $lastBatchByProduct[$productId] ?? null,
+                        $id,
+                        $productId
+                    ]);
+                }
+
+                // Re-check pick status after updating (must never show over-pick in DB)
                 $pickedCheck = $db->prepare("
-                    SELECT COUNT(*) as item_count, 
+                    SELECT COUNT(*) as item_count,
                            COALESCE(SUM(quantity_picked), 0) as total_picked,
-                           COALESCE(SUM(quantity_ordered), 0) as total_ordered
-                    FROM delivery_receipt_items 
+                           COALESCE(SUM(quantity_ordered), 0) as total_ordered,
+                           SUM(CASE WHEN COALESCE(quantity_picked, 0) > quantity_ordered THEN 1 ELSE 0 END) as over_pick_lines
+                    FROM delivery_receipt_items
                     WHERE delivery_receipt_id = ?
                 ");
                 $pickedCheck->execute([$id]);
                 $pickStatus = $pickedCheck->fetch();
-            
-                if ($pickStatus['total_picked'] <= 0) {
-                    $db->rollBack();
-                    Response::error('Failed to record picked items.', 400);
+
+                if ((int)$pickStatus['total_picked'] <= 0) {
+                    throw new Exception('Failed to record picked items.');
                 }
-            
-                // Check if all items are fully picked
-                $allPicked = $pickStatus['total_picked'] >= $pickStatus['total_ordered'];
+                if ((int)$pickStatus['over_pick_lines'] > 0
+                    || (int)$pickStatus['total_picked'] > (int)$pickStatus['total_ordered']) {
+                    throw new Exception('Cannot exceed ordered quantity. Transaction aborted.');
+                }
+
+                // All lines exact match (optional strict completeness flag)
+                $allPickedCheck = $db->prepare("
+                    SELECT COUNT(*) as total_items,
+                           SUM(CASE WHEN COALESCE(quantity_picked, 0) = quantity_ordered THEN 1 ELSE 0 END) as exact_items
+                    FROM delivery_receipt_items
+                    WHERE delivery_receipt_id = ?
+                ");
+                $allPickedCheck->execute([$id]);
+                $exactStatus = $allPickedCheck->fetch();
+                $allPicked = ((int)$exactStatus['total_items'] > 0
+                    && (int)$exactStatus['exact_items'] === (int)$exactStatus['total_items']);
             
                 // Generate SEQUENTIAL DR number (DR-YYYYMMDD-XXX)
                 $datePrefix = 'DR-' . date('Ymd') . '-';
@@ -507,91 +738,106 @@ function handlePut($db, $action, $currentUser) {
                 ");
                 $updateDR->execute([$drNumber, $currentUser['user_id'], $id]);
                 
-                // DEDUCT INVENTORY - This is where stock is officially released
+                // DEDUCT INVENTORY — base units only, then recompute packs + loose.
+                // Broken prior logic zeroed boxes/pieces without reducing quantity_available.
                 $itemsStmt = $db->prepare("
-                    SELECT dri.*, p.product_name 
+                    SELECT dri.*, p.product_name
                     FROM delivery_receipt_items dri
                     LEFT JOIN products p ON dri.product_id = p.id
                     WHERE dri.delivery_receipt_id = ?
                 ");
                 $itemsStmt->execute([$id]);
                 $items = $itemsStmt->fetchAll();
-                
+
+                $deductionLog = [];
+
                 foreach ($items as $item) {
-                    if ($item['quantity_picked'] > 0) {
-                        // Deduct from FG inventory using FIFO (oldest batches first)
-                        // Uses COALESCE to handle both new (pieces_available) and
-                        // old-style (quantity_available) rows from packaging.php
-                        $remaining = $item['quantity_picked'];
-                        
-                        $batchesStmt = $db->prepare("
-                            SELECT fgi.id, fgi.batch_id,
-                                   fgi.pieces_available,
-                                   fgi.boxes_available,
-                                   fgi.quantity_available,
-                                   fgi.quantity_pieces,
-                                   fgi.remaining_quantity,
-                                   COALESCE(p.pieces_per_box, 12) as pieces_per_box,
-                                   -- Same CASE logic as stock check to avoid double-counting
-                                   CASE
-                                       WHEN fgi.boxes_available > 0 OR fgi.pieces_available > 0
-                                       THEN (fgi.boxes_available * COALESCE(p.pieces_per_box, 12))
-                                            + fgi.pieces_available
-                                       ELSE GREATEST(0, COALESCE(
-                                           NULLIF(fgi.quantity_pieces, 0),
-                                           fgi.quantity_available,
-                                           fgi.remaining_quantity,
-                                           0
-                                       ))
-                                   END as effective_pieces
-                            FROM finished_goods_inventory fgi
-                            LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
-                            LEFT JOIN products p ON fgi.product_id = p.id
-                            WHERE fgi.product_id = ?
-                              AND pb.qc_status = 'released'
-                              AND (
-                                  fgi.pieces_available > 0
-                                  OR fgi.boxes_available > 0
-                                  OR fgi.quantity_available > 0
-                                  OR fgi.quantity_pieces > 0
-                                  OR fgi.remaining_quantity > 0
-                              )
-                            ORDER BY pb.manufacturing_date ASC, pb.created_at ASC
-                        ");
-                        $batchesStmt->execute([$item['product_id']]);
-                        $batches = $batchesStmt->fetchAll();
-                        
-                        foreach ($batches as $batch) {
-                            if ($remaining <= 0) break;
-                            
-                            $effectivePieces = (int)$batch['effective_pieces'];
-                            $toDeduct = min($remaining, $effectivePieces);
-                            
-                            // Deduct from whichever column holds the stock
-                            if ((int)$batch['pieces_available'] > 0) {
-                                $deductStmt = $db->prepare("
-                                    UPDATE finished_goods_inventory 
-                                    SET pieces_available = GREATEST(0, pieces_available - ?),
-                                        boxes_available = FLOOR(GREATEST(0, pieces_available - ?) / ?),
-                                        last_movement_at = NOW()
-                                    WHERE id = ?
-                                ");
-                                $deductStmt->execute([$toDeduct, $toDeduct, $batch['pieces_per_box'], $batch['id']]);
-                            } else {
-                                // Old-style row: deduct from quantity_available and remaining_quantity
-                                $deductStmt = $db->prepare("
-                                    UPDATE finished_goods_inventory 
-                                    SET quantity_available = GREATEST(0, quantity_available - ?),
-                                        remaining_quantity = GREATEST(0, remaining_quantity - ?),
-                                        quantity_pieces = GREATEST(0, quantity_pieces - ?),
-                                        last_movement_at = NOW()
-                                    WHERE id = ?
-                                ");
-                                $deductStmt->execute([$toDeduct, $toDeduct, $toDeduct, $batch['id']]);
-                            }
-                            
-                            $remaining -= $toDeduct;
+                    $needBase = (int)($item['quantity_picked'] ?? 0);
+                    if ($needBase <= 0) {
+                        continue;
+                    }
+
+                    $productName = $item['product_name'] ?? ('Product #' . $item['product_id']);
+                    $remaining = $needBase;
+
+                    // 1) Prefer the exact scanned inventory row (batch) when present
+                    $candidateIds = [];
+                    if (!empty($item['inventory_id'])) {
+                        $candidateIds[] = (int)$item['inventory_id'];
+                    }
+
+                    // 2) FIFO fill remaining from other released FG batches of same product
+                    $fifoStmt = $db->prepare("
+                        SELECT fgi.id
+                        FROM finished_goods_inventory fgi
+                        LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
+                        LEFT JOIN products p ON fgi.product_id = p.id
+                        WHERE fgi.product_id = ?
+                          AND (pb.qc_status = 'released' OR pb.qc_status IS NULL)
+                          AND (
+                              fgi.boxes_available > 0
+                              OR fgi.pieces_available > 0
+                              OR fgi.quantity_available > 0
+                              OR fgi.remaining_quantity > 0
+                              OR fgi.quantity > 0
+                          )
+                        ORDER BY
+                            CASE WHEN fgi.id = ? THEN 0 ELSE 1 END,
+                            pb.manufacturing_date ASC,
+                            pb.created_at ASC,
+                            fgi.id ASC
+                    ");
+                    $preferId = !empty($item['inventory_id']) ? (int)$item['inventory_id'] : 0;
+                    $fifoStmt->execute([(int)$item['product_id'], $preferId]);
+                    foreach ($fifoStmt->fetchAll(PDO::FETCH_COLUMN) as $fid) {
+                        $fid = (int)$fid;
+                        if (!in_array($fid, $candidateIds, true)) {
+                            $candidateIds[] = $fid;
                         }
+                    }
+
+                    if (empty($candidateIds)) {
+                        throw new Exception(
+                            "No FG inventory available to fulfill {$needBase} units of '{$productName}'. " .
+                            "Transaction rolled back."
+                        );
+                    }
+
+                    foreach ($candidateIds as $invId) {
+                        if ($remaining <= 0) {
+                            break;
+                        }
+
+                        // Lock + measure effective base for this row
+                        $lockStmt = $db->prepare("
+                            SELECT fgi.*, COALESCE(p.pieces_per_box, 12) AS pieces_per_box
+                            FROM finished_goods_inventory fgi
+                            LEFT JOIN products p ON fgi.product_id = p.id
+                            WHERE fgi.id = ?
+                            FOR UPDATE
+                        ");
+                        $lockStmt->execute([$invId]);
+                        $invRow = $lockStmt->fetch(PDO::FETCH_ASSOC);
+                        if (!$invRow) {
+                            continue;
+                        }
+
+                        $available = fgInventoryEffectiveBaseUnits($invRow, (int)$invRow['pieces_per_box']);
+                        if ($available <= 0) {
+                            continue;
+                        }
+
+                        $toDeduct = min($remaining, $available);
+                        $result = fgInventoryDeductBaseUnits($db, $invId, $toDeduct);
+                        $deductionLog[] = $result;
+                        $remaining -= $toDeduct;
+                    }
+
+                    if ($remaining > 0) {
+                        throw new Exception(
+                            "Insufficient FG stock for '{$productName}': short by {$remaining} base unit(s) " .
+                            "of {$needBase} required. Entire finalize transaction rolled back."
+                        );
                     }
                 }
                 
@@ -611,15 +857,28 @@ function handlePut($db, $action, $currentUser) {
                     'dr_number' => $drNumber,
                     'status' => 'ready',
                     'items_picked' => $pickStatus['total_picked'],
-                    'all_items_picked' => $allPicked
+                    'all_items_picked' => $allPicked,
+                    'inventory_deductions' => $deductionLog
                 ], "Picking complete! DR {$drNumber} generated. Inventory has been deducted.");
                 
             } catch (Exception $e) {
-                $db->rollBack();
-                throw $e;
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                // Business-rule failures (over-pick, wrong product, etc.) → HTTP 400 JSON
+                Response::error($e->getMessage(), 400);
             }
             break;
             
+        case 'mark_printed':
+            // Record paper DR print — shared helper (also exposed on POST)
+            $payload = markDeliveryReceiptPrinted($db, $current, $currentUser);
+            Response::success(
+                $payload,
+                'Delivery Receipt marked as printed. Paper copy is ready for driver signatures.'
+            );
+            break;
+
         case 'release':
         case 'dispatch':
             // Only Warehouse FG can dispatch
@@ -633,6 +892,27 @@ function handlePut($db, $action, $currentUser) {
                     Response::error('Items must be picked first. Use Dispatch page to scan and release items before dispatching.', 400);
                 }
                 Response::error('DR must be in ready status to dispatch (was: ' . $current['status'] . ')', 400);
+            }
+
+            // HARD RULE: physical DR (Delivered By / Received By signatures) must print before truck leaves
+            $printedAt = $current['printed_at'] ?? null;
+            if (empty($printedAt)) {
+                // Re-read in case column was just added / race with mark_printed
+                try {
+                    $printCheck = $db->prepare("SELECT printed_at FROM delivery_receipts WHERE id = ?");
+                    $printCheck->execute([$id]);
+                    $printedAt = $printCheck->fetchColumn();
+                } catch (Exception $e) {
+                    $printedAt = null;
+                }
+            }
+            if (empty($printedAt)) {
+                Response::error(
+                    'Print the Delivery Receipt before dispatching. ' .
+                    'The paper form has Driver (Delivered By) and Customer (Received By) signature lines ' .
+                    'and must leave with the truck.',
+                    400
+                );
             }
             
             // Check if DR has items to dispatch
@@ -651,7 +931,7 @@ function handlePut($db, $action, $currentUser) {
             try {
                 // Note: Inventory was already deducted during the picking process in dispatch.html
                 // when status changed from pending -> ready. 
-                // This dispatch action just updates status to mark it as physically dispatched.
+                // This dispatch action marks the truck as officially out (after paper DR printed).
                 
                 // Update DR status
                 $stmt = $db->prepare("
@@ -667,13 +947,17 @@ function handlePut($db, $action, $currentUser) {
                 if (!empty($current['order_id'])) {
                     $updateOrder = $db->prepare("
                         UPDATE sales_orders SET status = 'dispatched', updated_at = NOW()
-                        WHERE id = ? AND status IN ('approved', 'preparing', 'partially_fulfilled', 'ready')
+                        WHERE id = ? AND status IN ('approved', 'preparing', 'partially_fulfilled', 'picking', 'ready')
                     ");
                     $updateOrder->execute([$current['order_id']]);
                 }
                 
                 $db->commit();
-                Response::success(null, 'Delivery receipt dispatched successfully');
+                Response::success([
+                    'id' => (int)$id,
+                    'status' => 'dispatched',
+                    'printed_at' => $printedAt
+                ], 'Delivery receipt dispatched successfully. Truck may leave with the signed paper DR.');
             } catch (Exception $e) {
                 $db->rollBack();
                 throw $e;
@@ -699,30 +983,78 @@ function handlePut($db, $action, $currentUser) {
                 );
             }
             
-            // Returns have been processed, so any shortfall is already accounted for
-            // (the returns recording process updated quantity_delivered accordingly)
-            
+            // Returns already reconciled inventory/billing; close DR + order state machine
             $db->beginTransaction();
             try {
+                // Accepted vs shipped for partial close
+                $agg = $db->prepare("
+                    SELECT
+                        COALESCE(SUM(COALESCE(quantity_delivered, 0)), 0) AS qty_accepted,
+                        COALESCE(SUM(
+                            GREATEST(
+                                COALESCE(quantity_packed, 0),
+                                COALESCE(quantity_picked, 0),
+                                COALESCE(quantity_ordered, 0)
+                            )
+                        ), 0) AS qty_shipped,
+                        COALESCE(SUM(COALESCE(quantity_delivered, 0) * COALESCE(unit_price, 0)), 0) AS amount_accepted
+                    FROM delivery_receipt_items
+                    WHERE delivery_receipt_id = ?
+                ");
+                $agg->execute([$id]);
+                $t = $agg->fetch(PDO::FETCH_ASSOC);
+                $qtyAccepted = (int)$t['qty_accepted'];
+                $qtyShipped = (int)$t['qty_shipped'];
+                $amountAccepted = round((float)$t['amount_accepted'], 2);
+                $isPartial = $qtyAccepted < $qtyShipped;
+
                 $stmt = $db->prepare("
                     UPDATE delivery_receipts SET
                         status = 'delivered',
-                        delivered_at = NOW()
+                        delivered_at = NOW(),
+                        total_amount = ?
                     WHERE id = ?
                 ");
-                $stmt->execute([$id]);
-                
-                // Also update linked Sales Order to delivered
+                $stmt->execute([$amountAccepted, $id]);
+
+                // Close sales order: full delivery vs partially accepted
                 if (!empty($current['order_id'])) {
+                    $orderStatus = $isPartial ? 'partially_accepted' : 'delivered';
                     $updateOrder = $db->prepare("
-                        UPDATE sales_orders SET status = 'delivered', updated_at = NOW()
-                        WHERE id = ? AND status = 'dispatched'
+                        UPDATE sales_orders SET
+                            status = ?,
+                            total_amount = CASE WHEN ? > 0 THEN ? ELSE total_amount END,
+                            balance_due = GREATEST(0, (CASE WHEN ? > 0 THEN ? ELSE total_amount END) - COALESCE(amount_paid, 0)),
+                            payment_status = CASE
+                                WHEN COALESCE(amount_paid, 0) <= 0 THEN 'unpaid'
+                                WHEN COALESCE(amount_paid, 0) + 0.009 >= (CASE WHEN ? > 0 THEN ? ELSE total_amount END) THEN 'paid'
+                                ELSE 'partial'
+                            END,
+                            updated_at = NOW()
+                        WHERE id = ?
+                          AND status IN ('dispatched', 'ready', 'picking', 'preparing', 'approved')
                     ");
-                    $updateOrder->execute([$current['order_id']]);
+                    $updateOrder->execute([
+                        $orderStatus,
+                        $amountAccepted, $amountAccepted,
+                        $amountAccepted, $amountAccepted,
+                        $amountAccepted, $amountAccepted,
+                        $current['order_id']
+                    ]);
                 }
-                
+
                 $db->commit();
-                Response::success(null, 'Delivery confirmed');
+                Response::success([
+                    'id' => (int)$id,
+                    'status' => 'delivered',
+                    'qty_accepted' => $qtyAccepted,
+                    'qty_shipped' => $qtyShipped,
+                    'amount_accepted' => $amountAccepted,
+                    'order_status' => $isPartial ? 'partially_accepted' : 'delivered',
+                    'is_partial' => $isPartial
+                ], $isPartial
+                    ? 'Delivery confirmed as partially accepted (returns applied to billing).'
+                    : 'Delivery confirmed — full acceptance.');
             } catch (Exception $e) {
                 $db->rollBack();
                 throw $e;

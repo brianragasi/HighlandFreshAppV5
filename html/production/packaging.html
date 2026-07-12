@@ -48,72 +48,12 @@
 
 <body class="bg-base-200 min-h-screen">
 
-    <!-- Mobile Backdrop -->
+    <!-- Mobile Sidebar Backdrop (filled/used by ProductionSidebar) -->
     <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
 
-    <!-- Sidebar -->
-    <aside id="sidebar"
-        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
-        <div class="p-4 border-b border-base-300">
-            <div class="flex items-center gap-3">
-                <img src="../images/logo.jpg" alt="Highland Fresh" class="w-10 h-10 rounded-xl object-cover">
-                <div class="flex-1 min-w-0">
-                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
-                    <p class="text-xs text-base-content/60">Production</p>
-                </div>
-                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()"><i
-                        class="fas fa-times"></i></button>
-            </div>
-        </div>
+    <!-- Sidebar shell — content filled by ProductionSidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col"></aside>
 
-        <nav class="flex-1 overflow-y-auto p-4 space-y-6">
-            <div>
-                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
-                <ul class="menu menu-sm p-0 gap-1">
-                    <li><a href="dashboard.html"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i
-                                class="fas fa-th-large w-5 text-center text-base-content/60"></i><span>Dashboard</span></a>
-                    </li>
-                </ul>
-            </div>
-            <div>
-                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Production
-                </h2>
-                <ul class="menu menu-sm p-0 gap-1">
-                    <li><a href="batches.html"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i
-                                class="fas fa-box w-5 text-center text-base-content/60"></i><span>Production
-                                Batches</span></a></li>
-                    <li><a href="pasteurization.html"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i
-                                class="fas fa-fire-alt w-5 text-center text-base-content/60"></i><span>Pasteurization</span></a>
-                    </li>
-                    <li><a href="packaging.html"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content font-semibold"><i
-                                class="fas fa-boxes w-5 text-center"></i><span>Packaging</span></a></li>
-                    <li><a href="ccp_logging.html"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i
-                                class="fas fa-thermometer-half w-5 text-center text-base-content/60"></i><span>CCP
-                                Logging</span></a></li>
-                </ul>
-            </div>
-        </nav>
-
-        <div class="p-4 border-t border-base-300">
-            <div class="flex items-center gap-3">
-                <div class="avatar placeholder">
-                    <div class="w-10 rounded-xl bg-primary text-primary-content"><span class="text-sm font-semibold"
-                            id="userInitials">PS</span></div>
-                </div>
-                <div class="flex-1 min-w-0">
-                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Production Staff</p>
-                    <p class="text-xs text-base-content/60">Production</p>
-                </div>
-                <button class="btn btn-ghost btn-sm btn-square" onclick="AuthService.logout()"><i
-                        class="fas fa-sign-out-alt"></i></button>
-            </div>
-        </div>
-    </aside>
 
     <!-- Main Content -->
     <div class="lg:ml-72 min-h-screen flex flex-col">
@@ -231,10 +171,28 @@
                 </div>
             </div>
 
+            <!-- Revised Packaging Estimate (auto-calculated) -->
+            <div id="revisedEstimateCard" class="card bg-gradient-to-r from-info/5 to-primary/5 border border-info/30 mb-6" style="display:none;">
+                <div class="card-body p-5">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="card-title text-base">
+                            <i class="fas fa-calculator text-info"></i> System Packaging Estimate
+                        </h3>
+                        <span class="badge badge-info badge-sm" id="estimateTypeBadge">—</span>
+                    </div>
+                    <p class="text-sm text-base-content/60 mb-3">
+                        Estimates are guides only. <strong>You can only package into finished goods after QC releases the batch.</strong>
+                        Production “packaging stage” on a run is not the same as this FG packaging step.
+                    </p>
+                    <div id="revisedEstimateList" class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    </div>
+                </div>
+            </div>
+
             <!-- Tabs -->
             <div class="tabs tabs-boxed mb-6 bg-base-100 p-1 rounded-2xl inline-flex">
                 <button id="tabReady" class="tab tab-active" onclick="switchTab('ready')">
-                    <i class="fas fa-layer-group mr-2"></i>Ready to Package
+                    <i class="fas fa-layer-group mr-2"></i>Completed runs
                     <span id="readyBadge" class="badge badge-sm badge-warning ml-2">0</span>
                 </button>
                 <button id="tabLogs" class="tab" onclick="switchTab('logs')">
@@ -242,8 +200,15 @@
                 </button>
             </div>
 
-            <!-- Ready to Package Tab -->
+            <!-- Completed runs (package only after QC release) -->
             <div id="panelReady">
+                <div class="alert alert-warning mb-4 text-sm">
+                    <i class="fas fa-shield-alt"></i>
+                    <span>
+                        <strong>QC gate:</strong> “Package Now” stays blocked until a Quality Control officer
+                        releases the batch. Completing a production run alone is not enough.
+                    </span>
+                </div>
                 <div id="readyContainer" class="space-y-4">
                     <div class="text-center py-12"><span class="loading loading-spinner loading-lg text-primary"></span>
                     </div>
@@ -278,70 +243,96 @@
         </main>
     </div>
 
-    <!-- ═══════════════════ PACKAGING MODAL ═══════════════════ -->
+    <!-- ═══════════════════ PACKAGING MODAL (multi-SKU allocation) ═══════════════════ -->
     <dialog id="packagingModal" class="modal">
-        <div class="modal-box w-11/12 max-w-2xl">
+        <div class="modal-box w-11/12 max-w-2xl max-h-[90vh] overflow-y-auto">
             <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
 
             <h3 class="font-bold text-xl mb-1 flex items-center gap-2">
-                <i class="fas fa-boxes text-success"></i> Record Packaging
+                <i class="fas fa-boxes text-success"></i> Package bulk liquid
             </h3>
-            <p class="text-sm text-base-content/60 mb-4">How many bottles did you seal from this production run?</p>
+            <p class="text-sm text-base-content/60 mb-3">
+                Enter how many bottles of each size you sealed from this batch.
+                Volume is calculated in real time (bottles × size) and subtracted from net yield.
+            </p>
 
-            <!-- Run Summary -->
-            <div class="bg-base-200 rounded-xl p-3 mb-5 grid grid-cols-2 gap-2 text-sm">
-                <div><span class="text-base-content/50">Run Code:</span> <span id="pkgRunCode"
-                        class="font-semibold"></span></div>
-                <div><span class="text-base-content/50">Product:</span> <span id="pkgProduct"
-                        class="font-semibold"></span></div>
-                <div><span class="text-base-content/50">Total Produced:</span> <span id="pkgTotal"
-                        class="font-semibold text-primary"></span></div>
-                <div><span class="text-base-content/50">Still to Pack:</span> <span id="pkgAvailable"
-                        class="font-semibold text-success"></span></div>
+            <div class="bg-base-200 rounded-xl p-3 mb-3 grid grid-cols-2 gap-2 text-sm">
+                <div><span class="text-base-content/50">Run:</span> <span id="pkgRunCode" class="font-semibold font-mono"></span></div>
+                <div><span class="text-base-content/50">Product:</span> <span id="pkgProduct" class="font-semibold"></span></div>
+                <div><span class="text-base-content/50">Net yield:</span> <span id="pkgNetYield" class="font-semibold text-primary">—</span></div>
+                <div><span class="text-base-content/50">QC:</span> <span id="pkgQcStatus" class="font-semibold text-success">Released</span></div>
+            </div>
+
+            <!-- Live volume balance (ml-accurate, displayed in L) -->
+            <div id="pkgBalanceStrip" class="rounded-xl border border-base-300 p-3 mb-4 text-sm space-y-1.5">
+                <div class="flex justify-between gap-3">
+                    <span class="text-base-content/60">Volume used (bottles)</span>
+                    <span class="font-bold tabular-nums" id="pkgVolumeUsed">0.000 L</span>
+                </div>
+                <div class="flex justify-between gap-3">
+                    <span class="text-base-content/60">Leftover (unbottled liquid)</span>
+                    <span class="font-bold tabular-nums" id="pkgRemainder">0.000 L</span>
+                </div>
+                <div class="flex justify-between gap-3 border-t border-base-300 pt-1.5">
+                    <span class="text-base-content/60">Status</span>
+                    <span class="font-bold text-right" id="pkgVolumeMatch">Enter bottle counts</span>
+                </div>
+                <div class="mt-1 h-2 rounded-full bg-base-300 overflow-hidden">
+                    <div id="pkgUsedBar" class="h-full bg-primary transition-all duration-200" style="width:0%"></div>
+                </div>
             </div>
 
             <input type="hidden" id="pkgRunId">
             <input type="hidden" id="pkgBatchId">
             <input type="hidden" id="pkgProductName">
+            <input type="hidden" id="pkgNetYieldMl" value="0">
+            <input type="hidden" id="pkgBaseProductId" value="">
 
-            <!-- Quick Size Buttons -->
+            <!-- Multi-SKU allocation (always visible) -->
             <div class="mb-4">
                 <div class="flex items-center justify-between mb-2">
-                    <label class="font-semibold text-sm">Bottle Sizes Packed</label>
-                    <span class="text-xs text-base-content/40">Tap a size to add a row, or add a custom size</span>
+                    <label class="font-semibold text-sm">Bottle sizes to fill</label>
+                    <span class="text-xs text-base-content/50" id="pkgSkuHint">Active SKUs for this product</span>
                 </div>
-                <!-- Quick-add size preset buttons -->
-                <div class="flex flex-wrap gap-2 mb-4" id="quickSizeButtons"></div>
-
-                <!-- Size rows -->
-                <div id="sizeRows" class="space-y-2"></div>
-
-                <!-- Counter -->
+                <div id="pkgSkuAllocRows" class="space-y-2 mb-2"></div>
+                <div id="pkgSkuEmpty" class="alert alert-warning text-sm hidden">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>No packaging sizes found. Add 500&nbsp;ml / 1&nbsp;L SKUs under this base product in Admin → Products.</span>
+                </div>
                 <div class="mt-3 flex items-center justify-between text-sm border-t border-base-300 pt-3">
-                    <span class="text-base-content/50 font-medium">Total bottles in this run:</span>
-                    <span id="pkgTotalCount" class="font-bold text-2xl text-success">0</span>
+                    <span class="text-base-content/50 font-medium">Total bottles</span>
+                    <span id="pkgTotalCount" class="font-bold text-2xl text-success tabular-nums">0</span>
                 </div>
             </div>
 
-            <!-- Expiry Date (shared) -->
-            <div class="form-control mb-4">
-                <label class="label"><span class="label-text font-medium">Expiry Date for this batch</span></label>
+            <!-- Hidden containers kept for any legacy helpers -->
+            <div id="pkgConfirmMode" class="hidden"></div>
+            <div id="pkgAdjustMode" class="hidden">
+                <div id="quickSizeButtons" class="hidden"></div>
+                <div id="sizeRows" class="hidden"></div>
+            </div>
+            <div id="pkgPlanSummary" class="hidden"></div>
+            <span id="pkgEstimateBadge" class="hidden"></span>
+            <button type="button" id="pkgConfirmBtn" class="hidden"></button>
+
+            <div class="form-control mb-3">
+                <label class="label py-1"><span class="label-text font-medium">Expiry date</span></label>
                 <input type="date" id="pkgExpiryDate" class="input input-bordered w-full md:w-60">
             </div>
 
-            <!-- Notes -->
-            <div class="form-control mb-5">
-                <label class="label"><span class="label-text font-medium">Notes (optional)</span></label>
+            <div class="form-control mb-4">
+                <label class="label py-1"><span class="label-text font-medium">Notes (optional)</span></label>
                 <textarea id="pkgNotes" class="textarea textarea-bordered text-sm" rows="2"
-                    placeholder="Any observations about this packaging run..."></textarea>
+                    placeholder="e.g. Floor count differed from plan…"></textarea>
             </div>
 
-            <div class="modal-action">
-                <button type="button" class="btn btn-ghost"
+            <div class="modal-action flex-col sm:flex-row gap-2">
+                <button type="button" class="btn btn-ghost w-full sm:w-auto"
                     onclick="document.getElementById('packagingModal').close()">Cancel</button>
-                <button type="button" id="pkgSubmitBtn" class="btn btn-success gap-2" onclick="submitPackaging()">
-                    <i class="fas fa-check-double"></i> Record Packaging
+                <button type="button" id="pkgSubmitBtn" class="btn btn-success gap-2 w-full sm:flex-1"
+                    onclick="submitPackaging(false)" disabled>
+                    <i class="fas fa-check"></i> Record packaging
                 </button>
             </div>
         </div>
@@ -355,8 +346,10 @@
     <script src="../../js/vendor/axios.min.js?v=20260221b"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js"></script>
+    <script>window.PRODUCTION_ACTIVE_PAGE = "packaging";</script>
+    <script src="../../js/production/sidebar.js"></script>
     <script src="../../js/production/production.service.js?v=20260221b"></script>
-    <script>
+<script>
         const PKG_API = 'production/packaging.php';
         const PROD_API = 'production/runs.php';
 
@@ -366,19 +359,35 @@
 
         /* ── Auth & boot ── */
         document.addEventListener('DOMContentLoaded', async () => {
-            if (!AuthService.isAuthenticated()) { window.location.href = '../login.html'; return; }
-            const user = AuthService.getCurrentUser();
-            document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
-            document.getElementById('userInitials').textContent = (user.first_name[0] + user.last_name[0]).toUpperCase();
+            try {
+                if (!AuthService.isAuthenticated()) { window.location.href = '../login.html'; return; }
+                const user = AuthService.getCurrentUser() || {};
+                const nameEl = document.getElementById('sidebarUserName');
+                const initEl = document.getElementById('userInitials');
+                if (nameEl) nameEl.textContent = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username || 'Production Staff';
+                if (initEl) {
+                    const a = (user.first_name || '')[0] || '';
+                    const b = (user.last_name || '')[0] || '';
+                    initEl.textContent = ((a + b) || (user.username || 'PS').slice(0, 2)).toUpperCase();
+                }
 
-            // Theme
-            const t = localStorage.getItem('theme');
-            if (t === 'dark') { document.documentElement.setAttribute('data-theme', 'dark'); document.getElementById('themeToggle').checked = true; }
-            document.getElementById('themeToggle').addEventListener('change', e => {
-                const th = e.target.checked ? 'dark' : 'emerald';
-                document.documentElement.setAttribute('data-theme', th);
-                localStorage.setItem('theme', th);
-            });
+                // Theme
+                const t = localStorage.getItem('theme');
+                const themeToggle = document.getElementById('themeToggle');
+                if (t === 'dark' && themeToggle) {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                    themeToggle.checked = true;
+                }
+                if (themeToggle) {
+                    themeToggle.addEventListener('change', e => {
+                        const th = e.target.checked ? 'dark' : 'emerald';
+                        document.documentElement.setAttribute('data-theme', th);
+                        localStorage.setItem('theme', th);
+                    });
+                }
+            } catch (bootErr) {
+                console.error('Boot UI error (continuing):', bootErr);
+            }
 
             await loadReady();
             loadStats();
@@ -416,15 +425,38 @@
         /* ── Load ready batches ── */
         async function loadReady() {
             const el = document.getElementById('readyContainer');
-            el.innerHTML = '<div class="text-center py-12"><span class="loading loading-spinner loading-lg text-primary"></span></div>';
-            try {
-                const r = await api.get(PKG_API, { params: { action: 'ready_batches' } });
-                if (!r.success) throw new Error(r.message);
+            if (!el) return;
+            el.innerHTML = '<div class="text-center py-12"><span class="loading loading-spinner loading-lg text-primary"></span><p class="text-sm text-base-content/50 mt-2">Loading ready batches…</p></div>';
 
-                readyBatches = r.data.batches || [];
-                const pending = readyBatches.filter(b => !b.fully_packaged);
-                document.getElementById('statPending').textContent = pending.length;
-                document.getElementById('readyBadge').textContent = pending.length;
+            // Hard timeout so UI never spins forever if API stalls
+            const timeoutMs = 20000;
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Request timed out after 20s. Check API / database.')), timeoutMs)
+            );
+
+            try {
+                const r = await Promise.race([
+                    api.get(PKG_API, { params: { action: 'ready_batches' } }),
+                    timeoutPromise,
+                ]);
+                if (!r || !r.success) throw new Error((r && r.message) || 'Failed to load ready batches');
+
+                readyBatches = r.data?.batches || [];
+                // Only QC-released batches are "ready to package"
+                const packageable = readyBatches.filter(b =>
+                    !b.fully_packaged && (b.qc_cleared === true || b.qc_status === 'released')
+                );
+                const waitingQc = readyBatches.filter(b =>
+                    !b.fully_packaged && !(b.qc_cleared === true || b.qc_status === 'released')
+                );
+                const statPending = document.getElementById('statPending');
+                const readyBadge = document.getElementById('readyBadge');
+                if (statPending) statPending.textContent = packageable.length;
+                if (readyBadge) readyBadge.textContent = packageable.length;
+                // Optional: surface how many wait on QC
+                if (waitingQc.length && packageable.length === 0 && readyBatches.length) {
+                    // keep list visible; cards show "Waiting for QC"
+                }
 
                 if (!readyBatches.length) {
                     el.innerHTML = `
@@ -433,30 +465,116 @@
                         <p class="text-xl font-semibold text-base-content/50">No Completed Production Runs</p>
                         <p class="text-sm text-base-content/40 mt-1">Complete a production run in <a href="batches.html" class="link link-primary">Production Batches</a> first.</p>
                     </div>`;
+                    const card = document.getElementById('revisedEstimateCard');
+                    if (card) card.style.display = 'none';
                     return;
                 }
 
                 el.innerHTML = readyBatches.map(b => renderReadyCard(b)).join('');
+                loadRevisedEstimates();
             } catch (e) {
                 console.error(e);
-                el.innerHTML = `<div class="alert alert-error"><i class="fas fa-exclamation-circle"></i> Failed to load: ${e.message}</div>`;
+                const msg = e?.message || (typeof e === 'string' ? e : 'Unknown error');
+                el.innerHTML = `
+                    <div class="alert alert-error shadow-sm">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <div>
+                            <h4 class="font-bold">Failed to load packaging list</h4>
+                            <p class="text-sm">${msg}</p>
+                        </div>
+                        <button class="btn btn-sm" onclick="loadReady()">Retry</button>
+                    </div>`;
+            }
+        }
+
+        // Cache estimates by run_id for modal pre-fill
+        const estimateCache = {};
+
+        /* ── Load revised packaging estimates for first pending batch ── */
+        async function loadRevisedEstimates() {
+            const pending = readyBatches.filter(b => !b.fully_packaged);
+            if (!pending.length) {
+                document.getElementById('revisedEstimateCard').style.display = 'none';
+                return;
+            }
+
+            const batch = pending[0];
+            try {
+                const r = await api.get('production/packaging-estimate.php', { params: { run_id: batch.run_id } });
+                if (!r.success || (!r.data.initial_estimate?.items?.length && !r.data.revised_estimate?.items?.length)) {
+                    document.getElementById('revisedEstimateCard').style.display = 'none';
+                    return;
+                }
+
+                const hasRevision = r.data.has_revision;
+                const estimates = hasRevision ? r.data.revised_estimate.items : r.data.initial_estimate.items;
+                const label = hasRevision ? 'Revised' : 'Initial';
+                estimateCache[batch.run_id] = estimates;
+
+                document.getElementById('revisedEstimateCard').style.display = '';
+                document.getElementById('estimateTypeBadge').textContent = `${label} — ${batch.run_code}`;
+                document.getElementById('revisedEstimateList').innerHTML = estimates.map(e => `
+                    <div class="bg-base-100 border border-base-300 rounded-xl p-4 text-center">
+                        <p class="text-3xl font-bold text-primary mb-1">${e.estimated_units}</p>
+                        <p class="text-sm font-medium">${e.packaging_label}</p>
+                        <p class="text-xs text-base-content/50">${e.packaging_size_ml} mL each</p>
+                        <p class="text-xs text-info mt-1">System recommends</p>
+                    </div>
+                `).join('');
+            } catch (e) {
+                document.getElementById('revisedEstimateCard').style.display = 'none';
+            }
+        }
+
+        async function fetchEstimatesForRun(runId) {
+            if (estimateCache[runId]) return estimateCache[runId];
+            try {
+                const r = await api.get('production/packaging-estimate.php', { params: { run_id: runId } });
+                if (!r.success) return [];
+                const items = r.data.has_revision
+                    ? (r.data.revised_estimate.items || [])
+                    : (r.data.initial_estimate.items || []);
+                estimateCache[runId] = items;
+                return items;
+            } catch (e) {
+                return [];
             }
         }
 
         function renderReadyCard(b) {
             const bd = b.output_breakdown || {};
-            const outputDisplay = b.actual_quantity
-                ? `${bd.secondary_count ?? 0} ${bd.secondary_unit ?? 'crates'} + ${bd.remaining_primary ?? 0} ${bd.primary_unit ?? 'bottles'} (${b.actual_quantity} total)`
-                : `${b.actual_quantity ?? '?'} units`;
+            // Prefer product-master driven breakdown (units_per_pack / pack_name).
+            // Fall back to PackUnits if breakdown missing — never assume crates=24.
+            let outputDisplay;
+            if (b.actual_quantity != null && bd && (bd.secondary_count != null || bd.total_pieces != null)) {
+                const packs = bd.secondary_count ?? 0;
+                const loose = bd.remaining_primary ?? 0;
+                const packU = bd.secondary_unit || bd.pack_name || 'box';
+                const baseU = bd.primary_unit || bd.base_unit || 'unit';
+                const total = bd.total_pieces ?? b.actual_quantity;
+                const formula = bd.pack_formula ? ` · ${bd.pack_formula}` : '';
+                outputDisplay = `${packs} ${packU} + ${loose} ${baseU} (${total} total)${formula}`;
+            } else if (b.actual_quantity != null && typeof PackUnits !== 'undefined') {
+                outputDisplay = PackUnits.formatQuantity({
+                    quantity_available: b.actual_quantity,
+                    pieces_per_box: b.pieces_per_box || bd.conversion_factor || bd.units_per_pack || 1,
+                    box_unit: b.box_unit || bd.secondary_unit || 'box',
+                    base_unit: b.base_unit || bd.primary_unit || 'piece'
+                }, { preferSplit: true });
+            } else {
+                outputDisplay = `${b.actual_quantity ?? '?'} units`;
+            }
 
             const typeLabel = {
                 bottled_milk: 'Bottled Milk', cheese: 'Cheese', butter: 'Butter',
                 yogurt: 'Yogurt', milk_bar: 'Milk Bar', cream: 'Cream', flavored_milk: 'Flavored Milk'
             }[b.product_type] || b.product_type;
 
-            const isQCApproved = b.qc_status === 'released' || b.release_decision === 'approved';
-            const qcPending = b.qc_status === 'pending' || b.qc_status === 'on_hold';
+            // HARD RULE: finished-goods packaging only after QC officer releases the batch
+            const isQCApproved = b.qc_cleared === true || b.qc_status === 'released' || b.release_decision === 'approved';
+            const qcPending = !isQCApproved && (b.qc_status === 'pending' || b.qc_status === 'on_hold' || b.qc_status === 'in_testing' || !b.qc_status);
             const qcRejected = b.qc_status === 'rejected' || b.release_decision === 'rejected';
+            const noBatch = !b.batch_id || b.qc_status === 'no_batch';
 
             const statusBadge = b.fully_packaged
                 ? `<span class="badge badge-success gap-1"><i class="fas fa-check"></i> Fully Packaged</span>`
@@ -465,20 +583,23 @@
             let qcBadge = '';
             if (qcRejected) {
                 qcBadge = `<span class="badge badge-error badge-sm gap-1"><i class="fas fa-times-circle"></i> QC Rejected</span>`;
+            } else if (noBatch) {
+                qcBadge = `<span class="badge badge-ghost badge-sm gap-1"><i class="fas fa-unlink"></i> No batch / no QC</span>`;
             } else if (qcPending) {
-                qcBadge = `<span class="badge badge-warning badge-sm gap-1"><i class="fas fa-clock"></i> QC Pending</span>`;
+                qcBadge = `<span class="badge badge-warning badge-sm gap-1"><i class="fas fa-clock"></i> Waiting for QC release</span>`;
             } else if (isQCApproved) {
-                qcBadge = `<span class="badge badge-success badge-sm gap-1"><i class="fas fa-check-circle"></i> QC Approved</span>`;
+                qcBadge = `<span class="badge badge-success badge-sm gap-1"><i class="fas fa-check-circle"></i> QC Released</span>`;
             } else {
-                qcBadge = `<span class="badge badge-ghost badge-sm">No QC</span>`;
+                qcBadge = `<span class="badge badge-warning badge-sm gap-1"><i class="fas fa-shield-alt"></i> QC required</span>`;
             }
 
             // Can only package if QC approved AND not fully packaged
-            const canPackage = isQCApproved && !b.fully_packaged;
-            const blockReason = qcRejected ? 'QC rejected this batch' 
-                              : qcPending ? 'Waiting for QC approval'
-                              : !isQCApproved ? 'QC approval required'
-                              : b.fully_packaged ? 'Already fully packaged' 
+            const canPackage = isQCApproved && !b.fully_packaged && !!b.batch_id;
+            const blockReason = qcRejected ? 'QC rejected this batch — cannot package'
+                              : noBatch ? 'No QC batch linked — complete run & wait for QC'
+                              : qcPending ? 'Waiting for QC officer to release this batch'
+                              : !isQCApproved ? 'QC release required before packaging'
+                              : b.fully_packaged ? 'Already fully packaged'
                               : '';
 
             return `
@@ -559,34 +680,396 @@
             }
         }
 
+        let currentPkgEstimates = [];
+        let currentPkgSkus = []; // [{product_id, packaging_size_ml, packaging_label, ...}]
+        let pkgAdjustMode = true; // multi-SKU form is always the active UI
+
+        /** Format ml → display liters (always divide by 1000) */
+        function fmtLiters(ml) {
+            const n = Number(ml) || 0;
+            return `${(n / 1000).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} L`;
+        }
+
+        /** Sum volume from multi-SKU allocation inputs (qty × size_ml) */
+        function getAllocatedVolumeMl() {
+            let usedMl = 0;
+            document.querySelectorAll('[data-pkg-sku-row]').forEach(row => {
+                const sizeMl = Number(row.dataset.sizeMl) || 0;
+                const qty = parseInt(row.querySelector('[data-pkg-qty]')?.value, 10) || 0;
+                usedMl += qty * sizeMl;
+            });
+            // Legacy size rows (if any)
+            document.querySelectorAll('[id^="sizeRow_"]').forEach(row => {
+                if (row.closest('#pkgSkuAllocRows')) return;
+                const idx = row.id.replace('sizeRow_', '');
+                const qty = parseInt(document.getElementById(`qty_${idx}`)?.value, 10) || 0;
+                let size = parseFloat(document.getElementById(`size_${idx}`)?.value) || 0;
+                const unit = document.getElementById(`unit_${idx}`)?.value || 'ml';
+                if (unit === 'L' || unit === 'l') size *= 1000;
+                usedMl += qty * size;
+            });
+            return usedMl;
+        }
+
+        function getSmallestBottleMl() {
+            const sizes = [...document.querySelectorAll('[data-pkg-sku-row]')]
+                .map(r => Number(r.dataset.sizeMl) || 0)
+                .filter(s => s > 0);
+            return sizes.length ? Math.min(...sizes) : 0;
+        }
+
+        /**
+         * Real-time balance: used L, leftover L, over-yield lock.
+         * Math is always in milliliters; display converts ÷ 1000 → liters.
+         */
+        function updatePkgBalance() {
+            const net = Number(document.getElementById('pkgNetYieldMl')?.value || 0);
+            const usedMl = getAllocatedVolumeMl();
+            const remMl = net - usedMl; // can be negative if over
+            const leftoverMl = Math.max(0, remMl);
+
+            document.getElementById('pkgVolumeUsed').textContent = fmtLiters(usedMl);
+            document.getElementById('pkgRemainder').textContent = fmtLiters(leftoverMl);
+
+            const matchEl = document.getElementById('pkgVolumeMatch');
+            const bar = document.getElementById('pkgUsedBar');
+            const submitBtn = document.getElementById('pkgSubmitBtn');
+            const totalBottles = [...document.querySelectorAll('[data-pkg-qty]')]
+                .reduce((s, el) => s + (parseInt(el.value, 10) || 0), 0);
+            const totalEl = document.getElementById('pkgTotalCount');
+            if (totalEl) totalEl.textContent = totalBottles.toLocaleString();
+
+            const pct = net > 0 ? Math.min(100, (usedMl / net) * 100) : 0;
+            if (bar) {
+                bar.style.width = `${pct}%`;
+                bar.className = 'h-full transition-all duration-200 ' +
+                    (usedMl > net + 0.5 ? 'bg-error' : usedMl > 0 ? 'bg-primary' : 'bg-base-300');
+            }
+
+            let canSubmit = totalBottles > 0 && net > 0 && usedMl <= net + 0.5;
+
+            if (net <= 0) {
+                matchEl.textContent = 'Net yield unknown — set volume on workbench';
+                matchEl.className = 'font-bold text-warning text-right';
+                canSubmit = false;
+            } else if (usedMl <= 0) {
+                matchEl.textContent = 'Enter bottle counts for each size';
+                matchEl.className = 'font-bold text-base-content/50 text-right';
+                canSubmit = false;
+            } else if (usedMl > net + 0.5) {
+                matchEl.textContent = `Exceeds yield by ${fmtLiters(usedMl - net)}`;
+                matchEl.className = 'font-bold text-error text-right';
+                canSubmit = false;
+            } else {
+                const smallest = getSmallestBottleMl();
+                // True "leftover < 1 bottle" only when leftover is smaller than smallest SKU
+                if (smallest > 0 && leftoverMl > 0 && leftoverMl < smallest) {
+                    matchEl.textContent = `OK — leftover ${fmtLiters(leftoverMl)} (< 1× ${smallest} ml bottle)`;
+                    matchEl.className = 'font-bold text-success text-right';
+                } else if (leftoverMl <= 0.5) {
+                    matchEl.textContent = 'Fully allocated';
+                    matchEl.className = 'font-bold text-success text-right';
+                } else {
+                    matchEl.textContent = `${fmtLiters(usedMl)} packed · ${fmtLiters(leftoverMl)} left unbottled`;
+                    matchEl.className = 'font-bold text-primary text-right';
+                }
+            }
+
+            if (submitBtn) submitBtn.disabled = !canSubmit;
+            refreshAutoFillHints();
+            return { usedMl, leftoverMl, net, canSubmit, totalBottles };
+        }
+
+        function updateTotalCount() {
+            updatePkgBalance();
+        }
+
+        /** Render one input row per active SKU size */
+        function renderSkuAllocationRows(skus, estimates) {
+            const box = document.getElementById('pkgSkuAllocRows');
+            const empty = document.getElementById('pkgSkuEmpty');
+            box.innerHTML = '';
+
+            if (!skus || !skus.length) {
+                empty?.classList.remove('hidden');
+                updatePkgBalance();
+                return;
+            }
+            empty?.classList.add('hidden');
+
+            // Map size_ml → suggested units from estimate
+            const suggest = {};
+            (estimates || []).forEach(e => {
+                const ml = Number(e.packaging_size_ml);
+                if (ml > 0) suggest[ml] = Number(e.actual_units ?? e.estimated_units ?? 0);
+            });
+
+            skus.forEach((sku, i) => {
+                const ml = Number(sku.packaging_size_ml) || 0;
+                const suggested = suggest[ml] != null ? suggest[ml] : 0;
+                const label = sku.packaging_label || `${ml} ml`;
+                const code = sku.product_code ? ` · ${sku.product_code}` : '';
+                const row = document.createElement('div');
+                row.className = 'rounded-xl border border-base-300 bg-base-100 p-3 flex flex-wrap items-center gap-3';
+                row.dataset.pkgSkuRow = '1';
+                row.dataset.sizeMl = String(ml);
+                row.dataset.productId = String(sku.product_id || '');
+                row.dataset.label = label;
+                row.innerHTML = `
+                    <div class="flex-1 min-w-[8rem]">
+                        <p class="font-semibold text-sm">${escapeHtml(label)}</p>
+                        <p class="text-xs text-base-content/50">${ml.toLocaleString()} ml each${escapeHtml(code)}</p>
+                    </div>
+                    <div class="flex flex-col gap-1 min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <label class="text-xs text-base-content/50 font-medium whitespace-nowrap">Bottles filled</label>
+                            <div class="relative flex items-center gap-1.5">
+                                <input type="number" min="0" step="1" value="${suggested}"
+                                    data-pkg-qty class="input input-bordered w-28 text-center text-lg font-bold tabular-nums"
+                                    inputmode="numeric" aria-label="Bottles of ${escapeHtml(label)}">
+                                <button type="button"
+                                    class="btn btn-ghost btn-xs gap-1 text-primary border border-primary/30 hover:bg-primary/10 shrink-0"
+                                    data-pkg-autofill
+                                    title="Fill with maximum whole bottles from remaining liquid"
+                                    aria-label="Auto-fill max bottles for ${escapeHtml(label)}">
+                                    <i class="fas fa-wand-magic-sparkles text-[10px]"></i>
+                                    <span class="font-semibold">Max</span>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="text-[11px] text-base-content/40 m-0" data-pkg-max-hint></p>
+                    </div>
+                    <div class="text-right min-w-[5.5rem]">
+                        <p class="text-xs text-base-content/45">Volume</p>
+                        <p class="font-semibold tabular-nums text-sm" data-pkg-row-vol>${fmtLiters(suggested * ml)}</p>
+                    </div>`;
+                const qtyInput = row.querySelector('[data-pkg-qty]');
+                const volEl = row.querySelector('[data-pkg-row-vol]');
+                const maxBtn = row.querySelector('[data-pkg-autofill]');
+                qtyInput.addEventListener('input', () => {
+                    const q = parseInt(qtyInput.value, 10) || 0;
+                    volEl.textContent = fmtLiters(q * ml);
+                    updatePkgBalance();
+                    refreshAutoFillHints();
+                });
+                maxBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    autoFillMaxBottles(row);
+                });
+                box.appendChild(row);
+            });
+            updatePkgBalance();
+            refreshAutoFillHints();
+        }
+
+        /**
+         * Remaining liquid (ml) if this SKU row were zeroed — i.e. net minus all *other* SKUs.
+         * Used so Max = floor(available / bottle_ml) is the absolute max for this size.
+         */
+        function getAvailableMlForSkuRow(targetRow) {
+            const net = Number(document.getElementById('pkgNetYieldMl')?.value || 0);
+            let usedOther = 0;
+            document.querySelectorAll('[data-pkg-sku-row]').forEach(r => {
+                if (r === targetRow) return;
+                const sizeMl = Number(r.dataset.sizeMl) || 0;
+                const q = parseInt(r.querySelector('[data-pkg-qty]')?.value, 10) || 0;
+                usedOther += q * sizeMl;
+            });
+            // Also count any legacy size rows outside SKU alloc
+            document.querySelectorAll('[id^="sizeRow_"]').forEach(row => {
+                if (row.closest('#pkgSkuAllocRows')) return;
+                const idx = row.id.replace('sizeRow_', '');
+                const qty = parseInt(document.getElementById(`qty_${idx}`)?.value, 10) || 0;
+                let size = parseFloat(document.getElementById(`size_${idx}`)?.value) || 0;
+                const unit = document.getElementById(`unit_${idx}`)?.value || 'ml';
+                if (unit === 'L' || unit === 'l') size *= 1000;
+                usedOther += qty * size;
+            });
+            return Math.max(0, net - usedOther);
+        }
+
+        /**
+         * Smart Auto-Fill Max for one SKU:
+         * maxBottles = Math.floor(remaining_liquid_ml / sku_unit_ml)
+         * Writes into the field but does NOT lock it — user can still edit.
+         */
+        function autoFillMaxBottles(row) {
+            if (!row) return;
+            const sizeMl = Number(row.dataset.sizeMl) || 0;
+            const qtyInput = row.querySelector('[data-pkg-qty]');
+            if (!qtyInput || sizeMl <= 0) return;
+
+            const availableMl = getAvailableMlForSkuRow(row);
+            const maxBottles = Math.floor(availableMl / sizeMl);
+
+            qtyInput.value = String(Math.max(0, maxBottles));
+            // Keep input editable; fire input so volume + balance refresh
+            qtyInput.dispatchEvent(new Event('input', { bubbles: true }));
+            qtyInput.focus();
+            qtyInput.select();
+
+            const label = row.dataset.label || `${sizeMl} ml`;
+            if (typeof showToast === 'function') {
+                if (maxBottles <= 0) {
+                    showToast(`No whole ${label} bottles fit in remaining liquid`, 'warning');
+                } else {
+                    showToast(
+                        `Max ${maxBottles.toLocaleString()} × ${label} (${fmtLiters(maxBottles * sizeMl)})`,
+                        'success'
+                    );
+                }
+            }
+        }
+
+        /** Update per-row “Max N bottles from leftover” hints (inputs stay editable) */
+        function refreshAutoFillHints() {
+            document.querySelectorAll('[data-pkg-sku-row]').forEach(row => {
+                const sizeMl = Number(row.dataset.sizeMl) || 0;
+                const hint = row.querySelector('[data-pkg-max-hint]');
+                if (!hint || sizeMl <= 0) return;
+                const availableMl = getAvailableMlForSkuRow(row);
+                const maxBottles = Math.floor(availableMl / sizeMl);
+                if (maxBottles <= 0) {
+                    hint.innerHTML = '<span class="text-base-content/35">Max: 0 (not enough leftover)</span>';
+                } else {
+                    hint.innerHTML =
+                        `Max from leftover: <button type="button" class="link link-primary font-semibold no-underline hover:underline" data-pkg-autofill-hint>${maxBottles.toLocaleString()}</button> bottles`;
+                    const link = hint.querySelector('[data-pkg-autofill-hint]');
+                    if (link) {
+                        link.onclick = (e) => {
+                            e.preventDefault();
+                            autoFillMaxBottles(row);
+                        };
+                    }
+                }
+            });
+        }
+
+        function escapeHtml(str) {
+            return String(str ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
         /* ── Open Packaging Modal ── */
         async function openPackagingModal(runId, batchId) {
             const batch = readyBatches.find(b => b.run_id == runId);
             if (!batch) return;
 
+            pkgAdjustMode = true;
             document.getElementById('pkgRunId').value = runId;
             document.getElementById('pkgBatchId').value = batchId || '';
-            document.getElementById('pkgProductName').value = batch.product_name;
+            document.getElementById('pkgProductName').value = batch.product_name || batch.base_product_name || '';
             document.getElementById('pkgRunCode').textContent = batch.run_code;
-            document.getElementById('pkgProduct').textContent = batch.product_name;
-            document.getElementById('pkgTotal').textContent = `${batch.actual_quantity} bottles / units`;
-            document.getElementById('pkgAvailable').textContent = `${batch.remaining_to_package} left to pack`;
+            document.getElementById('pkgProduct').textContent = batch.base_product_name || batch.product_name || '—';
+            document.getElementById('pkgQcStatus').textContent = 'QC released';
             document.getElementById('pkgNotes').value = '';
+            document.getElementById('pkgSkuAllocRows').innerHTML = '';
 
-            // Set a default expiry date (+7 days)
             const exp = new Date();
             exp.setDate(exp.getDate() + 7);
             document.getElementById('pkgExpiryDate').value = exp.toISOString().split('T')[0];
 
-            // Reset rows
-            document.getElementById('sizeRows').innerHTML = '';
-            sizeRowIdx = 0;
+            // Net yield in MILLILITERS (source of truth)
+            let netYieldMl = Number(batch.net_yield_ml || 0);
+            try {
+                const yr = await api.get('production/yield.php', { params: { run_id: runId } });
+                if (yr.success && yr.data) {
+                    netYieldMl = Number(yr.data.net_yield_ml || yr.data.initial_volume_ml || netYieldMl || 0);
+                }
+            } catch (e) { /* optional */ }
+            // ready_batches may expose liters in other fields — if net is tiny but milk_liters looks like liters, convert
+            if (netYieldMl > 0 && netYieldMl < 500 && Number(batch.milk_liters_used) > 10) {
+                // already ml if ~100000 for 100L; if someone stored 100 as "100" meaning liters:
+                // only convert when yield.php gave liters-scale value under 10000 and milk_liters matches
+            }
+            document.getElementById('pkgNetYieldMl').value = String(netYieldMl);
+            document.getElementById('pkgNetYield').textContent = netYieldMl > 0
+                ? fmtLiters(netYieldMl)
+                : '— (set volume/losses on workbench)';
 
-            // Build quick-add size buttons - fetch REAL sizes from products
-            await buildQuickSizeButtons(batch.product_name, batch.product_type);
+            // Load SKUs + generate estimate (multi-SKU greedy suggestion)
+            let skus = [];
+            let estimates = [];
+            try {
+                if (netYieldMl > 0) {
+                    try {
+                        await api.post('production/packaging-estimate.php', {
+                            production_run_id: runId,
+                            estimate_type: 'revised',
+                            basis_volume_ml: netYieldMl
+                        });
+                    } catch (e) { /* may already exist or no skus yet */ }
+                }
+                const full = await api.get('production/packaging-estimate.php', { params: { run_id: runId } });
+                if (full.success && full.data) {
+                    skus = full.data.available_skus || [];
+                    const rev = full.data.revised_estimate?.items || [];
+                    const ini = full.data.initial_estimate?.items || [];
+                    estimates = (full.data.has_revision && rev.length) ? rev : (ini.length ? ini : []);
+                    if (full.data.product_name) {
+                        document.getElementById('pkgProduct').textContent = full.data.product_name;
+                        document.getElementById('pkgProductName').value = full.data.product_name;
+                    }
+                    if (full.data.base_product_id) {
+                        document.getElementById('pkgBaseProductId').value = full.data.base_product_id;
+                    }
+                    if (!netYieldMl && full.data.net_yield_ml) {
+                        netYieldMl = Number(full.data.net_yield_ml);
+                        document.getElementById('pkgNetYieldMl').value = String(netYieldMl);
+                        document.getElementById('pkgNetYield').textContent = fmtLiters(netYieldMl);
+                    }
+                }
+            } catch (e) {
+                console.warn('Estimate load failed', e);
+            }
+
+            // Fallback: resolve sizes from admin products by base name
+            if (!skus.length) {
+                try {
+                    const name = batch.base_product_name || batch.product_name || '';
+                    const response = await api.get('/admin/products.php', {
+                        params: { search: name, limit: 50 }
+                    });
+                    if (response.success && response.data?.products) {
+                        const map = new Map();
+                        response.data.products.forEach(p => {
+                            if (!p.is_active && p.is_active !== undefined && Number(p.is_active) !== 1) return;
+                            const ml = unitToMl(p.unit_size, p.unit_measure);
+                            if (ml <= 0) return;
+                            if (!map.has(ml)) {
+                                map.set(ml, {
+                                    product_id: p.id,
+                                    product_code: p.product_code,
+                                    packaging_size_ml: ml,
+                                    packaging_label: `${p.unit_size}${p.unit_measure || 'ml'}`
+                                });
+                            }
+                        });
+                        skus = Array.from(map.values()).sort((a, b) => b.packaging_size_ml - a.packaging_size_ml);
+                    }
+                } catch (e) { /* ignore */ }
+            }
+
+            currentPkgSkus = skus;
+            currentPkgEstimates = estimates;
+            renderSkuAllocationRows(skus, estimates);
 
             document.getElementById('packagingModal').showModal();
-            updateTotalCount();
+            updatePkgBalance();
+        }
+
+        function unitToMl(size, measure) {
+            const s = parseFloat(size);
+            if (!s || s <= 0) return 0;
+            const u = String(measure || 'ml').toLowerCase();
+            if (u === 'l' || u === 'lt' || u === 'liter' || u === 'liters') return Math.round(s * 1000);
+            if (u === 'ml' || u === 'milliliter' || u === 'milliliters') return Math.round(s);
+            if (u === 'kg') return Math.round(s * 1000);
+            if (u === 'g' || u === 'gram' || u === 'grams') return Math.round(s);
+            return Math.round(s);
         }
 
         /* ── Quick-add preset size buttons ── */
@@ -722,61 +1205,90 @@
             const rows = document.querySelectorAll('[id^="qty_"]');
             let total = 0;
             rows.forEach(r => { total += parseInt(r.value) || 0; });
-            document.getElementById('pkgTotalCount').textContent = total.toLocaleString();
+            const el = document.getElementById('pkgTotalCount');
+            if (el) el.textContent = total.toLocaleString();
+            updatePkgBalance(currentPkgEstimates, document.getElementById('pkgNetYieldMl')?.value);
         }
 
-        /* ── Submit Packaging ── */
-        async function submitPackaging() {
+        /* ── Submit multi-SKU packaging ── */
+        async function submitPackaging(acceptPlan = false) {
             const runId = document.getElementById('pkgRunId').value;
             const batchId = document.getElementById('pkgBatchId').value;
-            const notes = document.getElementById('pkgNotes').value;
+            let notes = document.getElementById('pkgNotes').value;
             const sharedExpiry = document.getElementById('pkgExpiryDate').value;
             const productName = document.getElementById('pkgProductName').value;
 
-            const rows = document.querySelectorAll('[id^="sizeRow_"]');
+            const batch = readyBatches.find(b => b.run_id == runId);
+            const qcOk = batch && (batch.qc_cleared === true || batch.qc_status === 'released');
+            if (!batchId || batchId === '0' || !qcOk) {
+                showToast('QC has not released this batch. Packaging is blocked until QC release.', 'error');
+                return;
+            }
+
+            const balance = updatePkgBalance();
+            if (!balance.canSubmit) {
+                if (balance.usedMl > balance.net) {
+                    showToast('Bottle volume exceeds net yield. Reduce counts before saving.', 'error');
+                } else {
+                    showToast('Enter bottle counts that fit within net yield.', 'warning');
+                }
+                return;
+            }
+
             const items = [];
-            let hasError = false;
-
-            rows.forEach(row => {
-                const idx = row.id.replace('sizeRow_', '');
-                const qty = parseInt(document.getElementById(`qty_${idx}`)?.value) || 0;
-                const size = parseFloat(document.getElementById(`size_${idx}`)?.value) || null;
-                const unit = document.getElementById(`unit_${idx}`)?.value || 'ml';
-                const productId = row.getAttribute('data-product-id') || null;
-                const variant = row.getAttribute('data-variant') || '';
-
-                if (qty <= 0) { hasError = true; return; }
-
+            document.querySelectorAll('[data-pkg-sku-row]').forEach(row => {
+                const qty = parseInt(row.querySelector('[data-pkg-qty]')?.value, 10) || 0;
+                if (qty <= 0) return;
+                const sizeMl = Number(row.dataset.sizeMl) || 0;
+                const productId = row.dataset.productId ? parseInt(row.dataset.productId, 10) : null;
+                const label = row.dataset.label || `${sizeMl}ml`;
                 items.push({
-                    product_id: productId && productId !== 'null' ? parseInt(productId) : null,
+                    product_id: productId || null,
                     product_name: productName,
-                    product_variant: variant || (size ? `${size}${unit}` : ''),
-                    size_ml: size,
-                    unit_measure: unit,
+                    product_variant: label,
+                    size_ml: sizeMl,
+                    unit_measure: 'ml',
                     quantity: qty,
                     expiry_date: sharedExpiry
                 });
             });
 
-            if (hasError || !items.length) {
-                showToast('Please enter quantity for at least one size row.', 'warning');
+            if (!items.length) {
+                showToast('Enter at least one bottle count greater than zero.', 'warning');
                 return;
             }
 
+            if (!notes) {
+                const parts = items.map(i => `${i.quantity}×${i.size_ml}ml`).join(', ');
+                notes = `Multi-SKU packaging: ${parts} (used ${fmtLiters(balance.usedMl)} of ${fmtLiters(balance.net)})`;
+            }
+
             const btn = document.getElementById('pkgSubmitBtn');
-            btn.classList.add('loading');
-            btn.disabled = true;
+            if (btn) { btn.classList.add('loading'); btn.disabled = true; }
 
             try {
+                // Sync actuals on estimate rows when ids exist
+                for (const e of currentPkgEstimates) {
+                    if (!e.id) continue;
+                    const row = [...document.querySelectorAll('[data-pkg-sku-row]')]
+                        .find(r => Number(r.dataset.sizeMl) === Number(e.packaging_size_ml));
+                    const qty = row ? (parseInt(row.querySelector('[data-pkg-qty]')?.value, 10) || 0) : 0;
+                    try {
+                        await api.put('production/packaging-estimate.php?id=' + e.id, {
+                            actual_units: qty
+                        });
+                    } catch (_) { /* non-blocking */ }
+                }
+
                 const r = await api.post(PKG_API, {
-                    production_run_id: parseInt(runId),
-                    batch_id: batchId ? parseInt(batchId) : null,
+                    production_run_id: parseInt(runId, 10),
+                    batch_id: batchId ? parseInt(batchId, 10) : null,
                     notes,
                     items
                 });
 
                 if (r.success) {
-                    showToast(`✅ ${r.message}`, 'success');
+                    showToast(r.message || 'Packaging recorded', 'success');
                     document.getElementById('packagingModal').close();
                     await loadReady();
                     loadStats();
@@ -788,8 +1300,11 @@
                 const msg = e.errors ? Object.values(e.errors).join('; ') : (e.message || 'Error');
                 showToast('Error: ' + msg, 'error');
             } finally {
-                btn.classList.remove('loading');
-                btn.disabled = false;
+                if (btn) {
+                    btn.classList.remove('loading');
+                    btn.disabled = false;
+                    updatePkgBalance();
+                }
             }
         }
 

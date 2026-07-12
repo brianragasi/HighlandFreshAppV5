@@ -67,7 +67,7 @@
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Operations</h2>
                 <ul class="menu menu-sm p-0 gap-1">
                     <li><a href="receiving.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
-                        <i class="fas fa-truck-loading w-5 text-center text-base-content/60"></i><span>Receive from Production</span>
+                        <i class="fas fa-dolly w-5 text-center text-base-content/60"></i><span>Put Away from Packaging</span>
                     </a></li>
                     <li><a href="delivery_receipts.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                         <i class="fas fa-file-invoice w-5 text-center text-base-content/60"></i><span>Delivery Receipts</span>
@@ -313,8 +313,8 @@
                         <div><span class="text-base-content/60">Product:</span> <strong id="qtyProduct">-</strong></div>
                         <div><span class="text-base-content/60">Batch:</span> <strong id="qtyBatch">-</strong></div>
                         <div><span class="text-base-content/60">Available:</span> <strong id="qtyAvailable">-</strong></div>
-                        <div class="mt-2 p-2 bg-info/10 rounded text-info text-xs">
-                            <i class="fas fa-box"></i> 1 Box = <span id="qtyPiecesPerBox">1</span> Pieces
+                        <div class="mt-2 p-2 bg-info/10 rounded text-info text-xs" id="qtyPackConfigLine">
+                            <i class="fas fa-box"></i> <span id="qtyPiecesPerBoxLabel">Pack configuration</span>
                         </div>
                     </div>
                 </div>
@@ -323,18 +323,18 @@
                     <label class="label"><span class="label-text">Release Quantity</span></label>
                     <div class="flex gap-2 items-center">
                         <div class="form-control flex-1">
-                            <label class="label py-0"><span class="label-text text-xs">Boxes</span></label>
+                            <label class="label py-0"><span class="label-text text-xs" id="qtyBoxesLabel">Packs</span></label>
                             <input type="number" id="qtyBoxes" class="input input-bordered w-full" min="0" value="0" onchange="calculateTotalReleasePieces()" oninput="calculateTotalReleasePieces()">
                         </div>
                         <span class="self-end pb-3 text-lg font-bold">+</span>
                         <div class="form-control flex-1">
-                            <label class="label py-0"><span class="label-text text-xs">Pieces</span></label>
+                            <label class="label py-0"><span class="label-text text-xs" id="qtyPiecesLabel">Loose</span></label>
                             <input type="number" id="qtyPieces" class="input input-bordered w-full" min="0" value="0" onchange="calculateTotalReleasePieces()" oninput="calculateTotalReleasePieces()">
                         </div>
                     </div>
                     <div class="mt-3 p-3 bg-primary/10 rounded-lg">
                         <div class="flex justify-between items-center">
-                            <span class="text-sm">Total Pieces to Release:</span>
+                            <span class="text-sm">Total base units to release:</span>
                             <span class="text-xl font-bold text-primary" id="qtyTotalPieces">0</span>
                         </div>
                     </div>
@@ -383,6 +383,7 @@
     <script src="../../../js/vendor/html5-qrcode.min.js"></script>
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/utils/units.js?v=20260712"></script>
     <script src="../../../js/warehouse/fg.service.js"></script>
     
     <script>
@@ -397,6 +398,114 @@
                 .filter(i => i.product_id == productId)
                 .reduce((sum, i) => sum + (i.releaseTotal || 0), 0);
         }
+
+        /** Ordered/required qty for a DR line item (supports quantity or quantity_ordered). */
+        function getRequiredQtyForItem(item) {
+            return parseInt(item.quantity_ordered ?? item.quantity, 10) || 0;
+        }
+
+        /** Remaining units still allowed for a product (never negative). */
+        function getRemainingQtyForProduct(productId) {
+            if (!currentDR || !currentDR.items) return Infinity;
+            const line = currentDR.items.find(i => i.product_id == productId);
+            if (!line) return 0;
+            return Math.max(0, getRequiredQtyForItem(line) - getScannedQtyForProduct(productId));
+        }
+
+        /**
+         * Hard stop: block any add that would push scanned_qty above required_qty.
+         * @returns {{ ok: boolean, message?: string, remaining?: number, required?: number, already?: number }}
+         */
+        function validatePickAgainstOrder(productId, addQty) {
+            if (!currentDR || !currentDR.items || !currentDR.items.length) {
+                return { ok: true };
+            }
+            const line = currentDR.items.find(i => i.product_id == productId);
+            if (!line) {
+                return {
+                    ok: false,
+                    message: 'This product is NOT on this picking ticket / delivery receipt.'
+                };
+            }
+            const required = getRequiredQtyForItem(line);
+            const already = getScannedQtyForProduct(productId);
+            const remaining = Math.max(0, required - already);
+            const add = parseInt(addQty, 10) || 0;
+
+            if (add <= 0) {
+                return { ok: false, message: 'Quantity must be greater than zero.', remaining, required, already };
+            }
+            if (already + add > required) {
+                return {
+                    ok: false,
+                    message: 'Cannot exceed ordered quantity',
+                    remaining,
+                    required,
+                    already,
+                    attempted: already + add
+                };
+            }
+            return { ok: true, remaining: remaining - add, required, already };
+        }
+
+        /** Short error tone for blocked over-scan (no external asset). */
+        function playErrorSound() {
+            try {
+                const Ctx = window.AudioContext || window.webkitAudioContext;
+                if (!Ctx) return;
+                const ctx = new Ctx();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(180, ctx.currentTime);
+                osc.frequency.setValueAtTime(120, ctx.currentTime + 0.12);
+                gain.gain.setValueAtTime(0.12, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.35);
+                setTimeout(() => ctx.close().catch(() => {}), 400);
+            } catch (_) { /* ignore */ }
+        }
+
+        function blockOverScan(message) {
+            playErrorSound();
+            showToast(message || 'Cannot exceed ordered quantity', 'error');
+            const input = document.getElementById('barcodeInput');
+            if (input) {
+                input.value = '';
+                input.focus();
+            }
+        }
+
+        /** Build one required-item progress row: green only when exact match; red when over. */
+        function renderRequiredItemRow(item) {
+            const scannedQty = getScannedQtyForProduct(item.product_id);
+            const requiredQty = getRequiredQtyForItem(item);
+            let rowClass = 'text-base-content/80';
+            let icon = '';
+            let countClass = 'font-mono';
+
+            if (requiredQty > 0 && scannedQty === requiredQty) {
+                rowClass = 'text-success font-medium';
+                icon = '<i class="fas fa-check-circle mr-1"></i>';
+                countClass = 'font-mono font-semibold text-success';
+            } else if (scannedQty > requiredQty) {
+                rowClass = 'text-error font-semibold';
+                icon = '<i class="fas fa-times-circle mr-1"></i>';
+                countClass = 'font-mono font-bold text-error';
+            } else if (scannedQty > 0) {
+                rowClass = 'text-warning';
+                icon = '<i class="fas fa-hourglass-half mr-1 opacity-70"></i>';
+                countClass = 'font-mono text-warning';
+            }
+
+            return `<div class="flex justify-between items-center gap-2 ${rowClass}">
+                <span class="min-w-0 truncate">${icon}${item.product_name}</span>
+                <span class="${countClass} shrink-0">${scannedQty}/${requiredQty}</span>
+            </div>`;
+        }
         
         // Update DR summary to show scanned vs required progress
         function updateDRSummaryProgress() {
@@ -407,15 +516,7 @@
             
             listEl.innerHTML = `
                 <div class="font-semibold mb-2">Required Items:</div>
-                ${currentDR.items.map(i => {
-                    const scannedQty = getScannedQtyForProduct(i.product_id);
-                    const requiredQty = parseInt(i.quantity) || 0;
-                    const isComplete = scannedQty >= requiredQty;
-                    return `<div class="flex justify-between items-center ${isComplete ? 'text-success' : ''}">
-                        <span>${isComplete ? '<i class="fas fa-check-circle mr-1"></i>' : ''}${i.product_name}</span>
-                        <span class="font-mono">${scannedQty}/${requiredQty}</span>
-                    </div>`;
-                }).join('')}
+                ${currentDR.items.map(renderRequiredItemRow).join('')}
             `;
         }
         
@@ -437,10 +538,14 @@
         
         function showToast(message, type = 'info') {
             const toast = document.createElement('div');
-            toast.className = `alert alert-${type} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            toast.className = `alert alert-${type} shadow-lg max-w-md`;
+            if (type === 'error') {
+                toast.innerHTML = `<i class="fas fa-exclamation-triangle"></i><span class="font-semibold">${message}</span>`;
+            } else {
+                toast.innerHTML = `<span>${message}</span>`;
+            }
             document.getElementById('toastContainer').appendChild(toast);
-            setTimeout(() => toast.remove(), 3000);
+            setTimeout(() => toast.remove(), type === 'error' ? 5000 : 3000);
         }
         
         document.addEventListener('DOMContentLoaded', async () => {
@@ -544,16 +649,7 @@
                             <div class="divider my-2"></div>
                             <div class="text-sm" id="drRequiredItemsList">
                                 <div class="font-semibold mb-2">Required Items:</div>
-                                ${currentDR.items.map(i => {
-                                    const scannedQty = getScannedQtyForProduct(i.product_id);
-                                    const requiredQty = parseInt(i.quantity) || 0;
-                                    const remaining = requiredQty - scannedQty;
-                                    const isComplete = scannedQty >= requiredQty;
-                                    return `<div class="flex justify-between items-center ${isComplete ? 'text-success' : ''}">
-                                        <span>${isComplete ? '<i class="fas fa-check-circle mr-1"></i>' : ''}${i.product_name}</span>
-                                        <span class="font-mono">${scannedQty}/${requiredQty}</span>
-                                    </div>`;
-                                }).join('')}
+                                ${currentDR.items.map(renderRequiredItemRow).join('')}
                             </div>
                         ` : ''}
                     </div>
@@ -633,14 +729,10 @@
                     const fifoCheck = await WarehouseFGService.checkFIFOCompliance(currentScanResult.id, currentScanResult.product_id);
                     const isFIFOOk = fifoCheck.data?.is_compliant !== false;
                     
-                    // Multi-unit calculations - use boxes_available/pieces_available
-                    const piecesPerBox = parseInt(currentScanResult.pieces_per_box) || 1;
-                    const availableBoxes = parseInt(currentScanResult.boxes_available) || 0;
-                    const availablePieces = parseInt(currentScanResult.pieces_available) || 0;
-                    const totalAvailable = (availableBoxes * piecesPerBox) + availablePieces;
-                    const availableDisplay = availableBoxes > 0 
-                        ? `${availableBoxes} Boxes + ${availablePieces} Pieces (${totalAvailable} pcs)` 
-                        : `${availablePieces} Pieces`;
+                    const availableDisplay = PackUnits.formatQuantity(currentScanResult, { preferSplit: true });
+                    const packLine = PackUnits.formatPackLine(currentScanResult);
+                    const integrity = PackUnits.checkIntegrity(currentScanResult);
+                    const integrityHtml = integrity.ok ? '' : `<div class="text-xs text-error mt-1">${PackUnits.integrityBadgeHtml(currentScanResult)} ${integrity.issues[0] || ''}</div>`;
                     
                     contentDiv.className = `rounded-lg p-4 ${isFIFOOk ? 'fifo-ok' : 'fifo-warning'}`;
                     contentDiv.innerHTML = `
@@ -654,7 +746,8 @@
                         <div class="bg-base-200 rounded-lg p-3 mb-3">
                             <div class="text-xs text-base-content/60 mb-1">Available Stock</div>
                             <div class="font-bold text-lg">${availableDisplay}</div>
-                            <div class="text-xs text-info mt-1"><i class="fas fa-box"></i> 1 Box = ${piecesPerBox} Pieces</div>
+                            <div class="text-xs text-info mt-1"><i class="fas fa-box"></i> ${packLine}</div>
+                            ${integrityHtml}
                         </div>
                         <div class="grid grid-cols-2 gap-2 text-sm mb-4">
                             <div><span class="text-base-content/60">Batch:</span> <code>${currentScanResult.batch_code}</code></div>
@@ -704,37 +797,52 @@
                 const matchingDRItem = currentDR.items.find(item => item.product_id == scannedProductId);
                 
                 if (!matchingDRItem) {
-                    // Product not on the DR
                     const drProductNames = currentDR.items.map(i => i.product_name).join(', ');
-                    showToast(`This product (${currentScanResult.product_name}) is NOT on this Delivery Receipt! Required: ${drProductNames}`, 'error');
+                    blockOverScan(`This product (${currentScanResult.product_name}) is NOT on this Delivery Receipt! Required: ${drProductNames}`);
+                    return;
+                }
+
+                // Hard-stop before modal if line is already fully picked
+                const remaining = getRemainingQtyForProduct(scannedProductId);
+                if (remaining <= 0) {
+                    blockOverScan('Cannot exceed ordered quantity');
+                    document.getElementById('scanResult')?.classList.add('hidden');
                     return;
                 }
             }
             
-            const piecesPerBox = parseInt(currentScanResult.pieces_per_box) || 1;
-            const availableBoxes = parseInt(currentScanResult.boxes_available) || 0;
-            const availablePieces = parseInt(currentScanResult.pieces_available) || 0;
-            const totalAvailable = (availableBoxes * piecesPerBox) + availablePieces;
-            const availableDisplay = availableBoxes > 0 
-                ? `${availableBoxes} Boxes + ${availablePieces} Pieces (${totalAvailable} pcs total)` 
-                : `${availablePieces} Pieces`;
+            const labels = PackUnits.unitLabels(currentScanResult);
+            const availableBoxes = PackUnits.readBoxes(currentScanResult);
+            const availablePieces = PackUnits.readLoosePieces(currentScanResult);
+            const totalAvailable = PackUnits.totalBase(currentScanResult);
+            const availableDisplay = PackUnits.formatQuantity(currentScanResult, { preferSplit: true });
+            const packLine = PackUnits.formatPackLine(currentScanResult);
+            const orderRemaining = getRemainingQtyForProduct(currentScanResult.product_id);
+            const maxAllowed = Number.isFinite(orderRemaining)
+                ? Math.min(totalAvailable, orderRemaining)
+                : totalAvailable;
             
             document.getElementById('qtyInventoryId').value = currentScanResult.id;
             document.getElementById('qtyProduct').textContent = currentScanResult.product_name;
             document.getElementById('qtyBatch').textContent = currentScanResult.batch_code;
             document.getElementById('qtyAvailable').textContent = availableDisplay;
-            document.getElementById('qtyPiecesPerBox').textContent = piecesPerBox;
+            document.getElementById('qtyPiecesPerBoxLabel').textContent = packLine;
+            document.getElementById('qtyBoxesLabel').textContent = labels.pack;
+            document.getElementById('qtyPiecesLabel').textContent = labels.base;
             document.getElementById('qtyBoxes').value = 0;
-            document.getElementById('qtyBoxes').max = availableBoxes;
+            document.getElementById('qtyBoxes').max = Math.max(0, availableBoxes);
             document.getElementById('qtyPieces').value = 0;
             document.getElementById('qtyTotalPieces').textContent = '0';
             document.getElementById('qtyValidation').textContent = '';
             
-            // Store available stock for validation
+            // Store available stock + order remaining for validation
             currentScanResult._maxBoxes = availableBoxes;
             currentScanResult._maxPieces = availablePieces;
-            currentScanResult._piecesPerBox = piecesPerBox;
+            currentScanResult._piecesPerBox = labels.piecesPerPack;
             currentScanResult._totalAvailable = totalAvailable;
+            currentScanResult._orderRemaining = orderRemaining;
+            currentScanResult._maxAllowed = maxAllowed;
+            currentScanResult._baseLabel = labels.base;
             
             calculateTotalReleasePieces();
             document.getElementById('quantityModal').showModal();
@@ -747,21 +855,35 @@
             const boxes = parseInt(document.getElementById('qtyBoxes').value) || 0;
             const pieces = parseInt(document.getElementById('qtyPieces').value) || 0;
             const total = (boxes * piecesPerBox) + pieces;
+            const baseLabel = (currentScanResult._baseLabel || 'units').toLowerCase();
             
-            document.getElementById('qtyTotalPieces').textContent = total.toLocaleString();
+            document.getElementById('qtyTotalPieces').textContent = `${total.toLocaleString()} ${baseLabel}`;
             
-            // Validation
             const maxAvailable = currentScanResult._totalAvailable || 0;
+            const orderRemaining = currentScanResult._orderRemaining;
+            const maxAllowed = currentScanResult._maxAllowed ?? maxAvailable;
             const validationEl = document.getElementById('qtyValidation');
             
             if (total > maxAvailable) {
-                validationEl.textContent = `⚠️ Exceeds available stock (${maxAvailable} pieces max)`;
+                validationEl.textContent = `Exceeds available stock (${maxAvailable.toLocaleString()} ${baseLabel} max)`;
                 validationEl.className = 'text-xs text-error mt-2';
+            } else if (Number.isFinite(orderRemaining) && total > orderRemaining) {
+                validationEl.textContent = `Cannot exceed ordered quantity (only ${orderRemaining.toLocaleString()} remaining on ticket)`;
+                validationEl.className = 'text-xs text-error mt-2 font-semibold';
             } else if (total === 0) {
-                validationEl.textContent = 'Enter quantity to release';
+                const remHint = Number.isFinite(orderRemaining)
+                    ? ` — ${orderRemaining.toLocaleString()} still needed on order`
+                    : '';
+                validationEl.textContent = `Enter quantity to release${remHint}`;
                 validationEl.className = 'text-xs text-base-content/60 mt-2';
             } else {
-                validationEl.textContent = `✓ ${maxAvailable - total} pieces will remain`;
+                const stockLeft = maxAvailable - total;
+                const orderLeft = Number.isFinite(orderRemaining) ? orderRemaining - total : null;
+                let msg = `${stockLeft.toLocaleString()} ${baseLabel} stock will remain`;
+                if (orderLeft !== null) {
+                    msg += ` · ${orderLeft.toLocaleString()} still needed on order`;
+                }
+                validationEl.textContent = msg;
                 validationEl.className = 'text-xs text-success mt-2';
             }
         }
@@ -784,23 +906,12 @@
                 showToast('Quantity exceeds available stock', 'warning');
                 return;
             }
-            
-            // Validate against DR ordered quantity
-            if (currentDR && currentDR.items) {
-                const drItem = currentDR.items.find(i => i.product_id == currentScanResult.product_id);
-                if (drItem) {
-                    const orderedQty = parseInt(drItem.quantity) || 0;
-                    // Calculate already scanned quantity for this product
-                    const alreadyScanned = scannedItems
-                        .filter(i => i.product_id == currentScanResult.product_id)
-                        .reduce((sum, i) => sum + (i.releaseTotal || 0), 0);
-                    const totalAfterAdding = alreadyScanned + totalRelease;
-                    
-                    if (totalAfterAdding > orderedQty) {
-                        showToast(`Cannot release ${totalRelease} pcs. DR only requires ${orderedQty} pcs total (already have ${alreadyScanned} pcs scanned)`, 'error');
-                        return;
-                    }
-                }
+
+            // Hard-stop: never allow scanned_qty > required_qty for this product
+            const pickCheck = validatePickAgainstOrder(currentScanResult.product_id, totalRelease);
+            if (!pickCheck.ok) {
+                blockOverScan(pickCheck.message || 'Cannot exceed ordered quantity');
+                return;
             }
             
             // Add to scanned items
@@ -823,6 +934,7 @@
             document.getElementById('quantityModal').close();
             document.getElementById('scanResult').classList.add('hidden');
             showToast('Item added to release list', 'success');
+            document.getElementById('barcodeInput')?.focus();
         });
         
         function renderScannedItems() {
@@ -914,6 +1026,28 @@
                 showToast('Please select a Picking Ticket', 'warning');
                 return;
             }
+
+            // Final client-side guard before Generate DR / Release
+            if (currentDR.items && currentDR.items.length > 0) {
+                for (const line of currentDR.items) {
+                    const required = getRequiredQtyForItem(line);
+                    const scanned = getScannedQtyForProduct(line.product_id);
+                    if (scanned > required) {
+                        blockOverScan(
+                            `Cannot exceed ordered quantity for ${line.product_name} (${scanned}/${required}). Remove excess scans first.`
+                        );
+                        return;
+                    }
+                }
+                // Reject products staged that are not on the ticket
+                for (const staged of scannedItems) {
+                    const onTicket = currentDR.items.some(i => i.product_id == staged.product_id);
+                    if (!onTicket) {
+                        blockOverScan(`${staged.product_name} is not on this picking ticket.`);
+                        return;
+                    }
+                }
+            }
             
             const isPicking = currentDR.status === 'picking';
             const confirmMsg = isPicking 
@@ -932,6 +1066,7 @@
             try {
                 const items = scannedItems.map(i => ({
                     inventory_id: i.id,
+                    product_id: i.product_id,
                     quantity_boxes: i.releaseBoxes,
                     quantity_pieces: i.releasePieces,
                     total_pieces: i.releaseTotal,
@@ -939,10 +1074,45 @@
                 }));
                 
                 if (isPicking) {
-                    // Finalize picking - this creates DR number and deducts inventory
+                    // Finalize picking - creates official DR number, inventory deducted, status → ready
                     const response = await WarehouseFGService.finalizePicking(drId, items);
                     const drNumber = response.data?.dr_number || 'DR generated';
-                    showToast(`Delivery Receipt ${drNumber} generated successfully!`, 'success');
+                    const finalDrId = response.data?.id || drId;
+
+                    showToast(
+                        `${drNumber} generated. Print the paper DR before the truck leaves (driver & customer signatures).`,
+                        'success'
+                    );
+
+                    scannedItems = [];
+                    renderScannedItems();
+                    await loadPendingDRs();
+                    await loadTodayStats();
+                    document.getElementById('selectDR').value = '';
+                    document.getElementById('drSummary').innerHTML =
+                        '<div class="text-base-content/60 text-center py-4">Select a Picking Ticket to begin</div>';
+                    currentDR = null;
+                    updateButtonState();
+
+                    // Force print workflow next: paper DR must leave with the truck
+                    await AuthService.confirmAction({
+                        title: 'Print Delivery Receipt',
+                        message:
+                            'This receipt is Ready for Delivery.\n\n' +
+                            'Print the paper DR now for Driver (Delivered By) and Customer (Received By) signatures.',
+                        highlight: drNumber,
+                        highlightLabel: 'Delivery Receipt',
+                        callout: 'The truck cannot be dispatched until the DR is printed.',
+                        calloutTone: 'warning',
+                        confirmText: 'Continue to Print',
+                        confirmIcon: 'fa-print',
+                        tone: 'success',
+                        icon: 'fa-print'
+                    });
+
+                    // Always open Delivery Receipts focused on print (paper must leave with truck)
+                    window.location.href = `delivery_receipts.html?print=${finalDrId}`;
+                    return;
                 } else {
                     // Regular release flow for already-finalized DRs
                     await WarehouseFGService.bulkReleaseItems(drId, items);
@@ -962,6 +1132,9 @@
             } catch (error) {
                 console.error('Release error:', error);
                 const errMsg = error.response?.data?.message || 'Failed to process';
+                if (/exceed ordered|not on this|duplicate scan/i.test(errMsg)) {
+                    playErrorSound();
+                }
                 showToast(errMsg, 'error');
             }
         }

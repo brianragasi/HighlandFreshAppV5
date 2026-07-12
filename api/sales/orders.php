@@ -13,6 +13,7 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/pack_uom.php';
 
 // Different roles for different operations
 // GET: Warehouse FG can view orders (to see approved orders for DR creation)
@@ -22,8 +23,12 @@ $currentUser = Auth::requireRole($allowedRoles);
 
 $action = getParam('action', 'list');
 
-// Valid order statuses
-$validStatuses = ['draft', 'pending', 'approved', 'preparing', 'dispatched', 'delivered', 'partially_fulfilled', 'fulfilled', 'cancelled'];
+// Valid order statuses (include warehouse/delivery terminal states)
+$validStatuses = [
+    'draft', 'pending', 'approved', 'picking', 'preparing', 'ready',
+    'dispatched', 'delivered', 'accepted', 'partially_accepted',
+    'partially_fulfilled', 'fulfilled', 'rejected', 'cancelled'
+];
 
 // Restrict write operations to Sales/GM only
 if (in_array($requestMethod, ['POST', 'PUT', 'DELETE']) && !in_array($currentUser['role'], ['sales_custodian', 'general_manager'])) {
@@ -38,7 +43,7 @@ try {
             handleGet($db, $action, $validStatuses);
             break;
         case 'POST':
-            handlePost($db, $action, $currentUser);
+            handlePost($db, $action, $currentUser, $validStatuses);
             break;
         case 'PUT':
             handlePut($db, $action, $currentUser, $validStatuses);
@@ -153,25 +158,96 @@ function handleGet($db, $action, $validStatuses) {
                 WHERE o.id = ?
             ");
             $stmt->execute([$id]);
-            $order = $stmt->fetch();
+            $order = $stmt->fetch(PDO::FETCH_ASSOC);
             
             if (!$order) {
                 Response::notFound('Order not found');
             }
             
-            // Get order items
+            // Order items + delivery/returns fulfillment (do not trust quantity_ordered alone)
             $itemsStmt = $db->prepare("
-                SELECT oi.*, 
-                       oi.quantity_ordered as quantity,
-                       oi.line_total as subtotal,
-                       p.product_name, p.product_code, p.unit_measure, p.base_unit
+                SELECT
+                    oi.*,
+                    oi.quantity_ordered AS quantity,
+                    oi.line_total AS subtotal,
+                    p.product_name,
+                    p.product_code,
+                    p.unit_measure,
+                    p.base_unit,
+                    COALESCE(p.pieces_per_box, 1) AS pieces_per_box,
+                    COALESCE(ret.qty_returned, 0) AS quantity_returned,
+                    del.qty_delivered AS quantity_delivered_dr,
+                    del.qty_shipped AS quantity_shipped_dr
                 FROM sales_order_items oi
                 LEFT JOIN products p ON oi.product_id = p.id
+                LEFT JOIN (
+                    SELECT
+                        dri.product_id,
+                        SUM(COALESCE(drt.quantity_returned, 0)) AS qty_returned
+                    FROM delivery_receipts dr
+                    INNER JOIN delivery_receipt_items dri
+                        ON dri.delivery_receipt_id = dr.id
+                    INNER JOIN delivery_returns drt
+                        ON drt.dr_item_id = dri.id
+                    WHERE dr.order_id = ?
+                      AND dr.status NOT IN ('cancelled')
+                    GROUP BY dri.product_id
+                ) ret ON ret.product_id = oi.product_id
+                LEFT JOIN (
+                    SELECT
+                        dri.product_id,
+                        SUM(
+                            CASE
+                                WHEN dr.returns_processed = 1 OR dr.status = 'delivered'
+                                THEN COALESCE(dri.quantity_delivered, 0)
+                                ELSE NULL
+                            END
+                        ) AS qty_delivered,
+                        SUM(
+                            GREATEST(
+                                COALESCE(dri.quantity_packed, 0),
+                                COALESCE(dri.quantity_picked, 0),
+                                COALESCE(dri.quantity_ordered, 0)
+                            )
+                        ) AS qty_shipped
+                    FROM delivery_receipts dr
+                    INNER JOIN delivery_receipt_items dri
+                        ON dri.delivery_receipt_id = dr.id
+                    WHERE dr.order_id = ?
+                      AND dr.status NOT IN ('cancelled')
+                    GROUP BY dri.product_id
+                ) del ON del.product_id = oi.product_id
                 WHERE oi.order_id = ?
                 ORDER BY oi.id ASC
             ");
-            $itemsStmt->execute([$id]);
-            $order['items'] = $itemsStmt->fetchAll();
+            $itemsStmt->execute([$id, $id, $id]);
+            $rawItems = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $enriched = enrichOrderItemsWithFulfillment($rawItems);
+            $order['items'] = $enriched['items'];
+            $order['original_total'] = $enriched['original_total'];
+            $order['billable_total'] = $enriched['billable_total'];
+            $order['return_credit_total'] = $enriched['return_credit_total'];
+            $order['has_returns'] = $enriched['has_returns'];
+            $order['qty_ordered_total'] = $enriched['qty_ordered_total'];
+            $order['qty_returned_total'] = $enriched['qty_returned_total'];
+            $order['qty_accepted_total'] = $enriched['qty_accepted_total'];
+
+            // Prefer live billable total when returns/delivery verified; else stored total
+            if ($enriched['fulfillment_verified']) {
+                $order['total_amount'] = $enriched['billable_total'];
+                $order['balance_due'] = max(
+                    0,
+                    round($enriched['billable_total'] - (float)($order['amount_paid'] ?? 0), 2)
+                );
+            }
+
+            $order['status_label'] = salesOrderStatusLabel(
+                $order['status'],
+                $enriched['has_returns'],
+                $enriched['fulfillment_verified']
+            );
+            $order['fulfillment_verified'] = $enriched['fulfillment_verified'];
             
             // Get related invoices
             $invoicesStmt = $db->prepare("
@@ -193,6 +269,16 @@ function handleGet($db, $action, $validStatuses) {
             ");
             $historyStmt->execute([$id]);
             $order['status_history'] = $historyStmt->fetchAll();
+
+            // Related DRs for transparency
+            $drStmt = $db->prepare("
+                SELECT id, dr_number, status, returns_processed, total_amount, delivered_at, dispatched_at
+                FROM delivery_receipts
+                WHERE order_id = ? AND status NOT IN ('cancelled')
+                ORDER BY id DESC
+            ");
+            $drStmt->execute([$id]);
+            $order['delivery_receipts'] = $drStmt->fetchAll(PDO::FETCH_ASSOC);
             
             Response::success($order, 'Order details retrieved');
             break;
@@ -257,8 +343,11 @@ function handleGet($db, $action, $validStatuses) {
 /**
  * Handle POST requests
  */
-function handlePost($db, $action, $currentUser) {
+function handlePost($db, $action, $currentUser, $validStatuses = null) {
     $data = getRequestBody();
+    if (!is_array($validStatuses)) {
+        $validStatuses = ['draft', 'pending', 'approved', 'preparing', 'dispatched', 'delivered', 'partially_fulfilled', 'fulfilled', 'cancelled'];
+    }
     
     switch ($action) {
         case 'create':
@@ -267,6 +356,39 @@ function handlePost($db, $action, $currentUser) {
             
             if (empty($data['customer_id'])) {
                 $errors['customer_id'] = 'Customer ID is required';
+            }
+
+            // Dual-action create: draft vs submit-for-approval in one step
+            // action_type: draft | pending_approval | submit
+            // status (optional): draft | pending
+            $actionType = strtolower(trim((string) ($data['action_type'] ?? '')));
+            $requestedStatus = strtolower(trim((string) ($data['status'] ?? '')));
+            $initialStatus = 'draft';
+            if (
+                in_array($actionType, ['pending_approval', 'submit', 'pending'], true)
+                || $requestedStatus === 'pending'
+                || $requestedStatus === 'pending_approval'
+            ) {
+                $initialStatus = 'pending'; // GM approval queue (existing enum)
+            } elseif ($actionType === 'draft' || $requestedStatus === 'draft' || $actionType === '') {
+                $initialStatus = 'draft';
+            }
+            if (!in_array($initialStatus, $validStatuses, true)) {
+                $initialStatus = 'draft';
+            }
+
+            // Submitting for approval requires at least one line item
+            if ($initialStatus === 'pending') {
+                $hasItems = !empty($data['items']) && is_array($data['items']) && count(array_filter($data['items'], function ($it) {
+                    return !empty($it['product_id']) && (
+                        (int) ($it['quantity'] ?? 0) > 0
+                        || (int) ($it['quantity_boxes'] ?? 0) > 0
+                        || (int) ($it['quantity_pieces'] ?? 0) > 0
+                    );
+                })) > 0;
+                if (!$hasItems) {
+                    $errors['items'] = 'Add at least one item before submitting for approval';
+                }
             }
             
             if (!empty($errors)) {
@@ -286,19 +408,22 @@ function handlePost($db, $action, $currentUser) {
             $orderNumber = generateOrderNumber($db);
             
             // Determine payment type (can be overridden per order)
-            $paymentType = $data['payment_type'] ?? $customer['default_payment_type'] ?? 'cash';
+            $paymentType = $data['payment_type']
+                ?? $data['payment_mode']
+                ?? $customer['default_payment_type']
+                ?? 'cash';
             
             $db->beginTransaction();
             
             try {
-                // Create order
+                // Create order (status set immediately — no forced draft hop)
                 $stmt = $db->prepare("
                     INSERT INTO sales_orders 
                     (order_number, customer_id, customer_po_number, delivery_date, 
                      payment_type, delivery_address, notes, sub_account_id,
                      subtotal, discount_amount, discount_percent, tax_amount, total_amount,
                      status, created_by)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 'draft', ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, ?, ?)
                 ");
                 
                 $stmt->execute([
@@ -310,6 +435,7 @@ function handlePost($db, $action, $currentUser) {
                     $data['delivery_address'] ?? $customer['address'],
                     $data['notes'] ?? $data['special_instructions'] ?? null,
                     $data['sub_account_id'] ?? null,
+                    $initialStatus,
                     $currentUser['user_id']
                 ]);
                 
@@ -332,8 +458,15 @@ function handlePost($db, $action, $currentUser) {
                             continue;
                         }
                         
-                        // Get product info
-                        $prodStmt = $db->prepare("SELECT product_name, unit_size, unit_measure, selling_price FROM products WHERE id = ?");
+                        // Product master UOM — single source for pack conversion
+                        $packCfg = hf_get_product_pack_config($db, (int)$item['product_id']);
+                        $prodStmt = $db->prepare("
+                            SELECT product_name, unit_size, unit_measure, selling_price,
+                                   COALESCE(pieces_per_box, 1) AS pieces_per_box,
+                                   COALESCE(base_unit, 'piece') AS base_unit,
+                                   COALESCE(box_unit, 'box') AS box_unit
+                            FROM products WHERE id = ?
+                        ");
                         $prodStmt->execute([$item['product_id']]);
                         $product = $prodStmt->fetch();
                         
@@ -341,10 +474,19 @@ function handlePost($db, $action, $currentUser) {
                             continue; // Skip invalid product
                         }
                         
-                        // Calculate total quantity from boxes and pieces
-                        $boxes = (int)($item['quantity_boxes'] ?? 0);
-                        $pieces = (int)($item['quantity_pieces'] ?? 0);
-                        $quantity = (int)($item['quantity'] ?? ($boxes + $pieces)); // Fallback if not provided
+                        // Authoritative order qty = BASE units (bottles/pieces).
+                        // "2 boxes" → 2 * units_per_pack from product master (never hardcoded).
+                        $boxes = (int)($item['quantity_boxes'] ?? $item['quantity_packs'] ?? 0);
+                        $pieces = (int)($item['quantity_pieces'] ?? $item['quantity_loose'] ?? 0);
+                        $ppb = max(1, (int)$packCfg['units_per_pack']);
+                        $fromPack = hf_packs_to_base($boxes, $pieces, $ppb);
+                        $quantity = (int)($item['quantity'] ?? $item['quantity_ordered'] ?? 0);
+                        if ($quantity <= 0 && $fromPack > 0) {
+                            $quantity = $fromPack;
+                        } elseif ($quantity > 0 && $fromPack > 0 && $quantity !== $fromPack) {
+                            // Trust pack breakdown when client sent inconsistent total
+                            $quantity = $fromPack;
+                        }
                         
                         if ($quantity <= 0) {
                             continue;
@@ -398,15 +540,21 @@ function handlePost($db, $action, $currentUser) {
                 }
                 
                 // Record status history
+                $historyNote = $initialStatus === 'pending'
+                    ? 'Order created and submitted for approval'
+                    : 'Order created as draft';
                 $historyStmt = $db->prepare("
                     INSERT INTO sales_order_status_history (order_id, status, notes, changed_by)
-                    VALUES (?, 'draft', 'Order created', ?)
+                    VALUES (?, ?, ?, ?)
                 ");
-                $historyStmt->execute([$orderId, $currentUser['user_id']]);
+                $historyStmt->execute([$orderId, $initialStatus, $historyNote, $currentUser['user_id']]);
                 
                 $db->commit();
                 
-                logAudit($currentUser['user_id'], 'CREATE', 'sales_orders', $orderId, null, $data);
+                logAudit($currentUser['user_id'], 'CREATE', 'sales_orders', $orderId, null, array_merge($data, [
+                    'initial_status' => $initialStatus,
+                    'action_type' => $actionType ?: ($initialStatus === 'pending' ? 'pending_approval' : 'draft'),
+                ]));
                 
                 // Get created order
                 $getStmt = $db->prepare("
@@ -418,7 +566,10 @@ function handlePost($db, $action, $currentUser) {
                 $getStmt->execute([$orderId]);
                 $order = $getStmt->fetch();
                 
-                Response::created($order, 'Order created successfully');
+                $msg = $initialStatus === 'pending'
+                    ? 'Order created and submitted for approval'
+                    : 'Order saved as draft';
+                Response::created($order, $msg);
                 
             } catch (Exception $e) {
                 $db->rollBack();
@@ -730,55 +881,46 @@ function handlePut($db, $action, $currentUser, $validStatuses) {
             }
             
             // =====================================================
-            // CRITICAL VALIDATION: Verify items were released from FG inventory
-            // before allowing "delivered" status
+            // CRITICAL VALIDATION: Verify warehouse has processed delivery
+            // before allowing "delivered" / "partially_accepted" status.
+            // Partial acceptance (returns) is allowed — do not require full ordered qty.
             // =====================================================
-            if ($newStatus === 'delivered') {
-                // Get DR for this order
-                $drStmt = $db->prepare("SELECT id, dr_number FROM delivery_receipts WHERE order_id = ?");
+            if (in_array($newStatus, ['delivered', 'partially_accepted', 'accepted'], true)) {
+                $drStmt = $db->prepare("
+                    SELECT id, dr_number, status, returns_processed
+                    FROM delivery_receipts
+                    WHERE order_id = ?
+                    ORDER BY id DESC
+                    LIMIT 1
+                ");
                 $drStmt->execute([$id]);
-                $dr = $drStmt->fetch();
-                
+                $dr = $drStmt->fetch(PDO::FETCH_ASSOC);
+
                 if (!$dr) {
                     Response::error('Cannot mark as delivered: No Delivery Receipt exists for this order. Create a DR first.', 400);
                 }
-                
-                // Get order items with their released quantities
-                $itemsStmt = $db->prepare("
-                    SELECT 
-                        oi.product_id,
-                        p.product_name,
-                        oi.quantity_ordered,
-                        COALESCE(dri.quantity_delivered, 0) as released_qty,
-                        COALESCE((
-                            SELECT SUM(dl.quantity_released) 
-                            FROM fg_dispatch_log dl 
-                            JOIN finished_goods_inventory fgi ON dl.inventory_id = fgi.id
-                            WHERE dl.dr_id = ? AND fgi.product_id = oi.product_id
-                        ), 0) as dispatch_qty
-                    FROM sales_order_items oi
-                    LEFT JOIN products p ON oi.product_id = p.id
-                    LEFT JOIN delivery_receipt_items dri ON dri.delivery_receipt_id = ? AND dri.product_id = oi.product_id
-                    WHERE oi.order_id = ?
-                ");
-                $itemsStmt->execute([$dr['id'], $dr['id'], $id]);
-                $items = $itemsStmt->fetchAll();
-                
-                $shortages = [];
-                foreach ($items as $item) {
-                    $actualReleased = max($item['released_qty'], $item['dispatch_qty']);
-                    if ($actualReleased < $item['quantity_ordered']) {
-                        $shortages[] = "{$item['product_name']}: ordered {$item['quantity_ordered']}, released {$actualReleased}";
-                    }
-                }
-                
-                if (!empty($shortages)) {
+
+                // Prefer warehouse-closed DRs; still require returns verification when dispatched
+                if ($dr['status'] === 'dispatched' && empty($dr['returns_processed'])) {
                     Response::error(
-                        "Cannot mark as delivered: Items not fully released from FG inventory.\n" .
-                        implode("\n", $shortages) . 
-                        "\n\nPlease dispatch items via Warehouse FG first.",
+                        'Cannot mark as delivered: Warehouse has not verified returns for DR ' .
+                        ($dr['dr_number'] ?? '') . '. Complete Driver Returned / Verify Delivery first.',
                         400
                     );
+                }
+
+                // If any returns exist, force partially_accepted rather than plain delivered
+                $retCheck = $db->prepare("
+                    SELECT COALESCE(SUM(drt.quantity_returned), 0)
+                    FROM delivery_returns drt
+                    INNER JOIN delivery_receipt_items dri ON dri.id = drt.dr_item_id
+                    INNER JOIN delivery_receipts drx ON drx.id = dri.delivery_receipt_id
+                    WHERE drx.order_id = ?
+                ");
+                $retCheck->execute([$id]);
+                $retQty = (float)$retCheck->fetchColumn();
+                if ($retQty > 0 && $newStatus === 'delivered') {
+                    $newStatus = 'partially_accepted';
                 }
             }
             
@@ -818,4 +960,131 @@ function handlePut($db, $action, $currentUser, $validStatuses) {
         default:
             Response::error('Invalid action', 400);
     }
+}
+
+/**
+ * Enrich order lines with Ordered / Returned / Accepted + billable money.
+ */
+function enrichOrderItemsWithFulfillment(array $rawItems) {
+    $items = [];
+    $originalTotal = 0.0;
+    $billableTotal = 0.0;
+    $hasReturns = false;
+    $fulfillmentVerified = false;
+    $qtyOrderedTotal = 0;
+    $qtyReturnedTotal = 0;
+    $qtyAcceptedTotal = 0;
+
+    foreach ($rawItems as $item) {
+        $ordered = (int)($item["quantity_ordered"] ?? 0);
+        $unitPrice = (float)($item["unit_price"] ?? 0);
+        $returned = (int)($item["quantity_returned"] ?? 0);
+        $deliveredDr = $item["quantity_delivered_dr"] ?? null;
+        $shippedDr = $item["quantity_shipped_dr"] ?? null;
+        $fulfilledCol = (int)($item["quantity_fulfilled"] ?? 0);
+
+        $hasDeliverySignal = ($deliveredDr !== null && $deliveredDr !== "");
+        if ($hasDeliverySignal) {
+            $fulfillmentVerified = true;
+            $accepted = (int)$deliveredDr;
+            if ($returned <= 0 && $accepted < $ordered) {
+                $returned = max(0, $ordered - $accepted);
+            }
+        } elseif ($fulfilledCol > 0) {
+            $accepted = min($ordered, $fulfilledCol);
+            if ($returned <= 0 && $accepted < $ordered) {
+                $returned = max(0, $ordered - $accepted);
+            }
+            if ($accepted < $ordered || $returned > 0) {
+                $fulfillmentVerified = true;
+            }
+        } else {
+            $accepted = $ordered;
+            $returned = 0;
+        }
+
+        $accepted = max(0, min($ordered, $accepted));
+        $returned = max(0, min($ordered, $returned));
+        if ($accepted + $returned > $ordered && $ordered > 0) {
+            $returned = max(0, $ordered - $accepted);
+        }
+
+        $originalSub = round($ordered * $unitPrice, 2);
+        $billableSub = round($accepted * $unitPrice, 2);
+        $credit = round(max(0, $originalSub - $billableSub), 2);
+        $lineHasReturns = ($returned > 0 || $accepted < $ordered);
+
+        if ($lineHasReturns) {
+            $hasReturns = true;
+        }
+
+        $item["quantity_ordered"] = $ordered;
+        $item["quantity_returned"] = $returned;
+        $item["quantity_accepted"] = $accepted;
+        $item["final_billable_qty"] = $accepted;
+        $item["quantity"] = $fulfillmentVerified ? $accepted : $ordered;
+        $item["original_subtotal"] = $originalSub;
+        $item["billable_subtotal"] = $billableSub;
+        $item["return_credit"] = $credit;
+        $item["subtotal"] = $fulfillmentVerified ? $billableSub : $originalSub;
+        $item["line_total"] = $item["subtotal"];
+        $item["has_returns"] = $lineHasReturns;
+        $item["quantity_shipped"] = ($shippedDr !== null && $shippedDr !== "")
+            ? (int)$shippedDr
+            : $ordered;
+
+        $originalTotal += $originalSub;
+        $billableTotal += $item["subtotal"];
+        $qtyOrderedTotal += $ordered;
+        $qtyReturnedTotal += $returned;
+        $qtyAcceptedTotal += $accepted;
+
+        $items[] = $item;
+    }
+
+    $originalTotal = round($originalTotal, 2);
+    $billableTotal = round($billableTotal, 2);
+
+    return [
+        "items" => $items,
+        "original_total" => $originalTotal,
+        "billable_total" => $fulfillmentVerified ? $billableTotal : $originalTotal,
+        "return_credit_total" => $fulfillmentVerified
+            ? round(max(0, $originalTotal - $billableTotal), 2)
+            : 0.0,
+        "has_returns" => $hasReturns && $fulfillmentVerified,
+        "fulfillment_verified" => $fulfillmentVerified,
+        "qty_ordered_total" => $qtyOrderedTotal,
+        "qty_returned_total" => $qtyReturnedTotal,
+        "qty_accepted_total" => $qtyAcceptedTotal,
+    ];
+}
+
+/**
+ * Human-readable status for Sales UI.
+ */
+function salesOrderStatusLabel($status, $hasReturns = false, $fulfillmentVerified = false) {
+    $status = (string)$status;
+    if ($status === "partially_accepted" || ($hasReturns && in_array($status, ["delivered", "accepted"], true))) {
+        return "Delivered (With Returns)";
+    }
+    if ($status === "partially_fulfilled") {
+        return "Partially Fulfilled";
+    }
+    if ($status === "delivered" || $status === "accepted") {
+        return "Delivered";
+    }
+    $map = [
+        "draft" => "Draft",
+        "pending" => "Pending Approval",
+        "approved" => "Approved",
+        "picking" => "Picking",
+        "preparing" => "Preparing",
+        "ready" => "Ready",
+        "dispatched" => "Dispatched",
+        "rejected" => "Rejected",
+        "cancelled" => "Cancelled",
+        "fulfilled" => "Fulfilled",
+    ];
+    return $map[$status] ?? ucfirst(str_replace("_", " ", $status));
 }

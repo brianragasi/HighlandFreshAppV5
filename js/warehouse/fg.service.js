@@ -278,7 +278,7 @@ const WarehouseFGService = {
     },
 
     /**
-     * Assign a packaged FG inventory item to a chiller (new packaging flow)
+     * Put away: assign packaged FG inventory to a chiller (location only; stock already booked)
      * @param {number} inventoryId - Finished goods inventory ID
      * @param {number} chillerId - Target chiller ID
      * @param {string} notes - Optional notes
@@ -293,7 +293,7 @@ const WarehouseFGService = {
     },
 
     /**
-     * Get pending batches from production (QC released, not yet received)
+     * Get packaged FG items awaiting put-away (no chiller assigned yet)
      */
     async getPendingBatches() {
         return await api.get(`${this.baseUrl}/inventory.php`, {
@@ -461,7 +461,26 @@ const WarehouseFGService = {
     },
 
     /**
-     * Release/dispatch delivery receipt
+     * Mark paper Delivery Receipt as printed (required before dispatch).
+     * Uses POST (not PUT) so it works even when method-override is blocked.
+     * @param {number|string} id - DR ID
+     * @param {string|null} drNumber - Optional DR number fallback
+     */
+    async markDRPrinted(id, drNumber = null) {
+        const body = {
+            action: 'mark_printed',
+            id: id != null ? Number(id) : undefined
+        };
+        if (drNumber) {
+            body.dr_number = drNumber;
+        }
+        // POST hits handlePost mark_printed path reliably
+        return await api.post(`${this.baseUrl}/delivery_receipts.php`, body);
+    },
+
+    /**
+     * Release/dispatch delivery receipt (truck leaves).
+     * Backend requires printed_at to be set first.
      * @param {number} id - DR ID
      */
     async releaseDR(id) {

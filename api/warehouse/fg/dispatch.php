@@ -12,6 +12,7 @@
  */
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
+require_once __DIR__ . '/inventory_helpers.php';
 
 // Require Warehouse FG role
 $currentUser = Auth::requireRole(['warehouse_fg', 'general_manager']);
@@ -274,11 +275,11 @@ function handlePost($db, $action, $currentUser) {
                     throw new Exception('Inventory item not found');
                 }
                 
-                // Calculate available using multi-unit system
-                $piecesPerBox = (int)($inventory['pieces_per_box'] ?? 12);
+                // Effective base units (handles multi-unit + legacy columns)
+                $piecesPerBox = max(1, (int)($inventory['pieces_per_box'] ?? 12));
                 $boxesAvail = (int)($inventory['boxes_available'] ?? 0);
                 $piecesAvail = (int)($inventory['pieces_available'] ?? 0);
-                $totalAvailable = ($boxesAvail * $piecesPerBox) + $piecesAvail;
+                $totalAvailable = fgInventoryEffectiveBaseUnits($inventory, $piecesPerBox);
                 $oldAuditValues = [
                     'boxes_available' => $boxesAvail,
                     'pieces_available' => $piecesAvail,
@@ -289,35 +290,22 @@ function handlePost($db, $action, $currentUser) {
                 if ($totalAvailable < $quantity) {
                     throw new Exception('Insufficient quantity available (have ' . $totalAvailable . ', need ' . $quantity . ')');
                 }
-                
-                // Calculate new inventory after deduction
-                $remaining = $totalAvailable - $quantity;
-                $newBoxes = floor($remaining / $piecesPerBox);
-                $newPieces = $remaining % $piecesPerBox;
+
+                // Atomic base-unit deduction + pack/loose recompute
+                $deductResult = fgInventoryDeductBaseUnits($db, $inventoryId, $quantity);
+                $newBoxes = $deductResult['after_boxes'];
+                $newPieces = $deductResult['after_loose'];
+                $remaining = $deductResult['after_base'];
                 $newAuditValues = [
                     'boxes_available' => (int)$newBoxes,
                     'pieces_available' => (int)$newPieces,
-                    'quantity_available' => max(0, (int)($inventory['quantity_available'] ?? 0) - $quantity),
+                    'quantity_available' => (int)$remaining,
                     'total_available_pieces' => (int)$remaining,
                     'released_quantity' => $quantity,
                     'dispatch_code' => null,
                     'dr_id' => $drId,
                     'barcode' => $barcode
                 ];
-                
-                // Deduct from inventory using multi-unit columns
-                $updateStmt = $db->prepare("
-                    UPDATE finished_goods_inventory 
-                    SET boxes_available = ?,
-                        pieces_available = ?,
-                        quantity_boxes = ?,
-                        quantity_pieces = ?,
-                        quantity = quantity - ?,
-                        quantity_available = GREATEST(0, quantity_available - ?),
-                        last_movement_at = NOW()
-                    WHERE id = ?
-                ");
-                $updateStmt->execute([$newBoxes, $newPieces, $newBoxes, $newPieces, $quantity, $quantity, $inventoryId]);
                 
                 // Generate dispatch code
                 $dispatchCode = 'DSP-' . date('Ymd') . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
@@ -353,16 +341,28 @@ function handlePost($db, $action, $currentUser) {
                 if ($drId) {
                     // Check if item already exists in DR (from order creation)
                     $checkStmt = $db->prepare("
-                        SELECT id, quantity_ordered 
+                        SELECT id, quantity_ordered, COALESCE(quantity_packed, 0) as quantity_packed
                         FROM delivery_receipt_items 
                         WHERE delivery_receipt_id = ? AND product_id = ?
                         LIMIT 1
+                        FOR UPDATE
                     ");
                     $checkStmt->execute([$drId, $inventory['product_id']]);
                     $existingItem = $checkStmt->fetch();
                     
                     if ($existingItem) {
-                        // Update existing item with batch and packed quantity
+                        $orderedQty = (int)$existingItem['quantity_ordered'];
+                        $alreadyPacked = (int)$existingItem['quantity_packed'];
+                        $newPacked = $alreadyPacked + $quantity;
+
+                        // Hard stop: never pack more than ordered
+                        if ($newPacked > $orderedQty) {
+                            throw new Exception(
+                                "Cannot exceed ordered quantity (have {$alreadyPacked}, releasing {$quantity}, ordered {$orderedQty})."
+                            );
+                        }
+
+                        // Accumulate packed quantity (do not overwrite prior batches)
                         $updateStmt = $db->prepare("
                             UPDATE delivery_receipt_items 
                             SET batch_id = ?, quantity_packed = ?, quantity_delivered = ?
@@ -370,12 +370,12 @@ function handlePost($db, $action, $currentUser) {
                         ");
                         $updateStmt->execute([
                             $inventory['batch_id'] ?? null,
-                            $quantity,
-                            $quantity,
+                            $newPacked,
+                            $newPacked,
                             $existingItem['id']
                         ]);
                     } else {
-                        // Insert new item (for ad-hoc DRs not from orders)
+                        // Ad-hoc DRs: first line sets ordered = released; still reject zero qty
                         $driStmt = $db->prepare("
                             INSERT INTO delivery_receipt_items 
                             (delivery_receipt_id, product_id, batch_id, quantity_ordered, quantity_packed, quantity_delivered)
@@ -391,19 +391,24 @@ function handlePost($db, $action, $currentUser) {
                         ]);
                     }
                     
-                    // Check if ALL items are fully picked before setting DR to 'ready'
+                    // Ready only when every line is exactly fully packed (not over)
                     $checkAllPickedStmt = $db->prepare("
                         SELECT 
                             COUNT(*) as total_items,
-                            SUM(CASE WHEN COALESCE(quantity_packed, 0) >= quantity_ordered THEN 1 ELSE 0 END) as picked_items
+                            SUM(CASE WHEN COALESCE(quantity_packed, 0) = quantity_ordered THEN 1 ELSE 0 END) as picked_items,
+                            SUM(CASE WHEN COALESCE(quantity_packed, 0) > quantity_ordered THEN 1 ELSE 0 END) as over_items
                         FROM delivery_receipt_items 
                         WHERE delivery_receipt_id = ?
                     ");
                     $checkAllPickedStmt->execute([$drId]);
                     $pickStatus = $checkAllPickedStmt->fetch();
+
+                    if ((int)$pickStatus['over_items'] > 0) {
+                        throw new Exception('Cannot exceed ordered quantity. Transaction aborted.');
+                    }
                     
                     $allPicked = ($pickStatus['total_items'] > 0 && 
-                                  $pickStatus['picked_items'] == $pickStatus['total_items']);
+                                  (int)$pickStatus['picked_items'] === (int)$pickStatus['total_items']);
                     
                     if ($allPicked) {
                         $drUpdateStmt = $db->prepare("
@@ -452,12 +457,14 @@ function handlePost($db, $action, $currentUser) {
                 Response::error('No items to release', 400);
             }
             
-            // If DR provided, get required products for validation (with ordered quantities)
+            // If DR provided, get required products for validation (with ordered + already packed)
             $drRequiredProducts = [];
             $drOrderedQuantities = [];
+            $drAlreadyPacked = [];
             if ($drId) {
                 $drItemsStmt = $db->prepare("
-                    SELECT dri.product_id, p.product_name, dri.quantity_ordered 
+                    SELECT dri.product_id, p.product_name, dri.quantity_ordered,
+                           COALESCE(dri.quantity_packed, 0) as quantity_packed
                     FROM delivery_receipt_items dri 
                     LEFT JOIN products p ON dri.product_id = p.id
                     WHERE dri.delivery_receipt_id = ?
@@ -465,30 +472,34 @@ function handlePost($db, $action, $currentUser) {
                 $drItemsStmt->execute([$drId]);
                 $drItems = $drItemsStmt->fetchAll();
                 foreach ($drItems as $di) {
-                    $drRequiredProducts[$di['product_id']] = $di['product_name'] ?? 'Unknown';
-                    $drOrderedQuantities[$di['product_id']] = (int)($di['quantity_ordered'] ?? 0);
+                    $pid = (int)$di['product_id'];
+                    $drRequiredProducts[$pid] = $di['product_name'] ?? 'Unknown';
+                    $drOrderedQuantities[$pid] = (int)($di['quantity_ordered'] ?? 0);
+                    $drAlreadyPacked[$pid] = (int)($di['quantity_packed'] ?? 0);
                 }
             }
-            
-            // Track quantities being released per product for over-release validation
-            $releasingPerProduct = [];
+
+            // Reject duplicate inventory_id rows in one bulk payload (unique bottle/batch lines)
+            $seenBulkInventory = [];
             foreach ($items as $item) {
-                $invId = $item['inventory_id'];
-                $qty = (int)($item['total_pieces'] ?? $item['quantity'] ?? 0);
-                
-                // We need to get product_id first - will validate after fetching inventory
-                if (!isset($releasingPerProduct[$invId])) {
-                    $releasingPerProduct[$invId] = $qty;
-                } else {
-                    $releasingPerProduct[$invId] += $qty;
+                $invId = (int)($item['inventory_id'] ?? 0);
+                if ($invId <= 0) {
+                    Response::error('Each item requires a valid inventory_id', 400);
                 }
+                if (isset($seenBulkInventory[$invId])) {
+                    Response::error(
+                        "Duplicate inventory row #{$invId} in release payload. Each unique bottle/batch may only appear once.",
+                        400
+                    );
+                }
+                $seenBulkInventory[$invId] = true;
             }
             
             $db->beginTransaction();
             
             try {
                 $released = [];
-                $releasedByProduct = []; // Track total released per product_id
+                $releasedByProduct = []; // Track total released per product_id in this request
                 $auditEntries = [];
                 
                 foreach ($items as $item) {
@@ -496,6 +507,10 @@ function handlePost($db, $action, $currentUser) {
                     // Frontend sends total_pieces OR quantity
                     $quantity = (int)($item['total_pieces'] ?? $item['quantity'] ?? 0);
                     $barcode = $item['barcode'] ?? null;
+
+                    if ($quantity <= 0) {
+                        throw new Exception('Release quantity must be greater than zero');
+                    }
                     
                     // Check and deduct inventory - include pieces_per_box from products table and batch_code from production_batches
                     $invStmt = $db->prepare("
@@ -507,35 +522,44 @@ function handlePost($db, $action, $currentUser) {
                     ");
                     $invStmt->execute([$inventoryId]);
                     $inventory = $invStmt->fetch();
+
+                    if (!$inventory) {
+                        throw new Exception("Inventory item $inventoryId not found");
+                    }
                     
                     // Validate product is on the DR
-                    if ($drId && !empty($drRequiredProducts) && !isset($drRequiredProducts[$inventory['product_id']])) {
+                    $productId = (int)$inventory['product_id'];
+                    if ($drId && !empty($drRequiredProducts) && !isset($drRequiredProducts[$productId])) {
                         $productName = $inventory['product_name'] ?? 'Unknown Product';
                         $requiredNames = implode(', ', array_values($drRequiredProducts));
                         throw new Exception("Product '$productName' is NOT on this Delivery Receipt. Required products: $requiredNames");
                     }
                     
-                    // Validate quantity doesn't exceed DR ordered amount
-                    $productId = $inventory['product_id'];
+                    // Validate quantity doesn't exceed DR ordered amount (prior packed + this request)
                     if ($drId && isset($drOrderedQuantities[$productId])) {
                         if (!isset($releasedByProduct[$productId])) {
                             $releasedByProduct[$productId] = 0;
                         }
-                        $currentTotal = $releasedByProduct[$productId] + $quantity;
+                        $alreadyPacked = $drAlreadyPacked[$productId] ?? 0;
+                        $currentTotal = $alreadyPacked + $releasedByProduct[$productId] + $quantity;
                         $orderedQty = $drOrderedQuantities[$productId];
                         
                         if ($currentTotal > $orderedQty) {
                             $productName = $inventory['product_name'] ?? 'Unknown Product';
-                            throw new Exception("Cannot release {$quantity} pcs of '{$productName}'. DR only requires {$orderedQty} pcs total (already releasing {$releasedByProduct[$productId]} pcs)");
+                            throw new Exception(
+                                "Cannot exceed ordered quantity for '{$productName}': " .
+                                "ordered {$orderedQty}, already packed {$alreadyPacked}, " .
+                                "this release would total {$currentTotal}."
+                            );
                         }
-                        $releasedByProduct[$productId] = $currentTotal;
+                        $releasedByProduct[$productId] += $quantity;
                     }
                     
-                    // Calculate available using multi-unit system
-                    $piecesPerBox = (int)($inventory['pieces_per_box'] ?? 12);
+                    // Effective base units (handles multi-unit + legacy columns)
+                    $piecesPerBox = max(1, (int)($inventory['pieces_per_box'] ?? 12));
                     $boxesAvail = (int)($inventory['boxes_available'] ?? 0);
                     $piecesAvail = (int)($inventory['pieces_available'] ?? 0);
-                    $totalAvailable = ($boxesAvail * $piecesPerBox) + $piecesAvail;
+                    $totalAvailable = fgInventoryEffectiveBaseUnits($inventory, $piecesPerBox);
                     $oldAuditValues = [
                         'boxes_available' => $boxesAvail,
                         'pieces_available' => $piecesAvail,
@@ -546,35 +570,22 @@ function handlePost($db, $action, $currentUser) {
                     if (!$inventory || $totalAvailable < $quantity) {
                         throw new Exception("Insufficient quantity for item $inventoryId (have $totalAvailable, need $quantity)");
                     }
-                    
-                    // Calculate new inventory after deduction
-                    $remaining = $totalAvailable - $quantity;
-                    $newBoxes = floor($remaining / $piecesPerBox);
-                    $newPieces = $remaining % $piecesPerBox;
+
+                    // Atomic base-unit deduction + pack/loose recompute
+                    $deductResult = fgInventoryDeductBaseUnits($db, $inventoryId, $quantity);
+                    $newBoxes = $deductResult['after_boxes'];
+                    $newPieces = $deductResult['after_loose'];
+                    $remaining = $deductResult['after_base'];
                     $newAuditValues = [
                         'boxes_available' => (int)$newBoxes,
                         'pieces_available' => (int)$newPieces,
-                        'quantity_available' => max(0, (int)($inventory['quantity_available'] ?? 0) - $quantity),
+                        'quantity_available' => (int)$remaining,
                         'total_available_pieces' => (int)$remaining,
                         'released_quantity' => $quantity,
                         'dispatch_code' => null,
                         'dr_id' => $drId,
                         'barcode' => $barcode
                     ];
-                    
-                    // Deduct using multi-unit columns
-                    $updateStmt = $db->prepare("
-                        UPDATE finished_goods_inventory 
-                        SET boxes_available = ?,
-                            pieces_available = ?,
-                            quantity_boxes = ?,
-                            quantity_pieces = ?,
-                            quantity = quantity - ?,
-                            quantity_available = GREATEST(0, quantity_available - ?),
-                            last_movement_at = NOW()
-                        WHERE id = ?
-                    ");
-                    $updateStmt->execute([$newBoxes, $newPieces, $newBoxes, $newPieces, $quantity, $quantity, $inventoryId]);
                     
                     // Log dispatch - generate dispatch code
                     $dispatchCode = 'DSP-' . date('Ymd') . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
@@ -595,20 +606,26 @@ function handlePost($db, $action, $currentUser) {
                     ");
                     $txnStmt->execute([$txnCode, $inventoryId, $inventory['product_id'], -$quantity, $drId, $currentUser['user_id']]);
                     
-                    // Add to DR items
+                    // Add to DR items (accumulate packed qty across batches for same product)
                     if ($drId) {
-                        // Check if item already exists in DR (from order creation)
                         $checkStmt = $db->prepare("
-                            SELECT id, quantity_ordered 
+                            SELECT id, quantity_ordered, COALESCE(quantity_packed, 0) as quantity_packed
                             FROM delivery_receipt_items 
                             WHERE delivery_receipt_id = ? AND product_id = ?
                             LIMIT 1
+                            FOR UPDATE
                         ");
                         $checkStmt->execute([$drId, $inventory['product_id']]);
                         $existingItem = $checkStmt->fetch();
                         
                         if ($existingItem) {
-                            // Update existing item with batch and packed quantity
+                            $newPacked = (int)$existingItem['quantity_packed'] + $quantity;
+                            $orderedQty = (int)$existingItem['quantity_ordered'];
+                            if ($newPacked > $orderedQty) {
+                                throw new Exception(
+                                    "Cannot exceed ordered quantity (would pack {$newPacked}, ordered {$orderedQty})."
+                                );
+                            }
                             $updateStmt = $db->prepare("
                                 UPDATE delivery_receipt_items 
                                 SET batch_id = ?, quantity_packed = ?, quantity_delivered = ?
@@ -616,8 +633,8 @@ function handlePost($db, $action, $currentUser) {
                             ");
                             $updateStmt->execute([
                                 $inventory['batch_id'] ?? null,
-                                $quantity,
-                                $quantity,
+                                $newPacked,
+                                $newPacked,
                                 $existingItem['id']
                             ]);
                         } else {
@@ -649,24 +666,27 @@ function handlePost($db, $action, $currentUser) {
                     ];
                 }
                 
-                // Check if ALL items are fully picked before setting DR to 'ready'
+                // Ready only when every line is exactly fully packed (never mark ready if over-packed)
                 if ($drId) {
-                    // Check if all DR items have quantity_packed >= quantity_ordered
                     $checkAllPickedStmt = $db->prepare("
                         SELECT 
                             COUNT(*) as total_items,
-                            SUM(CASE WHEN COALESCE(quantity_packed, 0) >= quantity_ordered THEN 1 ELSE 0 END) as picked_items
+                            SUM(CASE WHEN COALESCE(quantity_packed, 0) = quantity_ordered THEN 1 ELSE 0 END) as picked_items,
+                            SUM(CASE WHEN COALESCE(quantity_packed, 0) > quantity_ordered THEN 1 ELSE 0 END) as over_items
                         FROM delivery_receipt_items 
                         WHERE delivery_receipt_id = ?
                     ");
                     $checkAllPickedStmt->execute([$drId]);
                     $pickStatus = $checkAllPickedStmt->fetch();
+
+                    if ((int)$pickStatus['over_items'] > 0) {
+                        throw new Exception('Cannot exceed ordered quantity. Transaction aborted.');
+                    }
                     
                     $allPicked = ($pickStatus['total_items'] > 0 && 
-                                  $pickStatus['picked_items'] == $pickStatus['total_items']);
+                                  (int)$pickStatus['picked_items'] === (int)$pickStatus['total_items']);
                     
                     if ($allPicked) {
-                        // All items picked - set to 'ready'
                         $drUpdateStmt = $db->prepare("
                             UPDATE delivery_receipts 
                             SET status = 'ready', prepared_by = ?, prepared_at = NOW()

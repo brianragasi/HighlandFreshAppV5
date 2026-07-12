@@ -19,20 +19,15 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/config/ccp_standards.php';
 
 // Require Production role
 $currentUser = Auth::requireRole(['production_staff', 'general_manager', 'qc_officer']);
 
-// CCP Check Type Configurations based on Production Staff documentation
-define('CCP_CONFIGS', [
-    'chilling' => ['target' => 4, 'tolerance' => 1, 'is_max' => true, 'unit' => '°C'],
-    'preheating' => ['target' => 65, 'tolerance' => 2, 'is_max' => false, 'unit' => '°C'],
-    'homogenization' => ['target_min' => 1000, 'target_max' => 1500, 'unit' => 'psi'],
-    'pasteurization' => ['target' => 75, 'tolerance' => 2, 'is_max' => false, 'hold_time' => 15, 'unit' => '°C'],
-    'cooling' => ['target' => 4, 'tolerance' => 1, 'is_max' => true, 'unit' => '°C'],
-    'storage' => ['target' => 4, 'tolerance' => 1, 'is_max' => true, 'unit' => '°C'],
-    'intermediate' => ['target' => 4, 'tolerance' => 2, 'is_max' => true, 'unit' => '°C']
-]);
+// Shared CCP standards (api/config/ccp_standards.php) — single source of truth
+if (!defined('CCP_CONFIGS')) {
+    define('CCP_CONFIGS', ccp_get_configs());
+}
 
 try {
     $db = Database::getInstance()->getConnection();
