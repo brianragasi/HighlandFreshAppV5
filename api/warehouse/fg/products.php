@@ -175,78 +175,102 @@ function handleGet($db, $action) {
             break;
             
         case 'for_sale':
-            // Get products available for sale (with inventory > 0)
-            // Uses multi-unit system: boxes_available + pieces_available
-            // Subtracts quantities reserved in pending/approved/preparing orders
-            // INCLUDES items without product_id (manually packaged custom sizes)
+            // Products available for sale, aggregated by product SKU.
+            // Authoritative sellable unit = BASE units (bottles/packs/pieces):
+            //   on_hand = SUM(quantity_available) for available, non-expired lots
+            //   reserved = SUM(quantity_ordered) on open sales orders
+            //   available_qty = max(0, on_hand - reserved)
+            // Pack config (pieces_per_box, base_unit, box_unit) is for UI conversion only.
             $category = getParam('category');
             $search = getParam('search');
-            
+
+            // Linked products (normal path)
             $sql = "
-                SELECT 
-                    COALESCE(p.id, CONCAT('fg-', fi.id)) as id,
-                    COALESCE(p.product_code, CONCAT('FG-', fi.id)) as product_code,
-                    COALESCE(p.product_name, fi.product_name) as product_name,
-                    COALESCE(p.category, fi.product_type) as category,
-                    COALESCE(p.variant, fi.variant, CONCAT(fi.size_ml, fi.unit)) as variant,
-                    COALESCE(p.unit_size, fi.size_ml) as unit_size,
-                    COALESCE(p.unit_measure, fi.unit) as unit_measure,
-                    COALESCE(p.base_unit, 'piece') as base_unit,
-                    COALESCE(p.selling_price, 0) as selling_price,
-                    COALESCE(p.pieces_per_box, 1) as pieces_per_box,
-                    p.id as real_product_id,
-                    fi.id as fg_inventory_id,
-                    GREATEST(0, 
-                        SUM(CASE 
-                            WHEN fi.status = 'available' AND fi.expiry_date > CURDATE() 
-                            THEN COALESCE(NULLIF(fi.pieces_available, 0), NULLIF(fi.quantity_pieces, 0), fi.quantity_available, fi.remaining_quantity, 0)
-                            ELSE 0 
-                        END)
-                        - COALESCE((
-                            SELECT SUM(soi.quantity_ordered)
-                            FROM sales_order_items soi
-                            JOIN sales_orders so ON soi.order_id = so.id
-                            WHERE (soi.product_id = p.id OR (soi.product_id IS NULL AND soi.product_name = fi.product_name))
-                            AND so.status IN ('pending', 'approved', 'preparing')
-                        ), 0)
-                    ) as available_qty,
-                    COALESCE((
-                        SELECT SUM(soi.quantity_ordered)
-                        FROM sales_order_items soi
-                        JOIN sales_orders so ON soi.order_id = so.id
-                        WHERE (soi.product_id = p.id OR (soi.product_id IS NULL AND soi.product_name = fi.product_name))
-                        AND so.status IN ('pending', 'approved', 'preparing')
-                    ), 0) as reserved_qty
-                FROM finished_goods_inventory fi
-                LEFT JOIN products p ON fi.product_id = p.id
-                WHERE (p.id IS NULL OR p.is_active = 1)
-                AND fi.status = 'available' 
-                AND fi.expiry_date > CURDATE()
+                SELECT
+                    p.id,
+                    p.product_code,
+                    p.product_name,
+                    p.category,
+                    p.variant,
+                    p.unit_size,
+                    p.unit_measure,
+                    COALESCE(p.base_unit, 'piece') AS base_unit,
+                    COALESCE(p.box_unit, 'box') AS box_unit,
+                    COALESCE(p.selling_price, 0) AS selling_price,
+                    COALESCE(p.pieces_per_box, 1) AS pieces_per_box,
+                    p.id AS real_product_id,
+                    COALESCE(stock.on_hand, 0) AS on_hand_qty,
+                    COALESCE(res.reserved_qty, 0) AS reserved_qty,
+                    GREATEST(0, COALESCE(stock.on_hand, 0) - COALESCE(res.reserved_qty, 0)) AS available_qty
+                FROM products p
+                INNER JOIN (
+                    SELECT fi.product_id,
+                           SUM(GREATEST(0, COALESCE(fi.quantity_available, 0))) AS on_hand
+                    FROM finished_goods_inventory fi
+                    WHERE fi.product_id IS NOT NULL
+                      AND fi.status = 'available'
+                      AND (fi.expiry_date IS NULL OR fi.expiry_date > CURDATE())
+                      AND COALESCE(fi.quantity_available, 0) > 0
+                    GROUP BY fi.product_id
+                ) stock ON stock.product_id = p.id
+                LEFT JOIN (
+                    SELECT soi.product_id,
+                           SUM(COALESCE(soi.quantity_ordered, 0)) AS reserved_qty
+                    FROM sales_order_items soi
+                    JOIN sales_orders so ON soi.order_id = so.id
+                    WHERE soi.product_id IS NOT NULL
+                      AND so.status IN ('pending', 'approved', 'preparing')
+                    GROUP BY soi.product_id
+                ) res ON res.product_id = p.id
+                WHERE p.is_active = 1
             ";
             $params = [];
-            
+
             if ($category) {
-                $sql .= " AND (p.category = ? OR fi.product_type = ?)";
-                $params[] = $category;
+                $sql .= " AND p.category = ?";
                 $params[] = $category;
             }
-            
             if ($search) {
-                $sql .= " AND ((p.product_name LIKE ? OR p.product_code LIKE ?) OR (fi.product_name LIKE ?))";
+                $sql .= " AND (p.product_name LIKE ? OR p.product_code LIKE ?)";
                 $searchTerm = "%$search%";
                 $params[] = $searchTerm;
                 $params[] = $searchTerm;
-                $params[] = $searchTerm;
             }
-            
-            $sql .= " GROUP BY COALESCE(p.id, fi.id), fi.id, p.product_code, p.product_name, fi.product_name, p.category, fi.product_type, p.variant, fi.variant, fi.size_ml, fi.unit, p.unit_size, p.unit_measure, p.base_unit, p.selling_price, p.pieces_per_box 
-                      HAVING available_qty > 0 OR reserved_qty > 0 
-                      ORDER BY product_name ASC";
-            
+
+            $sql .= " HAVING available_qty > 0 OR reserved_qty > 0
+                      ORDER BY p.product_name ASC";
+
             $stmt = $db->prepare($sql);
             $stmt->execute($params);
-            $products = $stmt->fetchAll();
-            
+            $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Enrich with pack breakdown for UI (purely presentational)
+            foreach ($products as &$prod) {
+                $ppb = max(1, (int) ($prod['pieces_per_box'] ?? 1));
+                $avail = (int) ($prod['available_qty'] ?? 0);
+                $onHand = (int) ($prod['on_hand_qty'] ?? 0);
+                $reserved = (int) ($prod['reserved_qty'] ?? 0);
+                $base = $prod['base_unit'] ?: 'piece';
+                $box = $prod['box_unit'] ?: 'box';
+
+                $prod['available_qty'] = $avail;
+                $prod['on_hand_qty'] = $onHand;
+                $prod['reserved_qty'] = $reserved;
+                $prod['available_boxes'] = $ppb > 1 ? intdiv($avail, $ppb) : 0;
+                $prod['available_loose'] = $ppb > 1 ? ($avail % $ppb) : $avail;
+                $basePlural = $base . (substr($base, -1) === 's' ? 'es' : 's');
+                if (in_array(strtolower($base), ['piece', 'bottle', 'pack', 'block', 'cup', 'tub', 'jar'], true)) {
+                    $basePlural = $base . 's';
+                }
+                $boxOne = rtrim($box, 's');
+                $prod['pack_config_label'] = $ppb > 1
+                    ? ("1 {$boxOne} = {$ppb} {$basePlural}")
+                    : ("Sold as individual {$basePlural} (no multi-pack)");
+                $prod['quantity_unit'] = $base; // authoritative unit for available_qty / orders
+                $prod['quantity_unit_label'] = $basePlural;
+            }
+            unset($prod);
+
             Response::success($products, 'Available products retrieved');
             break;
             

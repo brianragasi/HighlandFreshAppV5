@@ -15,10 +15,35 @@
     
     <style>
         body { font-family: 'Inter', sans-serif; }
-        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
         .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
         .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
         .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .stat-value { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+        .money { font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .kpi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; }
+        @media (min-width: 1024px) { .kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+        .kpi-cell { padding: 1rem 1.25rem; border-right: 1px solid oklch(var(--bc) / 0.08); border-bottom: 1px solid oklch(var(--bc) / 0.08); }
+        @media (min-width: 1024px) {
+            .kpi-cell { border-bottom: 0; }
+            .kpi-cell:last-child { border-right: 0; }
+        }
+        @media (max-width: 1023px) {
+            .kpi-cell:nth-child(2n) { border-right: 0; }
+            .kpi-cell:nth-last-child(-n+2) { border-bottom: 0; }
+        }
+        .kpi-label { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: oklch(var(--bc) / 0.5); }
+        .kpi-value { font-size: 1.35rem; font-weight: 700; line-height: 1.2; margin-top: 0.25rem; }
+        .kpi-meta { font-size: 0.75rem; color: oklch(var(--bc) / 0.55); margin-top: 0.2rem; }
+        .section-title { font-size: 0.8rem; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: oklch(var(--bc) / 0.5); }
+        .pipeline-row { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid oklch(var(--bc) / 0.06); }
+        .pipeline-row:last-child { border-bottom: 0; }
+        .aging-row { display: grid; grid-template-columns: 4.5rem 1fr auto; gap: 0.75rem; align-items: center; padding: 0.4rem 0; }
+        .dash-table thead th {
+            font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;
+            font-weight: 600; color: oklch(var(--bc) / 0.5); background: transparent;
+            border-bottom: 1px solid oklch(var(--bc) / 0.1);
+        }
     </style>
 </head>
 <body class="bg-base-200 min-h-screen">
@@ -132,309 +157,182 @@
     
     <!-- Main Content -->
     <div class="lg:ml-72 min-h-screen flex flex-col">
-        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6 min-h-14">
             <div class="flex-none lg:hidden">
-                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button>
-            </div>
-            <div class="flex-1">
-                <div class="flex items-center gap-2">
-                    <i class="fas fa-th-large text-primary"></i>
-                    <span class="font-semibold">Sales Dashboard</span>
-                </div>
-            </div>
-            <div class="flex-none gap-2">
-                <button class="btn btn-primary btn-sm" onclick="window.location.href='orders.html?action=new'">
-                    <i class="fas fa-plus"></i> New Order
+                <button type="button" class="btn btn-ghost btn-square btn-sm" onclick="toggleSidebar()" aria-label="Menu">
+                    <i class="fas fa-bars"></i>
                 </button>
-                <label class="swap swap-rotate btn btn-ghost btn-circle">
+            </div>
+            <div class="flex-1 min-w-0">
+                <h1 class="text-base lg:text-lg font-bold">Dashboard</h1>
+                <p class="text-xs text-base-content/50 truncate" id="currentDate"></p>
+            </div>
+            <div class="flex-none flex items-center gap-1.5">
+                <a href="orders.html?status=pending" class="btn btn-ghost btn-sm hidden sm:inline-flex gap-1.5">
+                    Pending <span class="badge badge-sm badge-ghost" id="headerPendingHint">0</span>
+                </a>
+                <a href="orders.html?action=new" class="btn btn-primary btn-sm gap-1.5">
+                    <i class="fas fa-plus text-xs"></i> New Order
+                </a>
+                <label class="swap swap-rotate btn btn-ghost btn-sm btn-square" title="Theme">
                     <input type="checkbox" id="themeToggle" />
-                    <i class="fas fa-sun swap-off text-lg"></i>
-                    <i class="fas fa-moon swap-on text-lg"></i>
+                    <i class="fas fa-sun swap-off text-sm"></i>
+                    <i class="fas fa-moon swap-on text-sm"></i>
                 </label>
             </div>
         </header>
-        
-        <main class="flex-1 p-4 lg:p-6">
-            <!-- Page Header -->
-            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-                <div>
-                    <h1 class="text-2xl font-bold text-base-content">Sales Custodian Dashboard</h1>
-                    <p class="text-base-content/60">Overview of sales, receivables, and orders</p>
-                </div>
-                <div class="flex items-center gap-2">
-                    <span class="text-sm text-base-content/60">Today:</span>
-                    <span class="font-semibold" id="currentDate"></span>
-                </div>
-            </div>
-            
-            <!-- Stats Cards -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <div class="card bg-base-100 shadow-sm">
-                    <div class="card-body p-4">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <p class="text-xs text-base-content/60 uppercase tracking-wide">Today's Credit Sales</p>
-                                <p class="text-2xl font-bold text-primary mt-1" id="todaySales">₱0.00</p>
-                                <p class="text-xs text-base-content/60 mt-1"><span id="todayOrderCount">0</span> orders</p>
-                            </div>
-                            <div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
-                                <i class="fas fa-receipt text-primary text-xl"></i>
-                            </div>
-                        </div>
+
+        <main class="flex-1 p-4 lg:p-6 space-y-4 max-w-7xl w-full mx-auto">
+
+            <!-- Primary KPIs (single surface) -->
+            <section class="card bg-base-100 border border-base-300 overflow-hidden">
+                <div class="kpi-grid">
+                    <div class="kpi-cell">
+                        <p class="kpi-label">Today’s sales</p>
+                        <p class="kpi-value money text-base-content" id="todaySales">₱0.00</p>
+                        <p class="kpi-meta"><span id="todayOrderCount">0</span> orders today</p>
+                    </div>
+                    <div class="kpi-cell">
+                        <p class="kpi-label">Receivables</p>
+                        <p class="kpi-value money text-base-content" id="totalReceivables">₱0.00</p>
+                        <p class="kpi-meta"><span id="receivablesCount">0</span> accounts</p>
+                    </div>
+                    <div class="kpi-cell">
+                        <p class="kpi-label">Overdue</p>
+                        <p class="kpi-value money text-error" id="overdueAmount">₱0.00</p>
+                        <p class="kpi-meta"><span id="overdueCount" class="text-error/80">0</span> accounts · <a href="collections.html" class="link link-hover">Collect</a></p>
+                    </div>
+                    <div class="kpi-cell">
+                        <p class="kpi-label">Pending orders</p>
+                        <p class="kpi-value text-base-content" id="pendingOrders">0</p>
+                        <p class="kpi-meta"><a href="orders.html?status=pending" class="link link-hover">Review queue</a></p>
                     </div>
                 </div>
-                
-                <div class="card bg-base-100 shadow-sm">
-                    <div class="card-body p-4">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <p class="text-xs text-base-content/60 uppercase tracking-wide">Total Receivables</p>
-                                <p class="text-2xl font-bold text-info mt-1" id="totalReceivables">₱0.00</p>
-                                <p class="text-xs text-base-content/60 mt-1"><span id="receivablesCount">0</span> accounts</p>
-                            </div>
-                            <div class="w-12 h-12 bg-info/10 rounded-xl flex items-center justify-center">
-                                <i class="fas fa-file-invoice-dollar text-info text-xl"></i>
-                            </div>
+            </section>
+
+            <!-- Work row: orders + side metrics -->
+            <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+
+                <!-- Recent orders (primary work surface) -->
+                <section class="card bg-base-100 border border-base-300 xl:col-span-2">
+                    <div class="card-body p-4 gap-3">
+                        <div class="flex items-center justify-between gap-2">
+                            <h2 class="section-title m-0">Recent orders</h2>
+                            <a href="orders.html" class="btn btn-ghost btn-xs">All orders</a>
                         </div>
-                    </div>
-                </div>
-                
-                <div class="card bg-base-100 shadow-sm">
-                    <div class="card-body p-4">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <p class="text-xs text-base-content/60 uppercase tracking-wide">Overdue Amount</p>
-                                <p class="text-2xl font-bold text-error mt-1" id="overdueAmount">₱0.00</p>
-                                <p class="text-xs text-error mt-1"><span id="overdueCount">0</span> overdue</p>
-                            </div>
-                            <div class="w-12 h-12 bg-error/10 rounded-xl flex items-center justify-center">
-                                <i class="fas fa-exclamation-triangle text-error text-xl"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="card bg-base-100 shadow-sm">
-                    <div class="card-body p-4">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <p class="text-xs text-base-content/60 uppercase tracking-wide">Pending Orders</p>
-                                <p class="text-2xl font-bold text-warning mt-1" id="pendingOrders">0</p>
-                                <p class="text-xs text-base-content/60 mt-1">awaiting processing</p>
-                            </div>
-                            <div class="w-12 h-12 bg-warning/10 rounded-xl flex items-center justify-center">
-                                <i class="fas fa-hourglass-half text-warning text-xl"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Aging Summary & Order Pipeline -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <!-- Aging Summary -->
-                <div class="card bg-base-100 shadow-sm">
-                    <div class="card-body">
-                        <div class="flex items-center justify-between mb-4">
-                            <h2 class="card-title text-lg">
-                                <i class="fas fa-chart-pie text-primary"></i>
-                                Aging Summary
-                            </h2>
-                            <a href="aging.html" class="btn btn-ghost btn-sm">View All</a>
-                        </div>
-                        
-                        <div class="grid grid-cols-2 gap-4">
-                            <div class="bg-success/10 rounded-xl p-4 text-center">
-                                <p class="text-xs text-base-content/60 mb-1">0-30 Days</p>
-                                <p class="text-xl font-bold text-success" id="aging030">₱0.00</p>
-                                <p class="text-xs text-success/80 mt-1"><span id="aging030Count">0</span> accounts</p>
-                            </div>
-                            <div class="bg-warning/10 rounded-xl p-4 text-center">
-                                <p class="text-xs text-base-content/60 mb-1">31-60 Days</p>
-                                <p class="text-xl font-bold text-warning" id="aging3160">₱0.00</p>
-                                <p class="text-xs text-warning/80 mt-1"><span id="aging3160Count">0</span> accounts</p>
-                            </div>
-                            <div class="bg-orange-500/10 rounded-xl p-4 text-center">
-                                <p class="text-xs text-base-content/60 mb-1">61-90 Days</p>
-                                <p class="text-xl font-bold text-orange-500" id="aging6190">₱0.00</p>
-                                <p class="text-xs text-orange-500/80 mt-1"><span id="aging6190Count">0</span> accounts</p>
-                            </div>
-                            <div class="bg-error/10 rounded-xl p-4 text-center">
-                                <p class="text-xs text-base-content/60 mb-1">91+ Days</p>
-                                <p class="text-xl font-bold text-error" id="aging91plus">₱0.00</p>
-                                <p class="text-xs text-error/80 mt-1"><span id="aging91plusCount">0</span> accounts</p>
-                            </div>
-                        </div>
-                        
-                        <!-- Aging Progress Bar -->
-                        <div class="mt-4">
-                            <p class="text-xs text-base-content/60 mb-2">Distribution</p>
-                            <div class="flex h-4 rounded-full overflow-hidden bg-base-200">
-                                <div class="bg-success h-full" id="agingBar030" style="width: 25%"></div>
-                                <div class="bg-warning h-full" id="agingBar3160" style="width: 25%"></div>
-                                <div class="bg-orange-500 h-full" id="agingBar6190" style="width: 25%"></div>
-                                <div class="bg-error h-full" id="agingBar91plus" style="width: 25%"></div>
-                            </div>
-                            <div class="flex justify-between text-xs text-base-content/60 mt-1">
-                                <span>0-30d</span>
-                                <span>31-60d</span>
-                                <span>61-90d</span>
-                                <span>91+d</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Order Pipeline -->
-                <div class="card bg-base-100 shadow-sm">
-                    <div class="card-body">
-                        <div class="flex items-center justify-between mb-4">
-                            <h2 class="card-title text-lg">
-                                <i class="fas fa-tasks text-primary"></i>
-                                Order Pipeline
-                            </h2>
-                            <a href="orders.html" class="btn btn-ghost btn-sm">View All</a>
-                        </div>
-                        
-                        <div class="space-y-3">
-                            <div class="flex items-center justify-between p-3 bg-base-200 rounded-xl">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-8 h-8 bg-slate-400/20 rounded-lg flex items-center justify-center">
-                                        <i class="fas fa-edit text-slate-500 text-sm"></i>
-                                    </div>
-                                    <span class="font-medium">Draft</span>
-                                </div>
-                                <span class="badge badge-ghost" id="pipelineDraft">0</span>
-                            </div>
-                            <div class="flex items-center justify-between p-3 bg-base-200 rounded-xl">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-8 h-8 bg-warning/20 rounded-lg flex items-center justify-center">
-                                        <i class="fas fa-clock text-warning text-sm"></i>
-                                    </div>
-                                    <span class="font-medium">Pending</span>
-                                </div>
-                                <span class="badge badge-warning" id="pipelinePending">0</span>
-                            </div>
-                            <div class="flex items-center justify-between p-3 bg-base-200 rounded-xl">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-8 h-8 bg-info/20 rounded-lg flex items-center justify-center">
-                                        <i class="fas fa-check text-info text-sm"></i>
-                                    </div>
-                                    <span class="font-medium">Approved</span>
-                                </div>
-                                <span class="badge badge-info" id="pipelineApproved">0</span>
-                            </div>
-                            <div class="flex items-center justify-between p-3 bg-base-200 rounded-xl">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center">
-                                        <i class="fas fa-box text-primary text-sm"></i>
-                                    </div>
-                                    <span class="font-medium">Preparing</span>
-                                </div>
-                                <span class="badge badge-primary" id="pipelinePreparing">0</span>
-                            </div>
-                            <div class="flex items-center justify-between p-3 bg-base-200 rounded-xl">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-8 h-8 bg-accent/20 rounded-lg flex items-center justify-center">
-                                        <i class="fas fa-truck text-accent text-sm"></i>
-                                    </div>
-                                    <span class="font-medium">Dispatched</span>
-                                </div>
-                                <span class="badge badge-accent" id="pipelineDispatched">0</span>
-                            </div>
-                            <div class="flex items-center justify-between p-3 bg-base-200 rounded-xl">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-8 h-8 bg-success/20 rounded-lg flex items-center justify-center">
-                                        <i class="fas fa-check-circle text-success text-sm"></i>
-                                    </div>
-                                    <span class="font-medium">Delivered</span>
-                                </div>
-                                <span class="badge badge-success" id="pipelineDelivered">0</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Recent Orders & Top Customers -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <!-- Recent Orders -->
-                <div class="card bg-base-100 shadow-sm">
-                    <div class="card-body">
-                        <div class="flex items-center justify-between mb-4">
-                            <h2 class="card-title text-lg">
-                                <i class="fas fa-clipboard-list text-primary"></i>
-                                Recent Orders
-                            </h2>
-                            <a href="orders.html" class="btn btn-ghost btn-sm">View All</a>
-                        </div>
-                        
-                        <div class="overflow-x-auto">
-                            <table class="table table-sm">
+                        <div class="overflow-x-auto -mx-1">
+                            <table class="table table-sm dash-table">
                                 <thead>
-                                    <tr class="bg-base-200">
-                                        <th>Order #</th>
+                                    <tr>
+                                        <th>Order</th>
                                         <th>Customer</th>
-                                        <th>Amount</th>
+                                        <th class="text-right">Amount</th>
                                         <th>Status</th>
                                     </tr>
                                 </thead>
                                 <tbody id="recentOrdersTable">
                                     <tr>
-                                        <td colspan="4" class="text-center py-8">
-                                            <span class="loading loading-spinner loading-md"></span>
+                                        <td colspan="4" class="text-center py-10">
+                                            <span class="loading loading-spinner loading-sm text-primary"></span>
                                         </td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
                     </div>
-                </div>
-                
-                <!-- Top Customers by Outstanding Balance -->
-                <div class="card bg-base-100 shadow-sm">
-                    <div class="card-body">
-                        <div class="flex items-center justify-between mb-4">
-                            <h2 class="card-title text-lg">
-                                <i class="fas fa-users text-primary"></i>
-                                Top Outstanding Balances
-                            </h2>
-                            <a href="aging.html" class="btn btn-ghost btn-sm">View All</a>
+                </section>
+
+                <!-- Side: pipeline + aging -->
+                <div class="space-y-4">
+                    <section class="card bg-base-100 border border-base-300">
+                        <div class="card-body p-4 gap-1">
+                            <div class="flex items-center justify-between mb-1">
+                                <h2 class="section-title m-0">Pipeline</h2>
+                                <a href="orders.html" class="btn btn-ghost btn-xs">Open</a>
+                            </div>
+                            <div class="pipeline-row"><span class="text-sm text-base-content/70">Draft</span><span class="font-semibold stat-value text-sm" id="pipelineDraft">0</span></div>
+                            <div class="pipeline-row"><span class="text-sm text-base-content/70">Pending</span><span class="font-semibold stat-value text-sm" id="pipelinePending">0</span></div>
+                            <div class="pipeline-row"><span class="text-sm text-base-content/70">Approved</span><span class="font-semibold stat-value text-sm" id="pipelineApproved">0</span></div>
+                            <div class="pipeline-row"><span class="text-sm text-base-content/70">Preparing</span><span class="font-semibold stat-value text-sm" id="pipelinePreparing">0</span></div>
+                            <div class="pipeline-row"><span class="text-sm text-base-content/70">Dispatched</span><span class="font-semibold stat-value text-sm" id="pipelineDispatched">0</span></div>
+                            <div class="pipeline-row"><span class="text-sm text-base-content/70">Delivered</span><span class="font-semibold stat-value text-sm" id="pipelineDelivered">0</span></div>
                         </div>
-                        
-                        <div class="space-y-3" id="topCustomersContainer">
-                            <div class="flex items-center justify-center py-8">
-                                <span class="loading loading-spinner loading-md"></span>
+                    </section>
+
+                    <section class="card bg-base-100 border border-base-300">
+                        <div class="card-body p-4 gap-2">
+                            <div class="flex items-center justify-between">
+                                <h2 class="section-title m-0">Receivables aging</h2>
+                                <a href="aging.html" class="btn btn-ghost btn-xs">Report</a>
+                            </div>
+                            <div class="flex h-2 rounded-full overflow-hidden bg-base-200 mb-1">
+                                <div class="bg-base-content/30 h-full" id="agingBar030" style="width: 25%"></div>
+                                <div class="bg-base-content/45 h-full" id="agingBar3160" style="width: 25%"></div>
+                                <div class="bg-base-content/60 h-full" id="agingBar6190" style="width: 25%"></div>
+                                <div class="bg-error h-full" id="agingBar91plus" style="width: 25%"></div>
+                            </div>
+                            <div class="aging-row">
+                                <span class="text-xs text-base-content/50">0–30d</span>
+                                <span class="text-xs text-base-content/45"><span id="aging030Count">0</span> accts</span>
+                                <span class="text-sm font-semibold money" id="aging030">₱0.00</span>
+                            </div>
+                            <div class="aging-row">
+                                <span class="text-xs text-base-content/50">31–60d</span>
+                                <span class="text-xs text-base-content/45"><span id="aging3160Count">0</span> accts</span>
+                                <span class="text-sm font-semibold money" id="aging3160">₱0.00</span>
+                            </div>
+                            <div class="aging-row">
+                                <span class="text-xs text-base-content/50">61–90d</span>
+                                <span class="text-xs text-base-content/45"><span id="aging6190Count">0</span> accts</span>
+                                <span class="text-sm font-semibold money" id="aging6190">₱0.00</span>
+                            </div>
+                            <div class="aging-row">
+                                <span class="text-xs text-error/80">91d+</span>
+                                <span class="text-xs text-base-content/45"><span id="aging91plusCount">0</span> accts</span>
+                                <span class="text-sm font-semibold money text-error" id="aging91plus">₱0.00</span>
                             </div>
                         </div>
-                    </div>
+                    </section>
                 </div>
             </div>
-            
-            <!-- Recall Notifications Section -->
-            <div id="recallNotificationsSection" class="card bg-base-100 shadow-sm mt-6">
-                <div class="card-body">
-                    <div class="flex items-center justify-between mb-4">
-                        <h2 class="card-title text-lg">
-                            <i class="fas fa-exclamation-triangle text-error"></i>
-                            Active Recalls - Pending Customer Notifications
-                        </h2>
-                        <span class="badge badge-error" id="recallsCountBadge">0</span>
+
+            <!-- Top balances -->
+            <section class="card bg-base-100 border border-base-300">
+                <div class="card-body p-4 gap-3">
+                    <div class="flex items-center justify-between gap-2">
+                        <h2 class="section-title m-0">Highest outstanding balances</h2>
+                        <a href="aging.html" class="btn btn-ghost btn-xs">Aging report</a>
                     </div>
-                    <p class="text-sm text-base-content/60 mb-4">Contact affected customers about product recalls. Click the notification buttons after contacting each location.</p>
-                    
-                    <div id="recallNotificationsList" class="space-y-4 max-h-96 overflow-y-auto scrollbar-thin">
-                        <div class="text-center py-8 text-base-content/40">
-                            <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-                            <p>Loading recalls...</p>
+                    <div id="topCustomersContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2">
+                        <div class="flex items-center justify-center py-8 col-span-full">
+                            <span class="loading loading-spinner loading-sm text-primary"></span>
                         </div>
                     </div>
                 </div>
-            </div>
+            </section>
+
+            <!-- Recalls (secondary; still actionable) -->
+            <section id="recallNotificationsSection" class="card bg-base-100 border border-base-300">
+                <div class="card-body p-4 gap-3">
+                    <div class="flex items-center justify-between gap-2 flex-wrap">
+                        <div class="flex items-center gap-2">
+                            <h2 class="section-title m-0">Recall notifications</h2>
+                            <span class="badge badge-ghost badge-sm" id="recallsCountBadge">0</span>
+                        </div>
+                        <p class="text-xs text-base-content/50 m-0">Mark contacted after you call or email each location</p>
+                    </div>
+                    <div id="recallNotificationsList" class="space-y-3 max-h-80 overflow-y-auto scrollbar-thin">
+                        <div class="text-center py-6 text-base-content/40 text-sm">
+                            <span class="loading loading-spinner loading-sm"></span>
+                            <p class="mt-2">Loading…</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
         </main>
-        
-        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
-            <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+
+        <footer class="footer footer-center p-3 bg-base-100 text-base-content border-t border-base-300">
+            <p class="text-xs text-base-content/50">(c) 2026 Highland Fresh Dairy</p>
         </footer>
     </div>
     
@@ -488,12 +386,16 @@
             try {
                 const user = AuthService.getCurrentUser();
                 if (user) {
-                    document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
-                    document.getElementById('userInitials').textContent = `${user.first_name[0]}${user.last_name[0]}`;
+                    const first = user.first_name || '';
+                    const last = user.last_name || '';
+                    document.getElementById('sidebarUserName').textContent =
+                        `${first} ${last}`.trim() || user.username || 'Sales Custodian';
+                    document.getElementById('userInitials').textContent =
+                        ((first[0] || '') + (last[0] || '')).toUpperCase() || 'SC';
                 }
                 
                 document.getElementById('currentDate').textContent = new Date().toLocaleDateString('en-PH', {
-                    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+                    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
                 });
                 
                 await loadDashboardData();
@@ -523,7 +425,11 @@
                 document.getElementById('overdueAmount').textContent = formatCurrency(stats.overdue_amount);
                 document.getElementById('overdueCount').textContent = stats.overdue_count || 0;
                 document.getElementById('pendingOrders').textContent = stats.pending_orders || 0;
-                document.getElementById('pendingOrdersBadge').textContent = stats.pending_orders || 0;
+                const pendingN = stats.pending_orders || 0;
+                const pendingBadge = document.getElementById('pendingOrdersBadge');
+                if (pendingBadge) pendingBadge.textContent = pendingN;
+                const headerPending = document.getElementById('headerPendingHint');
+                if (headerPending) headerPending.textContent = pendingN;
                 
                 // Update order pipeline
                 const pipeline = stats.pipeline || {};
@@ -585,15 +491,15 @@
                 'cancelled': 'badge-error'
             };
             
-            tbody.innerHTML = orders.slice(0, 5).map(order => `
-                <tr class="hover cursor-pointer" onclick="window.location.href='orders.html?id=${order.id}'">
-                    <td class="font-mono text-sm">${order.order_number || `ORD-${order.id}`}</td>
+            tbody.innerHTML = orders.slice(0, 8).map(order => `
+                <tr class="hover:bg-base-200/50 cursor-pointer" onclick="window.location.href='orders.html?id=${order.id}'">
+                    <td class="font-mono text-xs font-semibold text-primary">${order.order_number || `ORD-${order.id}`}</td>
                     <td>
-                        <div class="font-medium text-sm">${order.customer_name || 'Unknown'}</div>
-                        <div class="text-xs text-base-content/60">${formatDate(order.created_at)}</div>
+                        <div class="text-sm font-medium leading-tight">${order.customer_name || 'Unknown'}</div>
+                        <div class="text-[11px] text-base-content/45">${formatDate(order.created_at)}</div>
                     </td>
-                    <td class="font-semibold">${formatCurrency(order.total_amount)}</td>
-                    <td><span class="badge ${statusBadges[order.status] || 'badge-ghost'} badge-sm">${order.status}</span></td>
+                    <td class="text-right money text-sm font-semibold">${formatCurrency(order.total_amount)}</td>
+                    <td><span class="badge ${statusBadges[order.status] || 'badge-ghost'} badge-sm badge-outline">${order.status}</span></td>
                 </tr>
             `).join('');
         }
@@ -602,27 +508,21 @@
             const container = document.getElementById('topCustomersContainer');
             
             if (!customers || customers.length === 0) {
-                container.innerHTML = `<p class="text-center py-8 text-base-content/60">No outstanding balances</p>`;
+                container.innerHTML = `<p class="text-center py-6 text-sm text-base-content/50 col-span-full">No outstanding balances</p>`;
                 return;
             }
             
             container.innerHTML = customers.map((c, i) => `
-                <div class="flex items-center justify-between p-3 bg-base-200 rounded-xl hover:bg-base-300 cursor-pointer"
+                <button type="button" class="text-left rounded-lg border border-base-300 p-3 hover:border-base-content/20 transition-colors"
                      onclick="window.location.href='customers.html?id=${c.id}'">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-sm font-bold text-primary">
-                            ${i + 1}
-                        </div>
-                        <div>
-                            <p class="font-medium text-sm">${c.name}</p>
-                            <p class="text-xs text-base-content/60">${c.customer_type || 'Customer'}</p>
-                        </div>
+                    <div class="flex items-start justify-between gap-2 mb-1">
+                        <span class="text-[11px] font-semibold text-base-content/40">#${i + 1}</span>
+                        ${c.days_overdue > 0 ? `<span class="text-[10px] font-medium text-error">${c.days_overdue}d overdue</span>` : ''}
                     </div>
-                    <div class="text-right">
-                        <p class="font-bold ${c.days_overdue > 0 ? 'text-error' : ''}">${formatCurrency(c.outstanding_balance)}</p>
-                        ${c.days_overdue > 0 ? `<p class="text-xs text-error">${c.days_overdue}d overdue</p>` : ''}
-                    </div>
-                </div>
+                    <p class="font-medium text-sm truncate" title="${String(c.name || '').replace(/"/g, '&quot;')}">${c.name || 'Customer'}</p>
+                    <p class="text-[11px] text-base-content/45 truncate mb-2">${c.customer_type || 'Customer'}</p>
+                    <p class="text-sm font-bold money ${c.days_overdue > 0 ? 'text-error' : ''}">${formatCurrency(c.outstanding_balance)}</p>
+                </button>
             `).join('');
         }
         
@@ -682,10 +582,8 @@
             
             if (!recalls.length) {
                 container.innerHTML = `
-                    <div class="text-center py-8 text-success">
-                        <i class="fas fa-check-circle text-2xl mb-2"></i>
-                        <p>No pending recall notifications</p>
-                        <p class="text-xs text-base-content/60 mt-1">All affected locations have been notified</p>
+                    <div class="text-center py-6 text-sm text-base-content/50">
+                        No pending recall notifications
                     </div>
                 `;
                 return;
@@ -699,41 +597,30 @@
                 if (pendingLocations.length === 0) return '';
                 
                 return `
-                    <div class="border ${r.recall_class === 'class_i' ? 'border-error bg-error/5' : 'border-warning bg-warning/5'} rounded-xl p-4">
-                        <div class="flex flex-col md:flex-row md:items-start gap-4 mb-3">
-                            <div class="flex-1">
-                                <div class="flex items-center gap-2 mb-1">
-                                    <span class="badge ${cls.badge} gap-1">
-                                        <i class="fas fa-${cls.icon}"></i> ${cls.label}
-                                    </span>
-                                    <code class="text-sm font-mono">${r.recall_code}</code>
+                    <div class="rounded-lg border border-base-300 p-3">
+                        <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
+                            <div class="min-w-0">
+                                <div class="flex flex-wrap items-center gap-1.5 mb-0.5">
+                                    <span class="badge ${cls.badge} badge-sm">${cls.label}</span>
+                                    <code class="text-xs font-mono">${r.recall_code}</code>
                                 </div>
-                                <p class="font-semibold">${r.product_name}</p>
-                                <p class="text-sm text-base-content/60">
-                                    Batch: ${r.batch_code} • ${r.total_dispatched} units dispatched
-                                </p>
-                                <p class="text-xs text-base-content/50 mt-1">${r.reason}</p>
+                                <p class="font-semibold text-sm">${r.product_name}</p>
+                                <p class="text-xs text-base-content/50">Batch ${r.batch_code} · ${r.total_dispatched} units · ${notifiedLocations.length} notified</p>
                             </div>
-                            <div class="text-right">
-                                <div class="badge badge-error badge-lg">${pendingLocations.length} pending</div>
-                                <p class="text-xs text-success mt-1">${notifiedLocations.length} notified</p>
-                            </div>
+                            <span class="badge badge-ghost badge-sm">${pendingLocations.length} to contact</span>
                         </div>
-                        
-                        <div class="divider my-2 text-xs">Locations to Contact</div>
-                        
-                        <div class="space-y-2">
+                        <div class="space-y-1.5">
                             ${pendingLocations.map(l => `
-                                <div class="flex items-center justify-between p-3 bg-base-100 rounded-lg border border-base-300">
-                                    <div>
-                                        <p class="font-medium">${l.location_name}</p>
-                                        <p class="text-xs text-base-content/60">${l.units_dispatched} units • ${l.location_address || 'No address'}</p>
+                                <div class="flex flex-wrap items-center justify-between gap-2 py-2 px-2 rounded-md bg-base-200/60">
+                                    <div class="min-w-0">
+                                        <p class="text-sm font-medium truncate">${l.location_name}</p>
+                                        <p class="text-[11px] text-base-content/50">${l.units_dispatched} units${l.location_address ? ' · ' + l.location_address : ''}</p>
                                     </div>
-                                    <div class="flex gap-2">
-                                        <button class="btn btn-sm btn-info" onclick="sendRecallNotification(${r.id}, ${l.id}, 'phone')">
+                                    <div class="flex gap-1 shrink-0">
+                                        <button type="button" class="btn btn-xs btn-ghost" onclick="sendRecallNotification(${r.id}, ${l.id}, 'phone')">
                                             <i class="fas fa-phone"></i> Called
                                         </button>
-                                        <button class="btn btn-sm btn-ghost" onclick="sendRecallNotification(${r.id}, ${l.id}, 'email')">
+                                        <button type="button" class="btn btn-xs btn-ghost" onclick="sendRecallNotification(${r.id}, ${l.id}, 'email')">
                                             <i class="fas fa-envelope"></i> Emailed
                                         </button>
                                     </div>

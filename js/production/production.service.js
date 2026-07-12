@@ -100,12 +100,31 @@ const ProductionService = {
      * @param {number} actualQuantity - Actual output quantity
      * @param {string} varianceReason - Reason for variance (optional)
      */
-    async completeRun(id, actualQuantity, varianceReason = '') {
-        return await api.put(`${this.baseUrl}/runs.php`, {
+    async completeRun(id, actualQuantity, varianceReason = '', reconciliationNotes = '') {
+        const payload = {
             id,
             action: 'complete',
             actual_quantity: actualQuantity,
             variance_reason: varianceReason
+        };
+        if (reconciliationNotes) {
+            payload.reconciliation_notes = reconciliationNotes;
+        }
+        return await api.put(`${this.baseUrl}/runs.php`, payload);
+    },
+
+    /**
+     * Mark material reconciliation for a production run
+     * @param {number} id
+     * @param {string} notes
+     * @param {boolean} force - allow over-tolerance with notes
+     */
+    async reconcileRun(id, notes = '', force = false) {
+        return await api.put(`${this.baseUrl}/runs.php`, {
+            id,
+            action: 'reconcile',
+            reconciliation_notes: notes,
+            force: force
         });
     },
 
@@ -300,5 +319,118 @@ const ProductionService = {
      */
     async getLowStockIngredients() {
         return await api.get('/warehouse/raw/ingredients.php', { params: { action: 'list', low_stock: '1' } });
-    }
+    },
+
+    // ========================================
+    // Production Losses
+    // ========================================
+
+    async recordLoss(data) {
+        return await api.post(`${this.baseUrl}/losses.php`, data);
+    },
+
+    async getLosses(runId, stage = null) {
+        const params = { run_id: runId };
+        if (stage) params.stage = stage;
+        return await api.get(`${this.baseUrl}/losses.php`, { params });
+    },
+
+    async deleteLoss(id) {
+        return await api.delete(`${this.baseUrl}/losses.php`, { params: { id } });
+    },
+
+    // ========================================
+    // Yield Calculation
+    // ========================================
+
+    async getYield(runId) {
+        return await api.get(`${this.baseUrl}/yield.php`, { params: { run_id: runId } });
+    },
+
+    async getReconciliation(runId) {
+        return await api.get(`${this.baseUrl}/yield.php`, { params: { run_id: runId, action: 'summary' } });
+    },
+
+    async recalculateYield(runId) {
+        return await api.post(`${this.baseUrl}/yield.php`, { action: 'calculate', production_run_id: runId });
+    },
+
+    // ========================================
+    // Packaging Estimates
+    // ========================================
+
+    async getEstimates(runId) {
+        return await api.get(`${this.baseUrl}/packaging-estimate.php`, { params: { run_id: runId } });
+    },
+
+    async generateEstimate(runId, estimateType = null, basisVolumeMl = null) {
+        const data = { production_run_id: runId };
+        if (estimateType) data.estimate_type = estimateType;
+        if (basisVolumeMl) data.basis_volume_ml = basisVolumeMl;
+        return await api.post(`${this.baseUrl}/packaging-estimate.php`, data);
+    },
+
+    async updateActualUnits(id, actualUnits) {
+        return await api.put(`${this.baseUrl}/packaging-estimate.php`, { id, actual_units: actualUnits });
+    },
+
+    // ========================================
+    // Run Volume (extends runs)
+    // ========================================
+
+    async startRunWithVolume(id, initialVolumeMl) {
+        return await api.put(`${this.baseUrl}/runs.php`, { id, action: 'start', initial_volume_ml: initialVolumeMl });
+    },
+
+    async setRunVolume(id, initialVolumeMl) {
+        return await api.put(`${this.baseUrl}/runs.php`, { id, action: 'set_volume', initial_volume_ml: initialVolumeMl });
+    },
+
+    /**
+     * Load run + yield + packaging estimates for the Active Run Workbench.
+     * Failures on optional endpoints are soft so the hub still opens.
+     */
+    async getRunWorkbenchData(runId) {
+        const runRes = await this.getRun(runId);
+        if (!runRes.success) {
+            return runRes;
+        }
+        const run = runRes.data;
+        let yieldData = null;
+        let estimates = null;
+        let reconciliation = null;
+
+        try {
+            if (run.initial_volume_ml) {
+                const y = await this.getYield(runId);
+                if (y.success) yieldData = y.data;
+            }
+        } catch (e) { /* optional */ }
+
+        try {
+            const e = await this.getEstimates(runId);
+            if (e.success) estimates = e.data;
+        } catch (e) { /* optional */ }
+
+        try {
+            if (run.initial_volume_ml) {
+                const r = await this.getReconciliation(runId);
+                if (r.success) reconciliation = r.data;
+            }
+        } catch (e) { /* optional */ }
+
+        return {
+            success: true,
+            data: {
+                run,
+                yieldData,
+                estimates,
+                reconciliation,
+                nextStep: (typeof ProductionRunFlow !== 'undefined')
+                    ? ProductionRunFlow.getNextStep(run, { yieldData, estimates })
+                    : null,
+            },
+            message: 'Workbench data loaded',
+        };
+    },
 };

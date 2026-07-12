@@ -16,20 +16,236 @@
     
     <style>
         body { font-family: 'Inter', sans-serif; }
-        .bento-card { @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg; }
+        .bento-card { transition: box-shadow 0.2s ease, transform 0.2s ease; }
+        .bento-card:hover { transform: translateY(-1px); box-shadow: 0 8px 20px -10px rgb(0 0 0 / 0.12); }
         .scrollbar-thin::-webkit-scrollbar { width: 6px; }
         .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); }
         .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
         .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-        .requisition-modal { border-radius: 1.5rem; overflow: hidden; }
-        .requisition-modal::backdrop { backdrop-filter: blur(8px); background: rgba(15, 23, 42, 0.55); }
-        .requisition-modal-header { background: linear-gradient(135deg, oklch(var(--p) / 0.12), oklch(var(--b1))); }
-        .requisition-item-card { transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
-        .requisition-item-card:hover { transform: translateY(-1px); border-color: oklch(var(--p) / 0.45); box-shadow: 0 12px 30px -15px rgba(0, 0, 0, 0.25); }
-        .requisition-scroll::-webkit-scrollbar { width: 8px; }
-        .requisition-scroll::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 999px; }
-        .requisition-scroll::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.22); border-radius: 999px; }
-        .requisition-scroll::-webkit-scrollbar-thumb:hover { background: oklch(var(--bc) / 0.35); }
+
+        /* ── High-density requisitions table ── */
+        .req-table-wrap {
+            background: oklch(var(--b1));
+            border: 1px solid oklch(var(--b3));
+            border-radius: 0.85rem;
+            overflow: hidden;
+        }
+        .req-table-scroll {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .req-table {
+            width: 100%;
+            min-width: 900px;
+            border-collapse: collapse;
+        }
+        .req-table thead th {
+            text-align: left;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: #6B7280;
+            background: oklch(var(--b2) / 0.7);
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid oklch(var(--b3));
+            white-space: nowrap;
+        }
+        .req-table thead th.col-actions { text-align: right; }
+        .req-table tbody td {
+            padding: 0.85rem 1rem;
+            vertical-align: middle;
+            border-bottom: 1px solid oklch(var(--b3) / 0.65);
+            font-size: 0.875rem;
+        }
+        .req-table tbody tr:last-child td { border-bottom: none; }
+        .req-table tbody tr { transition: background 0.12s ease; }
+        .req-table tbody tr:hover td { background: oklch(var(--b2) / 0.45); }
+        .req-code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-weight: 700;
+            font-size: 0.8125rem;
+            white-space: nowrap;
+        }
+        .req-code-meta {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.3rem;
+            margin-top: 0.3rem;
+        }
+        .req-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.12rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+            white-space: nowrap;
+            line-height: 1.3;
+        }
+        .req-pill--pending { background: #FEF3C7; color: #B45309; }
+        .req-pill--partial { background: #DBEAFE; color: #1D4ED8; }
+        .req-pill--fulfilled { background: #D1FAE5; color: #047857; }
+        .req-pill--urgent { background: #FEE2E2; color: #B91C1C; }
+        .req-pill--high { background: #FFEDD5; color: #C2410C; }
+        .req-pill--normal { background: oklch(var(--b2)); color: #6B7280; }
+        .req-pill--low { background: oklch(var(--b2)); color: #9CA3AF; }
+        .req-pill--warn { background: #FEF3C7; color: #92400E; font-weight: 600; text-transform: none; letter-spacing: 0; }
+        .req-plan {
+            font-weight: 600;
+            color: oklch(var(--bc));
+            line-height: 1.35;
+        }
+        .req-plan-sub {
+            margin-top: 0.15rem;
+            font-size: 0.75rem;
+            color: #6B7280;
+        }
+        .req-progress {
+            font-variant-numeric: tabular-nums;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .req-progress-bar {
+            margin-top: 0.35rem;
+            height: 0.3rem;
+            width: 5.5rem;
+            border-radius: 9999px;
+            background: oklch(var(--b3));
+            overflow: hidden;
+        }
+        .req-progress-bar > span {
+            display: block;
+            height: 100%;
+            border-radius: 9999px;
+            background: oklch(var(--p));
+        }
+        .req-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.35rem;
+            white-space: nowrap;
+        }
+
+        /* ── Fulfill modal (minimal enterprise) ── */
+        .requisition-modal { border-radius: 1rem; overflow: hidden; }
+        .requisition-modal::backdrop {
+            backdrop-filter: blur(6px);
+            background: rgba(15, 23, 42, 0.5);
+        }
+        .req-modal-header {
+            padding: 1.15rem 1.35rem;
+            border-bottom: 1px solid oklch(var(--b3));
+            background: oklch(var(--b1));
+        }
+        .req-meta-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.25rem 1.75rem;
+            padding: 0.25rem 0 0.5rem;
+        }
+        .req-meta-item {
+            min-width: 7rem;
+        }
+        .req-meta-item__label {
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #9CA3AF;
+            margin-bottom: 0.2rem;
+        }
+        .req-meta-item__value {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: oklch(var(--bc));
+            line-height: 1.3;
+        }
+        .req-meta-item__sub {
+            font-size: 0.75rem;
+            color: #6B7280;
+            margin-top: 0.1rem;
+        }
+        .req-plan-header {
+            margin: 0.25rem 0 0.75rem;
+            padding-bottom: 0.65rem;
+            border-bottom: 1px solid oklch(var(--b3) / 0.7);
+        }
+        .req-plan-header__kicker {
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #9CA3AF;
+        }
+        .req-plan-header__title {
+            margin-top: 0.2rem;
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: oklch(var(--bc));
+        }
+        .req-line-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .req-line-table thead th {
+            text-align: left;
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: #9CA3AF;
+            padding: 0.55rem 0.65rem;
+            border-bottom: 1px solid oklch(var(--b3));
+            background: oklch(var(--b2) / 0.4);
+        }
+        .req-line-table tbody td {
+            padding: 0.75rem 0.65rem;
+            border-bottom: 1px solid oklch(var(--b3) / 0.55);
+            vertical-align: middle;
+            font-size: 0.875rem;
+        }
+        .req-line-table tbody tr:last-child td { border-bottom: none; }
+        .req-line-table tbody tr:hover td { background: oklch(var(--b2) / 0.35); }
+        .issue-input {
+            width: 7.5rem;
+            max-width: 100%;
+            height: 2.65rem !important;
+            min-height: 2.65rem !important;
+            text-align: center;
+            font-size: 1.05rem !important;
+            font-weight: 700 !important;
+            font-variant-numeric: tabular-nums;
+            border: 2px solid oklch(var(--p) / 0.35) !important;
+            border-radius: 0.55rem !important;
+            background: oklch(var(--b1)) !important;
+        }
+        .issue-input:focus {
+            outline: none;
+            border-color: oklch(var(--p)) !important;
+            box-shadow: 0 0 0 3px oklch(var(--p) / 0.15);
+        }
+        .pack-note {
+            margin-top: 0.25rem;
+            font-size: 0.7rem;
+            color: #9CA3AF;
+            font-style: italic;
+            line-height: 1.35;
+        }
+        .pack-note i { opacity: 0.7; margin-right: 0.2rem; }
+        .stock-low {
+            font-size: 0.7rem;
+            color: #B45309;
+            margin-top: 0.2rem;
+        }
+        .requisition-scroll::-webkit-scrollbar { width: 6px; }
+        .requisition-scroll::-webkit-scrollbar-track { background: transparent; }
+        .requisition-scroll::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 999px; }
     </style>
 </head>
 <body class="bg-base-200 min-h-screen">
@@ -38,86 +254,12 @@
     <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
     
     <!-- Sidebar -->
-    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
-        <div class="p-4 border-b border-base-300">
-            <div class="flex items-center gap-3">
-                <img src="../../images/logo.jpg" alt="Highland Fresh Logo" class="w-10 h-10 rounded-xl object-cover">
-                <div class="flex-1 min-w-0">
-                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
-                    <p class="text-xs text-base-content/60">Warehouse Raw</p>
-                </div>
-                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()">
-                    <i class="fas fa-times"></i>
-                </button>
-                </div>
-                <!-- Sidebar stats widget (populated by js/warehouse/sidebar.stats.js) -->
-                <div class="grid grid-cols-4 gap-1 mt-3 pt-3 border-t border-base-200">
-                <a href="dashboard.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Raw Milk (L)">
-                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatMilk">0</span>
-                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Milk</span>
-                </a>
-                <a href="requisitions.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Pending Requisitions">
-                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatReq">0</span>
-                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Req</span>
-                </a>
-                <a href="reorder_alerts.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Low Stock Items">
-                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatLow">0</span>
-                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Low</span>
-                </a>
-                <a href="receive_deliveries.html" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Pending Deliveries">
-                    <span class="text-base font-bold leading-none stat-value" id="sidebarStatDeliv">0</span>
-                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Deliv</span>
-                </a>
-                </div>
-                </div>
-
-                <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
-            <div>
-                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
-                <ul class="menu menu-sm p-0 gap-1">
-                    <li><a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-th-large w-5 text-center text-base-content/60"></i><span>Dashboard</span></a></li>
-                </ul>
-            </div>
-            <div>
-                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory</h2>
-                <ul class="menu menu-sm p-0 gap-1">
-                    <li><a href="milk_storage.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-tint w-5 text-center text-base-content/60"></i><span>Milk Storage</span></a></li>
-                    <li><a href="ingredients.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-box-open w-5 text-center text-base-content/60"></i><span>Ingredients</span></a></li>
-                    <li><a href="mro.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-tools w-5 text-center text-base-content/60"></i><span>MRO Supplies</span></a></li>
-                </ul>
-            </div>
-            <div>
-                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Operations</h2>
-                <ul class="menu menu-sm p-0 gap-1">
-                    <li><a href="requisitions.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content"><i class="fas fa-clipboard-check w-5 text-center"></i><span>Requisitions</span><span class="badge badge-sm badge-primary-content" id="pendingReqsBadge">0</span></a></li>
-                    <li><a href="purchase_requests.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-shopping-cart w-5 text-center text-base-content/60"></i><span>Purchase Requests</span></a></li>
-                    <li><a href="receive_deliveries.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-truck-ramp-box w-5 text-center text-base-content/60"></i><span>Receive Deliveries</span></a></li>
-                    <li><a href="waste.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-trash-alt w-5 text-center text-base-content/60"></i><span>Spoilage & Waste</span></a></li>
-                </ul>
-            </div>
-            <div>
-                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
-                <ul class="menu menu-sm p-0 gap-1">
-                    <li><a href="reorder_alerts.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-exclamation-triangle w-5 text-center text-warning"></i><span>Reorder Alerts</span></a></li>
-                    <li><a href="reports/inventory.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-chart-bar w-5 text-center text-base-content/60"></i><span>Inventory Report</span></a></li>
-                    <li><a href="reports/movements.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200"><i class="fas fa-exchange-alt w-5 text-center text-base-content/60"></i><span>Stock Movements</span></a></li>
-                </ul>
-            </div>
-        </nav>
-        
-        <div class="p-4 border-t border-base-300">
-            <div class="flex items-center gap-3">
-                <div class="avatar placeholder"><div class="w-10 rounded-xl bg-primary text-primary-content"><span class="text-sm font-semibold" id="userInitials">WR</span></div></div>
-                <div class="flex-1 min-w-0">
-                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Warehouse Staff</p>
-                    <p class="text-xs text-base-content/60">Warehouse Raw</p>
-                </div>
-                <button class="btn btn-ghost btn-sm btn-square" onclick="AuthService.logout()"><i class="fas fa-sign-out-alt"></i></button>
-            </div>
-        </div>
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <!-- Populated by js/warehouse/raw-sidebar.js -->
     </aside>
-    
-    <!-- Main Content -->
+
+<!-- Main Content -->
     <div class="lg:ml-72 min-h-screen flex flex-col">
         
         <!-- Top Navbar -->
@@ -244,13 +386,29 @@
                 </div>
             </div>
             
-            <!-- Requisitions List -->
-            <div id="requisitionsList" class="space-y-4">
-                <div class="card bg-base-100 border border-base-300">
-                    <div class="card-body items-center justify-center py-12">
-                        <span class="loading loading-spinner loading-lg text-primary"></span>
-                        <p class="text-base-content/60 mt-2">Loading requisitions...</p>
-                    </div>
+            <!-- Requisitions Data Table -->
+            <div id="requisitionsList" class="req-table-wrap">
+                <div class="req-table-scroll">
+                    <table class="req-table">
+                        <thead>
+                            <tr>
+                                <th>Requisition</th>
+                                <th>Production plan</th>
+                                <th>Requester</th>
+                                <th>Progress</th>
+                                <th>Date</th>
+                                <th class="col-actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="requisitionsTableBody">
+                            <tr>
+                                <td colspan="6" class="text-center py-14">
+                                    <span class="loading loading-spinner loading-lg text-primary"></span>
+                                    <p class="text-base-content/60 mt-2 text-sm">Loading requisitions...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </main>
@@ -258,27 +416,26 @@
     
     <!-- Fulfill Modal -->
     <dialog id="fulfillModal" class="modal">
-        <div class="modal-box w-11/12 max-w-6xl max-h-[92vh] requisition-modal border-0 p-0 shadow-2xl">
-            <div class="requisition-modal-header border-b border-base-300 p-5">
+        <div class="modal-box w-11/12 max-w-5xl max-h-[92vh] requisition-modal border border-base-300 p-0 shadow-2xl">
+            <div class="req-modal-header relative">
                 <form method="dialog">
-                    <button class="btn btn-sm btn-circle btn-ghost absolute right-3 top-3" aria-label="Close">x</button>
+                    <button class="btn btn-sm btn-circle btn-ghost absolute right-3 top-3" aria-label="Close">✕</button>
                 </form>
                 <div class="pr-10">
-                    <p class="text-xs font-bold uppercase tracking-[0.22em] text-base-content/45">Warehouse Raw</p>
-                    <h3 class="mt-2 flex flex-wrap items-center gap-2 text-xl font-extrabold text-base-content" id="fulfillModalTitle">
-                        <i class="fas fa-clipboard-check text-primary"></i>
+                    <p class="text-xs font-bold uppercase tracking-[0.18em] text-base-content/40">Warehouse Raw · Fulfillment</p>
+                    <h3 class="mt-1.5 flex flex-wrap items-center gap-2 text-xl font-extrabold text-base-content" id="fulfillModalTitle">
                         Fulfill Requisition
                     </h3>
-                    <p class="mt-2 text-sm text-base-content/65" id="fulfillModalSubtitle">Review request details, inspect stock, and issue items.</p>
+                    <p class="mt-1 text-sm text-base-content/55" id="fulfillModalSubtitle">Review request details and issue materials.</p>
                 </div>
             </div>
-            <div id="fulfillModalBody" class="requisition-scroll overflow-y-auto p-5 md:p-6 max-h-[calc(92vh-230px)]">
+            <div id="fulfillModalBody" class="requisition-scroll overflow-y-auto p-5 md:px-6 md:py-5 max-h-[calc(92vh-200px)]">
                 <div class="flex flex-col items-center justify-center py-12">
                     <span class="loading loading-spinner loading-lg text-primary"></span>
                     <p class="mt-4 text-sm text-base-content/60">Loading requisition details...</p>
                 </div>
             </div>
-            <div class="modal-action sticky bottom-0 border-t border-base-300 bg-base-100/95 p-4 backdrop-blur" id="fulfillModalFooter">
+            <div class="modal-action sticky bottom-0 m-0 border-t border-base-300 bg-base-100 p-4" id="fulfillModalFooter">
                 <button class="btn btn-ghost" onclick="document.getElementById('fulfillModal').close()">Close</button>
             </div>
         </div>
@@ -412,6 +569,9 @@
     <script src="../../../js/config/auth.js"></script>
     <script src="../../../js/warehouse/raw.service.js"></script>
     <script src="../../../js/warehouse/sidebar.stats.js"></script>
+    <script>window.WAREHOUSE_RAW_ACTIVE_PAGE = "requisitions";</script>
+    <script src="../../../js/warehouse/raw-sidebar.js?v=20260712c"></script>
+
     <script>
         // Sidebar toggle
         function toggleSidebar() {
@@ -540,10 +700,10 @@
         }
         
         function renderRequisitions() {
-            const container = document.getElementById('requisitionsList');
+            const tbody = document.getElementById('requisitionsTableBody')
+                || document.getElementById('requisitionsList');
             let filtered = [...requisitions];
-            
-            // Apply filters
+
             if (currentFilter.status !== 'all') {
                 if (currentFilter.status === 'pending') {
                     filtered = filtered.filter(r => r.status === 'pending' || r.status === 'approved');
@@ -551,177 +711,120 @@
                     filtered = filtered.filter(r => r.status === currentFilter.status);
                 }
             }
-            
+
             if (currentFilter.search) {
                 const search = currentFilter.search.toLowerCase();
-                filtered = filtered.filter(r => 
-                    r.requisition_code.toLowerCase().includes(search)
+                filtered = filtered.filter(r =>
+                    (r.requisition_code || '').toLowerCase().includes(search)
+                    || (r.planned_product_name || '').toLowerCase().includes(search)
+                    || `${r.requested_by_first || ''} ${r.requested_by_last || ''}`.toLowerCase().includes(search)
                 );
             }
-            
+
             if (currentFilter.department) {
-                filtered = filtered.filter(r => 
+                filtered = filtered.filter(r =>
                     r.department && r.department.toLowerCase() === currentFilter.department
                 );
             }
-            
+
             if (currentFilter.priority) {
                 filtered = filtered.filter(r => r.priority === currentFilter.priority);
             }
-            
-            // Sort: urgent first, then by needed_by_date, then by created_at
+
             filtered.sort((a, b) => {
                 const priorityOrder = { urgent: 0, high: 1, normal: 2, low: 3 };
-                if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
-                    return priorityOrder[a.priority] - priorityOrder[b.priority];
-                }
+                const pa = priorityOrder[a.priority] ?? 9;
+                const pb = priorityOrder[b.priority] ?? 9;
+                if (pa !== pb) return pa - pb;
                 if (a.needed_by_date && b.needed_by_date) {
                     return new Date(a.needed_by_date) - new Date(b.needed_by_date);
                 }
                 return new Date(b.created_at) - new Date(a.created_at);
             });
-            
+
             if (filtered.length === 0) {
-                container.innerHTML = `
-                    <div class="card bg-base-100 border border-base-300">
-                        <div class="card-body items-center justify-center py-12">
-                            <i class="fas fa-clipboard-check fa-3x text-base-content/20 mb-4"></i>
-                            <h4 class="font-semibold text-lg">No requisitions found</h4>
-                            <p class="text-base-content/60">
-                                ${currentFilter.status === 'pending' ? 'All pending requisitions have been fulfilled!' : 'Try adjusting your filters'}
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center py-14">
+                            <i class="fas fa-clipboard-check text-4xl text-base-content/15 mb-3"></i>
+                            <p class="font-semibold">No requisitions found</p>
+                            <p class="text-sm text-base-content/50 mt-1">
+                                ${currentFilter.status === 'pending'
+                                    ? 'All pending requisitions have been fulfilled.'
+                                    : 'Try adjusting your filters.'}
                             </p>
-                        </div>
-                    </div>
-                `;
+                        </td>
+                    </tr>`;
                 return;
             }
-            
-            container.innerHTML = filtered.map(req => {
-                const priorityBadges = {
-                    'urgent': 'badge-error',
-                    'high': 'badge-warning',
-                    'normal': 'badge-info',
-                    'low': 'badge-ghost'
-                };
-                
-                const statusBadges = {
-                    'pending': 'badge-warning',
-                    'approved': 'badge-warning',
-                    'partial': 'badge-info',
-                    'fulfilled': 'badge-success',
-                    'cancelled': 'badge-ghost'
-                };
-                
-                // Calculate needed by status
-                let neededByHtml = '';
-                if (req.needed_by_date) {
-                    const days = daysUntil(req.needed_by_date);
-                    let badgeClass = 'badge-ghost';
-                    let neededByText = formatDate(req.needed_by_date);
-                    
-                    if (days < 0) {
-                        badgeClass = 'badge-error';
-                        neededByText = `OVERDUE (${Math.abs(days)}d)`;
-                    } else if (days === 0) {
-                        badgeClass = 'badge-warning';
-                        neededByText = 'TODAY';
-                    } else if (days <= 2) {
-                        badgeClass = 'badge-info';
-                        neededByText = days === 1 ? 'Tomorrow' : `In ${days} days`;
-                    }
-                    
-                    neededByHtml = `<span class="badge ${badgeClass} badge-sm gap-1"><i class="fas fa-clock"></i> ${neededByText}</span>`;
-                }
-                
-                // Item summary - use API field names
+
+            tbody.innerHTML = filtered.map(req => {
+                const status = (req.status || 'pending').toLowerCase();
+                const priority = (req.priority || 'normal').toLowerCase();
                 const totalItems = req.item_count || req.total_items || req.items?.length || 0;
                 const fulfilledItems = req.fulfilled_count || req.fulfilled_items || 0;
-                const processedItems = req.processed_count || fulfilledItems;
-                
-                const isPending = req.status === 'pending';
-                // V4.0 — no GM approval gate. Warehouse Raw can now fulfill
-                // directly from 'pending' (or 'partial' for top-up). 'approved'
-                // is kept for legacy rows that pre-date this change.
-                const canFulfill = ['pending', 'approved', 'partial'].includes(req.status);
-                const plannedProduction = req.planned_product_name
-                    ? `${escapeHtml(req.planned_product_name)}${req.planned_variant ? ` (${escapeHtml(req.planned_variant)})` : ''} - ${escapeHtml(req.planned_quantity || '')} ${escapeHtml(req.planned_yield_unit || '')}`
+                const pct = totalItems > 0 ? Math.round((fulfilledItems / totalItems) * 100) : 0;
+                const canFulfill = ['pending', 'approved', 'partial'].includes(status);
+
+                const planTitle = req.planned_product_name
+                    ? `${escapeHtml(req.planned_product_name)}${req.planned_variant ? ` (${escapeHtml(req.planned_variant)})` : ''}`
+                    : (req.purpose ? escapeHtml(req.purpose) : '<span class="text-base-content/40">—</span>');
+                const planQty = req.planned_quantity
+                    ? `${escapeHtml(req.planned_quantity)} ${escapeHtml(req.planned_yield_unit || '')}`.trim()
                     : '';
-                // V4.0 — surface the stock-override warning as a visible
-                // badge on the list card so warehouse staff can spot
-                // self-acknowledged shortages at a glance.
+
+                const requester = `${req.requested_by_first || ''} ${req.requested_by_last || ''}`.trim() || '—';
                 const hasOverride = Number(req.stock_override_acknowledged) === 1 || Number(req.stock_warning_count) > 0;
-                const overrideBadge = hasOverride
-                    ? `<span class="badge badge-warning badge-sm gap-1" title="Production acknowledged a stock shortage on submit. Open the requisition to see the per-item list and the reason.">
-                            <i class="fas fa-exclamation-triangle"></i> Stock override${req.stock_warning_count ? ` · ${req.stock_warning_count}` : ''}
-                       </span>`
-                    : '';
-                
+
+                let dateCell = formatDate(req.created_at);
+                if (req.needed_by_date) {
+                    const days = daysUntil(req.needed_by_date);
+                    let dueNote = formatDate(req.needed_by_date);
+                    if (days < 0) dueNote = `Overdue ${Math.abs(days)}d`;
+                    else if (days === 0) dueNote = 'Due today';
+                    else if (days === 1) dueNote = 'Due tomorrow';
+                    else if (days <= 3) dueNote = `Due in ${days}d`;
+                    dateCell = `<div class="text-sm font-medium">${formatDate(req.created_at)}</div>
+                        <div class="text-xs ${days < 0 ? 'text-error font-semibold' : 'text-base-content/50'} mt-0.5">${dueNote}</div>`;
+                } else {
+                    dateCell = `<div class="text-sm">${formatDate(req.created_at)}</div>`;
+                }
+
                 return `
-                    <div class="card bg-base-100 border border-base-300 hover:shadow-md transition-shadow ${isPending ? 'border-l-4 border-l-warning' : ''} ${req.status === 'partial' ? 'border-l-4 border-l-info' : ''}">
-                        <div class="card-body p-4">
-                            <!-- Header -->
-                            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-                                <div class="flex items-center gap-2 flex-wrap">
-                                    <span class="font-bold text-lg">${req.requisition_code}</span>
-                                    <span class="badge ${priorityBadges[req.priority]} badge-sm">
-                                        ${req.priority === 'urgent' ? '<i class="fas fa-exclamation mr-1"></i>' : ''}
-                                        ${req.priority.toUpperCase()}
-                                    </span>
-                                    <span class="badge ${statusBadges[req.status]} badge-sm badge-outline">
-                                        ${req.status.toUpperCase()}
-                                    </span>
-                                    ${overrideBadge}
-                                </div>
-                                <div>
-                                    ${neededByHtml}
-                                </div>
-                            </div>
-                            
-                            ${plannedProduction ? `
-                                <div class="alert alert-info py-2 mb-3">
-                                    <i class="fas fa-industry"></i>
-                                    <span><strong>Production plan:</strong> ${plannedProduction}</span>
-                                </div>
-                            ` : ''}
-                            ${req.purpose ? `<p class="text-sm text-base-content/70 mb-3"><i class="fas fa-bullseye mr-1"></i>${escapeHtml(req.purpose)}</p>` : ''}
-                            
-                            <!-- Details Grid -->
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
-                                <div>
-                                    <p class="text-xs text-base-content/60">Requested By</p>
-                                    <p class="font-semibold">${req.requested_by_first || ''} ${req.requested_by_last || ''}</p>
-                                    <p class="text-sm text-base-content/60">${req.department || 'N/A'}</p>
-                                </div>
-                                <div>
-                                    <p class="text-xs text-base-content/60">Items</p>
-                                    <p class="font-semibold">${fulfilledItems} / ${totalItems} complete</p>
-                                    <p class="text-sm text-base-content/60">${processedItems > fulfilledItems ? `${processedItems - fulfilledItems} partial, ` : ''}${totalItems - processedItems} pending</p>
-                                </div>
-                                <div>
-                                    <p class="text-xs text-base-content/60">Requested Date</p>
-                                    <p class="font-semibold">${formatDate(req.created_at)}</p>
-                                </div>
-                            </div>
-                            
-                            ${req.notes ? `<p class="text-sm text-base-content/60 mb-3"><i class="fas fa-comment mr-1"></i>${escapeHtml(req.notes)}</p>` : ''}
-                            
-                            <!-- Footer -->
-                            <div class="flex items-center justify-between pt-3 border-t border-base-300">
-                                <span class="text-sm text-base-content/60">${req.type || 'General'} Requisition</span>
-                                <div class="flex gap-2">
-                                    <button class="btn btn-ghost btn-sm" onclick="viewRequisition(${req.id})">
-                                        <i class="fas fa-eye"></i> View
-                                    </button>
-                                    ${canFulfill ? `
-                                        <button class="btn btn-primary btn-sm" onclick="openFulfillModal(${req.id})">
-                                            <i class="fas fa-box"></i> Fulfill
-                                        </button>
-                                    ` : ''}
-                                </div>
-                            </div>
+                <tr>
+                    <td>
+                        <div class="req-code">${escapeHtml(req.requisition_code || '—')}</div>
+                        <div class="req-code-meta">
+                            <span class="req-pill req-pill--${priority}">${escapeHtml(priority)}</span>
+                            <span class="req-pill req-pill--${status === 'approved' ? 'pending' : status}">${escapeHtml(status === 'approved' ? 'pending' : status)}</span>
+                            ${hasOverride ? `<span class="req-pill req-pill--warn" title="Stock override on submit"><i class="fas fa-exclamation-triangle"></i> Override</span>` : ''}
                         </div>
-                    </div>
-                `;
+                    </td>
+                    <td>
+                        <div class="req-plan">${planTitle}</div>
+                        ${planQty ? `<div class="req-plan-sub">${planQty}</div>` : ''}
+                    </td>
+                    <td>
+                        <div class="font-medium">${escapeHtml(requester)}</div>
+                        <div class="text-xs text-base-content/50 mt-0.5">${escapeHtml(req.department || '—')}</div>
+                    </td>
+                    <td>
+                        <div class="req-progress">${fulfilledItems}/${totalItems} complete</div>
+                        <div class="req-progress-bar" title="${pct}%"><span style="width:${pct}%"></span></div>
+                    </td>
+                    <td>${dateCell}</td>
+                    <td>
+                        <div class="req-actions">
+                            <button type="button" class="btn btn-ghost btn-sm" onclick="viewRequisition(${req.id})">
+                                <i class="fas fa-eye"></i> View
+                            </button>
+                            ${canFulfill ? `
+                            <button type="button" class="btn btn-primary btn-sm" onclick="openFulfillModal(${req.id})">
+                                <i class="fas fa-box-open"></i> Fulfill
+                            </button>` : ''}
+                        </div>
+                    </td>
+                </tr>`;
             }).join('');
         }
         
@@ -763,22 +866,6 @@
                 return requested > issued && item.status !== 'cancelled' && item.status !== 'rejected';
             };
 
-            const priorityBadges = {
-                'urgent': 'badge-error',
-                'high': 'badge-warning',
-                'normal': 'badge-info',
-                'low': 'badge-ghost'
-            };
-
-            const statusBadges = {
-                'pending': 'badge-warning',
-                'approved': 'badge-warning',
-                'partial': 'badge-info',
-                'fulfilled': 'badge-success',
-                'cancelled': 'badge-ghost',
-                'rejected': 'badge-ghost'
-            };
-
             const requester = `${req.requested_by_first || ''} ${req.requested_by_last || ''}`.trim() || 'N/A';
             const itemStats = items.reduce((stats, item) => {
                 stats.total += 1;
@@ -788,215 +875,172 @@
                 return stats;
             }, { total: items.length, completed: 0, partial: 0, pending: 0 });
 
-                    const neededByDays = daysUntil(req.needed_by_date);
+            const neededByDays = daysUntil(req.needed_by_date);
+            const priority = (req.priority || 'normal').toLowerCase();
+            const status = (req.status || 'pending').toLowerCase();
 
-                    document.getElementById('fulfillModalTitle').innerHTML = `
-                <i class="fas ${viewOnly ? 'fa-eye text-info' : 'fa-clipboard-check text-primary'}"></i>
-                <span>${escapeHtml(req.requisition_code || 'Requisition')}</span>
-                <span class="badge ${priorityBadges[req.priority] || 'badge-ghost'} badge-sm ml-1 shadow-sm">${escapeHtml((req.priority || 'normal').toUpperCase())}</span>
-                <span class="badge ${statusBadges[req.status] || 'badge-ghost'} badge-sm badge-outline ml-1">${escapeHtml((req.status || 'pending').toUpperCase())}</span>
+            document.getElementById('fulfillModalTitle').innerHTML = `
+                <span class="font-mono">${escapeHtml(req.requisition_code || 'Requisition')}</span>
+                <span class="req-pill req-pill--${priority}">${escapeHtml(priority)}</span>
+                <span class="req-pill req-pill--${status === 'approved' ? 'pending' : status}">${escapeHtml(status === 'approved' ? 'pending' : status)}</span>
             `;
             document.getElementById('fulfillModalSubtitle').textContent = requester === 'N/A'
-                ? 'Review request details, inspect stock, and issue items.'
-                : `Requested by ${requester} � ${req.department || 'N/A'} department`;
+                ? 'Review request details and issue materials.'
+                : `Requested by ${requester} · ${req.department || 'N/A'}`;
 
             let itemsHtml = '';
             if (items.length === 0) {
                 itemsHtml = `
-                    <div class="rounded-2xl border border-base-200 bg-base-100 p-8 text-center shadow-sm">
-                        <div class="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-base-200">
-                            <i class="fas fa-box-open text-2xl text-base-content/40"></i>
-                        </div>
-                        <p class="font-semibold">No items in this requisition</p>
-                        <p class="mt-1 text-sm text-base-content/60">This request does not have any line items attached.</p>
-                    </div>
-                `;
+                    <tr><td colspan="5" class="text-center py-10 text-base-content/50">
+                        No line items on this requisition.
+                    </td></tr>`;
             } else {
-                itemsHtml = items.map((item, index) => {
+                itemsHtml = items.map(item => {
                     const requested = parseFloat(item.requested_quantity || item.quantity_requested || 0);
                     const issued = parseFloat(item.issued_quantity || item.quantity_issued || 0);
                     const remaining = Math.max(0, requested - issued);
                     const available = parseFloat(item.available_stock || 0);
-
-                    let rowClass = 'bg-base-100';
-                    let statusBadge = '<span class="badge badge-warning badge-sm shadow-sm">Pending</span>';
-                    if (item.status === 'fulfilled') {
-                        rowClass = 'bg-success/10 border-l-4 border-success';
-                        statusBadge = '<span class="badge badge-success badge-sm shadow-sm">Completed</span>';
-                    } else if (item.status === 'partial') {
-                        rowClass = 'bg-info/10 border-l-4 border-info';
-                        statusBadge = '<span class="badge badge-info badge-sm shadow-sm">Partial</span>';
-                    } else if (item.status === 'cancelled' || item.status === 'rejected') {
-                        rowClass = 'bg-base-200 border-l-4 border-base-content/20 opacity-75';
-                        statusBadge = '<span class="badge badge-ghost badge-sm">Rejected</span>';
-                    }
-
+                    const unit = escapeHtml(item.unit_of_measure || item.unit || '');
                     const canFulfill = !viewOnly && canFulfillItem(item);
-                    const stockWarning = available < remaining && canFulfill ?
-                        `<p class="mt-2 text-xs text-error"><i class="fas fa-exclamation-triangle mr-1"></i>Only ${formatPackNumber(available)} available</p>` : '';
-                    const reqPacks = parseFloat(item.requested_quantity_in_packs);
-                    const packSize = parseFloat(item.pack_size_at_submit);
-                    const packInfo = (!Number.isNaN(reqPacks) && reqPacks > 0 && !Number.isNaN(packSize) && packSize > 0)
-                        ? `<p class="mt-2 text-xs text-base-content/60"><i class="fas fa-box mr-1"></i>${formatPackNumber(reqPacks)} pack${reqPacks === 1 ? '' : 's'} (1 pack = ${formatPackNumber(packSize)} ${escapeHtml(item.unit_of_measure || 'units')})</p>`
-                        : '';
+                    const st = (item.status || 'pending').toLowerCase();
+
+                    let statusLabel = 'Pending';
+                    let statusClass = 'req-pill--pending';
+                    if (st === 'fulfilled') { statusLabel = 'Done'; statusClass = 'req-pill--fulfilled'; }
+                    else if (st === 'partial') { statusLabel = 'Partial'; statusClass = 'req-pill--partial'; }
+                    else if (st === 'cancelled' || st === 'rejected') { statusLabel = 'Rejected'; statusClass = 'req-pill--low'; }
+
                     const breakAck = Number(item.break_pack_acknowledged) === 1;
                     const breakReason = (item.break_pack_acknowledged_reason || '').toString();
-                    const breakInfo = breakAck
-                        ? `<div class="mt-2 rounded-xl border border-warning/40 bg-warning/15 px-3 py-2 text-xs">
-                                <i class="fas fa-box-open text-warning mr-1"></i>
-                                <span class="font-semibold text-warning">Pack broken at request.</span>
-                                ${breakReason
-                                    ? `<span class="text-base-content/80">"${escapeHtml(breakReason)}"</span>`
-                                    : '<span class="text-base-content/60 italic">no reason given</span>'}
-                           </div>`
+                    const packNote = breakAck
+                        ? `<div class="pack-note"><i class="fas fa-box-open"></i>Pack broken at request${breakReason ? ': "' + escapeHtml(breakReason) + '"' : ''}</div>`
+                        : '';
+                    const stockLow = (canFulfill && available < remaining)
+                        ? `<div class="stock-low"><i class="fas fa-info-circle"></i> Only ${formatPackNumber(available)} ${unit} in stock</div>`
                         : '';
 
-                    const rejectButton = canFulfill
-                        ? `<button class="btn btn-ghost btn-sm btn-square text-error rounded-xl" onclick="openRejectModal(${req.id}, ${item.id}, ${escapeAttribute(JSON.stringify(item.item_name || item.name || ''))})" title="Reject item">
-                                <i class="fas fa-times"></i>
-                           </button>`
+                    const rejectBtn = canFulfill
+                        ? `<button type="button" class="btn btn-ghost btn-xs text-error" onclick="openRejectModal(${req.id}, ${item.id}, ${escapeAttribute(JSON.stringify(item.item_name || item.name || ''))})" title="Reject item"><i class="fas fa-times"></i></button>`
                         : '';
+
+                    const issueCell = canFulfill
+                        ? `<div class="flex flex-col items-end gap-1">
+                                <input type="number" class="input issue-input" id="fulfill_${item.id}"
+                                    value="${formatPackNumber(Math.min(remaining, available > 0 ? available : remaining))}"
+                                    min="0" max="${formatPackNumber(Math.max(remaining, available))}"
+                                    step="0.001" aria-label="Issue quantity">
+                                <span class="text-[0.65rem] text-base-content/45">${formatPackNumber(remaining)} ${unit} left to issue</span>
+                           </div>`
+                        : `<span class="text-sm text-base-content/50">${st === 'fulfilled' ? '—' : escapeHtml(item.rejection_reason || statusLabel)}</span>`;
 
                     return `
-                        <div class="requisition-item-card rounded-2xl border border-base-200 p-4 shadow-sm ${rowClass}" data-item-id="${item.id}">
-                            <div class="grid grid-cols-1 gap-4 lg:grid-cols-5 lg:items-center">
-                                <div class="lg:col-span-2">
-                                    <div class="flex flex-wrap items-start gap-2">
-                                        <p class="font-extrabold leading-tight">${escapeHtml(item.item_name || item.name || 'Unnamed Item')}</p>
-                                        ${statusBadge}
-                                    </div>
-                                    <p class="mt-1 text-sm text-base-content/60">
-                                        ${item.item_code ? `<span class="font-mono">${escapeHtml(item.item_code)}</span> � ` : ''}
-                                        ${escapeHtml(item.item_type || 'Item')}
-                                    </p>
-                                    ${stockWarning}
-                                    ${packInfo}
-                                    ${breakInfo}
-                                </div>
-
-                                <div class="rounded-2xl bg-base-200 p-3 text-center">
-                                    <p class="text-xs font-semibold uppercase tracking-[0.12em] text-base-content/50">Requested</p>
-                                    <p class="mt-1 text-lg font-extrabold">${formatPackNumber(requested)} <span class="text-xs text-base-content/55">${escapeHtml(item.unit_of_measure || '')}</span></p>
-                                </div>
-
-                                <div class="rounded-2xl bg-base-200 p-3 text-center">
-                                    <p class="text-xs font-semibold uppercase tracking-[0.12em] text-base-content/50">Issued</p>
-                                    <p class="mt-1 text-lg font-extrabold ${issued > 0 ? 'text-success' : ''}">${formatPackNumber(issued)} <span class="text-xs text-base-content/55">${escapeHtml(item.unit_of_measure || '')}</span></p>
-                                </div>
-
-                                <div class="rounded-2xl bg-base-200 p-3">
-                                    <p class="text-xs font-semibold uppercase tracking-[0.12em] text-base-content/50">Issue Now</p>
-                                    ${canFulfill ? `
-                                        <p class="mt-1 text-sm text-base-content/60">${formatPackNumber(remaining)} ${escapeHtml(item.unit_of_measure || '')} remaining</p>
-                                        <div class="mt-2 flex items-center gap-2">
-                                            <input type="number" class="input input-bordered input-sm w-full rounded-xl text-center"
-                                                   id="fulfill_${item.id}"
-                                                   value="${formatPackNumber(Math.min(remaining, available))}"
-                                                   min="0" max="${formatPackNumber(Math.min(remaining, available))}"
-                                                   step="0.001">
-                                        </div>
-                                    ` : `
-                                        <p class="mt-1 text-sm font-semibold">${item.status === 'fulfilled' ? 'No action needed' : item.status === 'partial' ? 'Partially issued' : 'Unavailable'}</p>
-                                        ${item.status === 'cancelled' || item.status === 'rejected' ? `<p class="mt-1 text-xs text-base-content/60">${escapeHtml(item.rejection_reason || '')}</p>` : ''}
-                                    `}
-                                </div>
-
-                                <div class="flex items-center justify-end gap-2">
-                                    ${rejectButton}
-                                </div>
+                    <tr data-item-id="${item.id}">
+                        <td>
+                            <div class="font-semibold">${escapeHtml(item.item_name || item.name || 'Unnamed')}</div>
+                            <div class="text-xs text-base-content/50 mt-0.5 flex flex-wrap items-center gap-2">
+                                ${item.item_code ? `<span class="font-mono">${escapeHtml(item.item_code)}</span>` : ''}
+                                <span class="req-pill ${statusClass}">${statusLabel}</span>
                             </div>
-                        </div>
-                    `;
+                            ${packNote}
+                            ${stockLow}
+                        </td>
+                        <td class="tabular-nums whitespace-nowrap">
+                            <span class="font-semibold">${formatPackNumber(requested)}</span>
+                            <span class="text-xs text-base-content/45 ml-0.5">${unit}</span>
+                        </td>
+                        <td class="tabular-nums whitespace-nowrap">
+                            <span class="font-semibold ${issued > 0 ? 'text-success' : ''}">${formatPackNumber(issued)}</span>
+                            <span class="text-xs text-base-content/45 ml-0.5">${unit}</span>
+                        </td>
+                        <td class="text-right">${issueCell}</td>
+                        <td class="text-right w-10">${rejectBtn}</td>
+                    </tr>`;
                 }).join('');
             }
 
             const plannedProduction = req.planned_product_name
-                ? `${escapeHtml(req.planned_product_name)}${req.planned_variant ? ` (${escapeHtml(req.planned_variant)})` : ''} - ${escapeHtml(req.planned_quantity || '')} ${escapeHtml(req.planned_yield_unit || '')}`
+                ? `${escapeHtml(req.planned_product_name)}${req.planned_variant ? ` (${escapeHtml(req.planned_variant)})` : ''}`
+                : '';
+            const plannedQty = req.planned_quantity
+                ? `${escapeHtml(req.planned_quantity)} ${escapeHtml(req.planned_yield_unit || '')}`.trim()
                 : '';
 
             const override = req.stock_override || {};
             const overrideHtml = override.acknowledged
-                ? `<div class="alert alert-warning rounded-2xl border-warning/20 py-4">
-                    <i class="fas fa-exclamation-triangle mt-0.5"></i>
-                    <div class="flex-1">
-                        <div class="font-extrabold">Stock override on this request${override.warnings?.length ? ` � ${override.warnings.length} item${override.warnings.length === 1 ? '' : 's'} flagged` : ''}</div>
-                        ${override.by ? `<div class="mt-1 text-sm">Acknowledged by <span class="font-semibold">${escapeHtml(override.by.first_name + ' ' + override.by.last_name)}</span> (${escapeHtml(override.by.role || 'n/a')})${override.at ? ` on ${formatDate(override.at)}` : ''}</div>` : ''}
-                        ${override.reason ? `<div class="mt-1 text-sm italic">"${escapeHtml(override.reason)}"</div>` : ''}
-                    </div>
-                </div>`
+                ? `<div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 mb-4">
+                    <span class="font-semibold"><i class="fas fa-exclamation-triangle mr-1 opacity-70"></i>Stock override</span>
+                    ${override.warnings && override.warnings.length ? ` · ${override.warnings.length} item(s) flagged` : ''}
+                    ${override.by ? ` · by ${escapeHtml((override.by.first_name || '') + ' ' + (override.by.last_name || ''))}` : ''}
+                    ${override.reason ? `<div class="mt-1 text-xs italic opacity-80">"${escapeHtml(override.reason)}"</div>` : ''}
+                   </div>`
                 : '';
 
+            const neededLabel = !req.needed_by_date ? '—'
+                : neededByDays < 0 ? `Overdue (${Math.abs(neededByDays)}d)`
+                : neededByDays === 0 ? 'Due today'
+                : `${neededByDays} days left`;
+
             document.getElementById('fulfillModalBody').innerHTML = `
-                <div class="space-y-5">
-                    <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-                        <div class="rounded-2xl border border-base-200 bg-base-100 p-4 shadow-sm">
-                            <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                                <i class="fas fa-user"></i>
-                            </div>
-                            <p class="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Requested By</p>
-                            <p class="mt-1 truncate font-extrabold">${escapeHtml(requester)}</p>
-                            <p class="mt-1 text-sm text-base-content/60">${escapeHtml(req.department || 'N/A')}</p>
+                <div>
+                    <div class="req-meta-row">
+                        <div class="req-meta-item">
+                            <div class="req-meta-item__label">Requester</div>
+                            <div class="req-meta-item__value">${escapeHtml(requester)}</div>
+                            <div class="req-meta-item__sub">${escapeHtml(req.department || '—')}</div>
                         </div>
-
-                        <div class="rounded-2xl border border-base-200 bg-base-100 p-4 shadow-sm">
-                            <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-info/10 text-info">
-                                <i class="fas fa-hashtag"></i>
-                            </div>
-                            <p class="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Requisition Code</p>
-                            <p class="mt-1 truncate font-mono font-extrabold">${escapeHtml(req.requisition_code || '-')}</p>
-                            <p class="mt-1 text-sm text-base-content/60">Created ${formatDate(req.created_at)}</p>
+                        <div class="req-meta-item">
+                            <div class="req-meta-item__label">Code</div>
+                            <div class="req-meta-item__value font-mono">${escapeHtml(req.requisition_code || '—')}</div>
+                            <div class="req-meta-item__sub">Created ${formatDate(req.created_at)}</div>
                         </div>
-
-                        <div class="rounded-2xl border border-base-200 bg-base-100 p-4 shadow-sm">
-                            <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-warning/10 text-warning">
-                                <i class="fas fa-clock"></i>
-                            </div>
-                            <p class="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Needed By</p>
-                            <p class="mt-1 font-extrabold">${formatDate(req.needed_by_date)}</p>
-                            <p class="mt-1 text-sm text-base-content/60">${neededByDays < 0 ? 'Overdue' : neededByDays === 0 ? 'Due today' : `${neededByDays} days left`}</p>
+                        <div class="req-meta-item">
+                            <div class="req-meta-item__label">Needed by</div>
+                            <div class="req-meta-item__value">${formatDate(req.needed_by_date)}</div>
+                            <div class="req-meta-item__sub">${neededLabel}</div>
                         </div>
-
-                        <div class="rounded-2xl border border-base-200 bg-base-100 p-4 shadow-sm">
-                            <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-success/10 text-success">
-                                <i class="fas fa-list-check"></i>
-                            </div>
-                            <p class="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Items</p>
-                            <p class="mt-1 font-extrabold">${itemStats.total} total</p>
-                            <p class="mt-1 text-sm text-base-content/60">${itemStats.pending} pending � ${itemStats.completed} complete</p>
+                        <div class="req-meta-item">
+                            <div class="req-meta-item__label">Items</div>
+                            <div class="req-meta-item__value">${itemStats.total} total</div>
+                            <div class="req-meta-item__sub">${itemStats.pending} pending · ${itemStats.completed} complete</div>
                         </div>
                     </div>
 
                     ${overrideHtml}
+
                     ${plannedProduction ? `
-                        <div class="alert alert-info rounded-2xl border-info/20 py-4">
-                            <i class="fas fa-industry mt-0.5"></i>
-                            <span><strong>Production plan:</strong> ${plannedProduction}</span>
-                        </div>
-                    ` : ''}
-                    ${req.purpose ? `
-                        <div class="rounded-2xl border border-base-200 bg-base-100 p-4 shadow-sm">
-                            <p class="text-xs font-bold uppercase tracking-[0.16em] text-base-content/50">Purpose</p>
-                            <p class="mt-2 text-sm leading-6 text-base-content/75">${escapeHtml(req.purpose)}</p>
-                        </div>
-                    ` : ''}
-                    ${req.notes ? `
-                        <div class="alert alert-info rounded-2xl border-info/20 py-4">
-                            <i class="fas fa-comment mt-0.5"></i>
-                            <span><strong>Notes:</strong> ${escapeHtml(req.notes)}</span>
-                        </div>
-                    ` : ''}
+                    <div class="req-plan-header">
+                        <div class="req-plan-header__kicker">Production plan</div>
+                        <div class="req-plan-header__title">${plannedProduction}${plannedQty ? ` · ${plannedQty}` : ''}</div>
+                        ${req.purpose ? `<p class="text-sm text-base-content/55 mt-1">${escapeHtml(req.purpose)}</p>` : ''}
+                    </div>` : (req.purpose ? `
+                    <div class="req-plan-header">
+                        <div class="req-plan-header__kicker">Purpose</div>
+                        <div class="req-plan-header__title text-base font-semibold">${escapeHtml(req.purpose)}</div>
+                    </div>` : '')}
 
-                    <div class="divider my-2"></div>
+                    ${req.notes ? `<p class="text-sm text-base-content/55 mb-3"><span class="font-semibold text-base-content/70">Notes:</span> ${escapeHtml(req.notes)}</p>` : ''}
 
-                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <h4 class="text-lg font-extrabold"><i class="fas fa-list mr-2 text-primary"></i>Requisition Items</h4>
-                        <div class="flex flex-wrap gap-2">
-                            <span class="badge badge-warning badge-sm gap-1"><i class="fas fa-hourglass-half"></i>${itemStats.pending} pending</span>
-                            <span class="badge badge-success badge-sm gap-1"><i class="fas fa-check"></i>${itemStats.completed} complete</span>
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 class="text-sm font-bold uppercase tracking-wider text-base-content/50">Line items</h4>
+                        <div class="flex gap-2 text-xs">
+                            <span class="req-pill req-pill--pending">${itemStats.pending} pending</span>
+                            <span class="req-pill req-pill--fulfilled">${itemStats.completed} complete</span>
                         </div>
                     </div>
-                    <div class="space-y-3">
-                        ${itemsHtml}
+
+                    <div class="rounded-lg border border-base-300 overflow-x-auto">
+                        <table class="req-line-table">
+                            <thead>
+                                <tr>
+                                    <th>Material</th>
+                                    <th>Requested</th>
+                                    <th>Issued</th>
+                                    <th class="text-right">Issue now</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>${itemsHtml}</tbody>
+                        </table>
                     </div>
                 </div>
             `;
@@ -1005,14 +1049,15 @@
             const canFulfillAny = items.some(canFulfillItem);
 
             document.getElementById('fulfillModalFooter').innerHTML = `
-                <button class="btn btn-ghost rounded-xl" onclick="document.getElementById('fulfillModal').close()">Close</button>
+                <button class="btn btn-ghost" onclick="document.getElementById('fulfillModal').close()">Close</button>
                 ${canFulfill && canFulfillAny ? `
-                    <button class="btn btn-primary rounded-xl shadow-lg shadow-primary/20" onclick="submitFulfillment()">
-                        <i class="fas fa-check"></i> Fulfill Selected Items
+                    <button class="btn btn-primary" onclick="submitFulfillment()">
+                        <i class="fas fa-check mr-1"></i> Issue materials
                     </button>
                 ` : ''}
             `;
         }
+
 
         function approveRequisition(id, code) {
             document.getElementById('approveRequisitionId').value = id;

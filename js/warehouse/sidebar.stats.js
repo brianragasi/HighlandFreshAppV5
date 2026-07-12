@@ -49,12 +49,20 @@
             setStat('sidebarStatReq',   reqs);
             setStat('sidebarStatLow',   low);
             setStat('sidebarStatDeliv', deliv);
+
+            // Keep classic badge ids in sync (shared sidebar + older page scripts)
+            setStat('pendingReqsBadge', reqs);
+            setStat('reorderAlertsBadge', low);
+            setStat('pendingMilkBadge', milk);
         } catch (err) {
             // Silently keep the "0" placeholders; the dashboard page itself
             // surfaces the real error to the user via its own try/catch.
             console.warn('Sidebar stats failed to load:', err);
         }
     }
+
+    // Allow raw-sidebar.js to re-run after it remounts the DOM nodes
+    window.__warehouseRawReloadSidebarStats = loadSidebarStats;
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', loadSidebarStats);

@@ -391,9 +391,17 @@ function handleGetRequest($db, $currentUser) {
 }
 
 /**
- * Handle POST requests - Create new disposal
+ * Handle POST requests - Create new disposal, or action=cancel
  */
 function handlePostRequest($db, $currentUser) {
+    $action = getParam('action', '');
+
+    // Cancel via POST (reliable when DELETE override is awkward)
+    if ($action === 'cancel') {
+        handleDeleteRequest($db, $currentUser);
+        return;
+    }
+
     // Only QC Officer and General Manager can create disposal requests
     // Warehouse staff must report to QC (segregation of duties)
     $allowedToCreate = ['qc_officer', 'general_manager'];
@@ -678,15 +686,21 @@ function handlePutRequest($db, $currentUser) {
 
 /**
  * Handle DELETE requests - Cancel disposal
+ *
+ * Who may cancel a *pending* disposal:
+ *  - General Manager / Admin: any request
+ *  - QC Officer: any request (reviewers must be able to withdraw bad write-offs,
+ *    including auto-created delivery-return disposals initiated by Warehouse FG)
+ *  - Initiator (Warehouse FG/Raw, QC, etc.): their own request only
  */
 function handleDeleteRequest($db, $currentUser) {
     requireActionRole(
         $currentUser,
-        ['qc_officer', 'general_manager', 'admin'],
-        'Only QC or GM/Admin can cancel disposal requests'
+        ['qc_officer', 'general_manager', 'admin', 'warehouse_fg', 'warehouse_raw'],
+        'Only QC, Warehouse, or GM/Admin can cancel disposal requests'
     );
 
-    $id = getParam('id');
+    $id = getParam('id') ?? getParam('disposal_id');
     
     if (!$id || !is_numeric($id)) {
         Response::error('Disposal ID is required', 400);
@@ -700,25 +714,35 @@ function handleDeleteRequest($db, $currentUser) {
         Response::notFound('Disposal not found');
     }
     
-    // Only pending can be cancelled, and only by initiator or GM
+    // Only pending can be cancelled
     if ($disposal['status'] !== 'pending') {
-        Response::error('Only pending disposals can be cancelled', 400);
+        Response::error('Only pending disposals can be cancelled (current: ' . $disposal['status'] . ')', 400);
+    }
+
+    $role = $currentUser['role'] ?? '';
+    $isReviewer = in_array($role, ['qc_officer', 'general_manager', 'admin'], true);
+    $isInitiator = (int)($disposal['initiated_by'] ?? 0) === (int)($currentUser['user_id'] ?? 0);
+
+    if (!$isReviewer && !$isInitiator) {
+        Response::error(
+            'You can only cancel disposal requests you created, or you need a QC/GM role to cancel others.',
+            403
+        );
     }
     
-    if ($disposal['initiated_by'] != $currentUser['user_id'] && 
-        !in_array($currentUser['role'], ['general_manager', 'admin'])) {
-        Response::error('You can only cancel your own disposal requests', 403);
-    }
-    
-    $stmt = $db->prepare("UPDATE disposals SET status = 'cancelled' WHERE id = ?");
+    $stmt = $db->prepare("UPDATE disposals SET status = 'cancelled' WHERE id = ? AND status = 'pending'");
     $stmt->execute([$id]);
+
+    if ($stmt->rowCount() < 1) {
+        Response::error('Failed to cancel disposal (it may have already been processed)', 409);
+    }
     
     logAudit($currentUser['user_id'], 'CANCEL', 'disposals', $id,
         ['status' => 'pending'],
-        ['status' => 'cancelled']
+        ['status' => 'cancelled', 'cancelled_by' => $currentUser['user_id']]
     );
     
-    Response::success(null, 'Disposal cancelled successfully');
+    Response::success(['id' => (int)$id, 'status' => 'cancelled'], 'Disposal cancelled successfully');
 }
 
 /**

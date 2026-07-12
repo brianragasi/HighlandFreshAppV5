@@ -56,60 +56,230 @@
             }
         }
 
-        .parent-card {
-            border-left: 4px solid oklch(var(--p));
-        }
-
-        .sku-chip {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            background: oklch(var(--b2));
+        /* ── Master–detail product catalog ── */
+        .product-card {
+            background: oklch(var(--b1));
             border: 1px solid oklch(var(--b3));
-            border-radius: 8px;
-            padding: 3px 6px 3px 10px;
-            font-size: 12px;
-            cursor: pointer;
-            transition: border-color 0.15s, background 0.15s;
+            border-radius: 1rem;
+            /* visible so kebab dropdown is not clipped */
+            overflow: visible;
+            transition: box-shadow 0.15s ease, border-color 0.15s ease;
             position: relative;
         }
-
-        .sku-chip:hover {
-            border-color: oklch(var(--p));
-            background: oklch(var(--p) / 0.06);
+        .product-card:focus-within {
+            z-index: 20;
         }
-
-        .sku-chip .chip-actions {
-            display: inline-flex;
+        .product-card:hover {
+            border-color: oklch(var(--bc) / 0.12);
+            box-shadow: 0 4px 16px -4px rgb(0 0 0 / 0.08);
+        }
+        /* Category icon colors (static classes — dynamic Tailwind bg-${x}/10 does not ship) */
+        .product-card__icon.cat-primary { background: oklch(var(--p) / 0.12); color: oklch(var(--p)); }
+        .product-card__icon.cat-secondary { background: oklch(var(--s) / 0.12); color: oklch(var(--s)); }
+        .product-card__icon.cat-accent { background: oklch(var(--a) / 0.12); color: oklch(var(--a)); }
+        .product-card__icon.cat-warning { background: oklch(var(--wa) / 0.15); color: oklch(var(--wa)); }
+        .product-card__icon.cat-info { background: oklch(var(--in) / 0.12); color: oklch(var(--in)); }
+        .product-card__icon.cat-success { background: oklch(var(--su) / 0.12); color: oklch(var(--su)); }
+        .sku-price.cat-primary { color: oklch(var(--p)); }
+        .sku-price.cat-secondary { color: oklch(var(--s)); }
+        .sku-price.cat-accent { color: oklch(var(--a)); }
+        .sku-price.cat-warning { color: oklch(var(--wa)); }
+        .sku-price.cat-info { color: oklch(var(--in)); }
+        .sku-price.cat-success { color: oklch(var(--su)); }
+        .product-card__header {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.875rem;
+            padding: 1.125rem 1.25rem;
+            border-bottom: 1px solid oklch(var(--b3) / 0.7);
+        }
+        .product-card__icon {
+            width: 2.75rem;
+            height: 2.75rem;
+            border-radius: 0.75rem;
+            display: flex;
             align-items: center;
-            gap: 2px;
-            margin-left: 4px;
-            opacity: 0;
-            transition: opacity 0.15s;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 1.1rem;
         }
-
-        .sku-chip:hover .chip-actions {
-            opacity: 1;
+        .product-card__title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            line-height: 1.3;
+            color: oklch(var(--bc));
         }
-
-        .sku-chip .chip-btn {
+        .product-card__meta {
+            margin-top: 0.25rem;
+            font-size: 0.8125rem;
+            color: #6B7280;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem 0.75rem;
+            align-items: center;
+        }
+        .product-card__meta .meta-dot {
+            width: 3px;
+            height: 3px;
+            border-radius: 9999px;
+            background: #D1D5DB;
+        }
+        .product-card__actions {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 0.15rem;
+            flex-shrink: 0;
+        }
+        .product-card__actions .btn-icon {
+            width: 2.25rem;
+            height: 2.25rem;
+            min-height: 2.25rem;
+            padding: 0;
+            border-radius: 0.5rem;
+            border: none;
+            background: transparent;
+            color: #6B7280;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 20px;
-            height: 20px;
-            border-radius: 4px;
-            font-size: 10px;
+            cursor: pointer;
             transition: background 0.12s, color 0.12s;
         }
-
-        .sku-chip .chip-btn:hover {
-            background: oklch(var(--b3));
+        .product-card__actions .btn-icon:hover {
+            background: oklch(var(--b2));
+            color: oklch(var(--bc));
         }
-
-        .sku-chip .chip-btn.chip-delete:hover {
-            background: oklch(var(--er) / 0.15);
+        .product-card__actions .btn-icon:hover.text-primary,
+        .product-card__actions .btn-icon.text-primary:hover {
+            color: oklch(var(--p));
+            background: oklch(var(--p) / 0.1);
+        }
+        .product-card__body {
+            padding: 0.5rem 0.75rem 0.75rem;
+        }
+        .sku-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .sku-table th {
+            text-align: left;
+            font-size: 0.65rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: #9CA3AF;
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid oklch(var(--b3) / 0.5);
+        }
+        .sku-table th.col-end,
+        .sku-table td.col-end {
+            text-align: right;
+        }
+        .sku-table td {
+            padding: 0.65rem 0.75rem;
+            font-size: 0.875rem;
+            vertical-align: middle;
+            border-bottom: 1px solid oklch(var(--b3) / 0.4);
+        }
+        .sku-table tr:last-child td {
+            border-bottom: none;
+        }
+        .sku-table tbody tr {
+            transition: background 0.12s;
+        }
+        .sku-table tbody tr:hover td {
+            background: oklch(var(--b2) / 0.5);
+        }
+        .sku-size {
+            font-weight: 600;
+            color: oklch(var(--bc));
+        }
+        .sku-code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.75rem;
+            color: #9CA3AF;
+        }
+        .sku-flavor {
+            font-size: 0.8125rem;
+            color: #6B7280;
+        }
+        .sku-price {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+        .sku-actions {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.1rem;
+            opacity: 0.55;
+            transition: opacity 0.12s;
+        }
+        .sku-table tbody tr:hover .sku-actions {
+            opacity: 1;
+        }
+        .sku-actions button {
+            width: 1.85rem;
+            height: 1.85rem;
+            border: none;
+            border-radius: 0.4rem;
+            background: transparent;
+            color: #6B7280;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+        }
+        .sku-actions button:hover {
+            background: oklch(var(--b3));
+            color: oklch(var(--bc));
+        }
+        .sku-actions button.danger:hover {
+            background: oklch(var(--er) / 0.12);
             color: oklch(var(--er));
+        }
+        .status-dot {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: #6B7280;
+        }
+        .status-dot::before {
+            content: '';
+            width: 0.4rem;
+            height: 0.4rem;
+            border-radius: 9999px;
+            background: #D1D5DB;
+        }
+        .status-dot.is-active {
+            color: #047857;
+        }
+        .status-dot.is-active::before {
+            background: #10B981;
+        }
+        .status-dot.is-inactive::before {
+            background: #F87171;
+        }
+        .cat-pill {
+            display: inline-flex;
+            align-items: center;
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 0.15rem 0.5rem;
+            border-radius: 9999px;
+            background: oklch(var(--b2));
+            color: #6B7280;
+        }
+        .empty-skus {
+            padding: 1rem 0.75rem;
+            text-align: center;
+            font-size: 0.8125rem;
+            color: #9CA3AF;
         }
     </style>
 </head>
@@ -334,7 +504,7 @@
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
                 <div>
                     <h1 class="text-2xl font-bold text-base-content">Product Catalog</h1>
-                    <p class="text-base-content/60">Base products with their size/packaging variants (SKUs)</p>
+                    <p class="text-base-content/60">Base liquids grouped with packaging sizes (SKUs) — bulk recipes live on the base, not the bottle</p>
                 </div>
                 <button class="btn btn-primary" onclick="openAddModal()">
                     <i class="fas fa-plus mr-2"></i>Add Base Product
@@ -682,16 +852,27 @@
             yogurt: 'accent', cheese: 'warning', butter: 'info', cream: 'success'
         };
 
-        /* ─────────── Group products by base (name + category) ─────────── */
+        /**
+         * Group SKU rows under one base product card.
+         * Prefer base_product_id / base_product_name from API; fall back to name+category.
+         */
         function groupProducts(flat) {
             const map = new Map();
             flat.forEach(p => {
-                const key = `${p.product_name.trim().toLowerCase()}||${p.category}`;
+                const hasBaseId = p.base_product_id != null && p.base_product_id !== '';
+                const baseName = (p.base_product_name || p.product_name || 'Unknown').trim();
+                const key = hasBaseId
+                    ? `id:${p.base_product_id}`
+                    : `name:${baseName.toLowerCase()}||${p.category}`;
+
                 if (!map.has(key)) {
                     map.set(key, {
-                        name: p.product_name,
+                        key,
+                        base_product_id: hasBaseId ? Number(p.base_product_id) : null,
+                        name: baseName,
                         category: p.category,
                         milk_type_name: p.milk_type_name,
+                        milk_type_id: p.milk_type_id,
                         shelf_life_days: p.shelf_life_days,
                         storage_temp_min: p.storage_temp_min,
                         storage_temp_max: p.storage_temp_max,
@@ -699,22 +880,81 @@
                         skus: []
                     });
                 }
-                map.get(key).skus.push(p);
+                const g = map.get(key);
+                // Prefer non-empty base fields from any SKU
+                if (!g.milk_type_name && p.milk_type_name) g.milk_type_name = p.milk_type_name;
+                if (!g.description && p.description) g.description = p.description;
+                g.skus.push(p);
             });
-            return Array.from(map.values());
+
+            // Sort SKUs by size within each group
+            return Array.from(map.values()).map(g => {
+                g.skus.sort((a, b) => (parseFloat(a.unit_size) || 0) - (parseFloat(b.unit_size) || 0));
+                return g;
+            }).sort((a, b) => a.name.localeCompare(b.name));
+        }
+
+        function formatSize(s) {
+            const raw = parseFloat(s.unit_size);
+            if (!s.unit_size || Number.isNaN(raw)) return null;
+            const clean = raw % 1 === 0 ? Math.round(raw) : raw;
+            return `${clean} ${s.unit_measure || 'ml'}`;
         }
 
         /* ─────────── Load ─────────── */
         async function loadData() {
             try {
-                const response = await AdminService.getProducts({ limit: 100 });
-                if (response.success) {
+                // Prefer hierarchical base_products endpoint when available
+                let groups = null;
+                try {
+                    const baseRes = await fetch(`${ApiConfig.baseUrl}/admin/products.php?action=base_products`, {
+                        headers: ApiConfig.getHeaders()
+                    });
+                    const baseJson = await baseRes.json();
+                    if (baseJson.success && Array.isArray(baseJson.data?.base_products)) {
+                        // Only show bases that still have SKUs (or always show all bases)
+                        groups = baseJson.data.base_products
+                            .filter(bp => Array.isArray(bp.skus) && bp.skus.length > 0)
+                            .map(bp => ({
+                            key: `id:${bp.id}`,
+                            base_product_id: Number(bp.id),
+                            name: bp.name,
+                            category: bp.category,
+                            milk_type_name: bp.milk_type_name,
+                            milk_type_id: bp.milk_type_id,
+                            shelf_life_days: bp.default_shelf_life_days || bp.shelf_life_days || 7,
+                            storage_temp_min: bp.storage_temp_min,
+                            storage_temp_max: bp.storage_temp_max,
+                            description: bp.description,
+                            skus: (bp.skus || []).slice().sort(
+                                (a, b) => (parseFloat(a.unit_size) || 0) - (parseFloat(b.unit_size) || 0)
+                            )
+                        }));
+                        allProducts = groups.flatMap(g => g.skus.map(s => ({
+                            ...s,
+                            base_product_id: g.base_product_id,
+                            base_product_name: g.name,
+                            category: s.category || g.category,
+                            milk_type_name: s.milk_type_name || g.milk_type_name,
+                            shelf_life_days: s.shelf_life_days || g.shelf_life_days,
+                            storage_temp_min: s.storage_temp_min ?? g.storage_temp_min,
+                            storage_temp_max: s.storage_temp_max ?? g.storage_temp_max,
+                            current_stock: s.current_stock
+                        })));
+                    }
+                } catch (_) { /* fall through */ }
+
+                if (!groups) {
+                    const response = await AdminService.getProducts({ limit: 200 });
+                    if (!response.success) throw new Error(response.message || 'Load failed');
                     allProducts = response.data?.products || [];
-                    productGroups = groupProducts(allProducts);
-                    filteredGroups = [...productGroups];
-                    updateStats();
-                    renderGroups();
+                    groups = groupProducts(allProducts);
                 }
+
+                productGroups = groups;
+                filteredGroups = [...productGroups];
+                updateStats();
+                renderGroups();
             } catch (err) {
                 console.error(err);
                 showToast('Failed to load products', 'error');
@@ -723,11 +963,12 @@
 
         /* ─────────── Stats ─────────── */
         function updateStats() {
-            const categories = new Set(allProducts.map(p => p.category));
+            const categories = new Set(productGroups.map(g => g.category).filter(Boolean));
+            const skus = productGroups.flatMap(g => g.skus || []);
             document.getElementById('statBaseProducts').textContent = productGroups.length;
-            document.getElementById('statTotalSKUs').textContent = allProducts.length;
+            document.getElementById('statTotalSKUs').textContent = skus.length;
             document.getElementById('statCategories').textContent = categories.size;
-            document.getElementById('statLowStock').textContent = allProducts.filter(p => (parseFloat(p.current_stock) || 0) < 50).length;
+            document.getElementById('statLowStock').textContent = skus.filter(p => (parseFloat(p.current_stock) || 0) < 50).length;
         }
 
         /* ─────────── Filter ─────────── */
@@ -738,23 +979,30 @@
 
             filteredGroups = productGroups.filter(g => {
                 const matchCat = !cat || g.category === cat;
-                const matchSearch = !search || g.name.toLowerCase().includes(search) ||
-                    g.skus.some(s => s.product_code?.toLowerCase().includes(search) || s.variant?.toLowerCase().includes(search));
+                const matchSearch = !search
+                    || g.name.toLowerCase().includes(search)
+                    || g.skus.some(s =>
+                        (s.product_code || '').toLowerCase().includes(search)
+                        || (s.variant || '').toLowerCase().includes(search)
+                        || (s.product_name || '').toLowerCase().includes(search)
+                    );
                 const matchStatus = status === '' || g.skus.some(s => String(s.is_active) === status);
                 return matchCat && matchSearch && matchStatus;
             });
             renderGroups();
         }
 
-        /* ─────────── Render (flat SKU table) ─────────── */
+        /**
+         * Master–detail cards: one card per base product, nested SKU table.
+         */
         function renderGroups() {
             const container = document.getElementById('productsContainer');
 
             if (filteredGroups.length === 0) {
                 container.innerHTML = `
-                    <div class="text-center py-16">
-                        <i class="fas fa-box-open text-5xl text-base-content/20 mb-4"></i>
-                        <p class="text-base-content/60 text-lg">No products found</p>
+                    <div class="text-center py-16 bg-base-100 rounded-2xl border border-base-300">
+                        <i class="fas fa-box-open text-5xl text-base-content/15 mb-4"></i>
+                        <p class="text-[#6B7280] text-base">No products found</p>
                         <button class="btn btn-primary btn-sm mt-4" onclick="openAddModal()">
                             <i class="fas fa-plus mr-2"></i>Add First Product
                         </button>
@@ -762,98 +1010,121 @@
                 return;
             }
 
-            // Flatten: one row per SKU. The first SKU of each product group
-            // gets the "Edit base" + "Add Size" actions in the Product cell;
-            // subsequent SKUs share the cell content but without the actions.
-            const rows = [];
-            filteredGroups.forEach(g => {
+            container.innerHTML = filteredGroups.map(g => {
                 const color = CATEGORY_COLORS[g.category] || 'primary';
                 const icon = CATEGORY_ICONS[g.category] || 'fa-box';
                 const label = CATEGORY_LABELS[g.category] || g.category;
                 const safeName = escapeJs(g.name);
-                const safeCat = g.category;
+                const safeCat = escapeJs(g.category);
+                const groupKey = escapeJs(g.key || g.name);
+                const activeCount = g.skus.filter(s => Number(s.is_active) === 1).length;
+                const skuCount = g.skus.length;
 
-                g.skus.forEach((s, idx) => {
-                    const rawSize = parseFloat(s.unit_size);
-                    const cleanSize = s.unit_size ? (rawSize % 1 === 0 ? Math.round(rawSize) : rawSize) : null;
-                    const sizeLabel = cleanSize !== null ? `${cleanSize} ${s.unit_measure || 'ml'}` : null;
-                    const noSize = !sizeLabel;
-                    const isFirst = idx === 0;
-
-                    const productCell = `
-                        <div class="flex items-start gap-3">
-                            <div class="w-8 h-8 bg-${color}/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                                <i class="fas ${icon} text-${color} text-sm"></i>
-                            </div>
-                            <div class="min-w-0 flex-1">
-                                <div class="font-semibold text-base-content truncate">${escapeHtml(g.name)}</div>
-                                <div class="text-xs text-base-content/60 mt-0.5">
-                                    <span class="badge badge-xs badge-ghost">${label}</span>
-                                    ${g.milk_type_name ? `<span class="ml-1">· ${escapeHtml(g.milk_type_name)}</span>` : ''}
-                                    <span class="text-base-content/40"> · ${g.shelf_life_days || 7}d shelf · ${g.storage_temp_min || 2}–${g.storage_temp_max || 6}°C</span>
+                const skuRows = g.skus.length === 0
+                    ? `<tr><td colspan="5" class="empty-skus">No packaging sizes yet — use ⋮ → Add size</td></tr>`
+                    : g.skus.map(s => {
+                        const sizeLabel = formatSize(s);
+                        const sizeText = sizeLabel || 'No size';
+                        const price = formatCurrency(s.selling_price || s.unit_price);
+                        const isActive = Number(s.is_active) === 1;
+                        const safeSize = escapeJs(sizeText);
+                        return `
+                        <tr>
+                            <td>
+                                <div class="sku-size">${escapeHtml(sizeText)}</div>
+                                <div class="sku-code">${escapeHtml(s.product_code || '—')}</div>
+                            </td>
+                            <td class="sku-flavor">${escapeHtml(s.variant || '—')}</td>
+                            <td class="sku-price cat-${color}">${price}</td>
+                            <td>
+                                <span class="status-dot ${isActive ? 'is-active' : 'is-inactive'}">
+                                    ${isActive ? 'Active' : 'Inactive'}
+                                </span>
+                            </td>
+                            <td class="col-end">
+                                <div class="sku-actions">
+                                    <button type="button" title="Edit size" onclick="editSku(${s.id})">
+                                        <i class="fas fa-pen"></i>
+                                    </button>
+                                    <button type="button" class="danger" title="Delete size"
+                                        onclick="deleteSku(${s.id}, '${safeName} ${safeSize}')">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
                                 </div>
-                                ${isFirst ? `
-                                <div class="flex gap-1 mt-1">
-                                    <button class="btn btn-ghost btn-xs h-6 min-h-0 px-2 text-base-content/60" onclick="editBaseProduct('${safeName}', '${safeCat}')" title="Edit base product (name, category, shelf life, storage)">
-                                        <i class="fas fa-pen text-xs"></i> Edit base
-                                    </button>
-                                    <button class="btn btn-ghost btn-xs h-6 min-h-0 px-2 text-primary" onclick="openAddSkuModal('${safeName}', '${safeCat}')" title="Add another size/SKU to this product">
-                                        <i class="fas fa-plus text-xs"></i> Add size
-                                    </button>
-                                </div>` : ''}
+                            </td>
+                        </tr>`;
+                    }).join('');
+
+                return `
+                <article class="product-card" data-group-key="${escapeHtml(g.key || g.name)}">
+                    <header class="product-card__header">
+                        <div class="product-card__icon cat-${color}">
+                            <i class="fas ${icon}"></i>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <h2 class="product-card__title">${escapeHtml(g.name)}</h2>
+                            <div class="product-card__meta">
+                                <span class="cat-pill">${escapeHtml(label)}</span>
+                                ${g.milk_type_name ? `<span>${escapeHtml(g.milk_type_name)}</span>` : ''}
+                                <span class="meta-dot" aria-hidden="true"></span>
+                                <span>${g.shelf_life_days || 7}d shelf</span>
+                                <span class="meta-dot" aria-hidden="true"></span>
+                                <span>${g.storage_temp_min ?? 2}–${g.storage_temp_max ?? 6}°C</span>
+                                <span class="meta-dot" aria-hidden="true"></span>
+                                <span>${skuCount} size${skuCount === 1 ? '' : 's'}${activeCount < skuCount ? ` · ${activeCount} active` : ''}</span>
                             </div>
-                        </div>`;
-
-                    const sizeCell = noSize
-                        ? `<span class="inline-flex items-center gap-1 text-warning text-sm"><i class="fas fa-exclamation-triangle"></i> No size</span>`
-                        : `<span class="font-medium">${escapeHtml(sizeLabel)}</span>${s.variant ? `<div class="text-xs text-base-content/50">${escapeHtml(s.variant)}</div>` : ''}`;
-
-                    const priceCell = `<span class="font-mono font-semibold text-${color}">${formatCurrency(s.selling_price || s.unit_price)}</span>`;
-
-                    const statusCell = s.is_active == 1
-                        ? `<span class="badge badge-success badge-sm gap-1"><span class="w-1.5 h-1.5 rounded-full bg-success-content"></span>Active</span>`
-                        : `<span class="badge badge-ghost badge-sm gap-1"><span class="w-1.5 h-1.5 rounded-full bg-base-content/40"></span>Inactive</span>`;
-
-                    const actionsCell = `
-                        <div class="flex items-center gap-1 justify-end">
-                            <button class="btn btn-ghost btn-xs" onclick="editSku(${s.id})" title="Edit this size">
-                                <i class="fas fa-pen text-primary"></i>
+                        </div>
+                        <div class="product-card__actions">
+                            <button type="button" class="btn-icon text-primary" title="Add packaging size"
+                                onclick="openAddSkuModal('${safeName}', '${safeCat}', '${groupKey}')">
+                                <i class="fas fa-plus"></i>
                             </button>
-                            <button class="btn btn-ghost btn-xs" onclick="deleteSku(${s.id}, '${safeName} ${sizeLabel || '(no size)'}')" title="Delete this size">
-                                <i class="fas fa-trash text-error"></i>
-                            </button>
-                        </div>`;
-
-                    const rowClass = noSize ? 'bg-warning/5' : '';
-
-                    rows.push(`
-                        <tr class="hover ${rowClass}">
-                            <td class="align-top">${productCell}</td>
-                            <td class="align-top">${sizeCell}</td>
-                            <td class="align-top">${priceCell}</td>
-                            <td class="align-top">${statusCell}</td>
-                            <td class="align-top text-right">${actionsCell}</td>
-                        </tr>`);
-                });
-            });
-
-            container.innerHTML = `
-                <div class="bg-base-100 border border-base-300 rounded-lg overflow-hidden">
-                    <div class="overflow-x-auto">
-                        <table class="table table-sm">
-                            <thead class="bg-base-200">
-                                <tr>
-                                    <th class="font-semibold">Product</th>
-                                    <th class="font-semibold">Size</th>
-                                    <th class="font-semibold">Price</th>
-                                    <th class="font-semibold">Status</th>
-                                    <th class="font-semibold text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>${rows.join('')}</tbody>
-                        </table>
+                            <div class="dropdown dropdown-end">
+                                <button type="button" tabindex="0" class="btn-icon" title="More actions" aria-label="More">
+                                    <i class="fas fa-ellipsis-vertical"></i>
+                                </button>
+                                <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-48 p-2 z-30">
+                                    <li>
+                                        <a onclick="editBaseProduct('${safeName}', '${safeCat}', '${groupKey}')">
+                                            <i class="fas fa-pen w-4 text-[#9CA3AF]"></i>Edit base product
+                                        </a>
+                                    </li>
+                                    <li>
+                                        <a onclick="openAddSkuModal('${safeName}', '${safeCat}', '${groupKey}')">
+                                            <i class="fas fa-plus w-4 text-[#9CA3AF]"></i>Add packaging size
+                                        </a>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </header>
+                    <div class="product-card__body">
+                        <div class="overflow-x-auto">
+                            <table class="sku-table">
+                                <thead>
+                                    <tr>
+                                        <th>Size / code</th>
+                                        <th>Flavor</th>
+                                        <th>Price</th>
+                                        <th>Status</th>
+                                        <th class="col-end"> </th>
+                                    </tr>
+                                </thead>
+                                <tbody>${skuRows}</tbody>
+                            </table>
+                        </div>
                     </div>
-                </div>`;
+                </article>`;
+            }).join('');
+        }
+
+        function findGroup(name, category, groupKey) {
+            if (groupKey) {
+                const byKey = productGroups.find(g => g.key === groupKey);
+                if (byKey) return byKey;
+            }
+            return productGroups.find(g => g.name === name && g.category === category)
+                || productGroups.find(g => g.name === name);
         }
 
         function escapeJs(s) { return (s || '').replace(/'/g, "\\'").replace(/"/g, '\\"'); }
@@ -879,54 +1150,52 @@
         }
 
         /* ─────────── Edit Base Product (shared props from first SKU) ─────────── */
-        function editBaseProduct(productName, category) {
-            const group = productGroups.find(g => g.name === productName && g.category === category);
+        function editBaseProduct(productName, category, groupKey) {
+            const group = findGroup(productName, category, groupKey);
             if (!group) return;
             const firstSku = group.skus[0];
 
             document.getElementById('baseModalTitle').textContent = 'Edit Base Product';
             document.getElementById('baseRecordId').value = 'EDIT_BASE';
-            // Store ORIGINAL name+category so lookup works even if user changes them
-            document.getElementById('baseOriginalName').value = productName;
-            document.getElementById('baseOriginalCategory').value = category;
+            document.getElementById('baseOriginalName').value = group.name;
+            document.getElementById('baseOriginalCategory').value = group.category;
 
             document.getElementById('base_product_name').value = group.name;
             document.getElementById('base_category').value = group.category;
-            document.getElementById('base_milk_type_id').value = firstSku?.milk_type_id || '';
+            document.getElementById('base_milk_type_id').value = firstSku?.milk_type_id || group.milk_type_id || '';
             document.getElementById('base_shelf_life_days').value = group.shelf_life_days || 7;
-            document.getElementById('base_storage_temp_min').value = group.storage_temp_min || 2;
-            document.getElementById('base_storage_temp_max').value = group.storage_temp_max || 6;
+            document.getElementById('base_storage_temp_min').value = group.storage_temp_min ?? 2;
+            document.getElementById('base_storage_temp_max').value = group.storage_temp_max ?? 6;
             document.getElementById('base_description').value = group.description || '';
-            document.getElementById('base_is_active').checked = firstSku?.is_active == 1;
+            document.getElementById('base_is_active').checked = firstSku ? Number(firstSku.is_active) === 1 : true;
 
             document.getElementById('skuList').innerHTML = `
                 <div class="alert alert-info py-2 text-sm">
                     <i class="fas fa-info-circle"></i>
-                    <span>This will update the <strong>base properties</strong> (name, category, temp, shelf life) for all ${group.skus.length} SKU(s) in this product. To edit individual sizes/prices, click a size chip directly.</span>
+                    <span>Updates shared base properties for all <strong>${group.skus.length}</strong> size(s). Edit prices/sizes with the row pen icons.</span>
                 </div>`;
 
             document.getElementById('baseProductModal').showModal();
         }
 
         /* ─────────── Open Add SKU Modal (adding new size to existing product) ─────────── */
-        function openAddSkuModal(productName, category) {
-            const group = productGroups.find(g => g.name === productName && g.category === category);
+        function openAddSkuModal(productName, category, groupKey) {
+            const group = findGroup(productName, category, groupKey);
             if (!group) return;
             const firstSku = group.skus[0];
 
-            document.getElementById('baseModalTitle').textContent = `Add Size to "${productName}"`;
+            document.getElementById('baseModalTitle').textContent = `Add size — ${group.name}`;
             document.getElementById('baseProductForm').reset();
             document.getElementById('baseRecordId').value = 'ADD_SKU';
-            document.getElementById('base_product_name').value = productName;
-            document.getElementById('base_category').value = category;
-            document.getElementById('base_milk_type_id').value = firstSku?.milk_type_id || '';
+            document.getElementById('base_product_name').value = group.name;
+            document.getElementById('base_category').value = group.category;
+            document.getElementById('base_milk_type_id').value = firstSku?.milk_type_id || group.milk_type_id || '';
             document.getElementById('base_shelf_life_days').value = group.shelf_life_days || 7;
-            document.getElementById('base_storage_temp_min').value = group.storage_temp_min || 2;
-            document.getElementById('base_storage_temp_max').value = group.storage_temp_max || 6;
+            document.getElementById('base_storage_temp_min').value = group.storage_temp_min ?? 2;
+            document.getElementById('base_storage_temp_max').value = group.storage_temp_max ?? 6;
             document.getElementById('base_description').value = group.description || '';
             document.getElementById('base_is_active').checked = true;
 
-            // Lock base fields visually
             ['base_product_name', 'base_category', 'base_milk_type_id'].forEach(id => {
                 document.getElementById(id).setAttribute('disabled', true);
             });
@@ -1007,10 +1276,9 @@
 
             try {
                 if (mode === 'EDIT_BASE') {
-                    // Use ORIGINAL name+category for lookup (user may have changed them in form)
                     const origName = document.getElementById('baseOriginalName').value;
                     const origCat = document.getElementById('baseOriginalCategory').value;
-                    const group = productGroups.find(g => g.name === origName && g.category === origCat);
+                    const group = findGroup(origName, origCat);
                     if (group) {
                         const promises = group.skus.map(sku => AdminService.updateProduct(sku.id, {
                             product_name: baseName,
@@ -1026,12 +1294,14 @@
                     }
                     showToast('Base product updated successfully', 'success');
                 } else {
-                    // Collect SKU rows
                     const skuRows = document.querySelectorAll('[id^="skuRow_"]');
                     if (skuRows.length === 0) {
                         showToast('Please add at least one size/SKU', 'warning');
                         return;
                     }
+
+                    const existing = findGroup(baseName, category);
+                    const baseProductId = existing?.base_product_id || null;
 
                     const createPromises = [];
                     for (const row of skuRows) {
@@ -1048,6 +1318,7 @@
                             product_name: baseName,
                             category,
                             milk_type_id: milkTypeId,
+                            base_product_id: baseProductId,
                             variant,
                             unit_size: unitSize,
                             unit_measure: unitMeasure,

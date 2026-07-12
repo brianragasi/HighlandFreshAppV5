@@ -14,6 +14,10 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 
+// Keep this endpoint snappy so the login UI cannot stick on "Sending..."
+@set_time_limit(25);
+ignore_user_abort(true);
+
 // Only allow POST
 if ($requestMethod !== 'POST') {
     Response::error('Method not allowed', 405);
@@ -29,14 +33,13 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
     Response::validationError(['email' => 'Please enter a valid email address']);
 }
 
-// Rate limit: max 3 reset requests per email per hour
-$rateLimitOk = true;
-
+// Rate limit: max 8 new tokens per email per hour.
+// If over the limit but the user has no usable open token, still issue one recovery token
+// so they are not permanently stuck after a failed email / used link.
 try {
     $db = Database::getInstance()->getConnection();
     ensurePasswordResetsTable($db);
 
-    // Rate limit check
     $rlStmt = $db->prepare("
         SELECT COUNT(*) FROM auth_password_resets
         WHERE email_sent_to = ?
@@ -45,61 +48,74 @@ try {
     $rlStmt->execute([$email]);
     $recentCount = (int) $rlStmt->fetchColumn();
 
-    if ($recentCount >= 3) {
-        $rateLimitOk = false;
-    }
+    $stmt = $db->prepare("
+        SELECT id, username, full_name, first_name, last_name, email, role, is_active
+        FROM users
+        WHERE LOWER(email) = ? AND is_active = 1
+        LIMIT 1
+    ");
+    $stmt->execute([$email]);
+    $user = $stmt->fetch();
 
-    if ($rateLimitOk) {
-        // Find user by email
-        $stmt = $db->prepare("
-            SELECT id, username, full_name, first_name, last_name, email, role, is_active
-            FROM users
-            WHERE LOWER(email) = ? AND is_active = 1
-            LIMIT 1
+    if ($user) {
+        $openStmt = $db->prepare("
+            SELECT COUNT(*) FROM auth_password_resets
+            WHERE user_id = ?
+              AND used_at IS NULL
+              AND expires_at > NOW()
         ");
-        $stmt->execute([$email]);
-        $user = $stmt->fetch();
+        $openStmt->execute([$user['id']]);
+        $openCount = (int) $openStmt->fetchColumn();
 
-        if ($user) {
-            // Invalidate any existing unused reset tokens for this user
+        // Block only when hammering requests AND a still-valid unused token already exists
+        $allowIssue = ($recentCount < 8) || ($openCount === 0);
+
+        if ($allowIssue) {
+            $userName = $user['full_name'] ?: trim(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? ''));
+
+            // Invalidate previous unused tokens so only the newest email link works
             $db->prepare("
                 UPDATE auth_password_resets
-                SET used_at = NOW()
+                SET used_at = NOW(),
+                    expires_at = LEAST(expires_at, NOW())
                 WHERE user_id = ? AND used_at IS NULL
             ")->execute([$user['id']]);
 
-            // Generate token
             $rawToken = bin2hex(random_bytes(32));
             $tokenHash = hash('sha256', $rawToken);
-            $expiresAt = date('Y-m-d H:i:s', time() + 3600); // 1 hour expiry
+            $expiresAt = date('Y-m-d H:i:s', time() + 3600);
 
-            // Store reset record
-            $insertStmt = $db->prepare("
+            $db->prepare("
                 INSERT INTO auth_password_resets (token_hash, user_id, email_sent_to, expires_at)
                 VALUES (?, ?, ?, ?)
-            ");
-            $insertStmt->execute([$tokenHash, $user['id'], $email, $expiresAt]);
+            ")->execute([$tokenHash, $user['id'], $email, $expiresAt]);
 
-            // Build reset URL
-            $resetUrl = APP_URL . '/html/reset-password.html?token=' . urlencode($rawToken);
+            // Build reset URL (prefer current host when running on localhost)
+            $resetUrl = rtrim(APP_URL, '/') . '/html/reset-password.html?token=' . urlencode($rawToken);
+            $host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
+            if ($host !== '' && (str_contains($host, 'localhost') || str_contains($host, '127.0.0.1'))) {
+                $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+                $basePath = '';
+                $script = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+                if (preg_match('#^(.*?)/api/auth/forgot_password\.php$#', $script, $m)) {
+                    $basePath = $m[1];
+                }
+                $resetUrl = $scheme . '://' . $host . $basePath . '/html/reset-password.html?token=' . urlencode($rawToken);
+            }
 
-            // Send email
             try {
-                $userName = $user['full_name'] ?: trim(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? ''));
-                $bodyHtml = buildResetEmailBody($userName, $resetUrl, $expiresAt);
+                $bodyHtml = buildResetEmailBody($userName ?: $user['username'], $resetUrl, $expiresAt);
                 $emailHtml = Mailer::buildTemplate('Password Reset Request', $bodyHtml);
-
                 Mailer::send(
                     $user['email'],
                     'Password Reset — Highland Fresh Dairy',
                     $emailHtml
                 );
-            } catch (Exception $e) {
+            } catch (Throwable $e) {
                 error_log("Forgot password email error for user {$user['id']}: " . $e->getMessage());
-                // Don't expose email errors to prevent enumeration
+                error_log("Forgot password reset URL (email failed) for user {$user['id']}: {$resetUrl}");
             }
 
-            // Audit log
             try {
                 logAudit($user['id'], 'PASSWORD_RESET_REQUESTED', 'users', $user['id'], null, [
                     'email' => $email,
@@ -108,9 +124,11 @@ try {
             } catch (Exception $e) {
                 error_log("Forgot password audit warning: " . $e->getMessage());
             }
+        } else {
+            error_log("Forgot password rate-limited for {$email} (recent={$recentCount}, open={$openCount})");
         }
-        // If user not found, we still return success to prevent email enumeration
     }
+    // If user not found, still return success to prevent email enumeration
 
 } catch (Exception $e) {
     error_log("Forgot password error: " . $e->getMessage());
@@ -122,38 +140,60 @@ Response::success(null, 'If an account exists with that email address, a passwor
 
 
 /**
- * Build password reset email HTML
+ * Build password reset email body (inner content for Mailer::buildTemplate)
+ * Uses table-based CTA for Outlook; inline styles only for Gmail/Apple Mail.
  */
 function buildResetEmailBody($userName, $resetUrl, $expiresAt) {
     $expiresFormatted = date('g:i A', strtotime($expiresAt));
+    $name = htmlspecialchars((string) $userName, ENT_QUOTES, 'UTF-8');
+    $url = htmlspecialchars((string) $resetUrl, ENT_QUOTES, 'UTF-8');
+    $expiresSafe = htmlspecialchars($expiresFormatted, ENT_QUOTES, 'UTF-8');
+    $fontStack = "system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
     return <<<HTML
-<p style="color:#495057;font-size:15px;line-height:1.7;margin:0 0 20px;">
-    Hi <strong>{$userName}</strong>,
+<p style="margin:0 0 8px 0;font-family:{$fontStack};color:#17211b;font-size:16px;font-weight:600;line-height:1.4;">
+    Hi {$name},
 </p>
-<p style="color:#495057;font-size:15px;line-height:1.7;margin:0 0 20px;">
-    We received a request to reset your password for your Highland Fresh Dairy account.
-    Click the button below to set a new password:
+<p style="margin:0 0 24px 0;font-family:{$fontStack};color:#4A5560;font-size:15px;font-weight:400;line-height:1.65;">
+    We received a request to reset the password for your Highland Fresh Dairy account.
+    Use the button below to choose a new password.
 </p>
-<div style="text-align:center;margin:0 0 24px;">
-    <a href="{$resetUrl}"
-       style="display:inline-block;background:linear-gradient(135deg,#dc3545,#e04855);color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:8px;font-weight:600;font-size:16px;letter-spacing:0.3px;box-shadow:0 4px 12px rgba(220,53,69,0.3);">
-        Reset My Password
-    </a>
-</div>
-<div style="background-color:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:16px;margin:0 0 20px;">
-    <p style="color:#856404;margin:0;font-size:13px;">
-        <strong>⚠ Important:</strong> This link expires in <strong>1 hour</strong> (at {$expiresFormatted})
-        and can only be used once.
-    </p>
-</div>
-<p style="color:#6c757d;font-size:13px;margin:0 0 12px;">
-    If you didn't request this password reset, you can safely ignore this email.
-    Your password will remain unchanged.
+
+<!-- CTA button (bulletproof table for Outlook) -->
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin:0 auto 28px auto;border-collapse:collapse;">
+    <tr>
+        <td align="center" bgcolor="#1f7a4d" style="background-color:#1f7a4d;border-radius:8px;mso-padding-alt:14px 32px;">
+            <!--[if mso]>
+            <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" href="{$url}" style="height:48px;v-text-anchor:middle;width:240px;" arcsize="17%" stroke="f" fillcolor="#1f7a4d">
+                <w:anchorlock/>
+                <center style="color:#ffffff;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;">Reset My Password</center>
+            </v:roundrect>
+            <![endif]-->
+            <!--[if !mso]><!-- -->
+            <a href="{$url}" target="_blank" rel="noopener"
+               style="display:inline-block;background-color:#1f7a4d;color:#ffffff;font-family:{$fontStack};font-size:16px;font-weight:700;line-height:1.25;text-align:center;text-decoration:none;padding:14px 32px;border-radius:8px;mso-padding-alt:0;">
+                Reset My Password
+            </a>
+            <!--<![endif]-->
+        </td>
+    </tr>
+</table>
+
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border-collapse:collapse;margin:0 0 24px 0;">
+    <tr>
+        <td style="background-color:#F7FAF8;border:1px solid #D8E8DE;border-radius:8px;padding:14px 16px;font-family:{$fontStack};color:#3D5C4A;font-size:13px;font-weight:400;line-height:1.55;">
+            <strong style="font-weight:700;color:#1f7a4d;">Important:</strong>
+            This link expires in <strong>1 hour</strong> (around {$expiresSafe}) and can only be used once.
+        </td>
+    </tr>
+</table>
+
+<p style="margin:0 0 16px 0;font-family:{$fontStack};color:#6B756F;font-size:13px;font-weight:400;line-height:1.6;">
+    If you did not request this password reset, you can safely ignore this email. Your password will not change.
 </p>
-<p style="color:#6c757d;font-size:13px;margin:0;">
-    If the button doesn't work, copy and paste this URL into your browser:<br>
-    <a href="{$resetUrl}" style="color:#dc3545;word-break:break-all;">{$resetUrl}</a>
+<p style="margin:0;font-family:{$fontStack};color:#8A9590;font-size:12px;font-weight:400;line-height:1.55;">
+    If the button does not work, copy and paste this URL into your browser:<br />
+    <a href="{$url}" style="color:#1f7a4d;text-decoration:underline;word-break:break-all;">{$url}</a>
 </p>
 HTML;
 }

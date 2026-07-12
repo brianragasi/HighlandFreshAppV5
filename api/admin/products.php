@@ -30,6 +30,8 @@ try {
                 getCategories($conn);
             } elseif ($action === 'milk-types') {
                 getMilkTypes($conn);
+            } elseif ($action === 'base_products') {
+                getBaseProducts($conn);
             } else {
                 getProducts($conn);
             }
@@ -56,6 +58,64 @@ try {
     }
 } catch (Exception $e) {
     sendError($e->getMessage(), 500);
+}
+
+/**
+ * List base liquid products with nested packaging SKUs.
+ * GET /api/admin/products.php?action=base_products
+ */
+function getBaseProducts($conn) {
+    try {
+        $conn->query('SELECT id FROM base_products LIMIT 0');
+    } catch (Throwable $e) {
+        sendError('base_products table missing — run scripts/sql/bulk_batch_product_architecture.sql', 500);
+        return;
+    }
+
+    $stmt = $conn->query("
+        SELECT bp.*,
+               mt.type_name AS milk_type_name,
+               (SELECT COUNT(*) FROM products p WHERE p.base_product_id = bp.id) AS sku_count,
+               (SELECT COUNT(*) FROM master_recipes mr WHERE mr.base_product_id = bp.id AND mr.is_active = 1) AS recipe_count
+        FROM base_products bp
+        LEFT JOIN milk_types mt ON mt.id = bp.milk_type_id
+        WHERE bp.is_active = 1
+        ORDER BY bp.name ASC
+    ");
+    $bases = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $skuStmt = $conn->prepare("
+        SELECT p.id, p.product_code, p.product_name, p.variant, p.unit_size, p.unit_measure,
+               p.base_unit, p.box_unit, p.pieces_per_box, p.selling_price, p.unit_price, p.is_active,
+               p.category,
+               (SELECT COALESCE(SUM(fgi.remaining_quantity), 0)
+                  FROM finished_goods_inventory fgi
+                 WHERE fgi.product_id = p.id AND fgi.status = 'available') AS current_stock
+        FROM products p
+        WHERE p.base_product_id = ?
+        ORDER BY p.unit_size ASC, p.product_code ASC
+    ");
+    $recipeStmt = $conn->prepare("
+        SELECT id, recipe_code, product_name, bulk_yield_liters, expected_yield, yield_unit,
+               base_milk_liters, is_active
+        FROM master_recipes
+        WHERE base_product_id = ?
+        ORDER BY recipe_code ASC
+    ");
+
+    foreach ($bases as &$bp) {
+        $skuStmt->execute([(int) $bp['id']]);
+        $bp['skus'] = $skuStmt->fetchAll(PDO::FETCH_ASSOC);
+        try {
+            $recipeStmt->execute([(int) $bp['id']]);
+            $bp['recipes'] = $recipeStmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {
+            $bp['recipes'] = [];
+        }
+    }
+    unset($bp);
+
+    sendSuccess(['base_products' => $bases]);
 }
 
 /**
@@ -106,37 +166,87 @@ function getProducts($conn) {
     $countStmt->execute($params);
     $total = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
     
-    // Get products with milk type info
-    $sql = "SELECT 
-                p.id,
-                p.product_code,
-                p.product_name,
-                p.category,
-                p.variant,
-                p.milk_type_id,
-                mt.type_code as milk_type_code,
-                mt.type_name as milk_type_name,
-                p.description,
-                p.unit_size,
-                p.unit_measure,
-                p.shelf_life_days,
-                p.storage_temp_min,
-                p.storage_temp_max,
-                p.base_unit,
-                p.box_unit,
-                p.pieces_per_box,
-                p.selling_price,
-                p.is_active,
-                p.created_at,
-                p.updated_at,
-                (SELECT COUNT(*) FROM master_recipes mr WHERE mr.product_id = p.id) as recipe_count,
-                (SELECT COALESCE(SUM(fgi.remaining_quantity), 0) 
-                 FROM finished_goods_inventory fgi WHERE fgi.product_id = p.id AND fgi.status = 'available') as current_stock
-            FROM products p
-            LEFT JOIN milk_types mt ON p.milk_type_id = mt.id
-            $whereClause
-            ORDER BY p.product_name ASC
-            LIMIT ? OFFSET ?";
+    // base_product_id optional (SKU → base liquid link)
+    $hasBase = false;
+    try {
+        $conn->query('SELECT base_product_id FROM products LIMIT 0');
+        $conn->query('SELECT id FROM base_products LIMIT 0');
+        $hasBase = true;
+    } catch (Throwable $e) {
+        $hasBase = false;
+    }
+
+    if ($hasBase) {
+        $sql = "SELECT 
+                    p.id,
+                    p.product_code,
+                    p.product_name,
+                    p.category,
+                    p.variant,
+                    p.milk_type_id,
+                    mt.type_code as milk_type_code,
+                    mt.type_name as milk_type_name,
+                    p.description,
+                    p.unit_size,
+                    p.unit_measure,
+                    p.shelf_life_days,
+                    p.storage_temp_min,
+                    p.storage_temp_max,
+                    p.base_unit,
+                    p.box_unit,
+                    p.pieces_per_box,
+                    p.selling_price,
+                    p.is_active,
+                    p.created_at,
+                    p.updated_at,
+                    p.base_product_id,
+                    bp.code AS base_product_code,
+                    bp.name AS base_product_name,
+                    (SELECT COUNT(*) FROM master_recipes mr
+                      WHERE mr.product_id = p.id OR mr.base_product_id = p.base_product_id) as recipe_count,
+                    (SELECT COALESCE(SUM(fgi.remaining_quantity), 0) 
+                     FROM finished_goods_inventory fgi WHERE fgi.product_id = p.id AND fgi.status = 'available') as current_stock
+                FROM products p
+                LEFT JOIN milk_types mt ON p.milk_type_id = mt.id
+                LEFT JOIN base_products bp ON bp.id = p.base_product_id
+                $whereClause
+                ORDER BY COALESCE(bp.name, p.product_name) ASC, p.unit_size ASC
+                LIMIT ? OFFSET ?";
+    } else {
+        $sql = "SELECT 
+                    p.id,
+                    p.product_code,
+                    p.product_name,
+                    p.category,
+                    p.variant,
+                    p.milk_type_id,
+                    mt.type_code as milk_type_code,
+                    mt.type_name as milk_type_name,
+                    p.description,
+                    p.unit_size,
+                    p.unit_measure,
+                    p.shelf_life_days,
+                    p.storage_temp_min,
+                    p.storage_temp_max,
+                    p.base_unit,
+                    p.box_unit,
+                    p.pieces_per_box,
+                    p.selling_price,
+                    p.is_active,
+                    p.created_at,
+                    p.updated_at,
+                    NULL AS base_product_id,
+                    NULL AS base_product_code,
+                    NULL AS base_product_name,
+                    (SELECT COUNT(*) FROM master_recipes mr WHERE mr.product_id = p.id) as recipe_count,
+                    (SELECT COALESCE(SUM(fgi.remaining_quantity), 0) 
+                     FROM finished_goods_inventory fgi WHERE fgi.product_id = p.id AND fgi.status = 'available') as current_stock
+                FROM products p
+                LEFT JOIN milk_types mt ON p.milk_type_id = mt.id
+                $whereClause
+                ORDER BY p.product_name ASC
+                LIMIT ? OFFSET ?";
+    }
     
     $params[] = $limit;
     $params[] = $offset;
@@ -296,32 +406,96 @@ function createProduct($conn) {
         return;
     }
     
-    $sql = "INSERT INTO products (
-                product_code, product_name, category, variant, milk_type_id,
-                description, unit_size, unit_measure, shelf_life_days,
-                storage_temp_min, storage_temp_max, base_unit, box_unit,
-                pieces_per_box, selling_price, is_active
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-    
-    $stmt = $conn->prepare($sql);
-    $stmt->execute([
-        $data['product_code'],
-        $data['product_name'],
-        $data['category'],
-        $data['variant'] ?? null,
-        $data['milk_type_id'] ?? null,
-        $data['description'] ?? null,
-        $data['unit_size'] ?? null,
-        $data['unit_measure'] ?? 'ml',
-        $data['shelf_life_days'] ?? 7,
-        $data['storage_temp_min'] ?? 2.00,
-        $data['storage_temp_max'] ?? 6.00,
-        $data['base_unit'] ?? 'piece',
-        $data['box_unit'] ?? 'box',
-        $data['pieces_per_box'] ?? 1,
-        $data['selling_price'] ?? $data['unit_price'] ?? 0.00,
-        $data['is_active'] ?? 1
-    ]);
+    $baseProductId = !empty($data['base_product_id']) ? (int) $data['base_product_id'] : null;
+    // Resolve / create base product when architecture is present
+    try {
+        $conn->query('SELECT base_product_id FROM products LIMIT 0');
+        $conn->query('SELECT id FROM base_products LIMIT 0');
+        if (!$baseProductId) {
+            $find = $conn->prepare("SELECT id FROM base_products WHERE name = ? AND category = ? LIMIT 1");
+            $find->execute([trim($data['product_name']), $data['category']]);
+            $baseProductId = $find->fetchColumn() ?: null;
+            if (!$baseProductId) {
+                $prefixMap = [
+                    'pasteurized_milk' => 'BASE-PM', 'flavored_milk' => 'BASE-FM',
+                    'yogurt' => 'BASE-YG', 'cheese' => 'BASE-CH', 'butter' => 'BASE-BT', 'cream' => 'BASE-CR'
+                ];
+                $prefix = $prefixMap[$data['category']] ?? 'BASE-XX';
+                $code = $prefix . '-' . strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $data['product_name']), 0, 6)) . rand(10, 99);
+                $insBp = $conn->prepare("
+                    INSERT INTO base_products (code, name, category, milk_type_id, description,
+                        default_shelf_life_days, storage_temp_min, storage_temp_max, is_active)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+                ");
+                $insBp->execute([
+                    $code,
+                    trim($data['product_name']),
+                    $data['category'],
+                    $data['milk_type_id'] ?? null,
+                    $data['description'] ?? null,
+                    $data['shelf_life_days'] ?? 7,
+                    $data['storage_temp_min'] ?? 2.00,
+                    $data['storage_temp_max'] ?? 6.00,
+                ]);
+                $baseProductId = (int) $conn->lastInsertId();
+            }
+        }
+
+        $sql = "INSERT INTO products (
+                    base_product_id, product_code, product_name, category, variant, milk_type_id,
+                    description, unit_size, unit_measure, shelf_life_days,
+                    storage_temp_min, storage_temp_max, base_unit, box_unit,
+                    pieces_per_box, selling_price, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+        $stmt = $conn->prepare($sql);
+        $stmt->execute([
+            $baseProductId,
+            $data['product_code'],
+            $data['product_name'],
+            $data['category'],
+            $data['variant'] ?? null,
+            $data['milk_type_id'] ?? null,
+            $data['description'] ?? null,
+            $data['unit_size'] ?? null,
+            $data['unit_measure'] ?? 'ml',
+            $data['shelf_life_days'] ?? 7,
+            $data['storage_temp_min'] ?? 2.00,
+            $data['storage_temp_max'] ?? 6.00,
+            $data['base_unit'] ?? 'piece',
+            $data['box_unit'] ?? 'box',
+            $data['pieces_per_box'] ?? 1,
+            $data['selling_price'] ?? $data['unit_price'] ?? 0.00,
+            $data['is_active'] ?? 1
+        ]);
+    } catch (Throwable $e) {
+        $sql = "INSERT INTO products (
+                    product_code, product_name, category, variant, milk_type_id,
+                    description, unit_size, unit_measure, shelf_life_days,
+                    storage_temp_min, storage_temp_max, base_unit, box_unit,
+                    pieces_per_box, selling_price, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+        $stmt = $conn->prepare($sql);
+        $stmt->execute([
+            $data['product_code'],
+            $data['product_name'],
+            $data['category'],
+            $data['variant'] ?? null,
+            $data['milk_type_id'] ?? null,
+            $data['description'] ?? null,
+            $data['unit_size'] ?? null,
+            $data['unit_measure'] ?? 'ml',
+            $data['shelf_life_days'] ?? 7,
+            $data['storage_temp_min'] ?? 2.00,
+            $data['storage_temp_max'] ?? 6.00,
+            $data['base_unit'] ?? 'piece',
+            $data['box_unit'] ?? 'box',
+            $data['pieces_per_box'] ?? 1,
+            $data['selling_price'] ?? $data['unit_price'] ?? 0.00,
+            $data['is_active'] ?? 1
+        ]);
+    }
     
     $productId = $conn->lastInsertId();
     

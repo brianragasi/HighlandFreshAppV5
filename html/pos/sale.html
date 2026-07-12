@@ -19,75 +19,329 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-
-        .scrollbar-thin::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-
-        .scrollbar-thin::-webkit-scrollbar-track {
-            background: oklch(var(--b2));
-            border-radius: 3px;
-        }
-
-        .scrollbar-thin::-webkit-scrollbar-thumb {
-            background: oklch(var(--bc) / 0.2);
-            border-radius: 3px;
-        }
-
-        .sidebar-transition {
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
 
         .product-card {
-            @apply transition-all duration-200 ease-out cursor-pointer;
+            transition: all 0.2s ease-out;
+            cursor: pointer;
         }
-
         .product-card:hover {
-            @apply -translate-y-1 shadow-lg border-primary;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.08);
+            border-color: oklch(var(--p));
         }
-
-        .product-card:active {
-            @apply scale-95;
-        }
-
+        .product-card:active { transform: scale(0.97); }
         .product-card.out-of-stock {
-            @apply opacity-50 cursor-not-allowed;
+            opacity: 0.5;
+            cursor: not-allowed;
         }
 
+        /* ── Cart panel layout ── */
+        .pos-cart-panel {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        .pos-cart-footer {
+            flex-shrink: 0;
+            border-top: 1px solid oklch(var(--b3));
+            background: oklch(var(--b1));
+            box-shadow: 0 -8px 24px -12px rgb(0 0 0 / 0.12);
+        }
+
+        /* Cart line item — grid alignment */
         .cart-item {
-            @apply transition-all duration-200;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto auto auto;
+            align-items: center;
+            gap: 0.65rem 0.75rem;
+            padding: 0.75rem 0.5rem;
+            border-radius: 0.75rem;
+            transition: background 0.15s ease;
         }
-
         .cart-item:hover {
-            @apply bg-base-200;
+            background: oklch(var(--b2) / 0.7);
         }
-
-        .qty-btn {
-            @apply w-8 h-8 flex items-center justify-center rounded-lg font-bold transition-all;
+        .cart-item__name {
+            font-size: 0.875rem;
+            font-weight: 600;
+            line-height: 1.3;
+            color: oklch(var(--bc));
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
-
-        .qty-btn:active {
-            @apply scale-90;
+        .cart-item__meta {
+            margin-top: 0.15rem;
+            font-size: 0.75rem;
+            color: #6B7280;
+            line-height: 1.3;
         }
-
-        .total-display {
+        .cart-item__line-total {
             font-variant-numeric: tabular-nums;
+            font-weight: 700;
+            font-size: 0.9375rem;
+            text-align: right;
+            min-width: 4.5rem;
+            color: oklch(var(--bc));
+        }
+        .cart-item__remove {
+            width: 2.25rem;
+            height: 2.25rem;
+            border: none;
+            border-radius: 0.5rem;
+            background: transparent;
+            color: #9CA3AF;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.12s, color 0.12s;
+        }
+        .cart-item__remove:hover {
+            background: oklch(var(--er) / 0.12);
+            color: oklch(var(--er));
         }
 
-        .payment-tab {
-            @apply flex-1 py-3 px-4 text-center font-medium rounded-t-lg transition-all cursor-pointer border-b-2;
+        /* Larger tap targets for qty stepper */
+        .qty-stepper {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.15rem;
+            background: oklch(var(--b2));
+            border-radius: 0.65rem;
+            padding: 0.2rem;
+            border: 1px solid oklch(var(--b3));
+        }
+        .qty-btn {
+            width: 2.35rem;
+            height: 2.35rem;
+            min-width: 2.35rem;
+            border: none;
+            border-radius: 0.5rem;
+            background: oklch(var(--b1));
+            color: oklch(var(--bc));
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+            transition: background 0.12s, transform 0.1s, opacity 0.12s;
+        }
+        .qty-btn:hover:not(:disabled) {
+            background: oklch(var(--p) / 0.12);
+            color: oklch(var(--p));
+        }
+        .qty-btn:active:not(:disabled) {
+            transform: scale(0.92);
+        }
+        .qty-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .qty-value {
+            min-width: 2rem;
+            text-align: center;
+            font-weight: 700;
+            font-size: 0.9375rem;
+            font-variant-numeric: tabular-nums;
+            user-select: none;
         }
 
-        .payment-tab.active {
-            @apply bg-base-100 border-primary text-primary;
+        /* Totals hierarchy */
+        .checkout-totals {
+            padding: 1rem 1.15rem 0.75rem;
+        }
+        .checkout-totals__row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.875rem;
+            color: #6B7280;
+            margin-bottom: 0.4rem;
+        }
+        .checkout-totals__row span:last-child {
+            font-variant-numeric: tabular-nums;
+            color: oklch(var(--bc) / 0.85);
+            font-weight: 500;
+        }
+        .checkout-totals__grand {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-top: 0.75rem;
+            padding-top: 0.85rem;
+            border-top: 1px solid oklch(var(--b3));
+        }
+        .checkout-totals__grand-label {
+            font-size: 1.05rem;
+            font-weight: 800;
+            letter-spacing: 0.01em;
+            color: oklch(var(--bc));
+        }
+        .checkout-totals__grand-amount {
+            font-size: 1.85rem;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -0.02em;
+            color: oklch(var(--p));
+            line-height: 1;
         }
 
-        .payment-tab:not(.active) {
-            @apply bg-base-200 border-transparent text-base-content/60 hover:bg-base-300;
+        /* Segmented payment control */
+        .pay-segment {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.35rem;
+            padding: 0.3rem;
+            background: oklch(var(--b2));
+            border-radius: 0.75rem;
+            border: 1px solid oklch(var(--b3));
+            margin-bottom: 0.85rem;
+        }
+        .pay-segment__btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.25rem;
+            padding: 0.55rem 0.25rem;
+            border: none;
+            border-radius: 0.55rem;
+            background: transparent;
+            color: #6B7280;
+            font-size: 0.7rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+            min-height: 3.25rem;
+        }
+        .pay-segment__btn i {
+            font-size: 1rem;
+        }
+        .pay-segment__btn:hover:not(.is-active) {
+            background: oklch(var(--b1) / 0.6);
+            color: oklch(var(--bc));
+        }
+        .pay-segment__btn.is-active {
+            background: oklch(var(--b1));
+            color: oklch(var(--p));
+            box-shadow: 0 1px 3px rgb(0 0 0 / 0.08), 0 0 0 1px oklch(var(--p) / 0.25);
+        }
+
+        .checkout-payment {
+            padding: 0 1.15rem 0.5rem;
+        }
+        .payment-panel {
+            background: oklch(var(--b2) / 0.45);
+            border: 1px solid oklch(var(--b3));
+            border-radius: 0.75rem;
+            padding: 0.9rem;
+        }
+        .tender-input {
+            width: 100%;
+            text-align: right;
+            font-size: 1.65rem !important;
+            font-weight: 700 !important;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -0.02em;
+            height: 3.25rem !important;
+            min-height: 3.25rem !important;
+            padding-right: 1rem !important;
+        }
+        .change-due-box {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 0.75rem;
+            padding: 0.85rem 1rem;
+            border-radius: 0.65rem;
+            background: #ECFDF5;
+            border: 1px solid #A7F3D0;
+        }
+        .change-due-box__label {
+            display: flex;
+            flex-direction: column;
+            gap: 0.1rem;
+        }
+        .change-due-box__label-title {
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #047857;
+        }
+        .change-due-box__label-hint {
+            font-size: 0.75rem;
+            color: #059669;
+            opacity: 0.85;
+        }
+        .change-due-box__amount {
+            font-size: 1.5rem;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+            color: #047857;
+            line-height: 1;
+        }
+        .change-due-box.is-short {
+            background: #FEF2F2;
+            border-color: #FECACA;
+        }
+        .change-due-box.is-short .change-due-box__label-title,
+        .change-due-box.is-short .change-due-box__amount {
+            color: #B91C1C;
+        }
+        .change-due-box.is-short .change-due-box__label-hint {
+            color: #DC2626;
+        }
+        [data-theme="dark"] .change-due-box {
+            background: rgba(16, 185, 129, 0.12);
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+        [data-theme="dark"] .change-due-box__label-title,
+        [data-theme="dark"] .change-due-box__amount {
+            color: #6EE7B7;
+        }
+
+        .btn-complete-sale {
+            width: 100%;
+            min-height: 3.5rem;
+            height: auto;
+            padding: 1rem 1.25rem;
+            border: none;
+            border-radius: 0.85rem;
+            background: linear-gradient(180deg, oklch(var(--p)) 0%, oklch(var(--p) / 0.88) 100%);
+            color: oklch(var(--pc));
+            font-size: 1.05rem;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.55rem;
+            cursor: pointer;
+            box-shadow: 0 4px 14px -2px oklch(var(--p) / 0.45);
+            transition: transform 0.12s, box-shadow 0.12s, opacity 0.12s;
+        }
+        .btn-complete-sale:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 20px -4px oklch(var(--p) / 0.5);
+        }
+        .btn-complete-sale:active:not(:disabled) {
+            transform: translateY(0);
+        }
+        .btn-complete-sale:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        .checkout-cta-wrap {
+            padding: 0.85rem 1.15rem 1.15rem;
         }
     </style>
 </head>
@@ -290,21 +544,18 @@
             </div>
 
             <!-- Cart Section (Right) -->
-            <div class="w-full lg:w-96 xl:w-[420px] bg-base-100 border-l border-base-300 flex flex-col">
+            <div class="w-full lg:w-96 xl:w-[420px] bg-base-100 border-l border-base-300 pos-cart-panel">
                 <!-- Cart Header -->
-                <div class="p-4 border-b border-base-300">
+                <div class="p-4 border-b border-base-300 shrink-0">
                     <div class="flex items-center justify-between">
                         <h2 class="font-bold text-lg flex items-center gap-2">
                             <i class="fas fa-cart-shopping text-primary"></i>
                             Current Sale
                         </h2>
-                        <button class="btn btn-ghost btn-sm text-error" onclick="clearCart()" id="btnClearCart"
-                            disabled>
+                        <button class="btn btn-ghost btn-sm text-error" onclick="clearCart()" id="btnClearCart" disabled>
                             <i class="fas fa-trash"></i> Clear
                         </button>
                     </div>
-
-                    <!-- Customer Selection -->
                     <div class="mt-3">
                         <label class="input input-bordered input-sm flex items-center gap-2">
                             <i class="fas fa-user text-base-content/40"></i>
@@ -313,8 +564,8 @@
                     </div>
                 </div>
 
-                <!-- Cart Items -->
-                <div class="flex-1 overflow-y-auto scrollbar-thin p-4" id="cartItems">
+                <!-- Cart Items (scrolls; footer stays visible) -->
+                <div class="flex-1 overflow-y-auto scrollbar-thin px-3 py-3 min-h-0" id="cartItems">
                     <div class="text-center py-12 text-base-content/60">
                         <i class="fas fa-cart-shopping text-5xl mb-3 opacity-30"></i>
                         <p>Cart is empty</p>
@@ -322,76 +573,80 @@
                     </div>
                 </div>
 
-                <!-- Cart Summary & Payment -->
-                <div class="border-t border-base-300">
-                    <!-- Totals -->
-                    <div class="p-4 space-y-2">
-                        <div class="flex justify-between text-sm">
-                            <span class="text-base-content/60">Subtotal</span>
+                <!-- Sticky checkout footer -->
+                <div class="pos-cart-footer">
+                    <div class="checkout-totals">
+                        <div class="checkout-totals__row">
+                            <span>Subtotal</span>
                             <span id="subtotal">₱0.00</span>
                         </div>
-                        <div class="flex justify-between text-sm">
-                            <span class="text-base-content/60">Items</span>
+                        <div class="checkout-totals__row">
+                            <span>Items</span>
                             <span id="totalItems">0</span>
                         </div>
-                        <div class="divider my-2"></div>
-                        <div class="flex justify-between items-center">
-                            <span class="text-lg font-semibold">Total</span>
-                            <span class="text-3xl font-bold text-primary total-display" id="grandTotal">₱0.00</span>
+                        <div class="checkout-totals__grand">
+                            <span class="checkout-totals__grand-label">Total</span>
+                            <span class="checkout-totals__grand-amount" id="grandTotal">₱0.00</span>
                         </div>
                     </div>
 
-                    <!-- Payment Section -->
-                    <div class="p-4 pt-0">
-                        <!-- Payment Method Tabs -->
-                        <div class="flex mb-3 bg-base-200 rounded-t-lg">
-                            <div class="payment-tab active" data-method="cash" onclick="selectPaymentMethod('cash')">
+                    <div class="checkout-payment">
+                        <!-- Segmented payment methods -->
+                        <div class="pay-segment" role="tablist" aria-label="Payment method">
+                            <button type="button" class="pay-segment__btn is-active" data-method="cash"
+                                onclick="selectPaymentMethod('cash')" role="tab" aria-selected="true">
                                 <i class="fas fa-money-bill-wave"></i>
-                                <span class="hidden sm:inline ml-1">Cash</span>
-                            </div>
-                            <div class="payment-tab" data-method="gcash" onclick="selectPaymentMethod('gcash')">
+                                <span>Cash</span>
+                            </button>
+                            <button type="button" class="pay-segment__btn" data-method="gcash"
+                                onclick="selectPaymentMethod('gcash')" role="tab" aria-selected="false">
                                 <i class="fas fa-mobile-screen"></i>
-                                <span class="hidden sm:inline ml-1">GCash</span>
-                            </div>
-                            <div class="payment-tab" data-method="bank" onclick="selectPaymentMethod('bank')">
+                                <span>GCash</span>
+                            </button>
+                            <button type="button" class="pay-segment__btn" data-method="bank"
+                                onclick="selectPaymentMethod('bank')" role="tab" aria-selected="false">
                                 <i class="fas fa-building-columns"></i>
-                                <span class="hidden sm:inline ml-1">Bank</span>
-                            </div>
-                            <div class="payment-tab" data-method="check" onclick="selectPaymentMethod('check')">
+                                <span>Bank</span>
+                            </button>
+                            <button type="button" class="pay-segment__btn" data-method="check"
+                                onclick="selectPaymentMethod('check')" role="tab" aria-selected="false">
                                 <i class="fas fa-money-check"></i>
-                                <span class="hidden sm:inline ml-1">Check</span>
-                            </div>
+                                <span>Check</span>
+                            </button>
                         </div>
 
-                        <!-- Payment Details -->
-                        <div id="paymentDetails" class="bg-base-100 rounded-b-lg border border-base-300 p-3 space-y-3">
-                            <!-- Cash Payment -->
+                        <div id="paymentDetails" class="payment-panel space-y-3">
+                            <!-- Cash -->
                             <div id="cashPayment">
-                                <label class="label py-1">
-                                    <span class="label-text">Amount Tendered</span>
+                                <label class="label py-0 pb-1.5">
+                                    <span class="label-text font-semibold text-sm">Amount Tendered</span>
                                 </label>
                                 <input type="number" id="amountTendered"
-                                    class="input input-bordered w-full text-right text-xl font-semibold"
-                                    placeholder="0.00" oninput="calculateChange()">
-                                <div class="flex justify-between items-center mt-2 p-2 bg-success/10 rounded-lg">
-                                    <span class="text-success font-medium">Change</span>
-                                    <span class="text-2xl font-bold text-success" id="changeAmount">₱0.00</span>
+                                    class="input input-bordered input-lg tender-input w-full"
+                                    placeholder="0.00" step="0.01" min="0" inputmode="decimal"
+                                    oninput="calculateChange()">
+                                <div class="change-due-box" id="changeDueBox">
+                                    <div class="change-due-box__label">
+                                        <span class="change-due-box__label-title">Change Due</span>
+                                        <span class="change-due-box__label-hint">Return to customer</span>
+                                    </div>
+                                    <span class="change-due-box__amount" id="changeAmount">₱0.00</span>
                                 </div>
                             </div>
 
-                            <!-- GCash Payment -->
+                            <!-- GCash -->
                             <div id="gcashPayment" class="hidden">
-                                <label class="label py-1">
-                                    <span class="label-text">GCash Reference Number</span>
+                                <label class="label py-0 pb-1.5">
+                                    <span class="label-text font-semibold text-sm">GCash Reference Number</span>
                                 </label>
                                 <input type="text" id="gcashRef" class="input input-bordered w-full"
                                     placeholder="Enter reference number">
                             </div>
 
-                            <!-- Bank Transfer Payment -->
+                            <!-- Bank -->
                             <div id="bankPayment" class="hidden">
-                                <label class="label py-1">
-                                    <span class="label-text">Bank</span>
+                                <label class="label py-0 pb-1.5">
+                                    <span class="label-text font-semibold text-sm">Bank</span>
                                 </label>
                                 <select id="bankName" class="select select-bordered w-full">
                                     <option value="">Select bank</option>
@@ -403,19 +658,19 @@
                                     <option value="UnionBank">UnionBank</option>
                                     <option value="Other">Other</option>
                                 </select>
-                                <label class="label py-1 mt-2">
-                                    <span class="label-text">Reference Number</span>
+                                <label class="label py-0 pb-1.5 mt-3">
+                                    <span class="label-text font-semibold text-sm">Reference Number</span>
                                 </label>
                                 <input type="text" id="bankRef" class="input input-bordered w-full"
                                     placeholder="Enter reference number">
                             </div>
 
-                            <!-- Check Payment -->
+                            <!-- Check -->
                             <div id="checkPayment" class="hidden">
                                 <div class="grid grid-cols-2 gap-3">
                                     <div>
-                                        <label class="label py-1">
-                                            <span class="label-text">Bank</span>
+                                        <label class="label py-0 pb-1">
+                                            <span class="label-text font-semibold text-xs">Bank</span>
                                         </label>
                                         <select id="checkBank" class="select select-bordered w-full select-sm">
                                             <option value="">Select bank</option>
@@ -428,8 +683,8 @@
                                         </select>
                                     </div>
                                     <div>
-                                        <label class="label py-1">
-                                            <span class="label-text">Check Number</span>
+                                        <label class="label py-0 pb-1">
+                                            <span class="label-text font-semibold text-xs">Check Number</span>
                                         </label>
                                         <input type="text" id="checkNumber" class="input input-bordered w-full input-sm"
                                             placeholder="Check #">
@@ -437,14 +692,14 @@
                                 </div>
                                 <div class="grid grid-cols-2 gap-3 mt-2">
                                     <div>
-                                        <label class="label py-1">
-                                            <span class="label-text">Check Date</span>
+                                        <label class="label py-0 pb-1">
+                                            <span class="label-text font-semibold text-xs">Check Date</span>
                                         </label>
                                         <input type="date" id="checkDate" class="input input-bordered w-full input-sm">
                                     </div>
                                     <div>
-                                        <label class="label py-1">
-                                            <span class="label-text">Account Owner</span>
+                                        <label class="label py-0 pb-1">
+                                            <span class="label-text font-semibold text-xs">Account Owner</span>
                                         </label>
                                         <input type="text" id="checkOwner" class="input input-bordered w-full input-sm"
                                             placeholder="Name">
@@ -452,10 +707,11 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
 
-                        <!-- Complete Sale Button -->
-                        <button id="btnCompleteSale" class="btn btn-primary btn-lg w-full mt-4" onclick="completeSale()"
-                            disabled>
+                    <div class="checkout-cta-wrap">
+                        <button type="button" id="btnCompleteSale" class="btn-complete-sale"
+                            onclick="completeSale()" disabled>
                             <i class="fas fa-check-circle"></i>
                             Complete Sale
                         </button>
@@ -606,19 +862,29 @@
                 const response = await POSService.getProducts({ in_stock: '1' });
 
                 if (response?.data?.products) {
-                    // Transform API response to component format
-                    products = response.data.products.map(p => ({
-                        id: p.id,
-                        name: p.product_name,
-                        variant: p.variant || `${p.unit_size || ''} ${p.unit_measure || ''}`.trim(),
-                        price: parseFloat(p.selling_price) || parseFloat(p.unit_price) || 0,
-                        stock: parseInt(p.total_pieces) || parseInt(p.stock_available) || 0,
-                        category: (p.category || 'other').toLowerCase(),
-                        image: null,
-                        expiring_soon: p.expiring_soon,
-                        days_to_expiry: p.days_to_expiry,
-                        stock_display: p.stock_display
-                    }));
+                    // One card per product.id (dedupe defensive — API already unique)
+                    const seen = new Set();
+                    products = [];
+                    for (const p of response.data.products) {
+                        const id = Number(p.id);
+                        if (!id || seen.has(id)) continue;
+                        seen.add(id);
+                        const sizeLabel = [p.unit_size, p.unit_measure].filter(Boolean).join(' ').trim();
+                        products.push({
+                            id,
+                            code: p.product_code || '',
+                            name: p.product_name,
+                            variant: p.variant || sizeLabel || '',
+                            price: parseFloat(p.selling_price) || parseFloat(p.unit_price) || 0,
+                            stock: parseInt(p.total_pieces, 10) || parseInt(p.stock_available, 10) || 0,
+                            category: (p.category || 'other').toLowerCase(),
+                            image: null,
+                            expiring_soon: p.expiring_soon,
+                            days_to_expiry: p.days_to_expiry,
+                            stock_display: p.stock_display,
+                            batch_count: Number(p.batch_count || 0)
+                        });
+                    }
                 } else {
                     products = [];
                 }
@@ -760,30 +1026,34 @@
                 return;
             }
 
-            container.innerHTML = cart.map((item, index) => `
-                <div class="cart-item flex items-center gap-3 p-2 rounded-lg">
-                    <div class="flex-1 min-w-0">
-                        <p class="font-medium text-sm truncate">${item.name}</p>
-                        <p class="text-xs text-base-content/60">${item.variant} · ${formatCurrency(item.price)}</p>
+            container.innerHTML = cart.map((item, index) => {
+                const atMax = item.quantity >= item.maxStock;
+                const lineTotal = formatCurrency(item.price * item.quantity);
+                const unitPrice = formatCurrency(item.price);
+                const variant = item.variant || '—';
+                return `
+                <div class="cart-item">
+                    <div class="min-w-0">
+                        <div class="cart-item__name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
+                        <div class="cart-item__meta">${escapeHtml(variant)} · ${unitPrice} each</div>
                     </div>
-                    <div class="flex items-center gap-1">
-                        <button class="qty-btn bg-base-200 hover:bg-base-300" onclick="updateQuantity(${index}, -1)">
-                            <i class="fas fa-minus text-xs"></i>
+                    <div class="qty-stepper" role="group" aria-label="Quantity">
+                        <button type="button" class="qty-btn" onclick="updateQuantity(${index}, -1)" aria-label="Decrease quantity">
+                            <i class="fas fa-minus"></i>
                         </button>
-                        <span class="w-8 text-center font-semibold">${item.quantity}</span>
-                        <button class="qty-btn bg-base-200 hover:bg-base-300 ${item.quantity >= item.maxStock ? 'opacity-50' : ''}"
-                                onclick="updateQuantity(${index}, 1)" ${item.quantity >= item.maxStock ? 'disabled' : ''}>
-                            <i class="fas fa-plus text-xs"></i>
+                        <span class="qty-value">${item.quantity}</span>
+                        <button type="button" class="qty-btn" onclick="updateQuantity(${index}, 1)"
+                            ${atMax ? 'disabled' : ''} aria-label="Increase quantity">
+                            <i class="fas fa-plus"></i>
                         </button>
                     </div>
-                    <div class="text-right min-w-[80px]">
-                        <p class="font-bold">${formatCurrency(item.price * item.quantity)}</p>
-                    </div>
-                    <button class="btn btn-ghost btn-xs btn-square text-error" onclick="removeFromCart(${index})">
+                    <div class="cart-item__line-total">${lineTotal}</div>
+                    <button type="button" class="cart-item__remove" onclick="removeFromCart(${index})"
+                        title="Remove item" aria-label="Remove ${escapeHtml(item.name)}">
                         <i class="fas fa-times"></i>
                     </button>
-                </div>
-            `).join('');
+                </div>`;
+            }).join('');
 
             document.getElementById('btnClearCart').disabled = false;
             document.getElementById('btnCompleteSale').disabled = false;
@@ -836,22 +1106,25 @@
             calculateChange();
         }
 
-        // Select payment method
+        // Select payment method (segmented control)
         function selectPaymentMethod(method) {
             currentPaymentMethod = method;
 
-            // Update tabs
+            document.querySelectorAll('.pay-segment__btn').forEach(btn => {
+                const on = btn.dataset.method === method;
+                btn.classList.toggle('is-active', on);
+                btn.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+            // Back-compat if any .payment-tab remains
             document.querySelectorAll('.payment-tab').forEach(tab => {
                 tab.classList.toggle('active', tab.dataset.method === method);
             });
 
-            // Show/hide payment sections
             document.getElementById('cashPayment').classList.toggle('hidden', method !== 'cash');
             document.getElementById('gcashPayment').classList.toggle('hidden', method !== 'gcash');
             document.getElementById('bankPayment').classList.toggle('hidden', method !== 'bank');
             document.getElementById('checkPayment').classList.toggle('hidden', method !== 'check');
 
-            // Focus appropriate field
             if (method === 'cash') {
                 document.getElementById('amountTendered').focus();
             } else if (method === 'gcash') {
@@ -863,26 +1136,34 @@
             }
         }
 
-        // Calculate change
+        // Calculate change due
         function calculateChange() {
             const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             const tendered = parseFloat(document.getElementById('amountTendered').value) || 0;
             const change = tendered - total;
 
             const changeEl = document.getElementById('changeAmount');
+            const box = document.getElementById('changeDueBox');
+
             if (change >= 0 && tendered > 0) {
                 changeEl.textContent = formatCurrency(change);
-                changeEl.classList.remove('text-error');
-                changeEl.classList.add('text-success');
+                box?.classList.remove('is-short');
             } else if (tendered > 0) {
                 changeEl.textContent = formatCurrency(change);
-                changeEl.classList.remove('text-success');
-                changeEl.classList.add('text-error');
+                box?.classList.add('is-short');
             } else {
                 changeEl.textContent = '₱0.00';
-                changeEl.classList.remove('text-error');
-                changeEl.classList.add('text-success');
+                box?.classList.remove('is-short');
             }
+        }
+
+        function escapeHtml(str) {
+            return String(str ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
 
         // Complete sale
@@ -929,7 +1210,7 @@
             // Disable button and show loading
             const btnComplete = document.getElementById('btnCompleteSale');
             btnComplete.disabled = true;
-            btnComplete.innerHTML = '<span class="loading loading-spinner"></span> Processing...';
+            btnComplete.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Processing...';
 
             // Prepare sale data for API
             const paymentMethod = currentPaymentMethod === 'bank' ? 'bank_transfer' : currentPaymentMethod;

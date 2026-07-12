@@ -50,25 +50,51 @@ try {
 
             $stmt = $db->prepare($sql);
             $stmt->execute($params);
-            $estimates = $stmt->fetchAll();
+            $estimates = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-            // Group by estimate_type
+            // Available bottle SKUs for this base product (multi-SKU packaging)
+            $resolved = resolvePackagingSkusForRun($db, $runId);
+            $skuByMl = [];
+            foreach ($resolved['skus'] ?? [] as $sku) {
+                $skuByMl[(int) $sku['packaging_size_ml']] = $sku;
+            }
+
+            // Group by estimate_type + attach product_id from SKU map
             $grouped = ['initial' => [], 'revised' => []];
             foreach ($estimates as $est) {
-                $grouped[$est['estimate_type']][] = $est;
+                $ml = (int) ($est['packaging_size_ml'] ?? 0);
+                if (isset($skuByMl[$ml])) {
+                    $est['product_id'] = $skuByMl[$ml]['product_id'];
+                    $est['product_code'] = $skuByMl[$ml]['product_code'] ?? null;
+                }
+                $type = $est['estimate_type'] ?? 'initial';
+                if (!isset($grouped[$type])) {
+                    $grouped[$type] = [];
+                }
+                $grouped[$type][] = $est;
             }
 
             $initialBasis = !empty($grouped['initial']) ? $grouped['initial'][0]['basis_volume_ml'] : null;
             $revisedBasis = !empty($grouped['revised']) ? $grouped['revised'][0]['basis_volume_ml'] : null;
 
+            // Run yield context for UI
+            $runStmt = $db->prepare("SELECT initial_volume_ml, net_yield_ml FROM production_runs WHERE id = ?");
+            $runStmt->execute([$runId]);
+            $runVol = $runStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
             Response::success([
-                'production_run_id' => (int)$runId,
+                'production_run_id' => (int) $runId,
+                'base_product_id' => $resolved['base_product_id'] ?? null,
+                'product_name' => $resolved['product_name'] ?? null,
+                'available_skus' => $resolved['skus'] ?? [],
+                'net_yield_ml' => isset($runVol['net_yield_ml']) ? (float) $runVol['net_yield_ml'] : null,
+                'initial_volume_ml' => isset($runVol['initial_volume_ml']) ? (float) $runVol['initial_volume_ml'] : null,
                 'initial_estimate' => [
-                    'basis_volume_ml' => $initialBasis ? (float)$initialBasis : null,
+                    'basis_volume_ml' => $initialBasis ? (float) $initialBasis : null,
                     'items' => $grouped['initial']
                 ],
                 'revised_estimate' => [
-                    'basis_volume_ml' => $revisedBasis ? (float)$revisedBasis : null,
+                    'basis_volume_ml' => $revisedBasis ? (float) $revisedBasis : null,
                     'items' => $grouped['revised']
                 ],
                 'has_revision' => !empty($grouped['revised'])

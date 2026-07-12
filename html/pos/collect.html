@@ -25,8 +25,161 @@
         .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
         .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         .stat-value { font-variant-numeric: tabular-nums; }
-        .overdue { animation: pulse-error 2s ease-in-out infinite; }
-        @keyframes pulse-error { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+
+        /* ── Collect Payment table (enterprise POS density) ── */
+        .collect-table-wrap {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            border-radius: 0.75rem;
+            border: 1px solid oklch(var(--b3));
+            max-width: 100%;
+        }
+        .collect-table {
+            width: 100%;
+            min-width: 720px; /* prevent column crush next to side panel */
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+        .collect-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: oklch(var(--b2));
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: #6B7280;
+            text-align: left;
+            padding: 0.875rem 1rem;
+            border-bottom: 1px solid oklch(var(--b3));
+            white-space: nowrap;
+        }
+        .collect-table thead th.col-actions {
+            text-align: right;
+            width: 3.5rem;
+        }
+        .collect-table tbody td {
+            padding: 0.95rem 1rem;
+            vertical-align: middle;
+            border-bottom: 1px solid oklch(var(--b3) / 0.65);
+            font-size: 0.875rem;
+        }
+        .collect-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+        .collect-table tbody tr {
+            transition: background-color 0.12s ease;
+        }
+        .collect-table tbody tr:hover td {
+            background: oklch(var(--b2) / 0.55);
+        }
+        .collect-table tbody tr.is-overdue td {
+            background: oklch(var(--er) / 0.04);
+        }
+        .collect-table tbody tr.is-overdue:hover td {
+            background: oklch(var(--er) / 0.08);
+        }
+
+        /* DR number: never break on hyphens */
+        .dr-number {
+            display: inline-block;
+            white-space: nowrap;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            color: oklch(var(--bc));
+        }
+
+        .cell-customer-name {
+            font-weight: 600;
+            color: oklch(var(--bc));
+            line-height: 1.3;
+        }
+        .cell-customer-meta {
+            margin-top: 0.15rem;
+            font-size: 0.75rem;
+            color: #6B7280;
+            line-height: 1.3;
+        }
+        .cell-money {
+            font-variant-numeric: tabular-nums;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .cell-money--balance {
+            color: oklch(var(--wa));
+        }
+        .cell-money--balance.is-overdue {
+            color: oklch(var(--er));
+        }
+        .cell-date {
+            white-space: nowrap;
+            color: #6B7280;
+            font-size: 0.8125rem;
+        }
+
+        /* Status pills — never squish text out of the pill */
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.3rem;
+            white-space: nowrap;
+            flex-shrink: 0;
+            padding: 0.28rem 0.7rem;
+            border-radius: 9999px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            line-height: 1.25;
+            letter-spacing: 0.01em;
+            max-width: none;
+        }
+        .status-pill--overdue {
+            background: #FEE2E2;
+            color: #B91C1C;
+        }
+        .status-pill--today {
+            background: #FEF3C7;
+            color: #B45309;
+        }
+        .status-pill--upcoming {
+            background: oklch(var(--b2));
+            color: #6B7280;
+        }
+        [data-theme="dark"] .status-pill--overdue {
+            background: rgba(239, 68, 68, 0.18);
+            color: #FCA5A5;
+        }
+        [data-theme="dark"] .status-pill--today {
+            background: rgba(245, 158, 11, 0.18);
+            color: #FCD34D;
+        }
+
+        .collect-action-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 2.25rem;
+            height: 2.25rem;
+            min-height: 2.25rem;
+            padding: 0;
+            border-radius: 0.5rem;
+            border: none;
+            background: oklch(var(--in) / 0.12);
+            color: oklch(var(--in));
+            cursor: pointer;
+            transition: background 0.12s, transform 0.12s;
+        }
+        .collect-action-btn:hover {
+            background: oklch(var(--in) / 0.22);
+            transform: scale(1.04);
+        }
+        .collect-table td.col-actions {
+            text-align: right;
+            white-space: nowrap;
+        }
     </style>
 </head>
 
@@ -259,23 +412,23 @@
                                 </div>
                             </div>
 
-                            <div class="overflow-x-auto">
-                                <table class="table table-sm">
+                            <div class="collect-table-wrap">
+                                <table class="collect-table">
                                     <thead>
-                                        <tr class="bg-base-200">
+                                        <tr>
                                             <th>DR Number</th>
                                             <th>Customer</th>
                                             <th>Total</th>
                                             <th>Balance</th>
                                             <th>Due Date</th>
                                             <th>Status</th>
-                                            <th></th>
+                                            <th class="col-actions"> </th>
                                         </tr>
                                     </thead>
                                     <tbody id="outstandingTable">
                                         <tr>
-                                            <td colspan="7" class="text-center py-8">
-                                                <span class="loading loading-spinner loading-md"></span>
+                                            <td colspan="7" class="text-center py-10">
+                                                <span class="loading loading-spinner loading-md text-primary"></span>
                                             </td>
                                         </tr>
                                     </tbody>
@@ -658,7 +811,7 @@
             if (filtered.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="7" class="text-center py-8 text-base-content/60">
+                        <td colspan="7" class="text-center py-10 text-base-content/60">
                             <i class="fas fa-check-circle text-4xl mb-2 text-success opacity-30"></i>
                             <p>No outstanding receivables</p>
                         </td>
@@ -669,33 +822,54 @@
 
             tbody.innerHTML = filtered.map(dr => {
                 const isOverdue = dr.days_overdue > 0;
-                const statusBadge = isOverdue
-                    ? `<span class="badge badge-error badge-sm">${dr.days_overdue}d overdue</span>`
-                    : dr.days_overdue === 0
-                        ? `<span class="badge badge-warning badge-sm">Due today</span>`
-                        : `<span class="badge badge-ghost badge-sm">Due in ${Math.abs(dr.days_overdue)}d</span>`;
+                const isToday = dr.days_overdue === 0;
+                const days = Math.abs(Number(dr.days_overdue) || 0);
+
+                let statusBadge;
+                if (isOverdue) {
+                    statusBadge = `<span class="status-pill status-pill--overdue">${days}d overdue</span>`;
+                } else if (isToday) {
+                    statusBadge = `<span class="status-pill status-pill--today">Due today</span>`;
+                } else {
+                    statusBadge = `<span class="status-pill status-pill--upcoming">Due in ${days}d</span>`;
+                }
+
+                const drPayload = JSON.stringify(dr).replace(/"/g, '&quot;');
+                const drNum = escapeHtml(dr.dr_number || '—');
+                const custName = escapeHtml(dr.customer_name || '—');
+                const custType = escapeHtml(formatCustomerType(dr.customer_type));
 
                 return `
-                    <tr class="hover cursor-pointer ${isOverdue ? 'overdue bg-error/5' : ''}" onclick="selectDR(${JSON.stringify(dr).replace(/"/g, '&quot;')})">
-                        <td class="font-mono text-sm">${dr.dr_number}</td>
+                    <tr class="cursor-pointer ${isOverdue ? 'is-overdue' : ''}" onclick="selectDR(${drPayload})">
+                        <td><span class="dr-number">${drNum}</span></td>
                         <td>
-                            <div>
-                                <p class="font-medium">${dr.customer_name}</p>
-                                <p class="text-xs text-base-content/60">${formatCustomerType(dr.customer_type)}</p>
-                            </div>
+                            <div class="cell-customer-name">${custName}</div>
+                            <div class="cell-customer-meta">${custType}</div>
                         </td>
-                        <td class="font-semibold">${formatCurrency(dr.total_amount)}</td>
-                        <td class="font-bold ${isOverdue ? 'text-error' : 'text-warning'}">${formatCurrency(dr.balance)}</td>
-                        <td>${formatDate(dr.due_date)}</td>
-                        <td>${statusBadge}</td>
+                        <td><span class="cell-money">${formatCurrency(dr.total_amount)}</span></td>
                         <td>
-                            <button class="btn btn-info btn-xs" onclick="event.stopPropagation(); selectDR(${JSON.stringify(dr).replace(/"/g, '&quot;')})">
+                            <span class="cell-money cell-money--balance ${isOverdue ? 'is-overdue' : ''}">${formatCurrency(dr.balance)}</span>
+                        </td>
+                        <td><span class="cell-date">${formatDate(dr.due_date)}</span></td>
+                        <td>${statusBadge}</td>
+                        <td class="col-actions">
+                            <button type="button" class="collect-action-btn" title="Collect payment"
+                                onclick="event.stopPropagation(); selectDR(${drPayload})">
                                 <i class="fas fa-hand-holding-dollar"></i>
                             </button>
                         </td>
                     </tr>
                 `;
             }).join('');
+        }
+
+        function escapeHtml(str) {
+            return String(str ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
 
         function formatCustomerType(type) {

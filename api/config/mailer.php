@@ -39,14 +39,14 @@ class Mailer {
             throw new Exception('SMTP password (Gmail App Password) is not configured. Set SMTP_PASSWORD environment variable.');
         }
 
-        // Connect
-        $socket = @fsockopen($host, $port, $errno, $errstr, 15);
+        // Connect with a short timeout so UI callers (forgot-password) cannot hang
+        $socket = @fsockopen($host, $port, $errno, $errstr, 8);
         if (!$socket) {
             throw new Exception("SMTP connection failed: {$errstr} ({$errno})");
         }
 
-        // Set timeout
-        stream_set_timeout($socket, 30);
+        // I/O timeout per read/write (seconds)
+        stream_set_timeout($socket, 12);
 
         // Read greeting
         self::readResponse($socket, 220);
@@ -139,7 +139,16 @@ class Mailer {
      */
     private static function readResponse($socket, $expectedCode) {
         $response = '';
-        while ($line = fgets($socket, 512)) {
+        $guard = 0;
+        while ($guard++ < 50) {
+            $line = fgets($socket, 512);
+            if ($line === false) {
+                $meta = stream_get_meta_data($socket);
+                if (!empty($meta['timed_out'])) {
+                    throw new Exception('SMTP read timed out');
+                }
+                break;
+            }
             $response .= $line;
             // Multi-line responses have a dash after the code, final line has a space
             if (isset($line[3]) && $line[3] === ' ') {
@@ -149,6 +158,10 @@ class Mailer {
             if (strlen($line) < 4) {
                 break;
             }
+        }
+
+        if ($response === '') {
+            throw new Exception('SMTP error: empty response from server');
         }
 
         $code = (int) substr($response, 0, 3);
@@ -168,55 +181,82 @@ class Mailer {
      * @return string             Full HTML email
      */
     public static function buildTemplate($title, $bodyHtml, $footerText = null) {
-        $appName = APP_NAME;
+        $appName = htmlspecialchars(APP_NAME, ENT_QUOTES, 'UTF-8');
+        $titleSafe = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
         $year = date('Y');
         $footer = $footerText ?: "&copy; {$year} {$appName}. All rights reserved.";
+        $fontStack = "system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
+        // Table-based layout for Gmail / Outlook / Apple Mail compatibility.
+        // Inline styles only; max-width fluid card on light gray canvas.
         return <<<HTML
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{$title}</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+    <title>{$titleSafe}</title>
+    <!--[if mso]>
+    <style type="text/css">
+        body, table, td { font-family: Arial, Helvetica, sans-serif !important; }
+    </style>
+    <![endif]-->
 </head>
-<body style="margin:0;padding:0;background-color:#f4f5f7;font-family:'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#f4f5f7;">
+<body style="margin:0;padding:0;background-color:#F4F6F8;font-family:{$fontStack};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+    <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">
+        {$titleSafe} &mdash; Highland Fresh Dairy
+    </div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#F4F6F8;margin:0;padding:0;width:100%;border-collapse:collapse;">
         <tr>
-            <td align="center" style="padding:40px 20px;">
-                <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background-color:#ffffff;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.08);overflow:hidden;">
+            <td align="center" style="padding:32px 16px;">
+                <!-- Card container -->
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border:1px solid #E5E9ED;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(23,33,27,0.06);border-collapse:separate;">
                     <!-- Header -->
                     <tr>
-                        <td style="background:linear-gradient(135deg,#2b7a3e 0%,#3da553 100%);padding:32px 40px;text-align:center;">
-                            <h1 style="color:#ffffff;margin:0;font-size:24px;font-weight:700;letter-spacing:-0.5px;">
-                                🥛 {$appName}
-                            </h1>
-                            <p style="color:rgba(255,255,255,0.8);margin:4px 0 0;font-size:13px;">
-                                Dairy Production System
-                            </p>
+                        <td align="center" bgcolor="#1f7a4d" style="background-color:#1f7a4d;background:linear-gradient(135deg,#1f7a4d 0%,#25965c 100%);padding:28px 32px 26px 32px;text-align:center;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin:0 auto;">
+                                <tr>
+                                    <td align="center" style="padding:0 0 10px 0;font-size:28px;line-height:1;">&#127859;</td>
+                                </tr>
+                                <tr>
+                                    <td align="center" style="font-family:{$fontStack};color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.3px;line-height:1.3;padding:0;">
+                                        {$appName}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td align="center" style="font-family:{$fontStack};color:rgba(255,255,255,0.88);font-size:13px;font-weight:500;letter-spacing:0.04em;line-height:1.4;padding:6px 0 0 0;">
+                                        Dairy Operations System
+                                    </td>
+                                </tr>
+                            </table>
                         </td>
                     </tr>
                     <!-- Body -->
                     <tr>
-                        <td style="padding:40px;">
-                            <h2 style="color:#1a1a2e;margin:0 0 20px;font-size:20px;font-weight:600;">
-                                {$title}
-                            </h2>
+                        <td style="padding:36px 32px 32px 32px;font-family:{$fontStack};background-color:#ffffff;">
+                            <h1 style="margin:0 0 20px 0;font-family:{$fontStack};color:#17211b;font-size:22px;font-weight:700;letter-spacing:-0.3px;line-height:1.3;">
+                                {$titleSafe}
+                            </h1>
                             {$bodyHtml}
                         </td>
                     </tr>
                     <!-- Footer -->
                     <tr>
-                        <td style="background-color:#f8f9fa;padding:24px 40px;text-align:center;border-top:1px solid #e9ecef;">
-                            <p style="color:#6c757d;margin:0;font-size:12px;">
+                        <td align="center" style="background-color:#FAFBFC;padding:20px 28px 24px 28px;text-align:center;border-top:1px solid #EEF1F4;">
+                            <p style="margin:0;font-family:{$fontStack};color:#8A9590;font-size:11px;font-weight:400;line-height:1.6;">
                                 {$footer}
                             </p>
-                            <p style="color:#adb5bd;margin:8px 0 0;font-size:11px;">
-                                This is an automated message. Please do not reply directly to this email.
+                            <p style="margin:8px 0 0 0;font-family:{$fontStack};color:#A8B2AD;font-size:11px;font-weight:400;line-height:1.5;">
+                                This is an automated message. Please do not reply to this email.
                             </p>
                         </td>
                     </tr>
                 </table>
+                <!-- /Card -->
             </td>
         </tr>
     </table>

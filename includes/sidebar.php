@@ -86,20 +86,25 @@ $roleNavigation = [
                 'title' => 'Main Menu',
                 'items' => [
                     ['id' => 'dashboard', 'label' => 'Dashboard', 'icon' => 'fa-th-large', 'href' => 'dashboard.html'],
+                    ['id' => 'workbench', 'label' => 'My Active Runs', 'icon' => 'fa-screwdriver-wrench', 'href' => 'run-workbench.html'],
                 ]
             ],
             'production' => [
-                'title' => 'Production',
+                'title' => 'Daily Floor Work',
                 'items' => [
-                    ['id' => 'batches', 'label' => 'Batches', 'icon' => 'fa-boxes-stacked', 'href' => 'batches.html'],
-                    ['id' => 'recipes', 'label' => 'Recipes', 'icon' => 'fa-book', 'href' => 'recipes.html'],
-                    ['id' => 'ccp', 'label' => 'CCP Logging', 'icon' => 'fa-temperature-high', 'href' => 'ccp.html'],
+                    ['id' => 'ccp', 'label' => 'CCP / Temperatures', 'icon' => 'fa-thermometer-half', 'href' => 'ccp_logging.html'],
+                    ['id' => 'packaging', 'label' => 'Packaging', 'icon' => 'fa-boxes', 'href' => 'packaging.html'],
+                    ['id' => 'requisitions', 'label' => 'Request Materials', 'icon' => 'fa-clipboard-list', 'href' => 'requisitions.html'],
                 ]
             ],
             'materials' => [
-                'title' => 'Materials',
+                'title' => 'More',
                 'items' => [
-                    ['id' => 'requisitions', 'label' => 'Requisitions', 'icon' => 'fa-clipboard-list', 'href' => 'requisitions.html'],
+                    ['id' => 'batches', 'label' => 'All Batches', 'icon' => 'fa-box', 'href' => 'batches.html'],
+                    ['id' => 'pasteurization', 'label' => 'Pasteurization', 'icon' => 'fa-fire-alt', 'href' => 'pasteurization.html'],
+                    ['id' => 'yield_tracking', 'label' => 'Yield Tracking', 'icon' => 'fa-chart-line', 'href' => 'yield-tracking.html'],
+                    ['id' => 'reconciliation', 'label' => 'Reconciliation', 'icon' => 'fa-balance-scale', 'href' => 'reconciliation.html'],
+                    ['id' => 'recipes', 'label' => 'Recipes', 'icon' => 'fa-book', 'href' => 'recipes.html'],
                     ['id' => 'byproducts', 'label' => 'Byproducts', 'icon' => 'fa-recycle', 'href' => 'byproducts.html'],
                 ]
             ],

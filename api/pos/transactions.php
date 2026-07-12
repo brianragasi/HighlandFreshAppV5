@@ -73,12 +73,14 @@ function generateSICode($db) {
  * Returns array of inventory deductions made
  */
 function deductInventory($db, $productId, $quantityNeeded, $userId, $transactionId, $transactionCode) {
-    // Get available inventory for this product, ordered by expiry (FIFO)
+    // Lock sellable FG rows (FIFO by expiry). Race-safe: SELECT ... FOR UPDATE
+    // inside the caller's transaction so two cashiers cannot oversell the last unit.
     $stmt = $db->prepare("
-        SELECT 
+        SELECT
             fg.id,
             fg.product_id,
             fg.quantity_available,
+            fg.remaining_quantity,
             fg.boxes_available,
             fg.pieces_available,
             fg.expiry_date,
@@ -87,51 +89,86 @@ function deductInventory($db, $productId, $quantityNeeded, $userId, $transaction
             p.base_unit,
             p.box_unit
         FROM finished_goods_inventory fg
-        JOIN products p ON fg.product_id = p.id
+        JOIN products p ON fg.product_id = p.id AND p.is_active = 1
+        LEFT JOIN chiller_locations cl ON cl.id = fg.chiller_id
         WHERE fg.product_id = ?
-        AND fg.status = 'available'
-        AND fg.expiry_date > CURDATE()
-        AND (fg.quantity_available > 0 OR fg.pieces_available > 0 OR fg.boxes_available > 0)
-        ORDER BY fg.expiry_date ASC
+          AND fg.status = 'available'
+          AND fg.expiry_date > CURDATE()
+          AND (
+                COALESCE(fg.quantity_available, 0) > 0
+             OR COALESCE(fg.remaining_quantity, 0) > 0
+             OR COALESCE(fg.pieces_available, 0) > 0
+             OR COALESCE(fg.boxes_available, 0) > 0
+          )
+          AND (cl.id IS NULL OR (cl.is_active = 1 AND cl.status IN ('available', 'full')))
+          AND (cl.id IS NULL OR cl.chiller_code NOT LIKE 'FREEZE%')
+        ORDER BY fg.expiry_date ASC, fg.id ASC
         FOR UPDATE
     ");
     $stmt->execute([$productId]);
-    $inventoryItems = $stmt->fetchAll();
-    
+    $inventoryItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
     if (empty($inventoryItems)) {
         throw new Exception("No available inventory for product ID: {$productId}");
     }
-    
+
     $deductions = [];
-    $remaining = $quantityNeeded;
-    
+    $remaining = (int) $quantityNeeded;
+
     foreach ($inventoryItems as $inv) {
-        if ($remaining <= 0) break;
-        
-        $piecesPerBox = $inv['pieces_per_box'] ?: 1;
-        $availablePieces = $inv['pieces_available'] ?: 0;
-        $availableBoxes = $inv['boxes_available'] ?: 0;
-        $totalAvailable = ($availableBoxes * $piecesPerBox) + $availablePieces;
-        
-        if ($totalAvailable <= 0) continue;
-        
+        if ($remaining <= 0) {
+            break;
+        }
+
+        $piecesPerBox = max(1, (int) ($inv['pieces_per_box'] ?: 1));
+        $availablePieces = (int) ($inv['pieces_available'] ?: 0);
+        $availableBoxes = (int) ($inv['boxes_available'] ?: 0);
+        $fromMulti = ($availableBoxes * $piecesPerBox) + $availablePieces;
+        // Many FG rows only set quantity_available / remaining_quantity
+        $qtyAvail = max((int) ($inv['quantity_available'] ?: 0), (int) ($inv['remaining_quantity'] ?: 0));
+        $totalAvailable = max($fromMulti, $qtyAvail);
+
+        if ($totalAvailable <= 0) {
+            continue;
+        }
+
         $deductAmount = min($remaining, $totalAvailable);
         $remaining -= $deductAmount;
-        
-        // Calculate new boxes and pieces
+
         $newTotal = $totalAvailable - $deductAmount;
         $newBoxes = intdiv($newTotal, $piecesPerBox);
         $newPieces = $newTotal % $piecesPerBox;
-        
-        // Update inventory
+
+        // Conditional update: refuse if another transaction already depleted stock
         $updateStmt = $db->prepare("
-            UPDATE finished_goods_inventory 
-            SET quantity_available = quantity_available - ?,
+            UPDATE finished_goods_inventory
+            SET quantity_available = GREATEST(0, COALESCE(quantity_available, 0) - ?),
+                remaining_quantity = GREATEST(0, COALESCE(remaining_quantity, 0) - ?),
                 boxes_available = ?,
-                pieces_available = ?
+                pieces_available = ?,
+                last_movement_at = NOW()
             WHERE id = ?
+              AND status = 'available'
+              AND (
+                    COALESCE(quantity_available, 0) >= ?
+                 OR COALESCE(remaining_quantity, 0) >= ?
+                 OR ((COALESCE(boxes_available, 0) * ?) + COALESCE(pieces_available, 0)) >= ?
+              )
         ");
-        $updateStmt->execute([$deductAmount, $newBoxes, $newPieces, $inv['id']]);
+        $updateStmt->execute([
+            $deductAmount,
+            $deductAmount,
+            $newBoxes,
+            $newPieces,
+            $inv['id'],
+            $deductAmount,
+            $deductAmount,
+            $piecesPerBox,
+            $deductAmount,
+        ]);
+        if ($updateStmt->rowCount() === 0) {
+            throw new Exception('Stock changed while selling — please refresh cart and try again');
+        }
         
         // Update chiller count if applicable
         if ($inv['chiller_id']) {

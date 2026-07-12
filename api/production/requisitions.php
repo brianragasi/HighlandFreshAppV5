@@ -454,8 +454,17 @@ function checkRequisitionPackIntegrity($db, $items) {
 }
 
 function getRequisitionRecipeItemsForPlan($db, $recipeId, $plannedQuantity) {
+    // Prefer bulk-batch columns when present (recipe → base liquid, plan in liters)
+    $select = "id, recipe_code, product_name, variant, product_type, base_milk_liters, expected_yield, yield_unit";
+    try {
+        $db->query('SELECT base_product_id, bulk_yield_liters FROM master_recipes LIMIT 0');
+        $select .= ', base_product_id, bulk_yield_liters';
+    } catch (Throwable $e) {
+        // legacy schema
+    }
+
     $stmt = $db->prepare("
-        SELECT id, recipe_code, product_name, variant, product_type, base_milk_liters, expected_yield, yield_unit
+        SELECT {$select}
         FROM master_recipes
         WHERE id = ? AND is_active = 1
     ");
@@ -466,7 +475,23 @@ function getRequisitionRecipeItemsForPlan($db, $recipeId, $plannedQuantity) {
         Response::notFound('Recipe not found or inactive');
     }
 
-    $expectedYield = (float) ($recipe['expected_yield'] ?? 0);
+    // Scale materials from bulk liquid volume (liters), not bottle SKU count.
+    // Denominator priority: bulk_yield_liters → base_milk_liters → expected_yield (legacy).
+    $bulkYield = null;
+    if (isset($recipe['bulk_yield_liters']) && $recipe['bulk_yield_liters'] !== null && (float) $recipe['bulk_yield_liters'] > 0) {
+        $bulkYield = (float) $recipe['bulk_yield_liters'];
+    } else {
+        $yu = strtolower((string) ($recipe['yield_unit'] ?? ''));
+        if (in_array($yu, ['liter', 'liters', 'l', 'lt'], true) && (float) ($recipe['expected_yield'] ?? 0) > 0) {
+            $bulkYield = (float) $recipe['expected_yield'];
+        } elseif ((float) ($recipe['base_milk_liters'] ?? 0) > 0) {
+            $bulkYield = (float) $recipe['base_milk_liters'];
+        } else {
+            $bulkYield = (float) ($recipe['expected_yield'] ?? 0);
+        }
+    }
+
+    $expectedYield = $bulkYield > 0 ? $bulkYield : (float) ($recipe['expected_yield'] ?? 0);
     $scaleFactor = $expectedYield > 0 ? max(0, (float) $plannedQuantity) / $expectedYield : 1;
     $requiredMilk = round(((float) $recipe['base_milk_liters']) * $scaleFactor, 3);
     $items = [];
@@ -492,10 +517,15 @@ function getRequisitionRecipeItemsForPlan($db, $recipeId, $plannedQuantity) {
             // yogurt recipes specifically, the warehouse still issues
             // raw milk — production pasteurizes it themselves.
             'notes' => ($recipe['product_type'] ?? '') === 'yogurt'
-                ? "Raw milk for planned {$recipe['product_name']} production (will be pasteurized by production before the run)"
-                : "Milk needed for planned {$recipe['product_name']} production"
+                ? "Raw milk for planned {$recipe['product_name']} bulk batch (will be pasteurized by production before the run)"
+                : "Milk needed for planned {$recipe['product_name']} bulk batch"
         ];
     }
+
+    // Expose bulk plan metadata to the client (used by requisition UI)
+    $recipe['plan_scale_liters'] = $expectedYield;
+    $recipe['plan_unit'] = 'liters';
+    $recipe['scale_factor'] = $scaleFactor;
 
     $ingredientsStmt = $db->prepare("
         SELECT ri.ingredient_id, ri.ingredient_name, ri.quantity, ri.unit, ri.is_optional, ri.notes,
@@ -514,66 +544,79 @@ function getRequisitionRecipeItemsForPlan($db, $recipeId, $plannedQuantity) {
             continue;
         }
 
-        // Pack conversion: ceil(qty / packSize) so warehouse always gets enough. The
-        // base-unit quantity is preserved for fulfillment; the pack hint is advisory.
+        // Pack metadata is advisory. Default policy = break-pack:
+        // request/issue the SCALED base quantity (e.g. 0.13 kg sugar).
+        // Only when enforce_whole_packs=1 do we ceil to whole packs.
         $packSizeValue = $ingredient['pack_size_value'] !== null ? (float) $ingredient['pack_size_value'] : null;
         $packSizeUnit  = $ingredient['pack_size_unit']  ?: null;
         $packLabel     = $ingredient['pack_label']      ?: null;
-        $packCount = null;
+        $enforceWholePacks = (int) ($ingredient['enforce_whole_packs'] ?? 0) === 1;
+        $packsExact = null;
+        $packCount = null; // whole packs only when enforce_whole_packs
         $packHint  = null;
         if ($packSizeValue !== null && $packSizeValue > 0) {
-            // The actual math the prof will ask about.
-            // ceil() guarantees the recipe never runs short; floor/round would risk shortage.
-            $packCount = (int) ceil($quantity / $packSizeValue);
-            $displayUnit    = $packSizeUnit ?: $ingredient['unit'] ?: 'units';
-            $packHint       = sprintf(
-                '1 %s = %s %s',
-                rtrim(rtrim(number_format($packSizeValue, 3, '.', ''), '0'), '.'),
+            $packsExact = round($quantity / $packSizeValue, 6);
+            $displayUnit = $packSizeUnit ?: $ingredient['unit'] ?: 'units';
+            $packHint = $packLabel ?: sprintf(
+                '1 pack = %s %s',
                 rtrim(rtrim(number_format($packSizeValue, 3, '.', ''), '0'), '.'),
                 $displayUnit
             );
-            // Build a clean hint like "1 packet = 100 ml" when label is set, else fallback to the unit math.
-            if ($packLabel) {
-                $packHint = $packLabel;
-            } else {
-                $packHint = sprintf(
-                    '1 pack = %s %s',
-                    rtrim(rtrim(number_format($packSizeValue, 3, '.', ''), '0'), '.'),
-                    $displayUnit
-                );
+            if ($enforceWholePacks) {
+                $packCount = (int) ceil($quantity / $packSizeValue);
             }
         }
 
-        $enforceWholePacks = (int) ($ingredient['enforce_whole_packs'] ?? 0) === 1;
         $currentStock = $ingredient['current_stock'] !== null ? (float) $ingredient['current_stock'] : null;
 
         $notes = trim((string) ($ingredient['notes'] ?? ''));
         if ((int) ($ingredient['is_optional'] ?? 0) === 1) {
             $notes = trim($notes . ($notes ? ' - ' : '') . 'Optional recipe item');
         }
-        if ($packCount !== null) {
-            $packNote = sprintf('Rounded up from %s %s -> %d pack%s',
-                rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.'),
-                $ingredient['unit'] ?: 'units',
-                $packCount,
-                $packCount === 1 ? '' : 's'
-            );
+        if ($packSizeValue !== null && $packSizeValue > 0) {
+            if ($enforceWholePacks && $packCount !== null) {
+                $packNote = sprintf(
+                    'Whole packs required: need %s %s → issue %d pack%s (%s %s)',
+                    rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.'),
+                    $ingredient['unit'] ?: 'units',
+                    $packCount,
+                    $packCount === 1 ? '' : 's',
+                    rtrim(rtrim(number_format($packCount * $packSizeValue, 3, '.', ''), '0'), '.'),
+                    $ingredient['unit'] ?: 'units'
+                );
+            } else {
+                $packNote = sprintf(
+                    'Break-pack OK: issue %s %s (opens ~%s of one pack; rest stays in warehouse)',
+                    rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.'),
+                    $ingredient['unit'] ?: 'units',
+                    rtrim(rtrim(number_format($packsExact, 4, '.', ''), '0'), '.')
+                );
+            }
             $notes = trim($notes . ($notes ? ' - ' : '') . $packNote);
+        }
+
+        // Quantity stored/requested is always scaled base units unless whole-pack
+        // enforcement forces ceil (then request base qty of whole packs).
+        $requestQty = $quantity;
+        if ($enforceWholePacks && $packCount !== null && $packSizeValue > 0) {
+            $requestQty = round($packCount * $packSizeValue, 3);
         }
 
         $items[] = [
             'item_type' => 'ingredient',
             'item_id' => (int) ($ingredient['ingredient_id'] ?? 0) > 0 ? (int) $ingredient['ingredient_id'] : null,
             'item_name' => trim($ingredient['ingredient_name'] ?? ''),
-            'quantity' => $quantity,
+            'quantity' => $requestQty,
+            'scaled_need' => $quantity,
             'unit' => $ingredient['unit'] ?: 'units',
             'pack_size_value' => $packSizeValue,
             'pack_size_unit' => $packSizeUnit,
             'pack_label' => $packLabel,
             'pack_count' => $packCount,
+            'packs_exact' => $packsExact,
+            'lock_mode' => ($enforceWholePacks && $packCount !== null) ? 'packs' : 'base',
             'enforce_whole_packs' => $enforceWholePacks,
             'current_stock' => $currentStock,
-            // Kept for back-compat with any older caller; identical to pack_count.
             'suggested_packs' => $packCount,
             'pack_hint' => $packHint,
             'notes' => $notes
@@ -585,9 +628,17 @@ function getRequisitionRecipeItemsForPlan($db, $recipeId, $plannedQuantity) {
             'recipe_id' => (int) $recipe['id'],
             'recipe_code' => $recipe['recipe_code'],
             'product_name' => $recipe['product_name'],
+            'base_product_id' => isset($recipe['base_product_id']) ? (int) $recipe['base_product_id'] : null,
             'variant' => $recipe['variant'],
+            // planned_quantity is bulk liquid volume (liters), not bottle count
             'planned_quantity' => (float) $plannedQuantity,
-            'yield_unit' => $recipe['yield_unit']
+            'yield_unit' => 'liters',
+            'plan_unit' => 'liters',
+            'bulk_yield_liters' => $expectedYield > 0 ? $expectedYield : null,
+            'scale_factor' => $scaleFactor,
+            // Legacy bottle yield kept for reference only
+            'legacy_expected_yield' => (float) ($recipe['expected_yield'] ?? 0),
+            'legacy_yield_unit' => $recipe['yield_unit'] ?? null,
         ],
         'items' => $items
     ];
@@ -650,51 +701,71 @@ function getRequisitionRecipeItemsForRun($db, $runId) {
             continue;
         }
 
-        // V4.0 — same pack conversion as getRequisitionRecipeItemsForPlan.
-        // Run-scoped requisitions get the same pack_count / enforce_whole_packs
-        // data so the form locks the qty field identically whether the
-        // requester picks a recipe plan or an existing production run.
+        // Same pack policy as getRequisitionRecipeItemsForPlan:
+        // default break-pack (scaled base qty); whole packs only if enforce_whole_packs.
         $packSizeValue = $ingredient['pack_size_value'] !== null ? (float) $ingredient['pack_size_value'] : null;
         $packSizeUnit  = $ingredient['pack_size_unit']  ?: null;
         $packLabel     = $ingredient['pack_label']      ?: null;
+        $enforceWholePacks = (int) ($ingredient['enforce_whole_packs'] ?? 0) === 1;
+        $packsExact = null;
         $packCount = null;
         $packHint  = null;
         if ($packSizeValue !== null && $packSizeValue > 0) {
-            $packCount = (int) ceil($quantity / $packSizeValue);
+            $packsExact = round($quantity / $packSizeValue, 6);
             $displayUnit = $packSizeUnit ?: ($ingredient['unit'] ?: 'units');
             $packHint = $packLabel ?: sprintf(
                 '1 pack = %s %s',
                 rtrim(rtrim(number_format($packSizeValue, 3, '.', ''), '0'), '.'),
                 $displayUnit
             );
+            if ($enforceWholePacks) {
+                $packCount = (int) ceil($quantity / $packSizeValue);
+            }
         }
-        $enforceWholePacks = (int) ($ingredient['enforce_whole_packs'] ?? 0) === 1;
         $currentStock = $ingredient['current_stock'] !== null ? (float) $ingredient['current_stock'] : null;
 
         $notes = trim((string) ($ingredient['notes'] ?? ''));
         if ((int) ($ingredient['is_optional'] ?? 0) === 1) {
             $notes = trim($notes . ($notes ? ' - ' : '') . 'Optional recipe item');
         }
-        if ($packCount !== null) {
-            $packNote = sprintf('Rounded up from %s %s -> %d pack%s',
-                rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.'),
-                $ingredient['unit'] ?: 'units',
-                $packCount,
-                $packCount === 1 ? '' : 's'
-            );
+        if ($packSizeValue !== null && $packSizeValue > 0) {
+            if ($enforceWholePacks && $packCount !== null) {
+                $packNote = sprintf(
+                    'Whole packs required: need %s %s → issue %d pack%s',
+                    rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.'),
+                    $ingredient['unit'] ?: 'units',
+                    $packCount,
+                    $packCount === 1 ? '' : 's'
+                );
+            } else {
+                $packNote = sprintf(
+                    'Break-pack OK: issue %s %s (opens ~%s of one pack; rest stays in warehouse)',
+                    rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.'),
+                    $ingredient['unit'] ?: 'units',
+                    rtrim(rtrim(number_format($packsExact, 4, '.', ''), '0'), '.')
+                );
+            }
             $notes = trim($notes . ($notes ? ' - ' : '') . $packNote);
+        }
+
+        $requestQty = $quantity;
+        if ($enforceWholePacks && $packCount !== null && $packSizeValue > 0) {
+            $requestQty = round($packCount * $packSizeValue, 3);
         }
 
         $items[] = [
             'item_type' => 'ingredient',
             'item_id' => $ingredientId > 0 ? $ingredientId : null,
             'item_name' => $ingredientName,
-            'quantity' => $quantity,
+            'quantity' => $requestQty,
+            'scaled_need' => $quantity,
             'unit' => $ingredient['unit'] ?: 'units',
             'pack_size_value' => $packSizeValue,
             'pack_size_unit' => $packSizeUnit,
             'pack_label' => $packLabel,
             'pack_count' => $packCount,
+            'packs_exact' => $packsExact,
+            'lock_mode' => ($enforceWholePacks && $packCount !== null) ? 'packs' : 'base',
             'enforce_whole_packs' => $enforceWholePacks,
             'current_stock' => $currentStock,
             'suggested_packs' => $packCount,

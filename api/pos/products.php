@@ -91,6 +91,115 @@ function formatMultiUnitDisplay($boxes, $pieces, $boxUnit = 'Box', $baseUnit = '
     return "0 {$baseUnit}s";
 }
 
+/**
+ * Sellable unit count for one product row (pieces/bottles).
+ * Prefer multi-unit fields; fall back to quantity_available / remaining_quantity
+ * (many FG rows only populate quantity_available).
+ */
+function posSellableUnits(array $p): int {
+    $ppb = max(1, (int) ($p['pieces_per_box'] ?? 1));
+    $boxes = (int) ($p['boxes_available'] ?? 0);
+    $pieces = (int) ($p['pieces_available'] ?? 0);
+    $fromMulti = ($boxes * $ppb) + $pieces;
+    if ($fromMulti > 0) {
+        return $fromMulti;
+    }
+    return max(
+        0,
+        (int) ($p['stock_available'] ?? 0),
+        (int) ($p['quantity_available'] ?? 0),
+        (int) ($p['remaining_quantity'] ?? 0)
+    );
+}
+
+/**
+ * Aggregated FG stock subquery for POS — one row per product_id (no card duplication).
+ * Only sellable FG: status=available, not expired, active product, chiller not offline.
+ */
+function posInventoryJoinSql(): string {
+    return "
+        LEFT JOIN (
+            SELECT
+                fgi.product_id,
+                SUM(
+                    GREATEST(
+                        COALESCE(fgi.quantity_available, 0),
+                        COALESCE(fgi.remaining_quantity, 0),
+                        (COALESCE(fgi.boxes_available, 0) * GREATEST(COALESCE(p2.pieces_per_box, 1), 1))
+                            + COALESCE(fgi.pieces_available, 0)
+                    )
+                ) AS total_available,
+                SUM(COALESCE(fgi.boxes_available, 0)) AS total_boxes,
+                SUM(COALESCE(fgi.pieces_available, 0)) AS total_pieces,
+                MIN(fgi.expiry_date) AS earliest_expiry,
+                COUNT(*) AS batch_count
+            FROM finished_goods_inventory fgi
+            INNER JOIN products p2 ON p2.id = fgi.product_id AND p2.is_active = 1
+            LEFT JOIN chiller_locations cl ON cl.id = fgi.chiller_id
+            WHERE fgi.status = 'available'
+              AND fgi.expiry_date > CURDATE()
+              AND (
+                    COALESCE(fgi.quantity_available, 0) > 0
+                 OR COALESCE(fgi.remaining_quantity, 0) > 0
+                 OR COALESCE(fgi.boxes_available, 0) > 0
+                 OR COALESCE(fgi.pieces_available, 0) > 0
+              )
+              AND (cl.id IS NULL OR (cl.is_active = 1 AND cl.status IN ('available', 'full')))
+              -- Exclude pure freezer storage from walk-in POS (still sellable via Dispatch/Main FG)
+              AND (cl.id IS NULL OR cl.chiller_code NOT LIKE 'FREEZE%')
+            GROUP BY fgi.product_id
+        ) inv ON inv.product_id = p.id
+    ";
+}
+
+/**
+ * Enrich product rows for POS UI. Always unset by-ref after loop (PHP trap).
+ */
+function enrichPosProducts(PDO $db, array &$products): void {
+    foreach ($products as &$p) {
+        $p['unit_price'] = getProductPrice($db, $p['id']);
+        // Prefer catalog selling_price when getProductPrice returns 0
+        if ((float) $p['unit_price'] <= 0) {
+            $p['unit_price'] = (float) ($p['selling_price'] ?? 0);
+        }
+        $p['selling_price'] = (float) ($p['selling_price'] ?? $p['unit_price']);
+
+        $p['stock_available'] = (int) ($p['stock_available'] ?? 0);
+        $p['boxes_available'] = (int) ($p['boxes_available'] ?? 0);
+        $p['pieces_available'] = (int) ($p['pieces_available'] ?? 0);
+        $p['total_pieces'] = posSellableUnits($p);
+        $p['stock_display'] = formatMultiUnitDisplay(
+            $p['boxes_available'],
+            $p['pieces_available'] > 0 ? $p['pieces_available'] : $p['total_pieces'],
+            $p['box_unit'] ?? 'box',
+            $p['base_unit'] ?? 'piece'
+        );
+
+        if (!empty($p['earliest_expiry'])) {
+            $daysToExpiry = (strtotime($p['earliest_expiry']) - strtotime('today')) / 86400;
+            $p['expiring_soon'] = $daysToExpiry <= 3;
+            $p['days_to_expiry'] = (int) $daysToExpiry;
+        } else {
+            $p['expiring_soon'] = false;
+            $p['days_to_expiry'] = null;
+        }
+    }
+    unset($p); // CRITICAL: without this, a following foreach corrupts/duplicates the last row
+
+    // Safety: unique by product id (defensive against accidental JOIN fan-out)
+    $seen = [];
+    $unique = [];
+    foreach ($products as $row) {
+        $pid = (int) ($row['id'] ?? 0);
+        if ($pid <= 0 || isset($seen[$pid])) {
+            continue;
+        }
+        $seen[$pid] = true;
+        $unique[] = $row;
+    }
+    $products = $unique;
+}
+
 // ========================================
 // GET HANDLERS
 // ========================================
@@ -98,12 +207,13 @@ function formatMultiUnitDisplay($boxes, $pieces, $boxUnit = 'Box', $baseUnit = '
 function handleGet($db, $action) {
     switch ($action) {
         case 'list':
-            // List all products with current available stock
+            // One card per sellable SKU (products.id) — inventory batches are aggregated
             $category = getParam('category');
             $inStockOnly = getParam('in_stock', '1') === '1';
-            
+            $invJoin = posInventoryJoinSql();
+
             $sql = "
-                SELECT 
+                SELECT
                     p.id,
                     p.product_code,
                     p.product_name,
@@ -113,77 +223,41 @@ function handleGet($db, $action) {
                     p.unit_size,
                     p.unit_measure,
                     p.shelf_life_days,
-                    COALESCE(p.base_unit, 'piece') as base_unit,
-                    COALESCE(p.box_unit, 'box') as box_unit,
-                    COALESCE(p.pieces_per_box, 1) as pieces_per_box,
-                    COALESCE(p.selling_price, p.unit_price, 0) as selling_price,
-                    COALESCE(p.unit_price, 0) as unit_price,
+                    COALESCE(p.base_unit, 'piece') AS base_unit,
+                    COALESCE(p.box_unit, 'box') AS box_unit,
+                    COALESCE(p.pieces_per_box, 1) AS pieces_per_box,
+                    COALESCE(p.selling_price, p.unit_price, 0) AS selling_price,
+                    COALESCE(p.unit_price, 0) AS unit_price,
                     p.is_active,
-                    COALESCE(inv.total_available, 0) as stock_available,
-                    COALESCE(inv.total_boxes, 0) as boxes_available,
-                    COALESCE(inv.total_pieces, 0) as pieces_available,
+                    COALESCE(inv.total_available, 0) AS stock_available,
+                    COALESCE(inv.total_boxes, 0) AS boxes_available,
+                    COALESCE(inv.total_pieces, 0) AS pieces_available,
                     inv.earliest_expiry,
-                    inv.batch_count
+                    COALESCE(inv.batch_count, 0) AS batch_count
                 FROM products p
-                LEFT JOIN (
-                    SELECT 
-                        product_id,
-                        SUM(COALESCE(quantity_available, 0)) as total_available,
-                        SUM(COALESCE(boxes_available, 0)) as total_boxes,
-                        SUM(COALESCE(pieces_available, 0)) as total_pieces,
-                        MIN(expiry_date) as earliest_expiry,
-                        COUNT(*) as batch_count
-                    FROM finished_goods_inventory
-                    WHERE status = 'available'
-                    AND expiry_date > CURDATE()
-                    AND (quantity_available > 0 OR boxes_available > 0 OR pieces_available > 0)
-                    GROUP BY product_id
-                ) inv ON p.id = inv.product_id
+                {$invJoin}
                 WHERE p.is_active = 1
             ";
             $params = [];
-            
+
             if ($category) {
                 $sql .= " AND p.category = ?";
                 $params[] = $category;
             }
-            
+
             if ($inStockOnly) {
-                $sql .= " AND (inv.total_available > 0 OR inv.total_boxes > 0 OR inv.total_pieces > 0)";
+                $sql .= " AND COALESCE(inv.total_available, 0) > 0";
             }
-            
-            $sql .= " ORDER BY p.category, p.product_name, p.variant";
-            
+
+            // Stable order; GROUP BY not needed — inv is pre-aggregated by product_id
+            $sql .= " ORDER BY p.category, p.product_name, p.unit_size, p.id";
+
             $stmt = $db->prepare($sql);
             $stmt->execute($params);
-            $products = $stmt->fetchAll();
-            
-            // Add price and display info
-            foreach ($products as &$p) {
-                $p['unit_price'] = getProductPrice($db, $p['id']);
-                $p['stock_display'] = formatMultiUnitDisplay(
-                    intval($p['boxes_available']),
-                    intval($p['pieces_available']),
-                    $p['box_unit'],
-                    $p['base_unit']
-                );
-                
-                // Calculate total pieces for simple comparison
-                $piecesPerBox = intval($p['pieces_per_box']) ?: 1;
-                $p['total_pieces'] = (intval($p['boxes_available']) * $piecesPerBox) + intval($p['pieces_available']);
-                
-                // Check if expiring soon (within 3 days)
-                if ($p['earliest_expiry']) {
-                    $daysToExpiry = (strtotime($p['earliest_expiry']) - strtotime('today')) / 86400;
-                    $p['expiring_soon'] = $daysToExpiry <= 3;
-                    $p['days_to_expiry'] = intval($daysToExpiry);
-                } else {
-                    $p['expiring_soon'] = false;
-                    $p['days_to_expiry'] = null;
-                }
-            }
-            
-            // Group by category for easier UI
+            $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            enrichPosProducts($db, $products);
+
             $byCategory = [];
             foreach ($products as $p) {
                 $cat = $p['category'] ?? 'uncategorized';
@@ -192,7 +266,7 @@ function handleGet($db, $action) {
                 }
                 $byCategory[$cat][] = $p;
             }
-            
+
             Response::success([
                 'products' => $products,
                 'by_category' => $byCategory,
@@ -207,8 +281,9 @@ function handleGet($db, $action) {
                 Response::error('Search query must be at least 2 characters', 400);
             }
             
+            $invJoin = posInventoryJoinSql();
             $sql = "
-                SELECT 
+                SELECT
                     p.id,
                     p.product_code,
                     p.product_name,
@@ -216,65 +291,44 @@ function handleGet($db, $action) {
                     p.variant,
                     p.unit_size,
                     p.unit_measure,
-                    COALESCE(p.base_unit, 'piece') as base_unit,
-                    COALESCE(p.box_unit, 'box') as box_unit,
-                    COALESCE(p.pieces_per_box, 1) as pieces_per_box,
-                    COALESCE(inv.total_available, 0) as stock_available,
-                    COALESCE(inv.total_boxes, 0) as boxes_available,
-                    COALESCE(inv.total_pieces, 0) as pieces_available,
+                    COALESCE(p.base_unit, 'piece') AS base_unit,
+                    COALESCE(p.box_unit, 'box') AS box_unit,
+                    COALESCE(p.pieces_per_box, 1) AS pieces_per_box,
+                    COALESCE(p.selling_price, p.unit_price, 0) AS selling_price,
+                    COALESCE(inv.total_available, 0) AS stock_available,
+                    COALESCE(inv.total_boxes, 0) AS boxes_available,
+                    COALESCE(inv.total_pieces, 0) AS pieces_available,
                     inv.earliest_expiry
                 FROM products p
-                LEFT JOIN (
-                    SELECT 
-                        product_id,
-                        SUM(COALESCE(quantity_available, 0)) as total_available,
-                        SUM(COALESCE(boxes_available, 0)) as total_boxes,
-                        SUM(COALESCE(pieces_available, 0)) as total_pieces,
-                        MIN(expiry_date) as earliest_expiry
-                    FROM finished_goods_inventory
-                    WHERE status = 'available'
-                    AND expiry_date > CURDATE()
-                    GROUP BY product_id
-                ) inv ON p.id = inv.product_id
+                {$invJoin}
                 WHERE p.is_active = 1
                 AND (
-                    p.product_name LIKE ? 
+                    p.product_name LIKE ?
                     OR p.product_code LIKE ?
                     OR p.variant LIKE ?
                     OR p.category LIKE ?
                 )
-                ORDER BY 
+                ORDER BY
                     CASE WHEN p.product_name LIKE ? THEN 0 ELSE 1 END,
-                    p.product_name
+                    p.product_name,
+                    p.id
                 LIMIT 20
             ";
-            
+
             $searchPattern = "%{$query}%";
             $exactPattern = "{$query}%";
-            
+
             $stmt = $db->prepare($sql);
             $stmt->execute([
-                $searchPattern, 
-                $searchPattern, 
-                $searchPattern, 
+                $searchPattern,
+                $searchPattern,
+                $searchPattern,
                 $searchPattern,
                 $exactPattern
             ]);
-            $products = $stmt->fetchAll();
-            
-            // Add price and display info
-            foreach ($products as &$p) {
-                $p['unit_price'] = getProductPrice($db, $p['id']);
-                $p['stock_display'] = formatMultiUnitDisplay(
-                    intval($p['boxes_available']),
-                    intval($p['pieces_available']),
-                    $p['box_unit'],
-                    $p['base_unit']
-                );
-                $piecesPerBox = intval($p['pieces_per_box']) ?: 1;
-                $p['total_pieces'] = (intval($p['boxes_available']) * $piecesPerBox) + intval($p['pieces_available']);
-            }
-            
+            $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            enrichPosProducts($db, $products);
+
             Response::success([
                 'products' => $products,
                 'count' => count($products),

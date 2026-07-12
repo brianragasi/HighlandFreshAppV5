@@ -156,7 +156,7 @@
                         <a href="receiving.html"
                             class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[#eef4f0]">
                             <i class="fas fa-truck-loading w-5 text-center text-base-content/60"></i>
-                            <span class="flex-1">Receive from Production</span>
+                            <span class="flex-1">Put Away from Packaging</span>
                         </a>
                     </li>
                     <li>
@@ -497,6 +497,7 @@
     <script src="../../../js/vendor/axios.min.js"></script>
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/utils/units.js?v=20260712"></script>
     <script src="../../../js/warehouse/fg.service.js"></script>
 
     <script>
@@ -562,10 +563,7 @@
         }
 
         function getTotalPieces(item) {
-            const piecesPerBox = parseInt(item.pieces_per_box) || 1;
-            const boxes = parseInt(item.quantity_boxes) || 0;
-            const pieces = parseInt(item.quantity_pieces) || 0;
-            return (boxes * piecesPerBox) + pieces;
+            return PackUnits.totalBase(item);
         }
 
         function getDaysUntilExpiry(item) {
@@ -585,12 +583,36 @@
             const totalPieces = getTotalPieces(item);
             const daysUntilExpiry = getDaysUntilExpiry(item);
 
+            const integrity = PackUnits.checkIntegrity(item);
+            const awaiting = item.awaiting_putaway == 1 || item.awaiting_putaway === true || !item.chiller_id;
+
+            if (!integrity.ok && integrity.severity === 'error') {
+                return {
+                    key: 'integrity',
+                    badge: '<span class="badge badge-error badge-sm gap-1"><i class="fas fa-exclamation-triangle"></i> Qty issue</span>',
+                    rowClass: 'bg-error/5',
+                    dispatchable: false,
+                    integrity
+                };
+            }
+
             if (totalPieces === 0) {
                 return {
                     key: 'out_of_stock',
                     badge: '<span class="badge badge-ghost badge-sm gap-1"><i class="fas fa-box-open"></i> Out of Stock</span>',
                     rowClass: 'opacity-50',
-                    dispatchable: false
+                    dispatchable: false,
+                    integrity
+                };
+            }
+
+            if (awaiting) {
+                return {
+                    key: 'awaiting_putaway',
+                    badge: '<span class="badge badge-warning badge-sm gap-1"><i class="fas fa-dolly"></i> Awaiting put-away</span>',
+                    rowClass: 'bg-warning/5',
+                    dispatchable: false,
+                    integrity
                 };
             }
 
@@ -599,7 +621,8 @@
                     key: 'expired',
                     badge: '<span class="badge badge-error badge-sm gap-1"><i class="fas fa-times"></i> Expired - Dispose</span>',
                     rowClass: 'expired',
-                    dispatchable: false
+                    dispatchable: false,
+                    integrity
                 };
             }
 
@@ -608,7 +631,8 @@
                     key: 'expiring',
                     badge: '<span class="badge badge-warning badge-sm gap-1"><i class="fas fa-clock"></i> Expiring</span>',
                     rowClass: 'expiring-soon',
-                    dispatchable: true
+                    dispatchable: true,
+                    integrity
                 };
             }
 
@@ -616,7 +640,8 @@
                 key: 'good',
                 badge: '<span class="badge badge-success badge-sm gap-1"><i class="fas fa-check"></i> Good</span>',
                 rowClass: '',
-                dispatchable: true
+                dispatchable: true,
+                integrity
             };
         }
 
@@ -670,29 +695,49 @@
             }
 
             tbody.innerHTML = items.map(item => {
-                // Multi-unit inventory calculations
-                const piecesPerBox = parseInt(item.pieces_per_box) || 1;
-                const quantityBoxes = parseInt(item.quantity_boxes) || 0;
-                const quantityPieces = parseInt(item.quantity_pieces) || 0;
                 const totalPieces = getTotalPieces(item);
+                // Always derive packs/loose from effective base total so UI never shows 0/0 with stock
+                const split = PackUnits.splitToPack(totalPieces, item);
+                let quantityBoxes = PackUnits.readBoxes(item);
+                let quantityPieces = PackUnits.readLoosePieces(item);
+                if ((quantityBoxes === 0 && quantityPieces === 0) && totalPieces > 0) {
+                    quantityBoxes = split.packs;
+                    quantityPieces = split.loose;
+                } else if (PackUnits.packSize(item) > 1) {
+                    // Prefer math from total when multi-unit columns disagree with base
+                    const multiTotal = (quantityBoxes * PackUnits.packSize(item)) + quantityPieces;
+                    if (multiTotal !== totalPieces && totalPieces > 0) {
+                        quantityBoxes = split.packs;
+                        quantityPieces = split.loose;
+                    }
+                }
                 const state = getInventoryState(item);
+                const packLine = PackUnits.formatPackLine(item);
+                const baseLabel = PackUnits.pluralize(PackUnits.baseUnit(item), totalPieces === 1 ? 1 : 2);
+                const integrityTitle = (state.integrity && !state.integrity.ok)
+                    ? state.integrity.issues.join('; ').replace(/"/g, '&quot;')
+                    : '';
 
-                // Format quantity display
-                const boxDisplay = quantityBoxes > 0 ? `<span class="font-semibold">${quantityBoxes}</span>` : '<span class="text-base-content/40">0</span>';
-                const pieceDisplay = quantityPieces > 0 ? `<span class="font-semibold">${quantityPieces}</span>` : '<span class="text-base-content/40">0</span>';
+                const boxDisplay = quantityBoxes !== 0
+                    ? `<span class="font-semibold ${quantityBoxes < 0 ? 'text-error' : ''}">${quantityBoxes}</span>`
+                    : '<span class="text-base-content/40">0</span>';
+                const pieceDisplay = quantityPieces !== 0
+                    ? `<span class="font-semibold ${quantityPieces < 0 ? 'text-error' : ''}">${quantityPieces}</span>`
+                    : '<span class="text-base-content/40">0</span>';
 
                 return `
-                    <tr class="${state.rowClass} hover">
+                    <tr class="${state.rowClass} hover" ${integrityTitle ? `title="${integrityTitle}"` : ''}>
                         <td>
                             <div class="font-medium">${item.product_name || 'Unknown Product'}</div>
                             <div class="text-xs text-base-content/60">${item.variant || ''} ${item.size_value || ''}${item.size_unit || ''}</div>
-                            <div class="text-xs text-info mt-1"><i class="fas fa-box text-xs"></i> 1 Box = ${piecesPerBox} pcs</div>
+                            <div class="text-xs text-info mt-1"><i class="fas fa-box text-xs"></i> ${packLine}</div>
+                            ${state.integrity && !state.integrity.ok ? PackUnits.integrityBadgeHtml(item) : ''}
                         </td>
                         <td><code class="text-xs bg-base-200 px-2 py-1 rounded">${item.batch_code || 'N/A'}</code></td>
                         <td><span class="badge badge-ghost badge-sm">${item.chiller_name || 'Unassigned'}</span></td>
                         <td class="text-right">${boxDisplay}</td>
                         <td class="text-right">${pieceDisplay}</td>
-                        <td class="text-right font-bold text-primary">${totalPieces.toLocaleString()}</td>
+                        <td class="text-right font-bold text-primary" title="${PackUnits.formatOnHand(item)}">${totalPieces.toLocaleString()} <span class="text-xs font-normal text-base-content/60">${baseLabel}</span></td>
                         <td class="text-sm">${item.manufacturing_date ? new Date(item.manufacturing_date).toLocaleDateString() : 'N/A'}</td>
                         <td class="text-sm">${item.expiry_date ? new Date(item.expiry_date).toLocaleDateString() : 'N/A'}</td>
                         <td>${state.badge}</td>
@@ -701,8 +746,9 @@
                                 <label tabindex="0" class="btn btn-ghost btn-xs btn-square">
                                     <i class="fas fa-ellipsis-v"></i>
                                 </label>
-                                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-300 w-40 p-1 z-50">
+                                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-300 w-48 p-1 z-50">
                                     <li><a onclick="viewBatchDetails(${item.id})"><i class="fas fa-eye w-4"></i> View Details</a></li>
+                                    ${state.key === 'awaiting_putaway' ? `<li><a href="receiving.html"><i class="fas fa-dolly w-4"></i> Put Away</a></li>` : ''}
                                     ${state.dispatchable ? `<li><a onclick="transferItem(${item.id})"><i class="fas fa-exchange-alt w-4"></i> Transfer</a></li>` : ''}
                                     ${state.key === 'expired' ? `<li><a onclick="disposeStock(${item.id})" class="text-error"><i class="fas fa-trash-alt w-4"></i> Dispose</a></li>` : ''}
                                     <li><a onclick="adjustStock(${item.id})" class="text-warning"><i class="fas fa-edit w-4"></i> Adjust</a></li>

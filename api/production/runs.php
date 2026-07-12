@@ -15,6 +15,8 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/config/ccp_standards.php';
+require_once dirname(__DIR__) . '/helpers/pack_uom.php';
 require_once __DIR__ . '/helpers/yield_helpers.php';
 
 // Require Production role
@@ -538,6 +540,104 @@ try {
                 ");
                 $byStmt->execute([$runId]);
                 $run['byproducts'] = $byStmt->fetchAll();
+
+                // Suggested starting volume for yield tracking (mL).
+                // Prefer milk already planned on the run / issued via requisition —
+                // production should not re-type what the system already knows.
+                $suggestedLiters = null;
+                $suggestedSource = null;
+
+                // 1) Milk issued on linked fulfilled requisition (raw milk lines)
+                if (!empty($run['linked_requisition_id'])) {
+                    $issStmt = $db->prepare("
+                        SELECT SUM(COALESCE(ri.issued_quantity, 0)) AS issued_qty,
+                               MAX(ri.unit_of_measure) AS unit
+                        FROM requisition_items ri
+                        WHERE ri.requisition_id = ?
+                          AND COALESCE(ri.issued_quantity, 0) > 0
+                          AND (
+                              ri.item_type IN ('raw_milk', 'pasteurized_milk', 'milk')
+                              OR LOWER(COALESCE(ri.item_name, '')) LIKE '%milk%'
+                          )
+                    ");
+                    try {
+                        $issStmt->execute([(int) $run['linked_requisition_id']]);
+                        $iss = $issStmt->fetch(PDO::FETCH_ASSOC);
+                        if ($iss && (float) ($iss['issued_qty'] ?? 0) > 0) {
+                            $qty = (float) $iss['issued_qty'];
+                            $unit = strtolower((string) ($iss['unit'] ?? 'liters'));
+                            // Convert to liters if unit is mL
+                            if (in_array($unit, ['ml', 'milliliter', 'milliliters'], true)) {
+                                $suggestedLiters = $qty / 1000;
+                            } else {
+                                $suggestedLiters = $qty; // assume liters
+                            }
+                            $suggestedSource = 'requisition_issued';
+                        }
+                    } catch (Throwable $e) {
+                        // column names may vary; fall through to recipe plan
+                    }
+                }
+
+                // 2) Planned milk on the run (set when run is created from recipe)
+                if ($suggestedLiters === null && (float) ($run['milk_liters_used'] ?? 0) > 0) {
+                    $suggestedLiters = (float) $run['milk_liters_used'];
+                    $suggestedSource = 'recipe_plan';
+                }
+
+                // 3) Recipe base scaled by planned quantity
+                if ($suggestedLiters === null
+                    && (float) ($run['base_milk_liters'] ?? 0) > 0
+                    && (float) ($run['expected_yield'] ?? 0) > 0
+                    && (float) ($run['planned_quantity'] ?? 0) > 0
+                ) {
+                    $suggestedLiters = round(
+                        ((float) $run['base_milk_liters'] / (float) $run['expected_yield']) * (float) $run['planned_quantity'],
+                        3
+                    );
+                    $suggestedSource = 'recipe_scaled';
+                }
+
+                $run['suggested_initial_volume_liters'] = $suggestedLiters;
+                $run['suggested_initial_volume_ml'] = $suggestedLiters !== null
+                    ? (int) round($suggestedLiters * 1000)
+                    : null;
+                $run['suggested_volume_source'] = $suggestedSource;
+                $run['initial_volume_liters'] = isset($run['initial_volume_ml']) && $run['initial_volume_ml'] !== null
+                    ? round(((float) $run['initial_volume_ml']) / 1000, 3)
+                    : null;
+
+                // Best-effort pack config from product master (for complete-run unit display)
+                $run['pieces_per_box'] = 1;
+                $run['base_unit'] = 'piece';
+                $run['box_unit'] = 'box';
+                try {
+                    $prodStmt = $db->prepare("
+                        SELECT pieces_per_box, base_unit, box_unit, product_name
+                        FROM products
+                        WHERE is_active = 1
+                          AND (
+                            product_name = ?
+                            OR product_name LIKE CONCAT(?, '%')
+                            OR LOWER(REPLACE(product_name, ' ', '_')) = LOWER(?)
+                          )
+                        ORDER BY
+                          CASE WHEN product_name = ? THEN 0 ELSE 1 END,
+                          pieces_per_box DESC
+                        LIMIT 1
+                    ");
+                    $pname = $run['product_name'] ?? '';
+                    $prodStmt->execute([$pname, $pname, $pname, $pname]);
+                    $prodPack = $prodStmt->fetch(PDO::FETCH_ASSOC);
+                    if ($prodPack) {
+                        $run['pieces_per_box'] = max(1, (int)($prodPack['pieces_per_box'] ?? 1));
+                        $run['base_unit'] = $prodPack['base_unit'] ?: 'piece';
+                        $run['box_unit'] = $prodPack['box_unit'] ?: 'box';
+                        $run['product_pack_matched'] = $prodPack['product_name'];
+                    }
+                } catch (Throwable $e) {
+                    // products table shape may vary
+                }
                 
                 Response::success($run, 'Production run retrieved successfully');
             }
@@ -593,11 +693,13 @@ try {
             $countStmt->execute($params);
             $total = $countStmt->fetch()['total'];
             
-            // Get runs
+            // Get runs (includes yield/volume fields for dashboard + yield tracking)
             $stmt = $db->prepare("
                 SELECT pr.id, pr.run_code, pr.recipe_id, pr.status, pr.planned_quantity,
                        pr.actual_quantity, pr.output_breakdown, pr.milk_liters_used, pr.start_datetime, pr.end_datetime,
                        pr.yield_variance, pr.created_at,
+                       pr.initial_volume_ml, pr.total_loss_ml, pr.total_byproduct_ml, pr.net_yield_ml,
+                       pr.material_reconciled, pr.reconciliation_notes,
                        mr.recipe_code, mr.product_name, mr.product_type, mr.variant, mr.yield_unit
                 FROM production_runs pr
                 JOIN master_recipes mr ON pr.recipe_id = mr.id
@@ -954,6 +1056,15 @@ try {
 
                     $initialVolumeMl = getParam('initial_volume_ml');
 
+                    // Auto-fill from planned/issued milk if staff did not re-type it
+                    if (!$initialVolumeMl || (float) $initialVolumeMl <= 0) {
+                        if (!empty($run['initial_volume_ml']) && (float) $run['initial_volume_ml'] > 0) {
+                            $initialVolumeMl = (float) $run['initial_volume_ml'];
+                        } elseif (!empty($run['milk_liters_used']) && (float) $run['milk_liters_used'] > 0) {
+                            $initialVolumeMl = (float) $run['milk_liters_used'] * 1000;
+                        }
+                    }
+
                     $db->beginTransaction();
 
                     if ($initialVolumeMl && (float)$initialVolumeMl > 0) {
@@ -983,6 +1094,7 @@ try {
                     $responseData = ['status' => 'in_progress'];
                     if ($initialVolumeMl) {
                         $responseData['initial_volume_ml'] = (float)$initialVolumeMl;
+                        $responseData['auto_volume'] = true;
                     }
                     if ($estimateResult && $estimateResult['success']) {
                         $responseData['packaging_estimate'] = $estimateResult;
@@ -1026,6 +1138,54 @@ try {
                     }
 
                     Response::success($responseData, 'Initial volume set and packaging estimate generated');
+                    break;
+
+                case 'reconcile':
+                    // Mark material reconciliation complete (optionally with override notes)
+                    if ($run['status'] === 'cancelled') {
+                        Response::error('Cannot reconcile a cancelled run', 400);
+                    }
+
+                    $reconNotes = trim(getParam('reconciliation_notes', ''));
+                    $force = filter_var(getParam('force', false), FILTER_VALIDATE_BOOLEAN);
+
+                    // Soft check: if initial volume set, verify unaccounted within tolerance unless force
+                    if (!$force && !empty($run['initial_volume_ml'])) {
+                        $finishedStmt = $db->prepare("
+                            SELECT COALESCE(SUM(pe.actual_units * pe.packaging_size_ml), 0)
+                            FROM packaging_estimates pe
+                            WHERE pe.production_run_id = ? AND pe.actual_units IS NOT NULL
+                        ");
+                        $finishedStmt->execute([$runId]);
+                        $finishedProductMl = (float) $finishedStmt->fetchColumn();
+                        $initialVolume = (float) $run['initial_volume_ml'];
+                        $totalLoss = (float) ($run['total_loss_ml'] ?? 0);
+                        $totalByproduct = (float) ($run['total_byproduct_ml'] ?? 0);
+                        $unaccounted = $initialVolume - ($finishedProductMl + $totalLoss + $totalByproduct);
+                        $tolerance = max(50, $initialVolume * 0.01);
+
+                        if (abs($unaccounted) > $tolerance && $reconNotes === '') {
+                            Response::validationError([
+                                'reconciliation_notes' => 'Unaccounted volume exceeds tolerance. Provide override notes or set force=true with notes.',
+                                'unaccounted_ml' => round($unaccounted, 2),
+                                'tolerance_ml' => $tolerance,
+                            ]);
+                        }
+                    }
+
+                    $stmt = $db->prepare("
+                        UPDATE production_runs
+                        SET material_reconciled = 1,
+                            reconciliation_notes = ?
+                        WHERE id = ?
+                    ");
+                    $stmt->execute([$reconNotes !== '' ? $reconNotes : null, $runId]);
+
+                    Response::success([
+                        'id' => (int) $runId,
+                        'material_reconciled' => true,
+                        'reconciliation_notes' => $reconNotes !== '' ? $reconNotes : null,
+                    ], 'Material reconciliation recorded');
                     break;
 
                 case 'update_status':
@@ -1122,55 +1282,102 @@ try {
                     $actualQuantity = (int) getParam('actual_quantity', 0);
                     $outputUnit = getParam('output_unit', 'pieces'); // pieces, boxes, crates, cases
                     $varianceReason = trim(getParam('variance_reason', ''));
+                    $reconNotes = trim(getParam('reconciliation_notes', ''));
                     
+                    // Fallback: use packaging estimate units when actual not provided
+                    if ($actualQuantity <= 0) {
+                        $estQtyStmt = $db->prepare("
+                            SELECT COALESCE(SUM(COALESCE(actual_units, estimated_units)), 0)
+                            FROM packaging_estimates
+                            WHERE production_run_id = ?
+                              AND estimate_type = (
+                                  SELECT IF(
+                                      EXISTS(SELECT 1 FROM packaging_estimates pe2
+                                             WHERE pe2.production_run_id = ? AND pe2.estimate_type = 'revised'),
+                                      'revised', 'initial'
+                                  )
+                              )
+                        ");
+                        $estQtyStmt->execute([$runId, $runId]);
+                        $actualQuantity = (int) $estQtyStmt->fetchColumn();
+                    }
+
+                    if ($actualQuantity <= 0 && (int) ($run['planned_quantity'] ?? 0) > 0) {
+                        $actualQuantity = (int) $run['planned_quantity'];
+                    }
+
                     if ($actualQuantity <= 0) {
                         Response::validationError(['actual_quantity' => 'Actual quantity is required']);
                     }
                     
-                    // =====================================================
-                    // MULTI-UNIT OUTPUT CONVERSION
-                    // Product Conversions:
-                    // - Bottled Milk: 1 Crate = 24 Bottles
-                    // - Milk Bars: 1 Box = 50 Pieces
-                    // - Cheese: 1 Case = 12 Blocks
-                    // - Butter: 1 Case = 20 Packs
-                    // =====================================================
-                    
-                    // Get recipe info for product type
+                    // Recipe product type (byproduct rules only — NOT pack conversion)
                     $recipeStmt = $db->prepare("SELECT product_type FROM master_recipes WHERE id = ?");
                     $recipeStmt->execute([$run['recipe_id']]);
                     $recipeInfo = $recipeStmt->fetch();
                     $productType = $recipeInfo['product_type'] ?? 'bottled_milk';
-                    
-                    // Define unit conversions per product type
-                    $unitConversions = [
-                        'bottled_milk' => ['primary' => 'bottles', 'secondary' => 'crates', 'conversion' => 24],
-                        'milk_bar' => ['primary' => 'pieces', 'secondary' => 'boxes', 'conversion' => 50],
-                        'cheese' => ['primary' => 'blocks', 'secondary' => 'cases', 'conversion' => 12],
-                        'butter' => ['primary' => 'packs', 'secondary' => 'cases', 'conversion' => 20],
-                        'yogurt' => ['primary' => 'cups', 'secondary' => 'trays', 'conversion' => 12],
-                    ];
-                    
-                    $conversionConfig = $unitConversions[$productType] ?? $unitConversions['bottled_milk'];
-                    $conversionFactor = $conversionConfig['conversion'];
-                    $primaryUnit = $conversionConfig['primary'];
-                    $secondaryUnit = $conversionConfig['secondary'];
-                    
-                    // Calculate total pieces and breakdown
+
+                    // =====================================================
+                    // MULTI-UNIT OUTPUT — ALWAYS from product master UOM
+                    // products.pieces_per_box / box_unit / base_unit
+                    // NEVER hardcode 24 crates / 50 boxes by product_type.
+                    // =====================================================
+
+                    $packProductId = (int)(
+                        $run['product_id']
+                        ?? $run['recipe_product_id']
+                        ?? $run['base_product_id']
+                        ?? 0
+                    );
+                    // Prefer an active SKU under this recipe product when base liquid has no pack size
+                    if ($packProductId > 0) {
+                        $packCfg = hf_get_product_pack_config($db, $packProductId);
+                        if ($packCfg['units_per_pack'] <= 1) {
+                            try {
+                                $skuStmt = $db->prepare("
+                                    SELECT id FROM products
+                                    WHERE (base_product_id = ? OR id = ?)
+                                      AND COALESCE(pieces_per_box, 1) > 1
+                                      AND COALESCE(is_active, 1) = 1
+                                    ORDER BY pieces_per_box DESC, id ASC
+                                    LIMIT 1
+                                ");
+                                $skuStmt->execute([$packProductId, $packProductId]);
+                                $skuId = (int)$skuStmt->fetchColumn();
+                                if ($skuId > 0) {
+                                    $packProductId = $skuId;
+                                    $packCfg = hf_get_product_pack_config($db, $packProductId);
+                                }
+                            } catch (Exception $e) { /* keep packCfg */ }
+                        }
+                    } else {
+                        $packCfg = hf_pack_config_from_row(null);
+                    }
+
+                    $conversionFactor = max(1, (int)$packCfg['units_per_pack']);
+                    $primaryUnit = $packCfg['base_unit'] ?: 'piece';
+                    $secondaryUnit = $packCfg['pack_name'] ?: 'box';
+
+                    // Calculate total base units and pack breakdown
                     $totalPieces = $actualQuantity;
-                    
-                    // If input was in secondary unit (boxes/crates/cases), convert to pieces
-                    if (in_array($outputUnit, ['boxes', 'crates', 'cases', $secondaryUnit])) {
+
+                    // If operator entered pack count (boxes/crates/cases), convert to base units
+                    $packUnitAliases = array_unique(array_filter([
+                        'boxes', 'box', 'crates', 'crate', 'cases', 'case', 'trays', 'tray',
+                        $secondaryUnit,
+                        rtrim($secondaryUnit, 's'),
+                        $secondaryUnit . 's',
+                    ]));
+                    if (in_array(strtolower((string)$outputUnit), array_map('strtolower', $packUnitAliases), true)) {
                         $totalPieces = $actualQuantity * $conversionFactor;
                     }
-                    
-                    // Calculate breakdown: X boxes + Y pieces
-                    $secondaryCount = floor($totalPieces / $conversionFactor);
-                    $remainingPrimary = $totalPieces % $conversionFactor;
-                    
+
+                    $split = hf_split_base_to_pack($totalPieces, $conversionFactor);
+                    $secondaryCount = $split['packs'];
+                    $remainingPrimary = $split['loose'];
+
                     $variance = $totalPieces - $run['planned_quantity'];
-                    
-                    // Store output breakdown as JSON
+
+                    // Store output breakdown as JSON (product-master driven)
                     $outputBreakdown = json_encode([
                         'total_pieces' => $totalPieces,
                         'secondary_count' => $secondaryCount,
@@ -1179,7 +1386,12 @@ try {
                         'primary_unit' => $primaryUnit,
                         'input_quantity' => $actualQuantity,
                         'input_unit' => $outputUnit,
-                        'conversion_factor' => $conversionFactor
+                        'conversion_factor' => $conversionFactor,
+                        'units_per_pack' => $conversionFactor,
+                        'pack_name' => $secondaryUnit,
+                        'base_unit' => $primaryUnit,
+                        'product_id' => $packProductId,
+                        'pack_formula' => format_pack_config_line($packCfg),
                     ]);
                     
                     $db->beginTransaction();
@@ -1194,15 +1406,20 @@ try {
                                 actual_quantity = ?,
                                 output_breakdown = ?,
                                 yield_variance = ?,
-                                variance_reason = ?
+                                variance_reason = ?,
+                                material_reconciled = CASE WHEN ? = 1 OR material_reconciled = 1 THEN 1 ELSE material_reconciled END,
+                                reconciliation_notes = COALESCE(?, reconciliation_notes)
                             WHERE id = ?
                         ");
+                        $markReconciled = $reconNotes !== '' ? 1 : 0;
                         $stmt->execute([
                             $currentUser['user_id'],
                             $totalPieces,
                             $outputBreakdown,
                             $variance,
                             $varianceReason,
+                            $markReconciled,
+                            $reconNotes !== '' ? $reconNotes : null,
                             $runId
                         ]);
                         
@@ -1224,14 +1441,19 @@ try {
                         
                         $expiryDate = date('Y-m-d', strtotime("+{$expiryDays} days"));
                         
-                        // Create batch record for QC verification
-                        // Columns: batch_code, recipe_id, run_id, milk_type_id, product_type, manufacturing_date,
-                        // raw_milk_liters, expected_yield, actual_yield, qc_status, created_by
+                        // Pull verified CCP temperatures from production logs so QC
+                        // sees actual production inputs without re-entry.
+                        $ccpTemps = ccp_extract_temps_from_logs($ccpLogs);
+                        $pasteurizationTemp = $ccpTemps['pasteurization_temp'];
+                        $coolingTemp = $ccpTemps['cooling_temp'];
+
+                        // Create batch record for QC verification (includes denormalized CCP temps)
                         $batchStmt = $db->prepare("
                             INSERT INTO production_batches (
                                 batch_code, recipe_id, run_id, milk_type_id, product_type, manufacturing_date,
-                                raw_milk_liters, expected_yield, actual_yield, qc_status, created_by, expiry_date
-                            ) VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, 'pending', ?, ?)
+                                raw_milk_liters, expected_yield, actual_yield, qc_status, created_by, expiry_date,
+                                pasteurization_temp, cooling_temp
+                            ) VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, 'pending', ?, ?, ?, ?)
                         ");
                         $batchStmt->execute([
                             $batchCode,
@@ -1243,7 +1465,9 @@ try {
                             $run['planned_quantity'],
                             $totalPieces,
                             $currentUser['user_id'],
-                            $expiryDate
+                            $expiryDate,
+                            $pasteurizationTemp,
+                            $coolingTemp
                         ]);
                         
                         $batchId = $db->lastInsertId();

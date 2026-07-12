@@ -32,7 +32,8 @@ try {
             }
 
             $sql = "
-                SELECT pl.*, u.name AS recorded_by_name
+                SELECT pl.*,
+                       TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS recorded_by_name
                 FROM production_losses pl
                 LEFT JOIN users u ON u.id = pl.recorded_by
                 WHERE pl.production_run_id = ?
