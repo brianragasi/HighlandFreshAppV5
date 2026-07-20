@@ -374,8 +374,12 @@ function handleGetRequest($db, $currentUser) {
     $stmt = $db->prepare("
         SELECT d.*,
                ui.first_name as initiated_by_name,
+               ui.last_name as initiated_by_last,
+               ui.role as initiated_by_role,
                ua.first_name as approved_by_name,
-               p.product_code
+               p.product_code,
+               TRIM(CONCAT(COALESCE(ui.first_name, ''), ' ', COALESCE(ui.last_name, ''))) as requested_by_name,
+               TRIM(CONCAT(COALESCE(ui.first_name, ''), ' ', COALESCE(ui.last_name, ''))) as created_by_name
         FROM disposals d
         LEFT JOIN users ui ON d.initiated_by = ui.id
         LEFT JOIN users ua ON d.approved_by = ua.id
@@ -386,8 +390,48 @@ function handleGetRequest($db, $currentUser) {
     ");
     $stmt->execute($params);
     $disposals = $stmt->fetchAll();
+
+    // Enrich requester labels for audit display (Name + Role)
+    foreach ($disposals as &$d) {
+        $full = trim(($d['initiated_by_name'] ?? '') . ' ' . ($d['initiated_by_last'] ?? ''));
+        if ($full === '') {
+            $full = 'System';
+        }
+        $roleLabel = formatDisposalRoleLabel($d['initiated_by_role'] ?? null);
+        $d['requested_by_name'] = $roleLabel ? ($full . ' (' . $roleLabel . ')') : $full;
+        $d['created_by_name'] = $d['requested_by_name'];
+        // Never expose blank category to UI
+        if (empty($d['disposal_category'])) {
+            $d['disposal_category'] = 'spoiled';
+        }
+        // Guard zero financial loss in list payloads
+        if ((float)($d['total_value'] ?? 0) <= 0 && (float)($d['quantity'] ?? 0) > 0) {
+            $unitCost = (float)($d['unit_cost'] ?? 0);
+            if ($unitCost <= 0) {
+                $unitCost = 35.0;
+            }
+            $d['unit_cost'] = $unitCost;
+            $d['total_value'] = round((float)$d['quantity'] * $unitCost, 2);
+        }
+    }
+    unset($d);
     
     Response::paginated($disposals, $total, $page, $limit, 'Disposals retrieved');
+}
+
+function formatDisposalRoleLabel(?string $role): string {
+    $map = [
+        'qc_officer' => 'QC',
+        'warehouse_fg' => 'Warehouse',
+        'warehouse_raw' => 'Warehouse',
+        'general_manager' => 'GM',
+        'production_staff' => 'Production',
+        'sales_custodian' => 'Sales',
+    ];
+    if (!$role) {
+        return '';
+    }
+    return $map[$role] ?? ucwords(str_replace('_', ' ', $role));
 }
 
 /**

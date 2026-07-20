@@ -12,6 +12,7 @@
  */
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
+require_once __DIR__ . '/inventory_helpers.php';
 
 // Require Warehouse FG role
 $currentUser = Auth::requireRole(['warehouse_fg', 'general_manager']);
@@ -207,8 +208,8 @@ function openBox($db, $inventoryId, $boxesToOpen, $userId, $reason = 'partial_sa
     // Update inventory
     $updateStmt = $db->prepare("
         UPDATE finished_goods_inventory 
-        SET quantity_boxes = quantity_boxes - ?,
-            boxes_available = boxes_available - ?,
+        SET quantity_boxes = GREATEST(0, quantity_boxes - ?),
+            boxes_available = GREATEST(0, boxes_available - ?),
             quantity_pieces = quantity_pieces + ?,
             pieces_available = pieces_available + ?
         WHERE id = ?
@@ -359,7 +360,8 @@ function releaseMultiUnit($db, $inventoryId, $releasedBoxes, $releasedPieces, $u
             boxes_available = ?,
             quantity_pieces = ?,
             pieces_available = ?,
-            quantity_available = quantity_available - ?
+            quantity_available = GREATEST(0, COALESCE(quantity_available, 0) - ?),
+            remaining_quantity = GREATEST(0, COALESCE(remaining_quantity, 0) - ?)
         WHERE id = ?
     ");
     $updateStmt->execute([
@@ -367,6 +369,7 @@ function releaseMultiUnit($db, $inventoryId, $releasedBoxes, $releasedPieces, $u
         $boxesAfter,
         $piecesAfter,
         $piecesAfter,
+        $totalReleasedPieces,
         $totalReleasedPieces,
         $inventoryId
     ]);
@@ -458,13 +461,13 @@ function handleGet($db, $action) {
                     DATEDIFF(fg.expiry_date, CURDATE()) as days_until_expiry,
                     CASE
                         WHEN fg.status <> 'available' THEN fg.status
-                        WHEN fg.expiry_date <= CURDATE() THEN 'expired'
+                        WHEN fg.expiry_date < CURDATE() THEN 'expired'
                         WHEN DATEDIFF(fg.expiry_date, CURDATE()) <= 3 THEN 'expiring'
                         ELSE 'good'
                     END as effective_status,
                     CASE
                         WHEN fg.status = 'available'
-                         AND fg.expiry_date > CURDATE()
+                         AND fg.expiry_date >= CURDATE()
                          AND (
                             COALESCE(fg.quantity_available, 0) > 0
                             OR COALESCE(fg.boxes_available, 0) > 0
@@ -515,8 +518,15 @@ function handleGet($db, $action) {
                 $params[] = $status;
             }
 
+            // Default list excludes only fully-consumed expired items.
+            // Expired batches that still hold stock must remain visible so the
+            // "Expired" filter pill can count and display them.
             if (!$includeExpired) {
-                $sql .= " AND (fg.expiry_date IS NULL OR fg.expiry_date > CURDATE())";
+                $sql .= " AND (fg.expiry_date IS NULL OR fg.expiry_date >= CURDATE()
+                    OR (fg.expiry_date < CURDATE()
+                        AND (COALESCE(fg.quantity_available, 0) > 0
+                             OR COALESCE(fg.boxes_available, 0) > 0
+                             OR COALESCE(fg.pieces_available, 0) > 0)))";
             }
             
             if ($productId) {
@@ -680,10 +690,20 @@ function handleGet($db, $action) {
                     c.chiller_code,
                     DATEDIFF(fg.expiry_date, CURDATE()) as days_until_expiry,
                     COALESCE(fg.boxes_available, 0) as boxes_available,
-                    COALESCE(fg.pieces_available, 0) as pieces_available
+                    COALESCE(fg.pieces_available, 0) as pieces_available,
+                    COALESCE(
+                        NULLIF(pb.batch_code, ''),
+                        CONCAT(
+                            'BATCH-',
+                            DATE_FORMAT(COALESCE(pb.manufacturing_date, fg.manufacturing_date, CURDATE()), '%y%m'),
+                            '-A',
+                            LPAD(COALESCE(fg.batch_id, fg.id), 2, '0')
+                        )
+                    ) as batch_code
                 FROM finished_goods_inventory fg
                 JOIN products p ON fg.product_id = p.id
                 LEFT JOIN chiller_locations c ON fg.chiller_id = c.id
+                LEFT JOIN production_batches pb ON fg.batch_id = pb.id
                 WHERE fg.status = 'available'
                 AND fg.expiry_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
                 AND fg.expiry_date >= CURDATE()
@@ -847,84 +867,192 @@ function handleGet($db, $action) {
             
             Response::success($summary, 'Inventory summary retrieved');
             break;
+
+        case 'putaway_count':
+            try {
+                if (!fgInventoryTableExists($db, 'put_away_queue')) {
+                    Response::success(['count' => 0, 'items' => []], 'Put-away queue empty');
+                    break;
+                }
+                $countStmt = $db->prepare("
+                    SELECT COUNT(*) as count
+                    FROM put_away_queue
+                    WHERE status = 'pending'
+                ");
+                $countStmt->execute();
+                $count = (int)$countStmt->fetchColumn();
+                Response::success(['count' => $count], 'Put-away count retrieved');
+            } catch (Throwable $e) {
+                Response::success(['count' => 0], 'Put-away queue not available');
+            }
+            break;
+
+        case 'pending_returns':
+            try {
+                if (!fgInventoryTableExists($db, 'put_away_queue')) {
+                    Response::success(['items' => [], 'count' => 0], 'Put-away queue empty');
+                    break;
+                }
+                $stmt = $db->prepare("
+                    SELECT
+                        pq.*,
+                        p.product_name,
+                        p.pieces_per_box,
+                        p.base_unit,
+                        p.box_unit,
+                        pb.expiry_date as batch_expiry_date,
+                        cl.chiller_name as chiller_location_name,
+                        cl.location as chiller_location_detail,
+                        CONCAT(u.first_name, ' ', u.last_name) as created_by_name
+                    FROM put_away_queue pq
+                    LEFT JOIN products p ON pq.product_id = p.id
+                    LEFT JOIN production_batches pb ON pq.batch_id = pb.id
+                    LEFT JOIN chiller_locations cl ON pq.chiller_id = cl.id
+                    LEFT JOIN users u ON pq.created_by = u.id
+                    WHERE pq.status = 'pending'
+                    ORDER BY pq.created_at ASC
+                ");
+                $stmt->execute();
+                $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+                foreach ($items as &$item) {
+                    $ppb = max(1, (int)($item['pieces_per_box'] ?? 1));
+                    $qty = (int)$item['quantity'];
+                    $converted = piecesToBoxes($qty, $ppb);
+                    $item['display_boxes'] = $converted['boxes'];
+                    $item['display_pieces'] = $converted['pieces'];
+                    $item['display_label'] = formatMultiUnitDisplay(
+                        $converted['boxes'],
+                        $converted['pieces'],
+                        $item['box_unit'] ?? 'box',
+                        $item['base_unit'] ?? 'piece'
+                    );
+                    if (empty($item['expiry_date']) && !empty($item['batch_expiry_date'])) {
+                        $item['expiry_date'] = $item['batch_expiry_date'];
+                    }
+                    $locParts = array_filter([
+                        $item['chiller_location_name'] ?? null,
+                        $item['chiller_location_detail'] ?? null
+                    ]);
+                    $item['location_label'] = $locParts
+                        ? implode(' - ', $locParts)
+                        : ($item['chiller_name'] ?? null);
+                }
+                unset($item);
+
+                Response::success([
+                    'items' => $items,
+                    'count' => count($items)
+                ], 'Pending put-away items retrieved');
+            } catch (Throwable $e) {
+                error_log('pending_returns query failed: ' . $e->getMessage());
+                Response::success(['items' => [], 'count' => 0], 'Put-away queue not available');
+            }
+            break;
             
         case 'pending_batches':
-            // Packaged FG rows awaiting put-away (chiller assignment) — already in FG books
-            $stmt = $db->prepare("
-                SELECT 
-                    fgi.id,
-                    fgi.id as inventory_id,
-                    fgi.batch_id,
-                    fgi.product_id,
-                    pb.batch_code,
-                    pb.batch_code as batch_number,
-                    fgi.product_type,
-                    fgi.product_name,
-                    fgi.product_variant as variant,
-                    fgi.size_ml,
-                    fgi.quantity,
-                    fgi.remaining_quantity,
-                    fgi.quantity_available,
-                    fgi.quantity_available as total_pieces,
-                    fgi.quantity_available as actual_yield,
-                    COALESCE(fgi.boxes_available, fgi.quantity_boxes, 0) as quantity_boxes,
-                    COALESCE(
-                        NULLIF(fgi.pieces_available, 0),
-                        NULLIF(fgi.quantity_pieces, 0),
-                        fgi.quantity_available,
+            // Packaged FG rows awaiting put-away (chiller assignment).
+            // Source of truth: finished_goods_inventory created by production packaging
+            // with chiller_id IS NULL. Do NOT query production_batches alone — packaging
+            // already books stock into FG before warehouse receives into a chiller.
+            try {
+                $hasQcRelease = false;
+                try {
+                    $db->query('SELECT id FROM qc_batch_release LIMIT 0');
+                    $hasQcRelease = true;
+                } catch (Throwable $e) {
+                    $hasQcRelease = false;
+                }
+
+                $qcSelect = $hasQcRelease
+                    ? 'qbr.release_decision as qc_decision, qbr.inspection_datetime as qc_release_date,'
+                    : 'NULL as qc_decision, NULL as qc_release_date,';
+                $qcJoin = $hasQcRelease
+                    ? 'LEFT JOIN qc_batch_release qbr ON fgi.qc_release_id = qbr.id'
+                    : '';
+
+                $stmt = $db->prepare("
+                    SELECT 
+                        fgi.id,
+                        fgi.id as inventory_id,
+                        fgi.batch_id,
+                        fgi.product_id,
+                        COALESCE(pb.batch_code, CONCAT('FG-', fgi.id)) as batch_code,
+                        COALESCE(pb.batch_code, CONCAT('FG-', fgi.id)) as batch_number,
+                        fgi.product_type,
+                        fgi.product_name,
+                        COALESCE(fgi.product_variant, fgi.variant) as variant,
+                        fgi.size_ml,
+                        fgi.quantity,
                         fgi.remaining_quantity,
-                        0
-                    ) as quantity_pieces,
-                    COALESCE(fgi.boxes_available, fgi.quantity_boxes, 0) as boxes_available,
-                    COALESCE(
-                        NULLIF(fgi.pieces_available, 0),
-                        NULLIF(fgi.quantity_pieces, 0),
                         fgi.quantity_available,
-                        fgi.remaining_quantity,
-                        0
-                    ) as pieces_available,
-                    COALESCE(p.pieces_per_box, 1) as pieces_per_box,
-                    COALESCE(p.base_unit, 'piece') as base_unit,
-                    COALESCE(p.box_unit, 'box') as box_unit,
-                    fgi.unit,
-                    fgi.notes,
-                    fgi.manufacturing_date as production_date,
-                    fgi.expiry_date,
-                    fgi.status,
-                    fgi.received_at as packaged_at,
-                    fgi.received_by as packaged_by,
-                    pb.qc_status,
-                    qbr.release_decision as qc_decision,
-                    qbr.inspection_datetime as qc_release_date,
-                    mr.id as recipe_id
-                FROM finished_goods_inventory fgi
-                LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
-                LEFT JOIN products p ON fgi.product_id = p.id
-                LEFT JOIN qc_batch_release qbr ON fgi.qc_release_id = qbr.id
-                LEFT JOIN master_recipes mr ON pb.recipe_id = mr.id
-                WHERE fgi.status = 'available'
-                  AND fgi.chiller_id IS NULL
-                  AND (
-                    COALESCE(fgi.remaining_quantity, 0) > 0
-                    OR COALESCE(fgi.quantity_available, 0) > 0
-                    OR COALESCE(fgi.pieces_available, 0) > 0
-                    OR COALESCE(fgi.boxes_available, 0) > 0
-                  )
-                ORDER BY fgi.received_at ASC
-            ");
-            $stmt->execute();
-            $pendingItems = $stmt->fetchAll();
+                        fgi.quantity_available as total_pieces,
+                        fgi.quantity_available as actual_yield,
+                        COALESCE(fgi.boxes_available, fgi.quantity_boxes, 0) as quantity_boxes,
+                        COALESCE(fgi.pieces_available, fgi.quantity_pieces, 0) as quantity_pieces,
+                        COALESCE(fgi.boxes_available, fgi.quantity_boxes, 0) as boxes_available,
+                        COALESCE(fgi.pieces_available, fgi.quantity_pieces, 0) as pieces_available,
+                        COALESCE(p.pieces_per_box, 1) as pieces_per_box,
+                        COALESCE(p.base_unit, 'piece') as base_unit,
+                        COALESCE(p.box_unit, 'box') as box_unit,
+                        fgi.unit,
+                        fgi.notes,
+                        fgi.manufacturing_date as production_date,
+                        fgi.expiry_date,
+                        fgi.status,
+                        fgi.received_at as packaged_at,
+                        fgi.received_by as packaged_by,
+                        pb.qc_status,
+                        {$qcSelect}
+                        mr.id as recipe_id,
+                        1 as awaiting_putaway
+                    FROM finished_goods_inventory fgi
+                    LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
+                    LEFT JOIN products p ON fgi.product_id = p.id
+                    {$qcJoin}
+                    LEFT JOIN master_recipes mr ON pb.recipe_id = mr.id
+                    WHERE fgi.chiller_id IS NULL
+                      AND COALESCE(fgi.status, 'available') IN ('available', 'low_stock')
+                      AND (
+                        COALESCE(fgi.remaining_quantity, 0) > 0
+                        OR COALESCE(fgi.quantity_available, 0) > 0
+                        OR COALESCE(fgi.pieces_available, 0) > 0
+                        OR COALESCE(fgi.boxes_available, 0) > 0
+                        OR COALESCE(fgi.quantity, 0) > 0
+                      )
+                    ORDER BY fgi.received_at ASC, fgi.id ASC
+                ");
+                $stmt->execute();
+                $pendingItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch (Throwable $e) {
+                error_log('pending_batches query failed: ' . $e->getMessage());
+                Response::error('Could not load receive-from-production queue: ' . $e->getMessage(), 500);
+                break;
+            }
 
             foreach ($pendingItems as &$pending) {
                 $ppb = max(1, (int)($pending['pieces_per_box'] ?? 1));
                 $boxes = (int)($pending['boxes_available'] ?? 0);
                 $pieces = (int)($pending['pieces_available'] ?? 0);
+                $booked = (int)($pending['quantity_available']
+                    ?? $pending['remaining_quantity']
+                    ?? $pending['quantity']
+                    ?? 0);
+                // Prefer multi-unit columns when they look consistent with booked qty
                 $multi = ($boxes * $ppb) + $pieces;
-                $booked = (int)($pending['quantity_available'] ?? $pending['remaining_quantity'] ?? 0);
+                if ($multi <= 0 && $booked > 0) {
+                    $boxes = $ppb > 1 ? intdiv($booked, $ppb) : 0;
+                    $pieces = $ppb > 1 ? ($booked % $ppb) : $booked;
+                    $multi = $booked;
+                }
+                $pending['boxes_available'] = $boxes;
+                $pending['pieces_available'] = $pieces;
+                $pending['quantity_boxes'] = $boxes;
+                $pending['quantity_pieces'] = $pieces;
                 $pending['total_pieces'] = $multi > 0 ? $multi : $booked;
                 $pending['inventory_display'] = formatMultiUnitDisplay(
-                    $boxes > 0 || $ppb <= 1 ? $boxes : intdiv(max($booked, $multi), $ppb),
-                    $boxes > 0 || $ppb <= 1 ? $pieces : (max($booked, $multi) % $ppb),
+                    $boxes,
+                    $pieces,
                     $pending['box_unit'] ?? 'box',
                     $pending['base_unit'] ?? 'piece'
                 );
@@ -934,7 +1062,7 @@ function handleGet($db, $action) {
                 $pending['awaiting_putaway'] = true;
             }
             unset($pending);
-            
+
             Response::success([
                 'batches' => $pendingItems,
                 'count' => count($pendingItems)
@@ -1226,9 +1354,14 @@ function handlePost($db, $action, $currentUser) {
             
             // Verify chiller exists and is available
             $chillerStmt = $db->prepare("
-                SELECT id, chiller_name, chiller_code, capacity, current_count
-                FROM chiller_locations
-                WHERE id = ? AND (status = 'available' OR is_active = 1)
+                SELECT id, chiller_name, chiller_code, capacity,
+                       COALESCE((SELECT SUM(GREATEST(fi.quantity_available, 0))
+                                 FROM finished_goods_inventory fi
+                                 WHERE fi.chiller_id = c.id
+                                   AND fi.status = 'available'
+                                   AND fi.quantity_available > 0), 0) as current_count
+                FROM chiller_locations c
+                WHERE c.id = ? AND (c.status = 'available' OR c.is_active = 1)
             ");
             $chillerStmt->execute([$chillerId]);
             $chiller = $chillerStmt->fetch();
@@ -1237,30 +1370,49 @@ function handlePost($db, $action, $currentUser) {
                 Response::error('Chiller not found or not available', 404);
             }
             
-            // Convert total pieces to boxes/pieces for display and stock tracking
+            // Resolve on-hand base units, preferring multi-unit when already set
+            // (packaging often writes correct boxes/pieces; never re-inflate booked to a stale total).
             $unitConfig = getProductUnitConfig($db, $fgItem['product_id']);
-            $piecesPerBox = (int) ($unitConfig['pieces_per_box'] ?? 1);
-            $totalPieces = (int) ($fgItem['quantity_available'] ?? 0);
-            if ($totalPieces <= 0) {
-                $totalPieces = (int) ($fgItem['remaining_quantity'] ?? 0);
+            $piecesPerBox = max(1, (int) ($unitConfig['pieces_per_box'] ?? 1));
+            $multiTotal = boxesToPieces(
+                $fgItem['boxes_available'] ?? 0,
+                $fgItem['pieces_available'] ?? 0,
+                $piecesPerBox
+            );
+            $bookedTotal = (int) ($fgItem['quantity_available'] ?? 0);
+            if ($bookedTotal <= 0) {
+                $bookedTotal = (int) ($fgItem['remaining_quantity'] ?? 0);
             }
+            // Prefer multi-unit when it has stock; else booked; else multi again
+            $totalPieces = $multiTotal > 0 ? $multiTotal : $bookedTotal;
             if ($totalPieces <= 0) {
-                $totalPieces = boxesToPieces(
-                    $fgItem['boxes_available'] ?? 0,
-                    $fgItem['pieces_available'] ?? 0,
-                    $piecesPerBox
-                );
+                $totalPieces = $multiTotal;
             }
             $converted = piecesToBoxes($totalPieces, $piecesPerBox);
+
+            // Capacity guard: prevent overfilling a chiller
+            $chillerCurrentCount = (int) ($chiller['current_count'] ?? 0);
+            $chillerCapacity = (int) ($chiller['capacity'] ?? 0);
+            if ($chillerCapacity > 0 && ($chillerCurrentCount + $totalPieces) > $chillerCapacity) {
+                $remaining = max(0, $chillerCapacity - $chillerCurrentCount);
+                Response::error(
+                    "Chiller \"{$chiller['chiller_name']}\" is full ({$chillerCurrentCount}/{$chillerCapacity}). "
+                    . "Only {$remaining} unit(s) can fit. Choose another chiller.",
+                    400
+                );
+            }
 
             $db->beginTransaction();
 
             try {
-                // Update the inventory item with chiller assignment
+                // Keep booked base qty and multi-unit columns in lockstep on put-away
                 $updateStmt = $db->prepare("
                     UPDATE finished_goods_inventory
                     SET chiller_id = ?,
                         chiller_location = ?,
+                        quantity = GREATEST(COALESCE(quantity, 0), ?),
+                        remaining_quantity = ?,
+                        quantity_available = ?,
                         quantity_boxes = ?,
                         quantity_pieces = ?,
                         boxes_available = ?,
@@ -1272,6 +1424,9 @@ function handlePost($db, $action, $currentUser) {
                 $updateStmt->execute([
                     $chillerId,
                     $chiller['chiller_name'],
+                    $totalPieces,
+                    $totalPieces,
+                    $totalPieces,
                     $converted['boxes'],
                     $converted['pieces'],
                     $converted['boxes'],
@@ -1282,6 +1437,24 @@ function handlePost($db, $action, $currentUser) {
 
                 $db->prepare("UPDATE chiller_locations SET current_count = current_count + ? WHERE id = ?")
                    ->execute([$totalPieces, $chillerId]);
+
+                // Mark production batch as FG-received once stock has a chiller location
+                try {
+                    $batchLink = $db->prepare("SELECT batch_id FROM finished_goods_inventory WHERE id = ?");
+                    $batchLink->execute([$inventoryId]);
+                    $linkedBatchId = (int) ($batchLink->fetchColumn() ?: 0);
+                    if ($linkedBatchId > 0) {
+                        $db->prepare("
+                            UPDATE production_batches
+                            SET fg_received = 1,
+                                fg_received_at = NOW(),
+                                fg_received_by = ?
+                            WHERE id = ?
+                        ")->execute([(int) $currentUser['user_id'], $linkedBatchId]);
+                    }
+                } catch (Throwable $e) {
+                    // optional columns
+                }
 
                 // Log put-away (location assignment). Type remains 'receive' for schema compat;
                 // reason text clarifies internal put-away.
@@ -1514,6 +1687,103 @@ function handlePost($db, $action, $currentUser) {
                 
             } catch (Exception $e) {
                 $db->rollBack();
+                throw $e;
+            }
+            break;
+
+        case 'confirm_putaway':
+            $queueId = $data['queue_id'] ?? $data['id'] ?? null;
+            if (!$queueId) {
+                Response::error('Queue ID required', 400);
+            }
+
+            if (!fgInventoryTableExists($db, 'put_away_queue')) {
+                Response::error('Put-away queue not initialized', 500);
+            }
+
+            $db->beginTransaction();
+            try {
+                $qStmt = $db->prepare("SELECT * FROM put_away_queue WHERE id = ? AND status = 'pending' FOR UPDATE");
+                $qStmt->execute([$queueId]);
+                $queueItem = $qStmt->fetch(PDO::FETCH_ASSOC);
+
+                if (!$queueItem) {
+                    $db->rollBack();
+                    Response::error('Queue item not found or already processed', 404);
+                }
+
+                $productId = (int)$queueItem['product_id'];
+                $batchId = !empty($queueItem['batch_id']) ? (int)$queueItem['batch_id'] : null;
+                $inventoryId = !empty($queueItem['inventory_id']) ? (int)$queueItem['inventory_id'] : null;
+                $qty = (int)$queueItem['quantity'];
+
+                // Find the existing FG inventory row for this batch/product
+                $fgId = null;
+                if ($inventoryId) {
+                    $s = $db->prepare("SELECT id FROM finished_goods_inventory WHERE id = ? LIMIT 1");
+                    $s->execute([$inventoryId]);
+                    $fgId = $s->fetchColumn() ?: null;
+                }
+                if (!$fgId && $batchId) {
+                    $s = $db->prepare("SELECT id FROM finished_goods_inventory WHERE product_id = ? AND batch_id = ? ORDER BY id DESC LIMIT 1");
+                    $s->execute([$productId, $batchId]);
+                    $fgId = $s->fetchColumn() ?: null;
+                }
+                if (!$fgId) {
+                    $s = $db->prepare("SELECT id FROM finished_goods_inventory WHERE product_id = ? ORDER BY id DESC LIMIT 1");
+                    $s->execute([$productId]);
+                    $fgId = $s->fetchColumn() ?: null;
+                }
+
+                if (!$fgId) {
+                    $db->rollBack();
+                    Response::error("No FG inventory row found for product #{$productId} — cannot restock", 404);
+                }
+
+                // Restock the existing FG row — this is the ONLY place on-hand stock changes
+                $restock = fgInventoryRestockBaseUnits($db, $fgId, $qty);
+
+                // Log transaction
+                try {
+                    $txnCode = 'PAW-' . date('Ymd') . '-' . str_pad((string)random_int(1, 9999), 4, '0', STR_PAD_LEFT);
+                    $txn = $db->prepare("
+                        INSERT INTO fg_inventory_transactions
+                        (transaction_code, inventory_id, product_id, transaction_type, quantity,
+                         reference_type, reference_id, performed_by, reason)
+                        VALUES (?, ?, ?, 'receive', ?, 'put_away_queue', ?, ?, ?)
+                    ");
+                    $txn->execute([
+                        $txnCode,
+                        $fgId,
+                        $productId,
+                        $qty,
+                        $queueId,
+                        $currentUser['user_id'],
+                        'Put-away confirmed from delivery return queue'
+                    ]);
+                } catch (Exception $logEx) {
+                    error_log('Put-away txn log skipped: ' . $logEx->getMessage());
+                }
+
+                // Mark queue item as confirmed
+                $db->prepare("
+                    UPDATE put_away_queue
+                    SET status = 'confirmed', confirmed_at = NOW(), confirmed_by = ?
+                    WHERE id = ?
+                ")->execute([$currentUser['user_id'], $queueId]);
+
+                $db->commit();
+
+                Response::success([
+                    'queue_id' => (int)$queueId,
+                    'inventory_id' => $fgId,
+                    'product_id' => $productId,
+                    'quantity_added' => $qty,
+                    'restock' => $restock
+                ], "Put-away confirmed: {$qty} units added to on-hand stock");
+
+            } catch (Exception $e) {
+                if ($db->inTransaction()) $db->rollBack();
                 throw $e;
             }
             break;

@@ -4,6 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Products Management | Highland Fresh Admin</title>
 
     <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
@@ -56,230 +59,191 @@
             }
         }
 
-        /* ── Master–detail product catalog ── */
-        .product-card {
+        /* ── ERP list shell (table-first master–detail) ── */
+        .erp-list-shell {
             background: oklch(var(--b1));
             border: 1px solid oklch(var(--b3));
-            border-radius: 1rem;
-            /* visible so kebab dropdown is not clipped */
-            overflow: visible;
-            transition: box-shadow 0.15s ease, border-color 0.15s ease;
-            position: relative;
-        }
-        .product-card:focus-within {
-            z-index: 20;
-        }
-        .product-card:hover {
-            border-color: oklch(var(--bc) / 0.12);
-            box-shadow: 0 4px 16px -4px rgb(0 0 0 / 0.08);
-        }
-        /* Category icon colors (static classes — dynamic Tailwind bg-${x}/10 does not ship) */
-        .product-card__icon.cat-primary { background: oklch(var(--p) / 0.12); color: oklch(var(--p)); }
-        .product-card__icon.cat-secondary { background: oklch(var(--s) / 0.12); color: oklch(var(--s)); }
-        .product-card__icon.cat-accent { background: oklch(var(--a) / 0.12); color: oklch(var(--a)); }
-        .product-card__icon.cat-warning { background: oklch(var(--wa) / 0.15); color: oklch(var(--wa)); }
-        .product-card__icon.cat-info { background: oklch(var(--in) / 0.12); color: oklch(var(--in)); }
-        .product-card__icon.cat-success { background: oklch(var(--su) / 0.12); color: oklch(var(--su)); }
-        .sku-price.cat-primary { color: oklch(var(--p)); }
-        .sku-price.cat-secondary { color: oklch(var(--s)); }
-        .sku-price.cat-accent { color: oklch(var(--a)); }
-        .sku-price.cat-warning { color: oklch(var(--wa)); }
-        .sku-price.cat-info { color: oklch(var(--in)); }
-        .sku-price.cat-success { color: oklch(var(--su)); }
-        .product-card__header {
-            display: flex;
-            align-items: flex-start;
-            gap: 0.875rem;
-            padding: 1.125rem 1.25rem;
-            border-bottom: 1px solid oklch(var(--b3) / 0.7);
-        }
-        .product-card__icon {
-            width: 2.75rem;
-            height: 2.75rem;
             border-radius: 0.75rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-            font-size: 1.1rem;
+            overflow: hidden;
         }
-        .product-card__title {
-            font-size: 1.05rem;
+        .erp-master {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8125rem;
+        }
+        .erp-master thead th {
+            font-size: 0.6875rem;
             font-weight: 700;
-            line-height: 1.3;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: oklch(0.35 0.02 260); /* dark slate — WCAG-friendly */
+            background: oklch(var(--b2));
+            border-bottom: 1px solid oklch(var(--bc) / 0.14);
+            padding: 0.55rem 0.75rem;
+            text-align: left;
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        [data-theme="dark"] .erp-master thead th {
+            color: oklch(0.88 0.01 260);
+        }
+        .erp-master tbody td {
+            padding: 0.55rem 0.75rem;
+            border-bottom: 1px solid oklch(var(--b3) / 0.65);
+            vertical-align: middle;
+        }
+        .erp-master tbody tr.master-row {
+            cursor: pointer;
+        }
+        .erp-master tbody tr.master-row:hover td {
+            background: oklch(var(--b2) / 0.55);
+        }
+        .erp-master tbody tr.master-row.is-open td {
+            background: oklch(var(--p) / 0.06);
+            border-bottom-color: transparent;
+        }
+        .erp-master .col-actions {
+            width: 7rem;
+            text-align: right;
+            white-space: nowrap;
+        }
+        .erp-master .col-expand {
+            width: 2rem;
+            color: oklch(var(--bc) / 0.4);
+            text-align: center;
+        }
+        .erp-master .name-cell {
+            font-weight: 700;
+            font-size: 0.875rem;
             color: oklch(var(--bc));
         }
-        .product-card__meta {
-            margin-top: 0.25rem;
-            font-size: 0.8125rem;
-            color: #6B7280;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.35rem 0.75rem;
-            align-items: center;
+        .erp-master .meta-muted {
+            font-size: 0.7rem;
+            color: oklch(var(--bc) / 0.45);
+            font-variant-numeric: tabular-nums;
         }
-        .product-card__meta .meta-dot {
-            width: 3px;
-            height: 3px;
-            border-radius: 9999px;
-            background: #D1D5DB;
+        .erp-master .num {
+            font-variant-numeric: tabular-nums;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.78rem;
         }
-        .product-card__actions {
-            margin-left: auto;
-            display: flex;
-            align-items: center;
-            gap: 0.15rem;
-            flex-shrink: 0;
+
+        /* Nested SKU detail (child of master row) */
+        .erp-detail-row td {
+            padding: 0 !important;
+            background: oklch(var(--b2) / 0.35);
+            border-bottom: 1px solid oklch(var(--b3));
         }
-        .product-card__actions .btn-icon {
-            width: 2.25rem;
-            height: 2.25rem;
-            min-height: 2.25rem;
-            padding: 0;
+        .erp-detail-panel {
+            padding: 0.35rem 0.75rem 0.75rem 2.25rem;
+        }
+        .erp-detail-label {
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: oklch(var(--bc) / 0.45);
+            margin: 0.35rem 0 0.35rem;
+        }
+        .erp-sku {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.78rem;
+            background: oklch(var(--b1));
+            border: 1px solid oklch(var(--b3));
             border-radius: 0.5rem;
-            border: none;
-            background: transparent;
-            color: #6B7280;
+            overflow: hidden;
+        }
+        .erp-sku thead th {
+            font-size: 0.62rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: oklch(var(--bc) / 0.45);
+            background: oklch(var(--b2) / 0.8);
+            padding: 0.35rem 0.6rem;
+            border-bottom: 1px solid oklch(var(--b3));
+            text-align: left;
+        }
+        .erp-sku tbody td {
+            padding: 0.4rem 0.6rem;
+            border-bottom: 1px solid oklch(var(--b3) / 0.5);
+        }
+        .erp-sku tbody tr:last-child td { border-bottom: none; }
+        .erp-sku tbody tr:hover td { background: oklch(var(--b2) / 0.4); }
+        .erp-sku .sku-code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.72rem;
+            color: oklch(var(--bc) / 0.5);
+        }
+        .erp-sku .sku-price {
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+        .status-pill {
             display: inline-flex;
             align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: background 0.12s, color 0.12s;
+            gap: 0.3rem;
+            font-size: 0.68rem;
+            font-weight: 600;
+            padding: 0.15rem 0.45rem;
+            border-radius: 999px;
+            border: 1px solid oklch(var(--b3));
+            background: oklch(var(--b2));
         }
-        .product-card__actions .btn-icon:hover {
+        .status-pill.is-active {
+            color: oklch(var(--su));
+            border-color: oklch(var(--su) / 0.35);
+            background: oklch(var(--su) / 0.1);
+        }
+        .status-pill.is-inactive {
+            color: oklch(var(--bc) / 0.45);
+        }
+        .cat-pill {
+            display: inline-block;
+            font-size: 0.65rem;
+            font-weight: 600;
+            padding: 0.12rem 0.4rem;
+            border-radius: 0.3rem;
+            background: oklch(var(--b2));
+            border: 1px solid oklch(var(--b3));
+            color: oklch(var(--bc) / 0.7);
+        }
+        .erp-toolbar-count {
+            font-size: 0.75rem;
+            color: oklch(var(--bc) / 0.5);
+            font-variant-numeric: tabular-nums;
+        }
+        .sku-actions button {
+            width: 1.75rem;
+            height: 1.75rem;
+            border: none;
+            background: transparent;
+            border-radius: 0.35rem;
+            color: oklch(var(--bc) / 0.45);
+            cursor: pointer;
+        }
+        .sku-actions button:hover {
             background: oklch(var(--b2));
             color: oklch(var(--bc));
         }
-        .product-card__actions .btn-icon:hover.text-primary,
-        .product-card__actions .btn-icon.text-primary:hover {
-            color: oklch(var(--p));
-            background: oklch(var(--p) / 0.1);
-        }
-        .product-card__body {
-            padding: 0.5rem 0.75rem 0.75rem;
-        }
-        .sku-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        .sku-table th {
-            text-align: left;
-            font-size: 0.65rem;
-            font-weight: 600;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
-            color: #9CA3AF;
-            padding: 0.5rem 0.75rem;
-            border-bottom: 1px solid oklch(var(--b3) / 0.5);
-        }
-        .sku-table th.col-end,
-        .sku-table td.col-end {
-            text-align: right;
-        }
-        .sku-table td {
-            padding: 0.65rem 0.75rem;
-            font-size: 0.875rem;
-            vertical-align: middle;
-            border-bottom: 1px solid oklch(var(--b3) / 0.4);
-        }
-        .sku-table tr:last-child td {
-            border-bottom: none;
-        }
-        .sku-table tbody tr {
-            transition: background 0.12s;
-        }
-        .sku-table tbody tr:hover td {
-            background: oklch(var(--b2) / 0.5);
-        }
-        .sku-size {
-            font-weight: 600;
-            color: oklch(var(--bc));
-        }
-        .sku-code {
-            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-            font-size: 0.75rem;
-            color: #9CA3AF;
-        }
-        .sku-flavor {
-            font-size: 0.8125rem;
-            color: #6B7280;
-        }
-        .sku-price {
-            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-            font-weight: 600;
-            font-size: 0.875rem;
+        .sku-actions button.danger:hover {
+            background: oklch(var(--er) / 0.1);
+            color: oklch(var(--er));
         }
         .sku-actions {
             display: inline-flex;
             align-items: center;
             justify-content: flex-end;
             gap: 0.1rem;
-            opacity: 0.55;
-            transition: opacity 0.12s;
-        }
-        .sku-table tbody tr:hover .sku-actions {
-            opacity: 1;
-        }
-        .sku-actions button {
-            width: 1.85rem;
-            height: 1.85rem;
-            border: none;
-            border-radius: 0.4rem;
-            background: transparent;
-            color: #6B7280;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.75rem;
-        }
-        .sku-actions button:hover {
-            background: oklch(var(--b3));
-            color: oklch(var(--bc));
-        }
-        .sku-actions button.danger:hover {
-            background: oklch(var(--er) / 0.12);
-            color: oklch(var(--er));
-        }
-        .status-dot {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.35rem;
-            font-size: 0.75rem;
-            font-weight: 500;
-            color: #6B7280;
-        }
-        .status-dot::before {
-            content: '';
-            width: 0.4rem;
-            height: 0.4rem;
-            border-radius: 9999px;
-            background: #D1D5DB;
-        }
-        .status-dot.is-active {
-            color: #047857;
-        }
-        .status-dot.is-active::before {
-            background: #10B981;
-        }
-        .status-dot.is-inactive::before {
-            background: #F87171;
-        }
-        .cat-pill {
-            display: inline-flex;
-            align-items: center;
-            font-size: 0.7rem;
-            font-weight: 600;
-            padding: 0.15rem 0.5rem;
-            border-radius: 9999px;
-            background: oklch(var(--b2));
-            color: #6B7280;
         }
         .empty-skus {
-            padding: 1rem 0.75rem;
+            padding: 0.75rem;
             text-align: center;
-            font-size: 0.8125rem;
-            color: #9CA3AF;
+            font-size: 0.78rem;
+            color: oklch(var(--bc) / 0.45);
         }
     </style>
 </head>
@@ -500,77 +464,49 @@
             </div>
         </header>
 
-        <main class="flex-1 p-4 lg:p-6">
-            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+        <main class="flex-1 p-3 md:p-4">
+            <!-- Toolbar: title + actions + inline counts (not dashboard KPIs) -->
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
                 <div>
-                    <h1 class="text-2xl font-bold text-base-content">Product Catalog</h1>
-                    <p class="text-base-content/60">Base liquids grouped with packaging sizes (SKUs) — bulk recipes live on the base, not the bottle</p>
+                    <h1 class="text-lg font-bold text-base-content leading-tight">Products</h1>
+                    <p class="text-xs text-base-content/50">Base liquids (master) · packaging sizes as SKU detail</p>
                 </div>
-                <button class="btn btn-primary" onclick="openAddModal()">
-                    <i class="fas fa-plus mr-2"></i>Add Base Product
+                <div class="flex items-center gap-2">
+                    <span class="erp-toolbar-count" id="listCountLabel">0 bases / 0 SKUs</span>
+                    <button class="btn btn-primary btn-sm" onclick="openAddModal()">
+                        <i class="fas fa-plus"></i><span class="ml-1">New base product</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Orphan base products (no active recipe) — dismissible -->
+            <div id="orphanRecipeBanner" class="hidden alert alert-warning shadow-sm mb-3 py-2.5 px-3 text-sm">
+                <i class="fas fa-exclamation-triangle shrink-0"></i>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold" id="orphanRecipeBannerText">
+                        Warning: 0 products do not have an active recipe and cannot be manufactured.
+                    </p>
+                    <p class="text-xs opacity-80 mt-0.5" id="orphanRecipeBannerNames"></p>
+                    <a href="recipes.html" class="link link-hover text-xs font-semibold mt-1 inline-flex items-center gap-1">
+                        <i class="fas fa-flask text-[10px]"></i> Open Recipes module
+                    </a>
+                </div>
+                <button type="button" class="btn btn-ghost btn-xs btn-circle" title="Dismiss"
+                    onclick="dismissOrphanRecipeBanner()">
+                    <i class="fas fa-times"></i>
                 </button>
             </div>
 
-            <!-- Stats -->
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
-                    <div class="flex items-center gap-3">
-                        <div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
-                            <i class="fas fa-boxes text-primary text-xl"></i>
-                        </div>
-                        <div>
-                            <p class="text-2xl font-bold" id="statBaseProducts">0</p>
-                            <p class="text-xs text-base-content/60">Base Products</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
-                    <div class="flex items-center gap-3">
-                        <div class="w-12 h-12 bg-success/10 rounded-xl flex items-center justify-center">
-                            <i class="fas fa-tags text-success text-xl"></i>
-                        </div>
-                        <div>
-                            <p class="text-2xl font-bold" id="statTotalSKUs">0</p>
-                            <p class="text-xs text-base-content/60">Total SKUs</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
-                    <div class="flex items-center gap-3">
-                        <div class="w-12 h-12 bg-warning/10 rounded-xl flex items-center justify-center">
-                            <i class="fas fa-exclamation-triangle text-warning text-xl"></i>
-                        </div>
-                        <div>
-                            <p class="text-2xl font-bold" id="statLowStock">0</p>
-                            <p class="text-xs text-base-content/60">Low Stock SKUs</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
-                    <div class="flex items-center gap-3">
-                        <div class="w-12 h-12 bg-info/10 rounded-xl flex items-center justify-center">
-                            <i class="fas fa-layer-group text-info text-xl"></i>
-                        </div>
-                        <div>
-                            <p class="text-2xl font-bold" id="statCategories">0</p>
-                            <p class="text-xs text-base-content/60">Categories</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Filters -->
-            <div class="bg-base-100 rounded-2xl border border-base-300 p-4 mb-6">
-                <div class="flex flex-col md:flex-row gap-4">
-                    <div class="flex-1">
-                        <label class="input input-bordered flex items-center gap-2">
-                            <i class="fas fa-search text-base-content/40"></i>
-                            <input type="text" id="searchInput" placeholder="Search products..." class="grow"
-                                oninput="filterData()" />
-                        </label>
-                    </div>
-                    <select id="categoryFilter" class="select select-bordered w-full md:w-48" onchange="filterData()">
-                        <option value="">All Categories</option>
+            <!-- Filters (list chrome, not KPI cards) -->
+            <div class="bg-base-100 border border-base-300 rounded-xl p-2.5 mb-3">
+                <div class="flex flex-col md:flex-row gap-2">
+                    <label class="input input-bordered input-sm flex items-center gap-2 flex-1 min-h-9">
+                        <i class="fas fa-search text-base-content/40 text-xs"></i>
+                        <input type="text" id="searchInput" placeholder="Search base name, code, variant…" class="grow text-sm"
+                            oninput="filterData()" />
+                    </label>
+                    <select id="categoryFilter" class="select select-bordered select-sm w-full md:w-44 min-h-9" onchange="filterData()">
+                        <option value="">All categories</option>
                         <option value="pasteurized_milk">Pasteurized Milk</option>
                         <option value="flavored_milk">Flavored Milk</option>
                         <option value="yogurt">Yogurt</option>
@@ -578,19 +514,19 @@
                         <option value="butter">Butter</option>
                         <option value="cream">Cream</option>
                     </select>
-                    <select id="statusFilter" class="select select-bordered w-full md:w-40" onchange="filterData()">
-                        <option value="">All Status</option>
-                        <option value="1">Active</option>
-                        <option value="0">Inactive</option>
+                    <select id="statusFilter" class="select select-bordered select-sm w-full md:w-32 min-h-9" onchange="filterData()">
+                        <option value="">All status</option>
+                        <option value="1">Active SKU</option>
+                        <option value="0">Inactive SKU</option>
                     </select>
                 </div>
             </div>
 
-            <!-- Product Groups (Parent-Child view) -->
-            <div id="productsContainer" class="space-y-4">
-                <div class="text-center py-12">
-                    <span class="loading loading-spinner loading-lg text-primary"></span>
-                    <p class="mt-2 text-base-content/60">Loading products...</p>
+            <!-- Master table (base products) + expandable SKU detail -->
+            <div class="erp-list-shell" id="productsContainer">
+                <div class="text-center py-12 text-base-content/50 text-sm">
+                    <span class="loading loading-spinner loading-md text-primary"></span>
+                    <p class="mt-2">Loading…</p>
                 </div>
             </div>
         </main>
@@ -598,20 +534,25 @@
 
     <!-- ====================== ADD/EDIT BASE PRODUCT MODAL ====================== -->
     <dialog id="baseProductModal" class="modal">
-        <div class="modal-box w-11/12 max-w-2xl">
+        <div class="modal-box w-11/12 max-w-4xl max-h-[90vh] overflow-y-auto">
             <form method="dialog">
                 <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
             <h3 class="font-bold text-lg mb-1" id="baseModalTitle">Add Base Product</h3>
-            <p class="text-sm text-base-content/60 mb-5">Define the universal properties of the liquid/product. You will
-                add sizes separately after saving.</p>
+            <p class="text-sm text-base-content/60 mb-5" id="baseModalSubtitle">Define the universal properties of the
+                liquid/product. You will add sizes separately after saving.</p>
 
             <form id="baseProductForm" onsubmit="saveBaseProduct(event)">
                 <input type="hidden" id="baseRecordId" value="">
                 <input type="hidden" id="baseOriginalName" value="">
                 <input type="hidden" id="baseOriginalCategory" value="">
+                <input type="hidden" id="baseOriginalKey" value="">
+                <input type="hidden" id="baseProductId" value="">
+                <!-- Modal mode: create | edit | add_sku -->
+                <input type="hidden" id="baseModalAction" value="create">
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Base product identity & storage (hidden in add_sku mode) -->
+                <div id="base-product-fields" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <!-- Product Name - full width -->
                     <div class="form-control md:col-span-2">
                         <label class="label"><span class="label-text font-medium">Product Name <span
@@ -683,28 +624,39 @@
                     </div>
                 </div>
 
+                <!-- Read-only product context chip (add_sku mode only) -->
+                <div id="addSkuContextBanner" class="hidden alert alert-info py-2 mb-3 text-sm">
+                    <i class="fas fa-box"></i>
+                    <div>
+                        <div class="font-semibold">Adding packaging size to <span id="addSkuContextName">—</span></div>
+                        <div class="text-xs opacity-80">Base product settings stay unchanged. Fill in the new size below and save.</div>
+                    </div>
+                </div>
+
                 <!-- ── SKU SECTION ── -->
-                <div class="divider my-4 text-sm font-semibold text-base-content/60">
-                    <i class="fas fa-tags mr-1"></i> Sizes / Packaging (SKUs)
-                </div>
-                <p class="text-xs text-base-content/50 mb-3">Add every size you sell this product in. Each size becomes
-                    a separate SKU with its own product code and price.</p>
+                <div id="skuSection" class="scroll-mt-4">
+                    <div class="divider my-4 text-sm font-semibold text-base-content/60" id="skuSectionDivider">
+                        <i class="fas fa-tags mr-1"></i> <span id="skuSectionTitle">Sizes / Packaging (SKUs)</span>
+                    </div>
+                    <p class="text-xs text-base-content/50 mb-3" id="skuSectionHelp">Add every size you sell this product in.
+                        Each size becomes a separate SKU with its own product code and price.</p>
 
-                <div id="skuList" class="space-y-2 mb-3">
-                    <!-- SKU rows injected here -->
-                </div>
+                    <div id="skuList" class="space-y-3 mb-3">
+                        <!-- SKU rows injected here -->
+                    </div>
 
-                <button type="button" class="btn btn-ghost btn-sm gap-2 border-dashed border-2 w-full"
-                    onclick="addSkuRow()">
-                    <i class="fas fa-plus text-primary"></i>
-                    <span class="text-primary">Add Size / SKU</span>
-                </button>
+                    <button type="button" id="addSkuRowBtn" class="btn btn-ghost btn-sm gap-2 border-dashed border-2 w-full"
+                        onclick="addSkuRow({ focus: true })">
+                        <i class="fas fa-plus text-primary"></i>
+                        <span class="text-primary" id="addSkuRowBtnLabel">Add Size / SKU</span>
+                    </button>
+                </div>
 
                 <div class="modal-action">
                     <button type="button" class="btn btn-ghost"
                         onclick="document.getElementById('baseProductModal').close()">Cancel</button>
                     <button type="submit" class="btn btn-primary" id="baseModalSaveBtn">
-                        <i class="fas fa-save mr-2"></i>Save Product
+                        <i class="fas fa-save mr-2"></i><span id="baseModalSaveLabel">Save Product</span>
                     </button>
                 </div>
             </form>
@@ -732,8 +684,13 @@
                     <div class="form-control">
                         <label class="label"><span class="label-text">Unit Size <span
                                     class="text-error">*</span></span></label>
-                        <input type="number" id="sku_edit_unit_size" class="input input-bordered" step="0.01" required
-                            placeholder="e.g., 1000" />
+                        <input type="number" id="sku_edit_unit_size" class="input input-bordered"
+                            min="1" step="0.01" required placeholder="e.g., 250"
+                            inputmode="decimal"
+                            onkeydown="return blockNegativeNumberKey(event)" />
+                        <label class="label py-0 hidden" id="sku_edit_size_error">
+                            <span class="label-text-alt text-error">Size must be greater than zero</span>
+                        </label>
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Unit Measure <span
@@ -769,9 +726,14 @@
                             min="1" />
                     </div>
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Selling Price (₱)</span></label>
-                        <input type="number" id="sku_edit_selling_price" class="input input-bordered" step="0.01"
-                            value="0" />
+                        <label class="label"><span class="label-text">Selling Price (₱) <span class="text-error">*</span></span></label>
+                        <input type="number" id="sku_edit_selling_price" class="input input-bordered"
+                            min="0.01" step="0.01" required placeholder="0.01"
+                            inputmode="decimal"
+                            onkeydown="return blockNegativeNumberKey(event)" />
+                        <label class="label py-0 hidden" id="sku_edit_price_error">
+                            <span class="label-text-alt text-error">Price must be greater than zero</span>
+                        </label>
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Product Code</span></label>
@@ -877,6 +839,7 @@
                         storage_temp_min: p.storage_temp_min,
                         storage_temp_max: p.storage_temp_max,
                         description: p.description,
+                        recipe_count: 0,
                         skus: []
                     });
                 }
@@ -884,6 +847,7 @@
                 // Prefer non-empty base fields from any SKU
                 if (!g.milk_type_name && p.milk_type_name) g.milk_type_name = p.milk_type_name;
                 if (!g.description && p.description) g.description = p.description;
+                g.recipe_count = (Number(g.recipe_count) || 0) + (Number(p.recipe_count) || 0);
                 g.skus.push(p);
             });
 
@@ -901,36 +865,82 @@
             return `${clean} ${s.unit_measure || 'ml'}`;
         }
 
+        function showProductsLoadError(message) {
+            const container = document.getElementById('productsContainer');
+            const msg = message || 'Failed to load product catalog';
+            if (container) {
+                container.innerHTML = `
+                    <div class="text-center py-12 px-4">
+                        <i class="fas fa-exclamation-triangle text-3xl text-error/70 mb-3"></i>
+                        <p class="text-sm font-semibold text-error mb-1">Could not load products</p>
+                        <p class="text-xs text-base-content/60 max-w-md mx-auto mb-4">${escapeHtml(msg)}</p>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="loadData()">
+                            <i class="fas fa-sync-alt mr-1"></i>Retry
+                        </button>
+                    </div>`;
+            }
+            if (typeof showToast === 'function') {
+                showToast(msg, 'error');
+            }
+        }
+
+        function showProductsLoading() {
+            const container = document.getElementById('productsContainer');
+            if (container) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-base-content/50 text-sm">
+                        <span class="loading loading-spinner loading-md text-primary"></span>
+                        <p class="mt-2">Loading…</p>
+                    </div>`;
+            }
+        }
+
         /* ─────────── Load ─────────── */
         async function loadData() {
+            showProductsLoading();
             try {
                 // Prefer hierarchical base_products endpoint when available
                 let groups = null;
+                let lastError = null;
                 try {
                     const baseRes = await fetch(`${ApiConfig.baseUrl}/admin/products.php?action=base_products`, {
                         headers: ApiConfig.getHeaders()
                     });
-                    const baseJson = await baseRes.json();
-                    if (baseJson.success && Array.isArray(baseJson.data?.base_products)) {
-                        // Only show bases that still have SKUs (or always show all bases)
-                        groups = baseJson.data.base_products
-                            .filter(bp => Array.isArray(bp.skus) && bp.skus.length > 0)
-                            .map(bp => ({
+                    const text = await baseRes.text();
+                    let baseJson = null;
+                    try {
+                        baseJson = text ? JSON.parse(text) : null;
+                    } catch (parseErr) {
+                        console.error('base_products non-JSON response', text?.slice?.(0, 300));
+                        lastError = new Error(
+                            baseRes.ok
+                                ? 'Invalid JSON from base_products API (PHP warning/notice may have corrupted the response)'
+                                : `base_products HTTP ${baseRes.status}: ${text?.slice?.(0, 120) || 'empty body'}`
+                        );
+                    }
+                    if (baseJson && baseJson.success && Array.isArray(baseJson.data?.base_products)) {
+                        // Show all bases; empty SKU lists render as empty detail rows
+                        groups = baseJson.data.base_products.map(bp => ({
                             key: `id:${bp.id}`,
                             base_product_id: Number(bp.id),
-                            name: bp.name,
-                            category: bp.category,
+                            name: bp.name || 'Unnamed',
+                            category: bp.category || '',
                             milk_type_name: bp.milk_type_name,
                             milk_type_id: bp.milk_type_id,
                             shelf_life_days: bp.default_shelf_life_days || bp.shelf_life_days || 7,
                             storage_temp_min: bp.storage_temp_min,
                             storage_temp_max: bp.storage_temp_max,
                             description: bp.description,
-                            skus: (bp.skus || []).slice().sort(
-                                (a, b) => (parseFloat(a.unit_size) || 0) - (parseFloat(b.unit_size) || 0)
-                            )
+                            recipe_count: Number(bp.recipe_count) || 0,
+                            has_active_recipe: bp.has_active_recipe !== false && (Number(bp.recipe_count) || 0) > 0,
+                            is_orphan: bp.is_orphan === true || (Number(bp.recipe_count) || 0) === 0,
+                            skus: Array.isArray(bp.skus)
+                                ? bp.skus.slice().sort(
+                                    (a, b) => (parseFloat(a.unit_size) || 0) - (parseFloat(b.unit_size) || 0)
+                                )
+                                : []
                         }));
-                        allProducts = groups.flatMap(g => g.skus.map(s => ({
+                        allProducts = groups.flatMap(g => (g.skus || []).map(s => ({
                             ...s,
                             base_product_id: g.base_product_id,
                             base_product_name: g.name,
@@ -941,34 +951,145 @@
                             storage_temp_max: s.storage_temp_max ?? g.storage_temp_max,
                             current_stock: s.current_stock
                         })));
+                        // Orphan warning banner (base products with no active recipe)
+                        renderOrphanRecipeBanner(
+                            baseJson.data.orphan_summary
+                            || buildOrphanSummaryFromGroups(groups)
+                        );
+                    } else if (baseJson && baseJson.success === false) {
+                        lastError = new Error(baseJson.message || 'base_products API returned success=false');
+                    } else if (!baseJson && !lastError) {
+                        lastError = new Error(`base_products HTTP ${baseRes.status}`);
                     }
-                } catch (_) { /* fall through */ }
-
-                if (!groups) {
-                    const response = await AdminService.getProducts({ limit: 200 });
-                    if (!response.success) throw new Error(response.message || 'Load failed');
-                    allProducts = response.data?.products || [];
-                    groups = groupProducts(allProducts);
+                } catch (e) {
+                    console.warn('base_products load failed, falling back to flat products list', e);
+                    lastError = e;
                 }
 
-                productGroups = groups;
+                if (!groups) {
+                    try {
+                        const response = await AdminService.getProducts({ limit: 200 });
+                        if (!response || response.success === false) {
+                            throw new Error(response?.message || lastError?.message || 'Load failed');
+                        }
+                        allProducts = response.data?.products || response.data || [];
+                        if (!Array.isArray(allProducts)) {
+                            allProducts = [];
+                        }
+                        groups = groupProducts(allProducts);
+                    } catch (fallbackErr) {
+                        console.error('Flat products fallback failed', fallbackErr);
+                        throw new Error(
+                            fallbackErr?.message
+                            || lastError?.message
+                            || 'Failed to load product catalog'
+                        );
+                    }
+                }
+
+                productGroups = groups || [];
                 filteredGroups = [...productGroups];
+                // Always recompute orphan banner from live group data
+                renderOrphanRecipeBanner(buildOrphanSummaryFromGroups(productGroups));
                 updateStats();
-                renderGroups();
+                try {
+                    renderGroups();
+                } catch (renderErr) {
+                    console.error('renderGroups failed', renderErr);
+                    throw new Error('Loaded data but failed to render table: ' + (renderErr.message || renderErr));
+                }
             } catch (err) {
                 console.error(err);
-                showToast('Failed to load products', 'error');
+                productGroups = [];
+                filteredGroups = [];
+                showProductsLoadError(err?.message || 'Failed to load products');
             }
         }
 
-        /* ─────────── Stats ─────────── */
+        const ORPHAN_BANNER_DISMISS_KEY = 'hf_orphan_recipe_banner_dismissed';
+
+        function buildOrphanSummaryFromGroups(groups) {
+            const orphans = (groups || []).filter(g =>
+                g.is_orphan === true || !g.has_active_recipe || !(Number(g.recipe_count) > 0)
+            ).map(g => ({
+                id: g.base_product_id,
+                name: g.name,
+                category: g.category,
+                sku_count: (g.skus || []).length,
+                recipe_count: Number(g.recipe_count) || 0
+            }));
+            return {
+                count: orphans.length,
+                products: orphans,
+                message: orphans.length > 0
+                    ? `Warning: ${orphans.length} product${orphans.length === 1 ? '' : 's'} do not have an active recipe and cannot be manufactured.`
+                    : null
+            };
+        }
+
+        function renderOrphanRecipeBanner(summary) {
+            const banner = document.getElementById('orphanRecipeBanner');
+            const textEl = document.getElementById('orphanRecipeBannerText');
+            const namesEl = document.getElementById('orphanRecipeBannerNames');
+            if (!banner || !textEl) return;
+
+            const count = Number(summary?.count) || 0;
+            if (count <= 0) {
+                banner.classList.add('hidden');
+                delete banner.dataset.fromApi;
+                return;
+            }
+
+            // Session-dismissible (reappears next browser session / new login tab)
+            try {
+                if (sessionStorage.getItem(ORPHAN_BANNER_DISMISS_KEY) === '1') {
+                    banner.classList.add('hidden');
+                    banner.dataset.fromApi = '1';
+                    return;
+                }
+            } catch (_) { /* private mode */ }
+
+            const msg = summary.message
+                || `Warning: ${count} product${count === 1 ? '' : 's'} do not have an active recipe and cannot be manufactured.`;
+            textEl.textContent = msg;
+
+            const names = (summary.products || []).map(p => p.name).filter(Boolean);
+            if (namesEl) {
+                namesEl.textContent = names.length
+                    ? names.slice(0, 8).join(' · ') + (names.length > 8 ? ` · +${names.length - 8} more` : '')
+                    : '';
+            }
+
+            banner.classList.remove('hidden');
+            banner.dataset.fromApi = '1';
+        }
+
+        function dismissOrphanRecipeBanner() {
+            const banner = document.getElementById('orphanRecipeBanner');
+            if (banner) banner.classList.add('hidden');
+            try {
+                sessionStorage.setItem(ORPHAN_BANNER_DISMISS_KEY, '1');
+            } catch (_) { /* ignore */ }
+        }
+
+        /* ─────────── List counts (toolbar only — KPIs stay on dashboard) ─────────── */
         function updateStats() {
-            const categories = new Set(productGroups.map(g => g.category).filter(Boolean));
             const skus = productGroups.flatMap(g => g.skus || []);
-            document.getElementById('statBaseProducts').textContent = productGroups.length;
-            document.getElementById('statTotalSKUs').textContent = skus.length;
-            document.getElementById('statCategories').textContent = categories.size;
-            document.getElementById('statLowStock').textContent = skus.filter(p => (parseFloat(p.current_stock) || 0) < 50).length;
+            const el = document.getElementById('listCountLabel');
+            if (el) {
+                el.textContent = `${productGroups.length} bases / ${skus.length} SKUs`;
+            }
+        }
+
+        const expandedGroups = new Set();
+
+        function toggleGroupExpand(key, ev) {
+            if (ev && (ev.target.closest('button') || ev.target.closest('a') || ev.target.closest('.dropdown'))) {
+                return;
+            }
+            if (expandedGroups.has(key)) expandedGroups.delete(key);
+            else expandedGroups.add(key);
+            renderGroups();
         }
 
         /* ─────────── Filter ─────────── */
@@ -989,65 +1110,80 @@
                 const matchStatus = status === '' || g.skus.some(s => String(s.is_active) === status);
                 return matchCat && matchSearch && matchStatus;
             });
+            const skus = filteredGroups.flatMap(g => g.skus || []);
+            const el = document.getElementById('listCountLabel');
+            if (el) el.textContent = `${filteredGroups.length} bases / ${skus.length} SKUs`;
             renderGroups();
         }
 
         /**
-         * Master–detail cards: one card per base product, nested SKU table.
+         * ERP master–detail table: one row per base product; expand to SKU children.
+         * Scalable to 100+ bases without card vertical stack.
          */
         function renderGroups() {
             const container = document.getElementById('productsContainer');
 
             if (filteredGroups.length === 0) {
                 container.innerHTML = `
-                    <div class="text-center py-16 bg-base-100 rounded-2xl border border-base-300">
-                        <i class="fas fa-box-open text-5xl text-base-content/15 mb-4"></i>
-                        <p class="text-[#6B7280] text-base">No products found</p>
-                        <button class="btn btn-primary btn-sm mt-4" onclick="openAddModal()">
-                            <i class="fas fa-plus mr-2"></i>Add First Product
+                    <div class="text-center py-12">
+                        <i class="fas fa-box-open text-3xl text-base-content/15 mb-2"></i>
+                        <p class="text-sm text-base-content/50">No products match filters</p>
+                        <button class="btn btn-primary btn-xs mt-3" onclick="openAddModal()">
+                            <i class="fas fa-plus mr-1"></i>New base product
                         </button>
                     </div>`;
                 return;
             }
 
-            container.innerHTML = filteredGroups.map(g => {
-                const color = CATEGORY_COLORS[g.category] || 'primary';
-                const icon = CATEGORY_ICONS[g.category] || 'fa-box';
+            const body = filteredGroups.map(g => {
                 const label = CATEGORY_LABELS[g.category] || g.category;
                 const safeName = escapeJs(g.name);
                 const safeCat = escapeJs(g.category);
-                const groupKey = escapeJs(g.key || g.name);
+                const groupKey = g.key || g.name;
+                const safeKey = escapeJs(groupKey);
                 const activeCount = g.skus.filter(s => Number(s.is_active) === 1).length;
                 const skuCount = g.skus.length;
+                const isOpen = expandedGroups.has(groupKey);
+                // Low stock: only count SKUs with known stock below threshold (not null/missing → not all rows)
+                const LOW_STOCK_THRESHOLD = 50;
+                const lowStock = g.skus.filter(s => {
+                    const stock = parseFloat(s.current_stock);
+                    return Number.isFinite(stock) && stock >= 0 && stock < LOW_STOCK_THRESHOLD;
+                }).length;
+                const milkLabel = g.milk_type_name
+                    || (g.skus.find(s => s.milk_type_name)?.milk_type_name)
+                    || inferMilkType(g.name, g.category);
 
                 const skuRows = g.skus.length === 0
-                    ? `<tr><td colspan="5" class="empty-skus">No packaging sizes yet — use ⋮ → Add size</td></tr>`
+                    ? `<tr><td colspan="6" class="empty-skus">No SKUs — add a packaging size</td></tr>`
                     : g.skus.map(s => {
-                        const sizeLabel = formatSize(s);
-                        const sizeText = sizeLabel || 'No size';
+                        const sizeText = formatSize(s) || '—';
                         const price = formatCurrency(s.selling_price || s.unit_price);
                         const isActive = Number(s.is_active) === 1;
                         const safeSize = escapeJs(sizeText);
+                        const stock = parseFloat(s.current_stock);
+                        const stockDisp = Number.isFinite(stock) ? stock : '—';
                         return `
                         <tr>
                             <td>
-                                <div class="sku-size">${escapeHtml(sizeText)}</div>
+                                <div class="font-semibold text-xs">${escapeHtml(sizeText)}</div>
                                 <div class="sku-code">${escapeHtml(s.product_code || '—')}</div>
                             </td>
-                            <td class="sku-flavor">${escapeHtml(s.variant || '—')}</td>
-                            <td class="sku-price cat-${color}">${price}</td>
+                            <td class="text-base-content/60">${escapeHtml(s.variant || '—')}</td>
+                            <td class="sku-price num">${price}</td>
+                            <td class="num meta-muted">${escapeHtml(String(stockDisp))}</td>
                             <td>
-                                <span class="status-dot ${isActive ? 'is-active' : 'is-inactive'}">
-                                    ${isActive ? 'Active' : 'Inactive'}
+                                <span class="status-pill ${isActive ? 'is-active' : 'is-inactive'}">
+                                    ${isActive ? 'Active' : 'Off'}
                                 </span>
                             </td>
-                            <td class="col-end">
+                            <td class="text-right">
                                 <div class="sku-actions">
-                                    <button type="button" title="Edit size" onclick="editSku(${s.id})">
+                                    <button type="button" title="Edit SKU" onclick="event.stopPropagation(); editSku(${s.id})">
                                         <i class="fas fa-pen"></i>
                                     </button>
-                                    <button type="button" class="danger" title="Delete size"
-                                        onclick="deleteSku(${s.id}, '${safeName} ${safeSize}')">
+                                    <button type="button" class="danger" title="Delete SKU"
+                                        onclick="event.stopPropagation(); deleteSku(${s.id}, '${safeName} ${safeSize}')">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </div>
@@ -1055,67 +1191,91 @@
                         </tr>`;
                     }).join('');
 
-                return `
-                <article class="product-card" data-group-key="${escapeHtml(g.key || g.name)}">
-                    <header class="product-card__header">
-                        <div class="product-card__icon cat-${color}">
-                            <i class="fas ${icon}"></i>
-                        </div>
-                        <div class="min-w-0 flex-1">
-                            <h2 class="product-card__title">${escapeHtml(g.name)}</h2>
-                            <div class="product-card__meta">
-                                <span class="cat-pill">${escapeHtml(label)}</span>
-                                ${g.milk_type_name ? `<span>${escapeHtml(g.milk_type_name)}</span>` : ''}
-                                <span class="meta-dot" aria-hidden="true"></span>
-                                <span>${g.shelf_life_days || 7}d shelf</span>
-                                <span class="meta-dot" aria-hidden="true"></span>
-                                <span>${g.storage_temp_min ?? 2}–${g.storage_temp_max ?? 6}°C</span>
-                                <span class="meta-dot" aria-hidden="true"></span>
-                                <span>${skuCount} size${skuCount === 1 ? '' : 's'}${activeCount < skuCount ? ` · ${activeCount} active` : ''}</span>
-                            </div>
-                        </div>
-                        <div class="product-card__actions">
-                            <button type="button" class="btn-icon text-primary" title="Add packaging size"
-                                onclick="openAddSkuModal('${safeName}', '${safeCat}', '${groupKey}')">
-                                <i class="fas fa-plus"></i>
-                            </button>
-                            <div class="dropdown dropdown-end">
-                                <button type="button" tabindex="0" class="btn-icon" title="More actions" aria-label="More">
-                                    <i class="fas fa-ellipsis-vertical"></i>
+                const detail = isOpen ? `
+                <tr class="erp-detail-row">
+                    <td colspan="7">
+                        <div class="erp-detail-panel">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <p class="erp-detail-label mb-0">Packaging SKUs · ${escapeHtml(g.name)}</p>
+                                <button type="button" class="btn btn-ghost btn-xs"
+                                    onclick="event.stopPropagation(); openAddSkuModal('${safeName}', '${safeCat}', '${safeKey}')">
+                                    <i class="fas fa-plus mr-1"></i>Add size
                                 </button>
-                                <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-48 p-2 z-30">
-                                    <li>
-                                        <a onclick="editBaseProduct('${safeName}', '${safeCat}', '${groupKey}')">
-                                            <i class="fas fa-pen w-4 text-[#9CA3AF]"></i>Edit base product
-                                        </a>
-                                    </li>
-                                    <li>
-                                        <a onclick="openAddSkuModal('${safeName}', '${safeCat}', '${groupKey}')">
-                                            <i class="fas fa-plus w-4 text-[#9CA3AF]"></i>Add packaging size
-                                        </a>
-                                    </li>
-                                </ul>
                             </div>
+                            <div class="overflow-x-auto mt-1">
+                                <table class="erp-sku">
+                                    <thead>
+                                        <tr>
+                                            <th>Size / code</th>
+                                            <th>Variant</th>
+                                            <th>Price</th>
+                                            <th>Stock</th>
+                                            <th>Status</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>${skuRows}</tbody>
+                                </table>
+                            </div>
+                            <p class="meta-muted mt-1.5">
+                                Shelf ${g.shelf_life_days || 7}d · storage ${g.storage_temp_min ?? 2}–${g.storage_temp_max ?? 6}°C
+                                ${g.milk_type_name ? ` · ${escapeHtml(g.milk_type_name)}` : ''}
+                            </p>
                         </div>
-                    </header>
-                    <div class="product-card__body">
-                        <div class="overflow-x-auto">
-                            <table class="sku-table">
-                                <thead>
-                                    <tr>
-                                        <th>Size / code</th>
-                                        <th>Flavor</th>
-                                        <th>Price</th>
-                                        <th>Status</th>
-                                        <th class="col-end"> </th>
-                                    </tr>
-                                </thead>
-                                <tbody>${skuRows}</tbody>
-                            </table>
+                    </td>
+                </tr>` : '';
+
+                return `
+                <tr class="master-row ${isOpen ? 'is-open' : ''}"
+                    data-group-key="${escapeHtml(groupKey)}"
+                    onclick="toggleGroupExpand('${safeKey}', event)">
+                    <td class="col-expand">
+                        <i class="fas fa-chevron-${isOpen ? 'down' : 'right'} text-[0.65rem]"></i>
+                    </td>
+                    <td>
+                        <div class="name-cell flex items-center gap-1.5 flex-wrap">
+                            ${escapeHtml(g.name)}
+                            ${g.is_orphan || !(Number(g.recipe_count) > 0)
+                                ? '<span class="badge badge-warning badge-xs" title="No active recipe — cannot manufacture">No recipe</span>'
+                                : ''}
                         </div>
-                    </div>
-                </article>`;
+                        <div class="meta-muted">${g.base_product_id ? `ID ${g.base_product_id}` : (g.category || 'product')}</div>
+                    </td>
+                    <td><span class="cat-pill">${escapeHtml(label)}</span></td>
+                    <td class="text-sm text-base-content/80">${escapeHtml(milkLabel)}</td>
+                    <td class="num">${skuCount}${activeCount < skuCount ? ` <span class="meta-muted">(${activeCount} on)</span>` : ''}</td>
+                    <td class="num ${lowStock > 0 ? 'text-warning font-bold' : 'meta-muted'}">${lowStock > 0 ? lowStock : '0'}</td>
+                    <td class="col-actions" onclick="event.stopPropagation()">
+                        <button type="button" class="btn btn-ghost btn-xs" title="Edit base"
+                            onclick="editBaseProduct('${safeName}', '${safeCat}', '${safeKey}')">
+                            <i class="fas fa-pen"></i>
+                        </button>
+                        <button type="button" class="btn btn-ghost btn-xs text-primary" title="Add SKU"
+                            onclick="openAddSkuModal('${safeName}', '${safeCat}', '${safeKey}')">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                    </td>
+                </tr>
+                ${detail}`;
             }).join('');
+
+            container.innerHTML = `
+                <div class="overflow-x-auto max-h-[calc(100vh-12rem)] overflow-y-auto">
+                    <table class="erp-master">
+                        <thead>
+                            <tr>
+                                <th class="col-expand"></th>
+                                <th>Base product</th>
+                                <th>Category</th>
+                                <th>Milk</th>
+                                <th>SKUs</th>
+                                <th>Low stock</th>
+                                <th class="col-actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>${body}</tbody>
+                    </table>
+                </div>`;
         }
 
         function findGroup(name, category, groupKey) {
@@ -1125,6 +1285,20 @@
             }
             return productGroups.find(g => g.name === name && g.category === category)
                 || productGroups.find(g => g.name === name);
+        }
+
+        /** Manufacturing default milk base when API milk_type is blank. */
+        function inferMilkType(name, category) {
+            const n = String(name || '').toLowerCase();
+            const c = String(category || '').toLowerCase();
+            if (n.includes('kesong') || c === 'cheese') return 'Carabao Milk';
+            if (
+                n.includes('fresh milk') || n.includes('chocolate milk') || n.includes('fresh cream')
+                || n.includes('butter') || n.includes('yogurt') || n.includes('milkbar')
+                || n.includes('yippe') || c === 'pasteurized_milk' || c === 'flavored_milk'
+                || c === 'cream' || c === 'butter' || c === 'yogurt'
+            ) return 'Cow Milk';
+            return 'Cow Milk';
         }
 
         function escapeJs(s) { return (s || '').replace(/'/g, "\\'").replace(/"/g, '\\"'); }
@@ -1137,128 +1311,590 @@
                 .replace(/'/g, '&#39;');
         }
 
+        /**
+         * Toggle modal UI between full edit and add-SKU-only.
+         * @param {'create'|'edit'|'add_sku'} action
+         * @param {{ productName?: string }} meta
+         */
+        function setBaseModalMode(action, meta = {}) {
+            const fields = document.getElementById('base-product-fields');
+            const banner = document.getElementById('addSkuContextBanner');
+            const title = document.getElementById('baseModalTitle');
+            const subtitle = document.getElementById('baseModalSubtitle');
+            const saveLabel = document.getElementById('baseModalSaveLabel');
+            const skuTitle = document.getElementById('skuSectionTitle');
+            const skuHelp = document.getElementById('skuSectionHelp');
+            const actionInput = document.getElementById('baseModalAction');
+            const nameChip = document.getElementById('addSkuContextName');
+            const productName = meta.productName || '';
+
+            if (actionInput) actionInput.value = action;
+
+            // Base fields: name/category stay required in HTML — toggle required when hidden
+            // so add_sku mode can submit without validating hidden controls.
+            const requiredWhenVisible = ['base_product_name', 'base_category'];
+
+            if (action === 'add_sku') {
+                if (fields) fields.classList.add('hidden');
+                if (banner) banner.classList.remove('hidden');
+                if (nameChip) nameChip.textContent = productName || '—';
+                if (title) title.textContent = 'Add New SKU';
+                if (subtitle) {
+                    subtitle.textContent = 'Create a packaging size for this product. Base liquid settings are not shown here.';
+                }
+                if (saveLabel) saveLabel.textContent = 'Save New Size';
+                if (skuTitle) skuTitle.textContent = 'New packaging size';
+                if (skuHelp) {
+                    skuHelp.textContent = 'Enter the size, unit, and selling price for the new SKU. Existing sizes are listed above for reference (read-only context).';
+                }
+                requiredWhenVisible.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.removeAttribute('required');
+                });
+            } else {
+                if (fields) fields.classList.remove('hidden');
+                if (banner) banner.classList.add('hidden');
+                if (title) {
+                    title.textContent = action === 'create' ? 'Add Base Product' : 'Edit Base Product';
+                }
+                if (subtitle) {
+                    subtitle.textContent = action === 'create'
+                        ? 'Define the universal properties of the liquid/product. Add packaging sizes below.'
+                        : 'Update shared base properties and packaging sizes for this product.';
+                }
+                if (saveLabel) saveLabel.textContent = action === 'create' ? 'Save Product' : 'Save Changes';
+                if (skuTitle) skuTitle.textContent = 'Sizes / Packaging (SKUs)';
+                if (skuHelp) {
+                    skuHelp.textContent = 'Add every size you sell this product in. Each size becomes a separate SKU with its own product code and price.';
+                }
+                requiredWhenVisible.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.setAttribute('required', 'required');
+                });
+            }
+        }
+
         /* ─────────── Open Add Base Product Modal ─────────── */
         function openAddModal() {
-            document.getElementById('baseModalTitle').textContent = 'Add Base Product';
             document.getElementById('baseProductForm').reset();
             document.getElementById('baseRecordId').value = '';
+            document.getElementById('baseOriginalKey').value = '';
+            document.getElementById('baseProductId').value = '';
             document.getElementById('base_is_active').checked = true;
+            ['base_product_name', 'base_category', 'base_milk_type_id'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.removeAttribute('disabled');
+            });
             document.getElementById('skuList').innerHTML = '';
             skuRowCounter = 0;
             addSkuRow(); // start with one empty SKU row
+            setBaseModalMode('create');
             document.getElementById('baseProductModal').showModal();
         }
 
-        /* ─────────── Edit Base Product (shared props from first SKU) ─────────── */
-        function editBaseProduct(productName, category, groupKey) {
+        /* ─────────── Edit Base Product + existing SKUs ─────────── */
+        /**
+         * @param {string} productName
+         * @param {string} category
+         * @param {string} groupKey
+         * @param {'edit'|'add_sku'} action - pencil vs + Add size
+         */
+        function editBaseProduct(productName, category, groupKey, action = 'edit') {
             const group = findGroup(productName, category, groupKey);
             if (!group) return;
             const firstSku = group.skus[0];
+            const mode = action === 'add_sku' ? 'add_sku' : 'edit';
 
-            document.getElementById('baseModalTitle').textContent = 'Edit Base Product';
             document.getElementById('baseRecordId').value = 'EDIT_BASE';
             document.getElementById('baseOriginalName').value = group.name;
             document.getElementById('baseOriginalCategory').value = group.category;
+            document.getElementById('baseOriginalKey').value = group.key || groupKey || '';
+            document.getElementById('baseProductId').value = group.base_product_id || '';
 
+            // Always populate base fields (even if hidden in add_sku — used on save)
             document.getElementById('base_product_name').value = group.name;
             document.getElementById('base_category').value = group.category;
             document.getElementById('base_milk_type_id').value = firstSku?.milk_type_id || group.milk_type_id || '';
-            document.getElementById('base_shelf_life_days').value = group.shelf_life_days || 7;
-            document.getElementById('base_storage_temp_min').value = group.storage_temp_min ?? 2;
-            document.getElementById('base_storage_temp_max').value = group.storage_temp_max ?? 6;
-            document.getElementById('base_description').value = group.description || '';
+            document.getElementById('base_shelf_life_days').value = group.shelf_life_days || firstSku?.shelf_life_days || 7;
+            document.getElementById('base_storage_temp_min').value = group.storage_temp_min ?? firstSku?.storage_temp_min ?? 2;
+            document.getElementById('base_storage_temp_max').value = group.storage_temp_max ?? firstSku?.storage_temp_max ?? 6;
+            document.getElementById('base_description').value = group.description || firstSku?.description || '';
             document.getElementById('base_is_active').checked = firstSku ? Number(firstSku.is_active) === 1 : true;
 
-            document.getElementById('skuList').innerHTML = `
-                <div class="alert alert-info py-2 text-sm">
-                    <i class="fas fa-info-circle"></i>
-                    <span>Updates shared base properties for all <strong>${group.skus.length}</strong> size(s). Edit prices/sizes with the row pen icons.</span>
-                </div>`;
-
-            document.getElementById('baseProductModal').showModal();
-        }
-
-        /* ─────────── Open Add SKU Modal (adding new size to existing product) ─────────── */
-        function openAddSkuModal(productName, category, groupKey) {
-            const group = findGroup(productName, category, groupKey);
-            if (!group) return;
-            const firstSku = group.skus[0];
-
-            document.getElementById('baseModalTitle').textContent = `Add size — ${group.name}`;
-            document.getElementById('baseProductForm').reset();
-            document.getElementById('baseRecordId').value = 'ADD_SKU';
-            document.getElementById('base_product_name').value = group.name;
-            document.getElementById('base_category').value = group.category;
-            document.getElementById('base_milk_type_id').value = firstSku?.milk_type_id || group.milk_type_id || '';
-            document.getElementById('base_shelf_life_days').value = group.shelf_life_days || 7;
-            document.getElementById('base_storage_temp_min').value = group.storage_temp_min ?? 2;
-            document.getElementById('base_storage_temp_max').value = group.storage_temp_max ?? 6;
-            document.getElementById('base_description').value = group.description || '';
-            document.getElementById('base_is_active').checked = true;
-
             ['base_product_name', 'base_category', 'base_milk_type_id'].forEach(id => {
-                document.getElementById(id).setAttribute('disabled', true);
+                const el = document.getElementById(id);
+                if (el) el.removeAttribute('disabled');
             });
 
+            // Populate existing SKUs
             document.getElementById('skuList').innerHTML = '';
             skuRowCounter = 0;
-            addSkuRow();
+            const skus = Array.isArray(group.skus) ? group.skus : [];
+            if (mode === 'add_sku') {
+                // Existing sizes as read-only context; only the new blank row is editable
+                skus.forEach(sku => addSkuRow(sku));
+                lockExistingSkuRowsAsContext();
+                addSkuRow({ focus: true });
+            } else if (skus.length === 0) {
+                addSkuRow();
+            } else {
+                skus.forEach(sku => addSkuRow(sku));
+            }
+
+            setBaseModalMode(mode, { productName: group.name });
             document.getElementById('baseProductModal').showModal();
+
+            if (mode === 'add_sku') {
+                requestAnimationFrame(() => {
+                    setTimeout(() => focusSkuSection(true), 50);
+                });
+            }
         }
 
-        /* ─────────── SKU Row Builder ─────────── */
-        function addSkuRow() {
+        /** In add_sku mode: existing rows are context only (no edit/delete). */
+        function lockExistingSkuRowsAsContext() {
+            document.querySelectorAll('#skuList .sku-row[data-existing="1"]').forEach(row => {
+                row.classList.add('opacity-80');
+                row.querySelectorAll('.sku-field').forEach(field => {
+                    field.disabled = true;
+                    field.removeAttribute('required');
+                });
+                const removeBtn = row.querySelector('.sku-remove-btn');
+                if (removeBtn) removeBtn.classList.add('hidden');
+                const badge = row.querySelector('.sku-status-badge');
+                if (badge) {
+                    badge.textContent = 'current';
+                    badge.classList.add('badge-ghost');
+                }
+            });
+        }
+
+        /**
+         * Table "+ Add size" — SKU-only view (base fields hidden).
+         */
+        function openAddSkuModal(productName, category, groupKey) {
+            editBaseProduct(productName, category, groupKey, 'add_sku');
+        }
+
+        /** Scroll modal SKU block into view; optionally focus the last (newest) size input. */
+        function focusSkuSection(focusNewestRow) {
+            const section = document.getElementById('skuSection');
+            const modalBox = document.querySelector('#baseProductModal .modal-box');
+            if (section) {
+                section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+            if (modalBox && section) {
+                const top = section.offsetTop - 12;
+                if (typeof modalBox.scrollTo === 'function') {
+                    modalBox.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+                } else {
+                    modalBox.scrollTop = Math.max(0, top);
+                }
+            }
+            if (focusNewestRow) {
+                const rows = document.querySelectorAll('#skuList .sku-row');
+                const last = rows[rows.length - 1];
+                if (!last) return;
+                last.classList.add('ring-2', 'ring-primary/40');
+                setTimeout(() => last.classList.remove('ring-2', 'ring-primary/40'), 1600);
+                const sizeInput = last.querySelector('input[name^="sku_unit_size_"]');
+                if (sizeInput && !sizeInput.disabled) {
+                    sizeInput.focus();
+                    sizeInput.select();
+                }
+            }
+        }
+
+        function setSelectValue(selectEl, value, fallback) {
+            if (!selectEl) return;
+            // Do not mix ?? with || without parentheses (SyntaxError: Unexpected token '||')
+            const firstOptionValue = (selectEl.options && selectEl.options[0])
+                ? selectEl.options[0].value
+                : '';
+            const resolvedFallback = (fallback !== undefined && fallback !== null && fallback !== '')
+                ? fallback
+                : firstOptionValue;
+            const v = (value !== undefined && value !== null && value !== '')
+                ? String(value)
+                : String(resolvedFallback);
+            const has = Array.from(selectEl.options || []).some(o => o.value === v);
+            selectEl.value = has ? v : String(resolvedFallback);
+        }
+
+        /** Block minus / scientific notation keys on numeric SKU fields. */
+        function blockNegativeNumberKey(event) {
+            const blocked = ['-', '+', 'e', 'E'];
+            if (blocked.includes(event.key)) {
+                event.preventDefault();
+                return false;
+            }
+            return true;
+        }
+
+        function clearSkuFieldError(inputEl) {
+            if (!inputEl) return;
+            inputEl.classList.remove('input-error');
+            const row = inputEl.closest('.sku-row') || inputEl.closest('.form-control');
+            if (!row) return;
+            if (inputEl.classList.contains('sku-unit-size') || inputEl.id === 'sku_edit_unit_size') {
+                const err = row.querySelector('.sku-size-error') || document.getElementById('sku_edit_size_error');
+                if (err) err.classList.add('hidden');
+            }
+            if (inputEl.classList.contains('sku-selling-price') || inputEl.id === 'sku_edit_selling_price') {
+                const err = row.querySelector('.sku-price-error') || document.getElementById('sku_edit_price_error');
+                if (err) err.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Pre-submit guard: size must be >= 1, price must be >= 0.01.
+         * Returns false if any active SKU row fails validation.
+         */
+        function validateSkuNumericFields() {
+            const MIN_SIZE = 1;
+            const MIN_PRICE = 0.01;
+            let ok = true;
+            let firstBad = null;
+
+            document.querySelectorAll('#skuList .sku-row').forEach(row => {
+                if (row.dataset.softDeleted === '1') return;
+                // Skip locked context rows in add_sku mode
+                const sizeInput = row.querySelector('.sku-unit-size, [name^="sku_unit_size_"]');
+                const priceInput = row.querySelector('.sku-selling-price, [name^="sku_selling_price_"]');
+                if (!sizeInput || sizeInput.disabled) return;
+
+                const size = parseFloat(sizeInput.value);
+                const price = parseFloat(priceInput?.value);
+
+                const sizeErr = row.querySelector('.sku-size-error');
+                const priceErr = row.querySelector('.sku-price-error');
+
+                const sizeBad = !Number.isFinite(size) || size < MIN_SIZE;
+                const priceBad = !Number.isFinite(price) || price < MIN_PRICE;
+
+                if (sizeBad) {
+                    ok = false;
+                    sizeInput.classList.add('input-error');
+                    if (sizeErr) sizeErr.classList.remove('hidden');
+                    if (!firstBad) firstBad = sizeInput;
+                } else {
+                    sizeInput.classList.remove('input-error');
+                    if (sizeErr) sizeErr.classList.add('hidden');
+                }
+
+                if (priceBad) {
+                    ok = false;
+                    if (priceInput) priceInput.classList.add('input-error');
+                    if (priceErr) priceErr.classList.remove('hidden');
+                    if (!firstBad && priceInput) firstBad = priceInput;
+                } else if (priceInput) {
+                    priceInput.classList.remove('input-error');
+                    if (priceErr) priceErr.classList.add('hidden');
+                }
+            });
+
+            if (!ok) {
+                const msg = 'Price and Size must be greater than zero.';
+                if (typeof showToast === 'function') showToast(msg, 'error');
+                if (firstBad) {
+                    firstBad.focus();
+                    firstBad.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            }
+            return ok;
+        }
+
+        /** Validation for the single-SKU edit modal. */
+        function validateSingleSkuEditFields() {
+            const MIN_SIZE = 1;
+            const MIN_PRICE = 0.01;
+            const sizeInput = document.getElementById('sku_edit_unit_size');
+            const priceInput = document.getElementById('sku_edit_selling_price');
+            const sizeErr = document.getElementById('sku_edit_size_error');
+            const priceErr = document.getElementById('sku_edit_price_error');
+            const size = parseFloat(sizeInput?.value);
+            const price = parseFloat(priceInput?.value);
+            let ok = true;
+
+            if (!Number.isFinite(size) || size < MIN_SIZE) {
+                ok = false;
+                sizeInput?.classList.add('input-error');
+                sizeErr?.classList.remove('hidden');
+            } else {
+                sizeInput?.classList.remove('input-error');
+                sizeErr?.classList.add('hidden');
+            }
+            if (!Number.isFinite(price) || price < MIN_PRICE) {
+                ok = false;
+                priceInput?.classList.add('input-error');
+                priceErr?.classList.remove('hidden');
+            } else {
+                priceInput?.classList.remove('input-error');
+                priceErr?.classList.add('hidden');
+            }
+            if (!ok) {
+                const msg = 'Price and Size must be greater than zero.';
+                if (typeof showToast === 'function') showToast(msg, 'error');
+            }
+            return ok;
+        }
+
+        /* ─────────── SKU Row Builder (empty or prefilled existing SKU) ─────────── */
+        /**
+         * @param {object|null} sku - existing SKU data, or options { focus: true } for a blank row
+         */
+        function addSkuRow(sku = null) {
+            const opts = sku && !sku.id && (sku.focus === true || sku.focus === false) && sku.unit_size == null
+                ? sku
+                : null;
+            const skuData = opts ? null : sku;
+            const shouldFocus = !!(opts && opts.focus) || !!(skuData && skuData._focus);
+
             const idx = skuRowCounter++;
             const div = document.createElement('div');
-            div.className = 'sku-row bg-base-200 rounded-xl p-3 grid grid-cols-2 md:grid-cols-4 gap-2 relative';
+            // Single horizontal row on md+: 4 equal columns, items aligned to bottom labels
+            div.className = 'sku-row bg-base-200 rounded-xl p-3 space-y-2 relative';
             div.id = `skuRow_${idx}`;
+            const productId = skuData && skuData.id ? Number(skuData.id) : '';
+            const isExisting = productId > 0;
+            const codeLabel = skuData && skuData.product_code
+                ? `<span class="text-[10px] text-base-content/50 font-mono sku-code-label">${escapeHtml(skuData.product_code)}</span>`
+                : (isExisting
+                    ? `<span class="text-[10px] text-base-content/40 sku-code-label">SKU #${productId}</span>`
+                    : '<span class="text-[10px] text-primary sku-code-label">New size</span>');
+
+            div.dataset.existing = isExisting ? '1' : '0';
+            div.dataset.softDeleted = '0';
+
             div.innerHTML = `
-                <div class="form-control">
-                    <label class="label py-0"><span class="label-text text-xs">Variant/Flavor</span></label>
-                    <input type="text" name="sku_variant_${idx}" class="input input-sm input-bordered" placeholder="e.g., Chocolate" />
-                </div>
-                <div class="form-control">
-                    <label class="label py-0"><span class="label-text text-xs">Size <span class="text-error">*</span></span></label>
-                    <div class="flex gap-1">
-                        <input type="number" name="sku_unit_size_${idx}" class="input input-sm input-bordered w-20" placeholder="1000" required />
-                        <select name="sku_unit_measure_${idx}" class="select select-sm select-bordered">
-                            <option value="ml">ml</option>
-                            <option value="L">L</option>
-                            <option value="g">g</option>
-                            <option value="kg">kg</option>
-                        </select>
+                <input type="hidden" name="sku_product_id_${idx}" value="${productId}" />
+                <input type="hidden" name="sku_soft_delete_${idx}" value="0" class="sku-soft-delete-flag" />
+                <div class="flex flex-row items-center justify-between gap-2 min-w-0">
+                    ${codeLabel}
+                    <div class="flex items-center gap-1 shrink-0">
+                        ${isExisting
+                            ? '<span class="badge badge-ghost badge-xs sku-status-badge">existing</span>'
+                            : '<span class="badge badge-primary badge-outline badge-xs sku-status-badge">new</span>'}
+                        <span class="badge badge-error badge-outline badge-xs hidden sku-will-disable-badge">will deactivate</span>
                     </div>
                 </div>
-                <div class="form-control">
-                    <label class="label py-0"><span class="label-text text-xs">Base Unit</span></label>
-                    <select name="sku_base_unit_${idx}" class="select select-sm select-bordered">
-                        <option value="piece">Piece</option>
-                        <option value="bottle">Bottle</option>
-                        <option value="pack">Pack</option>
-                        <option value="tub">Tub</option>
-                        <option value="jar">Jar</option>
-                    </select>
-                </div>
-                <div class="form-control">
-                    <label class="label py-0"><span class="label-text text-xs">Selling Price (₱) <span class="text-error">*</span></span></label>
-                    <div class="flex gap-1 items-center">
-                        <input type="number" name="sku_selling_price_${idx}" class="input input-sm input-bordered w-full" placeholder="0.00" step="0.01" required />
-                        <button type="button" class="btn btn-ghost btn-xs text-error" onclick="removeSkuRow(${idx})" title="Remove">
-                            <i class="fas fa-times"></i>
-                        </button>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
+                    <div class="form-control w-full min-w-0">
+                        <label class="label py-0"><span class="label-text text-xs">Variant/Flavor</span></label>
+                        <input type="text" name="sku_variant_${idx}" class="input input-sm input-bordered w-full sku-field" placeholder="e.g., Chocolate" />
+                    </div>
+                    <div class="form-control w-full min-w-0">
+                        <label class="label py-0"><span class="label-text text-xs">Size <span class="text-error">*</span></span></label>
+                        <div class="join w-full">
+                            <input type="number" name="sku_unit_size_${idx}"
+                                class="input input-sm input-bordered join-item w-full min-w-0 sku-field sku-unit-size"
+                                placeholder="e.g. 250" min="1" step="0.01" required
+                                inputmode="decimal"
+                                onkeydown="return blockNegativeNumberKey(event)"
+                                oninput="clearSkuFieldError(this)"
+                                title="Size must be greater than zero (min 1)" />
+                            <select name="sku_unit_measure_${idx}" class="select select-sm select-bordered join-item w-[4.5rem] shrink-0 sku-field">
+                                <option value="ml">ml</option>
+                                <option value="L">L</option>
+                                <option value="g">g</option>
+                                <option value="kg">kg</option>
+                            </select>
+                        </div>
+                        <label class="label py-0 hidden sku-size-error">
+                            <span class="label-text-alt text-error">Size must be greater than zero</span>
+                        </label>
+                    </div>
+                    <div class="form-control w-full min-w-0">
+                        <label class="label py-0"><span class="label-text text-xs">Base Unit</span></label>
+                        <select name="sku_base_unit_${idx}" class="select select-sm select-bordered w-full sku-field">
+                            <option value="piece">Piece</option>
+                            <option value="bottle">Bottle</option>
+                            <option value="pack">Pack</option>
+                            <option value="tub">Tub</option>
+                            <option value="jar">Jar</option>
+                            <option value="block">Block</option>
+                        </select>
+                    </div>
+                    <div class="form-control w-full min-w-0">
+                        <label class="label py-0"><span class="label-text text-xs">Selling Price (₱) <span class="text-error">*</span></span></label>
+                        <div class="flex items-center gap-1 w-full min-w-0">
+                            <input type="number" name="sku_selling_price_${idx}"
+                                class="input input-sm input-bordered flex-1 min-w-0 sku-field sku-selling-price"
+                                placeholder="0.01" min="0.01" step="0.01" required
+                                inputmode="decimal"
+                                onkeydown="return blockNegativeNumberKey(event)"
+                                oninput="clearSkuFieldError(this)"
+                                title="Price must be greater than zero (min ₱0.01)" />
+                            <button type="button" class="btn btn-ghost btn-sm text-error shrink-0 sku-remove-btn" onclick="removeSkuRow(${idx})" title="${isExisting ? 'Deactivate SKU (soft delete)' : 'Remove unsaved row'}">
+                                <i class="fas fa-times"></i>
+                            </button>
+                            <button type="button" class="btn btn-ghost btn-sm text-success shrink-0 hidden sku-undo-btn" onclick="undoSoftDeleteSkuRow(${idx})" title="Keep this SKU active">
+                                <i class="fas fa-undo"></i>
+                            </button>
+                        </div>
+                        <label class="label py-0 hidden sku-price-error">
+                            <span class="label-text-alt text-error">Price must be greater than zero</span>
+                        </label>
                     </div>
                 </div>`;
             document.getElementById('skuList').appendChild(div);
+
+            // Prefill after mount so selects get correct values
+            if (skuData) {
+                const variantInput = div.querySelector(`[name="sku_variant_${idx}"]`);
+                const sizeInput = div.querySelector(`[name="sku_unit_size_${idx}"]`);
+                const measureSel = div.querySelector(`[name="sku_unit_measure_${idx}"]`);
+                const baseUnitSel = div.querySelector(`[name="sku_base_unit_${idx}"]`);
+                const priceInput = div.querySelector(`[name="sku_selling_price_${idx}"]`);
+                if (variantInput) variantInput.value = skuData.variant || '';
+                if (sizeInput) sizeInput.value = skuData.unit_size != null ? skuData.unit_size : '';
+                setSelectValue(measureSel, skuData.unit_measure, 'ml');
+                setSelectValue(baseUnitSel, skuData.base_unit, 'piece');
+                if (priceInput) {
+                    priceInput.value = skuData.selling_price != null && skuData.selling_price !== ''
+                        ? skuData.selling_price
+                        : (skuData.unit_price != null ? skuData.unit_price : '');
+                }
+            }
+
+            if (shouldFocus) {
+                requestAnimationFrame(() => {
+                    const sizeInput = div.querySelector(`[name="sku_unit_size_${idx}"]`);
+                    if (sizeInput) {
+                        sizeInput.focus();
+                        sizeInput.select();
+                    }
+                });
+            }
         }
 
+        /**
+         * Red X behaviour:
+         *  - New SKU (no DB id): remove the HTML row completely (never existed in DB).
+         *  - Existing SKU (has id): soft-delete UI — strike through + flag for is_active=0 on save.
+         */
         function removeSkuRow(idx) {
             const el = document.getElementById(`skuRow_${idx}`);
-            if (el) el.remove();
+            if (!el) return;
+
+            const productIdRaw = el.querySelector(`[name="sku_product_id_${idx}"]`)?.value;
+            const productId = productIdRaw ? parseInt(productIdRaw, 10) : 0;
+            const isExisting = productId > 0 || el.dataset.existing === '1';
+
+            // Brand-new unsaved rows: hard-remove from DOM only
+            if (!isExisting) {
+                el.remove();
+                return;
+            }
+
+            // Existing SKUs: mark for soft-delete (deactivate on save)
+            el.dataset.softDeleted = '1';
+            const flag = el.querySelector('.sku-soft-delete-flag');
+            if (flag) flag.value = '1';
+
+            el.classList.add('opacity-60', 'ring-1', 'ring-error/40');
+            el.querySelectorAll('.sku-field').forEach(field => {
+                field.disabled = true;
+                field.classList.add('line-through', 'text-base-content/50');
+                // Drop required so form can submit with disabled soft-deleted rows
+                field.removeAttribute('required');
+            });
+            el.querySelectorAll('.sku-code-label, .sku-status-badge').forEach(n => {
+                n.classList.add('line-through', 'opacity-60');
+            });
+            const willBadge = el.querySelector('.sku-will-disable-badge');
+            if (willBadge) willBadge.classList.remove('hidden');
+            const removeBtn = el.querySelector('.sku-remove-btn');
+            if (removeBtn) removeBtn.classList.add('hidden');
+            const undoBtn = el.querySelector('.sku-undo-btn');
+            if (undoBtn) undoBtn.classList.remove('hidden');
+        }
+
+        function undoSoftDeleteSkuRow(idx) {
+            const el = document.getElementById(`skuRow_${idx}`);
+            if (!el) return;
+            el.dataset.softDeleted = '0';
+            const flag = el.querySelector('.sku-soft-delete-flag');
+            if (flag) flag.value = '0';
+
+            el.classList.remove('opacity-60', 'ring-1', 'ring-error/40');
+            el.querySelectorAll('.sku-field').forEach(field => {
+                field.disabled = false;
+                field.classList.remove('line-through', 'text-base-content/50');
+            });
+            // Restore required on size/price
+            const sizeInput = el.querySelector(`[name="sku_unit_size_${idx}"]`);
+            const priceInput = el.querySelector(`[name="sku_selling_price_${idx}"]`);
+            if (sizeInput) sizeInput.setAttribute('required', 'required');
+            if (priceInput) priceInput.setAttribute('required', 'required');
+
+            el.querySelectorAll('.sku-code-label, .sku-status-badge').forEach(n => {
+                n.classList.remove('line-through', 'opacity-60');
+            });
+            const willBadge = el.querySelector('.sku-will-disable-badge');
+            if (willBadge) willBadge.classList.add('hidden');
+            const removeBtn = el.querySelector('.sku-remove-btn');
+            if (removeBtn) removeBtn.classList.remove('hidden');
+            const undoBtn = el.querySelector('.sku-undo-btn');
+            if (undoBtn) undoBtn.classList.add('hidden');
+        }
+
+        /** Active (not soft-deleted) SKU rows to create/update. */
+        function collectSkuRowsFromForm() {
+            const rows = [];
+            const modalAction = document.getElementById('baseModalAction')?.value || '';
+            // add_sku mode: only submit the new blank row(s); existing are read-only context
+            const onlyNew = modalAction === 'add_sku';
+
+            document.querySelectorAll('[id^="skuRow_"]').forEach(row => {
+                if (row.dataset.softDeleted === '1') return; // handled separately as disable
+                const idx = row.id.replace('skuRow_', '');
+                const productIdRaw = row.querySelector(`[name="sku_product_id_${idx}"]`)?.value;
+                const productId = productIdRaw ? parseInt(productIdRaw, 10) : null;
+                const isExisting = Number.isFinite(productId) && productId > 0;
+                if (onlyNew && isExisting) return;
+
+                // Re-enable temporarily so disabled context fields aren't skipped if needed later
+                const unitSize = parseFloat(row.querySelector(`[name="sku_unit_size_${idx}"]`)?.value);
+                const unitMeasure = row.querySelector(`[name="sku_unit_measure_${idx}"]`)?.value || 'ml';
+                const baseUnit = row.querySelector(`[name="sku_base_unit_${idx}"]`)?.value || 'piece';
+                const sellingPrice = parseFloat(row.querySelector(`[name="sku_selling_price_${idx}"]`)?.value);
+                const variant = row.querySelector(`[name="sku_variant_${idx}"]`)?.value?.trim() || null;
+                if (!Number.isFinite(unitSize) || unitSize <= 0) return;
+                rows.push({
+                    product_id: isExisting ? productId : null,
+                    variant,
+                    unit_size: unitSize,
+                    unit_measure: unitMeasure,
+                    base_unit: baseUnit,
+                    selling_price: Number.isFinite(sellingPrice) ? sellingPrice : 0,
+                    unit_price: Number.isFinite(sellingPrice) ? sellingPrice : 0
+                });
+            });
+            return rows;
+        }
+
+        /** Existing SKU IDs marked for soft-delete (is_active = 0 on save). */
+        function collectSkuIdsToDisable() {
+            const ids = [];
+            document.querySelectorAll('[id^="skuRow_"]').forEach(row => {
+                if (row.dataset.softDeleted !== '1') return;
+                const idx = row.id.replace('skuRow_', '');
+                const productIdRaw = row.querySelector(`[name="sku_product_id_${idx}"]`)?.value;
+                const productId = productIdRaw ? parseInt(productIdRaw, 10) : 0;
+                if (productId > 0) ids.push(productId);
+            });
+            return ids;
         }
 
         /* ─────────── Save Base Product + SKUs ─────────── */
         async function saveBaseProduct(event) {
             event.preventDefault();
+
+            // Numeric guardrails before any API calls
+            if (!validateSkuNumericFields()) {
+                return;
+            }
 
             const mode = document.getElementById('baseRecordId').value;
             const baseName = document.getElementById('base_product_name').value.trim();
@@ -1269,6 +1905,7 @@
             const tempMax = parseFloat(document.getElementById('base_storage_temp_max').value) || 6;
             const description = document.getElementById('base_description').value;
             const isActive = document.getElementById('base_is_active').checked ? 1 : 0;
+            const baseProductIdField = parseInt(document.getElementById('baseProductId').value, 10) || null;
 
             const saveBtn = document.getElementById('baseModalSaveBtn');
             saveBtn.classList.add('loading');
@@ -1278,9 +1915,71 @@
                 if (mode === 'EDIT_BASE') {
                     const origName = document.getElementById('baseOriginalName').value;
                     const origCat = document.getElementById('baseOriginalCategory').value;
-                    const group = findGroup(origName, origCat);
-                    if (group) {
-                        const promises = group.skus.map(sku => AdminService.updateProduct(sku.id, {
+                    const origKey = document.getElementById('baseOriginalKey').value;
+                    const group = findGroup(origName, origCat, origKey);
+                    const baseProductId = baseProductIdField || group?.base_product_id || null;
+                    const skuRows = collectSkuRowsFromForm();
+                    const skusToDisable = collectSkuIdsToDisable();
+
+                    // Double-check collected values (HTML min can be bypassed)
+                    for (const row of skuRows) {
+                        if (!(row.unit_size >= 1) || !(row.selling_price >= 0.01)) {
+                            showToast('Price and Size must be greater than zero.', 'error');
+                            return;
+                        }
+                    }
+
+                    if (skuRows.length === 0) {
+                        showToast('Keep at least one active size/SKU (or undo a deactivation)', 'warning');
+                        return;
+                    }
+
+                    // Sync base_products master row when present
+                    if (baseProductId) {
+                        try {
+                            await fetch(`${ApiConfig.baseUrl}/admin/products.php?action=update_base&id=${baseProductId}`, {
+                                method: 'PUT',
+                                headers: {
+                                    ...ApiConfig.getHeaders(),
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    name: baseName,
+                                    category,
+                                    milk_type_id: milkTypeId,
+                                    default_shelf_life_days: shelfLife,
+                                    storage_temp_min: tempMin,
+                                    storage_temp_max: tempMax,
+                                    description,
+                                    is_active: isActive
+                                })
+                            }).then(r => r.json());
+                        } catch (e) {
+                            console.warn('Base product master update skipped', e);
+                        }
+                    }
+
+                    // Soft-delete marked existing SKUs first (is_active = 0, never hard DELETE)
+                    if (skusToDisable.length > 0) {
+                        const disableRes = await fetch(
+                            `${ApiConfig.baseUrl}/admin/products.php?action=disable_skus`,
+                            {
+                                method: 'POST',
+                                headers: {
+                                    ...ApiConfig.getHeaders(),
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({ sku_ids: skusToDisable })
+                            }
+                        ).then(r => r.json());
+                        if (!disableRes.success) {
+                            throw new Error(disableRes.message || 'Failed to deactivate SKU(s)');
+                        }
+                    }
+
+                    // Update remaining existing SKUs by id; insert rows without id as new products
+                    const promises = skuRows.map(row => {
+                        const shared = {
                             product_name: baseName,
                             category,
                             milk_type_id: milkTypeId,
@@ -1288,52 +1987,64 @@
                             storage_temp_min: tempMin,
                             storage_temp_max: tempMax,
                             description,
-                            is_active: isActive
-                        }));
-                        await Promise.all(promises);
-                    }
-                    showToast('Base product updated successfully', 'success');
+                            is_active: isActive,
+                            variant: row.variant,
+                            unit_size: row.unit_size,
+                            unit_measure: row.unit_measure,
+                            base_unit: row.base_unit,
+                            selling_price: row.selling_price,
+                            unit_price: row.unit_price
+                        };
+                        if (row.product_id) {
+                            return AdminService.updateProduct(row.product_id, shared);
+                        }
+                        return AdminService.createProduct({
+                            ...shared,
+                            base_product_id: baseProductId,
+                            box_unit: 'box',
+                            pieces_per_box: 1
+                        });
+                    });
+                    await Promise.all(promises);
+                    const disableNote = skusToDisable.length
+                        ? `, deactivated ${skusToDisable.length}`
+                        : '';
+                    showToast(`Base product updated (${skuRows.length} active SKU(s)${disableNote})`, 'success');
                 } else {
-                    const skuRows = document.querySelectorAll('[id^="skuRow_"]');
+                    const skuRows = collectSkuRowsFromForm();
                     if (skuRows.length === 0) {
                         showToast('Please add at least one size/SKU', 'warning');
                         return;
                     }
-
-                    const existing = findGroup(baseName, category);
-                    const baseProductId = existing?.base_product_id || null;
-
-                    const createPromises = [];
                     for (const row of skuRows) {
-                        const idx = row.id.replace('skuRow_', '');
-                        const unitSize = parseFloat(row.querySelector(`[name="sku_unit_size_${idx}"]`)?.value);
-                        const unitMeasure = row.querySelector(`[name="sku_unit_measure_${idx}"]`)?.value || 'ml';
-                        const baseUnit = row.querySelector(`[name="sku_base_unit_${idx}"]`)?.value || 'piece';
-                        const sellingPrice = parseFloat(row.querySelector(`[name="sku_selling_price_${idx}"]`)?.value) || 0;
-                        const variant = row.querySelector(`[name="sku_variant_${idx}"]`)?.value?.trim() || null;
-
-                        if (!unitSize) continue;
-
-                        createPromises.push(AdminService.createProduct({
-                            product_name: baseName,
-                            category,
-                            milk_type_id: milkTypeId,
-                            base_product_id: baseProductId,
-                            variant,
-                            unit_size: unitSize,
-                            unit_measure: unitMeasure,
-                            base_unit: baseUnit,
-                            box_unit: 'box',
-                            pieces_per_box: 1,
-                            shelf_life_days: shelfLife,
-                            storage_temp_min: tempMin,
-                            storage_temp_max: tempMax,
-                            description,
-                            selling_price: sellingPrice,
-                            unit_price: sellingPrice,
-                            is_active: isActive
-                        }));
+                        if (!(row.unit_size >= 1) || !(row.selling_price >= 0.01)) {
+                            showToast('Price and Size must be greater than zero.', 'error');
+                            return;
+                        }
                     }
+
+                    const existing = findGroup(baseName, category, document.getElementById('baseOriginalKey').value);
+                    const baseProductId = baseProductIdField || existing?.base_product_id || null;
+
+                    const createPromises = skuRows.map(row => AdminService.createProduct({
+                        product_name: baseName,
+                        category,
+                        milk_type_id: milkTypeId,
+                        base_product_id: baseProductId,
+                        variant: row.variant,
+                        unit_size: row.unit_size,
+                        unit_measure: row.unit_measure,
+                        base_unit: row.base_unit,
+                        box_unit: 'box',
+                        pieces_per_box: 1,
+                        shelf_life_days: shelfLife,
+                        storage_temp_min: tempMin,
+                        storage_temp_max: tempMax,
+                        description,
+                        selling_price: row.selling_price,
+                        unit_price: row.unit_price,
+                        is_active: isActive
+                    }));
                     await Promise.all(createPromises);
                     showToast(`Product saved with ${createPromises.length} SKU(s)`, 'success');
                 }
@@ -1382,6 +2093,10 @@
             const id = document.getElementById('sku_edit_id').value;
             if (!id) return;
 
+            if (!validateSingleSkuEditFields()) {
+                return;
+            }
+
             const formData = {
                 variant: document.getElementById('sku_edit_variant').value || null,
                 unit_size: parseFloat(document.getElementById('sku_edit_unit_size').value),
@@ -1389,8 +2104,8 @@
                 base_unit: document.getElementById('sku_edit_base_unit').value,
                 box_unit: document.getElementById('sku_edit_box_unit').value,
                 pieces_per_box: parseInt(document.getElementById('sku_edit_pieces_per_box').value) || 1,
-                selling_price: parseFloat(document.getElementById('sku_edit_selling_price').value) || 0,
-                unit_price: parseFloat(document.getElementById('sku_edit_selling_price').value) || 0
+                selling_price: parseFloat(document.getElementById('sku_edit_selling_price').value),
+                unit_price: parseFloat(document.getElementById('sku_edit_selling_price').value)
             };
 
             try {
@@ -1445,13 +2160,43 @@
         /* ─────────── Init ─────────── */
         document.addEventListener('DOMContentLoaded', async () => {
             try {
-                const user = await AuthService.getCurrentUser();
-                if (user) {
-                    document.getElementById('sidebarUserName').textContent = user.full_name;
-                    document.getElementById('userInitials').textContent = user.full_name.split(' ').map(n => n[0]).join('').substring(0, 2);
+                if (typeof AuthService !== 'undefined' && AuthService.isAuthenticated
+                    && !AuthService.isAuthenticated()) {
+                    window.location.href = '../login.html';
+                    return;
                 }
+                // getCurrentUser is synchronous (localStorage) — do not assume Promise
+                const user = (typeof AuthService !== 'undefined' && AuthService.getCurrentUser)
+                    ? AuthService.getCurrentUser()
+                    : null;
+                if (user) {
+                    const name = user.full_name
+                        || [user.first_name, user.last_name].filter(Boolean).join(' ')
+                        || user.username
+                        || 'User';
+                    const nameEl = document.getElementById('sidebarUserName');
+                    const initEl = document.getElementById('userInitials');
+                    if (nameEl) nameEl.textContent = name;
+                    if (initEl) {
+                        initEl.textContent = String(name)
+                            .split(/\s+/)
+                            .filter(Boolean)
+                            .map(n => n[0])
+                            .join('')
+                            .substring(0, 2)
+                            .toUpperCase() || 'GM';
+                    }
+                }
+            } catch (err) {
+                console.error('User chrome init error:', err);
+            }
+            // Always attempt catalog load even if sidebar user chrome fails
+            try {
                 await loadData();
-            } catch (err) { console.error('Init error:', err); }
+            } catch (err) {
+                console.error('Init loadData error:', err);
+                showProductsLoadError(err?.message || 'Failed to initialize product catalog');
+            }
         });
     </script>
 </body>

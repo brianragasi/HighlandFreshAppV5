@@ -96,7 +96,7 @@ function getSalesSummary($db) {
     
     // Collections for period
     $stmt = $db->prepare("
-        SELECT COALESCE(SUM(amount), 0) as total_collections
+        SELECT COALESCE(SUM(amount_collected), 0) as total_collections
         FROM payment_collections 
         WHERE DATE(collected_at) BETWEEN ? AND ?
         AND status = 'confirmed'
@@ -104,16 +104,20 @@ function getSalesSummary($db) {
     $stmt->execute([$startDate, $endDate]);
     $collections = $stmt->fetch();
     
-    // Sales by type
+    // Sales by type (non-zero only for charts)
     $stmt = $db->prepare("
         SELECT 
             c.customer_type as type,
-            COALESCE(SUM(o.total_amount), 0) as amount
+            COUNT(o.id) as order_count,
+            COALESCE(SUM(o.total_amount), 0) as amount,
+            COALESCE(SUM(o.total_amount), 0) as total_amount
         FROM sales_orders o
         JOIN customers c ON o.customer_id = c.id
         WHERE DATE(o.created_at) BETWEEN ? AND ?
         AND o.status NOT IN ('cancelled', 'voided')
         GROUP BY c.customer_type
+        HAVING amount > 0
+        ORDER BY amount DESC
     ");
     $stmt->execute([$startDate, $endDate]);
     $byType = $stmt->fetchAll();
@@ -121,8 +125,8 @@ function getSalesSummary($db) {
     Response::success([
         'total_sales' => floatval($summary['total_sales']),
         'total_orders' => intval($summary['total_orders']),
-        'avg_order_value' => floatval($summary['avg_order_value']),
-        'collections' => floatval($collections['total_collections']),
+        'avg_order_value' => round(floatval($summary['avg_order_value']), 2),
+        'collections' => floatval($collections['total_collections'] ?? 0),
         'change_percent' => round($changePercent, 1),
         'by_type' => $byType,
         'period' => [
@@ -140,6 +144,7 @@ function getSalesTrend($db) {
         SELECT 
             DATE(created_at) as date,
             COALESCE(SUM(total_amount), 0) as total,
+            COALESCE(SUM(total_amount), 0) as amount,
             COUNT(*) as orders
         FROM sales_orders 
         WHERE DATE(created_at) BETWEEN ? AND ?
@@ -148,7 +153,33 @@ function getSalesTrend($db) {
         ORDER BY date ASC
     ");
     $stmt->execute([$startDate, $endDate]);
-    $data = $stmt->fetchAll();
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Fill every calendar day in range so the line chart scales continuously
+    $byDate = [];
+    foreach ($rows as $row) {
+        $key = substr($row['date'], 0, 10);
+        $byDate[$key] = [
+            'date' => $key,
+            'total' => floatval($row['total']),
+            'amount' => floatval($row['total']),
+            'orders' => intval($row['orders']),
+        ];
+    }
+
+    $data = [];
+    $cursor = new DateTimeImmutable($startDate);
+    $end = new DateTimeImmutable($endDate);
+    while ($cursor <= $end) {
+        $key = $cursor->format('Y-m-d');
+        $data[] = $byDate[$key] ?? [
+            'date' => $key,
+            'total' => 0.0,
+            'amount' => 0.0,
+            'orders' => 0,
+        ];
+        $cursor = $cursor->modify('+1 day');
+    }
     
     Response::success($data, 'Sales trend retrieved');
 }
@@ -192,14 +223,16 @@ function getSalesByProduct($db) {
             p.id,
             p.product_name,
             p.product_code as sku,
-            SUM(oi.quantity) as quantity_sold,
-            SUM(oi.quantity * oi.unit_price) as revenue
+            COALESCE(SUM(oi.quantity_ordered), 0) as quantity_sold,
+            COALESCE(SUM(oi.quantity_ordered), 0) as quantity,
+            COALESCE(SUM(oi.line_total), 0) as revenue
         FROM sales_order_items oi
         JOIN sales_orders o ON oi.order_id = o.id
         JOIN products p ON oi.product_id = p.id
         WHERE DATE(o.created_at) BETWEEN ? AND ?
         AND o.status NOT IN ('cancelled', 'voided')
         GROUP BY p.id, p.product_name, p.product_code
+        HAVING revenue > 0
         ORDER BY revenue DESC
         LIMIT ?
     ");
@@ -233,52 +266,134 @@ function getSalesByType($db) {
     Response::success($data, 'Sales by type retrieved');
 }
 
+/**
+ * Customer performance for Sales Custodian.
+ * Sales / order metrics come from delivery_receipts (actual fulfilled AR source of truth).
+ * Outstanding = open unpaid balances. Payment score uses sales vs debt + credit limit.
+ */
 function getCustomerPerformance($db) {
-    $period = getParam('period', 'year');
-    $startDate = getStartDateByPeriod($period);
+    $period = getParam('period', 'all');
+    $startDate = ($period === 'all' || $period === '')
+        ? '2000-01-01'
+        : getStartDateByPeriod($period);
     $endDate = date('Y-m-d');
-    
+
+    $ageExpr = "DATEDIFF(CURDATE(), COALESCE(dr.delivered_at, dr.created_at))";
+    $balExpr = "(dr.total_amount - COALESCE(dr.amount_paid, 0))";
+
     $stmt = $db->prepare("
-        SELECT 
+        SELECT
             c.id,
             c.name as customer_name,
             c.customer_code,
             c.customer_type,
             c.credit_limit,
-            c.current_balance as outstanding_balance,
             c.status,
-            COUNT(o.id) as order_count,
-            COALESCE(SUM(o.total_amount), 0) as total_sales,
-            COALESCE(AVG(o.total_amount), 0) as avg_order_value,
-            MAX(o.created_at) as last_order_date,
-            CASE 
-                WHEN c.credit_limit > 0 AND c.current_balance > c.credit_limit THEN 30
-                WHEN c.credit_limit > 0 AND c.current_balance > c.credit_limit * 0.8 THEN 60
-                WHEN c.credit_limit > 0 AND c.current_balance > c.credit_limit * 0.5 THEN 80
-                ELSE 100
-            END as payment_score
+            COUNT(CASE WHEN dr.id IS NOT NULL AND dr.status NOT IN ('cancelled', 'draft')
+                AND DATE(COALESCE(dr.delivered_at, dr.created_at)) BETWEEN ? AND ?
+                THEN 1 END) as order_count,
+            COALESCE(SUM(CASE WHEN dr.id IS NOT NULL AND dr.status NOT IN ('cancelled', 'draft')
+                AND DATE(COALESCE(dr.delivered_at, dr.created_at)) BETWEEN ? AND ?
+                THEN dr.total_amount ELSE 0 END), 0) as total_sales,
+            COALESCE(SUM(CASE WHEN dr.id IS NOT NULL AND dr.status NOT IN ('cancelled', 'draft')
+                AND DATE(COALESCE(dr.delivered_at, dr.created_at)) BETWEEN ? AND ?
+                THEN COALESCE(dr.amount_paid, 0) ELSE 0 END), 0) as total_paid,
+            COALESCE(SUM(CASE WHEN dr.id IS NOT NULL
+                AND dr.payment_status != 'paid'
+                AND dr.status NOT IN ('cancelled', 'draft')
+                AND {$balExpr} > 0
+                THEN {$balExpr} ELSE 0 END), 0) as outstanding_balance,
+            COALESCE(SUM(CASE WHEN dr.id IS NOT NULL
+                AND dr.payment_status != 'paid'
+                AND dr.status NOT IN ('cancelled', 'draft')
+                AND {$balExpr} > 0
+                AND {$ageExpr} > 30
+                THEN {$balExpr} ELSE 0 END), 0) as past_due_balance,
+            MAX(CASE WHEN dr.status NOT IN ('cancelled', 'draft')
+                THEN COALESCE(dr.delivered_at, dr.created_at) END) as last_order_date
         FROM customers c
-        LEFT JOIN sales_orders o ON c.id = o.customer_id 
-            AND DATE(o.created_at) BETWEEN ? AND ?
-            AND o.status NOT IN ('cancelled', 'voided')
+        LEFT JOIN delivery_receipts dr ON c.id = dr.customer_id
         WHERE c.status = 'active'
-        GROUP BY c.id, c.name, c.customer_code, c.customer_type, 
-                 c.credit_limit, c.current_balance, c.status
+        GROUP BY c.id, c.name, c.customer_code, c.customer_type, c.credit_limit, c.status
         ORDER BY total_sales DESC
     ");
-    $stmt->execute([$startDate, $endDate]);
+    $stmt->execute([$startDate, $endDate, $startDate, $endDate, $startDate, $endDate]);
     $data = $stmt->fetchAll();
-    
-    // Add summary stats
-    $activeCount = count(array_filter($data, fn($c) => $c['status'] === 'active'));
-    $topPerformers = count(array_filter($data, fn($c) => $c['payment_score'] >= 90));
-    $atRisk = count(array_filter($data, fn($c) => $c['payment_score'] >= 50 && $c['payment_score'] < 70));
-    $overLimit = count(array_filter($data, fn($c) => 
-        floatval($c['credit_limit']) > 0 && floatval($c['outstanding_balance']) > floatval($c['credit_limit'])
-    ));
-    
+
+    foreach ($data as &$row) {
+        $sales = (float)$row['total_sales'];
+        $orders = (int)$row['order_count'];
+        $outstanding = round((float)$row['outstanding_balance'], 2);
+        $pastDue = round((float)$row['past_due_balance'], 2);
+        $paid = (float)$row['total_paid'];
+        $limit = (float)$row['credit_limit'];
+
+        $row['outstanding_balance'] = $outstanding;
+        $row['past_due_balance'] = $pastDue;
+        $row['total_sales'] = round($sales, 2);
+        $row['order_count'] = $orders;
+        $row['avg_order_value'] = $orders > 0 ? round($sales / $orders, 2) : 0.0;
+        $row['avg_order'] = $row['avg_order_value'];
+
+        // Payment score: relational to sales volume vs debt (+ hard over-limit floor)
+        $score = 100;
+        if ($sales <= 0 && $outstanding > 0) {
+            $score = 40; // debt without sales history — bad data / risk
+        } elseif ($sales > 0) {
+            $debtRatio = $outstanding / $sales;
+            $collectRate = min(1, $paid / max($sales, 0.01));
+            if ($debtRatio > 0.35) {
+                $score -= 35;
+            } elseif ($debtRatio > 0.20) {
+                $score -= 20;
+            } elseif ($debtRatio > 0.10) {
+                $score -= 10;
+            } elseif ($debtRatio > 0.05) {
+                $score -= 5;
+            }
+            if ($collectRate < 0.5) {
+                $score -= 15;
+            } elseif ($collectRate < 0.75) {
+                $score -= 5;
+            }
+            if ($outstanding > 0 && $pastDue / max($outstanding, 0.01) > 0.5) {
+                $score -= 15;
+            } elseif ($outstanding > 0 && $pastDue / max($outstanding, 0.01) > 0.25) {
+                $score -= 8;
+            }
+        }
+        // Hard rule: over credit limit → Poor (≤30)
+        if ($limit > 0 && $outstanding > $limit) {
+            $score = min($score, 30);
+        }
+        // Excellent only if strong volume and low debt ratio
+        if ($score >= 90 && ($sales < 50000 || ($sales > 0 && $outstanding / $sales > 0.08))) {
+            // Keep high but not perfect if volume weak relative to debt
+            if ($sales > 0 && $outstanding / $sales > 0.08) {
+                $score = min($score, 88);
+            }
+        }
+        $row['payment_score'] = (int) max(0, min(100, round($score)));
+        $row['over_limit'] = ($limit > 0 && $outstanding > $limit) ? 1 : 0;
+    }
+    unset($row);
+
+    // Rank by total sales (already ordered DESC)
+    $rank = 1;
+    foreach ($data as &$row) {
+        $row['rank'] = $rank++;
+    }
+    unset($row);
+
+    $activeCount = count($data);
+    $topPerformers = count(array_filter($data, fn($c) => (int)$c['payment_score'] >= 90));
+    $atRisk = count(array_filter($data, fn($c) => (int)$c['payment_score'] >= 50 && (int)$c['payment_score'] < 70));
+    $overLimit = count(array_filter($data, fn($c) => !empty($c['over_limit'])));
+
     Response::success([
         'customers' => $data,
+        'period' => $period,
+        'date_range' => ['start' => $startDate, 'end' => $endDate],
         'summary' => [
             'active_customers' => $activeCount,
             'top_performers' => $topPerformers,

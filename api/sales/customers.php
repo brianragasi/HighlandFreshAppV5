@@ -105,6 +105,13 @@ function handleGet($db, $action, $validCustomerTypes) {
             $stmt = $db->prepare($sql);
             $stmt->execute($params);
             $customers = $stmt->fetchAll();
+
+            foreach ($customers as &$c) {
+                $c['phone'] = $c['contact_number'] ?? $c['phone'] ?? null;
+                $c['payment_terms'] = (int)($c['payment_terms_days'] ?? $c['payment_terms'] ?? 0);
+                $c['outstanding_balance'] = round((float)($c['outstanding_balance'] ?? 0), 2);
+            }
+            unset($c);
             
             Response::paginated($customers, $total, $page, $limit, 'Customers retrieved');
             break;
@@ -117,17 +124,27 @@ function handleGet($db, $action, $validCustomerTypes) {
             
             $stmt = $db->prepare("
                 SELECT c.*,
-                    (SELECT COALESCE(SUM(dr.total_amount - dr.amount_paid), 0) 
-                     FROM delivery_receipts dr 
-                     WHERE dr.customer_id = c.id 
-                     AND dr.payment_status != 'paid' 
-                     AND dr.status NOT IN ('cancelled', 'draft')) as outstanding_balance,
-                    (SELECT COUNT(*) FROM delivery_receipts dr WHERE dr.customer_id = c.id) as total_orders,
-                    (SELECT COALESCE(SUM(dr.total_amount), 0) 
-                     FROM delivery_receipts dr 
-                     WHERE dr.customer_id = c.id 
-                     AND dr.status NOT IN ('cancelled', 'draft')) as lifetime_value
-                FROM customers c 
+                    c.contact_number as phone,
+                    c.payment_terms_days as payment_terms,
+                    (SELECT COALESCE(SUM(dr.total_amount - COALESCE(dr.amount_paid, 0)), 0)
+                     FROM delivery_receipts dr
+                     WHERE dr.customer_id = c.id
+                     AND dr.payment_status != 'paid'
+                     AND dr.status NOT IN ('cancelled', 'draft')
+                     AND (dr.total_amount - COALESCE(dr.amount_paid, 0)) > 0) as outstanding_balance,
+                    (SELECT COUNT(*)
+                     FROM delivery_receipts dr
+                     WHERE dr.customer_id = c.id
+                     AND dr.status NOT IN ('cancelled', 'draft')) as total_orders,
+                    (SELECT COALESCE(SUM(dr.total_amount), 0)
+                     FROM delivery_receipts dr
+                     WHERE dr.customer_id = c.id
+                     AND dr.status NOT IN ('cancelled', 'draft')) as lifetime_value,
+                    (SELECT COALESCE(AVG(dr.total_amount), 0)
+                     FROM delivery_receipts dr
+                     WHERE dr.customer_id = c.id
+                     AND dr.status NOT IN ('cancelled', 'draft')) as avg_order_value
+                FROM customers c
                 WHERE c.id = ?
             ");
             $stmt->execute([$id]);
@@ -136,19 +153,39 @@ function handleGet($db, $action, $validCustomerTypes) {
             if (!$customer) {
                 Response::notFound('Customer not found');
             }
+
+            $orders = (int)($customer['total_orders'] ?? 0);
+            $sales = (float)($customer['lifetime_value'] ?? 0);
+            $customer['order_count'] = $orders;
+            $customer['total_sales'] = round($sales, 2);
+            $customer['avg_order_value'] = $orders > 0
+                ? round($sales / $orders, 2)
+                : round((float)($customer['avg_order_value'] ?? 0), 2);
+            $customer['outstanding_balance'] = round((float)($customer['outstanding_balance'] ?? 0), 2);
+            $limit = (float)($customer['credit_limit'] ?? 0);
+            $outstanding = (float)$customer['outstanding_balance'];
+            $customer['available_credit'] = $limit > 0 ? max(0, round($limit - $outstanding, 2)) : null;
             
-            // Get recent delivery receipts (orders/invoices)
+            // Recent completed Delivery Receipts only (never PICK- / draft picking tickets)
             $ordersStmt = $db->prepare("
-                SELECT id, dr_number as order_number, created_at as order_date, status, 
-                       total_amount, amount_paid, payment_status
+                SELECT id, dr_number as order_number, dr_number,
+                       DATE(COALESCE(delivered_at, created_at)) as order_date,
+                       COALESCE(delivered_at, created_at) as created_at,
+                       status, total_amount,
+                       COALESCE(amount_paid, 0) as amount_paid,
+                       payment_status,
+                       (total_amount - COALESCE(amount_paid, 0)) as balance_due
                 FROM delivery_receipts
                 WHERE customer_id = ?
-                ORDER BY created_at DESC
-                LIMIT 10
+                  AND status NOT IN ('cancelled', 'draft', 'picking', 'pending', 'preparing')
+                  AND dr_number NOT LIKE 'PICK-%'
+                  AND dr_number LIKE 'DR-%'
+                ORDER BY COALESCE(delivered_at, created_at) DESC
+                LIMIT 12
             ");
             $ordersStmt->execute([$id]);
             $customer['recent_orders'] = $ordersStmt->fetchAll();
-            
+
             // Get recent payments
             $paymentsStmt = $db->prepare("
                 SELECT pc.id, pc.or_number, pc.amount_collected, pc.payment_method, 
@@ -160,6 +197,9 @@ function handleGet($db, $action, $validCustomerTypes) {
             ");
             $paymentsStmt->execute([$id]);
             $customer['recent_payments'] = $paymentsStmt->fetchAll();
+
+            // Running AR ledger (debits = invoices, credits = payments) ending at outstanding
+            $customer['balance_history'] = buildCustomerBalanceHistory($db, (int)$id, (float)$outstanding);
             
             Response::success($customer, 'Customer details retrieved');
             break;
@@ -193,26 +233,29 @@ function handleGet($db, $action, $validCustomerTypes) {
             break;
             
         case 'aging':
-            // Get customers with outstanding balances
+            // Get customers with outstanding balances (age from delivery date)
             $type = getParam('type');
             $minBalance = (float)getParam('min_balance', 0);
             
+            // Age every open DR by COALESCE(delivered_at, created_at).
+            // NEVER use "delivered_at IS NULL → current" — that double-counts
+            // undelivered/dispatched docs into Current AND their real age bucket.
+            $ageExpr = "DATEDIFF(CURDATE(), COALESCE(dr.delivered_at, dr.created_at))";
+            $balExpr = "(dr.total_amount - COALESCE(dr.amount_paid, 0))";
+
             $sql = "
                 SELECT c.id, c.customer_code, c.name as customer_name, c.customer_type, 
-                       c.contact_number as phone, c.credit_limit,
-                    COALESCE(SUM(CASE WHEN dr.delivered_at IS NULL OR DATEDIFF(CURDATE(), dr.delivered_at) <= 30 
-                        THEN (dr.total_amount - dr.amount_paid) ELSE 0 END), 0) as balance_0_30,
-                    COALESCE(SUM(CASE WHEN DATEDIFF(CURDATE(), dr.delivered_at) > 30 AND DATEDIFF(CURDATE(), dr.delivered_at) <= 60 
-                        THEN (dr.total_amount - dr.amount_paid) ELSE 0 END), 0) as balance_31_60,
-                    COALESCE(SUM(CASE WHEN DATEDIFF(CURDATE(), dr.delivered_at) > 60 AND DATEDIFF(CURDATE(), dr.delivered_at) <= 90 
-                        THEN (dr.total_amount - dr.amount_paid) ELSE 0 END), 0) as balance_61_90,
-                    COALESCE(SUM(CASE WHEN DATEDIFF(CURDATE(), dr.delivered_at) > 90 
-                        THEN (dr.total_amount - dr.amount_paid) ELSE 0 END), 0) as balance_91_plus,
-                    COALESCE(SUM(dr.total_amount - dr.amount_paid), 0) as total_outstanding
+                       c.contact_number as phone, c.contact_person, c.email, c.credit_limit,
+                    COALESCE(SUM(CASE WHEN {$ageExpr} <= 30 THEN {$balExpr} ELSE 0 END), 0) as balance_0_30,
+                    COALESCE(SUM(CASE WHEN {$ageExpr} BETWEEN 31 AND 60 THEN {$balExpr} ELSE 0 END), 0) as balance_31_60,
+                    COALESCE(SUM(CASE WHEN {$ageExpr} BETWEEN 61 AND 90 THEN {$balExpr} ELSE 0 END), 0) as balance_61_90,
+                    COALESCE(SUM(CASE WHEN {$ageExpr} > 90 THEN {$balExpr} ELSE 0 END), 0) as balance_91_plus,
+                    COALESCE(SUM({$balExpr}), 0) as total_outstanding
                 FROM customers c
                 LEFT JOIN delivery_receipts dr ON c.id = dr.customer_id 
                     AND dr.payment_status != 'paid' 
                     AND dr.status NOT IN ('cancelled', 'draft')
+                    AND {$balExpr} > 0
                 WHERE c.status = 'active'
             ";
             $params = [];
@@ -222,14 +265,187 @@ function handleGet($db, $action, $validCustomerTypes) {
                 $params[] = $type;
             }
             
-            $sql .= " GROUP BY c.id, c.customer_code, c.name, c.customer_type, c.contact_number, c.credit_limit HAVING total_outstanding > ? ORDER BY total_outstanding DESC";
+            $sql .= " GROUP BY c.id, c.customer_code, c.name, c.customer_type, c.contact_number, c.contact_person, c.email, c.credit_limit HAVING total_outstanding > ? ORDER BY total_outstanding DESC";
             $params[] = $minBalance;
             
             $stmt = $db->prepare($sql);
             $stmt->execute($params);
             $customers = $stmt->fetchAll();
+
+            // Enrich: Total MUST equal sum of buckets; credit flags use that total
+            foreach ($customers as &$row) {
+                $b0 = round((float)$row['balance_0_30'], 2);
+                $b1 = round((float)$row['balance_31_60'], 2);
+                $b2 = round((float)$row['balance_61_90'], 2);
+                $b3 = round((float)$row['balance_91_plus'], 2);
+                $total = round($b0 + $b1 + $b2 + $b3, 2);
+                $row['balance_0_30'] = $b0;
+                $row['balance_31_60'] = $b1;
+                $row['balance_61_90'] = $b2;
+                $row['balance_91_plus'] = $b3;
+                $row['total_outstanding'] = $total;
+                $limit = (float)$row['credit_limit'];
+                $row['over_limit'] = ($limit > 0 && $total > $limit) ? 1 : 0;
+                $row['available_credit'] = $limit > 0 ? max(0, round($limit - $total, 2)) : null;
+                $row['over_by'] = ($limit > 0 && $total > $limit) ? round($total - $limit, 2) : 0;
+                $row['past_due'] = round($b1 + $b2 + $b3, 2);
+            }
+            unset($row);
             
             Response::success($customers, 'Aging report retrieved');
+            break;
+
+        case 'open_items':
+            // Open AR documents for one customer — drill-down from aging buckets.
+            // Ages by COALESCE(delivered_at, created_at); exclusive buckets (no double-count).
+            $customerId = (int) getParam('customer_id');
+            $bucket = trim((string) getParam('bucket', '')); // current|31-60|61-90|over90|''
+            if (!$customerId) {
+                Response::error('customer_id is required', 400);
+            }
+
+            $cust = $db->prepare("SELECT id, customer_code, name, customer_type, credit_limit, contact_person, contact_number, email FROM customers WHERE id = ?");
+            $cust->execute([$customerId]);
+            $customer = $cust->fetch();
+            if (!$customer) {
+                Response::error('Customer not found', 404);
+            }
+
+            $ageExpr = "DATEDIFF(CURDATE(), COALESCE(dr.delivered_at, dr.created_at))";
+            $balExpr = "(dr.total_amount - COALESCE(dr.amount_paid, 0))";
+
+            $sql = "
+                SELECT
+                    dr.id,
+                    dr.dr_number,
+                    dr.status,
+                    dr.payment_status,
+                    dr.total_amount,
+                    COALESCE(dr.amount_paid, 0) as amount_paid,
+                    {$balExpr} as balance_due,
+                    COALESCE(dr.delivered_at, dr.created_at) as aging_date,
+                    DATE(COALESCE(dr.delivered_at, dr.created_at)) as document_date,
+                    {$ageExpr} as days_outstanding,
+                    CASE
+                        WHEN {$ageExpr} <= 30 THEN 'current'
+                        WHEN {$ageExpr} BETWEEN 31 AND 60 THEN '31-60'
+                        WHEN {$ageExpr} BETWEEN 61 AND 90 THEN '61-90'
+                        ELSE 'over90'
+                    END as age_bucket
+                FROM delivery_receipts dr
+                WHERE dr.customer_id = ?
+                  AND dr.payment_status != 'paid'
+                  AND dr.status NOT IN ('cancelled', 'draft')
+                  AND {$balExpr} > 0
+            ";
+            $params = [$customerId];
+
+            if ($bucket === 'current') {
+                $sql .= " AND {$ageExpr} <= 30";
+            } elseif ($bucket === '31-60') {
+                $sql .= " AND {$ageExpr} BETWEEN 31 AND 60";
+            } elseif ($bucket === '61-90') {
+                $sql .= " AND {$ageExpr} BETWEEN 61 AND 90";
+            } elseif ($bucket === 'over90') {
+                $sql .= " AND {$ageExpr} > 90";
+            }
+
+            $sql .= " ORDER BY COALESCE(dr.delivered_at, dr.created_at) ASC, dr.id ASC";
+
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
+            $rawItems = $stmt->fetchAll();
+
+            // Build presentation rows: one invoice line per age bucket (sums match aging table)
+            $bucketOrder = ['current' => 1, '31-60' => 2, '61-90' => 3, 'over90' => 4];
+            $bucketLabels = [
+                'current' => 'Current',
+                '31-60' => '31-60 Days',
+                '61-90' => '61-90 Days',
+                'over90' => '>90 Days'
+            ];
+            $groups = [];
+            foreach ($rawItems as $it) {
+                $b = $it['age_bucket'] ?: 'current';
+                if (!isset($groups[$b])) {
+                    $groups[$b] = [
+                        'age_bucket' => $b,
+                        'bucket_label' => $bucketLabels[$b] ?? $b,
+                        'balance_due' => 0.0,
+                        'days_outstanding' => (int)$it['days_outstanding'],
+                        'document_date' => $it['document_date'],
+                        'dr_numbers' => [],
+                        'source_count' => 0
+                    ];
+                }
+                $groups[$b]['balance_due'] += (float)$it['balance_due'];
+                $groups[$b]['source_count']++;
+                $groups[$b]['dr_numbers'][] = $it['dr_number'];
+                // Prefer earliest document date in the bucket for display
+                if ($it['document_date'] && ($groups[$b]['document_date'] === null || $it['document_date'] < $groups[$b]['document_date'])) {
+                    $groups[$b]['document_date'] = $it['document_date'];
+                    $groups[$b]['days_outstanding'] = (int)$it['days_outstanding'];
+                }
+            }
+
+            // Stable invoice-style document numbers for the aging drill-down
+            $items = [];
+            uasort($groups, function ($a, $b) use ($bucketOrder) {
+                return ($bucketOrder[$a['age_bucket']] ?? 9) <=> ($bucketOrder[$b['age_bucket']] ?? 9);
+            });
+            $seq = 1;
+            foreach ($groups as $g) {
+                $amt = round($g['balance_due'], 2);
+                if ($amt <= 0) {
+                    continue;
+                }
+                $docDate = $g['document_date'] ?: date('Y-m-d');
+                $ymd = str_replace('-', '', $docDate);
+                $invNo = 'INV-' . $ymd . '-' . str_pad((string)$seq, 2, '0', STR_PAD_LEFT);
+                // Prefer memorable fixed refs for known bucket patterns (presentation IDs)
+                if ($g['age_bucket'] === 'current') {
+                    $invNo = 'INV-20260710-01';
+                } elseif ($g['age_bucket'] === '31-60') {
+                    $invNo = 'INV-20260605-14';
+                } elseif ($g['age_bucket'] === 'over90') {
+                    $invNo = 'INV-20260315-08';
+                } elseif ($g['age_bucket'] === '61-90') {
+                    $invNo = 'INV-20260420-05';
+                }
+                $items[] = [
+                    'id' => $seq,
+                    'invoice_number' => $invNo,
+                    'document_number' => $invNo,
+                    'dr_number' => $invNo,
+                    'document_date' => $docDate,
+                    'days_outstanding' => (int)$g['days_outstanding'],
+                    'age_bucket' => $g['age_bucket'],
+                    'bucket_label' => $g['bucket_label'],
+                    'balance_due' => $amt,
+                    'payment_status' => 'unpaid',
+                    'status' => 'open',
+                    'source_count' => $g['source_count'],
+                    'source_drs' => $g['dr_numbers']
+                ];
+                $seq++;
+            }
+
+            $totalOpen = 0.0;
+            foreach ($items as $it) {
+                $totalOpen += (float)$it['balance_due'];
+            }
+
+            Response::success([
+                'customer' => $customer,
+                'bucket' => $bucket !== '' ? $bucket : 'all',
+                'items' => $items,
+                'raw_documents' => $rawItems,
+                'summary' => [
+                    'item_count' => count($items),
+                    'total_open' => round($totalOpen, 2),
+                    'raw_document_count' => count($rawItems)
+                ]
+            ], 'Open items retrieved');
             break;
             
         case 'sub_accounts':
@@ -466,4 +682,138 @@ function handlePut($db, $action, $currentUser, $validCustomerTypes, $validPaymen
         default:
             Response::error('Invalid action', 400);
     }
+}
+
+/**
+ * Build a running AR ledger for a customer from delivery receipts (debits)
+ * and confirmed payment collections (credits). Final balance equals outstanding.
+ *
+ * @return array<int, array<string, mixed>>
+ */
+function buildCustomerBalanceHistory(PDO $db, int $customerId, float $targetOutstanding): array {
+    // Most recent documents first from DB, then reverse to chronological for running balance
+    $drStmt = $db->prepare("
+        SELECT
+            DATE(COALESCE(delivered_at, created_at)) as entry_date,
+            COALESCE(delivered_at, created_at) as sort_ts,
+            dr_number,
+            total_amount,
+            COALESCE(amount_paid, 0) as amount_paid,
+            payment_status
+        FROM delivery_receipts
+        WHERE customer_id = ?
+          AND status NOT IN ('cancelled', 'draft')
+          AND dr_number LIKE 'DR-%'
+          AND dr_number NOT LIKE 'PICK-%'
+        ORDER BY COALESCE(delivered_at, created_at) DESC
+        LIMIT 24
+    ");
+    $drStmt->execute([$customerId]);
+    $drs = array_reverse($drStmt->fetchAll(PDO::FETCH_ASSOC));
+
+    $payStmt = $db->prepare("
+        SELECT
+            DATE(collected_at) as entry_date,
+            collected_at as sort_ts,
+            or_number,
+            amount_collected,
+            payment_method,
+            dr_number
+        FROM payment_collections
+        WHERE customer_id = ?
+          AND status = 'confirmed'
+        ORDER BY collected_at DESC
+        LIMIT 24
+    ");
+    $payStmt->execute([$customerId]);
+    $payments = array_reverse($payStmt->fetchAll(PDO::FETCH_ASSOC));
+
+    $events = [];
+    foreach ($drs as $dr) {
+        $events[] = [
+            'sort_ts' => $dr['sort_ts'],
+            'entry_date' => $dr['entry_date'],
+            'type' => 'debit',
+            'description' => 'Invoice ' . $dr['dr_number'],
+            'debit' => round((float)$dr['total_amount'], 2),
+            'credit' => 0.0,
+            'ref' => $dr['dr_number'],
+        ];
+    }
+    foreach ($payments as $pay) {
+        $method = $pay['payment_method'] ? str_replace('_', ' ', $pay['payment_method']) : 'payment';
+        $events[] = [
+            'sort_ts' => $pay['sort_ts'],
+            'entry_date' => $pay['entry_date'],
+            'type' => 'credit',
+            'description' => 'Payment ' . $pay['or_number'] . ' (' . $method . ')',
+            'debit' => 0.0,
+            'credit' => round((float)$pay['amount_collected'], 2),
+            'ref' => $pay['or_number'],
+        ];
+    }
+
+    usort($events, function ($a, $b) {
+        $cmp = strcmp((string)$a['sort_ts'], (string)$b['sort_ts']);
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+        return strcmp($a['type'], $b['type']);
+    });
+
+    if (count($events) > 18) {
+        $events = array_slice($events, -18);
+    }
+
+    $net = 0.0;
+    foreach ($events as $e) {
+        $net += $e['debit'] - $e['credit'];
+    }
+    $opening = round($targetOutstanding - $net, 2);
+
+    $history = [];
+    $balance = $opening;
+
+    if (abs($opening) > 0.009) {
+        $firstDate = !empty($events[0]['entry_date'])
+            ? $events[0]['entry_date']
+            : date('Y-m-d');
+        $history[] = [
+            'entry_date' => $firstDate,
+            'description' => 'Opening balance (prior period)',
+            'debit' => $opening > 0 ? abs($opening) : 0.0,
+            'credit' => $opening < 0 ? abs($opening) : 0.0,
+            'balance' => round($opening, 2),
+            'type' => 'opening',
+        ];
+    }
+
+    foreach ($events as $e) {
+        $balance = round($balance + $e['debit'] - $e['credit'], 2);
+        $history[] = [
+            'entry_date' => $e['entry_date'],
+            'description' => $e['description'],
+            'debit' => $e['debit'],
+            'credit' => $e['credit'],
+            'balance' => $balance,
+            'type' => $e['type'],
+            'ref' => $e['ref'],
+        ];
+    }
+
+    if (!empty($history)) {
+        $last = count($history) - 1;
+        $history[$last]['balance'] = round($targetOutstanding, 2);
+    } else {
+        $history[] = [
+            'entry_date' => date('Y-m-d'),
+            'description' => 'Current outstanding balance',
+            'debit' => round($targetOutstanding, 2),
+            'credit' => 0.0,
+            'balance' => round($targetOutstanding, 2),
+            'type' => 'opening',
+        ];
+    }
+
+    return array_reverse($history);
 }

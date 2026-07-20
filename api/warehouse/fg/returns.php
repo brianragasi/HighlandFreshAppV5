@@ -19,8 +19,56 @@ $currentUser = Auth::requireRole(['warehouse_fg', 'general_manager']);
 
 $action = getParam('action', 'list');
 
+function returnsTableExists($db, $tableName) {
+    static $cache = [];
+    if (isset($cache[$tableName])) return $cache[$tableName];
+    $stmt = $db->prepare("SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? LIMIT 1");
+    $stmt->execute([$tableName]);
+    $cache[$tableName] = (bool) $stmt->fetchColumn();
+    return $cache[$tableName];
+}
+
 try {
     $db = Database::getInstance()->getConnection();
+
+    // Auto-create put_away_queue table if it doesn't exist
+    if (!returnsTableExists($db, 'put_away_queue')) {
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS put_away_queue (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                product_id INT NOT NULL,
+                batch_id INT DEFAULT NULL,
+                inventory_id INT DEFAULT NULL,
+                quantity INT NOT NULL DEFAULT 0,
+                product_name VARCHAR(100) DEFAULT NULL,
+                batch_code VARCHAR(50) DEFAULT NULL,
+                chiller_name VARCHAR(100) DEFAULT NULL,
+                chiller_id INT DEFAULT NULL,
+                expiry_date DATE DEFAULT NULL,
+                dr_id INT DEFAULT NULL,
+                dr_number VARCHAR(50) DEFAULT NULL,
+                dr_item_id INT DEFAULT NULL,
+                return_id INT DEFAULT NULL,
+                notes TEXT DEFAULT NULL,
+                created_by INT DEFAULT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                confirmed_at DATETIME DEFAULT NULL,
+                confirmed_by INT DEFAULT NULL,
+                status ENUM('pending','confirmed','cancelled') DEFAULT 'pending',
+                INDEX idx_status (status),
+                INDEX idx_product (product_id),
+                INDEX idx_batch (batch_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+    } else {
+        // Migrate existing table: add columns if missing
+        $existingCols = array_map('strtolower', $db->query("SHOW COLUMNS FROM put_away_queue")->fetchAll(PDO::FETCH_COLUMN));
+        foreach (['chiller_id' => 'INT DEFAULT NULL', 'expiry_date' => 'DATE DEFAULT NULL'] as $col => $type) {
+            if (!in_array($col, $existingCols)) {
+                $db->exec("ALTER TABLE put_away_queue ADD COLUMN `{$col}` {$type}");
+            }
+        }
+    }
 
     switch ($requestMethod) {
         case 'GET':
@@ -351,46 +399,88 @@ function recordReturnsAndReconcile(PDO $db, array $data, array $currentUser) {
             $updLine->execute([$delivered, $delivered, $drItemId]);
             $lines[$drItemId]['quantity_delivered'] = $delivered;
 
-            // 3) Inventory routing
+            // 3) Inventory routing — resellable returns go to Put-away queue, never touch on-hand stock
             if ($routing['is_resellable'] && $routing['disposition'] === 'return_to_inventory') {
-                $invId = fgInventoryFindRowForRestock(
-                    $db,
+                // Look up product details
+                $prodStmt = $db->prepare("SELECT product_name FROM products WHERE id = ?");
+                $prodStmt->execute([$productId]);
+                $prod = $prodStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+                // Get batch code
+                $batchCode = null;
+                if ($batchId) {
+                    $batchStmt = $db->prepare("SELECT batch_code FROM production_batches WHERE id = ?");
+                    $batchStmt->execute([$batchId]);
+                    $batchCode = $batchStmt->fetchColumn() ?: null;
+                }
+
+                // Get chiller name + id from the existing FG inventory row (where this batch is stored)
+                $chillerName = null;
+                $chillerId = null;
+                if (!empty($line['inventory_id'])) {
+                    $chillerStmt = $db->prepare("
+                        SELECT cl.chiller_name, cl.id as chiller_id
+                        FROM finished_goods_inventory fgi
+                        LEFT JOIN chiller_locations cl ON fgi.chiller_id = cl.id
+                        WHERE fgi.id = ?
+                    ");
+                    $chillerStmt->execute([(int)$line['inventory_id']]);
+                    $chillerRow = $chillerStmt->fetch(PDO::FETCH_ASSOC);
+                    if ($chillerRow) {
+                        $chillerName = $chillerRow['chiller_name'] ?: null;
+                        $chillerId = $chillerRow['chiller_id'] ?: null;
+                    }
+                }
+
+                // Get expiry_date from production_batches or FG inventory
+                $expiryDate = null;
+                if ($batchId) {
+                    $expStmt = $db->prepare("SELECT expiry_date FROM production_batches WHERE id = ?");
+                    $expStmt->execute([$batchId]);
+                    $expiryDate = $expStmt->fetchColumn() ?: null;
+                }
+                if (!$expiryDate && !empty($line['inventory_id'])) {
+                    $expStmt = $db->prepare("SELECT expiry_date FROM finished_goods_inventory WHERE id = ?");
+                    $expStmt->execute([(int)$line['inventory_id']]);
+                    $expiryDate = $expStmt->fetchColumn() ?: null;
+                }
+
+                // Insert into put_away_queue — does NOT touch on-hand stock
+                $queueStmt = $db->prepare("
+                    INSERT INTO put_away_queue
+                    (product_id, batch_id, inventory_id, quantity, product_name, batch_code,
+                     chiller_name, chiller_id, expiry_date, dr_id, dr_number, dr_item_id,
+                     return_id, notes, created_by, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+                ");
+                $queueStmt->execute([
                     $productId,
                     $batchId,
-                    $line['inventory_id'] ?? null
-                );
-                if (!$invId) {
-                    throw new Exception(
-                        "Cannot restock product #{$productId}: no FG inventory row for batch. " .
-                        "Transaction rolled back."
-                    );
-                }
+                    $line['inventory_id'] ?? null,
+                    $qty,
+                    $prod['product_name'] ?? 'Unknown Product',
+                    $batchCode,
+                    $chillerName,
+                    $chillerId,
+                    $expiryDate,
+                    $drId,
+                    $dr['dr_number'] ?? null,
+                    $drItemId,
+                    $returnId,
+                    $return['notes'] ?? null,
+                    $currentUser['user_id']
+                ]);
 
-                $restock = fgInventoryRestockBaseUnits($db, $invId, $qty);
-                $restockLog[] = $restock;
-
-                // Movement log (best-effort if table shape allows)
-                try {
-                    $txnCode = 'RTN-' . date('Ymd') . '-' . str_pad((string)random_int(1, 9999), 4, '0', STR_PAD_LEFT);
-                    $txn = $db->prepare("
-                        INSERT INTO fg_inventory_transactions
-                        (transaction_code, inventory_id, product_id, transaction_type, quantity,
-                         reference_type, reference_id, performed_by, reason)
-                        VALUES (?, ?, ?, 'return', ?, 'delivery_return', ?, ?, ?)
-                    ");
-                    $txn->execute([
-                        $txnCode,
-                        $invId,
-                        $productId,
-                        $qty,
-                        $returnId,
-                        $currentUser['user_id'],
-                        'Resellable delivery return restocked'
-                    ]);
-                } catch (Exception $logEx) {
-                    // Non-fatal: restock itself is authoritative
-                    error_log('FG return txn log skipped: ' . $logEx->getMessage());
-                }
+                $restockLog[] = [
+                    'queue_id' => (int)$db->lastInsertId(),
+                    'product_id' => $productId,
+                    'product_name' => $prod['product_name'] ?? null,
+                    'batch_id' => $batchId,
+                    'batch_code' => $batchCode,
+                    'quantity' => $qty,
+                    'chiller_name' => $chillerName,
+                    'status' => 'pending_putaway',
+                ];
             } elseif ($routing['disposition'] === 'dispose'
                 || in_array($routing['condition'], ['damaged', 'expired'], true)) {
                 // Spoilage path — never restock saleable inventory

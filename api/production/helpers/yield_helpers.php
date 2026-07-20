@@ -40,11 +40,21 @@ function packagingSizeToMl($unitSize, $unitMeasure) {
  * Returns list of: product_id, packaging_size_ml, packaging_label, priority_order
  */
 function resolvePackagingSkusForRun(PDO $db, $runId) {
+    // Check if base_products table exists before joining
+    $hasBpTable = false;
+    try {
+        $db->query('SELECT id FROM base_products LIMIT 0');
+        $hasBpTable = true;
+    } catch (Throwable $e) { /* table doesn't exist */ }
+
+    $bpJoin = $hasBpTable ? 'LEFT JOIN base_products bp ON bp.id = mr.base_product_id' : '';
+    $bpCol  = $hasBpTable ? 'bp.name AS base_name' : 'NULL AS base_name';
+
     $stmt = $db->prepare("
-        SELECT mr.product_id, mr.base_product_id, mr.product_name, bp.name AS base_name
+        SELECT mr.product_id, mr.base_product_id, mr.product_name, {$bpCol}
         FROM production_runs pr
         JOIN master_recipes mr ON mr.id = pr.recipe_id
-        LEFT JOIN base_products bp ON bp.id = mr.base_product_id
+        {$bpJoin}
         WHERE pr.id = ?
     ");
     $stmt->execute([(int) $runId]);

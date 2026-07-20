@@ -1,45 +1,269 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="emerald">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chiller Storage - Warehouse Finished Goods | Highland Fresh</title>
-    
-    <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
+
     <link rel="stylesheet" href="../../../css/tailwind.css">
-    
-    <!-- Inter Font -->
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    
-    <!-- Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    
+
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .bento-card { @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f4f7f5;
+            color: #17211b;
+        }
+
+        .app-panel {
+            background: #ffffff;
+            border: 1px solid #dfe7e2;
+            border-radius: 8px;
+            box-shadow: 0 1px 2px rgba(23, 33, 27, 0.04);
+        }
+
         .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
-        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
-        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: #eef2ef; border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(23, 33, 27, 0.15); border-radius: 3px; }
+
         .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-        .chiller-card { @apply relative overflow-hidden; }
-        .chiller-fill { @apply absolute bottom-0 left-0 right-0 bg-gradient-to-t from-primary/30 to-primary/10 transition-all duration-500; }
-        .temp-normal { @apply text-success; }
-        .temp-warning { @apply text-warning; }
-        .temp-critical { @apply text-error; }
+
+        .work-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.35rem 0.75rem;
+            border-radius: 999px;
+            border: 1px solid #dfe7e2;
+            background: #fff;
+            color: #17211b;
+            cursor: pointer;
+            transition: background 0.12s, border-color 0.12s;
+            font-variant-numeric: tabular-nums;
+        }
+        .work-chip:hover { border-color: #b9c9c0; background: #f4f7f5; }
+        .work-chip.is-active {
+            background: #1f7a4d;
+            border-color: #1f7a4d;
+            color: #fff;
+        }
+        .work-chip.is-active.is-warn { background: #d97706; border-color: #d97706; }
+        .work-chip.is-active.is-error { background: #dc2626; border-color: #dc2626; }
+
+        /* Full-width master–detail (avoid Tailwind col-span purge gaps) */
+        .page-main {
+            width: 100%;
+            max-width: none;
+            box-sizing: border-box;
+        }
+        .master-detail {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            width: 100%;
+            min-width: 0;
+            align-items: stretch;
+        }
+        .master-detail__list,
+        .master-detail__detail {
+            width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
+        }
+        .master-detail__detail {
+            display: flex;
+            flex-direction: column;
+            min-height: 20rem;
+        }
+        @media (min-width: 1024px) {
+            .master-detail {
+                flex-direction: row;
+                height: calc(100vh - 13.5rem);
+                min-height: 28rem;
+            }
+            .master-detail__list {
+                flex: 1 1 42%;
+                width: 42%;
+                max-width: none;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+            .master-detail__detail {
+                flex: 1 1 58%;
+                width: 58%;
+                max-width: none;
+                min-height: 0;
+                overflow: hidden;
+            }
+        }
+
+        .loc-table-wrap {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-x: hidden; /* no horizontal scroll */
+            overflow-y: auto;
+            width: 100%;
+        }
+
+        .loc-table {
+            border-collapse: separate;
+            border-spacing: 0;
+            width: 100%;
+            table-layout: fixed; /* columns share full list width */
+        }
+        .loc-table thead th {
+            font-size: 0.6875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #8a968f;
+            background: #f7faf8;
+            border-bottom: 1px solid #e5ebe7;
+            padding: 0.65rem 0.6rem;
+            white-space: nowrap;
+            text-align: left;
+        }
+        .loc-table tbody td {
+            padding: 0.65rem 0.6rem;
+            border-bottom: 1px solid #eef2ef;
+            vertical-align: middle;
+            font-size: 0.8125rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        /* Column proportions — all fit on one line */
+        .loc-table .col-loc { width: 28%; }
+        .loc-table .col-status { width: 12%; }
+        .loc-table .col-used { width: 16%; }
+        .loc-table .col-free { width: 12%; }
+        .loc-table .col-fill { width: 18%; }
+        .loc-table .col-temp { width: 14%; }
+
+        .loc-table tbody tr {
+            cursor: pointer;
+            transition: background 0.1s ease;
+        }
+        .loc-table tbody tr:hover { background: #f7faf8; }
+        .loc-table tbody tr.is-selected {
+            background: #e6f2ec;
+        }
+        .loc-table tbody tr.is-selected:hover {
+            background: #dceee4;
+        }
+        .loc-table tbody tr.row-alert {
+            box-shadow: inset 3px 0 0 #dc2626;
+        }
+        .loc-table tbody tr.row-full {
+            box-shadow: inset 3px 0 0 #d97706;
+        }
+
+        .fill-bar {
+            height: 4px;
+            background: #eef2ef;
+            border-radius: 999px;
+            overflow: hidden;
+            min-width: 2rem;
+            max-width: 100%;
+        }
+        .fill-bar > span {
+            display: block;
+            height: 100%;
+            background: #1f7a4d;
+            border-radius: 999px;
+        }
+        .fill-bar.is-high > span { background: #d97706; }
+        .fill-bar.is-full > span { background: #dc2626; }
+
+        .status-pill {
+            display: inline-block;
+            font-size: 0.6875rem;
+            font-weight: 600;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            background: #e6f2ec;
+            color: #155c3a;
+            text-transform: capitalize;
+        }
+        .status-pill.is-full { background: #fef3c7; color: #92400e; }
+        .status-pill.is-down { background: #fee2e2; color: #b91c1c; }
+        .status-pill.is-maint { background: #e5e7eb; color: #4b5563; }
+
+        .temp-ok { color: #155c3a; font-variant-numeric: tabular-nums; font-weight: 600; }
+        .temp-bad { color: #b91c1c; font-variant-numeric: tabular-nums; font-weight: 700; }
+        .temp-na { color: #b0bab4; font-variant-numeric: tabular-nums; }
+
+        .fg-toolbar-count {
+            font-size: 0.75rem;
+            color: #65736b;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .detail-empty {
+            color: #8a968f;
+            font-size: 0.8125rem;
+            text-align: center;
+            padding: 2.5rem 1rem;
+        }
+
+        .contents-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8125rem;
+            table-layout: fixed;
+        }
+        .contents-table th {
+            text-align: left;
+            font-size: 0.625rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #8a968f;
+            font-weight: 600;
+            padding: 0.5rem 0.65rem;
+            border-bottom: 1px solid #eef2ef;
+            position: sticky;
+            top: 0;
+            background: #fff;
+            white-space: nowrap;
+        }
+        .contents-table td {
+            padding: 0.55rem 0.65rem;
+            border-bottom: 1px solid #f3f6f4;
+            vertical-align: middle;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .contents-table .c-product { width: 36%; }
+        .contents-table .c-batch { width: 28%; }
+        .contents-table .c-qty { width: 18%; }
+        .contents-table .c-exp { width: 18%; }
+        .contents-table tr.is-expiring td { color: #b45309; }
+        .contents-table tr.is-expired td { color: #b91c1c; font-weight: 600; }
+
+        .batch-id {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: #3d4a43;
+            letter-spacing: 0.01em;
+        }
     </style>
 </head>
-<body class="bg-base-200 min-h-screen">
-    
-    <!-- Mobile Sidebar Backdrop -->
+
+<body class="min-h-screen">
+
     <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
-    
-    <!-- Sidebar -->
-    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
-        
-        <!-- Sidebar Header -->
-        <div class="p-4 border-b border-base-300">
+
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-64 bg-white border-r border-[#dfe7e2] z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-4 border-b border-[#dfe7e2]">
             <div class="flex items-center gap-3">
                 <img src="../../images/logo.jpg" alt="Highland Fresh Logo" class="w-10 h-10 rounded-xl object-cover">
                 <div class="flex-1 min-w-0">
@@ -51,91 +275,81 @@
                 </button>
             </div>
         </div>
-        
-        <!-- Navigation -->
+
         <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
-            <!-- Main Menu -->
             <div>
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
                 <ul class="menu menu-sm p-0 gap-1">
                     <li>
-                        <a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[#eef4f0]">
                             <i class="fas fa-th-large w-5 text-center text-base-content/60"></i>
                             <span class="flex-1">Dashboard</span>
                         </a>
                     </li>
                 </ul>
             </div>
-            
-            <!-- Inventory -->
             <div>
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Inventory</h2>
                 <ul class="menu menu-sm p-0 gap-1">
                     <li>
-                        <a href="inventory.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <a href="inventory.html" class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[#eef4f0]">
                             <i class="fas fa-boxes w-5 text-center text-base-content/60"></i>
                             <span class="flex-1">FG Inventory</span>
                         </a>
                     </li>
                     <li>
-                        <a href="chillers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                        <a href="chillers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[#1f7a4d] text-white">
                             <i class="fas fa-temperature-low w-5 text-center"></i>
                             <span class="flex-1">Chiller Storage</span>
                         </a>
                     </li>
                 </ul>
             </div>
-            
-            <!-- Operations -->
             <div>
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Operations</h2>
                 <ul class="menu menu-sm p-0 gap-1">
                     <li>
-                        <a href="receiving.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <a href="receiving.html" class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[#eef4f0]">
                             <i class="fas fa-dolly w-5 text-center text-base-content/60"></i>
-                            <span class="flex-1">Put Away from Packaging</span>
+                            <span class="flex-1">Receive from Production</span>
                         </a>
                     </li>
                     <li>
-                        <a href="delivery_receipts.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <a href="delivery_receipts.html" class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[#eef4f0]">
                             <i class="fas fa-file-invoice w-5 text-center text-base-content/60"></i>
                             <span class="flex-1">Delivery Receipts</span>
                         </a>
                     </li>
                     <li>
-                        <a href="dispatch.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <a href="dispatch.html" class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[#eef4f0]">
                             <i class="fas fa-truck w-5 text-center text-base-content/60"></i>
                             <span class="flex-1">Dispatch</span>
                         </a>
                     </li>
                 </ul>
             </div>
-            
-            <!-- Customers -->
             <div>
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Customers</h2>
                 <ul class="menu menu-sm p-0 gap-1">
                     <li>
-                        <a href="customers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <a href="customers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[#eef4f0]">
                             <i class="fas fa-users w-5 text-center text-base-content/60"></i>
                             <span class="flex-1">Customer List</span>
                         </a>
                     </li>
                 </ul>
             </div>
-            
-            <!-- Reports -->
             <div>
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Reports</h2>
                 <ul class="menu menu-sm p-0 gap-1">
                     <li>
-                        <a href="reports/inventory.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <a href="reports/inventory.html" class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[#eef4f0]">
                             <i class="fas fa-chart-bar w-5 text-center text-base-content/60"></i>
                             <span class="flex-1">Inventory Report</span>
                         </a>
                     </li>
                     <li>
-                        <a href="reports/dispatch.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <a href="reports/dispatch.html" class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[#eef4f0]">
                             <i class="fas fa-shipping-fast w-5 text-center text-base-content/60"></i>
                             <span class="flex-1">Dispatch Report</span>
                         </a>
@@ -143,12 +357,11 @@
                 </ul>
             </div>
         </nav>
-        
-        <!-- User Section -->
-        <div class="p-4 border-t border-base-300">
+
+        <div class="p-4 border-t border-[#dfe7e2]">
             <div class="flex items-center gap-3">
                 <div class="avatar placeholder">
-                    <div class="w-10 rounded-xl bg-primary text-primary-content">
+                    <div class="w-10 rounded-xl bg-[#1f7a4d] text-white">
                         <span class="text-sm font-semibold" id="userInitials">FG</span>
                     </div>
                 </div>
@@ -161,32 +374,31 @@
                         <i class="fas fa-ellipsis-v"></i>
                     </label>
                     <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
-                        <li><a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i> Logout</a></li>
+                        <li>
+                            <a onclick="AuthService.logout()" class="text-error">
+                                <i class="fas fa-sign-out-alt w-4"></i> Logout
+                            </a>
+                        </li>
                     </ul>
                 </div>
             </div>
         </div>
     </aside>
-    
-    <!-- Main Content -->
-    <div class="lg:ml-72 min-h-screen flex flex-col">
-        
-        <!-- Top Navbar -->
-        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+
+    <div class="lg:ml-64 min-h-screen flex flex-col">
+        <header class="navbar bg-white/95 border-b border-[#dfe7e2] sticky top-0 z-30 px-4 lg:px-5 backdrop-blur">
             <div class="flex-none lg:hidden">
                 <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
                     <i class="fas fa-bars text-lg"></i>
                 </button>
             </div>
-            <div class="flex-1">
-                <div class="flex items-center gap-2">
-                    <i class="fas fa-temperature-low text-primary"></i>
-                    <span class="font-semibold">Chiller Storage</span>
-                </div>
+            <div class="flex-1 min-w-0">
+                <h1 class="text-lg lg:text-xl font-bold text-[#17211b]">Chiller Storage</h1>
             </div>
-            <div class="flex-none gap-2">
-                <button class="btn btn-primary btn-sm" onclick="openAddChillerModal()">
-                    <i class="fas fa-plus"></i> Add Chiller
+            <div class="flex-none flex items-center gap-2">
+                <button type="button" class="btn btn-sm btn-ghost border border-[#cfdad4]" onclick="openAddChillerModal()">
+                    <i class="fas fa-plus"></i>
+                    <span class="hidden sm:inline">Add</span>
                 </button>
                 <label class="swap swap-rotate btn btn-ghost btn-circle">
                     <input type="checkbox" id="themeToggle" />
@@ -195,142 +407,246 @@
                 </label>
             </div>
         </header>
-        
-        <!-- Page Content -->
-        <main class="flex-1 p-4 lg:p-6">
-            
-            <!-- Page Header -->
-            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+
+        <main class="page-main flex-1 p-3 md:p-4 w-full min-w-0">
+            <div class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between w-full">
                 <div>
-                    <h1 class="text-2xl font-bold text-base-content">Chiller Storage Management</h1>
-                    <p class="text-base-content/60">Monitor temperature and manage storage locations</p>
+                    <h2 class="text-lg font-bold text-[#17211b] leading-tight">Storage locations</h2>
+                    <p class="text-xs text-[#65736b]">Capacity · put-away target · contents · temp status</p>
+                </div>
+                <span class="fg-toolbar-count" id="listToolbarCount">0 locations</span>
+            </div>
+
+            <div class="app-panel mb-3 p-2.5 w-full">
+                <div class="flex flex-col lg:flex-row gap-2 lg:items-end w-full">
+                    <div class="form-control flex-1 min-w-0">
+                        <label class="label py-0.5">
+                            <span class="label-text text-[0.65rem] font-semibold uppercase tracking-wide text-[#65736b]">Search</span>
+                        </label>
+                        <input type="text" id="searchInput" placeholder="Name, code, or location…"
+                            class="input input-bordered input-sm w-full" onkeyup="applyFilters()">
+                    </div>
+                    <div class="form-control w-full lg:w-44 shrink-0">
+                        <label class="label py-0.5">
+                            <span class="label-text text-[0.65rem] font-semibold uppercase tracking-wide text-[#65736b]">Sort</span>
+                        </label>
+                        <select id="sortFilter" class="select select-bordered select-sm w-full" onchange="applyFilters()">
+                            <option value="name">Name A–Z</option>
+                            <option value="fill_desc">Fullest first</option>
+                            <option value="free_desc">Most free first</option>
+                            <option value="temp_alert">Temp alerts first</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-1.5 mt-2.5 pt-2 border-t border-[#eef4f0]" id="workFilterChips" role="tablist">
+                    <button type="button" class="work-chip is-active" data-filter="" onclick="setWorkFilter('')">All</button>
+                    <button type="button" class="work-chip" data-filter="available" onclick="setWorkFilter('available')">
+                        Open <span id="chipOpen" class="opacity-80">0</span>
+                    </button>
+                    <button type="button" class="work-chip" data-filter="full" onclick="setWorkFilter('full')">
+                        Full <span id="chipFull" class="opacity-80">0</span>
+                    </button>
+                    <button type="button" class="work-chip" data-filter="temp" onclick="setWorkFilter('temp')">
+                        Temp <span id="chipTemp" class="opacity-80">0</span>
+                    </button>
+                    <button type="button" class="work-chip" data-filter="down" onclick="setWorkFilter('down')">
+                        Offline <span id="chipDown" class="opacity-80">0</span>
+                    </button>
                 </div>
             </div>
-            
-            <!-- Temperature Alert Banner -->
-            <div id="tempAlertBanner" class="alert alert-warning mb-6 hidden">
-                <i class="fas fa-exclamation-triangle"></i>
-                <span id="tempAlertText">Temperature alert detected in some chillers!</span>
-            </div>
-            
-            <!-- Chiller Grid -->
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6" id="chillerGrid">
-                <div class="col-span-full text-center py-12">
-                    <span class="loading loading-spinner loading-lg"></span>
-                    <p class="text-base-content/60 mt-2">Loading chillers...</p>
+
+            <!-- Master–detail: full width · ~42/58 split on desktop -->
+            <div class="master-detail">
+                <!-- Location list -->
+                <div class="master-detail__list app-panel">
+                    <div class="loc-table-wrap scrollbar-thin">
+                        <table class="loc-table">
+                            <thead class="sticky top-0 z-[1]">
+                                <tr>
+                                    <th class="col-loc">Location</th>
+                                    <th class="col-status">Status</th>
+                                    <th class="col-used text-right">Used</th>
+                                    <th class="col-free text-right">Free</th>
+                                    <th class="col-fill">Fill</th>
+                                    <th class="col-temp">Temp</th>
+                                </tr>
+                            </thead>
+                            <tbody id="chillerTableBody">
+                                <tr>
+                                    <td colspan="6" class="text-center py-10 text-[#8a968f]">
+                                        <span class="loading loading-spinner loading-md"></span>
+                                        <p class="text-sm mt-2">Loading…</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Detail panel -->
+                <div class="master-detail__detail app-panel">
+                    <div id="detailEmpty" class="detail-empty flex-1 flex flex-col items-center justify-center h-full min-h-[16rem]">
+                        <i class="fas fa-snowflake text-3xl opacity-20 mb-3"></i>
+                        <p>Select a chiller to view contents</p>
+                    </div>
+                    <div id="detailPanel" class="hidden flex flex-col flex-1 min-h-0 h-full">
+                        <div class="px-4 pt-4 pb-3 border-b border-[#eef2ef] shrink-0">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="min-w-0 flex-1">
+                                    <h3 class="font-bold text-base text-[#17211b] truncate" id="detailName">—</h3>
+                                    <p class="text-xs text-[#8a968f] font-mono mt-0.5 truncate" id="detailCode">—</p>
+                                </div>
+                                <span id="detailStatusPill" class="status-pill shrink-0">—</span>
+                            </div>
+                            <dl class="grid grid-cols-3 gap-2 mt-3 text-center">
+                                <div class="rounded-lg bg-[#f7faf8] py-2 px-1">
+                                    <div class="text-[0.625rem] uppercase tracking-wide text-[#8a968f] font-semibold">Used</div>
+                                    <div class="text-sm font-bold tabular-nums" id="detailUsed">0</div>
+                                </div>
+                                <div class="rounded-lg bg-[#f7faf8] py-2 px-1">
+                                    <div class="text-[0.625rem] uppercase tracking-wide text-[#8a968f] font-semibold">Free</div>
+                                    <div class="text-sm font-bold tabular-nums" id="detailFree">0</div>
+                                </div>
+                                <div class="rounded-lg bg-[#f7faf8] py-2 px-1">
+                                    <div class="text-[0.625rem] uppercase tracking-wide text-[#8a968f] font-semibold">Temp</div>
+                                    <div class="text-sm font-bold tabular-nums" id="detailTemp">—</div>
+                                </div>
+                            </dl>
+                            <div class="flex flex-wrap gap-1.5 mt-3">
+                                <button type="button" class="btn btn-xs bg-[#1f7a4d] border-[#1f7a4d] text-white hover:bg-[#155c3a]"
+                                    id="detailOpenInvBtn" onclick="openInInventory()">
+                                    Open inventory
+                                </button>
+                                <button type="button" class="btn btn-ghost btn-xs border border-[#cfdad4]"
+                                    onclick="logTemperature(selectedId)">
+                                    Log temp
+                                </button>
+                                <button type="button" class="btn btn-ghost btn-xs border border-[#cfdad4]"
+                                    onclick="editChiller(selectedId)">
+                                    Edit
+                                </button>
+                            </div>
+                        </div>
+                        <div class="px-3 py-2 border-b border-[#eef2ef] flex items-center justify-between shrink-0">
+                            <span class="text-[0.65rem] font-semibold uppercase tracking-wide text-[#8a968f]">Contents · FIFO</span>
+                            <span class="text-xs text-[#8a968f] tabular-nums" id="detailLineCount">0 lines</span>
+                        </div>
+                        <div class="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin min-h-0" id="detailContents">
+                            <p class="detail-empty py-8">No stock</p>
+                        </div>
+                    </div>
                 </div>
             </div>
-            
         </main>
-        
-        <!-- Footer -->
-        <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
+
+        <footer class="footer footer-center p-3 bg-white text-base-content border-t border-[#dfe7e2]">
             <div>
-                <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
+                <p class="text-xs text-base-content/60">&copy; 2026 Highland Fresh Dairy. All rights reserved.</p>
             </div>
         </footer>
     </div>
-    
+
     <!-- Add/Edit Chiller Modal -->
     <dialog id="chillerModal" class="modal">
-        <div class="modal-box">
-            <h3 class="font-bold text-lg mb-4" id="chillerModalTitle">Add New Chiller</h3>
+        <div class="modal-box max-w-md rounded-lg">
+            <h3 class="font-bold text-lg mb-4" id="chillerModalTitle">Add chiller</h3>
             <form id="chillerForm">
                 <input type="hidden" id="chillerId">
-                <div class="form-control mb-4">
-                    <label class="label"><span class="label-text">Chiller Name</span></label>
-                    <input type="text" id="chillerName" class="input input-bordered" placeholder="e.g., Chiller A" required>
-                </div>
-                <div class="form-control mb-4">
-                    <label class="label"><span class="label-text">Location</span></label>
-                    <input type="text" id="chillerLocation" class="input input-bordered" placeholder="e.g., Cold Room 1">
-                </div>
-                <div class="grid grid-cols-2 gap-4 mb-4">
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Capacity (units)</span></label>
-                        <input type="number" id="chillerCapacity" class="input input-bordered" placeholder="1000" required>
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <div class="form-control col-span-2 sm:col-span-1">
+                        <label class="label py-1"><span class="label-text text-sm font-medium">Name <span class="text-error">*</span></span></label>
+                        <input type="text" id="chillerName" class="input input-bordered input-sm" placeholder="e.g. Chiller A" required>
                     </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Target Temp (°C)</span></label>
-                        <input type="number" id="chillerTargetTemp" class="input input-bordered" placeholder="4" step="0.1">
+                    <div class="form-control col-span-2 sm:col-span-1">
+                        <label class="label py-1"><span class="label-text text-sm font-medium">Code <span class="text-error">*</span></span></label>
+                        <input type="text" id="chillerCode" class="input input-bordered input-sm" placeholder="e.g. CH-A" required>
                     </div>
                 </div>
-                <div class="grid grid-cols-2 gap-4 mb-4">
+                <div class="form-control mb-3">
+                    <label class="label py-1"><span class="label-text text-sm font-medium">Plant location</span></label>
+                    <input type="text" id="chillerLocation" class="input input-bordered input-sm" placeholder="e.g. Cold Room 1">
+                </div>
+                <div class="grid grid-cols-2 gap-3 mb-3">
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Min Temp (°C)</span></label>
-                        <input type="number" id="chillerMinTemp" class="input input-bordered" placeholder="2" step="0.1">
+                        <label class="label py-1"><span class="label-text text-sm font-medium">Capacity <span class="text-error">*</span></span></label>
+                        <input type="number" id="chillerCapacity" class="input input-bordered input-sm" min="1" required>
                     </div>
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Max Temp (°C)</span></label>
-                        <input type="number" id="chillerMaxTemp" class="input input-bordered" placeholder="8" step="0.1">
+                        <label class="label py-1"><span class="label-text text-sm font-medium">Current temp (°C)</span></label>
+                        <input type="number" id="chillerTargetTemp" class="input input-bordered input-sm" step="0.1" placeholder="4">
                     </div>
                 </div>
-                <div class="modal-action">
-                    <button type="button" class="btn" onclick="chillerModal.close()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save</button>
+                <div class="grid grid-cols-2 gap-3 mb-4">
+                    <div class="form-control">
+                        <label class="label py-1"><span class="label-text text-sm font-medium">Min °C</span></label>
+                        <input type="number" id="chillerMinTemp" class="input input-bordered input-sm" step="0.1" placeholder="2">
+                    </div>
+                    <div class="form-control">
+                        <label class="label py-1"><span class="label-text text-sm font-medium">Max °C</span></label>
+                        <input type="number" id="chillerMaxTemp" class="input input-bordered input-sm" step="0.1" placeholder="8">
+                    </div>
+                </div>
+                <div class="modal-action mt-2">
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="chillerModal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-sm bg-[#1f7a4d] border-[#1f7a4d] text-white hover:bg-[#155c3a]">Save</button>
                 </div>
             </form>
         </div>
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
-    
+
     <!-- Log Temperature Modal -->
     <dialog id="logTempModal" class="modal">
-        <div class="modal-box">
-            <h3 class="font-bold text-lg mb-4">Log Temperature Reading</h3>
+        <div class="modal-box max-w-sm rounded-lg">
+            <h3 class="font-bold text-lg mb-1">Log temperature</h3>
+            <p class="text-xs text-[#65736b] mb-4" id="logTempChillerLabel">—</p>
             <form id="logTempForm">
                 <input type="hidden" id="logTempChillerId">
-                <div class="form-control mb-4">
-                    <label class="label"><span class="label-text">Current Temperature (°C)</span></label>
-                    <input type="number" id="logTempValue" class="input input-bordered" step="0.1" required>
+                <div class="form-control mb-3">
+                    <label class="label py-1"><span class="label-text text-sm font-medium">Reading (°C) <span class="text-error">*</span></span></label>
+                    <input type="number" id="logTempValue" class="input input-bordered input-sm" step="0.1" required>
                 </div>
                 <div class="form-control mb-4">
-                    <label class="label"><span class="label-text">Notes (optional)</span></label>
-                    <textarea id="logTempNotes" class="textarea textarea-bordered" placeholder="Any observations..."></textarea>
+                    <label class="label py-1"><span class="label-text text-sm font-medium">Notes</span></label>
+                    <textarea id="logTempNotes" class="textarea textarea-bordered textarea-sm" rows="2" placeholder="Optional…"></textarea>
                 </div>
-                <div class="modal-action">
-                    <button type="button" class="btn" onclick="logTempModal.close()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Log Reading</button>
+                <div class="modal-action mt-2">
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="logTempModal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-sm bg-[#1f7a4d] border-[#1f7a4d] text-white hover:bg-[#155c3a]">Save reading</button>
                 </div>
             </form>
         </div>
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
-    
-    <!-- Toast Container -->
+
     <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
-    
-    <!-- Scripts -->
+
     <script src="../../../js/vendor/axios.min.js"></script>
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/utils/units.js?v=20260712"></script>
     <script src="../../../js/warehouse/fg.service.js"></script>
-    
+
     <script>
         let chillers = [];
-        
-        // Sidebar toggle
+        let workFilter = '';
+        let selectedId = null;
+        let detailCache = null;
+
         function toggleSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            const backdrop = document.getElementById('sidebarBackdrop');
-            sidebar.classList.toggle('-translate-x-full');
-            backdrop.classList.toggle('hidden');
+            document.getElementById('sidebar').classList.toggle('-translate-x-full');
+            document.getElementById('sidebarBackdrop').classList.toggle('hidden');
         }
-        
-        // Theme toggle
-        document.getElementById('themeToggle').addEventListener('change', function() {
+
+        document.getElementById('themeToggle').addEventListener('change', function () {
             document.documentElement.setAttribute('data-theme', this.checked ? 'dark' : 'emerald');
             localStorage.setItem('theme', this.checked ? 'dark' : 'emerald');
         });
-        
-        // Load saved theme
-        const savedTheme = localStorage.getItem('theme');
-        if (savedTheme === 'dark') {
+        if (localStorage.getItem('theme') === 'dark') {
             document.documentElement.setAttribute('data-theme', 'dark');
             document.getElementById('themeToggle').checked = true;
         }
-        
-        // Show toast
+
         function showToast(message, type = 'info') {
             const toast = document.createElement('div');
             toast.className = `alert alert-${type} shadow-lg`;
@@ -338,227 +654,447 @@
             document.getElementById('toastContainer').appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
         }
-        
-        // Initialize page
+
+        function escapeHtml(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        function getMetrics(c) {
+            const used = Number(c.current_count) || 0;
+            const cap = Number(c.capacity) || 0;
+            const free = Math.max(0, cap - used);
+            const fill = cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
+            const temp = parseFloat(c.temperature_celsius);
+            const minT = parseFloat(c.min_temperature);
+            const maxT = parseFloat(c.max_temperature);
+            const hasTemp = Number.isFinite(temp);
+            // Standard dairy cold-store band; ignore invalid ranges (e.g. 0–0) so 3.0° stays normal green
+            let min = 2;
+            let max = 8;
+            if (Number.isFinite(minT) && Number.isFinite(maxT) && maxT > minT) {
+                min = minT;
+                max = maxT;
+            }
+            const tempAlert = hasTemp && (temp < min || temp > max);
+            const status = String(c.status || 'available').toLowerCase();
+            const isFull = status === 'full' || (cap > 0 && used >= cap);
+            const isDown = status === 'offline' || status === 'maintenance';
+            return { used, cap, free, fill, temp, min, max, hasTemp, tempAlert, status, isFull, isDown };
+        }
+
+        /** Prefer unique alphanumeric batch code for warehouse scan */
+        function resolveBatchId(item) {
+            const candidates = [
+                item.batch_code,
+                item.batch_number,
+                item.barcode,
+                item.lot_code,
+                item.lot_number
+            ];
+            for (const c of candidates) {
+                const s = String(c ?? '').trim();
+                if (s) return s;
+            }
+            if (item.batch_id != null && item.batch_id !== '') return String(item.batch_id);
+            if (item.id != null) return `FG-${item.id}`;
+            return '—';
+        }
+
+        function statusPill(m) {
+            if (m.isDown) {
+                const label = m.status === 'maintenance' ? 'Maintenance' : 'Offline';
+                return `<span class="status-pill is-maint">${label}</span>`;
+            }
+            if (m.isFull) return `<span class="status-pill is-full">Full</span>`;
+            return `<span class="status-pill">Open</span>`;
+        }
+
         document.addEventListener('DOMContentLoaded', async () => {
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../../login.html';
+                return;
+            }
             try {
                 const user = AuthService.getCurrentUser();
                 if (user) {
-                    document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
-                    document.getElementById('userInitials').textContent = `${user.first_name[0]}${user.last_name[0]}`;
+                    document.getElementById('sidebarUserName').textContent =
+                        `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Warehouse Staff';
+                    const f = (user.first_name || 'F')[0];
+                    const l = (user.last_name || 'G')[0];
+                    document.getElementById('userInitials').textContent = (f + l).toUpperCase();
                 }
                 await loadChillers();
-            } catch (error) {
-                console.error('Init error:', error);
+            } catch (e) {
+                console.error(e);
                 showToast('Failed to initialize page', 'error');
             }
         });
-        
-        // Load chillers
+
         async function loadChillers() {
             try {
                 const response = await WarehouseFGService.getChillers();
                 chillers = response.data || [];
-                renderChillers();
-                checkTemperatureAlerts();
+                updateChipCounts();
+                applyFilters();
+                if (selectedId) {
+                    const still = chillers.find(c => Number(c.id) === Number(selectedId));
+                    if (still) await selectChiller(selectedId, { silent: true });
+                    else clearDetail();
+                }
             } catch (error) {
                 console.error('Failed to load chillers:', error);
-                document.getElementById('chillerGrid').innerHTML = `
-                    <div class="col-span-full text-center py-12 text-error">
-                        <i class="fas fa-exclamation-circle text-4xl mb-2"></i>
-                        <p>Failed to load chillers</p>
-                    </div>
-                `;
+                document.getElementById('chillerTableBody').innerHTML = `
+                    <tr><td colspan="6" class="text-center py-10 text-error text-sm">Failed to load locations</td></tr>`;
             }
         }
-        
-        // Render chiller cards
-        function renderChillers() {
-            const grid = document.getElementById('chillerGrid');
-            
-            if (!chillers || chillers.length === 0) {
-                grid.innerHTML = `
-                    <div class="col-span-full text-center py-12">
-                        <i class="fas fa-temperature-low text-4xl text-base-content/30 mb-4"></i>
-                        <p class="text-base-content/60">No chillers configured</p>
-                        <button class="btn btn-primary btn-sm mt-4" onclick="openAddChillerModal()">
-                            <i class="fas fa-plus"></i> Add First Chiller
-                        </button>
-                    </div>
-                `;
+
+        function updateChipCounts() {
+            let open = 0, full = 0, temp = 0, down = 0;
+            chillers.forEach(c => {
+                const m = getMetrics(c);
+                if (m.isDown) down++;
+                else if (m.isFull) full++;
+                else open++;
+                if (m.tempAlert) temp++;
+            });
+            const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = String(n); };
+            set('chipOpen', open);
+            set('chipFull', full);
+            set('chipTemp', temp);
+            set('chipDown', down);
+        }
+
+        function setWorkFilter(key) {
+            workFilter = key || '';
+            document.querySelectorAll('#workFilterChips .work-chip[data-filter]').forEach(btn => {
+                const active = (btn.getAttribute('data-filter') || '') === workFilter;
+                btn.classList.toggle('is-active', active);
+                btn.classList.toggle('is-warn', active && key === 'full');
+                btn.classList.toggle('is-error', active && (key === 'temp' || key === 'down'));
+            });
+            applyFilters();
+        }
+
+        function getFilteredSorted() {
+            const q = (document.getElementById('searchInput').value || '').toLowerCase().trim();
+            const sort = document.getElementById('sortFilter').value;
+
+            let list = chillers.filter(c => {
+                const m = getMetrics(c);
+                if (q) {
+                    const hay = `${c.chiller_name || ''} ${c.chiller_code || ''} ${c.location || ''}`.toLowerCase();
+                    if (!hay.includes(q)) return false;
+                }
+                if (workFilter === 'available') return !m.isFull && !m.isDown;
+                if (workFilter === 'full') return m.isFull;
+                if (workFilter === 'temp') return m.tempAlert;
+                if (workFilter === 'down') return m.isDown;
+                return true;
+            });
+
+            list.sort((a, b) => {
+                const ma = getMetrics(a);
+                const mb = getMetrics(b);
+                switch (sort) {
+                    case 'fill_desc': return mb.fill - ma.fill;
+                    case 'free_desc': return mb.free - ma.free;
+                    case 'temp_alert':
+                        if (ma.tempAlert !== mb.tempAlert) return ma.tempAlert ? -1 : 1;
+                        return (a.chiller_name || '').localeCompare(b.chiller_name || '');
+                    default:
+                        return (a.chiller_name || '').localeCompare(b.chiller_name || '');
+                }
+            });
+            return list;
+        }
+
+        function applyFilters() {
+            const list = getFilteredSorted();
+            const tbody = document.getElementById('chillerTableBody');
+            const toolbar = document.getElementById('listToolbarCount');
+            if (toolbar) {
+                toolbar.textContent = list.length === 1 ? '1 location' : `${list.length} locations`;
+            }
+
+            if (!list.length) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-12 text-[#8a968f] text-sm">
+                    <i class="fas fa-snowflake text-2xl opacity-20 mb-2 block"></i>No matching locations
+                </td></tr>`;
                 return;
             }
-            
-            grid.innerHTML = chillers.map(chiller => {
-                const fillPercent = Math.min((chiller.current_count / chiller.capacity) * 100, 100);
-                const currentTemp = parseFloat(chiller.temperature_celsius) || 0;
-                const minTemp = parseFloat(chiller.min_temperature) || 2;
-                const maxTemp = parseFloat(chiller.max_temperature) || 8;
-                
-                let tempClass = 'temp-normal';
-                let tempIcon = 'fa-thermometer-half';
-                if (currentTemp < minTemp || currentTemp > maxTemp) {
-                    tempClass = 'temp-critical';
-                    tempIcon = 'fa-thermometer-full';
-                } else if (currentTemp <= minTemp + 1 || currentTemp >= maxTemp - 1) {
-                    tempClass = 'temp-warning';
-                }
-                
-                const statusBadge = chiller.status === 'available' 
-                    ? '<span class="badge badge-success badge-sm">Active</span>'
-                    : '<span class="badge badge-error badge-sm">Inactive</span>';
-                
+
+            tbody.innerHTML = list.map(c => {
+                const m = getMetrics(c);
+                const selected = Number(selectedId) === Number(c.id);
+                let rowClass = selected ? 'is-selected' : '';
+                if (m.tempAlert) rowClass += ' row-alert';
+                else if (m.isFull) rowClass += ' row-full';
+
+                const fillCls = m.fill >= 100 ? 'is-full' : (m.fill >= 85 ? 'is-high' : '');
+                const tempHtml = m.hasTemp
+                    ? `<span class="${m.tempAlert ? 'temp-bad' : 'temp-ok'}" title="Range ${m.min}–${m.max}°C">${m.temp.toFixed(1)}°</span>`
+                    : `<span class="temp-na">—</span>`;
+
+                const sub = c.location
+                    ? escapeHtml(c.location)
+                    : (c.chiller_code ? escapeHtml(c.chiller_code) : '');
+
                 return `
-                    <div class="card bg-base-100 shadow-md chiller-card bento-card">
-                        <div class="chiller-fill" style="height: ${fillPercent}%"></div>
-                        <div class="card-body relative z-10">
-                            <div class="flex justify-between items-start">
-                                <div>
-                                    <h3 class="card-title text-lg">${chiller.chiller_name}</h3>
-                                    <p class="text-sm text-base-content/60">${chiller.location || 'No location'}</p>
-                                </div>
-                                ${statusBadge}
+                    <tr class="${rowClass.trim()}" data-id="${c.id}" onclick="selectChiller(${c.id})">
+                        <td class="col-loc">
+                            <div class="font-semibold text-[#17211b] leading-tight truncate" title="${escapeHtml(c.chiller_name || '')}">${escapeHtml(c.chiller_name || '—')}</div>
+                            <div class="text-[0.7rem] text-[#8a968f] font-mono truncate">${sub}</div>
+                        </td>
+                        <td class="col-status">${statusPill(m)}</td>
+                        <td class="col-used text-right tabular-nums font-medium whitespace-nowrap">${m.used.toLocaleString()}<span class="text-[#8a968f] font-normal">/${m.cap.toLocaleString()}</span></td>
+                        <td class="col-free text-right tabular-nums whitespace-nowrap ${m.free === 0 ? 'text-error font-semibold' : ''}">${m.free.toLocaleString()}</td>
+                        <td class="col-fill">
+                            <div class="flex items-center gap-1.5">
+                                <div class="fill-bar flex-1 ${fillCls}"><span style="width:${Math.round(m.fill)}%"></span></div>
+                                <span class="tabular-nums text-[0.7rem] text-[#8a968f] shrink-0">${Math.round(m.fill)}%</span>
                             </div>
-                            
-                            <div class="flex items-center gap-4 mt-4">
-                                <div class="flex-1">
-                                    <div class="text-xs text-base-content/60 mb-1">Temperature</div>
-                                    <div class="flex items-center gap-2">
-                                        <i class="fas ${tempIcon} ${tempClass}"></i>
-                                        <span class="text-2xl font-bold ${tempClass}">${currentTemp.toFixed(1)}&deg;C</span>
-                                    </div>
-                                    <div class="text-xs text-base-content/60 mt-1">Range: ${minTemp}&deg;C - ${maxTemp}&deg;C</div>
-                                </div>
-                                <div class="flex-1 text-right">
-                                    <div class="text-xs text-base-content/60 mb-1">Capacity</div>
-                                    <div class="text-2xl font-bold">${chiller.current_count || 0}</div>
-                                    <div class="text-xs text-base-content/60">/ ${chiller.capacity} units</div>
-                                </div>
-                            </div>
-                            
-                            <progress class="progress progress-primary w-full mt-4" value="${fillPercent}" max="100"></progress>
-                            
-                            <div class="card-actions justify-end mt-4">
-                                <button class="btn btn-ghost btn-sm" onclick="logTemperature(${chiller.id})">
-                                    <i class="fas fa-thermometer-half"></i> Log Temp
-                                </button>
-                                <button class="btn btn-ghost btn-sm" onclick="editChiller(${chiller.id})">
-                                    <i class="fas fa-edit"></i> Edit
-                                </button>
-                                <button class="btn btn-ghost btn-sm" onclick="viewChillerContents(${chiller.id})">
-                                    <i class="fas fa-boxes"></i> Contents
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `;
+                        </td>
+                        <td class="col-temp whitespace-nowrap">${tempHtml}</td>
+                    </tr>`;
             }).join('');
         }
-        
-        // Check temperature alerts
-        function checkTemperatureAlerts() {
-            const alerts = chillers.filter(c => {
-                const temp = parseFloat(c.temperature_celsius) || 0;
-                const min = parseFloat(c.min_temperature) || 2;
-                const max = parseFloat(c.max_temperature) || 8;
-                return temp < min || temp > max;
-            });
-            
-            if (alerts.length > 0) {
-                document.getElementById('tempAlertBanner').classList.remove('hidden');
-                document.getElementById('tempAlertText').textContent = 
-                    `Temperature alert in ${alerts.length} chiller(s): ${alerts.map(c => c.chiller_name).join(', ')}`;
+
+        function clearDetail() {
+            selectedId = null;
+            detailCache = null;
+            document.getElementById('detailEmpty').classList.remove('hidden');
+            const panel = document.getElementById('detailPanel');
+            panel.classList.add('hidden');
+            panel.classList.remove('flex');
+            panel.style.display = '';
+            applyFilters();
+        }
+
+        async function selectChiller(id, opts = {}) {
+            selectedId = Number(id);
+            if (!opts.silent) applyFilters();
+
+            const c = chillers.find(x => Number(x.id) === selectedId);
+            if (!c) return;
+
+            document.getElementById('detailEmpty').classList.add('hidden');
+            const panel = document.getElementById('detailPanel');
+            panel.classList.remove('hidden');
+            panel.classList.add('flex');
+            panel.style.display = 'flex';
+            panel.style.flexDirection = 'column';
+            panel.style.flex = '1 1 auto';
+            panel.style.minHeight = '0';
+            panel.style.height = '100%';
+
+            const m = getMetrics(c);
+            document.getElementById('detailName').textContent = c.chiller_name || '—';
+            document.getElementById('detailCode').textContent =
+                [c.chiller_code, c.location].filter(Boolean).join(' · ') || '—';
+            const pillHost = document.getElementById('detailStatusPill');
+            if (pillHost) {
+                pillHost.className = 'status-pill shrink-0' +
+                    (m.isDown ? ' is-maint' : m.isFull ? ' is-full' : '');
+                pillHost.textContent = m.isDown
+                    ? (m.status === 'maintenance' ? 'Maintenance' : 'Offline')
+                    : (m.isFull ? 'Full' : 'Open');
+            }
+            document.getElementById('detailUsed').textContent = `${m.used.toLocaleString()} / ${m.cap.toLocaleString()}`;
+            document.getElementById('detailFree').textContent = m.free.toLocaleString();
+            const tempEl = document.getElementById('detailTemp');
+            if (m.hasTemp) {
+                tempEl.textContent = `${m.temp.toFixed(1)}°`;
+                tempEl.className = 'text-sm font-bold tabular-nums ' + (m.tempAlert ? 'text-error' : 'text-[#155c3a]');
             } else {
-                document.getElementById('tempAlertBanner').classList.add('hidden');
+                tempEl.textContent = '—';
+                tempEl.className = 'text-sm font-bold tabular-nums text-[#8a968f]';
+            }
+
+            document.getElementById('detailContents').innerHTML =
+                `<p class="detail-empty py-8"><span class="loading loading-spinner loading-sm"></span></p>`;
+
+            try {
+                const response = await WarehouseFGService.getChiller(selectedId);
+                detailCache = response.data || null;
+                renderContents(detailCache);
+            } catch (err) {
+                console.error(err);
+                document.getElementById('detailContents').innerHTML =
+                    `<p class="detail-empty py-8 text-error">Failed to load contents</p>`;
             }
         }
-        
-        // Open add chiller modal
+
+        function renderContents(detail) {
+            const inv = (detail && detail.inventory) || [];
+            document.getElementById('detailLineCount').textContent =
+                inv.length === 1 ? '1 line' : `${inv.length} lines`;
+
+            if (!inv.length) {
+                document.getElementById('detailContents').innerHTML =
+                    `<p class="detail-empty py-8">Empty — available for put-away</p>`;
+                return;
+            }
+
+            const rows = inv.map(item => {
+                let days = item.days_until_expiry;
+                if (days === undefined || days === null) {
+                    if (item.expiry_date) {
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        const exp = new Date(`${item.expiry_date}T00:00:00`);
+                        days = Math.ceil((exp - today) / 86400000);
+                    } else {
+                        days = null;
+                    }
+                } else {
+                    days = Number(days);
+                }
+
+                let rowCls = '';
+                let expLabel = '—';
+                if (days !== null && Number.isFinite(days)) {
+                    // Align with FG FEFO: past only = expired; today–3d = short-dated
+                    if (days < 0) {
+                        rowCls = 'is-expired';
+                        expLabel = 'Past';
+                    } else if (days === 0) {
+                        rowCls = 'is-expiring';
+                        expLabel = 'Today';
+                    } else if (days <= 3) {
+                        rowCls = 'is-expiring';
+                        expLabel = `${Math.floor(days)}d`;
+                    } else if (days <= 14) {
+                        expLabel = `${Math.floor(days)}d`;
+                    } else if (item.expiry_date) {
+                        expLabel = new Date(`${item.expiry_date}T00:00:00`)
+                            .toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                    }
+                }
+
+                let qty = '—';
+                if (typeof PackUnits !== 'undefined') {
+                    const n = PackUnits.totalBase(item);
+                    qty = PackUnits.formatOnHand(item) || String(n);
+                    // Prefer compact number for dense panel
+                    const unit = (PackUnits.baseUnit(item) || 'pc').slice(0, 3);
+                    qty = `${Number(n).toLocaleString()} ${unit}`;
+                } else {
+                    const boxes = Math.max(0, parseInt(item.boxes_available ?? item.quantity_boxes, 10) || 0);
+                    const pcs = Math.max(0, parseInt(item.pieces_available ?? item.quantity_pieces, 10) || 0);
+                    const rawQty = Math.max(0, parseInt(item.quantity_available ?? item.remaining_quantity, 10) || 0);
+                    qty = boxes || pcs ? `${boxes}b+${pcs}` : String(rawQty || '—');
+                }
+
+                const batchId = resolveBatchId(item);
+
+                return `<tr class="${rowCls}">
+                    <td class="c-product">
+                        <div class="font-semibold text-[#17211b] leading-tight truncate" title="${escapeHtml(item.product_name || '')}">${escapeHtml(item.product_name || '—')}</div>
+                    </td>
+                    <td class="c-batch"><span class="batch-id" title="${escapeHtml(batchId)}">${escapeHtml(batchId)}</span></td>
+                    <td class="c-qty text-right tabular-nums whitespace-nowrap">${escapeHtml(qty)}</td>
+                    <td class="c-exp tabular-nums whitespace-nowrap">${escapeHtml(expLabel)}</td>
+                </tr>`;
+            }).join('');
+
+            document.getElementById('detailContents').innerHTML = `
+                <table class="contents-table">
+                    <thead>
+                        <tr>
+                            <th class="c-product">Product</th>
+                            <th class="c-batch">Batch</th>
+                            <th class="c-qty text-right">Qty</th>
+                            <th class="c-exp">Exp</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>`;
+        }
+
+        function openInInventory() {
+            if (!selectedId) return;
+            window.location.href = `inventory.html?chiller=${selectedId}`;
+        }
+
         function openAddChillerModal() {
-            document.getElementById('chillerModalTitle').textContent = 'Add New Chiller';
+            document.getElementById('chillerModalTitle').textContent = 'Add chiller';
             document.getElementById('chillerForm').reset();
             document.getElementById('chillerId').value = '';
+            document.getElementById('chillerCode').disabled = false;
             document.getElementById('chillerModal').showModal();
         }
-        
-        // Edit chiller
+
         function editChiller(id) {
-            const chiller = chillers.find(c => c.id === id);
+            if (!id) return;
+            const chiller = chillers.find(c => Number(c.id) === Number(id));
             if (!chiller) return;
-            
-            document.getElementById('chillerModalTitle').textContent = 'Edit Chiller';
+            document.getElementById('chillerModalTitle').textContent = 'Edit chiller';
             document.getElementById('chillerId').value = chiller.id;
-            document.getElementById('chillerName').value = chiller.chiller_name;
+            document.getElementById('chillerName').value = chiller.chiller_name || '';
+            document.getElementById('chillerCode').value = chiller.chiller_code || '';
+            document.getElementById('chillerCode').disabled = true;
             document.getElementById('chillerLocation').value = chiller.location || '';
-            document.getElementById('chillerCapacity').value = chiller.capacity;
-            document.getElementById('chillerTargetTemp').value = chiller.temperature_celsius || '';
-            document.getElementById('chillerMinTemp').value = chiller.min_temperature || '';
-            document.getElementById('chillerMaxTemp').value = chiller.max_temperature || '';
+            document.getElementById('chillerCapacity').value = chiller.capacity || '';
+            document.getElementById('chillerTargetTemp').value = chiller.temperature_celsius ?? '';
+            document.getElementById('chillerMinTemp').value = chiller.min_temperature ?? '';
+            document.getElementById('chillerMaxTemp').value = chiller.max_temperature ?? '';
             document.getElementById('chillerModal').showModal();
         }
-        
-        // Handle chiller form
+
         document.getElementById('chillerForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const id = document.getElementById('chillerId').value;
             const data = {
                 chiller_name: document.getElementById('chillerName').value,
+                chiller_code: document.getElementById('chillerCode').value,
                 location: document.getElementById('chillerLocation').value,
-                capacity: parseInt(document.getElementById('chillerCapacity').value),
+                capacity: parseInt(document.getElementById('chillerCapacity').value, 10),
                 temperature_celsius: parseFloat(document.getElementById('chillerTargetTemp').value) || null,
                 min_temperature: parseFloat(document.getElementById('chillerMinTemp').value) || null,
                 max_temperature: parseFloat(document.getElementById('chillerMaxTemp').value) || null
             };
-            
             try {
                 if (id) {
                     await WarehouseFGService.updateChiller(id, data);
-                    showToast('Chiller updated successfully', 'success');
+                    showToast('Chiller updated', 'success');
                 } else {
                     await WarehouseFGService.createChiller(data);
-                    showToast('Chiller added successfully', 'success');
+                    showToast('Chiller added', 'success');
                 }
                 document.getElementById('chillerModal').close();
                 await loadChillers();
             } catch (error) {
-                showToast('Failed to save chiller', 'error');
+                showToast(error?.response?.data?.message || error?.message || 'Failed to save', 'error');
             }
         });
-        
-        // Log temperature
+
         function logTemperature(id) {
+            if (!id) return;
+            const c = chillers.find(x => Number(x.id) === Number(id));
             document.getElementById('logTempChillerId').value = id;
+            document.getElementById('logTempChillerLabel').textContent = c?.chiller_name || `Chiller #${id}`;
             document.getElementById('logTempForm').reset();
+            document.getElementById('logTempChillerId').value = id;
             document.getElementById('logTempModal').showModal();
         }
-        
-        // Handle log temp form
+
         document.getElementById('logTempForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const id = document.getElementById('logTempChillerId').value;
             const temperature = parseFloat(document.getElementById('logTempValue').value);
             const notes = document.getElementById('logTempNotes').value;
-            
             try {
                 await WarehouseFGService.logChillerTemperature(id, temperature, notes);
-                showToast('Temperature logged successfully', 'success');
+                showToast('Temperature logged', 'success');
                 document.getElementById('logTempModal').close();
                 await loadChillers();
             } catch (error) {
-                showToast('Failed to log temperature', 'error');
+                showToast(error?.response?.data?.message || error?.message || 'Failed to log temperature', 'error');
             }
         });
-        
-        // View chiller contents
-        function viewChillerContents(id) {
-            window.location.href = `inventory.html?chiller=${id}`;
-        }
     </script>
 </body>
+
 </html>
-
-
-
-
-
-

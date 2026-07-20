@@ -386,11 +386,13 @@ try {
                 // 2. Deduct from FG inventory - "Less" it per spec
                 $updateStmt = $db->prepare("
                     UPDATE finished_goods_inventory 
-                    SET quantity_available = quantity_available - ?,
-                        status = CASE WHEN quantity_available - ? <= 0 THEN 'transformed' ELSE status END
+                    SET quantity_available = GREATEST(0, quantity_available - ?),
+                        remaining_quantity = GREATEST(0, COALESCE(remaining_quantity, 0) - ?),
+                        boxes_available = GREATEST(0, COALESCE(boxes_available, 0) - CEIL(? / COALESCE(NULLIF((SELECT pieces_per_box FROM products WHERE id = product_id LIMIT 1), 0), 1))),
+                        status = CASE WHEN GREATEST(0, quantity_available - ?) <= 0 THEN 'transformed' ELSE status END
                     WHERE id = ?
                 ");
-                $updateStmt->execute([$quantity, $quantity, $inventoryId]);
+                $updateStmt->execute([$quantity, $quantity, $quantity, $quantity, $inventoryId]);
                 
                 $productionRunId = null;
                 $runCode = null;

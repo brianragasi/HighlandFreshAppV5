@@ -319,6 +319,9 @@
             <div class="form-control mb-3">
                 <label class="label py-1"><span class="label-text font-medium">Expiry date</span></label>
                 <input type="date" id="pkgExpiryDate" class="input input-bordered w-full md:w-60">
+                <label class="label py-0.5">
+                    <span class="label-text-alt text-base-content/50" id="pkgShelfLifeHint">Uses product shelf life from master data</span>
+                </label>
             </div>
 
             <div class="form-control mb-4">
@@ -543,26 +546,38 @@
 
         function renderReadyCard(b) {
             const bd = b.output_breakdown || {};
-            // Prefer product-master driven breakdown (units_per_pack / pack_name).
-            // Fall back to PackUnits if breakdown missing — never assume crates=24.
+            // Always prefer API-recomputed product master UOM (pieces_per_box / pack_name).
+            // Never display stale hardcoded "crates × 24" from old output_breakdown alone.
+            const total = Number(b.actual_quantity ?? bd.total_pieces ?? 0);
+            const ppb = Math.max(1, Number(
+                b.units_per_pack || b.pieces_per_box || bd.units_per_pack || bd.conversion_factor || 1
+            ));
+            const packU = b.pack_name || b.box_unit || bd.pack_name || bd.secondary_unit || 'box';
+            const baseU = b.base_unit || bd.base_unit || bd.primary_unit || 'piece';
+            const packs = Number.isFinite(Number(bd.secondary_count)) && bd.recomputed_from_product_master
+                ? Number(bd.secondary_count)
+                : Math.floor(total / ppb);
+            const loose = Number.isFinite(Number(bd.remaining_primary)) && bd.recomputed_from_product_master
+                ? Number(bd.remaining_primary)
+                : (total % ppb);
+            const formula = b.pack_formula || bd.pack_formula || (ppb > 1 ? `1 ${packU} = ${ppb} ${baseU}` : '');
+
             let outputDisplay;
-            if (b.actual_quantity != null && bd && (bd.secondary_count != null || bd.total_pieces != null)) {
-                const packs = bd.secondary_count ?? 0;
-                const loose = bd.remaining_primary ?? 0;
-                const packU = bd.secondary_unit || bd.pack_name || 'box';
-                const baseU = bd.primary_unit || bd.base_unit || 'unit';
-                const total = bd.total_pieces ?? b.actual_quantity;
-                const formula = bd.pack_formula ? ` · ${bd.pack_formula}` : '';
-                outputDisplay = `${packs} ${packU} + ${loose} ${baseU} (${total} total)${formula}`;
-            } else if (b.actual_quantity != null && typeof PackUnits !== 'undefined') {
-                outputDisplay = PackUnits.formatQuantity({
-                    quantity_available: b.actual_quantity,
-                    pieces_per_box: b.pieces_per_box || bd.conversion_factor || bd.units_per_pack || 1,
-                    box_unit: b.box_unit || bd.secondary_unit || 'box',
-                    base_unit: b.base_unit || bd.primary_unit || 'piece'
-                }, { preferSplit: true });
+            if (total > 0 && ppb > 1) {
+                const packLabel = packs === 1 ? packU : (packU.endsWith('s') ? packU : packU + 's');
+                const baseLabel = loose === 1 ? baseU : (baseU.endsWith('s') ? baseU : baseU + 's');
+                if (packs > 0 && loose > 0) {
+                    outputDisplay = `${packs} ${packLabel} + ${loose} ${baseLabel} (${total} total)`;
+                } else if (packs > 0) {
+                    outputDisplay = `${packs} ${packLabel} (${total} total)`;
+                } else {
+                    outputDisplay = `${loose} ${baseLabel} (${total} total)`;
+                }
+                if (formula) outputDisplay += ` · ${formula}`;
+            } else if (total > 0) {
+                outputDisplay = `${total} ${baseU}${total === 1 ? '' : 's'}`;
             } else {
-                outputDisplay = `${b.actual_quantity ?? '?'} units`;
+                outputDisplay = '—';
             }
 
             const typeLabel = {
@@ -953,6 +968,41 @@
                 .replace(/"/g, '&quot;');
         }
 
+        /** Local YYYY-MM-DD (avoid UTC shift from toISOString). */
+        function formatLocalDateYmd(date) {
+            const d = date instanceof Date ? date : new Date(date);
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        }
+
+        /**
+         * Default expiry = manufacturing/today + shelf_life_days from product/recipe master.
+         * Never hard-code 7 unless shelf life is missing from the API entirely.
+         */
+        function computeDefaultExpiryDate(shelfLifeDays, manufacturingDate) {
+            let days = parseInt(shelfLifeDays, 10);
+            if (!Number.isFinite(days) || days <= 0) {
+                days = 7; // last-resort only when master data is absent
+            }
+            let base;
+            if (manufacturingDate) {
+                // Parse as local date to avoid timezone off-by-one
+                const parts = String(manufacturingDate).slice(0, 10).split('-').map(Number);
+                if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+                    base = new Date(parts[0], parts[1] - 1, parts[2]);
+                } else {
+                    base = new Date();
+                }
+            } else {
+                base = new Date();
+            }
+            base.setHours(12, 0, 0, 0); // midday local — stable across DST
+            base.setDate(base.getDate() + days);
+            return formatLocalDateYmd(base);
+        }
+
         /* ── Open Packaging Modal ── */
         async function openPackagingModal(runId, batchId) {
             const batch = readyBatches.find(b => b.run_id == runId);
@@ -968,9 +1018,36 @@
             document.getElementById('pkgNotes').value = '';
             document.getElementById('pkgSkuAllocRows').innerHTML = '';
 
-            const exp = new Date();
-            exp.setDate(exp.getDate() + 7);
-            document.getElementById('pkgExpiryDate').value = exp.toISOString().split('T')[0];
+            // Expiry for FG packaging = manufacturing/today + shelf_life_days from master.
+            // Product/recipe shelf life is the source of truth (Butter=30), not a
+            // hard-coded +7 and not the QC batch expiry if that was built from
+            // legacy product-type defaults.
+            const expiryInput = document.getElementById('pkgExpiryDate');
+            const shelfDays = batch.shelf_life_days
+                ?? batch.recipe_shelf_life_days
+                ?? batch.base_shelf_life_days
+                ?? null;
+            const parsedShelf = parseInt(shelfDays, 10);
+            if (Number.isFinite(parsedShelf) && parsedShelf > 0) {
+                expiryInput.value = computeDefaultExpiryDate(
+                    parsedShelf,
+                    batch.manufacturing_date || null
+                );
+            } else if (batch.expiry_date) {
+                // Fall back to existing batch expiry when master shelf life is missing
+                expiryInput.value = String(batch.expiry_date).slice(0, 10);
+            } else {
+                expiryInput.value = computeDefaultExpiryDate(7, batch.manufacturing_date || null);
+            }
+            // Show shelf-life source for operators
+            const shelfHint = document.getElementById('pkgShelfLifeHint');
+            if (shelfHint) {
+                shelfHint.textContent = Number.isFinite(parsedShelf) && parsedShelf > 0
+                    ? `Based on ${parsedShelf}-day shelf life from product/recipe master`
+                    : (batch.expiry_date
+                        ? 'Using batch expiry (shelf life missing on master)'
+                        : 'Shelf life not found on master — using 7-day fallback');
+            }
 
             // Net yield in MILLILITERS (source of truth)
             let netYieldMl = Number(batch.net_yield_ml || 0);

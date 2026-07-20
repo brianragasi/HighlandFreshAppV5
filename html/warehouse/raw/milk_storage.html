@@ -898,6 +898,47 @@
         let pendingMilkData = [];
         let selectedMilkId = null;
         let selectedTankId = null;
+        let tankCountdownTimer = null;
+
+        /** Raw milk: 3h window from gate arrival → countdown labels */
+        function parseServerDateTime(value) {
+            if (!value) return null;
+            const s = String(value).trim();
+            // MySQL "YYYY-MM-DD HH:MM:SS" → local parseable ISO-ish
+            const normalized = s.includes('T') ? s : s.replace(' ', 'T');
+            const d = new Date(normalized);
+            return Number.isNaN(d.getTime()) ? null : d;
+        }
+
+        function formatMilkCountdown(expiresAt) {
+            const end = parseServerDateTime(expiresAt);
+            if (!end) return { text: '—', expired: false, urgent: false };
+            const now = new Date();
+            const diffMs = end.getTime() - now.getTime();
+            const abs = Math.abs(diffMs);
+            const totalMins = Math.floor(abs / 60000);
+            const h = Math.floor(totalMins / 60);
+            const m = totalMins % 60;
+            const pad = (n) => String(n).padStart(2, '0');
+            if (diffMs >= 0) {
+                return {
+                    text: `Expires in: ${pad(h)}h ${pad(m)}m`,
+                    expired: false,
+                    urgent: diffMs <= 60 * 60 * 1000 // < 1h remaining
+                };
+            }
+            return {
+                text: `Expired ${pad(h)}h ${pad(m)}m ago`,
+                expired: true,
+                urgent: true
+            };
+        }
+
+        function escapeHtml(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
         
         document.addEventListener('DOMContentLoaded', async () => {
             if (!AuthService.isAuthenticated()) {
@@ -914,6 +955,14 @@
             const action = urlParams.get('action');
             
             await loadData();
+
+            // Live countdown refresh (3h gate window)
+            if (tankCountdownTimer) clearInterval(tankCountdownTimer);
+            tankCountdownTimer = setInterval(() => {
+                if (tanksData.length && !document.getElementById('tanksView')?.classList.contains('hidden')) {
+                    renderTanks();
+                }
+            }, 30000);
             
             if (action === 'receive') {
                 openReceiveModal();
@@ -991,10 +1040,16 @@
                 const fillPercent = tank.capacity_liters > 0
                     ? Math.round((storedLiters / tank.capacity_liters) * 100)
                     : 0;
-                
+
+                // Critical: expired milk → red fill (overrides capacity-based green)
                 let fillClass = '';
-                if (fillPercent > 90) fillClass = 'danger';
+                if (expiredLiters > 0) fillClass = 'danger';
+                else if (fillPercent > 90) fillClass = 'danger';
                 else if (fillPercent > 70) fillClass = 'warning';
+
+                const expiresAt = tank.earliest_expires_at || tank.earliest_expiry;
+                const countdown = formatMilkCountdown(expiresAt);
+                const hasMilk = storedLiters > 0 && expiresAt;
                 
                 const statusBadges = {
                     'available': 'badge-success',
@@ -1005,19 +1060,19 @@
                 };
                 
                 return `
-                    <div class="bento-card card bg-base-100 border ${expiredLiters > 0 ? 'border-error/50' : 'border-base-300'} cursor-pointer" onclick="openTankDetail(${tank.id})">
+                    <div class="bento-card card bg-base-100 border ${expiredLiters > 0 || countdown.expired ? 'border-error/50' : 'border-base-300'} cursor-pointer" onclick="openTankDetail(${tank.id})">
                         <div class="card-body p-4">
                             <div class="flex justify-between items-start mb-3">
                                 <div>
-                                    <h3 class="font-bold text-lg">${tank.tank_code}</h3>
-                                    <p class="text-sm text-base-content/60">${tank.tank_name}</p>
+                                    <h3 class="font-bold text-lg">${escapeHtml(tank.tank_code)}</h3>
+                                    <p class="text-sm text-base-content/60">${escapeHtml(tank.tank_name)}</p>
                                 </div>
-                                <span class="badge ${statusBadges[tank.status] || 'badge-ghost'} badge-sm">${tank.status}</span>
+                                <span class="badge ${statusBadges[tank.status] || 'badge-ghost'} badge-sm">${escapeHtml(tank.status)}</span>
                             </div>
                             ${expiredLiters > 0 ? `
                                 <div class="mb-3 rounded-lg border border-error/30 bg-error/10 px-3 py-2 text-xs font-semibold text-error">
                                     <i class="fas fa-triangle-exclamation mr-1"></i>
-                                    ${expiredLiters.toLocaleString()}L expired milk needs clearing
+                                    ${expiredLiters.toLocaleString()}L expired · clear as spoilage loss (no GM approval)
                                 </div>
                             ` : ''}
                             
@@ -1041,8 +1096,9 @@
                                 </div>
                                 <div>
                                     <p class="text-base-content/60 text-xs">Earliest Expiry</p>
-                                    <p class="font-semibold ${tank.earliest_expiry && new Date(tank.earliest_expiry) <= new Date(Date.now() + 2*24*60*60*1000) ? 'text-error' : ''}">
-                                        ${tank.earliest_expiry ? formatDate(tank.earliest_expiry) : '-'}
+                                    <p class="font-semibold tabular-nums ${hasMilk && (countdown.expired || countdown.urgent) ? 'text-error' : hasMilk ? 'text-success' : ''}"
+                                       title="3-hour window from gate arrival">
+                                        ${hasMilk ? escapeHtml(countdown.text) : '—'}
                                     </p>
                                 </div>
                             </div>
@@ -1160,8 +1216,15 @@
                 if (response.success) {
                     const tank = response.data.tank;
                     const batches = response.data.milk_batches || [];
-                    const expiredBatches = batches.filter(b => parseInt(b.days_until_expiry, 10) < 0);
+                    const expiredBatches = batches.filter(b =>
+                        b.is_expired_3h == 1 || b.is_expired_3h === true || formatMilkCountdown(b.expires_at).expired
+                    );
                     const expiredLiters = expiredBatches.reduce((sum, b) => sum + parseFloat(b.remaining_liters || 0), 0);
+                    const estimatedLoss = expiredBatches.reduce((sum, b) => {
+                        const L = parseFloat(b.remaining_liters || 0);
+                        const c = parseFloat(b.unit_cost || 0);
+                        return sum + (L * c);
+                    }, 0);
 
                     // Calculate actual volume from batches for accuracy
                     const actualVolume = batches.reduce((sum, b) => sum + parseFloat(b.remaining_liters || 0), 0);
@@ -1169,7 +1232,8 @@
                     const displayVolume = batches.length > 0 ? actualVolume : parseFloat(tank.current_volume || 0);
                     const capacity = parseFloat(tank.capacity_liters) || 0;
                     const fillPct = capacity > 0 ? Math.round((displayVolume / capacity) * 100) : 0;
-                    const fillClass = fillPct > 90 ? 'danger' : (fillPct > 70 ? 'warning' : '');
+                    // Expired milk → critical red fill (matches card grid rule)
+                    const fillClass = expiredLiters > 0 ? 'danger' : (fillPct > 90 ? 'danger' : (fillPct > 70 ? 'warning' : ''));
 
                     const statusBadges = {
                         'available': 'badge-success',
@@ -1186,22 +1250,22 @@
                         batchesHtml = batches.map((batch, i) => {
                             const batchGrade = batch.grade || 'N/A';
                             const gradeClass = batchGrade === 'A' ? 'badge-success' : (batchGrade === 'B' ? 'badge-info' : 'badge-warning');
-                            const daysUntilExpiry = parseInt(batch.days_until_expiry, 10);
-                            const isExpired = daysUntilExpiry < 0;
+                            const cd = formatMilkCountdown(batch.expires_at || batch.earliest_expires_at);
+                            const isExpired = batch.is_expired_3h == 1 || batch.is_expired_3h === true || cd.expired;
                             return `
                             <div class="batch-row ${isExpired ? 'border-error/40 bg-error/5' : ''}">
                                 <div class="batch-index">#${i + 1}</div>
                                 <div class="min-w-0 flex-1">
-                                    <p class="batch-name">${batch.farmer_name || 'Unknown'}</p>
+                                    <p class="batch-name">${escapeHtml(batch.farmer_name || 'Unknown')}</p>
                                     <p class="batch-meta">
-                                        <span class="font-mono">${batch.farmer_code || 'N/A'}</span>
-                                        · <span class="badge ${gradeClass} badge-xs">Grade ${batchGrade}</span>
+                                        <span class="font-mono">${escapeHtml(batch.farmer_code || 'N/A')}</span>
+                                        · <span class="badge ${gradeClass} badge-xs">Grade ${escapeHtml(batchGrade)}</span>
                                     </p>
                                     ${isExpired ? '<span class="badge badge-error badge-xs mt-1">EXPIRED</span>' : ''}
                                 </div>
                                 <div class="flex-shrink-0 text-right">
                                     <p class="batch-qty">${parseFloat(batch.remaining_liters).toLocaleString()} <span class="text-xs font-normal text-base-content/60">L</span></p>
-                                    <p class="batch-qty-sub ${isExpired ? 'text-error font-semibold' : ''}">Exp: ${formatDate(batch.expiry_date)}</p>
+                                    <p class="batch-qty-sub tabular-nums ${isExpired || cd.urgent ? 'text-error font-semibold' : ''}">${escapeHtml(cd.text)}</p>
                                 </div>
                             </div>
                         `}).join('');
@@ -1235,7 +1299,10 @@
                             <div class="alert alert-error mb-4">
                                 <i class="fas fa-triangle-exclamation"></i>
                                 <span>
-                                    This tank contains ${expiredLiters.toLocaleString()}L of expired raw milk. It is blocked from issue/transfer; clear it as expired waste before using the tank.
+                                    This tank has <strong>${expiredLiters.toLocaleString()} L</strong> past the 3-hour gate window.
+                                    Est. spoilage loss: <strong>${formatPeso(estimatedLoss)}</strong>
+                                    (liters × farm gate unit cost). Warehouse can clear immediately — no GM approval.
+                                    Blocked from issue/transfer until cleared.
                                 </span>
                             </div>
                         ` : ''}
@@ -1320,11 +1387,28 @@
             }
         }
         
+        function formatPeso(amount) {
+            const n = Number(amount);
+            if (!Number.isFinite(n)) return '₱0.00';
+            return '₱' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        /**
+         * Warehouse Raw may clear expired milk immediately — no GM approval.
+         * This is an inventory loss (spoilage): liters × unit_cost (farm gate price).
+         */
         async function clearExpiredTankMilk(tankId) {
+            const tank = tanksData.find(t => Number(t.id) === Number(tankId));
+            const litersEst = parseFloat(tank?.expired_liters || 0);
+            // Pre-estimate loss if list payload has no cost; API returns exact loss after clear
             const confirmed = await AppDialogs.confirm({
-                title: 'Clear Expired Milk',
-                message: 'Clear all expired raw milk batches from this tank and record disposal transactions?',
-                confirmText: 'Clear Expired Milk',
+                title: 'Clear expired milk — record as loss',
+                message:
+                    'This writes off expired raw milk as spoilage (inventory loss).\n\n' +
+                    (litersEst > 0 ? `Estimated volume: ${litersEst.toLocaleString()} L\n` : '') +
+                    'No General Manager approval is required — Warehouse Raw can clear expired tank milk immediately.\n\n' +
+                    'Continue and post dispose transactions with cost?',
+                confirmText: 'Clear & record loss',
                 variant: 'danger',
                 icon: 'fa-trash-alt'
             });
@@ -1333,8 +1417,14 @@
             try {
                 const response = await WarehouseRawService.expireTankMilk(tankId);
                 if (response.success) {
-                    const liters = parseFloat(response.data?.total_expired_liters || 0).toLocaleString();
-                    showToast(`${liters}L expired milk cleared from tank`, 'success');
+                    const liters = parseFloat(response.data?.total_expired_liters || 0);
+                    const loss = parseFloat(response.data?.total_loss_value || 0);
+                    const code = response.data?.tank_code || 'tank';
+                    showToast(
+                        `${code}: ${liters.toLocaleString()} L cleared · Loss ${formatPeso(loss)}` +
+                        (loss <= 0 ? ' (no unit cost on batch)' : ''),
+                        loss > 0 ? 'warning' : 'success'
+                    );
                     document.getElementById('tankDetailModal').close();
                     loadData();
                 }

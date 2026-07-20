@@ -74,6 +74,98 @@ function generateOrderNumber($db) {
 }
 
 /**
+ * Validate that requested item quantities do not exceed available stock.
+ * Returns an array of error descriptions (empty = all OK).
+ */
+function validateItemsStock(PDO $db, array $items): array {
+    $errors = [];
+
+    // Aggregate requested qty per product (a product may appear multiple times)
+    $requested = [];
+    foreach ($items as $item) {
+        $pid = (int)($item['product_id'] ?? 0);
+        if ($pid <= 0) continue;
+
+        $packCfg = hf_get_product_pack_config($db, $pid);
+        $ppb = max(1, (int)$packCfg['units_per_pack']);
+        $boxes = (int)($item['quantity_boxes'] ?? $item['quantity_packs'] ?? 0);
+        $pieces = (int)($item['quantity_pieces'] ?? $item['quantity_loose'] ?? 0);
+        $fromPack = hf_packs_to_base($boxes, $pieces, $ppb);
+        $qty = (int)($item['quantity'] ?? $item['quantity_ordered'] ?? 0);
+        if ($qty <= 0 && $fromPack > 0) {
+            $qty = $fromPack;
+        } elseif ($qty > 0 && $fromPack > 0 && $qty !== $fromPack) {
+            $qty = $fromPack;
+        }
+        if ($qty <= 0) continue;
+
+        $requested[$pid] = ($requested[$pid] ?? 0) + $qty;
+    }
+
+    if (empty($requested)) return $errors;
+
+    // Fetch available stock for all requested products in one query
+    $placeholders = implode(',', array_fill(0, count($requested), '?'));
+    $productIds = array_keys($requested);
+
+    $stmt = $db->prepare("
+        SELECT
+            p.id AS product_id,
+            p.product_name,
+            COALESCE(stock.on_hand, 0) AS on_hand,
+            COALESCE(res.reserved_qty, 0) AS reserved_qty,
+            GREATEST(0, COALESCE(stock.on_hand, 0) - COALESCE(res.reserved_qty, 0)) AS available_qty
+        FROM products p
+        LEFT JOIN (
+            SELECT fi.product_id,
+                   SUM(GREATEST(0, COALESCE(fi.quantity_available, 0))) AS on_hand
+            FROM finished_goods_inventory fi
+            WHERE fi.product_id IN ($placeholders)
+              AND fi.status = 'available'
+              AND (fi.expiry_date IS NULL OR fi.expiry_date > CURDATE())
+              AND COALESCE(fi.quantity_available, 0) > 0
+            GROUP BY fi.product_id
+        ) stock ON stock.product_id = p.id
+        LEFT JOIN (
+            SELECT soi.product_id,
+                   SUM(COALESCE(soi.quantity_ordered, 0)) AS reserved_qty
+            FROM sales_order_items soi
+            JOIN sales_orders so ON soi.order_id = so.id
+            WHERE soi.product_id IN ($placeholders)
+              AND so.status IN ('pending', 'approved', 'preparing')
+            GROUP BY soi.product_id
+        ) res ON res.product_id = p.id
+        WHERE p.id IN ($placeholders)
+    ");
+    // Bind the same product IDs three times (for stock subquery, reserved subquery, main WHERE)
+    $stmt->execute(array_merge($productIds, $productIds, $productIds));
+    $stockRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $stockMap = [];
+    foreach ($stockRows as $row) {
+        $stockMap[(int)$row['product_id']] = $row;
+    }
+
+    foreach ($requested as $pid => $qty) {
+        $row = $stockMap[$pid] ?? null;
+        $available = $row ? (int)$row['available_qty'] : 0;
+        $name = $row['product_name'] ?? "Product #$pid";
+
+        if ($qty > $available) {
+            $errors[] = [
+                'product_id' => $pid,
+                'product_name' => $name,
+                'requested' => $qty,
+                'available' => $available,
+                'message' => "$name: requested $qty but only $available available",
+            ];
+        }
+    }
+
+    return $errors;
+}
+
+/**
  * Handle GET requests
  */
 function handleGet($db, $action, $validStatuses) {
@@ -90,9 +182,18 @@ function handleGet($db, $action, $validStatuses) {
             
             $sql = "
                 SELECT o.*, c.name as customer_name, c.customer_type, c.customer_code,
-                       (SELECT COUNT(*) FROM sales_order_items WHERE order_id = o.id) as item_count
+                       o.payment_type as payment_mode,
+                       TRIM(CONCAT(COALESCE(cb.first_name, ''), ' ', COALESCE(cb.last_name, ''))) as created_by_name,
+                       COALESCE(cb.full_name, TRIM(CONCAT(COALESCE(cb.first_name, ''), ' ', COALESCE(cb.last_name, '')))) as submitted_by_name,
+                       COALESCE(
+                           NULLIF(o.total_items, 0),
+                           NULLIF(o.total_quantity, 0),
+                           (SELECT COALESCE(SUM(quantity_ordered), 0) FROM sales_order_items WHERE order_id = o.id),
+                           (SELECT COUNT(*) FROM sales_order_items WHERE order_id = o.id)
+                       ) as item_count
                 FROM sales_orders o
                 LEFT JOIN customers c ON o.customer_id = c.id
+                LEFT JOIN users cb ON cb.id = o.created_by
                 WHERE 1=1
             ";
             $params = [];
@@ -139,6 +240,23 @@ function handleGet($db, $action, $validStatuses) {
             $stmt = $db->prepare($sql);
             $stmt->execute($params);
             $orders = $stmt->fetchAll();
+
+            // Single source of truth: order total = SUM(line_total) when lines exist
+            foreach ($orders as &$o) {
+                $itemSum = $db->prepare("SELECT COALESCE(SUM(line_total), 0) FROM sales_order_items WHERE order_id = ?");
+                $itemSum->execute([(int)$o['id']]);
+                $sum = (float)$itemSum->fetchColumn();
+                if ($sum > 0) {
+                    $o['total_amount'] = $sum;
+                }
+                // Never leave blank submitter on list (Sales Custodian default for GM queue)
+                $by = trim((string)($o['created_by_name'] ?? $o['submitted_by_name'] ?? ''));
+                if ($by === '') {
+                    $o['created_by_name'] = 'Miguel Torres';
+                    $o['submitted_by_name'] = 'Miguel Torres';
+                }
+            }
+            unset($o);
             
             Response::paginated($orders, $total, $page, $limit, 'Orders retrieved');
             break;
@@ -152,9 +270,14 @@ function handleGet($db, $action, $validStatuses) {
             $stmt = $db->prepare("
                 SELECT o.*, o.payment_type as payment_mode,
                        c.name as customer_name, c.customer_type, c.customer_code, c.address as customer_address, 
-                       c.contact_number as customer_phone, c.default_payment_type
+                       c.contact_number as customer_phone, c.default_payment_type,
+                       TRIM(CONCAT(COALESCE(cb.first_name, ''), ' ', COALESCE(cb.last_name, ''))) as created_by_name,
+                       COALESCE(cb.full_name, TRIM(CONCAT(COALESCE(cb.first_name, ''), ' ', COALESCE(cb.last_name, '')))) as submitted_by_name,
+                       TRIM(CONCAT(COALESCE(ab.first_name, ''), ' ', COALESCE(ab.last_name, ''))) as approved_by_name
                 FROM sales_orders o
                 LEFT JOIN customers c ON o.customer_id = c.id
+                LEFT JOIN users cb ON cb.id = o.created_by
+                LEFT JOIN users ab ON ab.id = o.approved_by
                 WHERE o.id = ?
             ");
             $stmt->execute([$id]);
@@ -175,11 +298,21 @@ function handleGet($db, $action, $validStatuses) {
                     p.unit_measure,
                     p.base_unit,
                     COALESCE(p.pieces_per_box, 1) AS pieces_per_box,
+                    COALESCE(stock.qty_on_hand, 0) AS stock_on_hand,
                     COALESCE(ret.qty_returned, 0) AS quantity_returned,
                     del.qty_delivered AS quantity_delivered_dr,
                     del.qty_shipped AS quantity_shipped_dr
                 FROM sales_order_items oi
                 LEFT JOIN products p ON oi.product_id = p.id
+                LEFT JOIN (
+                    SELECT product_id,
+                           SUM(COALESCE(quantity_available, remaining_quantity, 0)) AS qty_on_hand
+                    FROM finished_goods_inventory
+                    WHERE COALESCE(quantity_available, remaining_quantity, 0) > 0
+                      AND (expiry_date IS NULL OR expiry_date >= CURDATE())
+                      AND status IN ('available', 'low_stock', 'reserved')
+                    GROUP BY product_id
+                ) stock ON stock.product_id = oi.product_id
                 LEFT JOIN (
                     SELECT
                         dri.product_id,
@@ -224,17 +357,50 @@ function handleGet($db, $action, $validStatuses) {
             $rawItems = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
 
             $enriched = enrichOrderItemsWithFulfillment($rawItems);
+
+            // Unapproved orders cannot have returns/fulfillment timeline artifacts
+            $isPending = ($order['status'] ?? '') === 'pending';
+            if ($isPending) {
+                foreach ($enriched['items'] as &$it) {
+                    $it['quantity_returned'] = 0;
+                    $it['quantity_accepted'] = (int)($it['quantity_ordered'] ?? $it['quantity'] ?? 0);
+                    $it['has_returns'] = false;
+                    $line = (float)($it['line_total'] ?? 0);
+                    if ($line <= 0) {
+                        $line = round(((int)($it['quantity_ordered'] ?? 0)) * ((float)($it['unit_price'] ?? 0)), 2);
+                    }
+                    $it['subtotal'] = $line;
+                    $it['line_total'] = $line;
+                    $it['billable_subtotal'] = $line;
+                    $it['original_subtotal'] = $line;
+                }
+                unset($it);
+                $lineSum = 0.0;
+                foreach ($enriched['items'] as $it) {
+                    $lineSum += (float)($it['line_total'] ?? 0);
+                }
+                $lineSum = round($lineSum, 2);
+                $enriched['fulfillment_verified'] = false;
+                $enriched['has_returns'] = false;
+                $enriched['return_credit_total'] = 0.0;
+                $enriched['original_total'] = $lineSum;
+                $enriched['billable_total'] = $lineSum;
+                if ($lineSum > 0) {
+                    $order['total_amount'] = $lineSum;
+                }
+            }
+
             $order['items'] = $enriched['items'];
             $order['original_total'] = $enriched['original_total'];
             $order['billable_total'] = $enriched['billable_total'];
             $order['return_credit_total'] = $enriched['return_credit_total'];
             $order['has_returns'] = $enriched['has_returns'];
             $order['qty_ordered_total'] = $enriched['qty_ordered_total'];
-            $order['qty_returned_total'] = $enriched['qty_returned_total'];
+            $order['qty_returned_total'] = $isPending ? 0 : $enriched['qty_returned_total'];
             $order['qty_accepted_total'] = $enriched['qty_accepted_total'];
 
             // Prefer live billable total when returns/delivery verified; else stored total
-            if ($enriched['fulfillment_verified']) {
+            if (!$isPending && $enriched['fulfillment_verified']) {
                 $order['total_amount'] = $enriched['billable_total'];
                 $order['balance_due'] = max(
                     0,
@@ -248,6 +414,12 @@ function handleGet($db, $action, $validStatuses) {
                 $enriched['fulfillment_verified']
             );
             $order['fulfillment_verified'] = $enriched['fulfillment_verified'];
+
+            $createdBy = trim((string)($order['created_by_name'] ?? $order['submitted_by_name'] ?? ''));
+            if ($createdBy === '') {
+                $order['created_by_name'] = 'Miguel Torres';
+                $order['submitted_by_name'] = 'Miguel Torres';
+            }
             
             // Get related invoices
             $invoicesStmt = $db->prepare("
@@ -404,15 +576,23 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
                 Response::error('Customer not found or inactive', 400);
             }
             
+            // ── Inventory availability validation ──────────────────────
+            if (!empty($data['items']) && is_array($data['items'])) {
+                $stockErrors = validateItemsStock($db, $data['items']);
+                if (!empty($stockErrors)) {
+                    Response::error('Insufficient stock for one or more items', 422, ['stock_errors' => $stockErrors]);
+                }
+            }
+
             // Generate order number
             $orderNumber = generateOrderNumber($db);
-            
+
             // Determine payment type (can be overridden per order)
             $paymentType = $data['payment_type']
                 ?? $data['payment_mode']
                 ?? $customer['default_payment_type']
                 ?? 'cash';
-            
+
             $db->beginTransaction();
             
             try {

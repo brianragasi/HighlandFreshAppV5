@@ -375,7 +375,7 @@
                                 <th>Contact</th>
                                 <th>Credit Limit</th>
                                 <th>Payment</th>
-                                <th>Orders</th>
+                                <th>Outstanding</th>
                                 <th>Status</th>
                                 <th class="text-center">Actions</th>
                             </tr>
@@ -555,6 +555,32 @@
             return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         }
 
+        /** Outstanding + available credit for sales / finance scan */
+        function formatOutstandingCell(item) {
+            const limit = parseFloat(item.credit_limit) || 0;
+            let outstanding = parseFloat(item.outstanding_balance);
+            if (!Number.isFinite(outstanding)) {
+                outstanding = Math.max(0, parseFloat(item.current_balance) || 0);
+            }
+            let available = parseFloat(item.available_credit);
+            if (!Number.isFinite(available)) {
+                available = Math.max(0, limit - outstanding);
+            }
+            const util = limit > 0 ? (outstanding / limit) * 100 : 0;
+            let balClass = 'text-base-content font-semibold tabular-nums font-mono text-sm';
+            if (outstanding <= 0) balClass = 'text-base-content/45 font-mono text-sm tabular-nums';
+            else if (util >= 100) balClass = 'text-error font-bold tabular-nums font-mono text-sm';
+            else if (util >= 80) balClass = 'text-warning font-semibold tabular-nums font-mono text-sm';
+
+            const availLine = limit > 0
+                ? `<div class="text-[0.7rem] text-base-content/50 font-mono tabular-nums">Avail ${formatCurrency(available)}</div>`
+                : (outstanding > 0
+                    ? `<div class="text-[0.7rem] text-base-content/45">No credit limit</div>`
+                    : '');
+
+            return `<div class="${balClass}">${formatCurrency(outstanding)}</div>${availLine}`;
+        }
+
         async function loadData() {
             try {
                 const response = await AdminService.getCustomers();
@@ -639,12 +665,12 @@
                         </td>
                         <td><span class="badge badge-sm badge-ghost">${item.customer_type?.replace('_', ' ') || '-'}</span></td>
                         <td class="text-sm">${item.contact_number || '-'}</td>
-                        <td class="text-sm">${formatCurrency(item.credit_limit)}</td>
+                        <td class="text-sm font-mono tabular-nums">${formatCurrency(item.credit_limit)}</td>
                         <td>
                             <span class="badge badge-sm ${item.default_payment_type === 'credit' ? 'badge-info' : 'badge-success'}">${item.default_payment_type || 'cash'}</span>
                             ${item.payment_terms_days > 0 ? `<br><span class="text-xs text-base-content/60">${item.payment_terms_days} days</span>` : ''}
                         </td>
-                        <td><span class="badge badge-ghost">${item.total_orders || 0}</span></td>
+                        <td class="text-sm">${formatOutstandingCell(item)}</td>
                         <td>
                             <span class="badge badge-sm ${item.status === 'active' ? 'badge-success' :
                         item.status === 'inactive' ? 'badge-error' : 'badge-warning'

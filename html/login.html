@@ -157,14 +157,20 @@
 
                     <div class="portal-card rounded-lg bg-white">
                         <div class="p-6 sm:p-7">
-                            <div id="loginSuccess" class="alert alert-success mb-4 hidden rounded-lg">
-                                <i class="fas fa-check-circle"></i>
-                                <span id="successMessage">Login successful! Redirecting...</span>
+                            <div id="loginSuccess" class="alert alert-success mb-4 hidden rounded-lg relative pr-10" role="status" aria-live="polite">
+                                <i class="fas fa-check-circle shrink-0"></i>
+                                <span id="successMessage" class="text-sm">Login successful! Redirecting...</span>
+                                <button type="button" id="loginSuccessDismiss" class="btn btn-ghost btn-xs btn-circle absolute right-2 top-2" aria-label="Dismiss message" title="Dismiss">
+                                    <i class="fas fa-times"></i>
+                                </button>
                             </div>
 
-                            <div id="loginError" class="alert alert-error mb-4 hidden rounded-lg">
-                                <i class="fas fa-exclamation-circle"></i>
-                                <span id="errorMessage">Invalid username or password</span>
+                            <div id="loginError" class="alert alert-error mb-4 hidden rounded-lg relative pr-10" role="alert">
+                                <i class="fas fa-exclamation-circle shrink-0"></i>
+                                <span id="errorMessage" class="text-sm">Invalid username or password</span>
+                                <button type="button" id="loginErrorDismiss" class="btn btn-ghost btn-xs btn-circle absolute right-2 top-2" aria-label="Dismiss message" title="Dismiss">
+                                    <i class="fas fa-times"></i>
+                                </button>
                             </div>
 
                             <form id="loginForm" class="space-y-4">
@@ -239,6 +245,58 @@
             redirectToRoleDashboard(user.role);
         }
 
+        /**
+         * Flash messages from ?reason=… (logout / session expiry).
+         * One-shot for this navigation only: strip query so refresh/bookmark
+         * does not keep showing the banner (enterprise auth UX).
+         */
+        let flashDismissTimer = null;
+
+        function clearLoginFlashUrl() {
+            try {
+                const url = new URL(window.location.href);
+                if (!url.searchParams.has('reason')) return;
+                url.searchParams.delete('reason');
+                const clean = url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '') + url.hash;
+                window.history.replaceState({}, '', clean);
+            } catch (_) { /* ignore */ }
+        }
+
+        function hideLoginFlash(which) {
+            if (flashDismissTimer) {
+                clearTimeout(flashDismissTimer);
+                flashDismissTimer = null;
+            }
+            if (which === 'success' || which === 'all') {
+                document.getElementById('loginSuccess')?.classList.add('hidden');
+            }
+            if (which === 'error' || which === 'all') {
+                document.getElementById('loginError')?.classList.add('hidden');
+            }
+        }
+
+        function showLoginFlash(type, message, { autoDismissMs = 4000 } = {}) {
+            hideLoginFlash('all');
+            const isSuccess = type === 'success';
+            const box = document.getElementById(isSuccess ? 'loginSuccess' : 'loginError');
+            const text = document.getElementById(isSuccess ? 'successMessage' : 'errorMessage');
+            if (!box || !text) return;
+            text.textContent = message;
+            box.classList.remove('hidden');
+            clearLoginFlashUrl();
+            if (autoDismissMs > 0) {
+                flashDismissTimer = setTimeout(() => hideLoginFlash(isSuccess ? 'success' : 'error'), autoDismissMs);
+            }
+            // Keep focus on the form (primary task)
+            const idInput = document.getElementById('identifier');
+            if (idInput && !document.activeElement?.closest?.('#loginForm')) {
+                setTimeout(() => idInput.focus(), 0);
+            }
+        }
+
+        document.getElementById('loginSuccessDismiss')?.addEventListener('click', () => hideLoginFlash('success'));
+        document.getElementById('loginErrorDismiss')?.addEventListener('click', () => hideLoginFlash('error'));
+
         const loginReason = new URLSearchParams(window.location.search).get('reason');
         if (loginReason) {
             const reasonMessages = {
@@ -249,11 +307,10 @@
             };
             const message = reasonMessages[loginReason] || 'Please sign in again.';
             if (loginReason === 'manual_logout') {
-                document.getElementById('successMessage').textContent = message;
-                document.getElementById('loginSuccess').classList.remove('hidden');
+                showLoginFlash('success', message, { autoDismissMs: 4000 });
             } else {
-                document.getElementById('errorMessage').textContent = message;
-                document.getElementById('loginError').classList.remove('hidden');
+                // Session expiry: slightly longer so users can read it; still one-shot
+                showLoginFlash('error', message, { autoDismissMs: 5000 });
             }
         }
 

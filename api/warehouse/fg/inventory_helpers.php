@@ -16,7 +16,8 @@
  * and write ALL columns in sync.
  */
 
-require_once dirname(__DIR__) . '/helpers/pack_uom.php';
+// inventory_helpers lives in api/warehouse/fg/ — pack_uom is at api/helpers/
+require_once dirname(__DIR__, 2) . '/helpers/pack_uom.php';
 
 if (!function_exists('fgInventoryEffectiveBaseUnits')) {
 

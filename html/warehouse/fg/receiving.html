@@ -1,10 +1,10 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en" data-theme="emerald">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Put Away from Packaging - Warehouse FG | Highland Fresh</title>
+    <title>Receive from Production - Warehouse FG | Highland Fresh</title>
 
     <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
     <link rel="stylesheet" href="../../../css/tailwind.css">
@@ -128,7 +128,7 @@
                         <a href="receiving.html"
                             class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
                             <i class="fas fa-dolly w-5 text-center"></i>
-                            <span class="flex-1">Put Away from Packaging</span>
+                            <span class="flex-1">Receive from Production</span>
                             <span class="badge badge-sm bg-white/20 text-white border-0"
                                 id="pendingReceivingBadge">0</span>
                         </a>
@@ -228,7 +228,7 @@
                 </button>
             </div>
             <div class="flex-1">
-                <h1 class="text-lg lg:text-xl font-bold text-base-content">Put Away from Packaging</h1>
+                <h1 class="text-lg lg:text-xl font-bold text-base-content">Receive from Production</h1>
             </div>
             <div class="flex-none flex items-center gap-2">
                 <!-- Refresh Button -->
@@ -273,10 +273,10 @@
                     <div>
                         <h2 class="text-2xl font-bold mb-1">
                             <i class="fas fa-dolly mr-2"></i>
-                            Put Away Packaged Goods
+                            Receive from Production
                         </h2>
-                        <p class="text-primary-content/80">Assign QC-cleared packaged stock to chiller storage.
-                            Inventory is already booked from packaging — this step only sets location.</p>
+                        <p class="text-primary-content/80">Assign packaged production output to chiller storage.
+                            Inventory is already booked from packaging � this step only sets location (put-away).</p>
                     </div>
                     <div class="flex gap-2">
                         <a href="inventory.html"
@@ -304,7 +304,7 @@
                             <span class="badge badge-warning badge-sm">Pending</span>
                         </div>
                         <p class="text-2xl lg:text-3xl font-bold stat-value" id="pendingCount">0</p>
-                        <p class="text-sm text-base-content/60">Awaiting Put-Away</p>
+                        <p class="text-sm text-base-content/60">Awaiting Chiller Assignment</p>
                     </div>
                 </div>
 
@@ -349,7 +349,7 @@
                         <span class="badge badge-warning" id="pendingBadge">0</span>
                     </div>
                     <p class="text-sm text-base-content/60 mb-4">
-                        Packaged items already in finished-goods books with no chiller location yet.
+                        Packaged goods from Production that are booked in FG inventory but not yet assigned to a chiller.
                     </p>
 
                     <div class="overflow-x-auto">
@@ -418,7 +418,7 @@
         <!-- Footer -->
         <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300">
             <div>
-                <p class="text-sm text-base-content/60">� 2026 Highland Fresh Dairy. All rights reserved.</p>
+                <p class="text-sm text-base-content/60">? 2026 Highland Fresh Dairy. All rights reserved.</p>
             </div>
         </footer>
     </div>
@@ -431,8 +431,8 @@
                     <i class="fas fa-temperature-low text-success"></i>
                 </div>
                 <div>
-                    <h3 class="font-bold text-lg">Put Away — Assign to Chiller</h3>
-                    <p class="text-xs text-base-content/60">Internal transfer · stock already in FG books</p>
+                    <h3 class="font-bold text-lg">Put Away � Assign to Chiller</h3>
+                    <p class="text-xs text-base-content/60">Internal transfer � stock already in FG books</p>
                 </div>
             </div>
 
@@ -512,7 +512,7 @@
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js"></script>
     <script src="../../../js/utils/units.js?v=20260712"></script>
-    <script src="../../../js/warehouse/fg.service.js?v=20260221"></script>
+    <script src="../../../js/warehouse/fg.service.js?v=20260718"></script>
 
     <script>
         let pendingBatches = [];
@@ -592,8 +592,13 @@
                 const select = document.getElementById('receiveChiller');
                 select.innerHTML = '<option value="">Select chiller...</option>';
                 chillers.filter(c => c.status === 'available' || c.is_active === 1).forEach(c => {
-                    const available = c.capacity - (c.current_count || 0);
-                    select.innerHTML += `<option value="${c.id}">${c.chiller_name || c.name} (${available} available)</option>`;
+                    const currentCount = c.current_count || 0;
+                    const available = c.capacity - currentCount;
+                    const isFull = available <= 0;
+                    const label = isFull
+                        ? `${c.chiller_name || c.name} (FULL — ${currentCount}/${c.capacity})`
+                        : `${c.chiller_name || c.name} (${available} available)`;
+                    select.innerHTML += `<option value="${c.id}" ${isFull ? 'disabled' : ''}>${label}</option>`;
                 });
             } catch (error) {
                 console.error('Failed to load chillers:', error);
@@ -603,12 +608,23 @@
         async function loadPendingBatches() {
             try {
                 const response = await WarehouseFGService.getPendingBatches();
-                pendingBatches = response.data?.batches || response.data || [];
-                const count = Array.isArray(pendingBatches) ? pendingBatches.length : 0;
+                if (!response || response.success === false) {
+                    throw new Error(response?.message || 'Failed to load receive-from-production queue');
+                }
+                const payload = response.data;
+                if (Array.isArray(payload?.batches)) {
+                    pendingBatches = payload.batches;
+                } else if (Array.isArray(payload)) {
+                    pendingBatches = payload;
+                } else {
+                    pendingBatches = [];
+                }
+                const count = pendingBatches.length;
                 document.getElementById('pendingCount').textContent = count;
                 document.getElementById('pendingBadge').textContent = count;
                 document.getElementById('pendingReceivingBadge').textContent = count;
-                document.getElementById('notifCount').textContent = count;
+                const notif = document.getElementById('notifCount');
+                if (notif) notif.textContent = count;
                 renderPendingBatches();
             } catch (error) {
                 console.error('Failed to load pending batches:', error);
@@ -616,12 +632,19 @@
                 document.getElementById('pendingCount').textContent = '0';
                 document.getElementById('pendingBadge').textContent = '0';
                 document.getElementById('pendingReceivingBadge').textContent = '0';
-                document.getElementById('notifCount').textContent = '0';
+                const notif = document.getElementById('notifCount');
+                if (notif) notif.textContent = '0';
+                const msg = error?.message || error?.response?.data?.message || 'Could not load queue';
                 document.getElementById('pendingBatchesTable').innerHTML = `
-                    <tr><td colspan="7" class="text-center py-8 text-base-content/60">
-                        <i class="fas fa-check-circle text-success text-4xl mb-2"></i>
-                        <p>No items awaiting put-away</p>
+                    <tr><td colspan="7" class="text-center py-8 text-error">
+                        <i class="fas fa-exclamation-triangle text-4xl mb-2"></i>
+                        <p class="font-semibold">Failed to load items</p>
+                        <p class="text-sm text-base-content/60 mt-1">${msg}</p>
+                        <button type="button" class="btn btn-sm btn-outline mt-3" onclick="loadPendingBatches()">Retry</button>
                     </td></tr>`;
+                if (typeof showToast === 'function') {
+                    showToast(msg, 'error');
+                }
             }
         }
 
@@ -631,21 +654,41 @@
             if (!pendingBatches || pendingBatches.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8">
                     <i class="fas fa-check-circle text-success text-4xl mb-2"></i>
-                    <p class="text-base-content/60">All packaged items have a chiller location</p>
+                    <p class="text-base-content/60">No packaged goods awaiting chiller assignment</p>
                 </td></tr>`;
                 return;
             }
 
             tbody.innerHTML = pendingBatches.map(batch => {
-                const qtyDisplay = PackUnits.formatQuantity(batch, { preferSplit: true });
-                const packLine = PackUnits.formatPackLine(batch);
-                const integrity = PackUnits.checkIntegrity(batch);
+                let qtyDisplay = batch.inventory_display
+                    || batch.total_pieces
+                    || batch.quantity_available
+                    || batch.quantity
+                    || '�';
+                let packLine = batch.pack_config_label || '';
+                let integrityHtml = '';
+                try {
+                    if (typeof PackUnits !== 'undefined') {
+                        qtyDisplay = PackUnits.formatQuantity(batch, { preferSplit: true }) || qtyDisplay;
+                        packLine = PackUnits.formatPackLine(batch) || packLine;
+                        const integrity = PackUnits.checkIntegrity(batch);
+                        if (integrity && !integrity.ok) {
+                            integrityHtml = PackUnits.integrityBadgeHtml(batch);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('PackUnits display fallback', e);
+                }
 
                 let productName = batch.product_name || batch.product_type || 'Unknown';
                 productName = productName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
                 const packagedAt = batch.packaged_at || batch.production_date;
                 const packagedLabel = packagedAt ? new Date(packagedAt).toLocaleDateString() : 'N/A';
+                const qcOk = !batch.qc_status || batch.qc_status === 'released' || batch.qc_decision === 'approved';
+                const qcBadge = qcOk
+                    ? '<span class="badge badge-success badge-sm gap-1"><i class="fas fa-check"></i> QC Passed</span>'
+                    : `<span class="badge badge-warning badge-sm">${batch.qc_status || 'Pending QC'}</span>`;
 
                 return `
                 <tr class="pending-row hover">
@@ -656,15 +699,15 @@
                         <div class="font-medium">${productName}</div>
                         <div class="text-xs text-base-content/60">${batch.variant || batch.product_variant || ''}</div>
                         <div class="text-xs text-info mt-0.5">${packLine}</div>
-                        ${integrity.ok ? '' : PackUnits.integrityBadgeHtml(batch)}
+                        ${integrityHtml}
                     </td>
                     <td class="text-right font-bold text-primary">${qtyDisplay}</td>
                     <td>${packagedLabel}</td>
                     <td>${batch.expiry_date ? new Date(batch.expiry_date).toLocaleDateString() : 'N/A'}</td>
-                    <td><span class="badge badge-success badge-sm gap-1"><i class="fas fa-check"></i> QC Passed</span></td>
+                    <td>${qcBadge}</td>
                     <td>
                         <button class="btn btn-primary btn-sm gap-1" onclick="openReceiveModal(${batch.id})">
-                            <i class="fas fa-dolly"></i> Put Away
+                            <i class="fas fa-dolly"></i> Receive
                         </button>
                     </td>
                 </tr>
@@ -748,11 +791,13 @@
             let productName = batch.product_name || batch.product_type || 'Unknown';
             productName = productName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
             
-            if (batch.size_ml) {
-                productName += ` ${batch.size_ml}ml`;
+            const sizeNum = batch.size_ml || batch.size_value;
+            const sizeUnit = batch.unit || batch.size_unit || 'ml';
+            if (sizeNum && !productName.includes(String(sizeNum))) {
+                productName += ` ${sizeNum}${sizeUnit}`;
             }
-            if (batch.variant && !productName.includes(batch.variant)) {
-                productName += ` - ${batch.variant}`;
+            if (batch.variant && !productName.toLowerCase().includes(batch.variant.toLowerCase())) {
+                productName += ` – ${batch.variant}`;
             }
 
             const qtyDisplay = PackUnits.formatQuantity(batch, { preferSplit: true });
@@ -761,10 +806,10 @@
 
             let source = 'From packaging';
             if (batch.packaged_at) {
-                source += ` · ${new Date(batch.packaged_at).toLocaleString()}`;
+                source += ` – ${new Date(batch.packaged_at).toLocaleString()}`;
             }
             if (batch.notes) {
-                source = batch.notes.split('\n')[0].slice(0, 80);
+                source = batch.notes.split('\n')[0];
             }
 
             document.getElementById('receiveBatchId').value = itemId;
@@ -773,6 +818,7 @@
             document.getElementById('receiveQuantity').textContent = qtyDisplay;
             document.getElementById('receiveExpiry').textContent = batch.expiry_date ? new Date(batch.expiry_date).toLocaleDateString() : 'N/A';
             document.getElementById('receiveSource').textContent = source;
+            document.getElementById('receiveSource').title = source;
             document.getElementById('receiveConversionRate').textContent = packLine;
 
             const warnEl = document.getElementById('receiveIntegrityWarn');
@@ -806,8 +852,8 @@
                 const display = result?.data?.display || result?.display;
                 const chillerName = result?.data?.chiller_name || result?.chiller_name || 'chiller';
                 showToast(display
-                    ? `Put away ${display} → ${chillerName}`
-                    : `Put away complete → ${chillerName}`, 'success');
+                    ? `Put away ${display} ? ${chillerName}`
+                    : `Put away complete ? ${chillerName}`, 'success');
                 document.getElementById('receiveModal').close();
                 await loadPendingBatches();
                 await loadRecentReceipts();

@@ -111,9 +111,15 @@ function handleGet($db, $action) {
                 break;
             }
             
-            // Look up inventory by barcode or batch_code
+            // Look up inventory by barcode or batch_code (any prefix accepted)
+            // PKG-{id} codes are synthetic (not stored), so also match by fgi.id
+            $pkgId = null;
+            if (preg_match('/^PKG-(\d+)$/i', $barcode, $m)) {
+                $pkgId = (int)$m[1];
+            }
+
             $stmt = $db->prepare("
-                SELECT 
+                SELECT
                     fgi.*,
                     p.product_name,
                     p.variant,
@@ -122,24 +128,29 @@ function handleGet($db, $action) {
                     p.product_code as product_sku,
                     p.pieces_per_box,
                     cl.chiller_name,
-                    pb.batch_code,
+                    COALESCE(pb.batch_code, CONCAT('PKG-', fgi.id)) as batch_code,
                     pb.manufacturing_date,
                     pb.expiry_date as batch_expiry_date
                 FROM finished_goods_inventory fgi
                 LEFT JOIN products p ON fgi.product_id = p.id
                 LEFT JOIN chiller_locations cl ON fgi.chiller_id = cl.id
                 LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
-                WHERE (fgi.barcode = ? OR pb.barcode = ? OR pb.batch_code = ?)
-                AND (fgi.boxes_available > 0 OR fgi.pieces_available > 0)
+                WHERE (fgi.barcode = ? OR pb.barcode = ? OR pb.batch_code = ? OR fgi.id = ?)
+                  AND fgi.status = 'available'
+                  AND (
+                      COALESCE(fgi.boxes_available, 0) > 0
+                      OR COALESCE(fgi.pieces_available, 0) > 0
+                      OR COALESCE(fgi.quantity_available, 0) > 0
+                  )
                 LIMIT 1
             ");
-            $stmt->execute([$barcode, $barcode, $barcode]);
+            $stmt->execute([$barcode, $barcode, $barcode, $pkgId ?? 0]);
             $item = $stmt->fetch();
-            
+
             if (!$item) {
-                Response::error('Barcode not found in inventory. Scan product batch codes, not DR numbers.', 404);
+                Response::error('Barcode not found in inventory. Ensure stock exists and is available.', 404);
             }
-            
+
             $item['type'] = 'inventory_item';
             Response::success($item, 'Item found');
             break;
@@ -166,7 +177,7 @@ function handleGet($db, $action) {
                 Response::error('Inventory item not found', 404);
             }
             
-            // Check if there are older batches
+            // Check if there are older (non-expired) batches
             $olderStmt = $db->prepare("
                 SELECT fgi.id, pb.batch_code, pb.expiry_date
                 FROM finished_goods_inventory fgi
@@ -175,6 +186,7 @@ function handleGet($db, $action) {
                 AND (fgi.boxes_available > 0 OR fgi.pieces_available > 0)
                 AND fgi.id != ?
                 AND pb.expiry_date < ?
+                AND pb.expiry_date >= CURDATE()
                 ORDER BY pb.expiry_date ASC
                 LIMIT 1
             ");

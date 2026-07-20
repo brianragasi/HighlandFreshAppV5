@@ -87,12 +87,12 @@
 
     function readBoxes(item) {
         const v = item?.boxes_available ?? item?.quantity_boxes ?? item?.boxes ?? 0;
-        return parseInt(v, 10) || 0;
+        return Math.max(0, parseInt(v, 10) || 0);
     }
 
     function readLoosePieces(item) {
         const v = item?.pieces_available ?? item?.quantity_pieces ?? item?.pieces ?? 0;
-        return parseInt(v, 10) || 0;
+        return Math.max(0, parseInt(v, 10) || 0);
     }
 
     function readBookedBase(item) {
@@ -129,10 +129,10 @@
         const loose = readLoosePieces(item);
         const multi = totalBaseFromMultiUnit(item);
         if (boxes !== 0 || loose !== 0) {
-            return multi;
+            return Math.max(0, multi);
         }
         const booked = readBookedBase(item);
-        return booked !== null ? booked : multi;
+        return booked !== null ? Math.max(0, booked) : Math.max(0, multi);
     }
 
     /**
@@ -248,8 +248,8 @@
             }
         });
 
-        // Also check raw item if API exposes integrity flags
-        if (item?.has_negative_qty || item?.integrity_error) {
+        // Also check raw item if API exposes integrity flags (skip if local checks already caught it)
+        if ((item?.has_negative_qty || item?.integrity_error) && issues.length === 0) {
             issues.push(item.integrity_message || 'Quantity columns out of sync');
         }
 

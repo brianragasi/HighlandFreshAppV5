@@ -89,47 +89,122 @@ const SalesService = {
             const buckets = summaryRes.data?.buckets || {};
             const customers = customersRes.data || [];
 
-            // Transform customer data to expected format
-            const transformedCustomers = customers.map(c => ({
-                id: c.id,
-                customer_code: c.customer_code,
-                customer_name: c.customer_name,
-                customer_type: c.customer_type,
-                credit_limit: parseFloat(c.credit_limit) || 0,
-                current: parseFloat(c.balance_0_30) || 0,
-                days_31_60: parseFloat(c.balance_31_60) || 0,
-                days_61_90: parseFloat(c.balance_61_90) || 0,
-                over_90: parseFloat(c.balance_91_plus) || 0,
-                total: parseFloat(c.total_outstanding) || 0
-            }));
+            // Transform: Total is ALWAYS sum of the four buckets (no independent total field)
+            const transformedCustomers = customers.map(c => {
+                const current = Math.round((parseFloat(c.balance_0_30) || 0) * 100) / 100;
+                const d3160 = Math.round((parseFloat(c.balance_31_60) || 0) * 100) / 100;
+                const d6190 = Math.round((parseFloat(c.balance_61_90) || 0) * 100) / 100;
+                const over90 = Math.round((parseFloat(c.balance_91_plus) || 0) * 100) / 100;
+                const total = Math.round((current + d3160 + d6190 + over90) * 100) / 100;
+                const creditLimit = parseFloat(c.credit_limit) || 0;
+                const overBy = creditLimit > 0 && total > creditLimit
+                    ? Math.round((total - creditLimit) * 100) / 100
+                    : 0;
+                const avail = creditLimit > 0
+                    ? Math.max(0, Math.round((creditLimit - total) * 100) / 100)
+                    : null;
+                return {
+                    id: c.id,
+                    customer_code: c.customer_code || '',
+                    customer_name: c.customer_name,
+                    customer_type: c.customer_type,
+                    phone: c.phone || c.contact_number || '',
+                    contact_person: c.contact_person || '',
+                    email: c.email || '',
+                    credit_limit: creditLimit,
+                    current,
+                    days_31_60: d3160,
+                    days_61_90: d6190,
+                    over_90: over90,
+                    total,
+                    past_due: Math.round((d3160 + d6190 + over90) * 100) / 100,
+                    over_limit: creditLimit > 0 && total > creditLimit,
+                    over_by: overBy,
+                    available_credit: avail
+                };
+            });
+
+            // Portfolio totals from corrected customer rows (source of truth for the page)
+            const current = transformedCustomers.reduce((s, c) => s + c.current, 0);
+            const days_31_60 = transformedCustomers.reduce((s, c) => s + c.days_31_60, 0);
+            const days_61_90 = transformedCustomers.reduce((s, c) => s + c.days_61_90, 0);
+            const over_90 = transformedCustomers.reduce((s, c) => s + c.over_90, 0);
+            const total = Math.round((current + days_31_60 + days_61_90 + over_90) * 100) / 100;
+            const pastDue = days_31_60 + days_61_90 + over_90;
+            const overLimitCount = transformedCustomers.filter(c => c.over_limit).length;
+            const pastDueCount = transformedCustomers.filter(c => c.past_due > 0).length;
+            const over90Count = transformedCustomers.filter(c => c.over_90 > 0).length;
+
+            // Approximate DSO from portfolio: weighted avg days if we only have buckets
+            // Prefer API total; fall back to bucket midpoints
+            let dso = null;
+            if (total > 0) {
+                const weighted =
+                    (current * 15) +
+                    (days_31_60 * 45) +
+                    (days_61_90 * 75) +
+                    (over_90 * 105);
+                dso = Math.round(weighted / total);
+            }
 
             return {
                 data: {
                     // For dashboard
-                    bucket_0_30: parseFloat(buckets.current?.amount || 0) + parseFloat(buckets.days_1_30?.amount || 0),
+                    bucket_0_30: current,
                     bucket_0_30_count: (buckets.current?.count || 0) + (buckets.days_1_30?.count || 0),
-                    bucket_31_60: parseFloat(buckets.days_31_60?.amount) || 0,
+                    bucket_31_60: days_31_60,
                     bucket_31_60_count: buckets.days_31_60?.count || 0,
-                    bucket_61_90: parseFloat(buckets.days_61_90?.amount) || 0,
+                    bucket_61_90: days_61_90,
                     bucket_61_90_count: buckets.days_61_90?.count || 0,
-                    bucket_91_plus: parseFloat(buckets.days_91_plus?.amount) || 0,
+                    bucket_91_plus: over_90,
                     bucket_91_plus_count: buckets.days_91_plus?.count || 0,
-                    total_outstanding: parseFloat(summaryRes.data?.total_outstanding) || 0,
+                    total_outstanding: total,
                     by_customer_type: summaryRes.data?.by_customer_type || [],
                     // For aging report page
                     customers: transformedCustomers,
                     summary: {
-                        total: parseFloat(summaryRes.data?.total_outstanding) || 0,
-                        current: parseFloat(buckets.current?.amount || 0) + parseFloat(buckets.days_1_30?.amount || 0),
-                        days_31_60: parseFloat(buckets.days_31_60?.amount) || 0,
-                        days_61_90: parseFloat(buckets.days_61_90?.amount) || 0,
-                        over_90: parseFloat(buckets.days_91_plus?.amount) || 0
+                        total,
+                        current,
+                        days_31_60,
+                        days_61_90,
+                        over_90,
+                        past_due: pastDue,
+                        pct_overdue: total > 0 ? Math.round((pastDue / total) * 1000) / 10 : 0,
+                        pct_over_90: total > 0 ? Math.round((over_90 / total) * 1000) / 10 : 0,
+                        customers_with_balance: transformedCustomers.length,
+                        customers_past_due: pastDueCount,
+                        customers_over_90: over90Count,
+                        customers_over_limit: overLimitCount,
+                        dso
                     }
                 }
             };
         } catch (error) {
             console.error('Error fetching aging summary:', error);
             return { data: { customers: [], summary: {} } };
+        }
+    },
+
+    /**
+     * Open AR documents for a customer — aging drill-down (bucket-level invoices)
+     */
+    async getAgingOpenItems(customerId, bucket = '') {
+        try {
+            const res = await api.get(`${this.baseUrl}/customers.php`, {
+                params: {
+                    action: 'open_items',
+                    customer_id: customerId,
+                    bucket: bucket || undefined
+                }
+            });
+            // api interceptor already returns body { success, data, message }
+            if (res && res.success === false) {
+                throw new Error(res.message || 'Failed to load open items');
+            }
+            return res;
+        } catch (error) {
+            console.error('Error fetching aging open items:', error);
+            throw error;
         }
     },
 
@@ -239,6 +314,19 @@ const SalesService = {
      */
     async getSalesTrend(params = {}) {
         try {
+            // Prefer reports.php when a date range is supplied (Sales Report page)
+            if (params.start_date || params.end_date || params.from_date || params.to_date) {
+                const response = await api.get(`${this.baseUrl}/reports.php`, {
+                    params: {
+                        action: 'trend',
+                        start_date: params.start_date || params.from_date,
+                        end_date: params.end_date || params.to_date
+                    }
+                });
+                // Normalize: API returns array in data
+                const rows = Array.isArray(response.data) ? response.data : (response.data?.data || []);
+                return { data: rows };
+            }
             const days = params.days || 30;
             const response = await api.get(`${this.baseUrl}/dashboard.php`, {
                 params: { action: 'sales_trend', days }
@@ -776,11 +864,71 @@ const SalesService = {
      */
     async getSalesSummaryReport(params = {}) {
         try {
+            // reports.php action is "summary"; accept start_date/end_date or from_date/to_date
+            const start = params.start_date || params.from_date;
+            const end = params.end_date || params.to_date;
             return await api.get(`${this.baseUrl}/reports.php`, {
-                params: { action: 'sales_summary', ...params }
+                params: {
+                    action: 'summary',
+                    start_date: start,
+                    end_date: end,
+                    ...params
+                }
             });
         } catch (error) {
             console.error('Error fetching sales summary report:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Sales by product (top sellers) for date range
+     */
+    async getSalesByProduct(params = {}) {
+        try {
+            return await api.get(`${this.baseUrl}/reports.php`, {
+                params: {
+                    action: 'by_product',
+                    start_date: params.start_date || params.from_date,
+                    end_date: params.end_date || params.to_date,
+                    limit: params.limit || 10
+                }
+            });
+        } catch (error) {
+            console.error('Error fetching sales by product:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Sales by customer for date range
+     */
+    async getSalesByCustomerReport(params = {}) {
+        try {
+            return await api.get(`${this.baseUrl}/reports.php`, {
+                params: {
+                    action: 'by_customer',
+                    start_date: params.start_date || params.from_date,
+                    end_date: params.end_date || params.to_date,
+                    limit: params.limit || 10
+                }
+            });
+        } catch (error) {
+            console.error('Error fetching sales by customer:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Customer performance report (orders, sales, outstanding, payment score)
+     */
+    async getCustomerPerformance(params = {}) {
+        try {
+            return await api.get(`${this.baseUrl}/reports.php`, {
+                params: { action: 'customer_performance', period: 'all', ...params }
+            });
+        } catch (error) {
+            console.error('Error fetching customer performance:', error);
             throw error;
         }
     },
@@ -881,19 +1029,36 @@ const SalesService = {
     },
 
     /**
-     * Record a collection/payment
-     * @param {Object} data - Collection data (customer_id, invoice_id, amount, collection_date, payment_method, reference)
+     * Get unpaid delivery receipts for a specific customer
+     * Used by Record Collection modal to populate invoice dropdown
+     * @param {number} customerId - Customer ID
+     */
+    async getCustomerUnpaidInvoices(customerId) {
+        try {
+            const response = await api.get(`${this.baseUrl}/invoices.php`, {
+                params: { action: 'customer_unpaid_drs', customer_id: customerId }
+            });
+            return { data: response.data || [] };
+        } catch (error) {
+            console.error('Error fetching customer unpaid DRs:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Record a collection/payment against a delivery receipt
+     * @param {Object} data - Collection data (customer_id, dr_id, amount, collection_date, payment_method, reference)
      */
     async recordCollection(data) {
         try {
             return await api.post(`${this.baseUrl}/invoices.php`, {
-                action: 'record_payment',
-                invoice_id: data.invoice_id,
+                action: 'record_dr_payment',
+                dr_id: data.invoice_id,
+                customer_id: data.customer_id,
                 amount: data.amount,
                 payment_method: data.payment_method,
-                payment_date: data.collection_date,
-                reference_number: data.reference,
-                customer_id: data.customer_id,
+                collection_date: data.collection_date,
+                reference: data.reference,
                 notes: data.notes || ''
             });
         } catch (error) {

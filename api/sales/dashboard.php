@@ -417,80 +417,125 @@ function getCollectionsDue($db) {
     $today = date('Y-m-d');
     $nextWeek = date('Y-m-d', strtotime('+7 days'));
     $monthStart = date('Y-m-01');
-    
-    // Due today
+
+    // Net terms: due_date = invoice_date + payment_terms_days (default 30).
+    // invoice_date = delivery date (document date), never due_date itself.
+    $invoiceDateExpr = "DATE(COALESCE(dr.delivered_at, dr.created_at))";
+    $termsExpr = "COALESCE(NULLIF(c.payment_terms_days, 0), 30)";
+    $dueDateExpr = "DATE_ADD({$invoiceDateExpr}, INTERVAL {$termsExpr} DAY)";
+    $balanceExpr = "(dr.total_amount - COALESCE(dr.amount_paid, 0))";
+    $openWhere = "
+        dr.payment_status != 'paid'
+        AND dr.status NOT IN ('cancelled', 'draft')
+        AND {$balanceExpr} > 0
+    ";
+
+    // Due today — payment terms due date equals today
     $dueTodayStmt = $db->prepare("
-        SELECT COALESCE(SUM(total_amount - amount_paid), 0) as amount
-        FROM delivery_receipts 
-        WHERE payment_status != 'paid' 
-        AND status NOT IN ('cancelled', 'draft')
-        AND DATE(delivered_at) = ?
+        SELECT COALESCE(SUM({$balanceExpr}), 0) as amount
+        FROM delivery_receipts dr
+        LEFT JOIN customers c ON c.id = dr.customer_id
+        WHERE {$openWhere}
+          AND {$dueDateExpr} = ?
     ");
     $dueTodayStmt->execute([$today]);
     $dueToday = $dueTodayStmt->fetch()['amount'];
-    
-    // Due this week
+
+    // Due this week — due date from today through +7 days (includes due today)
     $dueWeekStmt = $db->prepare("
-        SELECT COALESCE(SUM(total_amount - amount_paid), 0) as amount
-        FROM delivery_receipts 
-        WHERE payment_status != 'paid' 
-        AND status NOT IN ('cancelled', 'draft')
-        AND DATE(delivered_at) BETWEEN ? AND ?
+        SELECT COALESCE(SUM({$balanceExpr}), 0) as amount
+        FROM delivery_receipts dr
+        LEFT JOIN customers c ON c.id = dr.customer_id
+        WHERE {$openWhere}
+          AND {$dueDateExpr} BETWEEN ? AND ?
     ");
     $dueWeekStmt->execute([$today, $nextWeek]);
     $dueThisWeek = $dueWeekStmt->fetch()['amount'];
-    
-    // Overdue (delivered more than 30 days ago and not paid)
+
+    // Overdue — due date strictly before today
     $overdueStmt = $db->prepare("
-        SELECT COALESCE(SUM(total_amount - amount_paid), 0) as amount
-        FROM delivery_receipts 
-        WHERE payment_status != 'paid' 
-        AND status = 'delivered'
-        AND delivered_at < DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+        SELECT COALESCE(SUM({$balanceExpr}), 0) as amount
+        FROM delivery_receipts dr
+        LEFT JOIN customers c ON c.id = dr.customer_id
+        WHERE {$openWhere}
+          AND {$dueDateExpr} < ?
     ");
-    $overdueStmt->execute();
+    $overdueStmt->execute([$today]);
     $overdue = $overdueStmt->fetch()['amount'];
-    
-    // Collected this month
+
+    // Collected this month (confirmed payments only)
     $collectedMTDStmt = $db->prepare("
         SELECT COALESCE(SUM(amount_collected), 0) as amount
-        FROM payment_collections 
+        FROM payment_collections
         WHERE status = 'confirmed'
-        AND collected_at >= ?
+          AND collected_at >= ?
     ");
     $collectedMTDStmt->execute([$monthStart]);
     $collectedMTD = $collectedMTDStmt->fetch()['amount'];
-    
-    // Get unpaid invoices (delivery receipts)
+
+    // Open invoices with Net 30 due dates and customer identity
     $invoicesStmt = $db->prepare("
-        SELECT 
+        SELECT
             dr.id,
             dr.dr_number as invoice_number,
             dr.dr_number as order_number,
             dr.customer_id,
-            dr.customer_name,
-            c.customer_type,
-            dr.created_at as invoice_date,
-            dr.delivered_at as due_date,
+            COALESCE(c.name, dr.customer_name) as customer_name,
+            c.customer_code,
+            COALESCE(c.customer_type, dr.customer_type) as customer_type,
+            {$invoiceDateExpr} as invoice_date,
+            {$dueDateExpr} as due_date,
+            {$termsExpr} as payment_terms_days,
             dr.total_amount,
-            dr.amount_paid as paid_amount,
-            (dr.total_amount - dr.amount_paid) as balance_due,
-            dr.payment_status
+            COALESCE(dr.amount_paid, 0) as paid_amount,
+            {$balanceExpr} as balance_due,
+            dr.payment_status,
+            CASE
+                WHEN {$dueDateExpr} < ? THEN 'overdue'
+                WHEN {$dueDateExpr} = ? THEN 'due_today'
+                WHEN {$dueDateExpr} BETWEEN ? AND ? THEN 'due_this_week'
+                ELSE 'upcoming'
+            END as due_status,
+            DATEDIFF(?, {$dueDateExpr}) as days_overdue
         FROM delivery_receipts dr
         LEFT JOIN customers c ON dr.customer_id = c.id
-        WHERE dr.payment_status != 'paid'
-        AND dr.status NOT IN ('cancelled', 'draft')
-        ORDER BY dr.delivered_at ASC, dr.total_amount DESC
+        WHERE {$openWhere}
+        ORDER BY
+            CASE
+                WHEN {$dueDateExpr} < ? THEN 0
+                WHEN {$dueDateExpr} = ? THEN 1
+                WHEN {$dueDateExpr} BETWEEN ? AND ? THEN 2
+                ELSE 3
+            END,
+            {$dueDateExpr} ASC,
+            {$balanceExpr} DESC
         LIMIT 100
     ");
-    $invoicesStmt->execute();
+    $invoicesStmt->execute([
+        $today, $today, $today, $nextWeek, $today,
+        $today, $today, $today, $nextWeek
+    ]);
     $invoices = $invoicesStmt->fetchAll();
-    
+
+    // Normalize numeric types + date strings for the UI
+    foreach ($invoices as &$inv) {
+        $inv['total_amount'] = (float)$inv['total_amount'];
+        $inv['paid_amount'] = (float)$inv['paid_amount'];
+        $inv['balance_due'] = (float)$inv['balance_due'];
+        $inv['payment_terms_days'] = (int)$inv['payment_terms_days'];
+        $inv['days_overdue'] = (int)$inv['days_overdue'];
+        $inv['invoice_date'] = $inv['invoice_date'] ? substr($inv['invoice_date'], 0, 10) : null;
+        $inv['due_date'] = $inv['due_date'] ? substr($inv['due_date'], 0, 10) : null;
+    }
+    unset($inv);
+
     Response::success([
         'due_today' => (float)$dueToday,
         'due_this_week' => (float)$dueThisWeek,
         'overdue' => (float)$overdue,
         'collected_mtd' => (float)$collectedMTD,
+        'as_of' => $today,
+        'payment_terms_default' => 30,
         'invoices' => $invoices
     ], 'Collections due retrieved');
 }

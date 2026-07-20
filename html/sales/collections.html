@@ -195,6 +195,7 @@
                                 <option value="">All Types</option>
                                 <option value="supermarket">Supermarket</option>
                                 <option value="institutional">Institutional</option>
+                                <option value="school">School</option>
                                 <option value="feeding_program">Feeding Program</option>
                                 <option value="wholesaler">Wholesaler</option>
                             </select>
@@ -306,7 +307,7 @@
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js"></script>
-    <script src="../../js/sales/sales.service.js"></script>
+    <script src="../../js/sales/sales.service.js?v=20260720-dr"></script>
     
     <script>
         let collections = [];
@@ -392,6 +393,38 @@
             }
         }
         
+        function formatCustomerType(type) {
+            const labels = {
+                supermarket: 'Supermarket',
+                institutional: 'Institutional',
+                school: 'School',
+                feeding_program: 'Feeding Program',
+                wholesaler: 'Wholesaler'
+            };
+            if (!type) return '';
+            return labels[type] || type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        }
+
+        function formatDateOnly(value) {
+            if (!value) return '-';
+            // Prefer Y-m-d string parsing to avoid timezone shifts from Date()
+            const s = String(value).slice(0, 10);
+            const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (m) return `${parseInt(m[2], 10)}/${parseInt(m[3], 10)}/${m[1]}`;
+            return new Date(value).toLocaleDateString();
+        }
+
+        function typeBadgeClass(type) {
+            switch (type) {
+                case 'supermarket': return 'badge-info';
+                case 'institutional': return 'badge-secondary';
+                case 'school': return 'badge-accent';
+                case 'feeding_program': return 'badge-primary';
+                case 'wholesaler': return 'badge-neutral';
+                default: return 'badge-ghost';
+            }
+        }
+
         function renderCollections(data) {
             const tbody = document.getElementById('collectionsTable');
             const today = new Date().toISOString().split('T')[0];
@@ -405,13 +438,23 @@
             }
             
             tbody.innerHTML = data.map(inv => {
-                const dueDate = inv.due_date ? new Date(inv.due_date) : null;
-                const isOverdue = dueDate && new Date(inv.due_date) < new Date(today);
-                const isDueToday = inv.due_date === today;
-                const balance = (inv.total_amount || 0) - (inv.paid_amount || 0);
+                const dueStr = inv.due_date ? String(inv.due_date).slice(0, 10) : '';
+                const isOverdue = inv.due_status === 'overdue' || (dueStr && dueStr < today);
+                const isDueToday = inv.due_status === 'due_today' || dueStr === today;
+                const isDueWeek = inv.due_status === 'due_this_week' || (
+                    dueStr && dueStr > today && dueStr <= (() => {
+                        const d = new Date(today + 'T00:00:00');
+                        d.setDate(d.getDate() + 7);
+                        return d.toISOString().split('T')[0];
+                    })()
+                );
+                const balance = inv.balance_due != null
+                    ? Number(inv.balance_due)
+                    : ((inv.total_amount || 0) - (inv.paid_amount || 0));
                 
                 let statusBadge = 'badge-ghost';
                 let statusText = 'Pending';
+                let rowClass = 'hover';
                 if (balance <= 0) {
                     statusBadge = 'badge-success';
                     statusText = 'Paid';
@@ -421,24 +464,33 @@
                 } else if (isDueToday) {
                     statusBadge = 'badge-warning';
                     statusText = 'Due Today';
+                    rowClass = 'hover bg-warning/10';
+                } else if (isDueWeek) {
+                    statusBadge = 'badge-info';
+                    statusText = 'Due This Week';
                 }
                 
+                const code = inv.customer_code || '';
+                const typeLabel = formatCustomerType(inv.customer_type);
+                const safeName = (inv.customer_name || '').replace(/'/g, "\\'");
+                
                 return `
-                <tr class="hover">
+                <tr class="${rowClass}">
                     <td>
-                        <div class="font-medium">${inv.customer_name}</div>
-                        <div class="text-xs text-base-content/60">${inv.customer_type || ''}</div>
+                        <div class="font-medium">${inv.customer_name || '-'}</div>
+                        <div class="text-xs font-mono text-base-content/60">${code}</div>
+                        ${typeLabel ? `<span class="badge ${typeBadgeClass(inv.customer_type)} badge-xs mt-1">${typeLabel}</span>` : ''}
                     </td>
                     <td class="font-mono text-sm">${inv.invoice_number || inv.order_number || '-'}</td>
-                    <td class="text-sm">${inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString() : '-'}</td>
-                    <td class="text-sm ${isOverdue ? 'text-error font-semibold' : ''}">${dueDate ? dueDate.toLocaleDateString() : '-'}</td>
+                    <td class="text-sm">${formatDateOnly(inv.invoice_date)}</td>
+                    <td class="text-sm ${isOverdue ? 'text-error font-semibold' : isDueToday ? 'text-warning font-semibold' : ''}">${formatDateOnly(inv.due_date)}</td>
                     <td class="text-right font-mono">${formatCurrency(inv.total_amount)}</td>
                     <td class="text-right font-mono text-success">${formatCurrency(inv.paid_amount)}</td>
                     <td class="text-right font-mono font-semibold ${balance > 0 ? 'text-warning' : ''}">${formatCurrency(balance)}</td>
                     <td><span class="badge ${statusBadge} badge-sm">${statusText}</span></td>
                     <td>
                         ${balance > 0 ? `
-                            <button class="btn btn-primary btn-xs" onclick="quickCollect(${inv.id}, '${inv.customer_name}', ${balance})">
+                            <button class="btn btn-primary btn-xs" onclick="quickCollect(${inv.id}, '${safeName}', ${balance})">
                                 <i class="fas fa-hand-holding-usd"></i> Collect
                             </button>
                         ` : '-'}
@@ -459,21 +511,29 @@
             
             const filtered = collections.filter(inv => {
                 const name = inv.customer_name || '';
+                const code = inv.customer_code || '';
                 const invNum = inv.invoice_number || inv.order_number || '';
+                const dueStr = inv.due_date ? String(inv.due_date).slice(0, 10) : '';
+                const balance = inv.balance_due != null
+                    ? Number(inv.balance_due)
+                    : ((inv.total_amount || 0) - (inv.paid_amount || 0));
                 const matchSearch = !search || 
-                    name.toLowerCase().includes(search) || 
+                    name.toLowerCase().includes(search) ||
+                    code.toLowerCase().includes(search) ||
                     invNum.toLowerCase().includes(search);
                 const matchType = !type || inv.customer_type === type;
                 
                 let matchPeriod = true;
                 if (period === 'today') {
-                    matchPeriod = inv.due_date === today;
+                    matchPeriod = inv.due_status === 'due_today' || dueStr === today;
                 } else if (period === 'week') {
-                    matchPeriod = inv.due_date <= nextWeekStr && inv.due_date >= today;
+                    matchPeriod = inv.due_status === 'due_this_week' || inv.due_status === 'due_today'
+                        || (dueStr && dueStr <= nextWeekStr && dueStr >= today);
                 } else if (period === 'overdue') {
-                    matchPeriod = inv.due_date < today && (inv.total_amount - inv.paid_amount) > 0;
+                    matchPeriod = (inv.due_status === 'overdue' || (dueStr && dueStr < today)) && balance > 0;
                 } else if (period === 'upcoming') {
-                    matchPeriod = inv.due_date > today && inv.due_date <= nextWeekStr;
+                    // Next 7 days, excluding today (due this week remaining)
+                    matchPeriod = dueStr && dueStr > today && dueStr <= nextWeekStr;
                 }
                 
                 return matchSearch && matchType && matchPeriod;
@@ -494,38 +554,81 @@
             document.getElementById('collectionDate').value = new Date().toISOString().split('T')[0];
             document.getElementById('collectionAmount').value = balance.toFixed(2);
             
-            // Find and select customer
+            // Find and select customer, then load their invoices
             const customerSelect = document.getElementById('collectionCustomer');
             const customer = customers.find(c => (c.customer_name || c.name) === customerName);
             if (customer) {
                 customerSelect.value = customer.id;
+                loadCustomerInvoices().then(() => {
+                    // After invoices load, select the specific one if provided
+                    if (invoiceId) {
+                        const invSelect = document.getElementById('collectionInvoice');
+                        invSelect.value = invoiceId;
+                    }
+                });
             }
             
             document.getElementById('collectionModal').showModal();
         }
         
+        let loadedCustomerOrders = [];
+
         async function loadCustomerInvoices() {
             const customerId = document.getElementById('collectionCustomer').value;
-            if (!customerId) return;
-            
+            const invoiceSelect = document.getElementById('collectionInvoice');
+            const amountInput = document.getElementById('collectionAmount');
+
+            if (!customerId) {
+                invoiceSelect.innerHTML = '<option value="">Select a customer first</option>';
+                loadedCustomerOrders = [];
+                return;
+            }
+
             try {
-                const response = await SalesService.getCustomerOrders(customerId, 20);
-                const orders = (response.data || []).filter(o => o.status === 'delivered' && o.balance > 0);
-                
-                const select = document.getElementById('collectionInvoice');
-                select.innerHTML = '<option value="">Apply to oldest unpaid invoice</option>' +
-                    orders.map(o => `<option value="${o.id}">${o.order_number || 'ORD-' + o.id} - Balance: ${formatCurrency(o.balance)}</option>`).join('');
+                const response = await SalesService.getCustomerUnpaidInvoices(customerId);
+                const invoices = response.data || [];
+
+                loadedCustomerOrders = invoices;
+
+                if (invoices.length === 0) {
+                    invoiceSelect.innerHTML = '<option value="">No unpaid invoices found</option>';
+                    amountInput.value = '';
+                    return;
+                }
+
+                invoiceSelect.innerHTML = invoices.map(inv => {
+                    const label = inv.dr_number || `DR-${inv.id}`;
+                    const balance = parseFloat(inv.balance_due || 0);
+                    return `<option value="${inv.id}">${label} — Balance: ${formatCurrency(balance)}</option>`;
+                }).join('');
+
+                // Auto-select oldest (first in list, sorted oldest by backend) and pre-fill amount
+                const oldest = invoices[0];
+                amountInput.value = parseFloat(oldest.balance_due || 0).toFixed(2);
             } catch (error) {
                 console.error('Error loading invoices:', error);
+                invoiceSelect.innerHTML = '<option value="">Failed to load invoices</option>';
+                loadedCustomerOrders = [];
             }
         }
         
         document.getElementById('collectionForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
+            let invoiceId = document.getElementById('collectionInvoice').value;
+            if (!invoiceId && loadedCustomerOrders.length > 0) {
+                invoiceId = loadedCustomerOrders[0].id;
+            }
+            invoiceId = parseInt(invoiceId, 10) || null;
+
+            if (!invoiceId) {
+                showToast('No unpaid invoice found for this customer', 'error');
+                return;
+            }
+
             const data = {
                 customer_id: parseInt(document.getElementById('collectionCustomer').value),
-                invoice_id: document.getElementById('collectionInvoice').value || null,
+                invoice_id: invoiceId,
                 amount: parseFloat(document.getElementById('collectionAmount').value),
                 collection_date: document.getElementById('collectionDate').value,
                 payment_method: document.getElementById('paymentMethod').value,

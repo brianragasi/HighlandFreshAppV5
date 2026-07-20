@@ -50,9 +50,46 @@
             font-variant-numeric: tabular-nums;
         }
 
-        /* Quick action cards */
-        .quick-action-card {
-            @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg cursor-pointer;
+        /* Floor work-queue home (MES-style) */
+        .floor-status-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem 1rem;
+            align-items: center;
+            font-size: 0.75rem;
+            font-variant-numeric: tabular-nums;
+            color: oklch(var(--bc) / 0.6);
+        }
+        .floor-status-bar strong {
+            color: oklch(var(--bc));
+            font-weight: 700;
+        }
+        .work-queue-item {
+            border: 1px solid oklch(var(--b3));
+            border-radius: 0.75rem;
+            background: oklch(var(--b1));
+            padding: 0.875rem 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+        }
+        @media (min-width: 768px) {
+            .work-queue-item {
+                flex-direction: row;
+                align-items: center;
+                justify-content: space-between;
+            }
+        }
+        .work-queue-item.is-primary {
+            border-color: oklch(var(--p) / 0.45);
+            box-shadow: 0 0 0 1px oklch(var(--p) / 0.15), 0 8px 24px -12px oklch(var(--p) / 0.35);
+        }
+        .work-queue-item .wq-meta {
+            min-width: 0;
+            flex: 1;
+        }
+        .blocker-panel {
+            border-left: 3px solid oklch(var(--er));
         }
     </style>
 </head>
@@ -76,39 +113,16 @@
                     <i class="fas fa-bars text-lg"></i>
                 </button>
             </div>
-            <div class="flex-1">
-                <h1 class="text-lg lg:text-xl font-bold text-base-content">Production Dashboard</h1>
+            <!-- DaisyUI .navbar > * is inline-flex (row); force column so title stacks above subtitle -->
+            <div class="flex-1 min-w-0 flex-col items-start justify-center gap-0.5">
+                <h1 class="text-lg lg:text-xl font-bold text-base-content leading-tight">Production Floor</h1>
+                <p class="text-xs text-base-content/50 truncate leading-snug">
+                    <span id="greeting">Shift</span>
+                    <span class="opacity-40 mx-1" aria-hidden="true">·</span>
+                    <span id="welcomeName">Operator</span>
+                </p>
             </div>
             <div class="flex-none flex items-center gap-2">
-                <!-- Search -->
-                <div class="hidden md:block">
-                    <label class="input input-bordered input-sm flex items-center gap-2 w-64">
-                        <i class="fas fa-search text-base-content/40"></i>
-                        <input type="text" placeholder="Search..." class="grow" />
-                        <kbd class="kbd kbd-sm">Ctrl+K</kbd>
-                    </label>
-                </div>
-
-                <!-- Notifications -->
-                <div class="dropdown dropdown-end">
-                    <label tabindex="0" class="btn btn-ghost btn-circle">
-                        <div class="indicator">
-                            <i class="fas fa-bell text-lg"></i>
-                            <span class="indicator-item badge badge-primary badge-xs" id="notificationCount">0</span>
-                        </div>
-                    </label>
-                    <div tabindex="0"
-                        class="dropdown-content bg-base-100 rounded-box shadow-lg border border-base-300 w-80 mt-3">
-                        <div class="p-4 border-b border-base-300">
-                            <h3 class="font-semibold">Notifications</h3>
-                        </div>
-                        <ul class="menu menu-sm p-2 max-h-64 overflow-y-auto">
-                            <li class="text-center py-4 text-base-content/60">No new notifications</li>
-                        </ul>
-                    </div>
-                </div>
-
-                <!-- Theme toggle -->
                 <label class="swap swap-rotate btn btn-ghost btn-circle">
                     <input type="checkbox" id="themeToggle" />
                     <i class="fas fa-sun swap-off text-lg"></i>
@@ -117,304 +131,99 @@
             </div>
         </header>
 
-        <!-- Page Content -->
-        <main class="flex-1 p-4 lg:p-6">
+        <!-- Floor work queue — MES style -->
+        <main class="flex-1 p-3 md:p-4 max-w-4xl mx-auto w-full space-y-3">
 
-            <!-- Welcome Banner -->
-            <div class="bg-gradient-to-r from-primary to-primary/80 rounded-2xl p-6 mb-6 text-primary-content">
-                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <div>
-                        <h2 class="text-2xl font-bold mb-1">Good <span id="greeting">Morning</span>, <span
-                                id="welcomeName">Production Staff</span>!</h2>
-                        <p class="text-primary-content/80">Here's today's production overview. Click on any card to take
-                            action!</p>
+            <!-- Thin situational awareness (not KPI theater) -->
+            <div class="floor-status-bar rounded-xl border border-base-300 bg-base-100 px-3 py-2">
+                <span>Active runs <strong id="runsInProgress">0</strong></span>
+                <span class="opacity-30">|</span>
+                <span>Done today <strong id="runsCompleted">0</strong></span>
+                <span class="opacity-30">|</span>
+                <span>Milk issued <strong id="availableMilk">0</strong> L</span>
+                <span class="opacity-30">|</span>
+                <span>CCP open <strong id="ccpAlerts">0</strong></span>
+            </div>
+
+            <!-- Blockers with CTAs (only when relevant) -->
+            <div id="blockerPanel" class="hidden space-y-2">
+                <div id="milkWarning" class="alert alert-error blocker-panel py-3 hidden">
+                    <i class="fas fa-ban"></i>
+                    <div class="flex-1 min-w-0">
+                        <h3 class="font-bold text-sm">No milk issued to production</h3>
+                        <p class="text-xs opacity-90" id="milkWarningDetail">Request milk before starting a new run.</p>
                     </div>
-                    <div class="flex gap-2">
-                        <a href="batches.html?action=new"
-                            class="btn btn-sm bg-white/20 border-white/30 text-white hover:bg-white/30">
-                            <i class="fas fa-play"></i> Start Production
-                        </a>
-                        <a href="ccp_logging.html"
-                            class="btn btn-sm bg-white/20 border-white/30 text-white hover:bg-white/30">
-                            <i class="fas fa-thermometer-half"></i> Log CCP
-                        </a>
+                    <div class="flex flex-wrap gap-2 shrink-0" id="milkWarningActions"></div>
+                </div>
+                <div id="ccpBlocker" class="alert alert-warning blocker-panel py-3 hidden">
+                    <i class="fas fa-thermometer-half"></i>
+                    <div class="flex-1 min-w-0">
+                        <h3 class="font-bold text-sm">CCP logs need attention</h3>
+                        <p class="text-xs opacity-90"><span id="ccpBlockerCount">0</span> open alert(s) — log temperatures before advancing stages.</p>
                     </div>
+                    <a href="ccp_logging.html" class="btn btn-sm btn-warning shrink-0">Log CCP</a>
                 </div>
             </div>
 
-            <!-- Milk Warning Alert (hidden by default) -->
-            <div id="milkWarning" class="alert alert-error mb-6 hidden">
-                <i class="fas fa-exclamation-triangle text-xl"></i>
-                <div>
-                    <h3 class="font-bold">No Milk Issued to Production!</h3>
-                    <p class="text-sm">You cannot start new production runs until Warehouse Raw fulfills a milk
-                        requisition for Production.</p>
+            <!-- YOUR WORK QUEUE (primary) -->
+            <section class="rounded-xl border border-base-300 bg-base-100 overflow-hidden">
+                <div class="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-base-300 bg-base-200/50">
+                    <h2 class="text-xs font-bold uppercase tracking-wider text-base-content/55">Your work queue</h2>
+                    <span class="text-[0.7rem] text-base-content/45" id="queueHint">Next executable step per active run</span>
                 </div>
-            </div>
-
-            <!-- What to do next (Active Run cards) -->
-            <div class="card bg-base-100 border border-base-300 mb-6">
-                <div class="card-body p-4 lg:p-5">
-                    <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
-                        <h3 class="card-title text-base">
-                            <i class="fas fa-route text-primary"></i>
-                            What to do next
-                        </h3>
-                        <a href="run-workbench.html" class="btn btn-primary btn-sm gap-2">
-                            <i class="fas fa-screwdriver-wrench"></i> Open Workbench
-                        </a>
-                    </div>
-                    <div id="nextStepCards" class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div class="text-center py-6 text-base-content/40 col-span-full">
-                            <span class="loading loading-spinner loading-md text-primary"></span>
-                            <p class="text-sm mt-2">Loading active runs…</p>
-                        </div>
+                <div id="nextStepCards" class="p-3 space-y-2">
+                    <div class="text-center py-8 text-base-content/40">
+                        <span class="loading loading-spinner loading-md text-primary"></span>
+                        <p class="text-sm mt-2">Loading work queue…</p>
                     </div>
                 </div>
-            </div>
-
-            <!-- Quick Actions -->
-            <div class="card bg-gradient-to-br from-base-100 to-base-200 border border-base-300 mb-6">
-                <div class="card-body">
-                    <h3 class="card-title text-base mb-4">
-                        <i class="fas fa-bolt text-primary"></i>
-                        Quick Actions
-                    </h3>
-                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                        <a href="run-workbench.html"
-                            class="quick-action-card card bg-primary text-primary-content">
-                            <div class="card-body items-center text-center p-4">
-                                <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center mb-2">
-                                    <i class="fas fa-screwdriver-wrench text-2xl"></i>
-                                </div>
-                                <p class="font-semibold">My Active Runs</p>
-                                <p class="text-xs opacity-80">One place for the full run</p>
-                            </div>
-                        </a>
-
-                        <a href="batches.html?action=new"
-                            class="quick-action-card card bg-success text-success-content">
-                            <div class="card-body items-center text-center p-4">
-                                <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center mb-2">
-                                    <i class="fas fa-play text-2xl"></i>
-                                </div>
-                                <p class="font-semibold">Start Production</p>
-                                <p class="text-xs opacity-80">Create a new production run</p>
-                            </div>
-                        </a>
-
-                        <a href="requisitions.html?action=new" class="quick-action-card card bg-info text-info-content">
-                            <div class="card-body items-center text-center p-4">
-                                <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center mb-2">
-                                    <i class="fas fa-clipboard-list text-2xl"></i>
-                                </div>
-                                <p class="font-semibold">Request Items</p>
-                                <p class="text-xs opacity-80">Create requisition</p>
-                            </div>
-                        </a>
-
-                        <a href="packaging.html" class="quick-action-card card bg-warning text-warning-content">
-                            <div class="card-body items-center text-center p-4">
-                                <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center mb-2">
-                                    <i class="fas fa-boxes text-2xl"></i>
-                                </div>
-                                <p class="font-semibold">Packaging</p>
-                                <p class="text-xs opacity-80">Pack QC-released batches</p>
-                            </div>
-                        </a>
-                    </div>
+                <div id="startRunFooter" class="px-3 pb-3 hidden">
+                    <a id="startRunBtn" href="batches.html?action=new" class="btn btn-outline btn-sm btn-block gap-2">
+                        <i class="fas fa-play"></i> Start a new production run
+                    </a>
+                    <p id="startRunGate" class="text-[0.7rem] text-center text-base-content/45 mt-1.5 hidden"></p>
                 </div>
-            </div>
+            </section>
 
-            <!-- Bento Grid Stats -->
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <!-- Runs In Progress -->
-                <a href="run-workbench.html"
-                    class="bento-card card bg-base-100 border border-base-300 cursor-pointer">
-                    <div class="card-body p-4">
-                        <div class="flex items-center justify-between mb-2">
-                            <div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
-                                <i class="fas fa-play-circle text-blue-500"></i>
-                            </div>
-                            <span class="badge badge-ghost badge-sm">Active</span>
-                        </div>
-                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="runsInProgress">0</p>
-                        <p class="text-sm text-base-content/60">Runs In Progress</p>
-                    </div>
-                </a>
-
-                <!-- Completed Today -->
-                <a href="batches.html?status=completed"
-                    class="bento-card card bg-base-100 border border-base-300 cursor-pointer">
-                    <div class="card-body p-4">
-                        <div class="flex items-center justify-between mb-2">
-                            <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                                <i class="fas fa-check-circle text-emerald-500"></i>
-                            </div>
-                            <span class="badge badge-success badge-sm">Today</span>
-                        </div>
-                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="runsCompleted">0</p>
-                        <p class="text-sm text-base-content/60">Completed Today</p>
-                    </div>
-                </a>
-
-                <!-- Usable Issued Milk -->
-                <div class="bento-card card bg-base-100 border border-base-300">
-                    <div class="card-body p-4">
-                        <div class="flex items-center justify-between mb-2">
-                            <div class="w-10 h-10 rounded-xl bg-cyan-500/10 flex items-center justify-center">
-                                <i class="fas fa-tint text-cyan-500"></i>
-                            </div>
-                            <span class="badge badge-info badge-sm">Liters</span>
-                        </div>
-                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="availableMilk">0</p>
-                        <p class="text-sm text-base-content/60">Usable Issued Milk (L)</p>
-                    </div>
+            <!-- Waiting on others -->
+            <details class="rounded-xl border border-base-300 bg-base-100 group" id="waitingSection">
+                <summary class="flex items-center justify-between gap-2 px-3 py-2.5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                    <h2 class="text-xs font-bold uppercase tracking-wider text-base-content/55">
+                        Waiting on others
+                        <span class="badge badge-ghost badge-xs ml-1 font-mono" id="waitingCount">0</span>
+                    </h2>
+                    <i class="fas fa-chevron-down text-xs text-base-content/40 group-open:rotate-180 transition-transform"></i>
+                </summary>
+                <div id="pendingReqsList" class="px-3 pb-3 space-y-1.5">
+                    <p class="text-xs text-base-content/45 py-2">No pending requisitions</p>
                 </div>
+            </details>
 
-                <!-- CCP Alerts -->
-                <a href="ccp_logging.html" class="bento-card card bg-base-100 border border-base-300 cursor-pointer">
-                    <div class="card-body p-4">
-                        <div class="flex items-center justify-between mb-2">
-                            <div class="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
-                                <i class="fas fa-exclamation-triangle text-amber-500"></i>
-                            </div>
-                            <span class="badge badge-warning badge-sm">Alert</span>
-                        </div>
-                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="ccpAlerts">0</p>
-                        <p class="text-sm text-base-content/60">CCP Alerts</p>
+            <!-- Recent completed (compact, demoted) -->
+            <details class="rounded-xl border border-base-300 bg-base-100 group">
+                <summary class="flex items-center justify-between gap-2 px-3 py-2.5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                    <h2 class="text-xs font-bold uppercase tracking-wider text-base-content/55">Recent runs</h2>
+                    <div class="flex items-center gap-2">
+                        <a href="batches.html" class="btn btn-ghost btn-xs" onclick="event.stopPropagation()">All</a>
+                        <i class="fas fa-chevron-down text-xs text-base-content/40 group-open:rotate-180 transition-transform"></i>
                     </div>
-                </a>
-            </div>
-
-            <!-- Active Yield Summary -->
-            <div class="card bg-base-100 border border-base-300 mb-6" id="yieldSummaryCard" style="display:none;">
-                <div class="card-body">
-                    <div class="flex items-center justify-between mb-2">
-                        <h3 class="card-title text-base">
-                            <i class="fas fa-chart-line text-primary"></i>
-                            Active Runs — Yield & Packaging
-                        </h3>
-                        <a href="run-workbench.html" class="btn btn-ghost btn-sm">
-                            Workbench <i class="fas fa-arrow-right ml-1"></i>
-                        </a>
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="table table-sm">
-                            <thead>
-                                <tr>
-                                    <th>Run</th>
-                                    <th>Product</th>
-                                    <th class="text-right">Initial (mL)</th>
-                                    <th class="text-right">Net Yield (mL)</th>
-                                    <th class="text-center">Efficiency</th>
-                                    <th>Packaging Estimate</th>
-                                </tr>
-                            </thead>
-                            <tbody id="yieldSummaryTable">
-                                <tr><td colspan="6" class="text-center py-4"><span class="loading loading-spinner loading-sm"></span></td></tr>
-                            </tbody>
-                        </table>
-                    </div>
+                </summary>
+                <div class="overflow-x-auto px-1 pb-2">
+                    <table class="table table-xs">
+                        <thead>
+                            <tr>
+                                <th>Run</th>
+                                <th>Product</th>
+                                <th>Status</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentRunsTable">
+                            <tr><td colspan="4" class="text-center py-3 text-base-content/40">Loading…</td></tr>
+                        </tbody>
+                    </table>
                 </div>
-            </div>
-
-            <!-- Two Column Layout -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <!-- This Week's Production -->
-                <div class="card bg-base-100 border border-base-300">
-                    <div class="card-body">
-                        <h3 class="card-title text-base">
-                            <i class="fas fa-chart-bar text-primary"></i>
-                            This Week's Production
-                        </h3>
-                        <div class="overflow-x-auto">
-                            <table class="table table-sm">
-                                <thead>
-                                    <tr>
-                                        <th>Product Type</th>
-                                        <th class="text-right">Quantity</th>
-                                        <th class="text-right">Unit</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="weekProductionTable">
-                                    <tr>
-                                        <td colspan="3" class="text-center py-4">
-                                            <span class="loading loading-spinner loading-sm"></span> Loading...
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Pending Requisitions -->
-                <div class="card bg-base-100 border border-base-300">
-                    <div class="card-body">
-                        <div class="flex items-center justify-between mb-2">
-                            <h3 class="card-title text-base">
-                                <i class="fas fa-clipboard-list text-primary"></i>
-                                Pending Requisitions
-                            </h3>
-                            <a href="requisitions.html" class="btn btn-ghost btn-sm">
-                                View All <i class="fas fa-arrow-right ml-1"></i>
-                            </a>
-                        </div>
-                        <div id="pendingReqsList" class="space-y-2">
-                            <div class="flex items-center justify-center py-4">
-                                <span class="loading loading-spinner loading-sm"></span>
-                                <span class="ml-2">Loading...</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Recent Production Runs -->
-            <div class="card bg-base-100 border border-base-300">
-                <div class="card-body">
-                    <div class="flex items-center justify-between mb-2">
-                        <h3 class="card-title text-base">
-                            <i class="fas fa-industry text-primary"></i>
-                            Recent Production Runs
-                        </h3>
-                        <a href="batches.html" class="btn btn-ghost btn-sm">
-                            View All <i class="fas fa-arrow-right ml-1"></i>
-                        </a>
-                    </div>
-
-                    <!-- Tip Alert -->
-                    <div class="alert alert-info py-2 mb-4">
-                        <i class="fas fa-lightbulb"></i>
-                        <span class="text-sm"><strong>Tip:</strong> Click on any row to see full details of the
-                            production run</span>
-                    </div>
-
-                    <div class="overflow-x-auto">
-                        <table class="table table-sm">
-                            <thead>
-                                <tr>
-                                    <th>Run Code</th>
-                                    <th>Product</th>
-                                    <th>Status</th>
-                                    <th class="text-right">Planned</th>
-                                    <th class="text-right">Actual</th>
-                                    <th>Started</th>
-                                    <th class="text-center">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="recentRunsTable">
-                                <tr>
-                                    <td colspan="7" class="text-center py-4">
-                                        <span class="loading loading-spinner loading-sm"></span> Loading...
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
+            </details>
 
         </main>
     </div>
@@ -453,331 +262,281 @@
         }
 
         // Check authentication
+
+        let dashState = { availableMilk: 0, warehouseMilk: 0, ccpAlerts: 0 };
+
         document.addEventListener('DOMContentLoaded', async () => {
-            // Require authentication
             if (!AuthService.isAuthenticated()) {
                 window.location.href = '../login.html';
                 return;
             }
 
             const user = AuthService.getCurrentUser();
+            const nameEl = document.getElementById('sidebarUserName');
+            if (nameEl) nameEl.textContent = `${user.first_name} ${user.last_name}`;
+            const welcome = document.getElementById('welcomeName');
+            if (welcome) welcome.textContent = user.first_name || 'Operator';
+            const initials = document.getElementById('userInitials');
+            if (initials) initials.textContent = ((user.first_name?.[0] || '') + (user.last_name?.[0] || '')).toUpperCase() || 'PS';
 
-            // Update user display
-            document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
-            document.getElementById('welcomeName').textContent = user.first_name;
-            document.getElementById('userInitials').textContent = (user.first_name[0] + user.last_name[0]).toUpperCase();
-
-            // Set greeting
             const hour = new Date().getHours();
-            let greeting = 'Morning';
-            if (hour >= 12 && hour < 17) greeting = 'Afternoon';
-            else if (hour >= 17) greeting = 'Evening';
-            document.getElementById('greeting').textContent = greeting;
+            let greeting = 'Morning shift';
+            if (hour >= 12 && hour < 17) greeting = 'Afternoon shift';
+            else if (hour >= 17) greeting = 'Evening shift';
+            const gEl = document.getElementById('greeting');
+            if (gEl) gEl.textContent = greeting;
 
-            // Load dashboard data
-            loadDashboard();
-            loadYieldSummary();
-            loadNextStepCards();
+            await loadDashboard();
+            await loadWorkQueue();
         });
 
         async function loadDashboard() {
             try {
                 const response = await ProductionService.getDashboardStats();
+                if (!response.success) return;
+                const data = response.data || {};
 
-                if (response.success) {
-                    const data = response.data;
+                const availableMilk = parseFloat(data.available_milk || 0);
+                const warehouseMilk = parseFloat(data.warehouse_tank_milk || 0);
+                const ccp = data.ccp_alerts || 0;
+                dashState = { availableMilk, warehouseMilk, ccpAlerts: ccp };
 
-                    // Update stat cards (API returns 'today' not 'today_stats')
-                    document.getElementById('runsInProgress').textContent = data.today?.in_progress || 0;
-                    document.getElementById('runsCompleted').textContent = data.today?.completed || 0;
-                    const availableMilk = parseFloat(data.available_milk || 0);
-                    document.getElementById('availableMilk').textContent = availableMilk.toLocaleString();
-                    document.getElementById('ccpAlerts').textContent = data.ccp_alerts || 0;
+                document.getElementById('runsInProgress').textContent = data.today?.in_progress || 0;
+                document.getElementById('runsCompleted').textContent = data.today?.completed || 0;
+                document.getElementById('availableMilk').textContent = availableMilk.toLocaleString();
+                document.getElementById('ccpAlerts').textContent = ccp;
 
-                    // Show warning if no usable issued milk is available.
-                    const warehouseMilk = parseFloat(data.warehouse_tank_milk || 0);
-                    if (availableMilk <= 0) {
-                        let warningHtml = `
-                            <i class="fas fa-exclamation-triangle text-xl"></i>
-                            <div>
-                                <h3 class="font-bold">No Milk Issued to Production!</h3>
-                        `;
-                        if (warehouseMilk > 0) {
-                            warningHtml += `<p class="text-sm">Warehouse Raw has <strong>${warehouseMilk.toLocaleString()}L</strong> of usable milk. 
-                                Create a requisition to request milk for production.</p>`;
-                        } else {
-                            warningHtml += `<p class="text-sm">Warehouse Raw has no usable milk available to issue. 
-                                Receive and QC-approve fresh milk before starting a milk-based run.</p>`;
-                        }
-                        warningHtml += '</div>';
-                        document.getElementById('milkWarning').innerHTML = warningHtml;
-                        document.getElementById('milkWarning').classList.remove('hidden');
-                    }
+                // Sidebar badges (if present)
+                const setBadge = (id, n) => {
+                    const el = document.getElementById(id);
+                    if (el) el.textContent = n;
+                };
+                setBadge('activeRunsBadge', data.today?.in_progress || 0);
+                setBadge('pendingReqsBadge', data.pending_requisitions || 0);
+                setBadge('ccpAlertsBadge', ccp);
 
-                    // Update sidebar badges
-                    document.getElementById('activeRunsBadge').textContent = data.today?.in_progress || 0;
-                    document.getElementById('pendingReqsBadge').textContent = data.pending_requisitions || 0;
-                    document.getElementById('ccpAlertsBadge').textContent = data.ccp_alerts || 0;
-
-                    // Render week production
-                    renderWeekProduction(data.week_production || []);
-
-                    // Render pending requisitions
-                    renderPendingRequisitions(data.pending_requisitions_list || []);
-
-                    // Render recent runs
-                    renderRecentRuns(data.recent_runs || []);
-                }
+                renderBlockers(availableMilk, warehouseMilk, ccp);
+                renderPendingRequisitions(data.pending_requisitions_list || []);
+                renderRecentRuns(data.recent_runs || []);
+                updateStartRunGate(availableMilk, warehouseMilk);
             } catch (error) {
                 console.error('Dashboard error:', error);
-                showToast('Failed to load dashboard data', 'error');
+                showToast('Failed to load floor status', 'error');
             }
         }
 
-        function renderWeekProduction(production) {
-            const tbody = document.getElementById('weekProductionTable');
+        function renderBlockers(availableMilk, warehouseMilk, ccp) {
+            const panel = document.getElementById('blockerPanel');
+            const milkEl = document.getElementById('milkWarning');
+            const ccpEl = document.getElementById('ccpBlocker');
+            let any = false;
 
-            if (!production.length) {
-                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-base-content/60 py-4">No production this week</td></tr>';
-                return;
+            if (availableMilk <= 0) {
+                any = true;
+                milkEl.classList.remove('hidden');
+                const detail = document.getElementById('milkWarningDetail');
+                const actions = document.getElementById('milkWarningActions');
+                if (warehouseMilk > 0) {
+                    detail.innerHTML = `Warehouse has <strong>${warehouseMilk.toLocaleString()} L</strong> usable milk. Request issue before starting a milk-based run.`;
+                    actions.innerHTML = `<a href="requisitions.html?action=new" class="btn btn-sm btn-error">Request milk</a>`;
+                } else {
+                    detail.textContent = 'Warehouse has no usable milk to issue. Wait for receiving/QC, or start only non-milk work.';
+                    actions.innerHTML = `<a href="requisitions.html" class="btn btn-sm btn-outline">View requisitions</a>`;
+                }
+            } else {
+                milkEl.classList.add('hidden');
             }
 
-            const productTypes = {
-                'bottled_milk': 'Bottled Milk',
-                'cheese': 'Cheese',
-                'butter': 'Butter',
-                'yogurt': 'Yogurt',
-                'milk_bar': 'Milk Bar',
-                'cream': 'Cream',
-                'flavored_milk': 'Flavored Milk'
-            };
+            if (ccp > 0) {
+                any = true;
+                ccpEl.classList.remove('hidden');
+                document.getElementById('ccpBlockerCount').textContent = String(ccp);
+            } else {
+                ccpEl.classList.add('hidden');
+            }
 
-            const typeColors = {
-                'bottled_milk': 'badge-primary',
-                'cheese': 'badge-warning',
-                'butter': 'badge-info',
-                'yogurt': 'badge-success',
-                'milk_bar': 'badge-secondary',
-                'cream': 'badge-accent',
-                'flavored_milk': 'badge-ghost'
-            };
+            panel.classList.toggle('hidden', !any);
+        }
 
-            tbody.innerHTML = production.map(item => `
-                <tr>
-                    <td>
-                        <span class="badge ${typeColors[item.product_type] || 'badge-ghost'}">
-                            ${productTypes[item.product_type] || item.product_type}
-                        </span>
-                    </td>
-                    <td class="text-right font-semibold">${parseFloat(item.total_produced || item.total_quantity || 0).toLocaleString()}</td>
-                    <td class="text-right text-base-content/60">${item.yield_unit || 'units'}</td>
-                </tr>
-            `).join('');
+        function updateStartRunGate(availableMilk, warehouseMilk) {
+            const footer = document.getElementById('startRunFooter');
+            const btn = document.getElementById('startRunBtn');
+            const gate = document.getElementById('startRunGate');
+            if (!footer) return;
+            footer.classList.remove('hidden');
+
+            if (availableMilk > 0) {
+                btn.classList.remove('btn-disabled');
+                btn.removeAttribute('aria-disabled');
+                btn.href = 'batches.html?action=new';
+                gate.classList.add('hidden');
+            } else {
+                // Still allow navigation but show gate message; primary path is requisition
+                btn.classList.add('btn-disabled');
+                btn.setAttribute('aria-disabled', 'true');
+                btn.href = 'javascript:void(0)';
+                gate.classList.remove('hidden');
+                gate.textContent = warehouseMilk > 0
+                    ? 'Start is gated until milk is issued. Use Request milk above.'
+                    : 'Start is gated — no usable milk in warehouse or production.';
+            }
         }
 
         function renderPendingRequisitions(requisitions) {
             const container = document.getElementById('pendingReqsList');
+            const countEl = document.getElementById('waitingCount');
+            const list = requisitions || [];
+            if (countEl) countEl.textContent = String(list.length);
 
-            if (!requisitions || !requisitions.length) {
-                container.innerHTML = '<p class="text-center text-base-content/60 py-4">No pending requisitions</p>';
+            if (!list.length) {
+                container.innerHTML = '<p class="text-xs text-base-content/45 py-2">Nothing waiting on warehouse</p>';
                 return;
             }
 
-            container.innerHTML = requisitions.slice(0, 5).map(req => `
-                <div class="flex items-center justify-between p-3 bg-base-200 rounded-xl">
-                    <div>
-                        <p class="font-semibold text-sm">${req.requisition_code}</p>
-                        <p class="text-xs text-base-content/60">${req.total_items} items • ${req.priority} priority</p>
+            container.innerHTML = list.slice(0, 8).map(req => `
+                <a href="requisitions.html" class="flex items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-200/40 px-2.5 py-2 hover:bg-base-200 transition-colors">
+                    <div class="min-w-0">
+                        <p class="font-mono text-xs font-bold truncate">${escapeHtml(req.requisition_code || '')}</p>
+                        <p class="text-[0.7rem] text-base-content/55 truncate">${req.total_items || 0} items · ${escapeHtml(req.priority || 'normal')} priority</p>
                     </div>
-                    <span class="badge ${req.status === 'pending' ? 'badge-warning' : 'badge-info'}">${req.status}</span>
-                </div>
+                    <span class="badge badge-sm ${req.status === 'pending' ? 'badge-warning' : 'badge-info'} shrink-0">${escapeHtml(req.status || '')}</span>
+                </a>
             `).join('');
         }
 
         function renderRecentRuns(runs) {
             const tbody = document.getElementById('recentRunsTable');
-
-            if (!runs.length) {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-base-content/60 py-4">No recent runs</td></tr>';
+            if (!runs || !runs.length) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-base-content/45 py-3">No recent runs</td></tr>';
                 return;
             }
 
             const statusColors = {
-                'planned': 'badge-ghost',
-                'in_progress': 'badge-primary',
-                'pasteurization': 'badge-warning',
-                'processing': 'badge-info',
-                'cooling': 'badge-info',
-                'packaging': 'badge-info',
-                'completed': 'badge-success',
-                'cancelled': 'badge-error'
+                planned: 'badge-ghost',
+                in_progress: 'badge-primary',
+                pasteurization: 'badge-warning',
+                processing: 'badge-info',
+                cooling: 'badge-info',
+                packaging: 'badge-info',
+                completed: 'badge-success',
+                cancelled: 'badge-error'
             };
 
-            tbody.innerHTML = runs.map(run => `
+            tbody.innerHTML = runs.slice(0, 8).map(run => `
                 <tr class="hover cursor-pointer" onclick="window.location='run-workbench.html?run_id=${run.id}'">
-                    <td><span class="font-mono font-semibold">${run.run_code}</span></td>
-                    <td>
-                        <div>${run.product_name}</div>
-                        <div class="text-xs text-base-content/60">${run.variant || ''}</div>
-                    </td>
-                    <td>
-                        <span class="badge ${statusColors[run.status] || 'badge-ghost'}">
-                            ${run.status.replace('_', ' ')}
-                        </span>
-                    </td>
-                    <td class="text-right">${run.planned_quantity} ${run.yield_unit || ''}</td>
-                    <td class="text-right">${run.actual_quantity ? run.actual_quantity + ' ' + (run.yield_unit || '') : '-'}</td>
-                    <td class="text-base-content/60">${run.start_datetime ? new Date(run.start_datetime).toLocaleString() : 'Not started'}</td>
-                    <td class="text-center">
-                        <a href="run-workbench.html?run_id=${run.id}" class="btn btn-primary btn-xs gap-1">
-                            <i class="fas fa-screwdriver-wrench"></i> Workbench
-                        </a>
+                    <td class="font-mono font-semibold text-xs">${escapeHtml(run.run_code)}</td>
+                    <td class="text-xs max-w-[8rem] truncate">${escapeHtml(run.product_name || '')}</td>
+                    <td><span class="badge badge-xs ${statusColors[run.status] || 'badge-ghost'}">${escapeHtml((run.status || '').replace(/_/g, ' '))}</span></td>
+                    <td class="text-right">
+                        <a href="run-workbench.html?run_id=${run.id}" class="btn btn-ghost btn-xs" onclick="event.stopPropagation()">Open</a>
                     </td>
                 </tr>
             `).join('');
         }
 
-        async function loadNextStepCards() {
+        async function loadWorkQueue() {
             const container = document.getElementById('nextStepCards');
-            if (!container || typeof ProductionRunFlow === 'undefined') return;
+            if (!container) return;
+
+            if (typeof ProductionRunFlow === 'undefined') {
+                container.innerHTML = `
+                    <div class="text-center py-6">
+                        <p class="text-sm text-base-content/50 mb-3">Open the workbench to continue production.</p>
+                        <a href="run-workbench.html" class="btn btn-primary btn-sm">Open Workbench</a>
+                    </div>`;
+                return;
+            }
+
             try {
                 const r = await ProductionService.getRuns({ status_group: 'active', limit: 20 });
                 const runs = Array.isArray(r.data) ? r.data : (r.data?.runs || []);
                 const activeStatuses = ['planned', 'in_progress', 'pasteurization', 'processing', 'cooling', 'packaging'];
-                const activeRuns = runs.filter(run => activeStatuses.includes(run.status)).slice(0, 6);
+                const activeRuns = runs.filter(run => activeStatuses.includes(run.status)).slice(0, 8);
 
                 if (window.ProductionSidebar) {
                     ProductionSidebar.showBadge('activeRunsBadge', activeRuns.length);
                 }
+                document.getElementById('runsInProgress').textContent = activeRuns.length;
 
                 if (!activeRuns.length) {
+                    const canStart = dashState.availableMilk > 0;
                     container.innerHTML = `
-                        <div class="col-span-full text-center py-6 bg-base-200 rounded-xl">
-                            <p class="font-semibold text-base-content/50">No active production runs</p>
-                            <a href="batches.html?action=new" class="btn btn-primary btn-sm mt-3 gap-2">
-                                <i class="fas fa-play"></i> Start a run
-                            </a>
+                        <div class="text-center py-8 px-2">
+                            <p class="font-semibold text-base-content/60">No active runs</p>
+                            <p class="text-xs text-base-content/45 mt-1 mb-4">Finish waiting work or start a new run when milk is issued.</p>
+                            ${canStart
+                                ? `<a href="batches.html?action=new" class="btn btn-primary btn-sm gap-2"><i class="fas fa-play"></i> Start production</a>`
+                                : `<a href="requisitions.html?action=new" class="btn btn-primary btn-sm gap-2"><i class="fas fa-clipboard-list"></i> Request milk first</a>`
+                            }
                         </div>`;
                     return;
                 }
 
-                const cards = [];
-                for (const run of activeRuns) {
-                    // Need CCP logs for accurate next step — fetch run detail (includes ccp_logs)
+                const items = [];
+                for (let i = 0; i < activeRuns.length; i++) {
+                    const run = activeRuns[i];
                     let full = run;
                     try {
                         const dr = await ProductionService.getRun(run.id);
                         if (dr.success) full = dr.data;
-                    } catch (e) {}
+                    } catch (e) { /* use list row */ }
 
                     const step = ProductionRunFlow.getNextStep(full);
                     const tones = ProductionRunFlow.toneClasses(step.tone);
-                    cards.push(`
-                        <div class="rounded-2xl border ${tones.border} bg-base-100 p-4 flex flex-col gap-3 shadow-sm">
-                            <div class="flex items-start justify-between gap-2">
-                                <div class="min-w-0">
-                                    <p class="font-mono font-bold truncate">${full.run_code || run.run_code}</p>
-                                    <p class="text-sm text-base-content/70 truncate">${full.product_name || run.product_name || ''}</p>
-                                    <span class="badge badge-ghost badge-sm mt-1">${(full.status || '').replace(/_/g, ' ')}</span>
+                    const runId = full.id || run.id;
+                    const isPrimary = i === 0;
+                    // Prefer workbench for execution continuity
+                    const href = (step.href && step.href.includes('run-workbench'))
+                        ? step.href
+                        : `run-workbench.html?run_id=${runId}`;
+
+                    items.push(`
+                        <div class="work-queue-item ${isPrimary ? 'is-primary' : ''}">
+                            <div class="wq-meta">
+                                ${isPrimary ? '<p class="text-[0.65rem] font-bold uppercase tracking-wide text-primary mb-0.5">Do this next</p>' : ''}
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="font-mono font-bold text-sm">${escapeHtml(full.run_code || run.run_code)}</span>
+                                    <span class="badge badge-ghost badge-xs">${escapeHtml((full.status || '').replace(/_/g, ' '))}</span>
                                 </div>
-                                <span class="badge ${tones.badge} badge-sm gap-1 shrink-0">
-                                    <i class="fas ${step.icon}"></i> Next
-                                </span>
+                                <p class="text-sm text-base-content/75 truncate">${escapeHtml(full.product_name || run.product_name || '')}</p>
+                                <p class="text-sm font-semibold mt-1">${escapeHtml(step.title)}</p>
+                                <p class="text-xs text-base-content/55">${escapeHtml(step.detail || '')}</p>
                             </div>
-                            <div>
-                                <p class="font-semibold text-sm">${step.title}</p>
-                                <p class="text-xs text-base-content/60 mt-0.5">${step.detail}</p>
-                            </div>
-                            <div class="flex gap-2 mt-auto">
-                                <a href="${step.href}" class="btn ${tones.btn} btn-sm flex-1 gap-1">
-                                    ${step.cta} <i class="fas fa-arrow-right text-xs"></i>
-                                </a>
-                                <a href="run-workbench.html?run_id=${full.id || run.id}" class="btn btn-ghost btn-sm" title="Workbench">
-                                    <i class="fas fa-screwdriver-wrench"></i>
+                            <div class="flex gap-2 shrink-0 w-full md:w-auto">
+                                <a href="${href}" class="btn ${isPrimary ? 'btn-primary' : tones.btn} btn-sm flex-1 md:flex-none gap-1 min-w-[9rem]">
+                                    ${escapeHtml(step.cta || 'Continue')} <i class="fas fa-arrow-right text-xs"></i>
                                 </a>
                             </div>
                         </div>
                     `);
                 }
-                container.innerHTML = cards.join('');
+                container.innerHTML = items.join('');
             } catch (e) {
                 console.error(e);
-                container.innerHTML = `<div class="col-span-full alert alert-warning text-sm">Could not load next steps. <a class="link" href="run-workbench.html">Open workbench</a></div>`;
+                container.innerHTML = `
+                    <div class="alert alert-warning text-sm py-2">
+                        Could not load work queue.
+                        <a class="link font-semibold" href="run-workbench.html">Open workbench</a>
+                    </div>`;
             }
         }
 
-        async function loadYieldSummary() {
-            try {
-                const r = await ProductionService.getRuns({ status_group: 'active', limit: 20 });
-                const runs = Array.isArray(r.data) ? r.data : (r.data?.runs || []);
-                const activeStatuses = ['in_progress', 'pasteurization', 'processing', 'cooling', 'packaging'];
-                const activeRuns = runs.filter(run => activeStatuses.includes(run.status));
-
-                if (!activeRuns.length) return;
-
-                document.getElementById('yieldSummaryCard').style.display = '';
-                const tbody = document.getElementById('yieldSummaryTable');
-                const rows = [];
-
-                for (const run of activeRuns.slice(0, 5)) {
-                    let yieldData = null;
-                    let estimates = [];
-                    if (run.initial_volume_ml) {
-                        try {
-                            const yr = await ProductionService.getYield(run.id);
-                            if (yr.success) yieldData = yr.data;
-                        } catch (e) {}
-                        try {
-                            const er = await ProductionService.getEstimates(run.id);
-                            if (er.success) {
-                                estimates = er.data.has_revision
-                                    ? (er.data.revised_estimate.items || [])
-                                    : (er.data.initial_estimate.items || []);
-                            }
-                        } catch (e) {}
-                    }
-
-                    const eff = Number(yieldData?.yield_efficiency_percent || 0);
-                    const effColor = !run.initial_volume_ml ? 'text-base-content/40'
-                        : eff >= 90 ? 'text-success' : eff >= 75 ? 'text-warning' : 'text-error';
-                    const estText = estimates.length
-                        ? estimates.map(e => `${e.estimated_units}× ${e.packaging_label}`).join(', ')
-                        : (run.initial_volume_ml ? '—' : 'Volume not set');
-
-                    rows.push(`
-                        <tr class="hover cursor-pointer" onclick="window.location='run-workbench.html?run_id=${run.id}'">
-                            <td class="font-mono font-semibold">${run.run_code}</td>
-                            <td>${run.product_name}<span class="text-xs text-base-content/50 block">${run.status.replace('_',' ')}</span></td>
-                            <td class="text-right">${Number(yieldData?.initial_volume_ml || run.initial_volume_ml || 0).toLocaleString()}</td>
-                            <td class="text-right font-semibold">${Number(yieldData?.net_yield_ml || run.net_yield_ml || 0).toLocaleString()}</td>
-                            <td class="text-center"><span class="font-bold ${effColor}">${run.initial_volume_ml ? eff.toFixed(1) + '%' : '—'}</span></td>
-                            <td class="text-sm text-base-content/70 max-w-[200px] truncate">${estText}</td>
-                        </tr>
-                    `);
-                }
-
-                tbody.innerHTML = rows.join('') || '<tr><td colspan="6" class="text-center py-4 text-base-content/40">No active runs</td></tr>';
-            } catch (e) {
-                console.error('Yield summary error:', e);
-            }
+        function escapeHtml(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
         }
 
         function showToast(message, type = 'info') {
             const container = document.getElementById('toastContainer');
+            if (!container) return;
             const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
             const icon = type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle';
-
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `
-                <i class="fas ${icon}"></i>
-                <span>${message}</span>
-            `;
+            toast.innerHTML = `<i class="fas ${icon}"></i><span>${escapeHtml(message)}</span>`;
             container.appendChild(toast);
-
-            setTimeout(() => {
-                toast.remove();
-            }, 3000);
+            setTimeout(() => toast.remove(), 3000);
         }
     </script>
 </body>

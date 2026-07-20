@@ -4,8 +4,8 @@
  * 
  * CSI (Charge Sales Invoice) management for Sales Custodian
  * 
- * GET actions: list, detail, unpaid, aging_report
- * POST actions: create_csi, record_payment
+ * GET actions: list, detail, unpaid, aging_report, customer_unpaid_drs
+ * POST actions: create_csi, record_payment, record_dr_payment
  * PUT actions: void
  * 
  * @package HighlandFresh
@@ -292,6 +292,51 @@ function handleGet($db, $action) {
             ], 'Aging report generated');
             break;
             
+        case 'customer_unpaid_drs':
+            // Get unpaid delivery receipts for a specific customer (used by Record Collection modal)
+            $customerId = getParam('customer_id');
+            if (!$customerId) {
+                Response::error('Customer ID required', 400);
+            }
+
+            $stmt = $db->prepare("
+                SELECT
+                    dr.id,
+                    dr.id as dr_id,
+                    dr.dr_number,
+                    dr.total_amount,
+                    dr.amount_paid,
+                    (dr.total_amount - COALESCE(dr.amount_paid, 0)) as balance_due,
+                    dr.payment_status,
+                    dr.delivered_at as invoice_date,
+                    DATE_ADD(DATE(COALESCE(dr.delivered_at, dr.created_at)), INTERVAL COALESCE(NULLIF(c.payment_terms_days, 0), 30) DAY) as due_date,
+                    COALESCE(c.name, dr.customer_name) as customer_name,
+                    c.customer_code,
+                    c.customer_type,
+                    'delivery_receipt' as source_type
+                FROM delivery_receipts dr
+                LEFT JOIN customers c ON dr.customer_id = c.id
+                WHERE dr.customer_id = ?
+                  AND dr.payment_status IN ('unpaid', 'partial')
+                  AND dr.status NOT IN ('cancelled', 'draft')
+                  AND (dr.total_amount - COALESCE(dr.amount_paid, 0)) > 0
+                ORDER BY dr.delivered_at ASC, dr.created_at ASC
+            ");
+            $stmt->execute([$customerId]);
+            $drs = $stmt->fetchAll();
+
+            foreach ($drs as &$dr) {
+                $dr['total_amount'] = (float)$dr['total_amount'];
+                $dr['amount_paid'] = (float)$dr['amount_paid'];
+                $dr['balance_due'] = (float)$dr['balance_due'];
+                $dr['invoice_date'] = $dr['invoice_date'] ? substr($dr['invoice_date'], 0, 10) : null;
+                $dr['due_date'] = $dr['due_date'] ? substr($dr['due_date'], 0, 10) : null;
+            }
+            unset($dr);
+
+            Response::success($drs, 'Customer unpaid delivery receipts retrieved');
+            break;
+
         default:
             Response::error('Invalid action', 400);
     }
@@ -460,7 +505,22 @@ function handlePost($db, $action, $currentUser) {
         case 'record_payment':
             // Record payment (supports partial/staggered payments)
             $invoiceId = $data['invoice_id'] ?? getParam('id');
-            
+            $customerId = $data['customer_id'] ?? null;
+
+            // Auto-resolve oldest unpaid invoice if none specified
+            if (!$invoiceId && $customerId) {
+                $oldestStmt = $db->prepare("
+                    SELECT id FROM sales_invoices
+                    WHERE customer_id = ? AND status = 'active' AND payment_status != 'paid'
+                    ORDER BY created_at ASC LIMIT 1
+                ");
+                $oldestStmt->execute([$customerId]);
+                $oldestRow = $oldestStmt->fetch();
+                if ($oldestRow) {
+                    $invoiceId = $oldestRow['id'];
+                }
+            }
+
             if (!$invoiceId) {
                 Response::error('Invoice ID required', 400);
             }
@@ -567,7 +627,109 @@ function handlePost($db, $action, $currentUser) {
                 throw $e;
             }
             break;
-            
+
+        case 'record_dr_payment':
+            // Record payment against a delivery receipt (used by Record Collection modal)
+            $drId = $data['dr_id'] ?? null;
+            $customerId = $data['customer_id'] ?? null;
+            $amount = floatval($data['amount'] ?? 0);
+            $paymentMethod = $data['payment_method'] ?? 'cash';
+            $paymentDate = $data['collection_date'] ?? date('Y-m-d');
+            $reference = $data['reference'] ?? null;
+            $notes = $data['notes'] ?? '';
+
+            if (!$drId) {
+                Response::error('Delivery receipt ID required', 400);
+            }
+
+            if ($amount <= 0) {
+                Response::error('Amount must be greater than 0', 400);
+            }
+
+            // Get the DR
+            $drStmt = $db->prepare("SELECT * FROM delivery_receipts WHERE id = ? AND status NOT IN ('cancelled', 'draft')");
+            $drStmt->execute([$drId]);
+            $dr = $drStmt->fetch();
+
+            if (!$dr) {
+                Response::notFound('Delivery receipt not found');
+            }
+
+            $currentBalance = floatval($dr['total_amount']) - floatval($dr['amount_paid']);
+            if ($currentBalance <= 0) {
+                Response::error('This delivery receipt is already fully paid', 400);
+            }
+
+            $effectiveAmount = min($amount, $currentBalance);
+            $newAmountPaid = floatval($dr['amount_paid']) + $effectiveAmount;
+            $newBalance = floatval($dr['total_amount']) - $newAmountPaid;
+            $newStatus = $newBalance <= 0 ? 'paid' : 'partial';
+
+            $db->beginTransaction();
+
+            try {
+                // Update delivery receipt
+                $updateDR = $db->prepare("
+                    UPDATE delivery_receipts
+                    SET amount_paid = ?,
+                        payment_status = ?,
+                        updated_at = NOW()
+                    WHERE id = ?
+                ");
+                $updateDR->execute([$newAmountPaid, $newStatus, $drId]);
+
+                // Record in payment_collections
+                $orNumber = 'OR-' . date('Ymd') . '-' . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
+                $insertStmt = $db->prepare("
+                    INSERT INTO payment_collections
+                    (or_number, dr_id, dr_number, customer_id, customer_name,
+                     amount_collected, balance_before, balance_after,
+                     payment_method, collected_by, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                $insertStmt->execute([
+                    $orNumber,
+                    $drId,
+                    $dr['dr_number'],
+                    $customerId ?: $dr['customer_id'],
+                    $dr['customer_name'],
+                    $effectiveAmount,
+                    $currentBalance,
+                    $newBalance,
+                    $paymentMethod,
+                    $currentUser['user_id'],
+                    $notes
+                ]);
+
+                // Update customer current_balance if customer_id available
+                $custId = $customerId ?: $dr['customer_id'];
+                if ($custId) {
+                    $db->prepare("UPDATE customers SET current_balance = current_balance - ? WHERE id = ?")
+                        ->execute([$effectiveAmount, $custId]);
+                }
+
+                $db->commit();
+
+                logAudit($currentUser['user_id'], 'RECORD_DR_PAYMENT', 'delivery_receipts', $drId,
+                    ['amount_paid' => $dr['amount_paid'], 'payment_status' => $dr['payment_status']],
+                    ['amount_paid' => $newAmountPaid, 'payment_status' => $newStatus, 'payment_amount' => $effectiveAmount]
+                );
+
+                Response::success([
+                    'payment_id' => $db->lastInsertId(),
+                    'dr_id' => $drId,
+                    'or_number' => $orNumber,
+                    'payment_amount' => $effectiveAmount,
+                    'new_balance' => $newBalance,
+                    'payment_status' => $newStatus
+                ], 'Payment recorded successfully');
+
+            } catch (Exception $e) {
+                $db->rollBack();
+                throw $e;
+            }
+            break;
+
         default:
             Response::error('Invalid action', 400);
     }

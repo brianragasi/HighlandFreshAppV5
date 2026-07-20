@@ -37,10 +37,16 @@ try {
             }
             break;
         case 'POST':
-            createProduct($conn);
+            if ($action === 'disable_skus') {
+                disableSkus($conn);
+            } else {
+                createProduct($conn);
+            }
             break;
         case 'PUT':
-            if ($id) {
+            if ($action === 'update_base' && $id) {
+                updateBaseProduct($conn, $id);
+            } elseif ($id) {
                 updateProduct($conn, $id);
             } else {
                 sendError('Product ID required', 400);
@@ -72,50 +78,142 @@ function getBaseProducts($conn) {
         return;
     }
 
-    $stmt = $conn->query("
-        SELECT bp.*,
-               mt.type_name AS milk_type_name,
-               (SELECT COUNT(*) FROM products p WHERE p.base_product_id = bp.id) AS sku_count,
-               (SELECT COUNT(*) FROM master_recipes mr WHERE mr.base_product_id = bp.id AND mr.is_active = 1) AS recipe_count
-        FROM base_products bp
-        LEFT JOIN milk_types mt ON mt.id = bp.milk_type_id
-        WHERE bp.is_active = 1
-        ORDER BY bp.name ASC
-    ");
-    $bases = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    try {
+        $stmt = $conn->query("
+            SELECT bp.*,
+                   mt.type_name AS milk_type_name,
+                   (SELECT COUNT(*) FROM products p WHERE p.base_product_id = bp.id) AS sku_count,
+                   (SELECT COUNT(*) FROM master_recipes mr WHERE mr.base_product_id = bp.id AND mr.is_active = 1) AS recipe_count
+            FROM base_products bp
+            LEFT JOIN milk_types mt ON mt.id = bp.milk_type_id
+            WHERE bp.is_active = 1
+            ORDER BY bp.name ASC
+        ");
+        $bases = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $skuStmt = $conn->prepare("
-        SELECT p.id, p.product_code, p.product_name, p.variant, p.unit_size, p.unit_measure,
-               p.base_unit, p.box_unit, p.pieces_per_box, p.selling_price, p.unit_price, p.is_active,
-               p.category,
-               (SELECT COALESCE(SUM(fgi.remaining_quantity), 0)
-                  FROM finished_goods_inventory fgi
-                 WHERE fgi.product_id = p.id AND fgi.status = 'available') AS current_stock
-        FROM products p
-        WHERE p.base_product_id = ?
-        ORDER BY p.unit_size ASC, p.product_code ASC
-    ");
-    $recipeStmt = $conn->prepare("
-        SELECT id, recipe_code, product_name, bulk_yield_liters, expected_yield, yield_unit,
-               base_milk_liters, is_active
-        FROM master_recipes
-        WHERE base_product_id = ?
-        ORDER BY recipe_code ASC
-    ");
+        // Stock subquery is optional — never fail the whole catalog if FG inventory is unavailable
+        $skuSqlWithStock = "
+            SELECT p.id, p.product_code, p.product_name, p.variant, p.unit_size, p.unit_measure,
+                   p.base_unit, p.box_unit, p.pieces_per_box, p.selling_price, p.unit_price, p.is_active,
+                   p.category, p.milk_type_id, p.shelf_life_days, p.storage_temp_min, p.storage_temp_max,
+                   p.description, p.base_product_id,
+                   mt.type_name AS milk_type_name,
+                   (SELECT COALESCE(SUM(
+                            GREATEST(
+                                COALESCE(fgi.quantity_available, 0),
+                                COALESCE(fgi.remaining_quantity, 0)
+                            )
+                        ), 0)
+                      FROM finished_goods_inventory fgi
+                     WHERE fgi.product_id = p.id
+                       AND fgi.status IN ('available', 'low_stock')
+                       AND (fgi.expiry_date IS NULL OR fgi.expiry_date >= CURDATE())
+                   ) AS current_stock
+            FROM products p
+            LEFT JOIN milk_types mt ON mt.id = p.milk_type_id
+            WHERE p.base_product_id = ?
+            ORDER BY p.unit_size ASC, p.product_code ASC
+        ";
+        $skuSqlSimple = "
+            SELECT p.id, p.product_code, p.product_name, p.variant, p.unit_size, p.unit_measure,
+                   p.base_unit, p.box_unit, p.pieces_per_box, p.selling_price, p.unit_price, p.is_active,
+                   p.category, p.milk_type_id, p.shelf_life_days, p.storage_temp_min, p.storage_temp_max,
+                   p.description, p.base_product_id,
+                   mt.type_name AS milk_type_name,
+                   NULL AS current_stock
+            FROM products p
+            LEFT JOIN milk_types mt ON mt.id = p.milk_type_id
+            WHERE p.base_product_id = ?
+            ORDER BY p.unit_size ASC, p.product_code ASC
+        ";
 
-    foreach ($bases as &$bp) {
-        $skuStmt->execute([(int) $bp['id']]);
-        $bp['skus'] = $skuStmt->fetchAll(PDO::FETCH_ASSOC);
         try {
-            $recipeStmt->execute([(int) $bp['id']]);
-            $bp['recipes'] = $recipeStmt->fetchAll(PDO::FETCH_ASSOC);
+            $skuStmt = $conn->prepare($skuSqlWithStock);
+            // Probe one execute path with invalid id to validate SQL compiles
+            $skuStmt->execute([0]);
         } catch (Throwable $e) {
-            $bp['recipes'] = [];
+            error_log('getBaseProducts stock subquery unavailable: ' . $e->getMessage());
+            $skuStmt = $conn->prepare($skuSqlSimple);
         }
-    }
-    unset($bp);
 
-    sendSuccess(['base_products' => $bases]);
+        $recipeStmt = null;
+        try {
+            $recipeStmt = $conn->prepare("
+                SELECT id, recipe_code, product_name, bulk_yield_liters, expected_yield, yield_unit,
+                       base_milk_liters, is_active
+                FROM master_recipes
+                WHERE base_product_id = ?
+                ORDER BY recipe_code ASC
+            ");
+        } catch (Throwable $e) {
+            $recipeStmt = null;
+        }
+
+        $orphans = [];
+        foreach ($bases as &$bp) {
+            try {
+                $skuStmt->execute([(int) $bp['id']]);
+                $bp['skus'] = $skuStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            } catch (Throwable $e) {
+                error_log('getBaseProducts SKU fetch id=' . $bp['id'] . ': ' . $e->getMessage());
+                $bp['skus'] = [];
+            }
+            $bp['recipes'] = [];
+            if ($recipeStmt) {
+                try {
+                    $recipeStmt->execute([(int) $bp['id']]);
+                    $bp['recipes'] = $recipeStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+                } catch (Throwable $e) {
+                    $bp['recipes'] = [];
+                }
+            }
+            $recipeCount = (int) ($bp['recipe_count'] ?? count(array_filter(
+                $bp['recipes'],
+                static function ($r) {
+                    return (int) ($r['is_active'] ?? 0) === 1;
+                }
+            )));
+            $bp['recipe_count'] = $recipeCount;
+            $bp['has_active_recipe'] = $recipeCount > 0;
+            $bp['is_orphan'] = !$bp['has_active_recipe'];
+            if ($bp['is_orphan']) {
+                $orphans[] = [
+                    'id' => (int) $bp['id'],
+                    'code' => $bp['code'] ?? null,
+                    'name' => $bp['name'] ?? '',
+                    'category' => $bp['category'] ?? null,
+                    'sku_count' => (int) ($bp['sku_count'] ?? count($bp['skus'])),
+                    'recipe_count' => 0,
+                ];
+            }
+        }
+        unset($bp);
+
+        // Ensure JSON-safe UTF-8 (prevents silent json_encode failures on odd names)
+        array_walk_recursive($bases, function (&$v) {
+            if (is_string($v) && !mb_check_encoding($v, 'UTF-8')) {
+                $v = mb_convert_encoding($v, 'UTF-8', 'UTF-8, ISO-8859-1, Windows-1252');
+            }
+        });
+
+        sendSuccess([
+            'base_products' => $bases,
+            'orphan_summary' => [
+                'count' => count($orphans),
+                'products' => $orphans,
+                'message' => count($orphans) > 0
+                    ? sprintf(
+                        'Warning: %d product%s do not have an active recipe and cannot be manufactured.',
+                        count($orphans),
+                        count($orphans) === 1 ? '' : 's'
+                    )
+                    : null,
+            ],
+        ], 'Base products retrieved');
+    } catch (Throwable $e) {
+        error_log('getBaseProducts failed: ' . $e->getMessage());
+        sendError('Could not load base products: ' . $e->getMessage(), 500);
+    }
 }
 
 /**
@@ -380,6 +478,17 @@ function createProduct($conn) {
         sendError('Invalid category', 400);
         return;
     }
+
+    // Size / price guardrails (SKU math integrity)
+    if (isset($data['unit_size']) && (float) $data['unit_size'] < 1) {
+        sendError('Price and Size must be greater than zero. (Size min: 1)', 400);
+        return;
+    }
+    $price = $data['selling_price'] ?? $data['unit_price'] ?? null;
+    if ($price !== null && $price !== '' && (float) $price < 0.01) {
+        sendError('Price and Size must be greater than zero. (Price min: 0.01)', 400);
+        return;
+    }
     
     // Generate product code if not provided
     if (empty($data['product_code'])) {
@@ -405,7 +514,23 @@ function createProduct($conn) {
         sendError('Product code already exists', 409);
         return;
     }
-    
+
+    // ── Duplicate volume/weight detection ─────────────────────────────────────
+    // Prevents creating '1L' when '1000ml' already exists (or vice versa).
+    if (!empty($data['unit_size']) && !empty($data['unit_measure'])) {
+        $canonicalMl = normalizeToBaseUnit((float) $data['unit_size'], $data['unit_measure']);
+        if ($canonicalMl !== null) {
+            $existingDup = findEquivalentSku($conn, $data['category'], $canonicalMl, $data['product_name'] ?? null);
+            if ($existingDup) {
+                sendError(
+                    "A packaging size of equivalent volume ({$existingDup['unit_size']} {$existingDup['unit_measure']}) already exists for this product: \"{$existingDup['product_name']}\" (SKU: {$existingDup['product_code']})",
+                    409
+                );
+                return;
+            }
+        }
+    }
+
     $baseProductId = !empty($data['base_product_id']) ? (int) $data['base_product_id'] : null;
     // Resolve / create base product when architecture is present
     try {
@@ -503,7 +628,116 @@ function createProduct($conn) {
         'message' => 'Product created successfully',
         'product_id' => $productId,
         'product_code' => $data['product_code']
-    ], 201);
+    ], 'Product created successfully', 201);
+}
+
+/**
+ * Update base liquid product (shared master props).
+ * PUT /api/admin/products.php?action=update_base&id={base_product_id}
+ */
+function updateBaseProduct($conn, $id) {
+    $data = json_decode(file_get_contents('php://input'), true) ?: [];
+    $id = (int) $id;
+    if ($id <= 0) {
+        sendError('Base product ID required', 400);
+        return;
+    }
+
+    try {
+        $conn->query('SELECT id FROM base_products LIMIT 0');
+    } catch (Throwable $e) {
+        sendError('base_products table missing', 500);
+        return;
+    }
+
+    $check = $conn->prepare('SELECT id FROM base_products WHERE id = ?');
+    $check->execute([$id]);
+    if (!$check->fetch()) {
+        sendError('Base product not found', 404);
+        return;
+    }
+
+    $updates = [];
+    $params = [];
+    $map = [
+        'name' => 'name',
+        'category' => 'category',
+        'milk_type_id' => 'milk_type_id',
+        'description' => 'description',
+        'default_shelf_life_days' => 'default_shelf_life_days',
+        'shelf_life_days' => 'default_shelf_life_days', // alias from modal
+        'storage_temp_min' => 'storage_temp_min',
+        'storage_temp_max' => 'storage_temp_max',
+        'is_active' => 'is_active',
+    ];
+    $seen = [];
+    foreach ($map as $inKey => $col) {
+        if (!array_key_exists($inKey, $data) || isset($seen[$col])) {
+            continue;
+        }
+        $seen[$col] = true;
+        $updates[] = "{$col} = ?";
+        $params[] = $data[$inKey];
+    }
+
+    if (empty($updates)) {
+        sendError('No fields to update', 400);
+        return;
+    }
+
+    $params[] = $id;
+    $sql = 'UPDATE base_products SET ' . implode(', ', $updates) . ' WHERE id = ?';
+    $stmt = $conn->prepare($sql);
+    $stmt->execute($params);
+
+    // Keep child SKU shared fields in sync with base name/category when provided
+    $skuUpdates = [];
+    $skuParams = [];
+    if (array_key_exists('name', $data) && trim((string) $data['name']) !== '') {
+        $skuUpdates[] = 'product_name = ?';
+        $skuParams[] = trim((string) $data['name']);
+    }
+    if (array_key_exists('category', $data) && $data['category'] !== null && $data['category'] !== '') {
+        $skuUpdates[] = 'category = ?';
+        $skuParams[] = $data['category'];
+    }
+    if (array_key_exists('milk_type_id', $data)) {
+        $skuUpdates[] = 'milk_type_id = ?';
+        $skuParams[] = $data['milk_type_id'] !== '' ? $data['milk_type_id'] : null;
+    }
+    $shelf = $data['default_shelf_life_days'] ?? $data['shelf_life_days'] ?? null;
+    if ($shelf !== null && $shelf !== '') {
+        $skuUpdates[] = 'shelf_life_days = ?';
+        $skuParams[] = (int) $shelf;
+    }
+    if (array_key_exists('storage_temp_min', $data)) {
+        $skuUpdates[] = 'storage_temp_min = ?';
+        $skuParams[] = $data['storage_temp_min'];
+    }
+    if (array_key_exists('storage_temp_max', $data)) {
+        $skuUpdates[] = 'storage_temp_max = ?';
+        $skuParams[] = $data['storage_temp_max'];
+    }
+    if (array_key_exists('description', $data)) {
+        $skuUpdates[] = 'description = ?';
+        $skuParams[] = $data['description'];
+    }
+    if (array_key_exists('is_active', $data)) {
+        $skuUpdates[] = 'is_active = ?';
+        $skuParams[] = (int) $data['is_active'];
+    }
+    if (!empty($skuUpdates)) {
+        $skuParams[] = $id;
+        $skuSql = 'UPDATE products SET ' . implode(', ', $skuUpdates) . ' WHERE base_product_id = ?';
+        try {
+            $conn->prepare($skuSql)->execute($skuParams);
+        } catch (Throwable $e) {
+            // Non-fatal: individual SKU updates from the modal still apply
+            error_log('updateBaseProduct SKU cascade: ' . $e->getMessage());
+        }
+    }
+
+    sendSuccess(['message' => 'Base product updated successfully', 'base_product_id' => $id]);
 }
 
 /**
@@ -519,6 +753,20 @@ function updateProduct($conn, $id) {
     
     if (!$existing) {
         sendError('Product not found', 404);
+        return;
+    }
+
+    // Size / price guardrails when those fields are being updated
+    if (array_key_exists('unit_size', $data) && (float) $data['unit_size'] < 1) {
+        sendError('Price and Size must be greater than zero. (Size min: 1)', 400);
+        return;
+    }
+    if (array_key_exists('selling_price', $data) && (float) $data['selling_price'] < 0.01) {
+        sendError('Price and Size must be greater than zero. (Price min: 0.01)', 400);
+        return;
+    }
+    if (array_key_exists('unit_price', $data) && (float) $data['unit_price'] < 0.01) {
+        sendError('Price and Size must be greater than zero. (Price min: 0.01)', 400);
         return;
     }
     
@@ -565,45 +813,73 @@ function updateProduct($conn, $id) {
 }
 
 /**
- * Delete (deactivate) product
+ * Soft-delete one or more SKUs (products.is_active = 0).
+ * POST /api/admin/products.php?action=disable_skus
+ * Body: { "sku_ids": [1,2,3] } or { "skus_to_disable": [1,2,3] }
+ *
+ * Never runs DELETE FROM — preserves referential integrity for FG inventory,
+ * packaging, recipes, and historical sales lines.
+ */
+function disableSkus($conn) {
+    $data = json_decode(file_get_contents('php://input'), true) ?: [];
+    $ids = $data['sku_ids'] ?? $data['skus_to_disable'] ?? [];
+    if (!is_array($ids)) {
+        $ids = [];
+    }
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids), function ($id) {
+        return $id > 0;
+    })));
+
+    if (empty($ids)) {
+        sendError('No SKU IDs provided to disable', 400);
+        return;
+    }
+
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    $stmt = $conn->prepare("UPDATE products SET is_active = 0 WHERE id IN ($placeholders)");
+    $stmt->execute($ids);
+    $affected = $stmt->rowCount();
+
+    sendSuccess([
+        'disabled_count' => $affected,
+        'sku_ids' => $ids,
+        'message' => "Deactivated {$affected} SKU(s) (soft delete — rows retained)"
+    ], "Deactivated {$affected} SKU(s)");
+}
+
+/**
+ * Delete (deactivate) product — ALWAYS soft-delete.
+ * Hard DELETE is disabled to protect inventory/recipe foreign keys.
  */
 function deleteProduct($conn, $id) {
     // Check if product exists
-    $checkStmt = $conn->prepare("SELECT id FROM products WHERE id = ?");
+    $checkStmt = $conn->prepare("SELECT id, product_code, product_name, is_active FROM products WHERE id = ?");
     $checkStmt->execute([$id]);
-    
-    if (!$checkStmt->fetch()) {
+    $row = $checkStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row) {
         sendError('Product not found', 404);
         return;
     }
-    
-    // Check for related inventory
+
+    // Soft delete only — never hard DELETE FROM products
+    $stmt = $conn->prepare("UPDATE products SET is_active = 0 WHERE id = ?");
+    $stmt->execute([(int) $id]);
+
     $relatedStmt = $conn->prepare("SELECT COUNT(*) as count FROM finished_goods_inventory WHERE product_id = ?");
-    $relatedStmt->execute([$id]);
-    $related = $relatedStmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($related['count'] > 0) {
-        // Soft delete - deactivate
-        $stmt = $conn->prepare("UPDATE products SET is_active = 0 WHERE id = ?");
-        $stmt->execute([$id]);
-        sendSuccess(['message' => 'Product deactivated (has inventory records)']);
-    } else {
-        // Also check for recipes
-        $recipeStmt = $conn->prepare("SELECT COUNT(*) as count FROM master_recipes WHERE product_id = ?");
-        $recipeStmt->execute([$id]);
-        $recipeCount = $recipeStmt->fetch(PDO::FETCH_ASSOC);
-        
-        if ($recipeCount['count'] > 0) {
-            $stmt = $conn->prepare("UPDATE products SET is_active = 0 WHERE id = ?");
-            $stmt->execute([$id]);
-            sendSuccess(['message' => 'Product deactivated (has associated recipes)']);
-        } else {
-            // Hard delete if no related records
-            $stmt = $conn->prepare("DELETE FROM products WHERE id = ?");
-            $stmt->execute([$id]);
-            sendSuccess(['message' => 'Product deleted successfully']);
-        }
-    }
+    $relatedStmt->execute([(int) $id]);
+    $invCount = (int) ($relatedStmt->fetch(PDO::FETCH_ASSOC)['count'] ?? 0);
+
+    $msg = $invCount > 0
+        ? 'SKU deactivated (inventory history retained)'
+        : 'SKU deactivated (soft delete)';
+
+    sendSuccess([
+        'message' => $msg,
+        'product_id' => (int) $id,
+        'is_active' => 0,
+        'soft_deleted' => true
+    ], $msg);
 }
 
 /**
@@ -726,4 +1002,69 @@ function exportProducts($conn) {
     $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     sendSuccess(['export_data' => $products]);
+}
+
+/**
+ * Convert a unit_size + unit_measure pair to a canonical base measurement (ml or g).
+ * Returns null if the unit_measure is unrecognized.
+ */
+function normalizeToBaseUnit(float $size, string $measure): ?float {
+    $measure = strtolower(trim($measure));
+
+    $mlMap = [
+        'ml'     => 1,
+        'l'      => 1000,
+        'ltr'    => 1000,
+        'litre'  => 1000,
+        'liter'  => 1000,
+        'litres' => 1000,
+        'liters' => 1000,
+        'cl'     => 10,
+    ];
+
+    $gMap = [
+        'g'      => 1,
+        'gm'     => 1,
+        'gram'   => 1,
+        'grams'  => 1,
+        'kg'     => 1000,
+        'kgs'    => 1000,
+        'kilogram'  => 1000,
+        'kilograms' => 1000,
+    ];
+
+    if (isset($mlMap[$measure])) {
+        return round($size * $mlMap[$measure], 4);
+    }
+    if (isset($gMap[$measure])) {
+        return round($size * $gMap[$measure], 4);
+    }
+
+    return null;
+}
+
+/**
+ * Find an active product with the same category whose normalized volume/weight
+ * matches the given canonical value (within 0.01 tolerance).
+ */
+function findEquivalentSku(PDO $conn, string $category, float $canonicalValue, ?string $productName): ?array {
+    $stmt = $conn->prepare(
+        "SELECT id, product_code, product_name, unit_size, unit_measure
+           FROM products
+          WHERE is_active = 1
+            AND category = :category"
+    );
+    $stmt->execute([':category' => $category]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($rows as $row) {
+        $existing = normalizeToBaseUnit((float) $row['unit_size'], $row['unit_measure']);
+        if ($existing === null) continue;
+
+        if (abs($existing - $canonicalValue) < 0.01) {
+            return $row;
+        }
+    }
+
+    return null;
 }

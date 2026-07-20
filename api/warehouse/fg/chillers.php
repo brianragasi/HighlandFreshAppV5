@@ -44,10 +44,13 @@ function handleGet($db, $action) {
             $stmt = $db->prepare("
                 SELECT 
                     c.*,
-                    COALESCE((SELECT SUM((COALESCE(fi.boxes_available, 0) * COALESCE(p.pieces_per_box, 1)) + COALESCE(fi.pieces_available, 0)) 
+                    COALESCE((SELECT SUM(GREATEST(fi.quantity_available, 0)) 
                               FROM finished_goods_inventory fi 
                               JOIN products p ON fi.product_id = p.id
-                              WHERE fi.chiller_id = c.id AND fi.status = 'available'), 0) as current_count
+                              WHERE fi.chiller_id = c.id 
+                                AND fi.status = 'available' 
+                                AND fi.quantity_available > 0
+                                AND p.is_active = 1), 0) as current_count
                 FROM chiller_locations c
                 WHERE c.is_active = 1
                 ORDER BY c.chiller_code
@@ -75,18 +78,22 @@ function handleGet($db, $action) {
                 Response::error('Chiller not found', 404);
             }
             
-            // Get inventory in this chiller
+            // Get inventory in this chiller (FEFO)
             $invStmt = $db->prepare("
                 SELECT 
                     fg.*,
                     p.product_name,
                     p.variant,
-                    p.unit_size,
-                    p.unit_measure
+                    COALESCE(p.unit_size, fg.size_ml) AS size_value,
+                    COALESCE(p.unit_measure, fg.unit, 'ml') AS size_unit,
+                    COALESCE(NULLIF(p.pieces_per_box, 0), 1) AS pieces_per_box,
+                    COALESCE(p.base_unit, 'piece') AS base_unit,
+                    COALESCE(p.box_unit, 'box') AS box_unit,
+                    DATEDIFF(fg.expiry_date, CURDATE()) AS days_until_expiry
                 FROM finished_goods_inventory fg
                 JOIN products p ON fg.product_id = p.id
                 WHERE fg.chiller_id = ? AND fg.status = 'available'
-                ORDER BY fg.expiry_date ASC
+                ORDER BY fg.expiry_date ASC, p.product_name ASC
             ");
             $invStmt->execute([$id]);
             $chiller['inventory'] = $invStmt->fetchAll();

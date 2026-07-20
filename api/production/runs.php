@@ -77,12 +77,55 @@ function parseIngredientAdjustments($ingredientAdjustmentsJson) {
     return $adjustments;
 }
 
+/**
+ * Bulk-batch plan denominator (liters of liquid plan), matching requisitions.php.
+ * Priority: bulk_yield_liters → expected_yield if unit is liters → base_milk_liters → expected_yield.
+ */
+function getRecipeBulkPlanDenominator(array $recipe) {
+    if (isset($recipe['bulk_yield_liters']) && $recipe['bulk_yield_liters'] !== null && (float) $recipe['bulk_yield_liters'] > 0) {
+        return (float) $recipe['bulk_yield_liters'];
+    }
+    $yu = strtolower((string) ($recipe['yield_unit'] ?? ''));
+    if (in_array($yu, ['liter', 'liters', 'l', 'lt'], true) && (float) ($recipe['expected_yield'] ?? 0) > 0) {
+        return (float) $recipe['expected_yield'];
+    }
+    if ((float) ($recipe['base_milk_liters'] ?? 0) > 0) {
+        return (float) $recipe['base_milk_liters'];
+    }
+    if ((float) ($recipe['expected_yield'] ?? 0) > 0) {
+        return (float) $recipe['expected_yield'];
+    }
+    return 1.0;
+}
+
+/** Scale factor: planned bulk liters / recipe bulk denominator. */
+function getRecipePlanScaleFactor(array $recipe, $plannedQuantity) {
+    $denom = getRecipeBulkPlanDenominator($recipe);
+    return $denom > 0 ? max(0, (float) $plannedQuantity) / $denom : 1.0;
+}
+
+/** Milk liters required for a planned bulk quantity. */
+function calculateRequiredMilkLitersForPlan(array $recipe, $plannedQuantity, $overrideLiters = null) {
+    if ($overrideLiters !== null && (float) $overrideLiters > 0) {
+        return round((float) $overrideLiters, 2);
+    }
+    $scale = getRecipePlanScaleFactor($recipe, $plannedQuantity);
+    return round(((float) ($recipe['base_milk_liters'] ?? 0)) * $scale, 2);
+}
+
 function calculateRecipeIngredientRequirements($db, $recipeId, $plannedQuantity, $ingredientAdjustmentsJson = null) {
-    $recipeStmt = $db->prepare("SELECT expected_yield FROM master_recipes WHERE id = ?");
+    // Prefer bulk-aware columns when present (same scale as material requisitions).
+    $select = 'expected_yield, base_milk_liters, yield_unit';
+    try {
+        $db->query('SELECT bulk_yield_liters FROM master_recipes LIMIT 0');
+        $select .= ', bulk_yield_liters';
+    } catch (Throwable $e) {
+        // legacy schema
+    }
+    $recipeStmt = $db->prepare("SELECT {$select} FROM master_recipes WHERE id = ?");
     $recipeStmt->execute([$recipeId]);
-    $recipe = $recipeStmt->fetch();
-    $expectedYield = $recipe && (float) $recipe['expected_yield'] > 0 ? (float) $recipe['expected_yield'] : 1;
-    $scaleFactor = max(0, (float) $plannedQuantity) / $expectedYield;
+    $recipe = $recipeStmt->fetch() ?: [];
+    $scaleFactor = getRecipePlanScaleFactor($recipe, $plannedQuantity);
 
     $ingredientsStmt = $db->prepare("
         SELECT ingredient_id, ingredient_name, quantity, unit, is_optional
@@ -405,6 +448,24 @@ try {
             }
         }
     }
+
+    // Ensure yield/volume tracking columns exist
+    $existingCols = array_map('strtolower', $db->query("SHOW COLUMNS FROM production_runs")->fetchAll(PDO::FETCH_COLUMN));
+    $yieldCols = [
+        'initial_volume_ml'      => 'decimal(12,2) DEFAULT 0',
+        'total_loss_ml'          => 'decimal(12,2) DEFAULT 0',
+        'total_byproduct_ml'     => 'decimal(12,2) DEFAULT 0',
+        'net_yield_ml'           => 'decimal(12,2) DEFAULT 0',
+        'material_reconciled'    => 'tinyint(1) DEFAULT 0',
+        'reconciliation_notes'   => 'text NULL',
+    ];
+    foreach ($yieldCols as $col => $type) {
+        if (!in_array($col, $existingCols)) {
+            try {
+                $db->exec("ALTER TABLE production_runs ADD COLUMN `{$col}` {$type}");
+            } catch (Throwable $e) { /* ignore */ }
+        }
+    }
     
     switch ($requestMethod) {
         case 'GET':
@@ -419,37 +480,42 @@ try {
                 // 2. GM/Warehouse approves
                 // 3. Warehouse fulfills/issues milk
                 // 4. Production can now use the issued milk
-                
-                $issuedMilkStats = getUsableIssuedRawMilkStats($db);
-                $totalIssued = $issuedMilkStats['total_issued'];
-                $totalReserved = getReservedRawMilkLiters($db, $issuedMilkStats['earliest_issued_at']);
-                $availableLiters = max(0, $totalIssued - $totalReserved);
-                $milkSources = array_map(function($source) {
-                    return [
-                        'id' => $source['requisition_id'],
-                        'delivery_code' => $source['requisition_code'],
-                        'remaining_liters' => (float) $source['issued_liters'],
-                        'delivery_date' => $source['issued_at'],
-                        'expiry_date' => $source['earliest_expiry'],
-                        'source_batches' => $source['source_batches'],
-                        'farmer_name' => 'Warehouse Raw',
-                        'fat_percentage' => 0
-                    ];
-                }, $issuedMilkStats['sources']);
-                
-                // Return in format expected by batches.html frontend
-                Response::success([
-                    'total_available_liters' => (float) $availableLiters,
-                    'milk_sources' => $milkSources,
-                    'total_issued' => (float) $totalIssued,
-                    'total_used' => (float) $totalReserved,
-                    'source' => 'requisition_based',
-                    'milk_type' => 'raw',
-                    'freshness_window' => 'Issued through fulfilled requisitions',
-                    'message' => $availableLiters > 0 
-                        ? "You have {$availableLiters}L of usable issued milk available"
-                        : 'No issued milk available. Submit a requisition or wait for Warehouse Raw to fulfill it.'
-                ], 'Available milk retrieved');
+                try {
+                    $issuedMilkStats = getUsableIssuedRawMilkStats($db);
+                    $totalIssued = $issuedMilkStats['total_issued'];
+                    $totalReserved = getReservedRawMilkLiters($db, $issuedMilkStats['earliest_issued_at']);
+                    $availableLiters = max(0, $totalIssued - $totalReserved);
+                    $milkSources = array_map(function ($source) {
+                        return [
+                            'id' => $source['requisition_id'],
+                            'delivery_code' => $source['requisition_code'],
+                            'remaining_liters' => (float) $source['issued_liters'],
+                            'delivery_date' => $source['issued_at'],
+                            'expiry_date' => $source['earliest_expiry'],
+                            'source_batches' => $source['source_batches'],
+                            'farmer_name' => 'Warehouse Raw',
+                            'fat_percentage' => 0
+                        ];
+                    }, $issuedMilkStats['sources']);
+
+                    // Return in format expected by batches.html frontend
+                    Response::success([
+                        'total_available_liters' => (float) $availableLiters,
+                        'milk_sources' => $milkSources,
+                        'total_issued' => (float) $totalIssued,
+                        'total_used' => (float) $totalReserved,
+                        'source' => 'requisition_based',
+                        'milk_type' => 'raw',
+                        'freshness_window' => 'Issued through fulfilled requisitions',
+                        'message' => $availableLiters > 0
+                            ? "You have {$availableLiters}L of usable issued milk available"
+                            : 'No issued milk available. Submit a requisition or wait for Warehouse Raw to fulfill it.'
+                    ], 'Available milk retrieved');
+                } catch (Throwable $e) {
+                    error_log('available_milk failed: ' . $e->getMessage());
+                    // Always return proper JSON so the UI can leave the spinner.
+                    Response::error('Could not load milk availability. Please retry.', 500);
+                }
             }
             
             // Get available PASTEURIZED milk for yogurt production
@@ -494,6 +560,7 @@ try {
                     SELECT pr.*,
                            mr.recipe_code, mr.product_name, mr.product_type, mr.variant,
                            mr.base_milk_liters, mr.expected_yield, mr.yield_unit,
+                           mr.bulk_yield_liters,
                            mr.pasteurization_temp, mr.pasteurization_time_mins, mr.cooling_temp,
                            u1.first_name as started_by_first, u1.last_name as started_by_last,
                            u2.first_name as completed_by_first, u2.last_name as completed_by_last,
@@ -585,16 +652,12 @@ try {
                     $suggestedSource = 'recipe_plan';
                 }
 
-                // 3) Recipe base scaled by planned quantity
+                // 3) Recipe base scaled by planned bulk volume (bulk_yield aware)
                 if ($suggestedLiters === null
                     && (float) ($run['base_milk_liters'] ?? 0) > 0
-                    && (float) ($run['expected_yield'] ?? 0) > 0
                     && (float) ($run['planned_quantity'] ?? 0) > 0
                 ) {
-                    $suggestedLiters = round(
-                        ((float) $run['base_milk_liters'] / (float) $run['expected_yield']) * (float) $run['planned_quantity'],
-                        3
-                    );
+                    $suggestedLiters = calculateRequiredMilkLitersForPlan($run, $run['planned_quantity']);
                     $suggestedSource = 'recipe_scaled';
                 }
 
@@ -816,15 +879,15 @@ try {
                 $errors['recipe_id'] = 'Recipe not found or inactive';
             }
             
-            // Calculate required milk liters
-            // If user provided custom milk_liters_used, use that
-            // Otherwise, scale from recipe: (base_milk_liters / expected_yield) * planned_quantity
-            if ($milkLitersUsed && $milkLitersUsed > 0) {
-                $requiredMilkLiters = (float) $milkLitersUsed;
-            } else if ($recipe) {
-                // Scale milk requirement based on planned quantity vs recipe's expected yield
-                $baseYield = $recipe['expected_yield'] > 0 ? $recipe['expected_yield'] : 1;
-                $requiredMilkLiters = round(($recipe['base_milk_liters'] / $baseYield) * $plannedQuantity, 2);
+            // Calculate required milk liters (bulk-batch aware).
+            // planned_quantity is liquid volume (L); scale vs bulk_yield_liters
+            // (fallback base_milk_liters / expected_yield) — same as requisitions.
+            if ($recipe) {
+                $requiredMilkLiters = calculateRequiredMilkLitersForPlan(
+                    $recipe,
+                    $plannedQuantity,
+                    ($milkLitersUsed && (float) $milkLitersUsed > 0) ? $milkLitersUsed : null
+                );
             } else {
                 $requiredMilkLiters = 0;
             }
@@ -1433,12 +1496,36 @@ try {
                         // Generate batch code
                         $batchCode = 'BATCH-' . date('Ymd') . '-' . str_pad($runId, 4, '0', STR_PAD_LEFT);
                         
-                        // Calculate expiry date (default 7 days for fresh milk products)
-                        $expiryDays = 7;
-                        if (in_array($productType, ['cheese'])) $expiryDays = 30;
-                        if (in_array($productType, ['butter'])) $expiryDays = 60;
-                        if (in_array($productType, ['milk_bar'])) $expiryDays = 14;
-                        
+                        // Expiry from recipe/product shelf_life_days (not hard-coded product-type map).
+                        // Butter recipe stores 30; products.shelf_life_days and base_products also 30.
+                        $expiryDays = 0;
+                        if (!empty($run['shelf_life_days']) && (int) $run['shelf_life_days'] > 0) {
+                            $expiryDays = (int) $run['shelf_life_days'];
+                        } else {
+                            try {
+                                $slStmt = $db->prepare("
+                                    SELECT COALESCE(
+                                        NULLIF(p.shelf_life_days, 0),
+                                        NULLIF(mr.shelf_life_days, 0),
+                                        NULLIF(bp.default_shelf_life_days, 0),
+                                        7
+                                    ) AS days
+                                    FROM master_recipes mr
+                                    LEFT JOIN products p ON p.id = mr.product_id
+                                    LEFT JOIN base_products bp ON bp.id = mr.base_product_id
+                                    WHERE mr.id = ?
+                                    LIMIT 1
+                                ");
+                                $slStmt->execute([(int) $run['recipe_id']]);
+                                $expiryDays = (int) ($slStmt->fetchColumn() ?: 7);
+                            } catch (Throwable $e) {
+                                $expiryDays = 7;
+                            }
+                        }
+                        if ($expiryDays <= 0) {
+                            $expiryDays = 7;
+                        }
+
                         $expiryDate = date('Y-m-d', strtotime("+{$expiryDays} days"));
                         
                         // Pull verified CCP temperatures from production logs so QC

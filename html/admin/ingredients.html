@@ -269,78 +269,40 @@
         </header>
 
         <!-- Content -->
-        <div class="p-4 md:p-6 space-y-6">
-            <!-- Stats Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
-                    <div class="flex items-center gap-4">
-                        <div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
-                            <i class="fas fa-seedling text-primary text-xl"></i>
-                        </div>
-                        <div>
-                            <p class="text-sm text-base-content/60">Total Ingredients</p>
-                            <p class="text-2xl font-bold" id="totalCount">0</p>
-                        </div>
-                    </div>
+        <div class="p-3 md:p-4 space-y-3">
+            <!-- Master-data list: KPIs live on warehouse/purchasing dashboards, not here -->
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                    <h1 class="text-lg font-bold leading-tight">Ingredients</h1>
+                    <p class="text-xs text-base-content/50">Master data — UOM, reorder points, costs</p>
                 </div>
-                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
-                    <div class="flex items-center gap-4">
-                        <div class="w-12 h-12 bg-success/10 rounded-xl flex items-center justify-center">
-                            <i class="fas fa-check-circle text-success text-xl"></i>
-                        </div>
-                        <div>
-                            <p class="text-sm text-base-content/60">Active</p>
-                            <p class="text-2xl font-bold" id="activeCount">0</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
-                    <div class="flex items-center gap-4">
-                        <div class="w-12 h-12 bg-warning/10 rounded-xl flex items-center justify-center">
-                            <i class="fas fa-exclamation-triangle text-warning text-xl"></i>
-                        </div>
-                        <div>
-                            <p class="text-sm text-base-content/60">Low Stock</p>
-                            <p class="text-2xl font-bold" id="lowStockCount">0</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
-                    <div class="flex items-center gap-4">
-                        <div class="w-12 h-12 bg-info/10 rounded-xl flex items-center justify-center">
-                            <i class="fas fa-peso-sign text-info text-xl"></i>
-                        </div>
-                        <div>
-                            <p class="text-sm text-base-content/60">Inventory Value</p>
-                            <p class="text-2xl font-bold" id="totalValue">₱0</p>
-                        </div>
-                    </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-base-content/50 font-mono" id="listCountLabel">
+                        <span id="totalCount">0</span> total · <span id="activeCount">0</span> active ·
+                        <span id="lowStockCount">0</span> low · <span id="totalValue">₱0</span>
+                    </span>
+                    <button class="btn btn-primary btn-sm" onclick="openModal()">
+                        <i class="fas fa-plus"></i><span class="ml-1">Add</span>
+                    </button>
                 </div>
             </div>
 
-            <!-- Search and Filter -->
-            <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
-                <div class="flex flex-col md:flex-row gap-4 items-start md:items-center">
-                    <div class="flex-1">
-                        <div class="input input-bordered flex items-center gap-2">
-                            <i class="fas fa-search text-base-content/40"></i>
-                            <input type="text" id="searchInput" placeholder="Search ingredients..."
-                                class="grow border-none focus:outline-none bg-transparent"
-                                onkeyup="handleSearch(event)">
-                        </div>
+            <div class="bg-base-100 border border-base-300 rounded-xl p-2.5">
+                <div class="flex flex-col md:flex-row gap-2 items-stretch md:items-center">
+                    <div class="input input-bordered input-sm flex items-center gap-2 flex-1 min-h-9">
+                        <i class="fas fa-search text-base-content/40 text-xs"></i>
+                        <input type="text" id="searchInput" placeholder="Search ingredients..."
+                            class="grow border-none focus:outline-none bg-transparent text-sm"
+                            onkeyup="handleSearch(event)">
                     </div>
-                    <select id="categoryFilter" class="select select-bordered w-full md:w-48" onchange="loadData()">
-                        <option value="">All Categories</option>
+                    <select id="categoryFilter" class="select select-bordered select-sm w-full md:w-44 min-h-9" onchange="loadData()">
+                        <option value="">All categories</option>
                     </select>
-                    <select id="statusFilter" class="select select-bordered w-full md:w-48" onchange="loadData()">
-                        <option value="">All Status</option>
+                    <select id="statusFilter" class="select select-bordered select-sm w-full md:w-32 min-h-9" onchange="loadData()">
+                        <option value="">All status</option>
                         <option value="1">Active</option>
                         <option value="0">Inactive</option>
                     </select>
-                    <button class="btn btn-primary w-full md:w-auto" onclick="openModal()">
-                        <i class="fas fa-plus mr-2"></i>
-                        Add Ingredient
-                    </button>
                 </div>
             </div>
 
@@ -410,25 +372,22 @@
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
                         <div class="form-control">
                             <label class="label"><span class="label-text font-medium">Category</span></label>
-                            <select id="category_id" class="select select-bordered">
+                            <select id="category_id" class="select select-bordered" onchange="onIngredientCategoryChange()">
                                 <option value="">Select Category</option>
                             </select>
+                            <label class="label py-0">
+                                <span class="label-text-alt text-base-content/50">Unit list updates based on category</span>
+                            </label>
                         </div>
                         <div class="form-control">
                             <label class="label"><span class="label-text font-medium">Unit of Measure *</span></label>
                             <select id="unit_of_measure" class="select select-bordered" required onchange="updateUnitBadges()">
-                                <option value="">Select Unit</option>
-                                <option value="kg">Kilograms (kg)</option>
-                                <option value="g">Grams (g)</option>
-                                <option value="L">Liters (L)</option>
-                                <option value="ml">Milliliters (ml)</option>
-                                <option value="liter">Liter</option>
-                                <option value="pcs">Pieces (pcs)</option>
-                                <option value="pack">Pack</option>
-                                <option value="bottle">Bottle</option>
-                                <option value="packet">Packet</option>
-                                <option value="roll">Roll</option>
+                                <option value="">-- Select Unit --</option>
+                                <!-- Options populated dynamically from category via JS -->
                             </select>
+                            <label class="label py-0 hidden" id="unitCategoryHint">
+                                <span class="label-text-alt text-info text-xs" id="unitCategoryHintText"></span>
+                            </label>
                         </div>
                         <div class="form-control">
                             <label class="label"><span class="label-text font-medium">Status</span></label>
@@ -627,7 +586,7 @@
 
                     categories.forEach(c => {
                         filterSelect.innerHTML += `<option value="${c.id}">${c.category_name}</option>`;
-                        formSelect.innerHTML += `<option value="${c.id}">${c.category_name}</option>`;
+                        formSelect.innerHTML += `<option value="${c.id}" data-category-name="${escapeAttr(c.category_name)}">${c.category_name}</option>`;
                     });
                 }
             } catch (error) {
@@ -635,10 +594,136 @@
             }
         }
 
+        /** Allowed UOM options by logical group (value, label). */
+        const UNIT_OPTIONS = {
+            packaging: [
+                { value: 'pcs', label: 'Pieces (pc)' },
+                { value: 'piece', label: 'Piece' },
+                { value: 'pack', label: 'Packs' },
+                { value: 'packet', label: 'Packet' },
+                { value: 'roll', label: 'Rolls' },
+                { value: 'bottle', label: 'Bottle / Cap' },
+            ],
+            mass_volume: [
+                { value: 'kg', label: 'Kilograms (kg)' },
+                { value: 'g', label: 'Grams (g)' },
+                { value: 'L', label: 'Liters (L)' },
+                { value: 'liter', label: 'Liter' },
+                { value: 'ml', label: 'Milliliters (ml)' },
+            ],
+            culture: [
+                { value: 'kg', label: 'Kilograms (kg)' },
+                { value: 'g', label: 'Grams (g)' },
+                { value: 'L', label: 'Liters (L)' },
+                { value: 'liter', label: 'Liter' },
+                { value: 'ml', label: 'Milliliters (ml)' },
+                { value: 'packet', label: 'Packet' },
+            ],
+            all: [
+                { value: 'kg', label: 'Kilograms (kg)' },
+                { value: 'g', label: 'Grams (g)' },
+                { value: 'L', label: 'Liters (L)' },
+                { value: 'liter', label: 'Liter' },
+                { value: 'ml', label: 'Milliliters (ml)' },
+                { value: 'pcs', label: 'Pieces (pc)' },
+                { value: 'pack', label: 'Packs' },
+                { value: 'packet', label: 'Packet' },
+                { value: 'roll', label: 'Rolls' },
+                { value: 'bottle', label: 'Bottle' },
+            ],
+        };
+
+        function escapeAttr(s) {
+            return String(s ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;');
+        }
+
+        /**
+         * Map category name → unit group.
+         * Packaging Materials → count/pack units only (no liters).
+         * Additives / Sweeteners / Flavorings → mass/volume.
+         */
+        function getUnitGroupForCategoryName(categoryName) {
+            const n = String(categoryName || '').toLowerCase().trim();
+            if (!n) return 'all';
+            if (n.includes('packaging')) return 'packaging';
+            if (n.includes('sweetener') || n.includes('flavor') || n.includes('additiv')) return 'mass_volume';
+            if (n.includes('culture') || n.includes('enzyme')) return 'culture';
+            return 'mass_volume'; // default safe process materials
+        }
+
+        function getSelectedCategoryName() {
+            const sel = document.getElementById('category_id');
+            if (!sel || !sel.value) return '';
+            const opt = sel.options[sel.selectedIndex];
+            return opt?.getAttribute('data-category-name') || opt?.textContent || '';
+        }
+
+        /**
+         * Rebuild Unit of Measure options for the current category.
+         * @param {string|null} preferredUnit - keep this if still allowed (edit load)
+         * @param {boolean} forceReset - always force "-- Select Unit --" (category change)
+         */
+        function populateUnitOfMeasureOptions(preferredUnit = null, forceReset = false) {
+            const unitSelect = document.getElementById('unit_of_measure');
+            if (!unitSelect) return;
+
+            const categoryName = getSelectedCategoryName();
+            const group = getUnitGroupForCategoryName(categoryName);
+            const options = UNIT_OPTIONS[group] || UNIT_OPTIONS.all;
+
+            const previous = preferredUnit != null ? preferredUnit : unitSelect.value;
+            unitSelect.innerHTML = '<option value="">-- Select Unit --</option>';
+            options.forEach(o => {
+                const opt = document.createElement('option');
+                opt.value = o.value;
+                opt.textContent = o.label;
+                unitSelect.appendChild(opt);
+            });
+
+            const allowed = new Set(options.map(o => o.value));
+            // Normalize aliases for matching preferred (e.g. liter vs L)
+            const aliasMap = { liters: 'L', l: 'L', lt: 'L', pieces: 'pcs', pc: 'pcs', rolls: 'roll' };
+            let pick = previous;
+            if (pick && aliasMap[String(pick).toLowerCase()]) {
+                pick = aliasMap[String(pick).toLowerCase()];
+            }
+
+            if (forceReset || !pick || !allowed.has(pick)) {
+                unitSelect.value = '';
+            } else {
+                unitSelect.value = pick;
+            }
+
+            // Hint text
+            const hint = document.getElementById('unitCategoryHint');
+            const hintText = document.getElementById('unitCategoryHintText');
+            if (hint && hintText) {
+                if (group === 'packaging') {
+                    hint.classList.remove('hidden');
+                    hintText.textContent = 'Packaging materials use count units (pieces, rolls, packs) — not liters.';
+                } else if (categoryName) {
+                    hint.classList.remove('hidden');
+                    hintText.textContent = 'Mass/volume units for process ingredients (kg, g, L, ml).';
+                } else {
+                    hint.classList.add('hidden');
+                }
+            }
+
+            updateUnitBadges();
+        }
+
+        /** Category dropdown onchange — filter UOM and force a fresh unit choice. */
+        function onIngredientCategoryChange() {
+            populateUnitOfMeasureOptions(null, true);
+        }
+
         function updateUnitBadges() {
             const unit = document.getElementById('unit_of_measure').value || 'units';
             document.querySelectorAll('.ingredient-unit-badge').forEach(el => {
-                el.textContent = unit;
+                el.textContent = unit || 'units';
             });
         }
 
@@ -762,6 +847,8 @@
             document.getElementById('modalTitle').textContent = id ? 'Edit Ingredient' : 'Add Ingredient';
             document.getElementById('dataForm').reset();
             document.getElementById('recordId').value = '';
+            // Reset UOM to placeholder until category is chosen
+            populateUnitOfMeasureOptions(null, true);
             updateUnitBadges();
             document.getElementById('formModal').showModal();
         }
@@ -779,7 +866,17 @@
                     document.getElementById('ingredient_code').value = i.ingredient_code;
                     document.getElementById('ingredient_name').value = i.ingredient_name;
                     document.getElementById('category_id').value = i.category_id || '';
-                    document.getElementById('unit_of_measure').value = i.unit_of_measure;
+                    // Filter UOM list for category, keep current unit if still valid
+                    populateUnitOfMeasureOptions(i.unit_of_measure || null, false);
+                    // If current unit invalid for category, leave blank to force re-pick
+                    const unitSel = document.getElementById('unit_of_measure');
+                    if (i.unit_of_measure && unitSel && !Array.from(unitSel.options).some(o => o.value === i.unit_of_measure)) {
+                        unitSel.value = '';
+                        showToast(
+                            `Unit "${i.unit_of_measure}" is not valid for this category — please choose a new unit of measure.`,
+                            'warning'
+                        );
+                    }
                     // Supplier pack size fields (optional — leave blank for ingredients without one).
                     document.getElementById('pack_size_value').value = i.pack_size_value != null ? i.pack_size_value : '';
                     document.getElementById('pack_size_unit').value = i.pack_size_unit || '';
@@ -842,10 +939,31 @@
             e.preventDefault();
 
             const recordId = document.getElementById('recordId').value;
+            const categoryId = document.getElementById('category_id').value || null;
+            const unitOfMeasure = document.getElementById('unit_of_measure').value;
+
+            // Guard: unit must be allowed for selected category
+            if (!unitOfMeasure) {
+                showToast('Please select a unit of measure', 'error');
+                document.getElementById('unit_of_measure').focus();
+                return;
+            }
+            const catName = getSelectedCategoryName();
+            const group = getUnitGroupForCategoryName(catName);
+            const allowed = new Set((UNIT_OPTIONS[group] || UNIT_OPTIONS.all).map(o => o.value));
+            if (!allowed.has(unitOfMeasure)) {
+                showToast(
+                    `Unit "${unitOfMeasure}" is not allowed for category "${catName || 'selected'}". Choose a valid unit.`,
+                    'error'
+                );
+                document.getElementById('unit_of_measure').focus();
+                return;
+            }
+
             const formData = {
                 ingredient_name: document.getElementById('ingredient_name').value,
-                category_id: document.getElementById('category_id').value || null,
-                unit_of_measure: document.getElementById('unit_of_measure').value,
+                category_id: categoryId,
+                unit_of_measure: unitOfMeasure,
                 pack_size_value: document.getElementById('pack_size_value').value || null,
                 pack_size_unit: document.getElementById('pack_size_unit').value || null,
                 pack_label: document.getElementById('pack_label').value || null,
