@@ -248,76 +248,29 @@
             </div>
         </header>
         
-        <main class="flex-1 p-4 lg:p-6">
-            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+        <main class="flex-1 p-3 md:p-4">
+            <!-- Asset management list (not monitoring dashboard) -->
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
                 <div>
-                    <h1 class="text-2xl font-bold text-base-content">Chillers</h1>
-                    <p class="text-base-content/60">Manage refrigeration units and cold storage</p>
+                    <h1 class="text-lg font-bold text-base-content leading-tight">Chillers</h1>
+                    <p class="text-xs text-base-content/50">Cold-storage asset register — search, assign status, edit capacity</p>
                 </div>
-                <button class="btn btn-primary" onclick="openAddModal()">
-                    <i class="fas fa-plus mr-2"></i>Add Chiller
-                </button>
-            </div>
-            
-            <!-- Stats -->
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
-                    <div class="flex items-center gap-3">
-                        <div class="w-12 h-12 bg-info/10 rounded-xl flex items-center justify-center">
-                            <i class="fas fa-snowflake text-info text-xl"></i>
-                        </div>
-                        <div>
-                            <p class="text-2xl font-bold" id="statTotal">0</p>
-                            <p class="text-xs text-base-content/60">Total Chillers</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
-                    <div class="flex items-center gap-3">
-                        <div class="w-12 h-12 bg-success/10 rounded-xl flex items-center justify-center">
-                            <i class="fas fa-power-off text-success text-xl"></i>
-                        </div>
-                        <div>
-                            <p class="text-2xl font-bold" id="statRunning">0</p>
-                            <p class="text-xs text-base-content/60">Available</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
-                    <div class="flex items-center gap-3">
-                        <div class="w-12 h-12 bg-warning/10 rounded-xl flex items-center justify-center">
-                            <i class="fas fa-tools text-warning text-xl"></i>
-                        </div>
-                        <div>
-                            <p class="text-2xl font-bold" id="statMaintenance">0</p>
-                            <p class="text-xs text-base-content/60">Maintenance</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="bg-base-100 rounded-2xl border border-base-300 p-4">
-                    <div class="flex items-center gap-3">
-                        <div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
-                            <i class="fas fa-cubes text-primary text-xl"></i>
-                        </div>
-                        <div>
-                            <p class="text-2xl font-bold" id="statCapacity">0</p>
-                            <p class="text-xs text-base-content/60">Total Capacity (units)</p>
-                        </div>
-                    </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-base-content/50 font-mono" id="listCountLabel">0 assets</span>
+                    <button class="btn btn-primary btn-sm" onclick="openAddModal()">
+                        <i class="fas fa-plus"></i><span class="ml-1">Add chiller</span>
+                    </button>
                 </div>
             </div>
-            
-            <!-- Filters -->
-            <div class="bg-base-100 rounded-2xl border border-base-300 p-4 mb-6">
-                <div class="flex flex-col md:flex-row gap-4">
-                    <div class="flex-1">
-                        <label class="input input-bordered flex items-center gap-2">
-                            <i class="fas fa-search text-base-content/40"></i>
-                            <input type="text" id="searchInput" placeholder="Search chillers..." class="grow" onkeyup="filterData()"/>
-                        </label>
-                    </div>
-                    <select id="statusFilter" class="select select-bordered w-full md:w-48" onchange="filterData()">
-                        <option value="">All Status</option>
+
+            <div class="bg-base-100 border border-base-300 rounded-xl p-2.5 mb-3">
+                <div class="flex flex-col md:flex-row gap-2">
+                    <label class="input input-bordered input-sm flex items-center gap-2 flex-1 min-h-9">
+                        <i class="fas fa-search text-base-content/40 text-xs"></i>
+                        <input type="text" id="searchInput" placeholder="Search name, code, location…" class="grow text-sm" onkeyup="filterData()"/>
+                    </label>
+                    <select id="statusFilter" class="select select-bordered select-sm w-full md:w-40 min-h-9" onchange="filterData()">
+                        <option value="">All status</option>
                         <option value="available">Available</option>
                         <option value="full">Full</option>
                         <option value="maintenance">Maintenance</option>
@@ -325,15 +278,14 @@
                     </select>
                 </div>
             </div>
-            
-            <!-- Chillers Grid -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="chillersGrid">
-                <div class="col-span-full text-center py-12">
-                    <span class="loading loading-spinner loading-lg text-primary"></span>
-                    <p class="mt-2 text-base-content/60">Loading chillers...</p>
+
+            <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden" id="chillersGrid">
+                <div class="text-center py-12 text-sm text-base-content/50">
+                    <span class="loading loading-spinner loading-md text-primary"></span>
+                    <p class="mt-2">Loading…</p>
                 </div>
             </div>
-        </div>
+        </main>
     </div>
     
     <!-- Add/Edit Modal -->
@@ -482,12 +434,13 @@
         }
         
         function updateStats() {
-            document.getElementById('statTotal').textContent = allData.length;
-            document.getElementById('statRunning').textContent = allData.filter(c => c.status === 'available').length;
-            document.getElementById('statMaintenance').textContent = allData.filter(c => c.status === 'maintenance').length;
-            
-            const totalCapacity = allData.reduce((sum, c) => sum + (parseInt(c.capacity) || 0), 0);
-            document.getElementById('statCapacity').textContent = totalCapacity.toLocaleString();
+            const avail = allData.filter(c => c.status === 'available').length;
+            const maint = allData.filter(c => c.status === 'maintenance').length;
+            const cap = allData.reduce((sum, c) => sum + (parseInt(c.capacity) || 0), 0);
+            const el = document.getElementById('listCountLabel');
+            if (el) {
+                el.textContent = `${filteredData.length} shown / ${allData.length} total · ${avail} available · ${maint} maint · ${cap.toLocaleString()} units cap`;
+            }
         }
         
         function filterData() {
@@ -503,84 +456,90 @@
                 return matchSearch && matchStatus;
             });
             
+            updateStats();
             renderGrid();
+        }
+
+        function escapeHtml(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
         }
         
         function renderGrid() {
             const grid = document.getElementById('chillersGrid');
             
             if (filteredData.length === 0) {
-                grid.innerHTML = `<div class="col-span-full text-center py-12">
-                    <i class="fas fa-snowflake text-4xl text-base-content/20 mb-4"></i>
-                    <p class="text-base-content/60">No chillers found</p>
+                grid.innerHTML = `<div class="text-center py-12 text-sm text-base-content/50">
+                    <i class="fas fa-snowflake text-3xl text-base-content/15 mb-2"></i>
+                    <p>No chillers match filters</p>
                 </div>`;
                 return;
             }
             
-            grid.innerHTML = filteredData.map(item => {
-                const currentTemp = parseFloat(item.temperature_celsius) || null;
+            const rows = filteredData.map(item => {
+                const currentTemp = parseFloat(item.temperature_celsius);
                 const minTemp = parseFloat(item.min_temperature) || 2;
                 const maxTemp = parseFloat(item.max_temperature) || 8;
-                const isInRange = currentTemp !== null && currentTemp >= minTemp && currentTemp <= maxTemp;
-                const fillPercent = item.capacity > 0 ? Math.min(100, (item.current_count / item.capacity) * 100) : 0;
-                
-                return `
-                <div class="bg-base-100 rounded-2xl border border-base-300 overflow-hidden hover:shadow-lg transition-shadow ${item.status === 'available' ? 'running-indicator' : ''}">
-                    <div class="bg-gradient-to-br from-info/10 to-primary/10 p-4">
-                        <div class="flex items-start justify-between">
-                            <div class="flex items-center gap-3">
-                                <div class="w-12 h-12 bg-base-100 rounded-xl flex items-center justify-center shadow-sm">
-                                    <i class="fas fa-snowflake text-info text-xl"></i>
-                                </div>
-                                <div>
-                                    <h3 class="font-bold">${item.chiller_name}</h3>
-                                    <p class="text-xs text-base-content/60">${item.chiller_code}</p>
-                                </div>
+                const hasTemp = Number.isFinite(currentTemp);
+                const isInRange = hasTemp && currentTemp >= minTemp && currentTemp <= maxTemp;
+                const fillPercent = item.capacity > 0
+                    ? Math.min(100, ((item.current_count || 0) / item.capacity) * 100)
+                    : 0;
+                const safeName = escapeHtml(item.chiller_name).replace(/'/g, "\\'");
+
+                return `<tr class="hover">
+                    <td>
+                        <div class="font-semibold text-sm">${escapeHtml(item.chiller_name)}</div>
+                        <div class="font-mono text-xs text-base-content/45">${escapeHtml(item.chiller_code)}</div>
+                    </td>
+                    <td class="text-sm text-base-content/70 max-w-[10rem] truncate" title="${escapeHtml(item.location || '')}">${escapeHtml(item.location || '—')}</td>
+                    <td class="font-mono text-sm tabular-nums">${item.current_count || 0} / ${item.capacity || 0}</td>
+                    <td class="w-28">
+                        <div class="flex items-center gap-2">
+                            <div class="flex-1 bg-base-200 rounded-full h-1.5 min-w-[3rem]">
+                                <div class="bg-info h-1.5 rounded-full" style="width:${fillPercent}%"></div>
                             </div>
-                            <div class="flex items-center gap-2">
-                                ${getStatusIcon(item.status)}
-                                <span class="badge ${getStatusBadge(item.status)} badge-sm">${item.status}</span>
-                            </div>
+                            <span class="font-mono text-[0.7rem] text-base-content/50 w-8">${Math.round(fillPercent)}%</span>
                         </div>
-                    </div>
-                    
-                    <div class="p-4">
-                        <!-- Temperature Display -->
-                        <div class="bg-base-200 rounded-xl p-4 mb-4 text-center">
-                            <div class="flex items-center justify-center gap-2 mb-1">
-                                <i class="fas fa-thermometer-half ${currentTemp !== null ? (isInRange ? 'text-success' : 'text-error') : 'text-base-content/40'}"></i>
-                                <span class="text-3xl font-bold ${currentTemp !== null ? (isInRange ? 'text-success' : 'text-error') : 'text-base-content/40'}">
-                                    ${currentTemp !== null ? currentTemp.toFixed(1) + '°C' : '--'}
-                                </span>
-                            </div>
-                            <p class="text-xs text-base-content/60">Range: ${minTemp}°C - ${maxTemp}°C</p>
-                        </div>
-                        
-                        <div class="space-y-2 text-sm mb-4">
-                            <div class="flex justify-between">
-                                <span class="text-base-content/60">Capacity</span>
-                                <span>${item.current_count || 0} / ${item.capacity} units</span>
-                            </div>
-                            <div class="w-full bg-base-200 rounded-full h-2">
-                                <div class="bg-info h-2 rounded-full" style="width: ${fillPercent}%"></div>
-                            </div>
-                            <div class="flex justify-between">
-                                <span class="text-base-content/60">Location</span>
-                                <span class="truncate ml-2">${item.location || '-'}</span>
-                            </div>
-                        </div>
-                        
-                        <div class="flex gap-2">
-                            <button class="btn btn-sm btn-ghost flex-1" onclick="editRecord(${item.id})">
-                                <i class="fas fa-edit"></i> Edit
-                            </button>
-                            <button class="btn btn-sm btn-ghost text-error" onclick="deleteRecord(${item.id}, '${item.chiller_name}')">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `}).join('');
+                    </td>
+                    <td class="font-mono text-sm ${hasTemp ? (isInRange ? 'text-success' : 'text-error font-semibold') : 'text-base-content/40'}">
+                        ${hasTemp ? currentTemp.toFixed(1) + '°C' : '—'}
+                        <div class="text-[0.65rem] text-base-content/40 font-normal">${minTemp}–${maxTemp}°C</div>
+                    </td>
+                    <td>
+                        <span class="badge ${getStatusBadge(item.status)} badge-sm gap-1">
+                            ${getStatusIcon(item.status)} ${escapeHtml(item.status || '—')}
+                        </span>
+                    </td>
+                    <td class="text-right whitespace-nowrap">
+                        <button type="button" class="btn btn-ghost btn-xs" onclick="editRecord(${item.id})" title="Edit">
+                            <i class="fas fa-pen"></i>
+                        </button>
+                        <button type="button" class="btn btn-ghost btn-xs text-error" onclick="deleteRecord(${item.id}, '${safeName}')" title="Delete">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>`;
+            }).join('');
+
+            grid.innerHTML = `
+                <div class="overflow-x-auto max-h-[calc(100vh-12rem)] overflow-y-auto">
+                    <table class="table table-sm">
+                        <thead class="sticky top-0 bg-base-200 z-[1]">
+                            <tr>
+                                <th class="text-[0.65rem] uppercase tracking-wide">Chiller</th>
+                                <th class="text-[0.65rem] uppercase tracking-wide">Location</th>
+                                <th class="text-[0.65rem] uppercase tracking-wide">Occupancy</th>
+                                <th class="text-[0.65rem] uppercase tracking-wide">Fill</th>
+                                <th class="text-[0.65rem] uppercase tracking-wide">Temp</th>
+                                <th class="text-[0.65rem] uppercase tracking-wide">Status</th>
+                                <th class="text-[0.65rem] uppercase tracking-wide text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>`;
         }
         
         function openAddModal() {

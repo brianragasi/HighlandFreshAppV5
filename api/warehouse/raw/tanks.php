@@ -20,6 +20,23 @@
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
 
 /**
+ * Raw milk business rule: 3-hour use window from gate arrival.
+ * Gate arrival = receiving_date + receiving_time (fallback: receiving created_at / received_date start).
+ */
+function sqlRawMilkGateArrivalExpr($rmiAlias = 'rmi', $mrAlias = 'mr') {
+    // Prefer receiving timestamp; fall back to inventory received_date at 00:00
+    return "COALESCE(
+        TIMESTAMP({$mrAlias}.receiving_date, COALESCE(NULLIF({$mrAlias}.receiving_time, ''), TIME({$mrAlias}.created_at), '00:00:00')),
+        TIMESTAMP({$rmiAlias}.received_date, '00:00:00'),
+        {$mrAlias}.created_at
+    )";
+}
+
+function sqlRawMilkExpiresAtExpr($rmiAlias = 'rmi', $mrAlias = 'mr') {
+    return 'DATE_ADD(' . sqlRawMilkGateArrivalExpr($rmiAlias, $mrAlias) . ', INTERVAL 3 HOUR)';
+}
+
+/**
  * Backfill raw milk inventory rows for accepted QC records that are missing inventory.
  * This prevents accepted milk from being invisible in Warehouse when a prior insert was skipped.
  */
@@ -72,28 +89,33 @@ function expireTankMilkBatches($db, $tankId, $currentUser, $reason = '') {
         throw new Exception('Tank not found');
     }
 
+    // 3-hour gate-arrival window (same rule as tank monitoring UI)
+    $expiresAt = sqlRawMilkExpiresAtExpr('rmi', 'mr');
     $batches = $db->prepare("
-        SELECT rmi.*
+        SELECT rmi.*,
+               {$expiresAt} as expires_at
         FROM raw_milk_inventory rmi
+        LEFT JOIN milk_receiving mr ON rmi.receiving_id = mr.id
         WHERE rmi.tank_id = ?
           AND rmi.status IN ('available', 'reserved')
           AND rmi.remaining_liters > 0
-          AND rmi.expiry_date < CURDATE()
-        ORDER BY rmi.expiry_date ASC, rmi.received_date ASC, rmi.id ASC
+          AND {$expiresAt} < NOW()
+        ORDER BY {$expiresAt} ASC, rmi.received_date ASC, rmi.id ASC
         FOR UPDATE
     ");
     $batches->execute([$tankId]);
     $expiredBatches = $batches->fetchAll();
 
     if (empty($expiredBatches)) {
-        throw new Exception('No expired milk batches found in this tank');
+        throw new Exception('No expired milk batches found in this tank (3-hour gate window)');
     }
 
     $reason = trim($reason) !== ''
         ? trim($reason)
-        : 'Expired raw milk removed from tank';
+        : 'Expired raw milk removed from tank (3h gate window)';
 
     $totalExpired = 0.0;
+    $totalLossValue = 0.0;
     $cleared = [];
 
     foreach ($expiredBatches as $batch) {
@@ -101,6 +123,9 @@ function expireTankMilkBatches($db, $tankId, $currentUser, $reason = '') {
         if ($liters <= 0) {
             continue;
         }
+
+        $unitCost = (float) ($batch['unit_cost'] ?? 0);
+        $lineLoss = round($liters * $unitCost, 2);
 
         $db->prepare("
             UPDATE raw_milk_inventory
@@ -118,8 +143,8 @@ function expireTankMilkBatches($db, $tankId, $currentUser, $reason = '') {
             INSERT INTO inventory_transactions
             (transaction_code, transaction_type, item_type, item_id, batch_id,
              quantity, unit_of_measure, reference_type, reference_id,
-             from_location, performed_by, reason)
-            VALUES (?, 'dispose', 'raw_milk', ?, ?, ?, 'L', 'tank_expiry', ?, ?, ?, ?)
+             from_location, unit_cost, total_cost, performed_by, reason)
+            VALUES (?, 'dispose', 'raw_milk', ?, ?, ?, 'L', 'tank_expiry', ?, ?, ?, ?, ?, ?)
         ")->execute([
             $txCode,
             $batch['id'],
@@ -127,19 +152,27 @@ function expireTankMilkBatches($db, $tankId, $currentUser, $reason = '') {
             $liters,
             $tankId,
             $tankData['tank_code'],
+            $unitCost > 0 ? $unitCost : null,
+            $lineLoss > 0 ? $lineLoss : null,
             $currentUser['user_id'],
-            $reason . ' (expired ' . $batch['expiry_date'] . ')'
+            $reason . ' · loss ₱' . number_format($lineLoss, 2) . ' @ ₱' . number_format($unitCost, 2) . '/L'
         ]);
 
         $totalExpired += $liters;
+        $totalLossValue += $lineLoss;
         $cleared[] = [
             'batch_id' => (int) $batch['id'],
             'batch_code' => $batch['batch_code'],
             'liters' => $liters,
+            'unit_cost' => $unitCost,
+            'loss_value' => $lineLoss,
+            'expires_at' => $batch['expires_at'] ?? null,
             'expiry_date' => $batch['expiry_date'],
             'transaction_code' => $txCode
         ];
     }
+
+    $totalLossValue = round($totalLossValue, 2);
 
     $db->prepare("
         UPDATE storage_tanks
@@ -157,6 +190,7 @@ function expireTankMilkBatches($db, $tankId, $currentUser, $reason = '') {
     logAudit($currentUser['user_id'], 'expire_tank_milk', 'storage_tanks', $tankId, null, [
         'tank_code' => $tankData['tank_code'],
         'total_expired_liters' => $totalExpired,
+        'total_loss_value' => $totalLossValue,
         'batch_count' => count($cleared),
         'reason' => $reason
     ]);
@@ -165,7 +199,10 @@ function expireTankMilkBatches($db, $tankId, $currentUser, $reason = '') {
         'tank_id' => (int) $tankId,
         'tank_code' => $tankData['tank_code'],
         'total_expired_liters' => $totalExpired,
+        'total_loss_value' => $totalLossValue,
+        'currency' => 'PHP',
         'batch_count' => count($cleared),
+        'gm_approval_required' => false,
         'batches' => $cleared
     ];
 }
@@ -209,6 +246,9 @@ function handleGet($db, $currentUser) {
             $tankType = getParam('tank_type');
             $milkTypeId = getParam('milk_type_id');
 
+            // 3-hour gate-arrival window (not calendar-day shelf life)
+            $expiresAt = sqlRawMilkExpiresAtExpr('rmi', 'mr');
+
             $sql = "
                 SELECT
                     st.*,
@@ -218,30 +258,41 @@ function handleGet($db, $currentUser) {
                      FROM raw_milk_inventory rmi
                      WHERE rmi.tank_id = st.id
                      AND rmi.status IN ('available', 'reserved')) as stored_liters,
-                    (SELECT COALESCE(SUM(remaining_liters), 0)
+                    (SELECT COALESCE(SUM(rmi.remaining_liters), 0)
                      FROM raw_milk_inventory rmi
+                     LEFT JOIN milk_receiving mr ON rmi.receiving_id = mr.id
                      WHERE rmi.tank_id = st.id
                      AND rmi.status IN ('available', 'reserved')
-                     AND rmi.expiry_date >= CURDATE()) as usable_liters,
-                    (SELECT COALESCE(SUM(remaining_liters), 0)
+                     AND {$expiresAt} >= NOW()) as usable_liters,
+                    (SELECT COALESCE(SUM(rmi.remaining_liters), 0)
                      FROM raw_milk_inventory rmi
+                     LEFT JOIN milk_receiving mr ON rmi.receiving_id = mr.id
                      WHERE rmi.tank_id = st.id
                      AND rmi.status IN ('available', 'reserved')
-                     AND rmi.expiry_date < CURDATE()) as expired_liters,
+                     AND {$expiresAt} < NOW()) as expired_liters,
                     (SELECT COUNT(*)
                      FROM raw_milk_inventory rmi
                      WHERE rmi.tank_id = st.id
                      AND rmi.status IN ('available', 'reserved')) as batch_count,
                     (SELECT COUNT(*)
                      FROM raw_milk_inventory rmi
+                     LEFT JOIN milk_receiving mr ON rmi.receiving_id = mr.id
                      WHERE rmi.tank_id = st.id
                      AND rmi.status IN ('available', 'reserved')
                      AND rmi.remaining_liters > 0
-                     AND rmi.expiry_date < CURDATE()) as expired_batch_count,
-                    (SELECT MIN(expiry_date)
+                     AND {$expiresAt} < NOW()) as expired_batch_count,
+                    (SELECT MIN({$expiresAt})
                      FROM raw_milk_inventory rmi
+                     LEFT JOIN milk_receiving mr ON rmi.receiving_id = mr.id
                      WHERE rmi.tank_id = st.id
-                     AND rmi.status IN ('available', 'reserved')) as earliest_expiry
+                     AND rmi.status IN ('available', 'reserved')
+                     AND rmi.remaining_liters > 0) as earliest_expires_at,
+                    (SELECT MIN({$expiresAt})
+                     FROM raw_milk_inventory rmi
+                     LEFT JOIN milk_receiving mr ON rmi.receiving_id = mr.id
+                     WHERE rmi.tank_id = st.id
+                     AND rmi.status IN ('available', 'reserved')
+                     AND rmi.remaining_liters > 0) as earliest_expiry
                 FROM storage_tanks st
                 LEFT JOIN milk_types mt ON st.milk_type_id = mt.id
                 WHERE st.is_active = 1
@@ -289,7 +340,9 @@ function handleGet($db, $currentUser) {
                 Response::error('Tank not found', 404);
             }
 
-            // Get milk batches in this tank (from raw_milk_inventory - revised schema)
+            // Get milk batches in this tank — 3h window from gate arrival
+            $expiresAt = sqlRawMilkExpiresAtExpr('rmi', 'mr');
+            $gateAt = sqlRawMilkGateArrivalExpr('rmi', 'mr');
             $batches = $db->prepare("
                 SELECT
                     rmi.*,
@@ -301,7 +354,10 @@ function handleGet($db, $currentUser) {
                     mt.type_name as milk_type_name,
                     u.first_name as received_by_first,
                     u.last_name as received_by_last,
-                    DATEDIFF(rmi.expiry_date, CURDATE()) as days_until_expiry
+                    {$gateAt} as gate_arrived_at,
+                    {$expiresAt} as expires_at,
+                    TIMESTAMPDIFF(MINUTE, NOW(), {$expiresAt}) as minutes_until_expiry,
+                    CASE WHEN {$expiresAt} < NOW() THEN 1 ELSE 0 END as is_expired_3h
                 FROM raw_milk_inventory rmi
                 JOIN milk_receiving mr ON rmi.receiving_id = mr.id
                 JOIN farmers f ON mr.farmer_id = f.id
@@ -309,7 +365,7 @@ function handleGet($db, $currentUser) {
                 LEFT JOIN users u ON rmi.received_by = u.id
                 WHERE rmi.tank_id = ?
                 AND rmi.status IN ('available', 'reserved')
-                ORDER BY rmi.expiry_date ASC, rmi.received_date ASC, rmi.id ASC
+                ORDER BY {$expiresAt} ASC, rmi.received_date ASC, rmi.id ASC
             ");
             $batches->execute([$id]);
             $batchList = $batches->fetchAll();

@@ -273,6 +273,10 @@ const PurchasingService = {
         return await api.get('/admin/gm_approvals.php?action=dashboard');
     },
 
+    async getGMUnifiedQueue() {
+        return await api.get('/admin/gm_approvals.php?action=unified_queue');
+    },
+
     async getGMPendingPOs() {
         return await api.get('/admin/gm_approvals.php?action=pending_pos');
     },

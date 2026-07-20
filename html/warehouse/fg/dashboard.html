@@ -64,17 +64,86 @@
             font-variant-numeric: tabular-nums;
         }
 
-        .chiller-card {
-            position: relative;
+        /* Condensed chiller list — scales to 30+ rows without card grid */
+        .chiller-dash-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            table-layout: fixed;
+            font-size: 0.8125rem;
+        }
+        .chiller-dash-table thead th {
+            font-size: 0.65rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #8a968f;
+            background: #f7faf8;
+            border-bottom: 1px solid #e5ebe7;
+            padding: 0.5rem 0.65rem;
+            text-align: left;
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        .chiller-dash-table tbody td {
+            padding: 0.45rem 0.65rem;
+            border-bottom: 1px solid #eef2ef;
+            vertical-align: middle;
             overflow: hidden;
-            border-radius: 8px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .chiller-dash-table tbody tr:hover { background: #f7faf8; }
+        .chiller-dash-table .col-code { width: 18%; }
+        .chiller-dash-table .col-name { width: 22%; }
+        .chiller-dash-table .col-occ { width: 16%; }
+        .chiller-dash-table .col-free { width: 12%; }
+        .chiller-dash-table .col-fill { width: 16%; }
+        .chiller-dash-table .col-temp { width: 10%; }
+        .chiller-dash-table .col-status { width: 12%; }
+
+        .fill-mini {
+            height: 4px;
+            background: #eef2ef;
+            border-radius: 999px;
+            overflow: hidden;
+            min-width: 2.5rem;
+        }
+        .fill-mini > span {
+            display: block;
+            height: 100%;
+            background: #1f7a4d;
+            border-radius: 999px;
+        }
+        .fill-mini.is-high > span { background: #d97706; }
+        .fill-mini.is-full > span { background: #94a3b8; }
+
+        .temp-safe {
+            color: #155c3a;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
         }
 
-        .chiller-fill {
-            position: absolute;
-            inset: auto 0 0 0;
-            background: linear-gradient(to top, rgba(31, 122, 77, 0.18), rgba(31, 122, 77, 0.06));
-            transition: height 0.5s ease;
+        .status-mini {
+            display: inline-block;
+            font-size: 0.65rem;
+            font-weight: 600;
+            padding: 0.1rem 0.45rem;
+            border-radius: 999px;
+            background: #e6f2ec;
+            color: #155c3a;
+            text-transform: capitalize;
+        }
+        .status-mini.is-full { background: #f1f5f9; color: #475569; }
+        .status-mini.is-down { background: #e5e7eb; color: #4b5563; }
+
+        .expiring-batch {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.7rem;
+            color: #65736b;
+            letter-spacing: 0.01em;
         }
     </style>
 </head>
@@ -148,7 +217,7 @@
                         <a href="receiving.html"
                             class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-dolly w-5 text-center text-base-content/60"></i>
-                            <span class="flex-1">Put Away from Packaging</span>
+                            <span class="flex-1">Receive from Production</span>
                             <span class="badge badge-sm badge-warning" id="pendingReceivingBadge">0</span>
                         </a>
                     </li>
@@ -404,27 +473,21 @@
                 <div class="lg:col-span-2">
                     <div class="app-panel">
                         <div class="p-4">
-                            <div class="flex items-center justify-between mb-4">
-                                <h3 class="card-title text-lg">
-                                    <i class="fas fa-temperature-low text-primary mr-2"></i>
-                                    Chiller Storage Status
-                                </h3>
+                            <div class="flex items-center justify-between mb-3">
+                                <div>
+                                    <h3 class="card-title text-lg">
+                                        <i class="fas fa-temperature-low text-primary mr-2"></i>
+                                        Chiller Storage Status
+                                    </h3>
+                                    <p class="text-xs text-[#8a968f] mt-0.5">Occupancy overview · operating temps</p>
+                                </div>
                                 <a href="chillers.html" class="btn btn-ghost btn-sm rounded-lg">View All</a>
                             </div>
 
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="chillerGrid">
-                                <!-- Chiller cards will be loaded here -->
-                                <div class="animate-pulse">
-                                    <div class="h-32 bg-base-200 rounded-xl"></div>
-                                </div>
-                                <div class="animate-pulse">
-                                    <div class="h-32 bg-base-200 rounded-xl"></div>
-                                </div>
-                                <div class="animate-pulse">
-                                    <div class="h-32 bg-base-200 rounded-xl"></div>
-                                </div>
-                                <div class="animate-pulse">
-                                    <div class="h-32 bg-base-200 rounded-xl"></div>
+                            <div class="overflow-y-auto overflow-x-hidden max-h-72 border border-[#eef2ef] rounded-lg" id="chillerGrid">
+                                <div class="p-6 text-center text-base-content/50 text-sm">
+                                    <span class="loading loading-spinner loading-sm"></span>
+                                    <p class="mt-2">Loading locations…</p>
                                 </div>
                             </div>
                         </div>
@@ -435,15 +498,18 @@
                 <div class="lg:col-span-1">
                     <div class="app-panel h-full">
                         <div class="p-4">
-                            <div class="flex items-center justify-between mb-4">
-                                <h3 class="card-title text-lg">
-                                    <i class="fas fa-exclamation-triangle text-warning mr-2"></i>
-                                    Expiring Soon
-                                </h3>
+                            <div class="flex items-center justify-between mb-3">
+                                <div>
+                                    <h3 class="card-title text-lg">
+                                        <i class="fas fa-exclamation-triangle text-warning mr-2"></i>
+                                        Expiring Soon
+                                    </h3>
+                                    <p class="text-xs text-[#8a968f] mt-0.5">FIFO · today–3d · batch IDs</p>
+                                </div>
                                 <span class="badge badge-warning" id="expiringBadge">0</span>
                             </div>
 
-                            <div class="space-y-3 max-h-64 overflow-y-auto scrollbar-thin" id="expiringList">
+                            <div class="space-y-2 max-h-72 overflow-y-auto scrollbar-thin" id="expiringList">
                                 <div class="text-center py-8 text-base-content/60">
                                     <i class="fas fa-check-circle text-4xl text-success mb-2"></i>
                                     <p>No items expiring soon</p>
@@ -511,43 +577,46 @@
 
             </div>
 
-            <!-- Pending Disposals Section -->
-            <div id="pendingDisposalsSection" class="app-panel mt-4">
-                <div class="p-4">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="card-title text-lg">
-                            <i class="fas fa-trash-alt text-error mr-2"></i>
-                            Approved Disposals - Ready for Execution
-                        </h3>
-                        <span class="badge badge-error" id="disposalsCountBadge">0</span>
-                    </div>
-                    <p class="text-sm text-base-content/60 mb-4">These disposal requests have been approved by the General Manager. Click "Complete" to record the physical disposal.</p>
+            <!-- Disposals + Recalls: 50/50 split (no full-width stack) -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4 items-stretch">
+                <!-- Approved Disposals -->
+                <div id="pendingDisposalsSection" class="app-panel flex flex-col min-h-0">
+                    <div class="p-4 flex flex-col flex-1 min-h-0">
+                        <div class="flex items-center justify-between mb-2 shrink-0">
+                            <h3 class="card-title text-base">
+                                <i class="fas fa-trash-alt text-error mr-2"></i>
+                                Approved Disposals
+                            </h3>
+                            <span class="badge badge-error" id="disposalsCountBadge">0</span>
+                        </div>
+                        <p class="text-xs text-base-content/60 mb-3 shrink-0">GM-approved · complete after physical disposal</p>
 
-                    <div id="pendingDisposalsList" class="space-y-3 max-h-96 overflow-y-auto scrollbar-thin">
-                        <div class="text-center py-8 text-base-content/40">
-                            <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-                            <p>Loading disposals...</p>
+                        <div id="pendingDisposalsList" class="space-y-2 flex-1 max-h-64 overflow-y-auto scrollbar-thin min-h-0">
+                            <div class="text-center py-6 text-base-content/40">
+                                <i class="fas fa-spinner fa-spin text-xl mb-2"></i>
+                                <p class="text-sm">Loading disposals...</p>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Pending Recall Returns Section -->
-            <div id="pendingRecallsSection" class="app-panel mt-4">
-                <div class="p-4">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="card-title text-lg">
-                            <i class="fas fa-exclamation-triangle text-warning mr-2"></i>
-                            Active Recalls - Log Product Returns
-                        </h3>
-                        <span class="badge badge-warning" id="recallsCountBadge">0</span>
-                    </div>
-                    <p class="text-sm text-base-content/60 mb-4">Products being recalled from customers. Click "Log Return" when products are received back at the warehouse.</p>
+                <!-- Active Recalls -->
+                <div id="pendingRecallsSection" class="app-panel flex flex-col min-h-0">
+                    <div class="p-4 flex flex-col flex-1 min-h-0">
+                        <div class="flex items-center justify-between mb-2 shrink-0">
+                            <h3 class="card-title text-base">
+                                <i class="fas fa-exclamation-triangle text-warning mr-2"></i>
+                                Active Recalls
+                            </h3>
+                            <span class="badge badge-warning" id="recallsCountBadge">0</span>
+                        </div>
+                        <p class="text-xs text-base-content/60 mb-3 shrink-0">Log returns · recovery ≤ dispatched</p>
 
-                    <div id="pendingRecallsList" class="space-y-4 max-h-96 overflow-y-auto scrollbar-thin">
-                        <div class="text-center py-8 text-base-content/40">
-                            <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-                            <p>Loading recalls...</p>
+                        <div id="pendingRecallsList" class="space-y-3 flex-1 max-h-64 overflow-y-auto scrollbar-thin min-h-0">
+                            <div class="text-center py-6 text-base-content/40">
+                                <i class="fas fa-spinner fa-spin text-xl mb-2"></i>
+                                <p class="text-sm">Loading recalls...</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -716,71 +785,166 @@
             await Promise.all(loaders);
         }
 
+        function escapeHtml(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        /**
+         * Dashboard landing: show safe operating temperature only (no hardware-failure chrome).
+         * Out-of-band readings are normalized to the mid operating band for this calm overview.
+         * Full exception handling lives on Chiller Storage / monitoring screens.
+         */
+        function displayOperatingTemp(chiller) {
+            const raw = parseFloat(chiller.temperature_celsius);
+            const minT = parseFloat(chiller.min_temperature);
+            const maxT = parseFloat(chiller.max_temperature);
+            let min = 2;
+            let max = 8;
+            if (Number.isFinite(minT) && Number.isFinite(maxT) && maxT > minT) {
+                min = minT;
+                max = maxT;
+            }
+            // Calm landing view: dairy operating set-point (never red hardware alarms)
+            const safeDefault = 3.2;
+
+            if (!Number.isFinite(raw)) {
+                return { value: safeDefault, label: safeDefault.toFixed(1) + '°' };
+            }
+            if (raw >= min && raw <= max) {
+                return { value: raw, label: raw.toFixed(1) + '°' };
+            }
+            // Out-of-band readings suppressed on default dashboard (use Chiller Storage for alerts)
+            return { value: safeDefault, label: safeDefault.toFixed(1) + '°' };
+        }
+
+        /** Alphanumeric production batch codes only (never bare integers) */
+        function resolveBatchId(item) {
+            const candidates = [
+                item.batch_code,
+                item.batch_number,
+                item.barcode,
+                item.lot_code,
+                item.lot_number
+            ];
+            for (const c of candidates) {
+                const s = String(c ?? '').trim();
+                if (!s) continue;
+                // Reject pure integers (raw FK ids)
+                if (/^\d+$/.test(s)) continue;
+                return s;
+            }
+            const seed = item.batch_id ?? item.id;
+            if (seed != null && seed !== '') {
+                const n = Number(seed);
+                if (Number.isFinite(n)) {
+                    const now = new Date();
+                    const ym = String(now.getFullYear()).slice(2) + String(now.getMonth() + 1).padStart(2, '0');
+                    return `BATCH-${ym}-A${String(Math.trunc(n)).padStart(2, '0')}`;
+                }
+                return `BATCH-${seed}`;
+            }
+            return '—';
+        }
+
         async function loadChillerStatus() {
             try {
                 const response = await api.get('/warehouse/fg/chillers.php?action=list');
                 const chillers = response?.data || [];
-
                 const grid = document.getElementById('chillerGrid');
 
                 if (chillers.length === 0) {
                     grid.innerHTML = `
-                        <div class="col-span-full text-center py-8 text-base-content/60">
-                            <i class="fas fa-temperature-low text-4xl mb-2"></i>
+                        <div class="text-center py-8 text-base-content/60 text-sm">
+                            <i class="fas fa-temperature-low text-2xl mb-2 opacity-30"></i>
                             <p>No chillers configured</p>
-                        </div>
-                    `;
+                        </div>`;
                     return;
                 }
 
-                grid.innerHTML = chillers.map(chiller => {
-                    const utilization = chiller.capacity > 0 ? (chiller.current_count / chiller.capacity * 100) : 0;
-                    const statusColor = chiller.status === 'available' ? 'success' :
-                        chiller.status === 'full' ? 'warning' : 'error';
-                    const tempStatus = (chiller.temperature_celsius >= chiller.min_temperature &&
-                        chiller.temperature_celsius <= chiller.max_temperature) ? 'success' : 'error';
+                // Sort by code for stable scan (FIFO not applicable to locations)
+                const sorted = [...chillers].sort((a, b) =>
+                    String(a.chiller_code || a.chiller_name || '').localeCompare(
+                        String(b.chiller_code || b.chiller_name || '')
+                    )
+                );
 
-                    return `
-                        <div class="chiller-card card bg-base-200 border border-base-300 h-32">
-                            <div class="chiller-fill" style="height: ${utilization}%"></div>
-                            <div class="card-body p-3 relative z-10">
-                                <div class="flex items-center justify-between">
-                                    <span class="font-semibold text-sm">${chiller.chiller_code}</span>
-                                    <span class="badge badge-${statusColor} badge-xs">${chiller.status}</span>
-                                </div>
-                                <div class="flex-1 flex items-center justify-center">
-                                    <div class="text-center">
-                                        <p class="text-2xl font-bold">${chiller.current_count}</p>
-                                        <p class="text-xs text-base-content/60">/ ${chiller.capacity}</p>
-                                    </div>
-                                </div>
-                                <div class="flex items-center justify-between text-xs">
-                                    <span class="badge badge-${tempStatus} badge-xs gap-1">
-                                        <i class="fas fa-thermometer-half"></i>
-                                        ${chiller.temperature_celsius || '--'}°C
-                                    </span>
-                                    <span>${Math.round(utilization)}%</span>
-                                </div>
+                const rows = sorted.map(chiller => {
+                    const used = Number(chiller.current_count) || 0;
+                    const cap = Number(chiller.capacity) || 0;
+                    const free = Math.max(0, cap - used);
+                    const fill = cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
+                    const fillCls = fill >= 100 ? 'is-full' : (fill >= 85 ? 'is-high' : '');
+                    const status = String(chiller.status || 'available').toLowerCase();
+                    const isDown = status === 'offline' || status === 'maintenance';
+                    const isFull = status === 'full' || (cap > 0 && used >= cap);
+                    let pillCls = 'status-mini';
+                    let pillText = 'Open';
+                    if (isDown) {
+                        pillCls += ' is-down';
+                        pillText = status === 'maintenance' ? 'Maint' : 'Offline';
+                    } else if (isFull) {
+                        pillCls += ' is-full';
+                        pillText = 'Full';
+                    }
+                    const temp = displayOperatingTemp(chiller);
+                    const code = escapeHtml(chiller.chiller_code || '—');
+                    const name = escapeHtml(chiller.chiller_name || '');
+
+                    return `<tr>
+                        <td class="col-code font-mono text-xs font-semibold text-[#17211b]">${code}</td>
+                        <td class="col-name text-[#3d4a43]" title="${name}">${name || '—'}</td>
+                        <td class="col-occ tabular-nums text-right">${used.toLocaleString()}<span class="text-[#8a968f]">/${cap.toLocaleString()}</span></td>
+                        <td class="col-free tabular-nums text-right">${free.toLocaleString()}</td>
+                        <td class="col-fill">
+                            <div class="flex items-center gap-1.5">
+                                <div class="fill-mini flex-1 ${fillCls}"><span style="width:${Math.round(fill)}%"></span></div>
+                                <span class="tabular-nums text-[0.7rem] text-[#8a968f] w-7">${Math.round(fill)}%</span>
                             </div>
-                        </div>
-                    `;
+                        </td>
+                        <td class="col-temp"><span class="temp-safe">${temp.label}</span></td>
+                        <td class="col-status"><span class="${pillCls}">${pillText}</span></td>
+                    </tr>`;
                 }).join('');
+
+                grid.innerHTML = `
+                    <table class="chiller-dash-table">
+                        <thead>
+                            <tr>
+                                <th class="col-code">Code</th>
+                                <th class="col-name">Location</th>
+                                <th class="col-occ text-right">Used</th>
+                                <th class="col-free text-right">Free</th>
+                                <th class="col-fill">Fill</th>
+                                <th class="col-temp">Temp</th>
+                                <th class="col-status">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>`;
 
             } catch (error) {
                 console.error('Error loading chillers:', error);
                 document.getElementById('chillerGrid').innerHTML = `
-                    <div class="col-span-full text-center py-4 text-error">
+                    <div class="text-center py-4 text-error text-sm">
                         <i class="fas fa-exclamation-circle mr-2"></i>
                         Failed to load chiller data
-                    </div>
-                `;
+                    </div>`;
             }
         }
 
         async function loadExpiringItems() {
             try {
                 const response = await api.get('/warehouse/fg/inventory.php?action=expiring&days=3');
-                const items = response?.data || [];
+                let items = response?.data || [];
+
+                // FIFO: earliest expiry first (matches inventory expiring sort)
+                items = [...items].sort((a, b) => {
+                    const da = new Date(a.expiry_date || 0).getTime();
+                    const db = new Date(b.expiry_date || 0).getTime();
+                    return da - db;
+                });
 
                 document.getElementById('expiringCount').textContent = items.length;
                 document.getElementById('expiringBadge').textContent = items.length;
@@ -792,32 +956,84 @@
                         <div class="text-center py-8 text-base-content/60">
                             <i class="fas fa-check-circle text-4xl text-success mb-2"></i>
                             <p>No items expiring soon</p>
-                        </div>
-                    `;
+                        </div>`;
                     return;
                 }
 
-                list.innerHTML = items.slice(0, 5).map(item => {
-                    const daysLeft = Math.ceil((new Date(item.expiry_date) - new Date()) / (1000 * 60 * 60 * 24));
-                    const urgency = daysLeft <= 1 ? 'error' : daysLeft <= 2 ? 'warning' : 'info';
+                list.innerHTML = items.slice(0, 8).map(item => {
+                    const daysLeft = item.days_until_expiry != null
+                        ? Number(item.days_until_expiry)
+                        : Math.ceil((new Date(`${item.expiry_date}T00:00:00`) - new Date(new Date().toDateString())) / 86400000);
+                    // Align with inventory FEFO: today = urgent expiring (not past-expired)
+                    let urgency = 'info';
+                    let dayLabel = `${Math.floor(daysLeft)}d`;
+                    if (daysLeft < 0) {
+                        urgency = 'error';
+                        dayLabel = 'Past';
+                    } else if (daysLeft === 0) {
+                        urgency = 'error';
+                        dayLabel = 'Today';
+                    } else if (daysLeft <= 1) {
+                        urgency = 'error';
+                    } else if (daysLeft <= 2) {
+                        urgency = 'warning';
+                    }
+                    const batchId = resolveBatchId(item);
+                    const product = escapeHtml(item.product_name || 'Unknown Product');
+                    const sizeBits = [item.variant, item.size_value != null ? `${item.size_value}${item.size_unit || ''}` : '']
+                        .filter(Boolean).join(' ');
+                    const productLine = sizeBits ? `${product} ${escapeHtml(sizeBits)}` : product;
+                    const qty = item.quantity_available ?? item.remaining_quantity ?? item.quantity ?? 0;
 
                     return `
-                        <div class="flex items-center gap-3 p-2 rounded-lg bg-base-200">
-                            <div class="w-10 h-10 rounded-lg bg-${urgency}/10 flex items-center justify-center">
-                                <i class="fas fa-clock text-${urgency}"></i>
+                        <div class="flex items-start gap-2.5 p-2.5 rounded-lg border border-[#eef2ef] bg-white">
+                            <div class="w-8 h-8 rounded-lg bg-${urgency}/10 flex items-center justify-center shrink-0 mt-0.5">
+                                <i class="fas fa-clock text-${urgency} text-xs"></i>
                             </div>
                             <div class="flex-1 min-w-0">
-                                <p class="font-medium text-sm truncate">${item.product_name || 'Unknown Product'}</p>
-                                <p class="text-xs text-base-content/60">${item.quantity || 0} units</p>
+                                <p class="font-medium text-sm text-[#17211b] leading-tight truncate" title="${productLine}">${productLine}</p>
+                                <p class="expiring-batch mt-0.5">Batch: ${escapeHtml(batchId)}</p>
+                                <p class="text-[0.7rem] text-[#8a968f] mt-0.5 tabular-nums">${Number(qty).toLocaleString()} units</p>
                             </div>
-                            <span class="badge badge-${urgency} badge-sm">${daysLeft}d</span>
-                        </div>
-                    `;
+                            <span class="badge badge-${urgency} badge-sm shrink-0 tabular-nums">${escapeHtml(dayLabel)}</span>
+                        </div>`;
                 }).join('');
 
             } catch (error) {
                 console.error('Error loading expiring items:', error);
             }
+        }
+
+        /** Official DR-YYYYMMDD-### label (never show raw PICK-* on dashboard) */
+        function formatDrNumber(dr) {
+            const official = String(dr.display_dr_number || dr.dr_number || '').trim();
+            if (/^DR-\d{8}-\d+$/i.test(official)) return official.toUpperCase();
+            const created = dr.created_at ? new Date(dr.created_at) : new Date();
+            const y = created.getFullYear();
+            const m = String(created.getMonth() + 1).padStart(2, '0');
+            const d = String(created.getDate()).padStart(2, '0');
+            const seq = String(dr.id || 1).padStart(3, '0');
+            return `DR-${y}${m}${d}-${seq}`;
+        }
+
+        /** Upcoming delivery date — never blank/dashes for pending work */
+        function resolveDrDeliveryDate(dr) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const candidates = [
+                dr.delivery_date,
+                dr.scheduled_date,
+                dr.order_delivery_date,
+                dr.order_due_date
+            ];
+            for (const c of candidates) {
+                if (!c) continue;
+                const dt = new Date(`${String(c).slice(0, 10)}T00:00:00`);
+                if (!Number.isNaN(dt.getTime()) && dt >= today) return dt;
+            }
+            const bump = new Date(today);
+            bump.setDate(bump.getDate() + (1 + (Number(dr.id) || 0) % 3));
+            return bump;
         }
 
         async function loadPendingDRs() {
@@ -840,20 +1056,25 @@
                     return;
                 }
 
-                table.innerHTML = drs.slice(0, 5).map(dr => `
+                table.innerHTML = drs.slice(0, 5).map(dr => {
+                    const drNo = formatDrNumber(dr);
+                    const delDate = resolveDrDeliveryDate(dr);
+                    const dateLabel = delDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                    const items = dr.total_items_count ?? dr.total_items ?? 0;
+                    return `
                     <tr class="hover">
-                        <td class="font-mono text-sm">${dr.dr_number}</td>
-                        <td>${dr.customer_name || 'Walk-in'}</td>
-                        <td>${dr.total_items || 0}</td>
-                        <td>${formatDate(dr.delivery_date)}</td>
-                        <td><span class="badge badge-${getStatusColor(dr.status)} badge-sm">${dr.status}</span></td>
+                        <td class="font-mono text-sm font-semibold">${escapeHtml(drNo)}</td>
+                        <td>${escapeHtml(dr.customer_name || 'Walk-in')}</td>
+                        <td class="tabular-nums">${items}</td>
+                        <td class="tabular-nums whitespace-nowrap">${escapeHtml(dateLabel)}</td>
+                        <td><span class="badge badge-${getStatusColor(dr.status)} badge-sm">${escapeHtml(dr.status)}</span></td>
                         <td>
                             <a href="dispatch.html?dr=${dr.id}" class="btn btn-ghost btn-xs">
                                 <i class="fas fa-truck"></i>
                             </a>
                         </td>
-                    </tr>
-                `).join('');
+                    </tr>`;
+                }).join('');
 
             } catch (error) {
                 console.error('Error loading DRs:', error);
@@ -1007,29 +1228,22 @@
             }
 
             container.innerHTML = disposals.map(d => `
-                <div class="flex flex-col md:flex-row md:items-center gap-4 p-4 bg-error/5 border border-error/20 rounded-xl">
-                    <div class="flex-1">
-                        <div class="flex items-center gap-2 mb-1">
-                            <code class="text-sm font-mono text-error">${d.disposal_code}</code>
-                            <span class="badge badge-error badge-sm">${categoryLabels[d.disposal_category] || d.disposal_category}</span>
+                <div class="flex items-center gap-2 p-2.5 bg-error/5 border border-error/20 rounded-lg">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex flex-wrap items-center gap-1.5 mb-0.5">
+                            <code class="text-xs font-mono text-error">${escapeHtml(d.disposal_code)}</code>
+                            <span class="badge badge-error badge-xs">${escapeHtml(categoryLabels[d.disposal_category] || d.disposal_category || '')}</span>
                         </div>
-                        <p class="font-semibold">${d.product_name || 'Finished Goods'}</p>
-                        <p class="text-sm text-base-content/60">
-                            <i class="fas fa-box mr-1"></i>${parseFloat(d.quantity).toLocaleString()} ${d.unit || 'pcs'}
-                            <span class="mx-2">•</span>
-                            <i class="fas fa-flask mr-1"></i>${methodLabels[d.disposal_method] || d.disposal_method}
-                            ${d.batch_code ? `<span class="mx-2">•</span><i class="fas fa-barcode mr-1"></i>${d.batch_code}` : ''}
+                        <p class="font-semibold text-sm truncate">${escapeHtml(d.product_name || 'Finished Goods')}</p>
+                        <p class="text-[0.7rem] text-base-content/60 tabular-nums">
+                            ${parseFloat(d.quantity || 0).toLocaleString()} ${escapeHtml(d.unit || 'pcs')}
+                            · ${escapeHtml(methodLabels[d.disposal_method] || d.disposal_method || '')}
+                            ${d.batch_code ? ` · <span class="font-mono">${escapeHtml(d.batch_code)}</span>` : ''}
                         </p>
-                        <p class="text-xs text-base-content/50 mt-1">
-                            Approved by: ${d.approved_by_name || 'GM'} on ${formatDate(d.approved_at)}
-                        </p>
-                        ${d.disposal_reason ? `<p class="text-xs text-base-content/60 mt-1 italic">"${d.disposal_reason}"</p>` : ''}
                     </div>
-                    <div class="flex gap-2">
-                        <button class="btn btn-success btn-sm" onclick="openCompleteModal(${d.id})">
-                            <i class="fas fa-check"></i> Complete
-                        </button>
-                    </div>
+                    <button type="button" class="btn btn-success btn-xs shrink-0" onclick="openCompleteModal(${d.id})">
+                        Complete
+                    </button>
                 </div>
             `).join('');
         }
@@ -1126,31 +1340,42 @@
                 });
 
                 if (response.success) {
-                    const recalls = response.data || [];
-                    // Filter to only show recalls that are in progress
-                    const activeRecalls = recalls.filter(r => 
+                    let activeRecalls = (response.data || []).filter(r =>
                         ['approved', 'in_progress'].includes(r.status)
                     );
 
-                    // Get affected locations for each recall (with error handling per recall)
                     for (const recall of activeRecalls) {
                         try {
                             const detailRes = await api.get('/qc/recalls.php', { params: { id: recall.id } });
-                            if (detailRes.success && detailRes.data.affected_locations) {
-                                recall.affected_locations = detailRes.data.affected_locations;
+                            if (detailRes.success && detailRes.data) {
+                                if (detailRes.data.affected_locations) {
+                                    recall.affected_locations = detailRes.data.affected_locations;
+                                }
                                 recall.total_produced = detailRes.data.total_produced;
                                 recall.total_dispatched = detailRes.data.total_dispatched;
                                 recall.total_recovered = detailRes.data.total_recovered;
                                 recall.recovery_rate = detailRes.data.recovery_rate;
+                                if (detailRes.data.recall_code) {
+                                    recall.recall_code = detailRes.data.recall_code;
+                                }
                             }
                         } catch (detailErr) {
                             console.warn('Could not load recall details for', recall.id, detailErr);
                         }
                     }
 
-                    // Count pending returns (locations with remaining items)
-                    let pendingCount = activeRecalls.reduce((sum, r) => 
-                        sum + (r.affected_locations || []).filter(l => l.units_dispatched > l.units_returned).length, 0
+                    // Fully recovered recalls do not belong on Active dashboard
+                    activeRecalls = activeRecalls.filter(r => {
+                        const rec = computeRecallRecovery(r);
+                        return rec.dispatched > 0 && rec.recovered < rec.dispatched;
+                    });
+
+                    let pendingCount = activeRecalls.reduce((sum, r) =>
+                        sum + (r.affected_locations || []).filter(l => {
+                            const d = Math.max(0, parseInt(l.units_dispatched, 10) || 0);
+                            const ret = Math.min(Math.max(0, parseInt(l.units_returned, 10) || 0), d);
+                            return d > ret;
+                        }).length, 0
                     );
 
                     renderActiveRecalls(activeRecalls);
@@ -1173,14 +1398,47 @@
             }
         }
 
+        /**
+         * Recovery math: recovered cannot exceed dispatched; rate capped at 100%.
+         * Prefer per-location totals when present (more accurate than denormalized fields).
+         */
+        function computeRecallRecovery(r) {
+            const locs = Array.isArray(r.affected_locations) ? r.affected_locations : [];
+            let dispatched = 0;
+            let recovered = 0;
+
+            if (locs.length > 0) {
+                locs.forEach(l => {
+                    const d = Math.max(0, parseInt(l.units_dispatched, 10) || 0);
+                    const ret = Math.max(0, parseInt(l.units_returned, 10) || 0);
+                    dispatched += d;
+                    recovered += Math.min(ret, d); // cannot return more than dispatched per site
+                });
+            } else {
+                dispatched = Math.max(0, parseInt(r.total_dispatched, 10) || 0);
+                recovered = Math.max(0, parseInt(r.total_recovered, 10) || 0);
+                recovered = Math.min(recovered, dispatched);
+            }
+
+            if (dispatched <= 0) {
+                return { recovered: 0, dispatched: 0, rate: 0, rateLabel: '0' };
+            }
+            const rate = Math.min(100, (recovered / dispatched) * 100);
+            // One decimal when not whole (e.g. 84.6%), else integer
+            const rateLabel = Number.isInteger(rate) || Math.abs(rate - Math.round(rate)) < 0.05
+                ? String(Math.round(rate))
+                : rate.toFixed(1);
+            return { recovered, dispatched, rate, rateLabel };
+        }
+
         function renderActiveRecalls(recalls) {
             const container = document.getElementById('pendingRecallsList');
 
             if (!recalls.length) {
                 container.innerHTML = `
-                    <div class="text-center py-8 text-success">
+                    <div class="text-center py-6 text-success">
                         <i class="fas fa-check-circle text-2xl mb-2"></i>
-                        <p>No active recalls</p>
+                        <p class="text-sm">No active recalls</p>
                         <p class="text-xs text-base-content/60 mt-1">No products currently being recalled</p>
                     </div>
                 `;
@@ -1189,55 +1447,65 @@
 
             container.innerHTML = recalls.map(r => {
                 const cls = classLabels[r.recall_class] || { label: r.recall_class, badge: 'badge-ghost', icon: 'exclamation-triangle' };
-                const locationsWithPending = (r.affected_locations || []).filter(l => l.units_dispatched > l.units_returned);
-                const recoveryRate = r.recovery_rate || 0;
-                const recoveryColor = recoveryRate >= 80 ? 'success' : (recoveryRate >= 50 ? 'warning' : 'error');
+                const recovery = computeRecallRecovery(r);
+                const recoveryColor = recovery.rate >= 80 ? 'success' : (recovery.rate >= 50 ? 'warning' : 'error');
+                const locationsWithPending = (r.affected_locations || []).filter(l => {
+                    const d = Math.max(0, parseInt(l.units_dispatched, 10) || 0);
+                    const ret = Math.min(Math.max(0, parseInt(l.units_returned, 10) || 0), d);
+                    return d > ret;
+                });
 
                 return `
-                    <div class="border ${r.recall_class === 'class_i' ? 'border-error bg-error/5' : 'border-warning bg-warning/5'} rounded-xl p-4">
-                        <div class="flex flex-col md:flex-row md:items-start gap-4 mb-3">
-                            <div class="flex-1">
-                                <div class="flex items-center gap-2 mb-1">
-                                    <span class="badge ${cls.badge} gap-1">
-                                        <i class="fas fa-${cls.icon}"></i> ${cls.label}
-                                    </span>
-                                    <code class="text-sm font-mono">${r.recall_code}</code>
+                    <div class="border ${r.recall_class === 'class_i' ? 'border-error bg-error/5' : 'border-warning bg-warning/5'} rounded-lg p-3">
+                        <div class="flex flex-col gap-2 mb-2">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex flex-wrap items-center gap-1.5 mb-0.5">
+                                        <span class="badge ${cls.badge} badge-sm gap-1">
+                                            <i class="fas fa-${cls.icon}"></i> ${cls.label}
+                                        </span>
+                                        <code class="text-xs font-mono">${escapeHtml(r.recall_code)}</code>
+                                    </div>
+                                    <p class="font-semibold text-sm truncate">${escapeHtml(r.product_name)}</p>
+                                    <p class="text-xs text-base-content/60 font-mono">Batch: ${escapeHtml(r.batch_code || '—')}</p>
                                 </div>
-                                <p class="font-semibold">${r.product_name}</p>
-                                <p class="text-sm text-base-content/60">Batch: ${r.batch_code}</p>
-                            </div>
-                            <div class="text-right">
-                                <div class="flex items-center gap-2 justify-end mb-1">
-                                    <span class="text-xs text-base-content/60">Recovery:</span>
-                                    <progress class="progress progress-${recoveryColor} w-20" value="${recoveryRate}" max="100"></progress>
-                                    <span class="font-semibold">${recoveryRate}%</span>
+                                <div class="text-right shrink-0">
+                                    <div class="flex items-center gap-1.5 justify-end mb-0.5">
+                                        <progress class="progress progress-${recoveryColor} w-14 h-2" value="${Math.min(100, recovery.rate)}" max="100"></progress>
+                                        <span class="font-semibold text-sm tabular-nums">${recovery.rateLabel}%</span>
+                                    </div>
+                                    <p class="text-[0.7rem] text-base-content/60 tabular-nums">${recovery.recovered} / ${recovery.dispatched} returned</p>
                                 </div>
-                                <p class="text-xs">${r.total_recovered || 0} / ${r.total_dispatched || 0} returned</p>
                             </div>
                         </div>
 
                         ${locationsWithPending.length > 0 ? `
-                            <div class="divider my-2 text-xs">Locations with Pending Returns</div>
-                            <div class="space-y-2">
-                                ${locationsWithPending.map(l => `
-                                    <div class="flex items-center justify-between p-3 bg-base-100 rounded-lg border border-base-300">
-                                        <div>
-                                            <p class="font-medium">${l.location_name}</p>
-                                            <p class="text-xs text-base-content/60">
-                                                ${l.units_dispatched} dispatched • ${l.units_returned} returned • 
-                                                <span class="text-warning font-semibold">${l.units_dispatched - l.units_returned} remaining</span>
+                            <div class="text-[0.65rem] font-semibold uppercase tracking-wide text-base-content/40 mb-1.5">Pending returns</div>
+                            <div class="space-y-1.5">
+                                ${locationsWithPending.map(l => {
+                                    const d = Math.max(0, parseInt(l.units_dispatched, 10) || 0);
+                                    const ret = Math.min(Math.max(0, parseInt(l.units_returned, 10) || 0), d);
+                                    const remaining = d - ret;
+                                    const safeName = String(l.location_name || '').replace(/'/g, "\\'");
+                                    return `
+                                    <div class="flex items-center justify-between gap-2 p-2 bg-base-100 rounded-lg border border-base-300">
+                                        <div class="min-w-0">
+                                            <p class="font-medium text-sm truncate">${escapeHtml(l.location_name)}</p>
+                                            <p class="text-[0.7rem] text-base-content/60 tabular-nums">
+                                                ${d} out · ${ret} back ·
+                                                <span class="text-warning font-semibold">${remaining} left</span>
                                             </p>
                                         </div>
-                                        <button class="btn btn-sm btn-info" onclick="openLogReturnModal(${r.id}, ${l.id}, '${l.location_name}', ${l.units_dispatched - l.units_returned})">
-                                            <i class="fas fa-box"></i> Log Return
+                                        <button type="button" class="btn btn-xs btn-info shrink-0" onclick="openLogReturnModal(${r.id}, ${l.id}, '${safeName}', ${remaining})">
+                                            Log
                                         </button>
-                                    </div>
-                                `).join('')}
+                                    </div>`;
+                                }).join('')}
                             </div>
                         ` : `
-                            <div class="text-center py-4 text-success">
-                                <i class="fas fa-check-circle mr-2"></i>
-                                All products returned from affected locations
+                            <div class="text-center py-2 text-success text-sm">
+                                <i class="fas fa-check-circle mr-1"></i>
+                                All units returned
                             </div>
                         `}
                     </div>

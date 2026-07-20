@@ -302,6 +302,35 @@ const WarehouseFGService = {
     },
 
     /**
+     * Get put-away queue count (for badge)
+     */
+    async getPutawayCount() {
+        return await api.get(`${this.baseUrl}/inventory.php`, {
+            params: { action: 'putaway_count' }
+        });
+    },
+
+    /**
+     * Get pending return items in the put-away queue
+     */
+    async getPendingReturns() {
+        return await api.get(`${this.baseUrl}/inventory.php`, {
+            params: { action: 'pending_returns' }
+        });
+    },
+
+    /**
+     * Confirm put-away: restock on-hand and clear from queue
+     * @param {number} queueId - Put-away queue item ID
+     */
+    async confirmPutaway(queueId) {
+        return await api.post(`${this.baseUrl}/inventory.php`, {
+            action: 'confirm_putaway',
+            queue_id: queueId
+        });
+    },
+
+    /**
      * Transfer inventory between chillers
      * @param {number} inventoryId - Inventory item ID
      * @param {number} toChillerId - Destination chiller ID

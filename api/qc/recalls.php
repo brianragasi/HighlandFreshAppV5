@@ -188,7 +188,7 @@ function getRecallList($db) {
                 br.*,
                 CASE 
                     WHEN br.total_dispatched > 0 
-                    THEN ROUND((br.total_recovered / br.total_dispatched) * 100, 2)
+                    THEN LEAST(100, ROUND((LEAST(COALESCE(br.total_recovered, 0), br.total_dispatched) / br.total_dispatched) * 100, 2))
                     ELSE 0 
                 END as recovery_rate,
                 CONCAT(ui.first_name, ' ', ui.last_name) as initiated_by_name,
@@ -227,7 +227,7 @@ function getRecallDetails($db, $id) {
             br.*,
             CASE 
                 WHEN br.total_dispatched > 0 
-                THEN ROUND((br.total_recovered / br.total_dispatched) * 100, 2)
+                THEN LEAST(100, ROUND((LEAST(COALESCE(br.total_recovered, 0), br.total_dispatched) / br.total_dispatched) * 100, 2))
                 ELSE 0 
             END as recovery_rate,
             CONCAT(ui.first_name, ' ', ui.last_name) as initiated_by_name,
@@ -334,7 +334,7 @@ function getRecallStats($db) {
         SELECT 
             AVG(CASE 
                 WHEN total_dispatched > 0 
-                THEN (total_recovered / total_dispatched) * 100 
+                THEN LEAST(100, (LEAST(COALESCE(total_recovered, 0), total_dispatched) / total_dispatched) * 100)
                 ELSE 0 
             END) as avg_recovery_rate
         FROM batch_recalls
@@ -369,7 +369,7 @@ function getActiveRecalls($db) {
             br.total_recovered,
             CASE 
                 WHEN br.total_dispatched > 0 
-                THEN ROUND((br.total_recovered / br.total_dispatched) * 100, 2)
+                THEN LEAST(100, ROUND((LEAST(COALESCE(br.total_recovered, 0), br.total_dispatched) / br.total_dispatched) * 100, 2))
                 ELSE 0 
             END as recovery_rate,
             br.initiated_at

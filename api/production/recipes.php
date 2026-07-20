@@ -59,9 +59,15 @@ try {
             $where = "WHERE 1=1";
             $params = [];
             
-            if ($productType && in_array($productType, ['bottled_milk', 'cheese', 'butter', 'yogurt', 'milk_bar'])) {
-                $where .= " AND mr.product_type = ?";
-                $params[] = $productType;
+            $validTypes = ['pasteurized_milk', 'bottled_milk', 'cheese', 'butter', 'yogurt', 'milk_bar', 'cream', 'flavored_milk'];
+            if ($productType && in_array($productType, $validTypes, true)) {
+                // pasteurized_milk includes legacy bottled_milk rows
+                if ($productType === 'pasteurized_milk' || $productType === 'bottled_milk') {
+                    $where .= " AND mr.product_type IN ('pasteurized_milk', 'bottled_milk')";
+                } else {
+                    $where .= " AND mr.product_type = ?";
+                    $params[] = $productType;
+                }
             }
             
             if ($status === 'active') {
@@ -86,8 +92,12 @@ try {
             $hasBulkYield = false;
             try {
                 $db->query('SELECT base_product_id FROM master_recipes LIMIT 0');
-                $hasBaseProduct = true;
-            } catch (Throwable $e) { /* legacy */ }
+                // Also verify the base_products table exists and has a name column
+                $bpCheck = $db->query("SHOW COLUMNS FROM base_products LIKE 'name'");
+                if ($bpCheck->fetch()) {
+                    $hasBaseProduct = true;
+                }
+            } catch (Throwable $e) { /* legacy — no base_product_id or base_products table */ }
             try {
                 $db->query('SELECT bulk_yield_liters FROM master_recipes LIMIT 0');
                 $hasBulkYield = true;
@@ -105,22 +115,22 @@ try {
                 : '';
 
             // Get recipes (bulk-batch aware: recipe → base liquid, not bottle SKU)
-            $stmt = $db->prepare("
-                SELECT mr.id, mr.recipe_code, mr.product_name, mr.product_type, mr.variant,
-                       mr.description, mr.base_milk_liters, mr.expected_yield,
-                       mr.yield_unit, mr.shelf_life_days, mr.is_active, mr.created_at,
-                       mr.pasteurization_temp, mr.pasteurization_time_mins, mr.cooling_temp,
-                       (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = mr.id) as ingredient_count
-                       {$baseSelect}
-                       {$bulkSelect}
-                FROM master_recipes mr
-                {$baseJoin}
-                {$where}
-                ORDER BY COALESCE(bp.name, mr.product_name), mr.recipe_code
-                LIMIT ? OFFSET ?
-            ");
-            // ORDER BY bp.name fails when no join — fix for legacy
-            if (!$hasBaseProduct) {
+            if ($hasBaseProduct) {
+                $stmt = $db->prepare("
+                    SELECT mr.id, mr.recipe_code, mr.product_name, mr.product_type, mr.variant,
+                           mr.description, mr.base_milk_liters, mr.expected_yield,
+                           mr.yield_unit, mr.shelf_life_days, mr.is_active, mr.created_at,
+                           mr.pasteurization_temp, mr.pasteurization_time_mins, mr.cooling_temp,
+                           (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = mr.id) as ingredient_count
+                           {$baseSelect}
+                           {$bulkSelect}
+                    FROM master_recipes mr
+                    {$baseJoin}
+                    {$where}
+                    ORDER BY COALESCE(bp.name, mr.product_name), mr.recipe_code
+                    LIMIT ? OFFSET ?
+                ");
+            } else {
                 $stmt = $db->prepare("
                     SELECT mr.id, mr.recipe_code, mr.product_name, mr.product_type, mr.variant,
                            mr.description, mr.base_milk_liters, mr.expected_yield,
@@ -226,8 +236,11 @@ try {
             // Validation
             $errors = [];
             if (empty($productName)) $errors['product_name'] = 'Product name is required';
-            if (!in_array($productType, ['bottled_milk', 'cheese', 'butter', 'yogurt', 'milk_bar', 'cream', 'flavored_milk'])) {
+            if (!in_array($productType, ['pasteurized_milk', 'bottled_milk', 'cheese', 'butter', 'yogurt', 'milk_bar', 'cream', 'flavored_milk'], true)) {
                 $errors['product_type'] = 'Invalid product type';
+            }
+            if ($productType === 'bottled_milk') {
+                $productType = 'pasteurized_milk';
             }
             if ($baseMilkLiters <= 0) $errors['base_milk_liters'] = 'Base milk liters must be greater than 0';
             if ($expectedYield <= 0) $errors['expected_yield'] = 'Expected yield must be greater than 0';

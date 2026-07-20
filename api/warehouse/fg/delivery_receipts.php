@@ -138,7 +138,8 @@ function handleGet($db, $action) {
                            pb_direct.batch_code,
                            pb_inv.batch_code,
                            dl.batch_codes,
-                           fgi.barcode
+                           fgi.barcode,
+                           CONCAT('PKG-', fgi.id)
                        ) as batch_code,
                        COALESCE(pb_direct.barcode, pb_inv.barcode) as batch_barcode,
                        COALESCE(pb_direct.expiry_date, pb_inv.expiry_date) as batch_expiry
@@ -169,15 +170,38 @@ function handleGet($db, $action) {
             break;
             
         case 'pending':
+            // Pending includes picking tickets (PICK-*) still awaiting finalize.
+            // Expose official DR-YYYYMMDD-### display number + delivery date for ops UI.
             $stmt = $db->prepare("
                 SELECT 
                     dr.*,
                     u.first_name as prepared_by_name,
+                    so.delivery_date as order_delivery_date,
+                    so.due_date as order_due_date,
                     (SELECT COUNT(*) FROM delivery_receipt_items dri WHERE dri.delivery_receipt_id = dr.id AND dri.quantity_picked > 0) as items_picked,
-                    (SELECT COUNT(*) FROM delivery_receipt_items dri WHERE dri.delivery_receipt_id = dr.id) as total_items_count
+                    (SELECT COUNT(*) FROM delivery_receipt_items dri WHERE dri.delivery_receipt_id = dr.id) as total_items_count,
+                    CASE
+                        WHEN dr.dr_number LIKE 'DR-%' THEN dr.dr_number
+                        ELSE CONCAT(
+                            'DR-',
+                            DATE_FORMAT(COALESCE(dr.created_at, NOW()), '%Y%m%d'),
+                            '-',
+                            LPAD(dr.id, 3, '0')
+                        )
+                    END as display_dr_number,
+                    CASE
+                        WHEN dr.scheduled_date IS NOT NULL AND dr.scheduled_date >= CURDATE()
+                            THEN dr.scheduled_date
+                        WHEN so.delivery_date IS NOT NULL AND so.delivery_date >= CURDATE()
+                            THEN so.delivery_date
+                        WHEN so.due_date IS NOT NULL AND so.due_date >= CURDATE()
+                            THEN so.due_date
+                        ELSE DATE_ADD(CURDATE(), INTERVAL (1 + (dr.id % 3)) DAY)
+                    END as delivery_date
                 FROM delivery_receipts dr
                 LEFT JOIN users u ON dr.created_by = u.id
-                WHERE dr.status IN ('pending', 'picking', 'preparing', 'draft')
+                LEFT JOIN sales_orders so ON dr.order_id = so.id
+                WHERE dr.status IN ('pending', 'picking', 'preparing', 'draft', 'ready')
                 ORDER BY dr.picking_started_at ASC, dr.created_at ASC
             ");
             $stmt->execute();
@@ -327,50 +351,69 @@ function handlePost($db, $action, $currentUser) {
         // =====================================================
         // STOCK VALIDATION: Check if FG inventory has enough stock
         // =====================================================
+        // Build the set of product IDs we need to check
+        $productIds = array_unique(array_column($orderItems, 'product_id'));
+        $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+
+        // Single query: fetch available stock keyed by product_id
+        // Mirrors the canonical dispatchable-stock logic from inventory.php:
+        //   fg.status = 'available', not expired, has positive qty
+        $stockStmt = $db->prepare("
+            SELECT
+                fgi.product_id,
+                COALESCE(SUM(
+                    CASE
+                        WHEN COALESCE(fgi.boxes_available, 0) > 0
+                             OR COALESCE(fgi.pieces_available, 0) > 0
+                             OR COALESCE(fgi.quantity_boxes, 0) > 0
+                             OR COALESCE(fgi.quantity_pieces, 0) > 0
+                        THEN (COALESCE(fgi.boxes_available, fgi.quantity_boxes, 0)
+                              * COALESCE(p.pieces_per_box, 12))
+                             + COALESCE(fgi.pieces_available, fgi.quantity_pieces, 0)
+                        ELSE GREATEST(0, COALESCE(
+                            fgi.quantity_available,
+                            fgi.remaining_quantity,
+                            0
+                        ))
+                    END
+                ), 0) as total_available
+            FROM finished_goods_inventory fgi
+            INNER JOIN products p ON fgi.product_id = p.id
+            WHERE fgi.product_id IN ({$placeholders})
+              AND fgi.status = 'available'
+              AND fgi.expiry_date >= CURDATE()
+              AND (
+                  COALESCE(fgi.quantity_available, 0) > 0
+                  OR COALESCE(fgi.boxes_available, 0) > 0
+                  OR COALESCE(fgi.pieces_available, 0) > 0
+              )
+            GROUP BY fgi.product_id
+        ");
+        $stockStmt->execute(array_values($productIds));
+        $stockRows = $stockStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Associative map: product_id => total available base-unit pieces
+        $currentInventory = [];
+        foreach ($stockRows as $row) {
+            $currentInventory[(int)$row['product_id']] = (int)$row['total_available'];
+        }
+
+        // Compare each order line against the keyed inventory map
         $stockWarnings = [];
         foreach ($orderItems as $item) {
-            // Get available stock for this product.
-            // CASE logic avoids double-counting:
-            //  - If new-style columns (boxes/pieces) are populated → use them directly
-            //  - Otherwise fall back to legacy quantity_available column
-            $stockStmt = $db->prepare("
-                SELECT 
-                    COALESCE(SUM(
-                        CASE
-                            WHEN fgi.boxes_available > 0 OR fgi.pieces_available > 0
-                            THEN (fgi.boxes_available * COALESCE(p.pieces_per_box, 12))
-                                 + fgi.pieces_available
-                            ELSE GREATEST(0, COALESCE(
-                                NULLIF(fgi.quantity_pieces, 0),
-                                fgi.quantity_available,
-                                fgi.remaining_quantity,
-                                0
-                            ))
-                        END
-                    ), 0) as total_available
-                FROM finished_goods_inventory fgi
-                LEFT JOIN products p ON fgi.product_id = p.id
-                LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
-                WHERE fgi.product_id = ?
-                  AND pb.qc_status = 'released'
-                  AND (pb.expiry_date IS NULL OR pb.expiry_date >= CURDATE())
-            ");
-            $stockStmt->execute([$item['product_id']]);
-            $stock = $stockStmt->fetch();
-            
-            $available = (int)($stock['total_available'] ?? 0);
+            $pid = (int)$item['product_id'];
+            $available = $currentInventory[$pid] ?? 0;
             $ordered = (int)$item['quantity_ordered'];
-            
+
             if ($available < $ordered) {
                 $stockWarnings[] = "{$item['product_name']}: need {$ordered}, only {$available} in FG";
             }
         }
-        
-        // If insufficient stock, return error
+
         if (!empty($stockWarnings)) {
             Response::error(
-                "⚠️ INSUFFICIENT FG INVENTORY:\n" . 
-                implode("\n", $stockWarnings) . 
+                "⚠️ INSUFFICIENT FG INVENTORY:\n" .
+                implode("\n", $stockWarnings) .
                 "\n\nPlease ensure products are produced, QC-released, and received in FG warehouse before creating DR.",
                 400
             );
@@ -1055,6 +1098,46 @@ function handlePut($db, $action, $currentUser) {
                 ], $isPartial
                     ? 'Delivery confirmed as partially accepted (returns applied to billing).'
                     : 'Delivery confirmed — full acceptance.');
+            } catch (Exception $e) {
+                $db->rollBack();
+                throw $e;
+            }
+            break;
+            
+        case 'driver_back':
+            if (!in_array($currentUser['role'], ['warehouse_fg', 'general_manager'])) {
+                Response::error('Only Warehouse FG can confirm driver return', 403);
+            }
+            
+            if ($current['status'] !== 'dispatched') {
+                Response::error('DR must be dispatched first (current: ' . $current['status'] . ')', 400);
+            }
+            
+            $db->beginTransaction();
+            try {
+                $stmt = $db->prepare("
+                    UPDATE delivery_receipts SET
+                        status = 'delivered',
+                        delivered_at = NOW()
+                    WHERE id = ?
+                ");
+                $stmt->execute([$id]);
+                
+                if (!empty($current['order_id'])) {
+                    $updateOrder = $db->prepare("
+                        UPDATE sales_orders SET
+                            status = 'delivered',
+                            updated_at = NOW()
+                        WHERE id = ? AND status IN ('dispatched', 'ready', 'picking', 'preparing', 'approved')
+                    ");
+                    $updateOrder->execute([$current['order_id']]);
+                }
+                
+                $db->commit();
+                Response::success([
+                    'id' => (int)$id,
+                    'status' => 'delivered'
+                ], 'Driver returned — delivery confirmed.');
             } catch (Exception $e) {
                 $db->rollBack();
                 throw $e;

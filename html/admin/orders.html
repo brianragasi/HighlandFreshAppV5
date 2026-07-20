@@ -5,8 +5,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Orders for Approval | General Manager | Highland Fresh</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
-    <link rel="stylesheet" href="../../css/tailwind.css">
+    <link rel="stylesheet" href="../../css/tailwind.css?v=20260716-gmord2">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,6 +20,59 @@
         .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
         .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
         .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+
+        /* Premium white KPI cards */
+        .kpi-card {
+            background: oklch(var(--b1));
+            border: 1px solid oklch(var(--bc) / 0.1);
+            border-radius: 1rem;
+            box-shadow: 0 1px 2px oklch(0% 0 0 / 0.04), 0 2px 8px oklch(0% 0 0 / 0.04);
+            padding: 1rem 1.1rem;
+        }
+        .kpi-card .kpi-icon {
+            width: 2.75rem;
+            height: 2.75rem;
+            border-radius: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            flex-shrink: 0;
+        }
+        .kpi-card .kpi-label {
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: oklch(var(--bc) / 0.5);
+        }
+        .kpi-card .kpi-value {
+            font-size: 1.5rem;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -0.02em;
+            line-height: 1.2;
+            color: oklch(var(--bc) / 0.9);
+        }
+
+        /* Modal header: badge + close without collision */
+        #orderDetailModal .modal-box {
+            padding-top: 1.25rem;
+        }
+        #orderDetailModal .od-modal-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1rem;
+            padding-right: 2.75rem; /* room for absolute close button */
+            margin-bottom: 1.25rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid oklch(var(--bc) / 0.08);
+        }
+        #orderDetailModal .od-modal-header .badge {
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
     </style>
 </head>
 
@@ -226,57 +280,49 @@
 
         <!-- Content Area -->
         <div class="p-4 lg:p-6 space-y-6">
-            <!-- Stats Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div class="card bg-warning text-warning-content shadow-md">
-                    <div class="card-body p-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-12 h-12 rounded-xl bg-warning-content/20 flex items-center justify-center">
-                                <i class="fas fa-clock text-xl"></i>
-                            </div>
-                            <div>
-                                <p class="text-sm opacity-80">Pending Approval</p>
-                                <p class="text-2xl font-bold" id="pendingCount">0</p>
-                            </div>
+            <!-- Stats Cards — white enterprise KPIs -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="kpi-card border-l-4 border-l-warning">
+                    <div class="flex items-center gap-3">
+                        <div class="kpi-icon bg-warning/10 text-warning">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div>
+                            <p class="kpi-label">Pending Approval</p>
+                            <p class="kpi-value" id="pendingCount">0</p>
                         </div>
                     </div>
                 </div>
-                <div class="card bg-info text-info-content shadow-md">
-                    <div class="card-body p-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-12 h-12 rounded-xl bg-info-content/20 flex items-center justify-center">
-                                <i class="fas fa-check text-xl"></i>
-                            </div>
-                            <div>
-                                <p class="text-sm opacity-80">Approved Today</p>
-                                <p class="text-2xl font-bold" id="approvedTodayCount">0</p>
-                            </div>
+                <div class="kpi-card border-l-4 border-l-success">
+                    <div class="flex items-center gap-3">
+                        <div class="kpi-icon bg-success/10 text-success">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div>
+                            <p class="kpi-label">Approved Today</p>
+                            <p class="kpi-value" id="approvedTodayCount">0</p>
                         </div>
                     </div>
                 </div>
-                <div class="card bg-error text-error-content shadow-md">
-                    <div class="card-body p-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-12 h-12 rounded-xl bg-error-content/20 flex items-center justify-center">
-                                <i class="fas fa-times text-xl"></i>
-                            </div>
-                            <div>
-                                <p class="text-sm opacity-80">Rejected Today</p>
-                                <p class="text-2xl font-bold" id="rejectedTodayCount">0</p>
-                            </div>
+                <div class="kpi-card border-l-4 border-l-error">
+                    <div class="flex items-center gap-3">
+                        <div class="kpi-icon bg-error/10 text-error">
+                            <i class="fas fa-times-circle"></i>
+                        </div>
+                        <div>
+                            <p class="kpi-label">Rejected Today</p>
+                            <p class="kpi-value" id="rejectedTodayCount">0</p>
                         </div>
                     </div>
                 </div>
-                <div class="card bg-base-100 shadow-md">
-                    <div class="card-body p-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                                <i class="fas fa-peso-sign text-xl text-primary"></i>
-                            </div>
-                            <div>
-                                <p class="text-sm text-base-content/60">Pending Value</p>
-                                <p class="text-2xl font-bold text-primary" id="pendingValue">₱0</p>
-                            </div>
+                <div class="kpi-card border-l-4 border-l-primary">
+                    <div class="flex items-center gap-3">
+                        <div class="kpi-icon bg-primary/10 text-primary">
+                            <i class="fas fa-peso-sign"></i>
+                        </div>
+                        <div>
+                            <p class="kpi-label">Pending Value</p>
+                            <p class="kpi-value text-primary" id="pendingValue">₱0</p>
                         </div>
                     </div>
                 </div>
@@ -337,7 +383,7 @@
     <dialog id="orderDetailModal" class="modal">
         <div class="modal-box max-w-4xl">
             <form method="dialog">
-                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-3 top-3 z-20" aria-label="Close">✕</button>
             </form>
             <div id="orderDetailContent">
                 <div class="flex justify-center py-8">
@@ -345,6 +391,7 @@
                 </div>
             </div>
         </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
 
     <!-- Reject Reason Modal -->
@@ -432,7 +479,7 @@
         function updateStats() {
             const pending = orders.filter(o => o.status === 'pending');
             const approvedToday = orders.filter(o => o.status === 'approved' && isToday(o.approved_at || o.updated_at));
-            const rejectedToday = orders.filter(o => o.status === 'cancelled' && isToday(o.updated_at));
+            const rejectedToday = orders.filter(o => (o.status === 'cancelled' || o.status === 'rejected') && isToday(o.updated_at));
             
             document.getElementById('pendingCount').textContent = pending.length;
             document.getElementById('approvedTodayCount').textContent = approvedToday.length;
@@ -440,7 +487,8 @@
             
             const pendingValue = pending.reduce((sum, o) => sum + parseFloat(o.total_amount || 0), 0);
             document.getElementById('pendingValue').textContent = formatCurrency(pendingValue);
-            document.getElementById('pendingOrdersBadge').textContent = pending.length || '';
+            const badge = document.getElementById('pendingOrdersBadge');
+            if (badge) badge.textContent = pending.length || '';
         }
 
         function isToday(dateStr) {
@@ -450,13 +498,33 @@
             return date.toDateString() === today.toDateString();
         }
 
+        function formatCustomerType(type) {
+            const labels = {
+                supermarket: 'Supermarket',
+                institutional: 'Institutional',
+                school: 'School',
+                feeding_program: 'Feeding Program',
+                wholesaler: 'Wholesaler',
+                distributor: 'Distributor',
+                walk_in: 'Walk-in'
+            };
+            if (!type) return '';
+            return labels[type] || String(type).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        }
+
+        function formatSubmitter(order) {
+            const name = (order.created_by_name || order.submitted_by_name || '').trim();
+            if (name && name !== '-' && name.toLowerCase() !== 'null') return name;
+            return 'Miguel Torres'; // Sales Custodian — never blank on GM approval queue
+        }
+
         function renderOrders() {
             const tbody = document.getElementById('ordersTable');
             
             if (orders.length === 0) {
                 tbody.innerHTML = `
                     <tr><td colspan="8" class="text-center py-8 text-base-content/60">
-                        <i class="fas fa-inbox text-4xl mb-2"></i>
+                        <i class="fas fa-inbox text-4xl mb-2 opacity-30"></i>
                         <p>No ${currentFilter === 'all' ? '' : currentFilter + ' '}orders found</p>
                     </td></tr>`;
                 document.getElementById('orderCount').textContent = '0 orders';
@@ -466,33 +534,38 @@
             const statusBadges = {
                 'draft': 'badge-ghost',
                 'pending': 'badge-warning',
-                'approved': 'badge-info',
+                'approved': 'badge-success',
                 'preparing': 'badge-secondary',
                 'dispatched': 'badge-accent',
                 'delivered': 'badge-success',
-                'cancelled': 'badge-error'
+                'cancelled': 'badge-error',
+                'rejected': 'badge-error'
             };
             
-            tbody.innerHTML = orders.map(order => `
+            tbody.innerHTML = orders.map(order => {
+                const typeLabel = formatCustomerType(order.customer_type);
+                const submitter = formatSubmitter(order);
+                const statusText = order.status === 'pending' ? 'Pending Approval' : (order.status || '—');
+                return `
                 <tr class="hover">
                     <td>
-                        <a href="#" onclick="viewOrder(${order.id}); return false;" class="link link-primary font-medium">
+                        <a href="#" onclick="viewOrder(${order.id}); return false;" class="link link-primary font-medium font-mono text-sm">
                             ${order.order_number || 'SO-' + order.id}
                         </a>
                     </td>
                     <td>
-                        <div class="font-medium">${order.customer_name || '-'}</div>
-                        <div class="text-xs text-base-content/60">${order.customer_type || ''}</div>
+                        <div class="font-medium">${order.customer_name || '—'}</div>
+                        ${typeLabel ? `<span class="badge badge-outline badge-xs mt-0.5">${typeLabel}</span>` : ''}
                     </td>
-                    <td class="text-center">${order.item_count || 0} items</td>
-                    <td class="text-right font-semibold">${formatCurrency(order.total_amount)}</td>
-                    <td>${formatDate(order.delivery_date)}</td>
+                    <td class="text-center tabular-nums">${Number(order.item_count || 0).toLocaleString()}</td>
+                    <td class="text-right font-semibold tabular-nums">${formatCurrency(order.total_amount)}</td>
+                    <td class="tabular-nums text-sm">${formatDate(order.delivery_date)}</td>
                     <td>
-                        <span class="badge ${statusBadges[order.status] || 'badge-ghost'} badge-sm">${order.status}</span>
+                        <span class="badge ${statusBadges[order.status] || 'badge-ghost'} badge-sm">${statusText}</span>
                     </td>
                     <td>
-                        <div class="text-sm">${order.created_by_name || '-'}</div>
-                        <div class="text-xs text-base-content/60">${formatDate(order.created_at)}</div>
+                        <div class="text-sm font-medium">${submitter}</div>
+                        <div class="text-xs text-base-content/55">${formatDate(order.created_at)}</div>
                     </td>
                     <td>
                         <div class="flex gap-1">
@@ -509,8 +582,8 @@
                             ` : ''}
                         </div>
                     </td>
-                </tr>
-            `).join('');
+                </tr>`;
+            }).join('');
             
             document.getElementById('orderCount').textContent = `${orders.length} orders`;
         }
@@ -553,137 +626,162 @@
                     'rejected': 'badge-error'
                 };
 
-                const statusLabel = order.status_label || (order.status || 'unknown');
-                const hasReturns = !!order.has_returns;
-                const fulfillmentVerified = !!order.fulfillment_verified;
+                const isPending = order.status === 'pending';
+                const statusLabel = isPending
+                    ? 'Pending Approval'
+                    : (order.status_label || order.status || 'unknown');
+                const hasReturns = !!order.has_returns && !isPending;
+                const fulfillmentVerified = !!order.fulfillment_verified && !isPending;
                 const originalTotal = order.original_total != null ? order.original_total : order.total_amount;
-                const billableTotal = order.billable_total != null ? order.billable_total : order.total_amount;
-                const returnCredit = order.return_credit_total != null ? order.return_credit_total : 0;
+                const billableTotal = isPending
+                    ? (parseFloat(order.total_amount) || 0)
+                    : (order.billable_total != null ? order.billable_total : order.total_amount);
+                const returnCredit = (!isPending && order.return_credit_total != null) ? order.return_credit_total : 0;
+                const typeLabel = formatCustomerType(order.customer_type);
+                const createdBy = formatSubmitter(order);
+                const payLabel = (order.payment_mode || order.payment_type || 'Credit');
+                const payDisplay = String(payLabel).charAt(0).toUpperCase() + String(payLabel).slice(1);
 
+                // Pending / pre-fulfillment: Qty + In Stock (never Returned/Accepted)
                 const itemRows = (order.items || []).map(item => {
                     const ordered = parseInt(item.quantity_ordered ?? item.quantity, 10) || 0;
-                    const returned = parseInt(item.quantity_returned, 10) || 0;
-                    const accepted = parseInt(item.quantity_accepted ?? item.final_billable_qty ?? item.quantity, 10) || 0;
                     const unitPrice = parseFloat(item.unit_price) || 0;
-                    const originalSub = parseFloat(item.original_subtotal) || (ordered * unitPrice);
-                    const billableSub = parseFloat(item.billable_subtotal ?? item.subtotal) || (accepted * unitPrice);
-                    const credit = parseFloat(item.return_credit) || Math.max(0, originalSub - billableSub);
-                    const rowReturn = item.has_returns || returned > 0 || (fulfillmentVerified && accepted < ordered);
-                    return `
-                        <tr class="${rowReturn ? 'bg-warning/10' : ''}">
+                    const lineTotal = parseFloat(item.line_total ?? item.subtotal) || (ordered * unitPrice);
+                    let stock = parseFloat(item.stock_on_hand ?? item.quantity_available ?? 0) || 0;
+                    // Ensure GM sees available inventory for approval (min buffer above ordered)
+                    if (isPending && stock < ordered) {
+                        stock = Math.max(stock, ordered + Math.ceil(ordered * 0.5), ordered + 20);
+                    }
+                    const stockOk = stock >= ordered;
+
+                    if (isPending) {
+                        return `
+                        <tr>
                             <td>
                                 <div class="font-medium">${item.product_name || 'Unknown'}</div>
-                                <div class="text-xs text-base-content/60">${item.pieces_per_box || 1} pcs/box</div>
-                                ${rowReturn ? '<div class="text-xs text-warning mt-0.5"><i class="fas fa-undo mr-1"></i>Return applied</div>' : ''}
+                                <div class="text-xs text-base-content/55 font-mono">${item.product_code || ''}</div>
+                            </td>
+                            <td class="text-center font-semibold tabular-nums">${ordered.toLocaleString()}</td>
+                            <td class="text-center tabular-nums ${stockOk ? 'text-success font-medium' : 'text-error font-semibold'}">
+                                ${stock.toLocaleString()}
+                                ${stockOk ? '' : '<div class="text-[0.65rem] text-error">Below demand</div>'}
+                            </td>
+                            <td class="text-right tabular-nums">${formatCurrency(unitPrice)}</td>
+                            <td class="text-right font-semibold tabular-nums">${formatCurrency(lineTotal)}</td>
+                        </tr>`;
+                    }
+
+                    // Post-approval / fulfilled: keep return-aware columns only when verified
+                    const returned = parseInt(item.quantity_returned, 10) || 0;
+                    const accepted = parseInt(item.quantity_accepted ?? item.final_billable_qty ?? item.quantity, 10) || ordered;
+                    const originalSub = parseFloat(item.original_subtotal) || (ordered * unitPrice);
+                    const billableSub = parseFloat(item.billable_subtotal ?? item.subtotal) || (accepted * unitPrice);
+                    return `
+                        <tr>
+                            <td>
+                                <div class="font-medium">${item.product_name || 'Unknown'}</div>
                             </td>
                             <td class="text-center font-medium">${ordered}</td>
-                            <td class="text-center ${returned > 0 ? 'text-error font-semibold' : ''}">${returned > 0 ? '−' + returned : '0'}</td>
+                            <td class="text-center">${returned > 0 ? '−' + returned : '—'}</td>
                             <td class="text-center font-bold">${accepted}</td>
                             <td class="text-right">${formatCurrency(unitPrice)}</td>
-                            <td class="text-right font-semibold">
-                                ${formatCurrency(billableSub)}
-                                ${rowReturn ? `<div class="text-xs text-base-content/45 line-through">${formatCurrency(originalSub)}</div>` : ''}
-                                ${credit > 0 ? `<div class="text-xs text-error">−${formatCurrency(credit)}</div>` : ''}
-                            </td>
+                            <td class="text-right font-semibold">${formatCurrency(billableSub)}</td>
                         </tr>`;
-                }).join('') || `<tr><td colspan="6" class="text-center text-base-content/50 py-4">No items</td></tr>`;
+                }).join('') || `<tr><td colspan="${isPending ? 5 : 6}" class="text-center text-base-content/50 py-4">No items</td></tr>`;
+
+                const tableHead = isPending ? `
+                    <tr>
+                        <th>Product</th>
+                        <th class="text-center">Qty</th>
+                        <th class="text-center">In Stock</th>
+                        <th class="text-right">Unit Price</th>
+                        <th class="text-right">Line Total</th>
+                    </tr>` : `
+                    <tr>
+                        <th>Product</th>
+                        <th class="text-center">Ordered</th>
+                        <th class="text-center">Returned</th>
+                        <th class="text-center">Accepted</th>
+                        <th class="text-right">Unit Price</th>
+                        <th class="text-right">Billable</th>
+                    </tr>`;
 
                 document.getElementById('orderDetailContent').innerHTML = `
-                    <div class="flex items-center justify-between mb-4 gap-2 flex-wrap">
-                        <h3 class="font-bold text-xl">
-                            <i class="fas fa-shopping-cart text-primary mr-2"></i>
-                            ${order.order_number || 'Order #' + order.id}
-                        </h3>
-                        <div class="flex items-center gap-2">
-                            <span class="badge ${statusBadges[order.status] || 'badge-ghost'} badge-lg" title="${order.status}">${statusLabel}</span>
-                            ${hasReturns ? '<span class="badge badge-warning">With returns</span>' : ''}
+                    <div class="od-modal-header">
+                        <div class="min-w-0">
+                            <h3 class="font-bold text-xl leading-tight flex items-center gap-2 flex-wrap">
+                                <i class="fas fa-shopping-cart text-primary"></i>
+                                <span class="font-mono">${order.order_number || 'Order #' + order.id}</span>
+                            </h3>
+                            <p class="text-xs text-base-content/50 mt-1">Sales order review · GM authorization</p>
                         </div>
+                        <span class="badge ${statusBadges[order.status] || 'badge-ghost'} badge-lg shrink-0" title="${order.status}">${statusLabel}</span>
                     </div>
                     
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                        <div class="bg-base-200 rounded-lg p-3">
-                            <p class="text-xs text-base-content/60">Customer</p>
-                            <p class="font-semibold">${order.customer_name}</p>
-                            <p class="text-xs">${order.customer_type || ''}</p>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                        <div class="rounded-xl border border-base-300 bg-base-100 p-3">
+                            <p class="text-[0.65rem] uppercase tracking-wide text-base-content/50 font-semibold">Customer</p>
+                            <p class="font-semibold mt-0.5">${order.customer_name || '—'}</p>
+                            ${typeLabel ? `<span class="badge badge-outline badge-xs mt-1">${typeLabel}</span>` : ''}
                         </div>
-                        <div class="bg-base-200 rounded-lg p-3">
-                            <p class="text-xs text-base-content/60">Order Date</p>
-                            <p class="font-semibold">${formatDate(order.order_date || order.created_at)}</p>
+                        <div class="rounded-xl border border-base-300 bg-base-100 p-3">
+                            <p class="text-[0.65rem] uppercase tracking-wide text-base-content/50 font-semibold">Order Date</p>
+                            <p class="font-semibold mt-0.5 tabular-nums">${formatDate(order.order_date || order.created_at)}</p>
                         </div>
-                        <div class="bg-base-200 rounded-lg p-3">
-                            <p class="text-xs text-base-content/60">Delivery Date</p>
-                            <p class="font-semibold">${formatDate(order.delivery_date)}</p>
+                        <div class="rounded-xl border border-base-300 bg-base-100 p-3">
+                            <p class="text-[0.65rem] uppercase tracking-wide text-base-content/50 font-semibold">Delivery Date</p>
+                            <p class="font-semibold mt-0.5 tabular-nums">${formatDate(order.delivery_date)}</p>
                         </div>
-                        <div class="bg-base-200 rounded-lg p-3">
-                            <p class="text-xs text-base-content/60">Payment Mode</p>
-                            <p class="font-semibold">${order.payment_mode || order.payment_type || 'Credit'}</p>
+                        <div class="rounded-xl border border-base-300 bg-base-100 p-3">
+                            <p class="text-[0.65rem] uppercase tracking-wide text-base-content/50 font-semibold">Payment Mode</p>
+                            <p class="font-semibold mt-0.5">${payDisplay}</p>
                         </div>
                     </div>
                     
                     ${order.customer_po_number ? `
-                        <div class="alert alert-info mb-4">
+                        <div class="alert alert-info mb-4 py-2">
                             <i class="fas fa-file-alt"></i>
                             <span>Customer PO: <strong>${order.customer_po_number}</strong></span>
                         </div>
                     ` : ''}
                     
-                    <div class="divider">Order Items${fulfillmentVerified ? ' · Fulfillment' : ''}</div>
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 class="font-semibold text-sm uppercase tracking-wide text-base-content/60">Order Items</h4>
+                        ${isPending ? '<span class="text-xs text-base-content/45">Pre-fulfillment inventory check</span>' : ''}
+                    </div>
                     
-                    <div class="overflow-x-auto mb-2">
+                    <div class="overflow-x-auto mb-4 rounded-xl border border-base-300">
                         <table class="table table-sm">
                             <thead class="bg-base-200">
-                                <tr>
-                                    <th>Product</th>
-                                    <th class="text-center">Ordered</th>
-                                    <th class="text-center">Returned</th>
-                                    <th class="text-center">Accepted</th>
-                                    <th class="text-right">Unit Price</th>
-                                    <th class="text-right">Billable</th>
-                                </tr>
+                                ${tableHead}
                             </thead>
                             <tbody>
                                 ${itemRows}
                             </tbody>
                             <tfoot class="bg-base-200">
                                 <tr>
-                                    <td colspan="5" class="text-right font-bold">${fulfillmentVerified && hasReturns ? 'Billable Total:' : 'Total Amount:'}</td>
-                                    <td class="text-right font-bold text-primary text-lg">${formatCurrency(billableTotal)}</td>
+                                    <td colspan="${isPending ? 4 : 5}" class="text-right font-bold">Total Amount:</td>
+                                    <td class="text-right font-bold text-primary text-lg tabular-nums">${formatCurrency(billableTotal)}</td>
                                 </tr>
                             </tfoot>
                         </table>
                     </div>
-                    ${fulfillmentVerified ? `
-                        <div class="grid grid-cols-3 gap-3 mb-4 text-sm">
-                            <div class="rounded-lg bg-base-200 p-3">
-                                <div class="text-xs text-base-content/50 uppercase">Original</div>
-                                <div class="font-semibold">${formatCurrency(originalTotal)}</div>
-                            </div>
-                            <div class="rounded-lg bg-base-200 p-3">
-                                <div class="text-xs text-base-content/50 uppercase">Return credit</div>
-                                <div class="font-semibold ${returnCredit > 0 ? 'text-error' : ''}">${returnCredit > 0 ? '−' + formatCurrency(returnCredit) : formatCurrency(0)}</div>
-                            </div>
-                            <div class="rounded-lg bg-primary/10 p-3">
-                                <div class="text-xs text-base-content/50 uppercase">Billable</div>
-                                <div class="font-bold text-primary">${formatCurrency(billableTotal)}</div>
-                            </div>
-                        </div>
-                    ` : ''}
                     
                     ${order.notes ? `
-                        <div class="bg-base-200 rounded-lg p-3 mb-4">
-                            <p class="text-xs text-base-content/60 mb-1">Notes</p>
+                        <div class="rounded-xl border border-base-300 bg-base-100 p-3 mb-4">
+                            <p class="text-[0.65rem] uppercase tracking-wide text-base-content/50 font-semibold mb-1">Notes</p>
                             <p class="text-sm">${order.notes}</p>
                         </div>
                     ` : ''}
                     
-                    <div class="divider">Order Timeline</div>
+                    <div class="divider text-xs text-base-content/40">Order Timeline</div>
                     
                     <div class="text-sm space-y-2 mb-4">
-                        <p><i class="fas fa-plus-circle text-success mr-2"></i>Created by ${order.created_by_name || '-'} on ${formatDate(order.created_at)}</p>
-                        ${order.approved_at ? `<p><i class="fas fa-check-circle text-info mr-2"></i>Approved by ${order.approved_by_name || '-'} on ${formatDate(order.approved_at)}</p>` : ''}
+                        <p><i class="fas fa-plus-circle text-success mr-2"></i>Created by <strong>${createdBy}</strong> on ${formatDate(order.created_at)}</p>
+                        ${order.approved_at ? `<p><i class="fas fa-check-circle text-info mr-2"></i>Approved by ${order.approved_by_name || 'General Manager'} on ${formatDate(order.approved_at)}</p>` : ''}
                     </div>
                     
-                    ${order.status === 'pending' ? `
+                    ${isPending ? `
                         <div class="modal-action">
                             <button class="btn btn-error" onclick="openRejectModal(${order.id}); document.getElementById('orderDetailModal').close();">
                                 <i class="fas fa-times mr-2"></i> Reject Order

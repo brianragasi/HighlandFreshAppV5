@@ -3112,7 +3112,7 @@ INSERT INTO `recipe_ingredients` (`id`, `recipe_id`, `ingredient_id`, `ingredien
 (9, 15, 9, 'Sugar', 'sugar', 0.100, 'kg', 0, 'Optional sweetener'),
 (10, 16, 10, 'Vanilla Extract', 'flavoring', 0.005, 'L', 0, 'For flavor'),
 (11, 16, 12, 'Stabilizer', 'other', 0.020, 'kg', 0, 'Texture enhancer'),
-(12, 17, 12, 'Stabilizer', 'other', 0.010, 'kg', 0, 'For consistency');
+(12, 17, 12, 'Stabilizer', 'other', 0.100, 'kg', 0, '0.1% inclusion per 100 L bulk batch');
 
 -- --------------------------------------------------------
 

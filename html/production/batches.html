@@ -213,7 +213,8 @@
                             <select class="select select-bordered select-sm w-full sm:w-40" id="productTypeFilter"
                                 onchange="loadRuns()">
                                 <option value="">All Products</option>
-                                <option value="bottled_milk">Bottled Milk</option>
+                                <option value="pasteurized_milk">Pasteurized Milk</option>
+                                <option value="bottled_milk">Bottled Milk (legacy)</option>
                                 <option value="cheese">Cheese</option>
                                 <option value="butter">Butter</option>
                                 <option value="yogurt">Yogurt</option>
@@ -777,12 +778,49 @@
         let availableMilkData = null;
         let selectedRecipeData = null;
 
+        // Bulk plan denominator (liters) — same priority as requisitions/runs APIs.
+        // planned_quantity is liquid volume; never use SKU "expected_yield" blocks
+        // when bulk_yield_liters / base_milk_liters is available.
+        function getRecipeBulkPlanDenominator(recipe) {
+            if (!recipe) return 1;
+            const bulk = parseFloat(recipe.bulk_yield_liters);
+            if (Number.isFinite(bulk) && bulk > 0) return bulk;
+            const yu = String(recipe.yield_unit || '').toLowerCase();
+            const expected = parseFloat(recipe.expected_yield);
+            if (['liter', 'liters', 'l', 'lt'].includes(yu) && Number.isFinite(expected) && expected > 0) {
+                return expected;
+            }
+            const baseMilk = parseFloat(recipe.base_milk_liters);
+            if (Number.isFinite(baseMilk) && baseMilk > 0) return baseMilk;
+            if (Number.isFinite(expected) && expected > 0) return expected;
+            return 1;
+        }
+
+        function getRecipePlanScaleFactor(recipe, plannedQty) {
+            const denom = getRecipeBulkPlanDenominator(recipe);
+            const planned = parseFloat(plannedQty);
+            if (!(denom > 0) || !Number.isFinite(planned) || planned <= 0) return 0;
+            return planned / denom;
+        }
+
+        function getRequiredMilkLiters(recipe, plannedQty) {
+            if (!recipe) return 0;
+            const scale = getRecipePlanScaleFactor(recipe, plannedQty);
+            const baseMilk = parseFloat(recipe.base_milk_liters) || 0;
+            return baseMilk * scale;
+        }
+
         // Gating helper for the submit button. `isOpen=true` enables the button
         // (the form is "ready to submit"); `isOpen=false` disables it.
         // The visual signal for "is it actually ready" lives in the readiness
         // card on the right; this button gate is just a coarse "are we in a
         // state where submitting could even work" check.
-        function setNewRunMaterialGate(isOpen) {
+        //
+        // IMPORTANT: closing the gate must NOT clear the recipe dropdown or
+        // reset the readiness card to a permanent spinner. That only happens
+        // when options.resetForm is true (modal open / hard reset).
+        function setNewRunMaterialGate(isOpen, options = {}) {
+            const resetForm = !!(options && options.resetForm);
             const blocked = !isOpen;
             ['recipeSelect', 'runNotes'].forEach(id => {
                 const field = document.getElementById(id);
@@ -805,12 +843,19 @@
             const submitBtn = document.querySelector('#newRunForm button[type="submit"]');
             if (submitBtn) submitBtn.disabled = blocked;
 
-            if (blocked) {
+            if (blocked && resetForm) {
                 selectedRecipeData = null;
-                document.getElementById('recipeSelect').value = '';
-                // Reset the status card to its initial "no recipe yet" state.
+                const recipeSelect = document.getElementById('recipeSelect');
+                if (recipeSelect) recipeSelect.value = '';
                 resetStatusCard();
             }
+        }
+
+        // Submit-only gate: keep recipe/qty editable while blocking Create Run
+        // (e.g. not enough milk for the current planned volume).
+        function setNewRunSubmitEnabled(enabled) {
+            const submitBtn = document.querySelector('#newRunForm button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = !enabled;
         }
 
         // Resets the right-side readiness card to its initial "loading / no recipe" state.
@@ -907,28 +952,38 @@
             try {
                 const response = await ProductionService.getAvailablePasteurizedMilk();
                 if (response.success) {
-                    const data = response.data;
-                    const isEnough = data.total_available_liters >= (selectedRecipeData?.base_milk_liters || 0);
+                    const data = response.data || {};
+                    const plannedQty = parseFloat(document.getElementById('plannedQuantity')?.value) || 0;
+                    const required = plannedQty > 0
+                        ? getRequiredMilkLiters(selectedRecipeData, plannedQty)
+                        : (parseFloat(selectedRecipeData?.base_milk_liters) || 0);
+                    const available = parseFloat(data.total_available_liters) || 0;
+                    const isEnough = available >= required - 0.01;
                     const line = document.getElementById('statusMilkLine');
                     if (!line) return;
                     line.innerHTML = isEnough
                         ? `<i class="fas fa-check-circle text-success mt-0.5"></i>
                             <div class="flex-1">
-                                <div class="text-success font-semibold">${Math.round(data.total_available_liters).toLocaleString()} L pasteurized milk available</div>
-                                <div class="text-xs text-base-content/60">${data.message || 'Yogurt ready to cook.'}</div>
+                                <div class="text-success font-semibold">${Math.round(available).toLocaleString()} L pasteurized milk available</div>
+                                <div class="text-xs text-base-content/60">${data.message || (required > 0 ? `Need ${required.toFixed(1)} L for this batch` : 'Yogurt ready to cook.')}</div>
                             </div>`
                         : `<i class="fas fa-exclamation-triangle text-warning mt-0.5"></i>
                             <div class="flex-1">
                                 <div class="text-warning font-semibold">Yogurt needs pasteurized milk</div>
-                                <div class="text-xs text-base-content/60 mb-1">${data.message || 'Run pasteurization first, then create the yogurt run.'}</div>
+                                <div class="text-xs text-base-content/60 mb-1">${data.message || `Need ${required.toFixed(1)} L; only ${available.toFixed(1)} L pasteurized available. Run pasteurization first.`}</div>
                                 <a href="pasteurization.html" class="link link-hover text-xs font-semibold inline-flex items-center gap-1">
                                     <i class="fas fa-arrow-right text-[10px]"></i>
                                     Open Pasteurization page
                                 </a>
                             </div>`;
+                    setNewRunSubmitEnabled(isEnough || available > 0);
+                } else {
+                    setStatusMilk({ ok: false, message: response.message || 'Could not check pasteurized milk availability.' });
+                    setNewRunSubmitEnabled(true); // backend re-validates on submit
                 }
             } catch (error) {
                 setStatusMilk({ ok: false, message: 'Failed to check pasteurized milk: ' + (error.message || 'unknown error') });
+                setNewRunSubmitEnabled(true);
             }
         }
 
@@ -1019,13 +1074,14 @@
 
         async function loadAvailableMilk() {
             // Mark the milk line as loading, then fetch the issued-milk stats.
+            // Always settles the spinner (success, API error, or network error).
             setStatusMilk({ loading: true });
 
             try {
                 const response = await ProductionService.getAvailableMilk();
-                if (response.success) {
-                    availableMilkData = response.data;
-                    const totalLiters = availableMilkData.total_available_liters || 0;
+                if (response && response.success) {
+                    availableMilkData = response.data || {};
+                    const totalLiters = parseFloat(availableMilkData.total_available_liters) || 0;
                     const sources = availableMilkData.milk_sources || [];
                     setStatusMilk({
                         ok: totalLiters > 0,
@@ -1033,25 +1089,29 @@
                         sources: sources.length,
                         message: totalLiters > 0
                             ? null
-                            : 'Submit a material requisition and wait for Warehouse Raw to fulfill it.'
+                            : (availableMilkData.message || 'Submit a material requisition and wait for Warehouse Raw to fulfill it.')
                     });
-                    // Open the submit gate as soon as we know milk is available.
-                    // The user can't pick a recipe yet (we're still in the
-                    // pre-recipe state), but the inputs are unlocked and the
-                    // status card is the source of truth for "are we ready".
-                    if (totalLiters > 0) {
-                        setNewRunMaterialGate(true);
-                    }
+                    // Unlock form fields so recipe prefill / manual selection can run.
+                    // Submit remains usable; checkMilkRequirement tightens it if needed.
+                    setNewRunMaterialGate(true);
                 } else {
-                    setStatusMilk({ ok: false, message: response.message || 'Could not load milk availability.' });
-                    // API responded but with a failure — let the user try to
-                    // submit anyway; the backend will re-validate.
+                    availableMilkData = { total_available_liters: 0, milk_sources: [] };
+                    setStatusMilk({
+                        ok: false,
+                        message: (response && response.message) || 'Could not load milk availability.'
+                    });
+                    // API responded but with a failure — unlock UI so user is not stuck;
+                    // backend re-validates on submit.
                     setNewRunMaterialGate(true);
                 }
             } catch (error) {
                 console.error('Error loading available milk:', error);
-                setStatusMilk({ ok: false, message: 'Could not load milk availability. The system will re-check on submit.' });
-                // Network/parse error — also let the user try; backend re-validates.
+                availableMilkData = { total_available_liters: 0, milk_sources: [] };
+                setStatusMilk({
+                    ok: false,
+                    message: 'Could not load milk availability. The system will re-check on submit.'
+                });
+                // Network/parse error — leave spinner, unlock form, backend re-validates.
                 setNewRunMaterialGate(true);
             }
         }
@@ -1098,21 +1158,18 @@
                 return;
             }
             const plannedQty = parseFloat(document.getElementById('plannedQuantity').value) || 0;
-            const expectedYield = parseFloat(selectedRecipeData?.expected_yield) || 1;
-            const scale = plannedQty > 0 && expectedYield > 0 ? plannedQty / expectedYield : 0;
+            const bulkDenom = getRecipeBulkPlanDenominator(selectedRecipeData);
+            const scale = plannedQty > 0 ? getRecipePlanScaleFactor(selectedRecipeData, plannedQty) : 0;
             const showingBase = scale === 0;
 
             list.innerHTML = ingredients.map(ing => {
-                // When the user has typed a planned qty, scale the recipe
-                // quantity to the user's batch. When they haven't yet,
-                // show the base recipe quantity (per expected yield) as a
-                // hint. Either way, never show "—" for a defined ingredient.
+                // Scale vs bulk plan liters (not legacy SKU expected_yield).
                 const baseQty = parseFloat(ing.quantity) || 0;
                 const scaled = scale > 0 ? Math.round(baseQty * scale * 1000) / 1000 : baseQty;
                 const unit = ing.unit || '';
                 const tooltip = showingBase
-                    ? `Per recipe's full yield (${expectedYield} ${escapeHtml(unit)}). Type a planned quantity above to see per-batch amounts.`
-                    : `Scaled to planned quantity ${plannedQty} ${escapeHtml(unit)}`;
+                    ? `Per recipe bulk batch (${bulkDenom} L). Type a planned quantity above to see per-batch amounts.`
+                    : `Scaled to planned ${plannedQty} L (×${scale.toFixed(3)} vs ${bulkDenom} L bulk)`;
                 return `<tr>
                     <td>
                         <div class="font-medium text-xs">${escapeHtml(ing.ingredient_name)}</div>
@@ -1147,7 +1204,7 @@
 
         // Updates the milk line on the readiness card against the (auto-computed) milk
         // requirement for the current planned volume. The backend uses the same
-        // auto-calc when createRun is called, so this is a UX preview only.
+        // bulk-aware auto-calc when createRun is called, so this is a UX preview only.
         function checkMilkRequirement() {
             if (!selectedRecipeData || !availableMilkData) return;
             // V4.0 (Issue C fix) — for yogurt recipes, the milk type is
@@ -1160,10 +1217,11 @@
             const plannedQty = parseFloat(document.getElementById('plannedQuantity').value) || 0;
             if (plannedQty <= 0) return;
 
-            const baseMilk = selectedRecipeData.base_milk_liters || 0;
-            const baseYield = selectedRecipeData.expected_yield || 1;
-            const requiredMilk = baseYield > 0 ? (baseMilk / baseYield) * plannedQty : 0;
-            const availableLiters = availableMilkData.total_available_liters || 0;
+            // Bulk-batch: required milk = base_milk_liters × (planned_L / bulk_yield_L)
+            // NOT (base_milk / expected_yield_SKU) × planned — that treated 100 L butter
+            // as 500 L milk (expected_yield=20 blocks) and locked the UI.
+            const requiredMilk = getRequiredMilkLiters(selectedRecipeData, plannedQty);
+            const availableLiters = parseFloat(availableMilkData.total_available_liters) || 0;
 
             if (requiredMilk > 0) {
                 // Tolerance handles DB decimal truncation vs JS float precision
@@ -1175,11 +1233,11 @@
                         line.innerHTML = `<i class="fas fa-check-circle text-success mt-0.5"></i>
                             <div class="flex-1">
                                 <div class="text-success font-semibold">${Math.round(availableLiters).toLocaleString()} L milk available</div>
-                                <div class="text-xs text-base-content/60">Need ${requiredMilk.toFixed(1)} L for ${plannedQty} ${selectedRecipeData.yield_unit || 'units'} batch — well stocked</div>
+                                <div class="text-xs text-base-content/60">Need ${requiredMilk.toFixed(1)} L for ${plannedQty} L batch — well stocked</div>
                             </div>`;
                     }
-                    // Plenty of milk for the planned qty — keep the submit gate open.
-                    setNewRunMaterialGate(true);
+                    // Plenty of milk — allow Create Run (do not reset recipe).
+                    setNewRunSubmitEnabled(true);
                 } else {
                     const line = document.getElementById('statusMilkLine');
                     if (line) {
@@ -1189,11 +1247,10 @@
                                 <div class="text-xs text-base-content/60">Only ${availableLiters.toFixed(1)} L available — request more or reduce the planned volume.</div>
                             </div>`;
                     }
-                    // The planned volume is too high for what's available. Close
-                    // the submit gate so the user can't try; the form's required
-                    // attribute on plannedQuantity won't catch this (it's a
-                    // business rule, not a syntactic one).
-                    setNewRunMaterialGate(false);
+                    // Disable submit only — keep recipe selected and fields usable.
+                    // Never call setNewRunMaterialGate(false) here (that used to
+                    // clear the dropdown and leave "Checking milk…" forever).
+                    setNewRunSubmitEnabled(false);
                 }
             }
         }
@@ -1440,7 +1497,8 @@
 
         async function showNewRunModal() {
             document.getElementById('newRunForm').reset();
-            setNewRunMaterialGate(false);
+            // Hard reset: clear recipe + show initial readiness state.
+            setNewRunMaterialGate(false, { resetForm: true });
             resetStatusCard();
             clearRequisitionPrefill();
 
@@ -1473,6 +1531,8 @@
 
             document.getElementById('newRunModal').showModal();
 
+            // Always settle milk check (success or error) before prefill so the
+            // spinner cannot outlive the request.
             await loadAvailableMilk();
 
             // Apply the pre-fill AFTER the milk gate has settled so the recipe dropdown
@@ -1480,12 +1540,31 @@
             if (recipeId) {
                 const recipeSelect = document.getElementById('recipeSelect');
                 if (recipeSelect) {
-                    // Make sure the recipes have been loaded before we set the value.
-                    if (recipeSelect.options.length <= 1) {
+                    // Ensure options are loaded; match by string id.
+                    if (recipeSelect.options.length <= 1 || !recipes.length) {
                         await loadRecipes();
                     }
-                    recipeSelect.value = recipeId;
-                    await updateRecipeDetails();
+                    const want = String(recipeId);
+                    recipeSelect.value = want;
+                    // If option missing (stale cache / limit), reload once more.
+                    if (recipeSelect.value !== want) {
+                        await loadRecipes();
+                        recipeSelect.value = want;
+                    }
+                    if (recipeSelect.value === want) {
+                        // Ensure the control is enabled so the selected value is visible/usable.
+                        recipeSelect.disabled = false;
+                        await updateRecipeDetails();
+                    } else {
+                        console.error('Recipe id not found in dropdown:', recipeId, recipes.map(r => r.id));
+                        setStatusMilk({
+                            ok: false,
+                            message: `Recipe #${recipeId} is not in the active recipe list. Pick a recipe manually.`
+                        });
+                        if (typeof showToast === 'function') {
+                            showToast(`Recipe #${recipeId} not found in active recipes`, 'error');
+                        }
+                    }
                 }
             }
             if (plannedQty) {
@@ -1496,8 +1575,11 @@
                     // ingredients table re-scales to the new planned qty. Without
                     // this, the table keeps the empty-scale rows that were
                     // rendered when the recipe was first picked.
-                    await refreshStatusCard();
+                    refreshStatusCard();
                 }
+            } else if (recipeId) {
+                // Recipe-only prefill still re-check milk once details loaded.
+                refreshStatusCard();
             }
         }
 
@@ -1629,6 +1711,7 @@
 
         // Fallback pack factors by product type only when product master is unavailable
         const unitConversionsFallback = {
+            'pasteurized_milk': { primary: 'Bottles', secondary: 'Crates', conversion: 24 },
             'bottled_milk': { primary: 'Bottles', secondary: 'Crates', conversion: 24 },
             'milk_bar': { primary: 'Pieces', secondary: 'Boxes', conversion: 50 },
             'cheese': { primary: 'Blocks', secondary: 'Cases', conversion: 12 },

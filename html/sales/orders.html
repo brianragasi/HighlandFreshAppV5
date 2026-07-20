@@ -688,6 +688,47 @@
         function formatCurrency(amount) {
             return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount || 0);
         }
+
+        /** Y-m-d / datetime → M/D/YYYY without timezone off-by-one. */
+        function formatOrderDate(value) {
+            if (!value) return '—';
+            const s = String(value).slice(0, 10);
+            const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (m) return `${parseInt(m[2], 10)}/${parseInt(m[3], 10)}/${m[1]}`;
+            const d = new Date(String(value).replace(' ', 'T'));
+            if (Number.isNaN(d.getTime())) return '—';
+            return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+        }
+
+        /**
+         * Delivery date display: never earlier than order date.
+         * Falls back to order date when missing or time-traveling.
+         */
+        function formatDeliveryDate(deliveryValue, orderValue) {
+            const orderStr = orderValue ? String(orderValue).slice(0, 10) : '';
+            let delStr = deliveryValue ? String(deliveryValue).slice(0, 10) : '';
+            if (delStr && orderStr && delStr < orderStr) {
+                delStr = orderStr; // same-day floor
+            }
+            if (!delStr) return '—';
+            return formatOrderDate(delStr);
+        }
+
+        function formatCustomerType(type) {
+            const labels = {
+                supermarket: 'Supermarket',
+                institutional: 'Institutional',
+                school: 'School',
+                feeding_program: 'Feeding Program',
+                wholesaler: 'Wholesaler',
+                distributor: 'Distributor',
+                walk_in: 'Walk-in',
+                restaurant: 'Restaurant',
+                other: 'Other'
+            };
+            if (!type) return '';
+            return labels[type] || String(type).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        }
         
         function debounceSearch() {
             clearTimeout(searchTimeout);
@@ -728,12 +769,14 @@
                 
                 await Promise.all([loadOrders(), loadCustomers(), loadProducts()]);
                 
+                // ?action=new → open New Order modal (matches nav link / deep link)
                 if (action === 'new') {
                     openNewOrderModal();
                     if (customerId) {
                         document.getElementById('orderCustomer').value = customerId;
                         onCustomerChange();
                     }
+                    // Keep deep-link UX; URL remains ?action=new while modal is open
                 }
             } catch (error) {
                 console.error('Init error:', error);
@@ -793,18 +836,26 @@
                         <p>No orders found</p>
                     </td></tr>`;
                 } else {
-                    tbody.innerHTML = orders.map(o => `
+                    tbody.innerHTML = orders.map(o => {
+                        const orderDateStr = formatOrderDate(o.order_date || o.created_at);
+                        // Never display a delivery date that precedes the order date
+                        const deliveryDateStr = formatDeliveryDate(o.delivery_date, o.order_date || o.created_at);
+                        const typeLabel = formatCustomerType(o.customer_type);
+                        const payRaw = (o.payment_mode || o.payment_type || 'credit').toString().toLowerCase();
+                        const payLabel = payRaw === 'cash' ? 'Cash' : (payRaw === 'credit' ? 'Credit' : payRaw.charAt(0).toUpperCase() + payRaw.slice(1));
+                        const itemCount = Number(o.item_count || o.total_items || o.total_quantity || o.items?.length || 0);
+                        return `
                         <tr class="hover cursor-pointer" onclick="viewOrder(${o.id})">
                             <td class="font-mono text-sm font-medium">${o.order_number || 'ORD-' + o.id}</td>
                             <td>
                                 <div class="font-medium">${o.customer_name || 'Unknown'}</div>
-                                <div class="text-xs text-base-content/60">${o.customer_type || ''}</div>
+                                ${typeLabel ? `<span class="badge badge-ghost badge-xs mt-0.5 font-medium">${typeLabel}</span>` : ''}
                             </td>
-                            <td class="text-sm">${new Date(o.order_date || o.created_at).toLocaleDateString()}</td>
-                            <td class="text-sm">${o.delivery_date ? new Date(o.delivery_date).toLocaleDateString() : '-'}</td>
-                            <td class="text-center">${o.item_count || o.items?.length || 0}</td>
+                            <td class="text-sm tabular-nums">${orderDateStr}</td>
+                            <td class="text-sm tabular-nums">${deliveryDateStr}</td>
+                            <td class="text-center tabular-nums font-medium">${itemCount.toLocaleString()}</td>
                             <td class="text-right font-mono font-semibold">${formatCurrency(o.total_amount)}</td>
-                            <td><span class="badge badge-outline badge-sm">${o.payment_mode || o.payment_type || 'credit'}</span></td>
+                            <td><span class="badge badge-outline badge-sm ${payRaw === 'credit' ? 'badge-info' : ''}">${payLabel}</span></td>
                             <td><span class="badge ${statusBadges[o.status] || 'badge-ghost'} badge-sm" title="${o.status}">${statusListLabel(o.status)}</span></td>
                             <td>
                                 <div class="dropdown dropdown-end" onclick="event.stopPropagation()">
@@ -818,15 +869,15 @@
                                         ${o.status === 'pending' ? `
                                             <li class="disabled"><span class="text-base-content/40"><i class="fas fa-clock w-4"></i> Awaiting GM Approval</span></li>
                                             <li><a onclick="cancelOrder(${o.id})" class="text-error"><i class="fas fa-times w-4"></i> Cancel</a></li>
-                                        ` : ''}}
+                                        ` : ''}
                                         ${o.status === 'dispatched' && currentUserRole !== 'sales_custodian' ? `
                                             <li><a onclick="markDelivered(${o.id})" class="text-success"><i class="fas fa-check-circle w-4"></i> Mark Delivered</a></li>
                                         ` : ''}
                                     </ul>
                                 </div>
                             </td>
-                        </tr>
-                    `).join('');
+                        </tr>`;
+                    }).join('');
                 }
                 
                 // Pagination
@@ -1234,25 +1285,64 @@
             if (badge) badge.textContent = `${orderItems.length} item(s) added`;
         }
         
+        function getProductAvailable(productId) {
+            const select = document.getElementById('productSelect');
+            for (const opt of select.options) {
+                if (parseInt(opt.value, 10) === productId) {
+                    return parseInt(opt.dataset.available, 10) || 0;
+                }
+            }
+            return 0;
+        }
+
         function updateItemBoxes(index, boxes) {
             const item = orderItems[index];
-            item.quantity_boxes = parseInt(boxes) || 0;
-            item.quantity = (item.quantity_boxes * item.pieces_per_box) + item.quantity_pieces;
+            const newBoxes = parseInt(boxes) || 0;
+            const newQty = (newBoxes * item.pieces_per_box) + item.quantity_pieces;
+            const available = getProductAvailable(item.product_id);
+
+            if (newQty > available) {
+                showToast(`Insufficient stock. Only ${available.toLocaleString()} ${PackUnits.pluralize(item.base_unit, available === 1 ? 1 : 2)} available.`, 'error');
+                renderOrderItems();
+                return;
+            }
+
+            item.quantity_boxes = newBoxes;
+            item.quantity = newQty;
             item.subtotal = item.quantity * item.price;
             renderOrderItems();
         }
-        
+
         function updateItemPieces(index, pieces) {
             const item = orderItems[index];
-            item.quantity_pieces = parseInt(pieces) || 0;
-            item.quantity = (item.quantity_boxes * item.pieces_per_box) + item.quantity_pieces;
+            const newPieces = parseInt(pieces) || 0;
+            const newQty = (item.quantity_boxes * item.pieces_per_box) + newPieces;
+            const available = getProductAvailable(item.product_id);
+
+            if (newQty > available) {
+                showToast(`Insufficient stock. Only ${available.toLocaleString()} ${PackUnits.pluralize(item.base_unit, available === 1 ? 1 : 2)} available.`, 'error');
+                renderOrderItems();
+                return;
+            }
+
+            item.quantity_pieces = newPieces;
+            item.quantity = newQty;
             item.subtotal = item.quantity * item.price;
             renderOrderItems();
         }
         
         function updateItemQty(index, qty) {
             const item = orderItems[index];
-            item.quantity = parseInt(qty) || 1;
+            const newQty = parseInt(qty) || 1;
+            const available = getProductAvailable(item.product_id);
+
+            if (newQty > available) {
+                showToast(`Insufficient stock. Only ${available.toLocaleString()} ${PackUnits.pluralize(item.base_unit, available === 1 ? 1 : 2)} available.`, 'error');
+                renderOrderItems();
+                return;
+            }
+
+            item.quantity = newQty;
             item.subtotal = item.quantity * item.price;
             renderOrderItems();
         }
@@ -1340,7 +1430,13 @@
                 loadOrders();
             } catch (error) {
                 console.error('Error creating order:', error);
-                showToast(error.response?.data?.message || error.message || 'Failed to create order', 'error');
+                const stockErrors = error.errors?.stock_errors || error.response?.data?.errors?.stock_errors;
+                if (stockErrors && stockErrors.length) {
+                    const lines = stockErrors.map(e => e.message || `${e.product_name}: need ${e.requested}, only ${e.available} available`);
+                    showToast('Insufficient stock:\n' + lines.join('\n'), 'error');
+                } else {
+                    showToast(error.response?.data?.message || error.message || 'Failed to create order', 'error');
+                }
             } finally {
                 if (draftBtn) {
                     draftBtn.classList.remove('loading');

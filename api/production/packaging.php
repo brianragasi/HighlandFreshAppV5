@@ -20,6 +20,221 @@ require_once dirname(__DIR__) . '/helpers/pack_uom.php';
 $currentUser = Auth::requireRole(['production_staff', 'general_manager']);
 
 /**
+ * Rebuild output display from product master pack UOM (never trust stale crates×24 JSON).
+ *
+ * @param PDO $db
+ * @param array $row ready_batches row
+ * @return array
+ */
+/**
+ * Resolve shelf life (days) for packaging expiry defaults.
+ * Priority: packaging SKU products.shelf_life_days → recipe → base_products → 7 (last resort).
+ */
+function resolveShelfLifeDaysForPackagingRow(PDO $db, array $row): int
+{
+    $productId = (int) ($row['product_id'] ?? $row['recipe_product_id'] ?? 0);
+    $baseProductId = (int) ($row['base_product_id'] ?? 0);
+
+    // 1) Explicit SKU / product master
+    if ($productId > 0) {
+        try {
+            $stmt = $db->prepare('SELECT shelf_life_days FROM products WHERE id = ? AND is_active = 1 LIMIT 1');
+            $stmt->execute([$productId]);
+            $days = $stmt->fetchColumn();
+            if ($days !== false && $days !== null && (int) $days > 0) {
+                return (int) $days;
+            }
+        } catch (Throwable $e) {
+            // ignore
+        }
+    }
+
+    // 2) Best SKU under base product (common when recipe points at base liquid)
+    if ($baseProductId > 0) {
+        try {
+            $stmt = $db->prepare("
+                SELECT shelf_life_days FROM products
+                WHERE base_product_id = ? AND is_active = 1 AND shelf_life_days IS NOT NULL AND shelf_life_days > 0
+                ORDER BY unit_size ASC, id ASC
+                LIMIT 1
+            ");
+            $stmt->execute([$baseProductId]);
+            $days = $stmt->fetchColumn();
+            if ($days !== false && $days !== null && (int) $days > 0) {
+                return (int) $days;
+            }
+        } catch (Throwable $e) {
+            // ignore
+        }
+        try {
+            $stmt = $db->prepare('SELECT default_shelf_life_days FROM base_products WHERE id = ? LIMIT 1');
+            $stmt->execute([$baseProductId]);
+            $days = $stmt->fetchColumn();
+            if ($days !== false && $days !== null && (int) $days > 0) {
+                return (int) $days;
+            }
+        } catch (Throwable $e) {
+            // ignore
+        }
+    }
+
+    // 3) Recipe shelf life (master_recipes.shelf_life_days)
+    $recipeDays = (int) ($row['recipe_shelf_life_days'] ?? $row['shelf_life_days'] ?? 0);
+    if ($recipeDays > 0) {
+        return $recipeDays;
+    }
+
+    // 4) Base product column already joined on ready_batches
+    $baseDays = (int) ($row['base_shelf_life_days'] ?? 0);
+    if ($baseDays > 0) {
+        return $baseDays;
+    }
+
+    return 7; // last-resort only when no master data exists
+}
+
+function rebuildOutputBreakdownFromProductMaster(PDO $db, array $row)
+{
+    $total = (int)($row['actual_quantity'] ?? 0);
+    $productId = (int)($row['product_id'] ?? $row['recipe_product_id'] ?? 0);
+    $baseProductId = (int)($row['base_product_id'] ?? 0);
+    $packProductId = $productId > 0 ? $productId : $baseProductId;
+    $prod = null;
+
+    // 1) Exact recipe product
+    if ($productId > 0) {
+        $prod = _hfFetchProductPackRow($db, $productId);
+    }
+    // 2) Best SKU under base product (largest pack size wins for display consistency)
+    if ((!$prod || (int)($prod['pieces_per_box'] ?? 1) <= 1) && $baseProductId > 0) {
+        $prod = _hfFetchBestSkuForBase($db, $baseProductId) ?: $prod;
+    }
+    // 3) Best SKU matching recipe product as base_product_id
+    if ((!$prod || (int)($prod['pieces_per_box'] ?? 1) <= 1) && $productId > 0) {
+        $sku = _hfFetchBestSkuForBase($db, $productId);
+        if ($sku) {
+            $prod = $sku;
+        }
+    }
+
+    if ($prod) {
+        $packProductId = (int)$prod['id'];
+    }
+
+    $cfg = $prod
+        ? hf_pack_config_from_row($prod)
+        : ($packProductId > 0 ? hf_get_product_pack_config($db, $packProductId) : hf_pack_config_from_row(null));
+
+    $ppb = max(1, (int)$cfg['units_per_pack']);
+    $split = hf_split_base_to_pack($total, $ppb);
+    $packName = $cfg['pack_name'] ?: 'box';
+    $baseUnit = $cfg['base_unit'] ?: 'piece';
+    $formula = format_pack_config_line($cfg);
+
+    $breakdown = [
+        'total_pieces' => $total,
+        'secondary_count' => $split['packs'],
+        'secondary_unit' => $packName,
+        'remaining_primary' => $split['loose'],
+        'primary_unit' => $baseUnit,
+        'conversion_factor' => $ppb,
+        'units_per_pack' => $ppb,
+        'pack_name' => $packName,
+        'base_unit' => $baseUnit,
+        'product_id' => $packProductId,
+        'pack_formula' => $formula,
+        'recomputed_from_product_master' => true,
+    ];
+
+    $old = is_array($row['output_breakdown'] ?? null) ? $row['output_breakdown'] : null;
+    if (is_array($old)) {
+        if (isset($old['input_quantity'])) {
+            $breakdown['input_quantity'] = $old['input_quantity'];
+        }
+        if (isset($old['input_unit'])) {
+            $breakdown['input_unit'] = $old['input_unit'];
+        }
+    }
+
+    return [
+        'output_breakdown' => $breakdown,
+        'pieces_per_box' => $ppb,
+        'units_per_pack' => $ppb,
+        'box_unit' => $packName,
+        'pack_name' => $packName,
+        'base_unit' => $baseUnit,
+        'pack_formula' => $formula,
+    ];
+}
+
+function _hfFetchProductPackRow(PDO $db, $productId)
+{
+    $productId = (int)$productId;
+    if ($productId <= 0) {
+        return null;
+    }
+    try {
+        $stmt = $db->prepare("
+            SELECT id, base_unit, box_unit, pieces_per_box, pack_name, units_per_pack
+            FROM products WHERE id = ? LIMIT 1
+        ");
+        $stmt->execute([$productId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row) {
+            return $row;
+        }
+    } catch (Throwable $e) { /* columns may not exist */ }
+    try {
+        $stmt = $db->prepare("
+            SELECT id, base_unit, box_unit, pieces_per_box
+            FROM products WHERE id = ? LIMIT 1
+        ");
+        $stmt->execute([$productId]);
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+function _hfFetchBestSkuForBase(PDO $db, $baseProductId)
+{
+    $baseProductId = (int)$baseProductId;
+    if ($baseProductId <= 0) {
+        return null;
+    }
+    try {
+        $stmt = $db->prepare("
+            SELECT id, base_unit, box_unit, pieces_per_box, pack_name, units_per_pack
+            FROM products
+            WHERE base_product_id = ?
+              AND COALESCE(is_active, 1) = 1
+              AND COALESCE(pieces_per_box, 1) > 1
+            ORDER BY pieces_per_box DESC, id ASC
+            LIMIT 1
+        ");
+        $stmt->execute([$baseProductId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row) {
+            return $row;
+        }
+    } catch (Throwable $e) { /* ignore */ }
+    try {
+        $stmt = $db->prepare("
+            SELECT id, base_unit, box_unit, pieces_per_box
+            FROM products
+            WHERE base_product_id = ?
+              AND COALESCE(is_active, 1) = 1
+            ORDER BY COALESCE(pieces_per_box, 1) DESC, id ASC
+            LIMIT 1
+        ");
+        $stmt->execute([$baseProductId]);
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+/**
  * Resolve FG product master for a packaging line.
  * Frontend often sends product_id=null when accepting a yield plan — we must
  * still link the correct SKU so pack config (1 box = N bottles) works.
@@ -38,6 +253,7 @@ function resolvePackagingProduct(PDO $db, $itemProductId, $sizeMl, $productName,
             $stmt = $db->prepare("
                 SELECT id, product_code, product_name, category, variant,
                        unit_size, unit_measure, base_unit, box_unit, base_product_id,
+                       shelf_life_days,
                        COALESCE(pieces_per_box, 1) AS pieces_per_box, is_active
                 FROM products WHERE id = ? LIMIT 1
             ");
@@ -46,6 +262,7 @@ function resolvePackagingProduct(PDO $db, $itemProductId, $sizeMl, $productName,
             $stmt = $db->prepare("
                 SELECT id, product_code, product_name, category, variant,
                        unit_size, unit_measure, base_unit, box_unit,
+                       shelf_life_days,
                        COALESCE(pieces_per_box, 1) AS pieces_per_box, is_active
                 FROM products WHERE id = ? LIMIT 1
             ");
@@ -68,6 +285,7 @@ function resolvePackagingProduct(PDO $db, $itemProductId, $sizeMl, $productName,
             $stmt = $db->prepare("
                 SELECT id, product_code, product_name, category, variant,
                        unit_size, unit_measure, base_unit, box_unit, base_product_id,
+                       shelf_life_days,
                        COALESCE(pieces_per_box, 1) AS pieces_per_box, is_active
                 FROM products
                 WHERE base_product_id = ? AND is_active = 1
@@ -183,12 +401,12 @@ try {
             // lock contention. QC state is already denormalized on production_batches.qc_status.
             if ($action === 'ready_batches') {
                 // bulk-batch fields optional (base_product_id / bulk_yield_liters)
-                $bulkCols = ', NULL AS base_product_id, NULL AS bulk_yield_liters, NULL AS base_product_name';
+                $bulkCols = ', NULL AS base_product_id, NULL AS bulk_yield_liters, NULL AS base_product_name, NULL AS base_shelf_life_days';
                 $bulkJoin = '';
                 try {
                     $db->query('SELECT base_product_id, bulk_yield_liters FROM master_recipes LIMIT 0');
                     $db->query('SELECT id FROM base_products LIMIT 0');
-                    $bulkCols = ', mr.base_product_id, mr.bulk_yield_liters, bp.name AS base_product_name';
+                    $bulkCols = ', mr.base_product_id, mr.bulk_yield_liters, bp.name AS base_product_name, bp.default_shelf_life_days AS base_shelf_life_days';
                     $bulkJoin = ' LEFT JOIN base_products bp ON bp.id = mr.base_product_id ';
                 } catch (Throwable $e) {
                     // legacy schema
@@ -210,7 +428,8 @@ try {
                         mr.product_type,
                         mr.product_id     AS product_id,
                         mr.product_id     AS recipe_product_id,
-                        mr.yield_unit
+                        mr.yield_unit,
+                        mr.shelf_life_days AS recipe_shelf_life_days
                         {$bulkCols},
                         pb.id             AS batch_id,
                         pb.batch_code,
@@ -236,12 +455,26 @@ try {
                 $stmt->execute();
                 $rows = $stmt->fetchAll();
 
-                // Parse JSON output_breakdown + packaging flags
+                // Parse JSON then RECOMPUTE pack display from product master UOM.
+                // Old runs stored hardcoded crates×24 — that must not override Admin SKU pack size.
                 foreach ($rows as &$row) {
-                    if ($row['output_breakdown']) {
+                    if (!empty($row['output_breakdown']) && is_string($row['output_breakdown'])) {
                         $decoded = json_decode($row['output_breakdown'], true);
                         $row['output_breakdown'] = is_array($decoded) ? $decoded : null;
                     }
+                    $rebuilt = rebuildOutputBreakdownFromProductMaster($db, $row);
+                    $row['output_breakdown'] = $rebuilt['output_breakdown'];
+                    $row['pieces_per_box'] = $rebuilt['pieces_per_box'];
+                    $row['units_per_pack'] = $rebuilt['units_per_pack'];
+                    $row['box_unit'] = $rebuilt['box_unit'];
+                    $row['pack_name'] = $rebuilt['pack_name'];
+                    $row['base_unit'] = $rebuilt['base_unit'];
+                    $row['pack_formula'] = $rebuilt['pack_formula'];
+
+                    // Canonical shelf life for packaging expiry default (days).
+                    // Priority: packaging SKU → recipe → base product. Never silently drop to UI hardcode.
+                    $row['shelf_life_days'] = resolveShelfLifeDaysForPackagingRow($db, $row);
+
                     // Map batch QC status for UI (release_decision is derived, not joined)
                     $qc = $row['qc_status'] ?? 'pending';
                     if ($row['batch_id'] === null) {
@@ -344,7 +577,8 @@ try {
                     SELECT pr.*, mr.product_type, mr.product_name AS recipe_product_name,
                            mr.product_id AS recipe_product_id,
                            mr.base_product_id, mr.bulk_yield_liters,
-                           mr.milk_type_id, mr.yield_unit
+                           mr.milk_type_id, mr.yield_unit,
+                           mr.shelf_life_days AS recipe_shelf_life_days
                     FROM production_runs pr
                     JOIN master_recipes mr ON pr.recipe_id = mr.id
                     WHERE pr.id = ?
@@ -491,6 +725,7 @@ try {
                     $notes
                 ]);
                 $packagingRunId = $db->lastInsertId();
+                $createdFgIds = [];
 
                 // Insert items + create FG inventory records
                 $itemIns = $db->prepare("
@@ -505,7 +740,6 @@ try {
                     $sizeMl      = isset($item['size_ml']) ? (float)$item['size_ml'] : null;
                     $unitMeasure = $item['unit_measure'] ?? 'ml';
                     $variant     = $item['product_variant'] ?? null;
-                    $expiryDate  = $item['expiry_date'] ?? date('Y-m-d', strtotime('+7 days'));
                     $rawName     = $item['product_name'] ?? $run['recipe_product_name'];
 
                     // Always resolve to product master (pack rules + correct name)
@@ -521,6 +755,24 @@ try {
 
                     $productId   = $resolved ? (int) $resolved['id'] : null;
                     $productName = $resolved ? $resolved['product_name'] : $rawName;
+
+                    // Expiry: prefer client value; else shelf_life from product/recipe (not hard-coded 7).
+                    $expiryDate = !empty($item['expiry_date']) ? $item['expiry_date'] : null;
+                    if (!$expiryDate) {
+                        $shelfDays = 0;
+                        if ($resolved && !empty($resolved['shelf_life_days'])) {
+                            $shelfDays = (int) $resolved['shelf_life_days'];
+                        }
+                        if ($shelfDays <= 0) {
+                            $shelfDays = resolveShelfLifeDaysForPackagingRow($db, [
+                                'product_id' => $productId,
+                                'recipe_product_id' => $run['recipe_product_id'] ?? null,
+                                'base_product_id' => $run['base_product_id'] ?? null,
+                                'recipe_shelf_life_days' => $run['recipe_shelf_life_days'] ?? $run['shelf_life_days'] ?? null,
+                            ]);
+                        }
+                        $expiryDate = date('Y-m-d', strtotime('+' . max(1, $shelfDays) . ' days'));
+                    }
                     // Pack UOM always from product master (unified helper)
                     $packCfg = $resolved
                         ? hf_pack_config_from_row($resolved)
@@ -573,7 +825,7 @@ try {
 
                     // Create finished_goods_inventory record
                     // Base qty columns + multi-unit from product pack config.
-                    // chiller_id left NULL until warehouse put-away.
+                    // chiller_id left NULL until warehouse "Receive from Production" put-away.
                     $fgIns = $db->prepare("
                         INSERT INTO finished_goods_inventory
                             (batch_id, qc_release_id, product_id, milk_type_id,
@@ -581,14 +833,14 @@ try {
                              size_ml, quantity, remaining_quantity, quantity_available,
                              quantity_boxes, quantity_pieces, boxes_available, pieces_available,
                              unit, manufacturing_date, expiry_date,
-                             received_by, received_at, last_movement_at,
+                             chiller_id, received_by, received_at, last_movement_at,
                              status, notes)
                         VALUES (?, ?, ?, ?,
                                 ?, ?, ?, ?,
                                 ?, ?, ?, ?,
                                 ?, ?, ?, ?,
                                 'pcs', CURDATE(), ?,
-                                ?, NOW(), NOW(),
+                                NULL, ?, NOW(), NOW(),
                                 'available', ?)
                     ");
                     $fgIns->execute([
@@ -607,13 +859,29 @@ try {
                         $currentUser['user_id'],
                         "From packaging run {$packagingCode} · batch {$batchCode} · awaiting put-away · {$linkNote} · {$packNote}"
                     ]);
-                    $fgInventoryId = $db->lastInsertId();
+                    $fgInventoryId = (int) $db->lastInsertId();
+                    $createdFgIds[] = $fgInventoryId;
 
                     $itemIns->execute([
                         $packagingRunId,
                         $productId, $productName, $variant,
                         $sizeMl, $unitMeasure, $qty, $fgInventoryId
                     ]);
+                }
+
+                // Batch stays "not fully received into chiller" until warehouse put-away.
+                // Stock IS already on FG books (chiller_id NULL) so Receive-from-Production can list it.
+                if ($batchId) {
+                    try {
+                        $db->prepare("
+                            UPDATE production_batches
+                            SET fg_received = 0,
+                                updated_at = NOW()
+                            WHERE id = ?
+                        ")->execute([(int) $batchId]);
+                    } catch (Throwable $e) {
+                        // fg_received / updated_at may be missing on legacy schema
+                    }
                 }
 
                 $db->commit();
@@ -623,8 +891,10 @@ try {
                     'packaging_code' => $packagingCode,
                     'total_packaged' => $totalPiecesNow,
                     'items_count'    => count($items),
+                    'fg_inventory_ids' => $createdFgIds,
+                    'awaiting_putaway' => true,
                     'status'         => 'completed'
-                ], "Packaging complete! {$totalPiecesNow} units added to Finished Goods inventory.");
+                ], "Packaging complete! {$totalPiecesNow} units booked to Finished Goods (awaiting warehouse put-away).");
 
             } catch (Exception $e) {
                 $db->rollBack();

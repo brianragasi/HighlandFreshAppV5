@@ -70,27 +70,72 @@ try {
     
     // === RECEIVING STATISTICS ===
     
-    // Pending batches from production (QC released but not yet received)
-    // Uses NOT EXISTS for reliable checking even if fg_received column is NULL
+    // Awaiting warehouse put-away: packaged FG stock with no chiller yet.
+    // (Packaging books into finished_goods_inventory first; warehouse assigns location.)
+    // Old query looked for QC-released batches WITHOUT FG rows — that hid every
+    // packaging-created lot (e.g. Butter 395) because packaging already inserts FG.
     $pendingReceiving = $db->prepare("
-        SELECT COUNT(*) as count
-        FROM production_batches pb
-        WHERE pb.qc_status = 'released'
-        AND (pb.fg_received IS NULL OR pb.fg_received = 0)
-        AND NOT EXISTS (SELECT 1 FROM fg_receiving fr WHERE fr.batch_id = pb.id)
-        AND NOT EXISTS (SELECT 1 FROM finished_goods_inventory fgi WHERE fgi.batch_id = pb.id)
+        SELECT COUNT(*) as count,
+               COALESCE(SUM(
+                   GREATEST(
+                       COALESCE(fgi.quantity_available, 0),
+                       COALESCE(fgi.remaining_quantity, 0),
+                       COALESCE(fgi.quantity, 0),
+                       (COALESCE(fgi.boxes_available, 0) * COALESCE(p.pieces_per_box, 1))
+                           + COALESCE(fgi.pieces_available, 0)
+                   )
+               ), 0) as units
+        FROM finished_goods_inventory fgi
+        LEFT JOIN products p ON p.id = fgi.product_id
+        WHERE fgi.chiller_id IS NULL
+          AND COALESCE(fgi.status, 'available') IN ('available', 'low_stock')
+          AND (
+            COALESCE(fgi.remaining_quantity, 0) > 0
+            OR COALESCE(fgi.quantity_available, 0) > 0
+            OR COALESCE(fgi.pieces_available, 0) > 0
+            OR COALESCE(fgi.boxes_available, 0) > 0
+            OR COALESCE(fgi.quantity, 0) > 0
+          )
     ");
     $pendingReceiving->execute();
     $pendingData = $pendingReceiving->fetch();
     
-    // Received today
-    $receivedToday = $db->prepare("
-        SELECT COUNT(*) as count, COALESCE(SUM(quantity_received), 0) as units
-        FROM fg_receiving
-        WHERE DATE(received_at) = CURDATE()
-    ");
-    $receivedToday->execute();
-    $receivedTodayData = $receivedToday->fetch();
+    // Put-away (chiller assignment) completed today — prefer transaction log, fall back to fg_receiving
+    $receivedTodayData = ['count' => 0, 'units' => 0];
+    try {
+        $receivedToday = $db->prepare("
+            SELECT COUNT(*) as count, COALESCE(SUM(quantity), 0) as units
+            FROM fg_inventory_transactions
+            WHERE DATE(created_at) = CURDATE()
+              AND transaction_type = 'receive'
+              AND (reason LIKE '%Put-away%' OR reason LIKE '%put-away%' OR reason LIKE '%chiller%' OR reason LIKE '%Assigned%')
+        ");
+        $receivedToday->execute();
+        $receivedTodayData = $receivedToday->fetch() ?: $receivedTodayData;
+        if ((int) ($receivedTodayData['count'] ?? 0) === 0) {
+            // Any receive txn today (assign_to_chiller logs type=receive)
+            $receivedToday = $db->prepare("
+                SELECT COUNT(*) as count, COALESCE(SUM(quantity), 0) as units
+                FROM fg_inventory_transactions
+                WHERE DATE(created_at) = CURDATE()
+                  AND transaction_type = 'receive'
+            ");
+            $receivedToday->execute();
+            $receivedTodayData = $receivedToday->fetch() ?: $receivedTodayData;
+        }
+    } catch (Throwable $e) {
+        try {
+            $receivedToday = $db->prepare("
+                SELECT COUNT(*) as count, COALESCE(SUM(quantity_received), 0) as units
+                FROM fg_receiving
+                WHERE DATE(received_at) = CURDATE()
+            ");
+            $receivedToday->execute();
+            $receivedTodayData = $receivedToday->fetch() ?: $receivedTodayData;
+        } catch (Throwable $e2) {
+            // leave zeros
+        }
+    }
     
     // === DELIVERY RECEIPT STATISTICS ===
     

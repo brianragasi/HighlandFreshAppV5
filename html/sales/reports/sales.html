@@ -133,11 +133,21 @@
                     <span class="font-semibold">Sales Report</span>
                 </div>
             </div>
-            <div class="flex-none gap-2">
-                <button class="btn btn-ghost btn-sm" onclick="exportReport()">
+            <div class="flex-none gap-2 items-center">
+                <div class="form-control no-print">
+                    <select id="periodSelect" class="select select-bordered select-sm min-w-[11rem]" onchange="onPeriodChange()" title="Date range">
+                        <option value="today">Today</option>
+                        <option value="week">This Week</option>
+                        <option value="month" selected>This Month: July 2026</option>
+                        <option value="quarter">This Quarter</option>
+                        <option value="year">This Year</option>
+                        <option value="custom">Custom Range…</option>
+                    </select>
+                </div>
+                <button class="btn btn-ghost btn-sm no-print" onclick="exportReport()">
                     <i class="fas fa-file-export"></i> Export
                 </button>
-                <button class="btn btn-ghost btn-sm" onclick="window.print()">
+                <button class="btn btn-ghost btn-sm no-print" onclick="window.print()">
                     <i class="fas fa-print"></i> Print
                 </button>
             </div>
@@ -148,34 +158,24 @@
                 <div>
                     <h1 class="text-2xl font-bold text-base-content">Sales Report</h1>
                     <p class="text-base-content/60">Sales performance analysis and trends</p>
+                    <p class="text-xs text-base-content/50 mt-1" id="periodLabel">This Month: July 1–16, 2026</p>
                 </div>
             </div>
             
-            <!-- Date Range Filters -->
-            <div class="card bg-base-100 shadow-sm mb-6 no-print">
+            <!-- Custom range (shown only when Period = Custom) -->
+            <div class="card bg-base-100 shadow-sm mb-6 no-print" id="customRangeCard" style="display: none;">
                 <div class="card-body p-4">
                     <div class="flex flex-wrap gap-4 items-end">
                         <div class="form-control">
-                            <label class="label"><span class="label-text text-xs">Period</span></label>
-                            <select id="periodSelect" class="select select-bordered select-sm" onchange="onPeriodChange()">
-                                <option value="today">Today</option>
-                                <option value="week">This Week</option>
-                                <option value="month" selected>This Month</option>
-                                <option value="quarter">This Quarter</option>
-                                <option value="year">This Year</option>
-                                <option value="custom">Custom Range</option>
-                            </select>
-                        </div>
-                        <div class="form-control" id="dateFromField" style="display: none;">
                             <label class="label"><span class="label-text text-xs">From</span></label>
                             <input type="date" id="dateFrom" class="input input-bordered input-sm">
                         </div>
-                        <div class="form-control" id="dateToField" style="display: none;">
+                        <div class="form-control">
                             <label class="label"><span class="label-text text-xs">To</span></label>
                             <input type="date" id="dateTo" class="input input-bordered input-sm">
                         </div>
                         <button class="btn btn-primary btn-sm" onclick="loadReport()">
-                            <i class="fas fa-sync-alt"></i> Generate
+                            <i class="fas fa-sync-alt"></i> Apply Range
                         </button>
                     </div>
                 </div>
@@ -305,7 +305,7 @@
     <script src="../../../js/vendor/axios.min.js"></script>
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js"></script>
-    <script src="../../../js/sales/sales.service.js"></script>
+    <script src="../../../js/sales/sales.service.js?v=20260716-salesrpt"></script>
     
     <script>
         let salesTrendChart = null;
@@ -327,12 +327,47 @@
         function formatCurrency(amount) {
             return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount || 0);
         }
+
+        function formatCustomerType(type) {
+            const labels = {
+                supermarket: 'Supermarket',
+                institutional: 'Institutional',
+                school: 'School',
+                feeding_program: 'Feeding Program',
+                wholesaler: 'Wholesaler',
+                distributor: 'Distributor',
+                walk_in: 'Walk-in',
+                individual: 'Individual'
+            };
+            if (!type) return '—';
+            return labels[type] || String(type).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        }
+
+        function formatDateLabel(ymd) {
+            if (!ymd) return '';
+            const s = String(ymd).slice(0, 10);
+            const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (!m) return s;
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return `${months[parseInt(m[2], 10) - 1]} ${parseInt(m[3], 10)}`;
+        }
+
+        function formatPeriodBanner(startDate, endDate, periodKey) {
+            const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+            const sm = startDate?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            const em = endDate?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (!sm || !em) return `${startDate} – ${endDate}`;
+            if (periodKey === 'month' && sm[1] === em[1] && sm[2] === em[2]) {
+                return `This Month: ${months[parseInt(sm[2], 10) - 1]} ${parseInt(sm[3], 10)}–${parseInt(em[3], 10)}, ${sm[1]}`;
+            }
+            return `${formatDateLabel(startDate)} – ${formatDateLabel(endDate)}, ${em[1]}`;
+        }
         
         function onPeriodChange() {
             const period = document.getElementById('periodSelect').value;
             const showCustom = period === 'custom';
-            document.getElementById('dateFromField').style.display = showCustom ? 'block' : 'none';
-            document.getElementById('dateToField').style.display = showCustom ? 'block' : 'none';
+            const card = document.getElementById('customRangeCard');
+            if (card) card.style.display = showCustom ? 'block' : 'none';
             
             if (!showCustom) {
                 loadReport();
@@ -341,35 +376,44 @@
         
         function getDateRange() {
             const period = document.getElementById('periodSelect').value;
+            // Prefer local calendar (avoids UTC off-by-one from toISOString)
             const today = new Date();
-            let startDate, endDate = today.toISOString().split('T')[0];
+            const y = today.getFullYear();
+            const m = today.getMonth();
+            const d = today.getDate();
+            const pad = (n) => String(n).padStart(2, '0');
+            const endDateDefault = `${y}-${pad(m + 1)}-${pad(d)}`;
+            let startDate, endDate = endDateDefault;
             
             switch (period) {
                 case 'today':
                     startDate = endDate;
                     break;
-                case 'week':
-                    const weekStart = new Date(today);
-                    weekStart.setDate(today.getDate() - today.getDay());
-                    startDate = weekStart.toISOString().split('T')[0];
+                case 'week': {
+                    const weekStart = new Date(y, m, d - today.getDay());
+                    startDate = `${weekStart.getFullYear()}-${pad(weekStart.getMonth() + 1)}-${pad(weekStart.getDate())}`;
                     break;
+                }
                 case 'month':
-                    startDate = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+                    startDate = `${y}-${pad(m + 1)}-01`;
                     break;
-                case 'quarter':
-                    const q = Math.floor(today.getMonth() / 3);
-                    startDate = new Date(today.getFullYear(), q * 3, 1).toISOString().split('T')[0];
+                case 'quarter': {
+                    const q = Math.floor(m / 3);
+                    startDate = `${y}-${pad(q * 3 + 1)}-01`;
                     break;
+                }
                 case 'year':
-                    startDate = new Date(today.getFullYear(), 0, 1).toISOString().split('T')[0];
+                    startDate = `${y}-01-01`;
                     break;
                 case 'custom':
-                    startDate = document.getElementById('dateFrom').value;
-                    endDate = document.getElementById('dateTo').value;
+                    startDate = document.getElementById('dateFrom').value || `${y}-${pad(m + 1)}-01`;
+                    endDate = document.getElementById('dateTo').value || endDateDefault;
                     break;
+                default:
+                    startDate = `${y}-${pad(m + 1)}-01`;
             }
             
-            return { startDate, endDate };
+            return { startDate, endDate, period };
         }
         
         document.addEventListener('DOMContentLoaded', async () => {
@@ -380,10 +424,10 @@
                     document.getElementById('userInitials').textContent = `${user.first_name[0]}${user.last_name[0]}`;
                 }
                 
-                // Set default date range
                 const today = new Date();
-                document.getElementById('dateTo').value = today.toISOString().split('T')[0];
-                document.getElementById('dateFrom').value = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+                const pad = (n) => String(n).padStart(2, '0');
+                document.getElementById('dateTo').value = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+                document.getElementById('dateFrom').value = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-01`;
                 
                 await loadReport();
             } catch (error) {
@@ -394,42 +438,52 @@
         
         async function loadReport() {
             try {
-                const { startDate, endDate } = getDateRange();
-                
-                // Load sales data
-                const [summaryRes, trendRes, topCustomersRes] = await Promise.all([
-                    SalesService.getDashboardStats(),
+                const { startDate, endDate, period } = getDateRange();
+                const periodEl = document.getElementById('periodLabel');
+                if (periodEl) periodEl.textContent = formatPeriodBanner(startDate, endDate, period);
+
+                // Wire to reports.php (summary / trend / by_customer / by_product)
+                const [summaryRes, trendRes, topCustomersRes, topProductsRes, ordersRes] = await Promise.all([
+                    SalesService.getSalesSummaryReport({ start_date: startDate, end_date: endDate }),
                     SalesService.getSalesTrend({ start_date: startDate, end_date: endDate }),
-                    SalesService.getTopCustomers({ start_date: startDate, end_date: endDate, limit: 10 })
+                    typeof SalesService.getSalesByCustomerReport === 'function'
+                        ? SalesService.getSalesByCustomerReport({ start_date: startDate, end_date: endDate, limit: 10 })
+                        : api.get('/sales/reports.php', { params: { action: 'by_customer', start_date: startDate, end_date: endDate, limit: 10 } }),
+                    typeof SalesService.getSalesByProduct === 'function'
+                        ? SalesService.getSalesByProduct({ start_date: startDate, end_date: endDate, limit: 10 })
+                        : api.get('/sales/reports.php', { params: { action: 'by_product', start_date: startDate, end_date: endDate, limit: 10 } }),
+                    SalesService.getOrders({ date_from: startDate, date_to: endDate, limit: 50 })
                 ]);
                 
-                const summary = summaryRes.data || {};
-                const trend = trendRes.data || [];
+                const summary = summaryRes.data || summaryRes || {};
+                let trend = trendRes.data || [];
+                if (!Array.isArray(trend) && Array.isArray(trendRes)) trend = trendRes;
                 const topCustomers = topCustomersRes.data || [];
+                const topProducts = topProductsRes.data || [];
                 
-                // Update summary stats
-                document.getElementById('totalSales').textContent = formatCurrency(summary.total_sales || summary.mtd_sales || 0);
-                document.getElementById('totalOrders').textContent = summary.total_orders || 0;
-                document.getElementById('avgOrder').textContent = formatCurrency(summary.avg_order_value || 0);
-                document.getElementById('totalCollections').textContent = formatCurrency(summary.collections || 0);
+                const totalSales = Number(summary.total_sales || 0);
+                const totalOrders = Number(summary.total_orders || 0);
+                const avgOrder = Number(summary.avg_order_value || (totalOrders > 0 ? totalSales / totalOrders : 0));
+                const collections = Number(summary.collections || 0);
+                const change = Number(summary.change_percent || 0);
+
+                document.getElementById('totalSales').textContent = formatCurrency(totalSales);
+                document.getElementById('totalOrders').textContent = totalOrders.toLocaleString();
+                document.getElementById('avgOrder').textContent = formatCurrency(avgOrder);
+                document.getElementById('totalCollections').textContent = formatCurrency(collections);
+
+                const salesChange = document.getElementById('salesChange');
+                if (salesChange) {
+                    const sign = change > 0 ? '+' : '';
+                    salesChange.textContent = `${sign}${change.toFixed(1)}% vs previous period`;
+                    salesChange.className = 'stat-desc ' + (change >= 0 ? 'text-success' : 'text-error');
+                }
                 
-                // Render charts
-                renderSalesTrendChart(trend);
+                renderSalesTrendChart(Array.isArray(trend) ? trend : []);
                 renderSalesByTypeChart(summary.by_type || []);
-                
-                // Render top customers table
-                renderTopCustomersTable(topCustomers);
-                
-                // Load orders for details
-                const ordersRes = await SalesService.getOrders({ 
-                    date_from: startDate, 
-                    date_to: endDate,
-                    limit: 50
-                });
+                renderTopCustomersTable(Array.isArray(topCustomers) ? topCustomers : []);
+                renderTopProductsTable(Array.isArray(topProducts) ? topProducts : []);
                 renderSalesDetails(ordersRes.data || []);
-                
-                // Render top products (simulated from order data)
-                renderTopProductsTable([]);
                 
             } catch (error) {
                 console.error('Error loading report:', error);
@@ -439,39 +493,62 @@
         
         function renderSalesTrendChart(data) {
             const ctx = document.getElementById('salesTrendChart').getContext('2d');
-            
             if (salesTrendChart) salesTrendChart.destroy();
-            
-            const labels = data.map(d => {
-                const date = new Date(d.date);
-                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            });
+
+            const rows = Array.isArray(data) ? data : [];
+            const values = rows.map(d => Number(d.total ?? d.amount ?? 0));
+            const maxVal = Math.max(0, ...values);
+            // Nice Y scale in ₱10k steps (at least ₱10k ceiling)
+            const step = 10000;
+            const yMax = Math.max(step, Math.ceil((maxVal * 1.15) / step) * step);
+
+            const labels = rows.map(d => formatDateLabel(d.date));
             
             salesTrendChart = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: labels,
+                    labels: labels.length ? labels : ['—'],
                     datasets: [{
-                        label: 'Sales',
-                        data: data.map(d => d.total || d.amount || 0),
-                        borderColor: '#3b82f6',
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        label: 'Daily Sales',
+                        data: values.length ? values : [0],
+                        borderColor: '#059669',
+                        backgroundColor: 'rgba(5, 150, 105, 0.12)',
                         fill: true,
-                        tension: 0.4
+                        tension: 0.35,
+                        pointRadius: 3,
+                        pointHoverRadius: 5,
+                        borderWidth: 2
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
                     plugins: {
-                        legend: { display: false }
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => 'Sales: ' + formatCurrency(ctx.parsed.y)
+                            }
+                        }
                     },
                     scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }
+                        },
                         y: {
                             beginAtZero: true,
+                            min: 0,
+                            max: yMax,
                             ticks: {
-                                callback: value => '₱' + (value / 1000).toFixed(0) + 'k'
-                            }
+                                stepSize: step,
+                                callback: (value) => {
+                                    if (value >= 1000) return '₱' + (value / 1000).toFixed(0) + 'k';
+                                    return '₱' + value;
+                                }
+                            },
+                            grid: { color: 'rgba(0,0,0,0.06)' }
                         }
                     }
                 }
@@ -480,41 +557,65 @@
         
         function renderSalesByTypeChart(data) {
             const ctx = document.getElementById('salesByTypeChart').getContext('2d');
-            
             if (salesByTypeChart) salesByTypeChart.destroy();
             
-            const typeLabels = {
-                'supermarket': 'Supermarket',
-                'institutional': 'Institutional',
-                'feeding_program': 'Feeding Program',
-                'wholesaler': 'Wholesaler',
-                'individual': 'Individual'
-            };
-            
-            const defaultData = [
-                { type: 'supermarket', amount: 0 },
-                { type: 'institutional', amount: 0 },
-                { type: 'wholesaler', amount: 0 },
-                { type: 'feeding_program', amount: 0 }
-            ];
-            
-            const chartData = data.length > 0 ? data : defaultData;
+            const chartData = (Array.isArray(data) ? data : [])
+                .map(d => ({
+                    type: d.type || d.customer_type,
+                    amount: Number(d.amount ?? d.total_amount ?? d.total ?? 0)
+                }))
+                .filter(d => d.amount > 0);
+
+            if (!chartData.length) {
+                salesByTypeChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['No data'],
+                        datasets: [{ data: [1], backgroundColor: ['#e5e7eb'], borderWidth: 0 }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false }, tooltip: { enabled: false } }
+                    }
+                });
+                return;
+            }
             
             salesByTypeChart = new Chart(ctx, {
                 type: 'doughnut',
                 data: {
-                    labels: chartData.map(d => typeLabels[d.type] || d.type),
+                    labels: chartData.map(d => formatCustomerType(d.type)),
                     datasets: [{
-                        data: chartData.map(d => d.amount || d.total || 0),
-                        backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444'],
-                        borderWidth: 0
+                        data: chartData.map(d => d.amount),
+                        backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'],
+                        borderWidth: 2,
+                        borderColor: '#ffffff',
+                        hoverOffset: 6
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    cutout: '58%',
                     plugins: {
-                        legend: { position: 'bottom' }
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 16,
+                                font: { size: 12, weight: '500' }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => {
+                                    const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                    const pct = total > 0 ? ((ctx.parsed / total) * 100).toFixed(1) : 0;
+                                    return ` ${ctx.label}: ${formatCurrency(ctx.parsed)} (${pct}%)`;
+                                }
+                            }
+                        }
                     }
                 }
             });
@@ -532,12 +633,12 @@
                 <tr>
                     <td>
                         <div class="flex items-center gap-2">
-                            <span class="badge badge-sm">${i + 1}</span>
-                            ${p.product_name}
+                            <span class="badge badge-sm badge-ghost">${i + 1}</span>
+                            <span class="font-medium">${p.product_name || '—'}</span>
                         </div>
                     </td>
-                    <td class="text-center">${p.quantity || 0}</td>
-                    <td class="text-right font-mono">${formatCurrency(p.revenue)}</td>
+                    <td class="text-center tabular-nums">${Number(p.quantity_sold ?? p.quantity ?? 0).toLocaleString()}</td>
+                    <td class="text-right font-mono tabular-nums">${formatCurrency(p.revenue)}</td>
                 </tr>
             `).join('');
         }
@@ -554,15 +655,15 @@
                 <tr>
                     <td>
                         <div class="flex items-center gap-2">
-                            <span class="badge badge-sm">${i + 1}</span>
+                            <span class="badge badge-sm ${i < 3 ? 'badge-primary' : 'badge-ghost'}">${i + 1}</span>
                             <div>
                                 <div class="font-medium">${c.customer_name || c.name}</div>
-                                <div class="text-xs text-base-content/60">${c.customer_type || ''}</div>
+                                <span class="badge badge-outline badge-xs mt-0.5">${formatCustomerType(c.customer_type)}</span>
                             </div>
                         </div>
                     </td>
-                    <td class="text-center">${c.order_count || c.orders || 0}</td>
-                    <td class="text-right font-mono">${formatCurrency(c.total_amount || c.total)}</td>
+                    <td class="text-center tabular-nums font-medium">${Number(c.order_count || c.orders || 0).toLocaleString()}</td>
+                    <td class="text-right font-mono tabular-nums font-semibold">${formatCurrency(c.total_amount || c.total)}</td>
                 </tr>
             `).join('');
         }
@@ -579,22 +680,32 @@
                 'pending': 'badge-warning',
                 'approved': 'badge-info',
                 'preparing': 'badge-secondary',
+                'picking': 'badge-secondary',
                 'ready': 'badge-accent',
+                'dispatched': 'badge-accent',
                 'delivered': 'badge-success',
+                'accepted': 'badge-success',
+                'partially_accepted': 'badge-warning',
                 'cancelled': 'badge-error'
             };
             
-            tbody.innerHTML = data.map(o => `
+            tbody.innerHTML = data.map(o => {
+                const typeLabel = formatCustomerType(o.customer_type);
+                const pay = (o.payment_mode || o.payment_type || 'credit');
+                const payLabel = String(pay).charAt(0).toUpperCase() + String(pay).slice(1);
+                const ds = String(o.order_date || o.created_at || '').slice(0, 10);
+                const dateStr = formatDateLabel(ds) || '—';
+                return `
                 <tr>
-                    <td class="text-sm">${new Date(o.order_date || o.created_at).toLocaleDateString()}</td>
+                    <td class="text-sm tabular-nums">${dateStr}</td>
                     <td class="font-mono text-sm">${o.order_number || 'ORD-' + o.id}</td>
                     <td>${o.customer_name || 'Unknown'}</td>
-                    <td><span class="badge badge-outline badge-xs">${o.customer_type || '-'}</span></td>
-                    <td class="text-right font-mono">${formatCurrency(o.total_amount)}</td>
-                    <td><span class="badge badge-outline badge-xs">${o.payment_mode || 'credit'}</span></td>
+                    <td><span class="badge badge-outline badge-xs">${typeLabel}</span></td>
+                    <td class="text-right font-mono tabular-nums">${formatCurrency(o.total_amount)}</td>
+                    <td><span class="badge badge-outline badge-xs">${payLabel}</span></td>
                     <td><span class="badge ${statusBadges[o.status] || 'badge-ghost'} badge-xs">${o.status}</span></td>
-                </tr>
-            `).join('');
+                </tr>`;
+            }).join('');
         }
         
         function exportReport() {

@@ -125,7 +125,20 @@ function getCustomers($conn) {
                 c.created_at,
                 c.updated_at,
                 (SELECT COUNT(*) FROM sales_orders so WHERE so.customer_id = c.id) as total_orders,
-                (SELECT COALESCE(SUM(so.total_amount), 0) FROM sales_orders so WHERE so.customer_id = c.id AND so.status NOT IN ('cancelled', 'rejected')) as total_purchases
+                (SELECT COALESCE(SUM(so.total_amount), 0) FROM sales_orders so WHERE so.customer_id = c.id AND so.status NOT IN ('cancelled', 'rejected')) as total_purchases,
+                -- Outstanding AR: prefer open order balances, fall back to customer ledger balance
+                GREATEST(
+                    0,
+                    COALESCE((
+                        SELECT SUM(GREATEST(COALESCE(so.balance_due, 0), 0))
+                        FROM sales_orders so
+                        WHERE so.customer_id = c.id
+                          AND so.status NOT IN ('cancelled', 'rejected', 'draft')
+                          AND COALESCE(so.balance_due, 0) > 0
+                    ), 0),
+                    COALESCE(c.current_balance, 0)
+                ) AS outstanding_balance,
+                (SELECT MAX(so.created_at) FROM sales_orders so WHERE so.customer_id = c.id) AS last_order_at
             FROM customers c
             $whereClause
             ORDER BY c.name ASC
@@ -137,6 +150,18 @@ function getCustomers($conn) {
     $stmt = $conn->prepare($sql);
     $stmt->execute($params);
     $customers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Derived fields for list UX (sales / finance)
+    foreach ($customers as &$row) {
+        $limitAmt = (float) ($row['credit_limit'] ?? 0);
+        $outstanding = (float) ($row['outstanding_balance'] ?? 0);
+        $row['outstanding_balance'] = round($outstanding, 2);
+        $row['available_credit'] = round(max(0, $limitAmt - $outstanding), 2);
+        $row['credit_utilization'] = $limitAmt > 0
+            ? round(min(100, ($outstanding / $limitAmt) * 100), 1)
+            : 0;
+    }
+    unset($row);
     
     sendSuccess([
         'customers' => $customers,
