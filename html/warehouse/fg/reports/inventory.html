@@ -569,12 +569,60 @@
                 showToast('Generate report first', 'warning');
                 return;
             }
-            showToast(`Exporting ${format.toUpperCase()}...`, 'info');
-            // TODO: Implement actual export
+
+            if (format === 'pdf') {
+                printReport();
+                return;
+            }
+
+            const headers = ['Product', 'SKU', 'Category', 'Batch', 'Chiller', 'Quantity', 'Unit Price', 'Total Value', 'Expiry', 'Status'];
+            const rows = reportData.map(item => {
+                const unitPrice = item.unit_price || 0;
+                const value = item.quantity * unitPrice;
+                return [
+                    item.product_name || 'N/A',
+                    item.product_sku || item.sku || 'N/A',
+                    item.category || 'N/A',
+                    item.batch_code || '',
+                    item.chiller_name || 'Unassigned',
+                    item.quantity || 0,
+                    parseFloat(unitPrice || 0).toFixed(2),
+                    parseFloat(value || 0).toFixed(2),
+                    formatDate(item.expiry_date),
+                    getExpiryStatus(item.expiry_date)
+                ];
+            });
+            downloadCsv(`inventory-report-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+            showToast('CSV downloaded', 'success');
         }
 
         function printReport() {
             window.print();
+        }
+
+        function getExpiryStatus(expiryDate) {
+            const days = Math.floor((new Date(expiryDate) - new Date()) / (1000 * 60 * 60 * 24));
+            if (days < 0) return 'Expired';
+            if (days <= 3) return 'Critical';
+            if (days <= 7) return 'Near Expiry';
+            return 'Good';
+        }
+
+        function downloadCsv(filename, headers, rows) {
+            const csv = [headers, ...rows]
+                .map(row => row.map(csvCell).join(','))
+                .join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            link.click();
+            URL.revokeObjectURL(link.href);
+        }
+
+        function csvCell(value) {
+            const text = value == null ? '' : String(value);
+            return `"${text.replace(/"/g, '""')}"`;
         }
 
         function formatDate(dateStr) {

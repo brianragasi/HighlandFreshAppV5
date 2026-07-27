@@ -470,7 +470,7 @@
         <!-- Footer -->
         <footer class="footer footer-center p-4 bg-base-100 text-base-content border-t border-base-300 no-print">
             <div>
-                <p class="text-sm text-base-content/60">� 2026 Highland Fresh Dairy. All rights reserved.</p>
+                <p class="text-sm text-base-content/60">2026 Highland Fresh Dairy. All rights reserved.</p>
             </div>
         </footer>
     </div>
@@ -719,12 +719,46 @@
                 showToast('Generate report first', 'warning');
                 return;
             }
-            showToast(`Exporting ${format.toUpperCase()}...`, 'info');
-            // TODO: Implement actual export
+
+            if (format === 'pdf') {
+                printReport();
+                return;
+            }
+
+            const headers = ['DR No.', 'Date', 'Customer', 'Items', 'Quantity', 'Amount', 'Status', 'Created By'];
+            const rows = reportData.map(dr => [
+                dr.dr_number,
+                formatDate(dr.created_at),
+                dr.customer_name || 'N/A',
+                dr.item_count || 0,
+                dr.total_quantity || 0,
+                parseFloat(dr.total_amount || 0).toFixed(2),
+                dr.status || '',
+                dr.created_by_name || 'N/A'
+            ]);
+            downloadCsv(`dispatch-report-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+            showToast('CSV downloaded', 'success');
         }
 
         function printReport() {
             window.print();
+        }
+
+        function downloadCsv(filename, headers, rows) {
+            const csv = [headers, ...rows]
+                .map(row => row.map(csvCell).join(','))
+                .join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            link.click();
+            URL.revokeObjectURL(link.href);
+        }
+
+        function csvCell(value) {
+            const text = value == null ? '' : String(value);
+            return `"${text.replace(/"/g, '""')}"`;
         }
 
         function formatDate(dateStr) {

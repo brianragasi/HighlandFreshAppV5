@@ -1684,7 +1684,7 @@ function handlePut($db, $action, $currentUser) {
                 foreach ($allPOItems as $poItem) {
                     $itemData = $receivingMap[(int)$poItem['id']] ?? null;
                     if (!$itemData) {
-                        // Item not in this receiving batch â€” check if already fully received
+                        // Item not in this receiving batch; check if already fully received.
                         $prevAccepted = (float)$poItem['quantity_received'];
                         if ($prevAccepted < (float)$poItem['quantity'] - 0.001) {
                             $allFullyAccepted = false;

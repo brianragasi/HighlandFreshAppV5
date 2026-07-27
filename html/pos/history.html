@@ -1030,9 +1030,54 @@
         }
 
         function exportData() {
-            showToast('Exporting data...', 'info');
-            // TODO: Implement CSV export
-            setTimeout(() => showToast('Export feature coming soon', 'info'), 1000);
+            if (historyData.length === 0) {
+                showToast('No records to export', 'warning');
+                return;
+            }
+
+            const isSales = currentTab === 'sales';
+            const headers = isSales
+                ? ['Transaction No.', 'Date', 'Customer', 'Items', 'Amount', 'Payment', 'Status']
+                : ['OR No.', 'Date', 'Customer', 'DR No.', 'Amount', 'Payment', 'Status'];
+            const rows = historyData.map(row => isSales
+                ? [
+                    row.transaction_code,
+                    formatDateTime(row.created_at),
+                    row.customer_name,
+                    row.items_count,
+                    parseFloat(row.total_amount || 0).toFixed(2),
+                    formatPaymentMethod(row.payment_method),
+                    row.status
+                ]
+                : [
+                    row.or_number,
+                    formatDateTime(row.collected_at || row.created_at),
+                    row.customer_name,
+                    row.dr_number,
+                    parseFloat(row.amount || 0).toFixed(2),
+                    formatPaymentMethod(row.payment_method),
+                    row.status
+                ]);
+
+            downloadCsv(`pos-${currentTab}-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+            showToast('CSV downloaded', 'success');
+        }
+
+        function downloadCsv(filename, headers, rows) {
+            const csv = [headers, ...rows]
+                .map(row => row.map(csvCell).join(','))
+                .join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            link.click();
+            URL.revokeObjectURL(link.href);
+        }
+
+        function csvCell(value) {
+            const text = value == null ? '' : String(value);
+            return `"${text.replace(/"/g, '""')}"`;
         }
     </script>
 </body>
