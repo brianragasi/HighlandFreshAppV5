@@ -40,7 +40,24 @@ class Mailer {
         }
 
         // Connect with a short timeout so UI callers (forgot-password) cannot hang
-        $socket = @fsockopen($host, $port, $errno, $errstr, 8);
+        // Configure stream context for SSL/TLS options
+        $contextOptions = [
+            'ssl' => [
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+                'allow_self_signed' => true,
+            ],
+        ];
+        $context = stream_context_create($contextOptions);
+
+        $socket = @stream_socket_client(
+            "tcp://{$host}:{$port}",
+            $errno,
+            $errstr,
+            8,
+            STREAM_CLIENT_CONNECT,
+            $context
+        );
         if (!$socket) {
             throw new Exception("SMTP connection failed: {$errstr} ({$errno})");
         }

@@ -1,13 +1,13 @@
 <?php
 /**
- * Highland Fresh System - Purchase Requests API
+ * Highland Fresh System - Purchase Request Slips API
  * 
  * Phase 1 Purchasing Workflow:
  *   Warehouse Raw creates PR → GM approves → Purchaser creates PO
  * 
- * POST   - Create PR (warehouse_raw only)
- * GET    - List PRs, get details
- * PUT    - Approve/Reject PR (GM only)
+ * POST   - Create PRS
+ * GET    - List PRS records, get details
+ * PUT    - Edit/submit drafts; legacy GM PR approval actions are retained
  * 
  * @package HighlandFresh
  * @version 4.0
@@ -15,8 +15,8 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 
-// Allowed roles: warehouse_raw creates, purchaser views approved, GM approves
-$currentUser = Auth::requireRole(['warehouse_raw', 'purchaser', 'general_manager']);
+// Allowed roles: warehouse_raw creates PRS, purchaser converts PRS to PO, GM approves POs.
+$currentUser = Auth::requireRole(['warehouse_raw', 'purchaser', 'general_manager', 'production_staff', 'maintenance_head']);
 
 $action = getParam('action', 'list');
 
@@ -57,7 +57,7 @@ function ensurePRTables($db) {
             `needed_by_date` DATE DEFAULT NULL,
             `purpose` VARCHAR(255) DEFAULT NULL,
             `notes` TEXT DEFAULT NULL,
-            `status` ENUM('draft','pending','approved','rejected','converted') DEFAULT 'pending',
+            `status` ENUM('draft','pending','approved','rejected','converted','partially_converted') DEFAULT 'pending',
             `approved_by` INT(11) DEFAULT NULL,
             `approved_at` DATETIME DEFAULT NULL,
             `approver_name` VARCHAR(100) DEFAULT NULL,
@@ -111,7 +111,7 @@ function ensurePRTables($db) {
 
     $db->exec("
         ALTER TABLE `purchase_requests`
-        MODIFY COLUMN `status` ENUM('draft','pending','approved','rejected','converted') DEFAULT 'pending'
+        MODIFY COLUMN `status` ENUM('draft','pending','approved','rejected','converted','partially_converted') DEFAULT 'pending'
     ");
 
     $db->exec("
@@ -129,6 +129,37 @@ function ensurePRTables($db) {
             KEY `idx_pr_history_changed_at` (`changed_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     ");
+
+    ensureProcurementNotificationSupport($db);
+}
+
+function ensureProcurementNotificationSupport($db) {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS `procurement_notifications` (
+            `id` INT(11) NOT NULL AUTO_INCREMENT,
+            `target_role` VARCHAR(50) NOT NULL,
+            `notification_type` VARCHAR(50) NOT NULL,
+            `title` VARCHAR(150) NOT NULL,
+            `message` TEXT NOT NULL,
+            `reference_type` VARCHAR(50) DEFAULT NULL,
+            `reference_id` INT(11) DEFAULT NULL,
+            `is_read` TINYINT(1) NOT NULL DEFAULT 0,
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_procurement_notifications_role` (`target_role`, `is_read`),
+            KEY `idx_procurement_notifications_reference` (`reference_type`, `reference_id`),
+            KEY `idx_procurement_notifications_created` (`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    ");
+}
+
+function createProcurementNotification($db, $targetRole, $type, $title, $message, $referenceType = null, $referenceId = null) {
+    $stmt = $db->prepare("
+        INSERT INTO procurement_notifications
+        (target_role, notification_type, title, message, reference_type, reference_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ");
+    $stmt->execute([$targetRole, $type, $title, $message, $referenceType, $referenceId]);
 }
 
 /**
@@ -170,12 +201,12 @@ function handleGet($db, $action, $currentUser) {
                 $params[] = $date_to;
             }
 
-            // Warehouse Raw sees their own PRs; Purchaser sees approved only; GM sees all
+            // Warehouse Raw sees their own PRS records; Purchaser sees submitted PRS inbox items.
             if ($currentUser['role'] === 'warehouse_raw') {
                 $where .= " AND pr.requested_by = ?";
                 $params[] = $currentUser['user_id'];
             } elseif ($currentUser['role'] === 'purchaser') {
-                $where .= " AND pr.status = 'approved' AND pr.approved_by IS NOT NULL AND pr.approved_at IS NOT NULL";
+                $where .= " AND pr.status IN ('pending', 'approved', 'converted', 'partially_converted')";
             }
 
             // Count total
@@ -290,17 +321,18 @@ function handleGet($db, $action, $currentUser) {
                 FROM purchase_requests 
                 WHERE pr_number LIKE ?
             ");
-            $stmt->execute(["PR-{$today}-%"]);
+            $stmt->execute(["PRS-{$today}-%"]);
             $count = (int) $stmt->fetch()['count'] + 1;
-            $nextNumber = "PR-{$today}-" . str_pad($count, 3, '0', STR_PAD_LEFT);
+            $nextNumber = "PRS-{$today}-" . str_pad($count, 3, '0', STR_PAD_LEFT);
 
-            Response::success(['next_number' => $nextNumber], 'Next PR number');
+            Response::success(['next_number' => $nextNumber], 'Next PRS number');
             break;
 
+        case 'prs_inbox':
         case 'approved_for_po':
-            // Get approved PRs that don't have a completed PO yet
-            // Used by Purchaser when creating a PO
-            requireActionRole($currentUser, ['purchaser', 'general_manager'], 'Only Purchaser can view approved PRs for PO creation');
+            // Purchaser inbox: submitted PRS records that still need PO creation.
+            // Legacy 'approved' PR rows are included for backward compatibility.
+            requireActionRole($currentUser, ['purchaser', 'general_manager'], 'Only Purchaser can view PRS records for PO creation');
 
             $stmt = $db->query("
                 SELECT 
@@ -310,9 +342,7 @@ function handleGet($db, $action, $currentUser) {
                     (SELECT COALESCE(SUM(estimated_total), 0) FROM purchase_request_items WHERE purchase_request_id = pr.id) as estimated_total
                 FROM purchase_requests pr
                 LEFT JOIN users u ON pr.requested_by = u.id
-                WHERE pr.status = 'approved'
-                AND pr.approved_by IS NOT NULL
-                AND pr.approved_at IS NOT NULL
+                WHERE pr.status IN ('pending', 'approved')
                 AND pr.id NOT IN (
                     SELECT COALESCE(purchase_request_id, 0) 
                     FROM purchase_orders 
@@ -340,7 +370,7 @@ function handleGet($db, $action, $currentUser) {
                 $req['items'] = $itemsStmt->fetchAll();
             }
 
-            Response::success($requests, 'Approved PRs for PO creation');
+            Response::success($requests, 'PRS inbox retrieved for PO creation');
             break;
 
         case 'requested_items':
@@ -406,8 +436,7 @@ function handleGet($db, $action, $currentUser) {
                     pr.created_at
                 FROM purchase_requests pr
                 JOIN purchase_request_items pri ON pri.purchase_request_id = pr.id
-                WHERE pr.department = 'warehouse_raw'
-                  AND pr.status = 'pending'
+                WHERE pr.status = 'pending'
                   AND (pri.ingredient_id IS NOT NULL OR pri.mro_item_id IS NOT NULL)
                 ORDER BY pr.created_at DESC, pr.id DESC
             ");
@@ -635,8 +664,9 @@ function replacePRItems($db, $prId, $items, $defaultPurpose = null) {
 function handlePost($db, $action, $currentUser) {
     switch ($action) {
         case 'create':
-            // ===== WAREHOUSE RAW ONLY =====
-            requireActionRole($currentUser, ['warehouse_raw'], 'Only Warehouse Raw staff can create Purchase Requests');
+            // Warehouse Raw creates PRS records manually; low-stock screens only
+            // help the custodian decide what to request.
+            requireActionRole($currentUser, ['warehouse_raw', 'general_manager'], 'Only Warehouse Raw can create Purchase Request Slips');
 
             $data = getRequestBody();
 
@@ -656,8 +686,15 @@ function handlePost($db, $action, $currentUser) {
                 Response::error('Invalid Purchase Request status', 400);
             }
 
+            // V4.1: Department derived from the creator's role
+            $departmentMap = [
+                'warehouse_raw' => 'warehouse_raw',
+                'general_manager'  => 'general',
+            ];
+            $department = $departmentMap[$currentUser['role']] ?? 'warehouse_raw';
+
             if ($status === 'pending') {
-                $duplicate = findDuplicatePendingPR($db, 'warehouse_raw', $fingerprint);
+                $duplicate = findDuplicatePendingPR($db, $department, $fingerprint);
                 if ($duplicate) {
                     Response::error('Duplicate pending Purchase Request already exists (' . $duplicate['pr_number'] . '). Please update that request instead.', 409, [
                         'duplicate_pr_id' => (int) $duplicate['id'],
@@ -665,7 +702,7 @@ function handlePost($db, $action, $currentUser) {
                     ]);
                 }
 
-                $overlap = findPendingPRWithOverlappingItems($db, 'warehouse_raw', $data['items']);
+                $overlap = findPendingPRWithOverlappingItems($db, $department, $data['items']);
                 if ($overlap) {
                     Response::error('Pending Purchase Request already exists for one or more items (' . $overlap['pr_number'] . '). Please update that request instead.', 409, [
                         'duplicate_pr_id' => (int) $overlap['id'],
@@ -677,22 +714,23 @@ function handlePost($db, $action, $currentUser) {
             $db->beginTransaction();
 
             try {
-                // Generate PR number
+                // Generate PRS number
                 $today = date('Ymd');
                 $codeStmt = $db->prepare("SELECT COUNT(*) as count FROM purchase_requests WHERE pr_number LIKE ?");
-                $codeStmt->execute(["PR-{$today}-%"]);
+                $codeStmt->execute(["PRS-{$today}-%"]);
                 $count = (int) $codeStmt->fetch()['count'] + 1;
-                $prNumber = "PR-{$today}-" . str_pad($count, 3, '0', STR_PAD_LEFT);
+                $prNumber = "PRS-{$today}-" . str_pad($count, 3, '0', STR_PAD_LEFT);
 
                 // Insert PR
                 $stmt = $db->prepare("
                     INSERT INTO purchase_requests 
                     (pr_number, requested_by, department, priority, needed_by_date, purpose, notes, status, request_fingerprint)
-                    VALUES (?, ?, 'warehouse_raw', ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
                     $prNumber,
                     $currentUser['user_id'],
+                    $department,
                     $priority,
                     $data['needed_by_date'] ?? null,
                     $data['purpose'] ?? null,
@@ -702,9 +740,21 @@ function handlePost($db, $action, $currentUser) {
                 ]);
 
                 $prId = $db->lastInsertId();
-                addPRStatusHistory($db, $prId, null, $status, $currentUser['user_id'], $status === 'draft' ? 'Draft saved' : 'Submitted for GM approval');
+                addPRStatusHistory($db, $prId, null, $status, $currentUser['user_id'], $status === 'draft' ? 'PRS draft saved' : 'Submitted to Purchaser inbox');
 
                 replacePRItems($db, $prId, $data['items'], $data['purpose'] ?? null);
+
+                if ($status === 'pending') {
+                    createProcurementNotification(
+                        $db,
+                        'purchaser',
+                        'prs_submitted_for_canvass',
+                        'New PRS for canvassing',
+                        'Warehouse Raw submitted ' . $prNumber . '. Canvass 3 suppliers and create the formal PO.',
+                        'purchase_request',
+                        $prId
+                    );
+                }
 
                 $db->commit();
 
@@ -719,7 +769,7 @@ function handlePost($db, $action, $currentUser) {
                     'id' => $prId,
                     'pr_number' => $prNumber,
                     'status' => $status
-                ], $status === 'draft' ? 'Purchase Request draft saved' : 'Purchase Request created — awaiting GM approval', 201);
+                ], $status === 'draft' ? 'Purchase Request Slip draft saved' : 'Purchase Request Slip submitted to Purchaser', 201);
 
             } catch (Exception $e) {
                 $db->rollBack();
@@ -841,14 +891,14 @@ function handlePut($db, $action, $currentUser) {
             break;
 
         case 'submit':
-            requireActionRole($currentUser, ['warehouse_raw'], 'Only Warehouse Raw staff can submit Purchase Requests');
+            requireActionRole($currentUser, ['warehouse_raw'], 'Only Warehouse Raw staff can submit Purchase Request Slips');
 
             if ($current['requested_by'] != $currentUser['user_id']) {
                 Response::error('You can only submit your own Purchase Request drafts', 403);
             }
 
             if ($current['status'] !== 'draft') {
-                Response::error('Only draft Purchase Requests can be submitted. Current status: ' . $current['status'], 400);
+                Response::error('Only draft Purchase Request Slips can be submitted. Current status: ' . $current['status'], 400);
             }
 
             $fingerprint = $current['request_fingerprint'] ?? null;
@@ -884,80 +934,23 @@ function handlePut($db, $action, $currentUser) {
                 WHERE id = ?
             ");
             $stmt->execute([$id]);
-            addPRStatusHistory($db, $id, 'draft', 'pending', $currentUser['user_id'], 'Submitted for GM approval');
+            addPRStatusHistory($db, $id, 'draft', 'pending', $currentUser['user_id'], 'Submitted to Purchaser inbox');
+            createProcurementNotification(
+                $db,
+                'purchaser',
+                'prs_submitted_for_canvass',
+                'New PRS for canvassing',
+                'Warehouse Raw submitted ' . ($current['pr_number'] ?? ('PRS #' . $id)) . '. Canvass 3 suppliers and create the formal PO.',
+                'purchase_request',
+                $id
+            );
 
             logAudit($currentUser['user_id'], 'SUBMIT', 'purchase_requests', $id,
                 ['status' => 'draft'],
                 ['status' => 'pending']
             );
 
-            Response::success(['id' => $id, 'status' => 'pending'], 'Purchase Request submitted for GM approval');
-            break;
-
-        case 'gm_update':
-            requireActionRole($currentUser, ['general_manager'], 'Only the General Manager can edit Purchase Requests');
-
-            if ($current['status'] !== 'pending') {
-                Response::error('Only pending Purchase Requests can be edited. Current status: ' . $current['status'], 400);
-            }
-
-            rejectSupplierFieldsInPR($data);
-            validatePRCreateData($data);
-
-            $fingerprint = buildPRFingerprint($data['items']);
-
-            $overlap = findPendingPRWithOverlappingItems($db, $current['department'], $data['items'], $id);
-            if ($overlap) {
-                Response::error('Pending Purchase Request already exists for one or more items (' . $overlap['pr_number'] . '). Please update that request instead.', 409, [
-                    'duplicate_pr_id' => (int) $overlap['id'],
-                    'duplicate_pr_number' => $overlap['pr_number']
-                ]);
-            }
-
-            $priority = $data['priority'] ?? $current['priority'];
-            if (!in_array($priority, ['low', 'normal', 'high', 'urgent'])) {
-                Response::error('Invalid priority', 400);
-            }
-
-            $db->beginTransaction();
-            try {
-                $stmt = $db->prepare("
-                    UPDATE purchase_requests
-                    SET priority = ?,
-                        needed_by_date = ?,
-                        purpose = ?,
-                        notes = ?,
-                        request_fingerprint = ?,
-                        updated_at = NOW()
-                    WHERE id = ?
-                ");
-                $stmt->execute([
-                    $priority,
-                    $data['needed_by_date'] ?? null,
-                    $data['purpose'] ?? null,
-                    $data['notes'] ?? null,
-                    $fingerprint,
-                    $id
-                ]);
-
-                replacePRItems($db, $id, $data['items'], $data['purpose'] ?? null);
-
-                $gmNotes = trim((string) ($data['gm_notes'] ?? ''));
-                $historyNote = $gmNotes !== '' ? 'GM review: ' . $gmNotes : 'GM reviewed and updated request';
-                addPRStatusHistory($db, $id, 'pending', 'pending', $currentUser['user_id'], $historyNote);
-
-                $db->commit();
-            } catch (Exception $e) {
-                $db->rollBack();
-                throw $e;
-            }
-
-            logAudit($currentUser['user_id'], 'UPDATE', 'purchase_requests', $id,
-                ['status' => $current['status']],
-                ['status' => 'pending', 'items_count' => count($data['items'])]
-            );
-
-            Response::success(['id' => $id, 'status' => 'pending'], 'Purchase Request updated by GM');
+            Response::success(['id' => $id, 'status' => 'pending'], 'Purchase Request Slip submitted to Purchaser');
             break;
 
         case 'reopen':
@@ -993,91 +986,6 @@ function handlePut($db, $action, $currentUser) {
             );
 
             Response::success(['id' => $id, 'status' => 'draft'], 'Purchase Request reopened as draft');
-            break;
-
-        case 'approve':
-            // ===== GM ONLY =====
-            requireActionRole($currentUser, ['general_manager'], 'Only the General Manager can approve Purchase Requests');
-
-            if ($current['status'] !== 'pending') {
-                Response::error('Only pending Purchase Requests can be approved. Current status: ' . $current['status'], 400);
-            }
-
-            // Get the approver's full name for permanent record
-            $approverStmt = $db->prepare("SELECT full_name FROM users WHERE id = ?");
-            $approverStmt->execute([$currentUser['user_id']]);
-            $approverName = $approverStmt->fetchColumn() ?: 'General Manager';
-            $approvedAt = date('Y-m-d H:i:s');
-
-            $stmt = $db->prepare("
-                UPDATE purchase_requests 
-                SET status = 'approved',
-                    approved_by = ?,
-                    approved_at = ?,
-                    approver_name = ?,
-                    updated_at = NOW()
-                WHERE id = ?
-            ");
-            $stmt->execute([$currentUser['user_id'], $approvedAt, $approverName, $id]);
-            $approvalRemarks = trim((string)($data['approval_remarks'] ?? $data['remarks'] ?? $data['notes'] ?? ''));
-            addPRStatusHistory($db, $id, $current['status'], 'approved', $currentUser['user_id'], $approvalRemarks !== '' ? $approvalRemarks : 'Approved by GM');
-
-            logAudit($currentUser['user_id'], 'APPROVE', 'purchase_requests', $id,
-                ['status' => 'pending'],
-                ['status' => 'approved', 'approved_by' => $currentUser['user_id'], 'approver_name' => $approverName, 'approved_at' => $approvedAt, 'approval_remarks' => $approvalRemarks]
-            );
-
-            Response::success([
-                'id' => $id,
-                'status' => 'approved',
-                'approved_by' => $currentUser['user_id'],
-                'approver_name' => $approverName,
-                'approved_at' => $approvedAt
-            ], 'Purchase Request approved');
-            break;
-
-        case 'reject':
-            // ===== GM ONLY =====
-            requireActionRole($currentUser, ['general_manager'], 'Only the General Manager can reject Purchase Requests');
-
-            if ($current['status'] !== 'pending') {
-                Response::error('Only pending Purchase Requests can be rejected. Current status: ' . $current['status'], 400);
-            }
-
-            $reason = $data['reason'] ?? 'No reason provided';
-
-            // Get the rejector's full name for permanent record
-            $rejectorStmt = $db->prepare("SELECT full_name FROM users WHERE id = ?");
-            $rejectorStmt->execute([$currentUser['user_id']]);
-            $rejectorName = $rejectorStmt->fetchColumn() ?: 'General Manager';
-            $rejectedAt = date('Y-m-d H:i:s');
-
-            $stmt = $db->prepare("
-                UPDATE purchase_requests 
-                SET status = 'rejected',
-                    approved_by = ?,
-                    approved_at = ?,
-                    approver_name = ?,
-                    rejection_reason = ?,
-                    updated_at = NOW()
-                WHERE id = ?
-            ");
-            $stmt->execute([$currentUser['user_id'], $rejectedAt, $rejectorName, $reason, $id]);
-            addPRStatusHistory($db, $id, $current['status'], 'rejected', $currentUser['user_id'], $reason);
-
-            logAudit($currentUser['user_id'], 'REJECT', 'purchase_requests', $id,
-                ['status' => 'pending'],
-                ['status' => 'rejected', 'rejected_by' => $currentUser['user_id'], 'rejector_name' => $rejectorName, 'rejected_at' => $rejectedAt, 'reason' => $reason]
-            );
-
-            Response::success([
-                'id' => $id,
-                'status' => 'rejected',
-                'rejected_by' => $currentUser['user_id'],
-                'rejector_name' => $rejectorName,
-                'rejected_at' => $rejectedAt,
-                'rejection_reason' => $reason
-            ], 'Purchase Request rejected');
             break;
 
         default:

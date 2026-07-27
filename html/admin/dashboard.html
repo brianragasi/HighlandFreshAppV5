@@ -63,6 +63,75 @@
         .master-icon {
             @apply transition-transform duration-300;
         }
+
+        .approval-review-modal {
+            max-height: min(84vh, 820px);
+            display: flex;
+            flex-direction: column;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .approval-review-head {
+            border-bottom: 1px solid oklch(var(--b3));
+            padding: 1.25rem 1.5rem 1rem;
+            background: linear-gradient(180deg, oklch(var(--b1)), oklch(var(--b2) / 0.45));
+        }
+
+        .approval-review-body {
+            overflow-y: auto;
+            padding: 1rem 1.5rem;
+        }
+
+        .approval-review-foot {
+            border-top: 1px solid oklch(var(--b3));
+            padding: 1rem 1.5rem;
+            background: oklch(var(--b1));
+        }
+
+        .approval-items-card {
+            border: 1px solid oklch(var(--b3));
+            border-radius: 0.85rem;
+            overflow: hidden;
+            background: oklch(var(--b1));
+        }
+
+        .approval-items-card table thead th {
+            background: oklch(var(--b2));
+            color: oklch(var(--bc) / 0.65);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .approval-review-body > .grid > div {
+            border: 1px solid oklch(var(--b3));
+            border-radius: 0.75rem;
+            background: oklch(var(--b2) / 0.55);
+            padding: 0.85rem;
+            min-width: 0;
+        }
+
+        .approval-review-body > .grid > div > span:first-child {
+            display: block;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: oklch(var(--bc) / 0.5);
+            margin-bottom: 0.25rem;
+        }
+
+        .approval-review-body #modalRef {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            color: oklch(var(--p));
+            overflow-wrap: anywhere;
+        }
+
+        .approval-review-body #modalAmount {
+            font-size: 1.125rem;
+            color: oklch(var(--bc));
+        }
     </style>
 </head>
 
@@ -268,7 +337,7 @@
                 </div>
                 <div class="flex-1 min-w-0">
                     <p class="font-semibold text-sm truncate" id="sidebarUserName">General Manager</p>
-                    <p class="text-xs text-base-content/60 truncate">Administrator</p>
+                    <p class="text-xs text-base-content/60 truncate">General Manager</p>
                 </div>
                 <div class="dropdown dropdown-top dropdown-end">
                     <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
@@ -544,24 +613,34 @@
 
     <!-- GM Approval Modal -->
     <dialog id="approvalModal" class="modal">
-        <div class="modal-box w-11/12 max-w-lg">
+        <div class="modal-box w-11/12 max-w-2xl approval-review-modal">
             <form method="dialog">
                 <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
-            <h3 class="font-bold text-lg flex items-center gap-2 mb-4" id="modalTitle">
-                <i class="fas fa-gavel text-warning"></i>
-                <span>Approval Decision</span>
-            </h3>
+            <div class="approval-review-head">
+                <div class="flex items-start gap-3 pr-10">
+                    <div class="w-11 h-11 rounded-xl bg-warning/15 text-warning flex items-center justify-center shrink-0">
+                        <i class="fas fa-gavel text-lg"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-xs uppercase tracking-wide text-base-content/50 font-bold mb-1">GM Review</p>
+                        <h3 class="font-bold text-xl leading-tight" id="modalTitle">Approval Decision</h3>
+                        <p class="text-sm text-base-content/60 mt-1">Review the request details before approving or rejecting.</p>
+                    </div>
+                </div>
+            </div>
 
             <!-- Loading state -->
-            <div id="modalLoading" class="flex justify-center py-8">
-                <span class="loading loading-spinner loading-md"></span>
+            <div id="modalLoading" class="flex flex-col items-center justify-center py-16 gap-3">
+                <span class="loading loading-spinner loading-lg text-primary"></span>
+                <p class="text-sm text-base-content/60">Loading approval details...</p>
             </div>
 
             <!-- Content (hidden until loaded) -->
-            <div id="modalContent" class="hidden space-y-4">
+            <div id="modalContent" class="hidden flex-1 min-h-0 flex flex-col">
+                <div class="approval-review-body scrollbar-thin space-y-4">
                 <!-- Summary fields -->
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                         <span class="text-xs text-base-content/50 block">Reference</span>
                         <span class="font-semibold text-sm" id="modalRef">—</span>
@@ -581,8 +660,15 @@
                 </div>
 
                 <!-- Detail section (line items, etc.) -->
-                <div id="modalDetailSection" class="bg-base-200 rounded-lg p-3 text-sm max-h-40 overflow-y-auto scrollbar-thin hidden">
-                    <div id="modalDetailBody"></div>
+                <div id="modalDetailSection" class="approval-items-card text-sm hidden">
+                    <div class="px-4 py-3 border-b border-base-300 flex items-center justify-between gap-3">
+                        <div>
+                            <p class="font-bold text-sm">Request Details</p>
+                            <p class="text-xs text-base-content/50">Items, quantity, and amount for this approval.</p>
+                        </div>
+                        <i class="fas fa-list-check text-base-content/40"></i>
+                    </div>
+                    <div id="modalDetailBody" class="max-h-64 overflow-y-auto scrollbar-thin"></div>
                 </div>
 
                 <!-- Remarks -->
@@ -591,22 +677,64 @@
                     <textarea id="modalRemarks" class="textarea textarea-bordered textarea-sm h-20" placeholder="Reason for approval or rejection…"></textarea>
                 </div>
 
+                </div>
+
                 <!-- Action buttons -->
-                <div class="flex justify-end gap-2 pt-2">
-                    <button class="btn btn-error btn-sm" onclick="submitDecision('reject')">
-                        <i class="fas fa-times mr-1"></i> Reject
-                    </button>
-                    <button class="btn btn-success btn-sm" onclick="submitDecision('approve')">
-                        <i class="fas fa-check mr-1"></i> Approve
-                    </button>
+                <div class="approval-review-foot flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <p class="text-xs text-base-content/50">This action will update the request status immediately.</p>
+                    <div class="flex justify-end gap-2">
+                        <button class="btn btn-error gap-2" onclick="submitDecision('reject')">
+                            <i class="fas fa-times"></i> Reject
+                        </button>
+                        <button class="btn btn-success gap-2" onclick="submitDecision('approve')">
+                            <i class="fas fa-check"></i> Approve
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
 
+
+    <!-- Approve PO Modal -->
+    <dialog id="approvePOModal" class="modal">
+        <div class="modal-box max-w-3xl">
+            <h3 class="font-bold text-lg mb-4">
+                <i class="fas fa-file-invoice-dollar text-warning mr-2"></i>Review Purchase Order
+            </h3>
+            <div id="approvePOContent"></div>
+            <div class="modal-action">
+                <button class="btn btn-ghost" onclick="document.getElementById('approvePOModal').close()">Cancel</button>
+                <button class="btn btn-outline btn-sm" onclick="if(currentApprovalPO) openPrintablePO(currentApprovalPO.id)">
+                    <i class="fas fa-print"></i> Print Preview
+                </button>
+                <button class="btn btn-error" onclick="rejectCurrentPO()"><i class="fas fa-times"></i> Reject</button>
+                <button class="btn btn-success" onclick="approveCurrentPO()"><i class="fas fa-check"></i> Approve</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- PO Approved Success Modal -->
+    <dialog id="poApprovedModal" class="modal">
+        <div class="modal-box max-w-md text-center">
+            <div class="text-success text-6xl mb-4"><i class="fas fa-check-circle"></i></div>
+            <h3 class="font-bold text-xl mb-2">Purchase Order Approved!</h3>
+            <p class="text-sm text-base-content/70 mb-1" id="poApprovedNumber"></p>
+            <p class="text-sm text-base-content/70 mb-4">Purchasing has been notified. The Purchaser can now send the final PO to the supplier.</p>
+            <div class="flex justify-center gap-2">
+                <button class="btn btn-primary" id="poApprovedPrintBtn">
+                    <i class="fas fa-print"></i> Print PO Document
+                </button>
+                <button class="btn btn-ghost" onclick="document.getElementById('poApprovedModal').close()">Close</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
     <!-- Toast container -->
-    <div id="toastContainer" class="toast toast-top toast-end z-[100]"></div>
+    <div id="toastContainer" class="toast toast-top toast-end" style="z-index: 9999;"></div>
 
     <!-- Scripts -->
     <script src="../../js/config/api.js"></script>
@@ -745,6 +873,7 @@
             switch (String(type || '')) {
                 case 'disposal': return 'fa-trash-alt text-error';
                 case 'purchase_order': return 'fa-file-invoice-dollar text-warning';
+                case 'purchase_request': return 'fa-file-alt text-info';
                 case 'sales_order': return 'fa-shopping-cart text-info';
                 case 'requisition': return 'fa-clipboard-list text-secondary';
                 default: return 'fa-bell text-base-content/50';
@@ -903,12 +1032,24 @@
 
         // ─── In-Dashboard Approval Modal Logic ───────────────────────
         let currentApproval = { sourceId: null, type: null, category: null };
+        let currentApprovalPO = null;
 
         async function openApprovalModal(sourceId, category, type) {
             // For demo/fallback rows without a numeric source_id, fall back to redirect
             const numericId = parseInt(String(sourceId).replace(/\D/g, ''), 10);
             if (!numericId) {
                 window.location.href = 'gm_approvals.html';
+                return;
+            }
+
+            // V4.1: Purchase Requests open the full GM editor (edit qty/prices/priority before approving)
+            if (type === 'purchase_request') {
+                window.location.href = `gm_approvals.html?review_pr=${numericId}`;
+                return;
+            }
+
+            if (type === 'purchase_order') {
+                viewPODetail(numericId);
                 return;
             }
 
@@ -942,16 +1083,16 @@
             document.getElementById('modalLoading').classList.add('hidden');
             document.getElementById('modalContent').classList.remove('hidden');
 
-            const ref = detail.order_number || detail.disposal_code || detail.po_number || detail.requisition_code || `#${currentApproval.sourceId}`;
+            const ref = detail.order_number || detail.disposal_code || detail.po_number || detail.requisition_code || detail.pr_number || `#${currentApproval.sourceId}`;
             document.getElementById('modalRef').textContent = ref;
 
-            const typeLabels = { credit: 'Credit Override', credit_override: 'Credit Override', sales_order: 'Sales Order', disposal: 'Disposal', purchase_order: 'Purchase Order', requisition: 'Requisition' };
+            const typeLabels = { credit: 'Credit Override', credit_override: 'Credit Override', sales_order: 'Sales Order', disposal: 'Disposal', purchase_order: 'Purchase Order', purchase_request: 'Purchase Request', requisition: 'Requisition' };
             document.getElementById('modalType').textContent = typeLabels[type] || category;
 
-            const customer = detail.customer_name || detail.supplier_name || detail.product_name || detail.department || '—';
+            const customer = detail.customer_name || detail.supplier_name || detail.product_name || detail.department || detail.requested_by_name || '—';
             document.getElementById('modalCustomer').textContent = customer;
 
-            const amount = detail.total_amount || detail.total_value;
+            const amount = detail.total_amount || detail.total_value || detail.estimated_total;
             document.getElementById('modalAmount').textContent = amount ? `₱${parseFloat(amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—';
 
             // Line items
@@ -960,8 +1101,8 @@
             if (detail.items && detail.items.length) {
                 detailSection.classList.remove('hidden');
                 detailBody.innerHTML = `
-                    <table class="table table-xs w-full">
-                        <thead><tr><th>Item</th><th class="text-right">Qty</th><th class="text-right">Amount</th></tr></thead>
+                    <table class="table table-sm w-full">
+                        <thead><tr><th>Item</th><th class="text-right">Quantity</th><th class="text-right">Amount</th></tr></thead>
                         <tbody>
                             ${detail.items.map(i => `
                                 <tr>
@@ -986,6 +1127,276 @@
             }
         }
 
+
+        async function viewPODetail(id) {
+            const modal = document.getElementById('approvePOModal');
+            const content = document.getElementById('approvePOContent');
+            currentApprovalPO = null;
+
+            content.innerHTML = `
+                <div class="text-center py-8 text-base-content/60">
+                    <span class="loading loading-spinner loading-md"></span>
+                    <p class="mt-2">Loading purchase order details...</p>
+                </div>
+            `;
+            modal.showModal();
+
+            try {
+                const response = await api.get(`/purchasing/purchase_orders.php?action=detail&id=${id}`);
+                const po = response?.data;
+                if (!po) {
+                    content.innerHTML = `
+                        <div class="alert alert-error">
+                            <i class="fas fa-exclamation-circle"></i>
+                            <span>Purchase Order not found.</span>
+                        </div>
+                    `;
+                    return;
+                }
+
+                currentApprovalPO = po;
+                content.innerHTML = renderPOApprovalDetail(po);
+            } catch (error) {
+                console.error('Failed to load PO detail:', error);
+                content.innerHTML = `
+                    <div class="alert alert-error">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <span>${escapeHtml(error?.message || 'Failed to load purchase order details.')}</span>
+                    </div>
+                `;
+            }
+        }
+
+        function renderPOApprovalDetail(po) {
+            const items = po.items || [];
+            const statusBadge = getPOStatusBadgeClass(po.status || 'pending');
+            const paymentTerms = formatPaymentTerms(po.payment_terms || '');
+
+            return `
+                <div class="space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div class="bg-base-200 rounded-xl p-3">
+                            <p class="text-xs text-base-content/60 mb-1">PO Number</p>
+                            <p class="font-mono font-bold text-primary">${escapeHtml(po.po_number)}</p>
+                        </div>
+                        <div class="bg-base-200 rounded-xl p-3">
+                            <p class="text-xs text-base-content/60 mb-1">Status</p>
+                            <span class="badge ${statusBadge}">${escapeHtml(formatPOStatus(po.status || 'pending'))}</span>
+                        </div>
+                        <div class="bg-base-200 rounded-xl p-3">
+                            <p class="text-xs text-base-content/60 mb-1">Total Amount</p>
+                            <p class="font-bold text-primary">${formatCurrency(po.total_amount)}</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="bg-base-200 rounded-xl p-3">
+                            <p class="text-xs text-base-content/60 mb-1">Supplier</p>
+                            <p class="font-semibold">${escapeHtml(po.supplier_name || '-')}</p>
+                            <p class="text-sm text-base-content/60">${escapeHtml(po.supplier_code || '')}</p>
+                            ${po.contact_person ? `<p class="text-sm text-base-content/60">Contact: ${escapeHtml(po.contact_person)}</p>` : ''}
+                        </div>
+                        <div class="bg-base-200 rounded-xl p-3">
+                            <p class="text-xs text-base-content/60 mb-1">Order Details</p>
+                            <p class="text-sm">Order Date: <span class="font-medium">${formatDate(po.order_date)}</span></p>
+                            <p class="text-sm">Expected Delivery: <span class="font-medium">${formatDate(po.expected_delivery)}</span></p>
+                            <p class="text-sm">Payment Terms: <span class="font-medium">${escapeHtml(paymentTerms)}</span></p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        ${po.pr_number ? `
+                            <div class="bg-primary/5 border border-primary/20 rounded-xl p-3">
+                                <p class="text-xs text-base-content/60 mb-1">Approved PR</p>
+                                <p class="font-mono font-semibold text-primary">${escapeHtml(po.pr_number)}</p>
+                                ${po.pr_purpose ? `<p class="text-sm text-base-content/60">${escapeHtml(po.pr_purpose)}</p>` : ''}
+                            </div>
+                        ` : ''}
+                        ${po.requisition_code ? `
+                            <div class="bg-base-200 rounded-xl p-3">
+                                <p class="text-xs text-base-content/60 mb-1">Linked Requisition</p>
+                                <p class="font-mono font-semibold">${escapeHtml(po.requisition_code)}</p>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <div class="overflow-x-auto border border-base-300 rounded-xl">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr class="hover">
+                                    <th>Description</th>
+                                    <th class="text-right">Qty</th>
+                                    <th>Unit</th>
+                                    <th class="text-right">Unit Price</th>
+                                    <th class="text-right">Line Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${items.length ? items.map(item => `
+                                    <tr>
+                                        <td>${escapeHtml(item.item_description || '-')}</td>
+                                        <td class="text-right">${parseFloat(item.quantity || 0).toFixed(2)}</td>
+                                        <td>${escapeHtml(item.unit || '-')}</td>
+                                        <td class="text-right">${formatCurrency(item.unit_price)}</td>
+                                        <td class="text-right font-semibold">${formatCurrency(item.total_amount)}</td>
+                                    </tr>
+                                `).join('') : `
+                                    <tr>
+                                        <td colspan="5" class="text-center py-6 text-base-content/60">No items found</td>
+                                    </tr>
+                                `}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    ${po.notes ? `
+                        <div class="bg-base-200 rounded-xl p-3">
+                            <p class="text-xs text-base-content/60 mb-1">Notes</p>
+                            <p class="text-sm">${escapeHtml(po.notes)}</p>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        async function approveCurrentPO() {
+            if (!currentApprovalPO?.id) return;
+            const id = currentApprovalPO.id;
+            document.getElementById('approvePOModal').close();
+            await processPODecision(id, 'approve');
+        }
+
+        async function rejectCurrentPO() {
+            if (!currentApprovalPO?.id) return;
+            const id = currentApprovalPO.id;
+            document.getElementById('approvePOModal').close();
+            await processPODecision(id, 'reject');
+        }
+
+        async function processPODecision(id, decision) {
+            const isApprove = decision === 'approve';
+            if (isApprove) {
+                const confirmed = await AuthService.confirmAction({
+                    title: 'Approve Purchase Order',
+                    message: 'Approve this purchase order and allow Purchasing to proceed?',
+                    confirmText: 'Approve PO',
+                    icon: 'fa-file-invoice-dollar',
+                    tone: 'success'
+                });
+                if (!confirmed) return;
+            }
+
+            const remarks = await AuthService.promptText({
+                title: isApprove ? 'Approval Remarks' : 'Reject Purchase Order',
+                message: isApprove ? 'Add remarks for Purchasing before this PO moves forward.' : 'Add the reason so Purchasing can correct the PO.',
+                label: isApprove ? 'Approval remarks' : 'Rejection reason',
+                placeholder: isApprove ? 'Example: Approved as requested' : 'Enter reason',
+                confirmText: isApprove ? 'Continue' : 'Reject PO',
+                icon: isApprove ? 'fa-comment-dots' : 'fa-times-circle',
+                tone: isApprove ? 'success' : 'error',
+                required: !isApprove
+            });
+            if (remarks === null) return;
+
+            try {
+                if (isApprove) {
+                    const stepUpToken = await AuthService.promptStepUp('po_approval', 'PO approval');
+                    if (!stepUpToken) return;
+                    await api.put(`/purchasing/purchase_orders.php?action=approve&id=${id}`, {
+                        step_up_token: stepUpToken,
+                        approval_remarks: remarks
+                    });
+                    removeActionRow(id);
+                    showPOApprovedModal(id);
+                } else {
+                    await api.put(`/purchasing/purchase_orders.php?action=reject&id=${id}`, {
+                        reason: remarks || 'Rejected by GM'
+                    });
+                    removeActionRow(id);
+                    showToast('Purchase Order rejected', 'success');
+                }
+            } catch (err) {
+                const msg = (err.response && err.response.data && err.response.data.message) || err.message || 'Action failed';
+                showToast(msg, 'error');
+            }
+        }
+
+        function removeActionRow(id) {
+            const row = document.querySelector(`[data-action-id="po-${id}"], [data-action-id="${id}"]`);
+            if (!row) return;
+            row.style.transition = 'opacity 0.3s, transform 0.3s';
+            row.style.opacity = '0';
+            row.style.transform = 'translateX(20px)';
+            setTimeout(() => {
+                row.remove();
+                const remaining = document.querySelectorAll('#pendingActionsList [data-action-id]').length;
+                const badge = document.getElementById('pendingActionsBadge');
+                if (badge) badge.textContent = `${remaining} open`;
+                document.getElementById('statPendingActions').textContent = remaining;
+                updateSidebarApprovalBadge(remaining);
+                if (remaining === 0) renderPendingActions([]);
+            }, 300);
+        }
+
+        function openPrintablePO(id) {
+            if (!id) return;
+            window.open(`../purchasing/print_po.html?po_id=${id}`, '_blank', 'noopener');
+        }
+
+        function formatCurrency(amount) {
+            return '\u20B1' + parseFloat(amount || 0).toLocaleString('en-PH', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function formatPaymentTerms(terms) {
+            const labels = {
+                cash: 'Cash',
+                credit_7: 'Credit - 7 Days',
+                credit_15: 'Credit - 15 Days',
+                credit_30: 'Credit - 30 Days',
+                credit_45: 'Credit - 45 Days',
+                credit_60: 'Credit - 60 Days'
+            };
+            return labels[terms] || String(terms || '-').replace(/_/g, ' ');
+        }
+
+        function formatPOStatus(status) {
+            const labels = {
+                draft: 'Draft',
+                pending: 'Pending GM Approval',
+                approved: 'Approved',
+                rejected: 'Rejected',
+                ordered: 'Ordered',
+                partial_received: 'Partially Received',
+                received: 'Fully Received',
+                closed: 'Closed',
+                cancelled: 'Cancelled'
+            };
+            return labels[status] || String(status || '-').replace(/_/g, ' ');
+        }
+
+        function getPOStatusBadgeClass(status) {
+            const classes = {
+                draft: 'badge-ghost',
+                pending: 'badge-warning',
+                approved: 'badge-success',
+                rejected: 'badge-error',
+                ordered: 'badge-info',
+                partial_received: 'badge-warning',
+                received: 'badge-success',
+                closed: 'badge-neutral',
+                cancelled: 'badge-error'
+            };
+            return classes[status] || 'badge-ghost';
+        }
+
         async function submitDecision(decision) {
             if (!currentApproval.sourceId) return;
 
@@ -993,7 +1404,7 @@
             const btnLabel = decision === 'approve' ? 'Approve' : 'Reject';
 
             try {
-                const res = await api.post(`/admin/gm_approvals.php?action=${decision}`, {
+                await api.post(`/admin/gm_approvals.php?action=${decision}`, {
                     type: currentApproval.type,
                     source_id: currentApproval.sourceId,
                     remarks: remarks,
@@ -1011,7 +1422,6 @@
                     row.style.transform = 'translateX(20px)';
                     setTimeout(() => {
                         row.remove();
-                        // Update badge count
                         const remaining = document.querySelectorAll('#pendingActionsList [data-action-id]').length;
                         const badge = document.getElementById('pendingActionsBadge');
                         if (badge) badge.textContent = `${remaining} open`;
@@ -1030,17 +1440,30 @@
 
         function showToast(message, type = 'info') {
             const container = document.getElementById('toastContainer');
-            const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
-            const icon = type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle';
+            const colors = {
+                success: { bg: '#16a34a', icon: 'fa-check-circle' },
+                error: { bg: '#dc2626', icon: 'fa-exclamation-circle' },
+                info: { bg: '#2563eb', icon: 'fa-info-circle' }
+            };
+            const c = colors[type] || colors.info;
             const toast = document.createElement('div');
-            toast.className = `alert ${alertClass} shadow-lg text-sm py-2 px-4`;
-            toast.innerHTML = `<i class="fas ${icon}"></i><span>${escapeHtml(message)}</span>`;
+            toast.setAttribute('style', `background:${c.bg};color:#fff;padding:12px 18px;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,0.25);display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500;`);
+            toast.innerHTML = `<i class="fas ${c.icon}"></i><span>${escapeHtml(message)}</span>`;
             container.appendChild(toast);
             setTimeout(() => {
                 toast.style.transition = 'opacity 0.3s';
                 toast.style.opacity = '0';
                 setTimeout(() => toast.remove(), 300);
             }, 3500);
+        }
+
+        function showPOApprovedModal(poId) {
+            const modal = document.getElementById('poApprovedModal');
+            const numEl = document.getElementById('poApprovedNumber');
+            const printBtn = document.getElementById('poApprovedPrintBtn');
+            numEl.textContent = `PO Reference #${poId}`;
+            printBtn.onclick = () => window.open(`../purchasing/print_po.html?po_id=${poId}`, '_blank', 'noopener');
+            modal.showModal();
         }
     </script>
 </body>

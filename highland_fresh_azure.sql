@@ -19,66 +19,6 @@ SET time_zone = '+00:00';
 -- Database: `highland_fresh`
 --
 
-DELIMITER $$
---
--- Procedures
---
-CREATE PROCEDURE `sp_populate_recall_locations` (IN `p_recall_id` INT, IN `p_batch_id` INT)   BEGIN
-    
-    INSERT INTO recall_affected_locations 
-        (recall_id, location_type, location_id, location_name, location_address,
-         contact_person, contact_phone, contact_email, dispatch_date, 
-         dispatch_reference, units_dispatched)
-    SELECT 
-        p_recall_id,
-        CASE d.customer_type 
-            WHEN 'supermarket' THEN 'store'
-            WHEN 'school' THEN 'store'
-            WHEN 'feeding_program' THEN 'distributor'
-            ELSE 'direct_customer'
-        END as location_type,
-        d.customer_id,
-        d.customer_name,
-        d.delivery_address,
-        fc.contact_person,
-        d.contact_number,
-        fc.email,
-        DATE(d.dispatched_at),
-        d.dr_number,
-        SUM(di.quantity_dispatched) as units_dispatched
-    FROM delivery_items di
-    JOIN deliveries d ON di.delivery_id = d.id
-    JOIN finished_goods_inventory fgi ON di.inventory_id = fgi.id
-    LEFT JOIN fg_customers fc ON d.customer_id = fc.id
-    WHERE fgi.batch_id = p_batch_id
-      AND d.status IN ('dispatched', 'in_transit', 'delivered')
-      AND di.quantity_dispatched > 0
-    GROUP BY d.customer_id, d.customer_name
-    ON DUPLICATE KEY UPDATE 
-        units_dispatched = units_dispatched + VALUES(units_dispatched);
-    
-    
-    IF ROW_COUNT() = 0 THEN
-        INSERT INTO recall_affected_locations 
-            (recall_id, location_type, location_name, units_dispatched, notes)
-        VALUES 
-            (p_recall_id, 'internal', 'Dispatch Records Unavailable', 
-             (SELECT total_dispatched FROM batch_recalls WHERE id = p_recall_id),
-             'Manual tracking required - delivery records not linked to batch');
-    END IF;
-    
-    
-    UPDATE batch_recalls 
-    SET total_dispatched = (
-        SELECT COALESCE(SUM(units_dispatched), 0) 
-        FROM recall_affected_locations 
-        WHERE recall_id = p_recall_id
-    )
-    WHERE id = p_recall_id;
-END$$
-
-DELIMITER ;
-
 -- --------------------------------------------------------
 
 --
@@ -590,28 +530,6 @@ CREATE TABLE `batch_recalls` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
--- Triggers `batch_recalls`
---
-DELIMITER $$
-CREATE TRIGGER `tr_recall_status_change` AFTER UPDATE ON `batch_recalls` FOR EACH ROW BEGIN
-    IF OLD.status != NEW.status THEN
-        INSERT INTO recall_activity_log (recall_id, action, action_by, details)
-        VALUES (
-            NEW.id,
-            CASE NEW.status
-                WHEN 'approved' THEN 'approved'
-                WHEN 'completed' THEN 'completed'
-                WHEN 'cancelled' THEN 'cancelled'
-                ELSE 'updated'
-            END,
-            COALESCE(NEW.approved_by, NEW.completed_by, NEW.initiated_by),
-            JSON_OBJECT('old_status', OLD.status, 'new_status', NEW.status)
-        );
-    END IF;
-END
-$$
-DELIMITER ;
-
 -- --------------------------------------------------------
 
 --
@@ -1017,20 +935,6 @@ CREATE TABLE `delivery_items` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
--- Triggers `delivery_items`
---
-DELIMITER $$
-CREATE TRIGGER `tr_delivery_items_set_batch_id` BEFORE INSERT ON `delivery_items` FOR EACH ROW BEGIN
-    IF NEW.batch_id IS NULL AND NEW.inventory_id IS NOT NULL THEN
-        SET NEW.batch_id = (
-            SELECT batch_id FROM finished_goods_inventory 
-            WHERE id = NEW.inventory_id
-        );
-    END IF;
-END
-$$
-DELIMITER ;
-
 -- --------------------------------------------------------
 
 --
@@ -3052,31 +2956,7 @@ CREATE TABLE `recall_returns` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
--- Triggers `recall_returns`
---
-DELIMITER $$
-CREATE TRIGGER `tr_recall_return_update` AFTER INSERT ON `recall_returns` FOR EACH ROW BEGIN
-    
-    UPDATE recall_affected_locations 
-    SET units_returned = units_returned + NEW.units_returned,
-        return_status = CASE 
-            WHEN (units_returned + NEW.units_returned) >= units_dispatched THEN 'complete'
-            WHEN (units_returned + NEW.units_returned) > 0 THEN 'partial'
-            ELSE 'pending'
-        END
-    WHERE id = NEW.affected_location_id;
-    
-    
-    UPDATE batch_recalls 
-    SET total_recovered = (
-        SELECT COALESCE(SUM(units_returned), 0) 
-        FROM recall_affected_locations 
-        WHERE recall_id = NEW.recall_id
-    )
-    WHERE id = NEW.recall_id;
-END
-$$
-DELIMITER ;
+-- --------------------------------------------------------
 
 -- --------------------------------------------------------
 

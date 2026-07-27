@@ -87,6 +87,51 @@ try {
 
                 $batch = ccp_enrich_batch($db, $batch, true, true);
 
+                // V4.1: Include production's packaging summary so QC knows what to verify
+                $pkgSummaryStmt = $db->prepare("
+                    SELECT COALESCE(SUM(pri.quantity), 0) AS total_pieces,
+                           COUNT(DISTINCT pri.id) AS line_count
+                    FROM packaging_run_items pri
+                    JOIN packaging_runs pr ON pri.packaging_run_id = pr.id
+                    WHERE pr.batch_id = ? OR pr.production_run_id = ?
+                ");
+                $pkgSummaryStmt->execute([(int) $batch['id'], (int) ($batch['run_id'] ?? 0)]);
+                $pkgRow = $pkgSummaryStmt->fetch(PDO::FETCH_ASSOC);
+                $batch['production_packed_total'] = (int) ($pkgRow['total_pieces'] ?? 0);
+                $batch['production_packed_lines'] = (int) ($pkgRow['line_count'] ?? 0);
+
+                // Also fetch the packaging line details for display
+                $pkgDetailStmt = $db->prepare("
+                    SELECT pri.product_name, pri.product_variant, pri.size_ml,
+                           pri.unit_measure, pri.quantity
+                    FROM packaging_run_items pri
+                    JOIN packaging_runs pr ON pri.packaging_run_id = pr.id
+                    WHERE pr.batch_id = ? OR pr.production_run_id = ?
+                    ORDER BY pri.id
+                ");
+                $pkgDetailStmt->execute([(int) $batch['id'], (int) ($batch['run_id'] ?? 0)]);
+                $batch['packaging_lines'] = $pkgDetailStmt->fetchAll(PDO::FETCH_ASSOC);
+
+                // Give the QC modal the pack size so physical counts can be entered
+                // as boxes + loose pieces when the product master supports it.
+                $packConfigStmt = $db->prepare("
+                    SELECT
+                        COALESCE(NULLIF(p.pieces_per_box, 0), 1) AS pieces_per_box,
+                        COALESCE(NULLIF(p.base_unit, ''), 'piece') AS base_unit,
+                        COALESCE(NULLIF(p.box_unit, ''), 'box') AS box_unit
+                    FROM packaging_run_items pri
+                    JOIN packaging_runs pr ON pri.packaging_run_id = pr.id
+                    JOIN products p ON p.id = pri.product_id
+                    WHERE pr.batch_id = ? OR pr.production_run_id = ?
+                    ORDER BY pri.id ASC
+                    LIMIT 1
+                ");
+                $packConfigStmt->execute([(int) $batch['id'], (int) ($batch['run_id'] ?? 0)]);
+                $packConfig = $packConfigStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+                $batch['pieces_per_box'] = (int) ($packConfig['pieces_per_box'] ?? 1);
+                $batch['base_unit'] = $packConfig['base_unit'] ?? 'piece';
+                $batch['box_unit'] = $packConfig['box_unit'] ?? 'box';
+
                 Response::success($batch, 'Batch retrieved successfully');
             }
 
@@ -152,6 +197,14 @@ try {
             $organolepticSmell = filter_var(getParam('organoleptic_smell', false), FILTER_VALIDATE_BOOLEAN);
             $ccpAcknowledged = filter_var(getParam('ccp_acknowledged', false), FILTER_VALIDATE_BOOLEAN);
 
+            // V4.1: Packaging integrity + physical count verification
+            $packagingIntegrityPassed = filter_var(getParam('packaging_integrity_passed', false), FILTER_VALIDATE_BOOLEAN);
+            $labelingPassed = filter_var(getParam('labeling_passed', false), FILTER_VALIDATE_BOOLEAN);
+            $qcVerifiedBoxes = getParam('qc_verified_boxes', null);
+            $qcVerifiedPieces = getParam('qc_verified_pieces', null);
+            if ($qcVerifiedBoxes !== null) $qcVerifiedBoxes = (int) $qcVerifiedBoxes;
+            if ($qcVerifiedPieces !== null) $qcVerifiedPieces = (int) $qcVerifiedPieces;
+
             // Validation
             $errors = [];
             if (!$batchId) {
@@ -194,6 +247,67 @@ try {
                         'ccp_acknowledged' => 'QC officer must confirm CCP parameters were reviewed against standards',
                     ]);
                 }
+
+                // V4.1: Packaging integrity is mandatory for release
+                if (!$packagingIntegrityPassed) {
+                    Response::validationError([
+                        'packaging_integrity_passed' => 'You must confirm packaging integrity (seals, caps, no leaks) before releasing',
+                    ]);
+                }
+                if (!$labelingPassed) {
+                    Response::validationError([
+                        'labeling_passed' => 'You must confirm labeling is correct before releasing',
+                    ]);
+                }
+
+                // V4.1: Physical count verification — QC must enter what they counted
+                if ($qcVerifiedBoxes === null && $qcVerifiedPieces === null) {
+                    Response::validationError([
+                        'qc_verified_pieces' => 'Enter the number of pieces you physically counted (boxes and/or loose pieces)',
+                    ]);
+                }
+
+                // Compare QC count against what production recorded.
+                // If QC counted sealed boxes, convert boxes into pieces using the
+                // product's pack size. Loose pieces remain as-is.
+                $piecesPerBoxStmt = $db->prepare("
+                    SELECT COALESCE(NULLIF(p.pieces_per_box, 0), 1) AS pieces_per_box
+                    FROM packaging_run_items pri
+                    JOIN packaging_runs pr ON pri.packaging_run_id = pr.id
+                    JOIN products p ON p.id = pri.product_id
+                    WHERE pr.batch_id = ? OR pr.production_run_id = ?
+                    ORDER BY pri.id ASC
+                    LIMIT 1
+                ");
+                $piecesPerBoxStmt->execute([(int) $batchId, (int) ($batch['run_id'] ?? 0)]);
+                $piecesPerBox = max(1, (int) ($piecesPerBoxStmt->fetchColumn() ?: 1));
+                $qcTotalPieces = (($qcVerifiedBoxes ?? 0) * $piecesPerBox) + ($qcVerifiedPieces ?? 0);
+                $productionTotalPieces = 0;
+
+                // Get production's total from packaging_run_items linked to this batch
+                $pkgStmt = $db->prepare("
+                    SELECT COALESCE(SUM(pri.quantity), 0) AS total_packed
+                    FROM packaging_run_items pri
+                    JOIN packaging_runs pr ON pri.packaging_run_id = pr.id
+                    WHERE pr.batch_id = ? OR pr.production_run_id = ?
+                ");
+                $pkgStmt->execute([(int) $batchId, (int) ($batch['run_id'] ?? 0)]);
+                $productionTotalPieces = (int) $pkgStmt->fetchColumn();
+
+                // If no packaging records exist, fall back to batch actual_yield
+                if ($productionTotalPieces <= 0) {
+                    $productionTotalPieces = (int) ($batch['actual_yield'] ?? 0);
+                }
+
+                $countVariance = $qcTotalPieces - $productionTotalPieces;
+
+                if ($countVariance !== 0) {
+                    Response::validationError([
+                        'qc_count_mismatch' => "Count mismatch: you counted {$qcTotalPieces} pieces but production recorded {$productionTotalPieces}. "
+                            . "Variance: " . ($countVariance > 0 ? "+" : "") . "{$countVariance}. "
+                            . "Re-count or investigate before releasing.",
+                    ]);
+                }
             }
 
             // Begin transaction
@@ -233,6 +347,11 @@ try {
                         barcode = COALESCE(?, barcode),
                         pasteurization_temp = COALESCE(?, pasteurization_temp),
                         cooling_temp = COALESCE(?, cooling_temp),
+                        packaging_integrity_passed = ?,
+                        labeling_passed = ?,
+                        qc_verified_boxes = ?,
+                        qc_verified_pieces = ?,
+                        qc_count_variance = ?,
                         fg_received = 0
                     WHERE id = ?
                 ");
@@ -248,6 +367,11 @@ try {
                     $barcode,
                     $pasteTemp,
                     $coolTemp,
+                    $action === 'release' ? ($packagingIntegrityPassed ? 1 : 0) : null,
+                    $action === 'release' ? ($labelingPassed ? 1 : 0) : null,
+                    $action === 'release' ? $qcVerifiedBoxes : null,
+                    $action === 'release' ? $qcVerifiedPieces : null,
+                    $action === 'release' ? ($countVariance ?? 0) : null,
                     $batchId,
                 ]);
 
@@ -272,6 +396,11 @@ try {
                     'status' => $newStatus,
                     'barcode' => $barcode ?: $batch['barcode'],
                     'ccp_summary' => $summary,
+                    'packaging_integrity_passed' => $action === 'release' ? $packagingIntegrityPassed : null,
+                    'labeling_passed' => $action === 'release' ? $labelingPassed : null,
+                    'qc_verified_boxes' => $action === 'release' ? $qcVerifiedBoxes : null,
+                    'qc_verified_pieces' => $action === 'release' ? $qcVerifiedPieces : null,
+                    'qc_count_variance' => $action === 'release' ? ($countVariance ?? 0) : null,
                 ], $message);
 
             } catch (Exception $e) {

@@ -858,7 +858,7 @@
                 const opt = document.createElement('option');
                 opt.value = bp.id;
                 const cat = CATEGORY_LABELS[bp.category] || bp.category || '';
-                const milkWarn = bp.milk_type_id ? '' : ' · no milk type';
+                const milkWarn = (bp.milk_type_id !== null && bp.milk_type_id !== undefined && bp.milk_type_id !== '') ? '' : ' · no milk type';
                 opt.textContent = `${bp.name} (${cat})${milkWarn}`;
                 if (String(bp.id) === String(selectedId)) opt.selected = true;
                 sel.appendChild(opt);
@@ -886,12 +886,12 @@
             document.getElementById('recipeDocTitle').textContent = bp.name || 'Untitled recipe';
             document.getElementById('categoryDisplay').value = CATEGORY_LABELS[bp.category] || bp.category || '';
 
-            productMissingMilkType = !bp.milk_type_id;
+            productMissingMilkType = bp.milk_type_id === null || bp.milk_type_id === undefined || bp.milk_type_id === '';
             if (productMissingMilkType) {
                 document.getElementById('milkTypeDisplay').value = 'Not set';
                 document.getElementById('milkTypeWarning').classList.remove('hidden');
             } else {
-                document.getElementById('milkTypeDisplay').value = bp.milk_type_name || `Type #${bp.milk_type_id}`;
+                document.getElementById('milkTypeDisplay').value = bp.milk_type_name || (bp.milk_type_id == 0 ? 'N/A' : `Type #${bp.milk_type_id}`);
                 document.getElementById('milkTypeWarning').classList.add('hidden');
             }
 
@@ -1132,10 +1132,12 @@
             }
 
             // Extra dairy guard when yield is liquid: milk alone should not be a tiny fraction of yield
-            if ((yieldUnit === 'liters' || yieldUnit === 'L') && milk + 1e-9 < yieldVal * MASS_BALANCE_MIN_RATIO) {
+            // Skipped for non-liquid yield units (units, pieces, kg) where BOM contributes mass.
+            const isLiquidYield = yieldUnit === 'liters' || yieldUnit === 'L' || yieldUnit === 'ml';
+            if (isLiquidYield && milk + 1e-9 < yieldVal * 0.80) {
                 result.ok = false;
-                result.message = 'Configuration Error: Total ingredient volume does not match the expected yield. '
-                    + `Base milk (${milk} L) is far below expected yield (${yieldVal} L).`;
+                result.message = 'Configuration Error: Base milk volume is far below the expected yield. '
+                    + `Base milk (${milk} L) should be at least 80% of expected yield (${yieldVal} L) for liquid recipes.`;
                 return result;
             }
 

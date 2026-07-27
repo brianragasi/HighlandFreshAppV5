@@ -213,6 +213,27 @@
                 Start Pasteurization Run
             </h3>
 
+            <!-- Auto-config banner — shown when arriving from batches/requisitions with URL params -->
+            <div id="autoConfigBanner" class="alert alert-success mb-4 hidden">
+                <i class="fas fa-magic text-lg"></i>
+                <div>
+                    <div class="font-semibold" id="autoConfigTitle">Auto-configured for Requisition</div>
+                    <div class="text-sm" id="autoConfigSub">Temperature, duration, and volume have been pre-filled.</div>
+                </div>
+            </div>
+
+            <!-- Shortfall banner — shown when available raw milk < planned volume -->
+            <div id="shortfallBanner" class="alert alert-warning mb-4 hidden">
+                <i class="fas fa-exclamation-triangle text-lg"></i>
+                <div class="flex-1">
+                    <div class="font-semibold" id="shortfallTitle">Shortfall detected</div>
+                    <div class="text-sm" id="shortfallSub"></div>
+                </div>
+                <button type="button" id="requestSuppBtn" class="btn btn-warning btn-sm" onclick="requestSupplementalMilk()">
+                    <i class="fas fa-plus-circle"></i> Request Supplemental Milk
+                </button>
+            </div>
+
             <form id="newPastForm" onsubmit="createRun(event)">
                 <!-- Available Raw Milk — flips between success (has milk) and
                      warning (no milk). When no milk, the form fields are
@@ -277,12 +298,18 @@
                 <!-- Duration -->
                 <div class="form-control mb-4">
                     <label class="label">
-                        <span class="label-text font-medium">Duration (minutes) *</span>
+                        <span class="label-text font-medium">Duration *</span>
                     </label>
-                    <input type="number" id="durationMins" class="input input-bordered" min="1" max="120" value="15"
-                        required>
+                    <div class="flex gap-2">
+                        <input type="number" id="durationMins" class="input input-bordered flex-1" min="1" max="7200" value="15"
+                            required>
+                        <select id="durationUnit" class="select select-bordered w-36">
+                            <option value="minutes" selected>Minutes</option>
+                            <option value="seconds">Seconds</option>
+                        </select>
+                    </div>
                     <label class="label">
-                        <span class="label-text-alt">HTST: 15-20 sec | Batch: 30 min</span>
+                        <span class="label-text-alt" id="durationHint">HTST: 15-20 sec | Batch: 30 min</span>
                     </label>
                 </div>
 
@@ -413,6 +440,67 @@
                 .replace(/'/g, '&#39;');
         }
 
+        // Creates an urgent supplemental requisition for the raw milk shortfall.
+        // Called from the "Request Supplemental Milk" button in the modal.
+        async function requestSupplementalMilk() {
+            const btn = document.getElementById('requestSuppBtn');
+            if (!btn) return;
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const reqId = urlParams.get('req_id') || activePasteurizationReqId;
+            const plannedVolume = parseFloat(urlParams.get('planned_volume')) || 0;
+            const targetTemp = parseFloat(urlParams.get('target_temp')) || 75;
+            const targetDuration = parseInt(urlParams.get('target_duration')) || 15;
+            const durationUnit = urlParams.get('duration_unit') || 'minutes';
+            // Read actual available raw milk from the modal display, not from inputLiters (which is locked to planned_volume)
+            const milkDisplayEl = document.getElementById('modalAvailableMilk');
+            const availableRaw = milkDisplayEl ? parseFloat(milkDisplayEl.textContent.replace(/,/g, '')) || 0 : 0;
+
+            if (!reqId || plannedVolume <= 0) {
+                showToast('Cannot determine shortfall — missing requisition context', 'error');
+                return;
+            }
+
+            const shortfall = Math.round((plannedVolume - availableRaw) * 1000) / 1000;
+            if (shortfall <= 0) {
+                showToast('No shortfall detected', 'info');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating request...';
+
+            try {
+                // Determine recipe_id from URL params or fromReqContext
+                const recipeId = urlParams.get('recipe_id') || (typeof fromReqContext !== 'undefined' && fromReqContext?.planned_recipe_id) || null;
+
+                const response = await api.post(PAST_API, {
+                    action: 'create_supplemental_requisition',
+                    source_requisition_id: reqId,
+                    shortfall_liters: shortfall,
+                    recipe_id: recipeId,
+                    planned_quantity: plannedVolume,
+                    yield_unit: 'liters'
+                });
+
+                if (response.success) {
+                    const code = response.data?.requisition_code || 'REQ-SUPP';
+                    showToast(`Supplemental requisition ${code} created for ${shortfall} L. Warehouse notified.`, 'success');
+                    // Hide the shortfall banner — the request is now pending
+                    const banner = document.getElementById('shortfallBanner');
+                    if (banner) banner.classList.add('hidden');
+                } else {
+                    showToast(response.message || 'Failed to create supplemental requisition', 'error');
+                }
+            } catch (error) {
+                console.error('Supplemental requisition error:', error);
+                showToast(error.response?.data?.message || error.message || 'Failed to create supplemental requisition', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-plus-circle"></i> Request Supplemental Milk';
+            }
+        }
+
         // V4.0 — when arrived from a fulfilled yogurt requisition via the
         // next-step banner, show a small context strip AND a clear
         // "click to start" card. The card shows the pre-filled value
@@ -431,6 +519,7 @@
                 if (res.success && res.data) {
                     const r = res.data;
                     fromReqContext = r;
+                    activePasteurizationReqId = r.id;
 
                     // Context strip — what requisition this is from.
                     const banner = document.createElement('div');
@@ -466,6 +555,20 @@
                         prefilledInput = parseFloat(r.planned_quantity);
                     }
 
+                    // Fetch recipe to get pasteurization parameters
+                    let recipeParams = null;
+                    const recipeId = r.planned_recipe_id || r.recipe_id;
+                    if (recipeId) {
+                        try {
+                            const recipeRes = await api.get('production/recipes.php', { params: { id: recipeId } });
+                            if (recipeRes.success && recipeRes.data) {
+                                recipeParams = recipeRes.data.recipe || recipeRes.data;
+                            }
+                        } catch (e) {
+                            console.warn('Could not fetch recipe for pasteurization params:', e);
+                        }
+                    }
+
                     // V4.0 — visible "Start pasteurization" card. The
                     // user sees the pre-filled value, then clicks one
                     // button to open the modal with that value. No
@@ -478,6 +581,9 @@
                     const prefillDisplay = prefilledInput
                         ? `${parseFloat(prefilledInput).toFixed(2)} L`
                         : '? L';
+                    const recipeParamText = recipeParams
+                        ? `${recipeParams.pasteurization_temp || 75}°C for ${recipeParams.pasteurization_time_mins || 15} min`
+                        : 'default settings';
                     card.innerHTML = `
                         <div class="card-body p-4 flex-row items-center gap-4">
                             <div class="w-12 h-12 rounded-xl bg-primary-content/20 flex items-center justify-center">
@@ -486,8 +592,8 @@
                             <div class="flex-1">
                                 <div class="font-semibold text-lg">Start pasteurization from ${escapeHtml(r.requisition_code || 'this requisition')}</div>
                                 <div class="text-sm opacity-90">
-                                    ${prefillDisplay} raw milk issued and ready to pasteurize.
-                                    Click below to open the run form with the liters pre-filled.
+                                    ${prefillDisplay} raw milk issued. Recipe target: ${recipeParamText}.
+                                    Click below to open the run form pre-filled.
                                 </div>
                             </div>
                             <button id="quickStartBtn" class="btn btn-accent btn-lg">
@@ -506,6 +612,32 @@
                         const input = document.getElementById('inputLiters');
                         if (input && prefilledInput) {
                             input.value = parseFloat(prefilledInput);
+                        }
+                        // Auto-fill recipe parameters (temperature, duration, unit)
+                        if (recipeParams) {
+                            const tempEl = document.getElementById('temperature');
+                            const durEl = document.getElementById('durationMins');
+                            const unitEl = document.getElementById('durationUnit');
+                            if (tempEl && recipeParams.pasteurization_temp) {
+                                tempEl.value = parseFloat(recipeParams.pasteurization_temp);
+                            }
+                            if (durEl && recipeParams.pasteurization_time_mins) {
+                                durEl.value = parseInt(recipeParams.pasteurization_time_mins);
+                            }
+                            // Determine unit: yogurt uses 85°C/30min (minutes),
+                            // milk uses 72-75°C/15sec (seconds for HTST).
+                            // heuristic: if temp >= 80 and duration >= 20 → minutes (batch)
+                            //            else → default to minutes (user can change)
+                            if (unitEl) {
+                                const t = parseFloat(recipeParams.pasteurization_temp || 75);
+                                const d = parseInt(recipeParams.pasteurization_time_mins || 15);
+                                // Yogurt: 85°C / 30min → clearly minutes
+                                // Fresh milk: 75°C / 15 → ambiguous, keep minutes (HTST label clarifies)
+                                if (t >= 80 && d >= 20) {
+                                    unitEl.value = 'minutes';
+                                }
+                                // The hint text already explains HTST vs Batch
+                            }
                         }
                         const hint = document.getElementById('fromReqHint');
                         if (hint) {
@@ -551,16 +683,90 @@
 
             loadStats();
             loadRuns();
+
+            // Auto-open modal when arriving from batches.html with ?action=new&...
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('action') === 'new') {
+                const plannedVolume = urlParams.get('planned_volume');
+                const targetTemp = urlParams.get('target_temp');
+                const targetDuration = urlParams.get('target_duration');
+                const durationUnit = urlParams.get('duration_unit') || 'minutes';
+                const reqId = urlParams.get('req_id');
+
+                // Small delay to let the modal DOM settle
+                setTimeout(() => {
+                    const modal = document.getElementById('newPastModal');
+                    if (modal && typeof modal.showModal === 'function') {
+                        // Pre-fill input liters and lock it
+                        if (plannedVolume) {
+                            const inputEl = document.getElementById('inputLiters');
+                            if (inputEl) {
+                                inputEl.value = parseFloat(plannedVolume);
+                                inputEl.readOnly = true;
+                                inputEl.classList.add('bg-base-200');
+                            }
+                        }
+
+                        // Pre-fill temperature
+                        if (targetTemp) {
+                            const tempEl = document.getElementById('temperature');
+                            if (tempEl) tempEl.value = parseFloat(targetTemp);
+                        }
+
+                        // Pre-fill duration + unit
+                        if (targetDuration) {
+                            const durEl = document.getElementById('durationMins');
+                            if (durEl) durEl.value = parseInt(targetDuration);
+                        }
+                        const unitEl = document.getElementById('durationUnit');
+                        if (unitEl) unitEl.value = durationUnit;
+
+                        // Show the auto-config banner
+                        const banner = document.getElementById('autoConfigBanner');
+                        const title = document.getElementById('autoConfigTitle');
+                        const sub = document.getElementById('autoConfigSub');
+                        if (banner) {
+                            banner.classList.remove('hidden');
+                            if (title) title.textContent = `Auto-configured for Requisition ${reqId ? '#' + reqId : ''}`;
+                            if (sub) sub.textContent = `Volume: ${plannedVolume || '?'} L | Temp: ${targetTemp || '?'}°C | Duration: ${targetDuration || '?'} ${durationUnit}`;
+                        }
+
+                        modal.showModal();
+
+                        // Clean up on modal close: re-enable input, hide banner
+                        modal.addEventListener('close', () => {
+                            const inp = document.getElementById('inputLiters');
+                            if (inp) { inp.readOnly = false; inp.classList.remove('bg-base-200'); }
+                            const ab = document.getElementById('autoConfigBanner');
+                            if (ab) ab.classList.add('hidden');
+                        }, { once: true });
+
+                        // Save req_id to module-level variable BEFORE wiping URL,
+                        // so createRun can include it in the POST payload.
+                        activePasteurizationReqId = reqId;
+
+                        // Clean the URL so a refresh doesn't re-open the modal
+                        window.history.replaceState({}, '', window.location.pathname);
+                    }
+                }, 150);
+            }
         });
+
+        // Track the active requisition ID for the shortfall/supplemental flow
+        let activePasteurizationReqId = null;
 
         async function loadStats() {
             try {
-                // Get available raw milk
-                // V4.0 — hoist availableRaw to function scope so the
-                // pasteurized-milk hint below can read it without crashing
-                // when the raw-milk API call failed.
+                // Get available raw milk — when a req_id is in the URL,
+                // fetch the milk *issued for that specific requisition*
+                // instead of the general tank balance.
                 let availableRaw = 0;
-                const rawResponse = await api.get(PAST_API, { params: { action: 'available_raw_milk' } });
+                const urlParams = new URLSearchParams(window.location.search);
+                const reqIdForQuery = urlParams.get('req_id') || activePasteurizationReqId;
+                const rawParams = { action: 'available_raw_milk' };
+                if (reqIdForQuery) rawParams.req_id = reqIdForQuery;
+
+                const rawResponse = await api.get(PAST_API, { params: rawParams });
                 if (rawResponse.success) {
                 // V4.0 — preserve the fractional value. Previously
                 // `Math.round(0.106) === 0`, so a 0.106 L balance
@@ -571,6 +777,7 @@
                 // UI just needs to show the real number and let
                 // the user decide.
                 availableRaw = Number(rawResponse.data.available_liters || 0);
+                const consumedLiters = Number(rawResponse.data.consumed_liters || 0);
                     // V4.0.1 — show 3 decimals so the UI matches the API's
                     // precise available value. The previous toFixed(2)
                     // rounded 0.107 to "0.11" and the user typed 0.11
@@ -600,7 +807,15 @@
                         document.querySelector('#newPastForm button[type="submit"]')
                     ].filter(Boolean);
 
-                    if (availableRaw <= 0) {
+                    if (availableRaw <= 0 && consumedLiters > 0) {
+                        // All milk consumed — block with "Already Pasteurized" message.
+                        alertEl.className = 'alert alert-warning mb-4';
+                        headlineEl.innerHTML = `Raw Milk Available: <span id="modalAvailableMilk" class="text-warning">0.000</span>L <span class="text-sm opacity-70">(Already Pasteurized)</span>`;
+                        subtextEl.innerHTML = `This requisition's ${consumedLiters.toFixed(3)}L of raw milk has already been pasteurized.`;
+                        if (iconEl) iconEl.className = 'fas fa-check-circle text-lg';
+                        linkWrap.classList.add('hidden');
+                        formFields.forEach(el => el.setAttribute('disabled', 'disabled'));
+                    } else if (availableRaw <= 0) {
                         // No raw milk. Hard block + link to requisitions.
                         alertEl.className = 'alert alert-warning mb-4';
                         headlineEl.innerHTML = `No raw milk in production's hands`;
@@ -628,6 +843,22 @@
                         linkWrap.classList.add('hidden');
                         formFields.forEach(el => el.removeAttribute('disabled'));
                     }
+                }
+
+                // Shortfall detection: when arriving with a planned_volume
+                // from URL params, compare available vs required and show
+                // the supplemental-request banner if there's a gap.
+                const plannedVolume = parseFloat(urlParams.get('planned_volume')) || 0;
+                const shortfallBanner = document.getElementById('shortfallBanner');
+                const shortfallTitle = document.getElementById('shortfallTitle');
+                const shortfallSub = document.getElementById('shortfallSub');
+                if (shortfallBanner && plannedVolume > 0 && availableRaw > 0 && availableRaw < plannedVolume) {
+                    const gap = (plannedVolume - availableRaw).toFixed(3);
+                    shortfallTitle.textContent = `Shortfall of ${gap} L detected`;
+                    shortfallSub.textContent = `Planned: ${plannedVolume.toFixed(2)} L | Available: ${availableRawDisplay} L`;
+                    shortfallBanner.classList.remove('hidden');
+                } else if (shortfallBanner) {
+                    shortfallBanner.classList.add('hidden');
                 }
 
                 // Get pasteurized milk available
@@ -752,7 +983,7 @@
                                 : '<span class="text-base-content/40">-</span>'}
                             </td>
                             <td class="text-right">${run.temperature}°C</td>
-                            <td class="text-right">${run.duration_mins} min</td>
+                            <td class="text-right">${run.duration_mins} ${run.duration_unit === 'seconds' ? 'sec' : 'min'}</td>
                             <td class="text-base-content/60">${formatDateTime(run.started_at)}</td>
                             <td class="text-center">
                                 ${run.status === 'in_progress' ? `
@@ -786,20 +1017,34 @@
             const inputLiters = parseFloat(document.getElementById('inputLiters').value);
             const temperature = parseFloat(document.getElementById('temperature').value);
             const durationMins = parseInt(document.getElementById('durationMins').value);
+            const durationUnit = document.getElementById('durationUnit').value;
             const notes = document.getElementById('notes').value.trim();
 
+            // Include requisition_id when arriving from a specific requisition
+            const urlParams = new URLSearchParams(window.location.search);
+            const requisitionId = urlParams.get('req_id') || activePasteurizationReqId || null;
+
             try {
-                const response = await api.post(PAST_API, {
+                const payload = {
                     input_liters: inputLiters,
                     temperature: temperature,
                     duration_mins: durationMins,
+                    duration_unit: durationUnit,
                     notes: notes
-                });
+                };
+                if (requisitionId) payload.requisition_id = requisitionId;
+
+                const response = await api.post(PAST_API, payload);
 
                 if (response.success) {
                     showToast('Pasteurization run started!', 'success');
                     document.getElementById('newPastModal').close();
                     document.getElementById('newPastForm').reset();
+                    // Re-enable input if it was locked by auto-config
+                    const inputEl = document.getElementById('inputLiters');
+                    if (inputEl) { inputEl.readOnly = false; inputEl.classList.remove('bg-base-200'); }
+                    const autoBanner = document.getElementById('autoConfigBanner');
+                    if (autoBanner) autoBanner.classList.add('hidden');
                     loadStats();
                     loadRuns();
                 } else {
@@ -807,7 +1052,19 @@
                 }
             } catch (error) {
                 console.error('Create run error:', error);
-                showToast(error.response?.data?.message || error.message, 'error');
+                // The Axios interceptor transforms 422s into
+                // { type, errors, message } — no .response wrapper.
+                let errorMsg = 'Validation failed';
+                const fieldErrors = error.errors || error.response?.data?.errors;
+                if (fieldErrors && typeof fieldErrors === 'object') {
+                    const details = Object.values(fieldErrors).join(', ');
+                    errorMsg = `Validation failed: ${details}`;
+                } else if (error.message) {
+                    errorMsg = error.message;
+                } else if (error.response?.data?.message) {
+                    errorMsg = error.response.data.message;
+                }
+                showToast(errorMsg, 'error');
             }
         }
 
@@ -849,9 +1106,92 @@
             }
         }
 
-        function viewDetails(runId) {
-            // TODO: Implement detail view modal
-            showToast('Details view coming soon', 'info');
+        async function viewDetails(runId) {
+            try {
+                const response = await api.get(PAST_API, { params: { id: runId } });
+                if (!response.success || !response.data) {
+                    showToast('Failed to load run details', 'error');
+                    return;
+                }
+                const run = response.data;
+                const unitLabel = run.duration_unit === 'seconds' ? 'sec' : 'min';
+                const shrinkage = run.input_milk_liters > 0 && run.output_milk_liters > 0
+                    ? (((run.input_milk_liters - run.output_milk_liters) / run.input_milk_liters) * 100).toFixed(1)
+                    : null;
+
+                const statusMap = {
+                    pending: { class: 'badge-warning', icon: 'fa-clock', label: 'Pending' },
+                    in_progress: { class: 'badge-info', icon: 'fa-spinner', label: 'In Progress' },
+                    completed: { class: 'badge-success', icon: 'fa-check-circle', label: 'Completed' },
+                    failed: { class: 'badge-error', icon: 'fa-times-circle', label: 'Failed' }
+                };
+                const cfg = statusMap[run.status] || statusMap.pending;
+
+                let html = `
+                    <dialog id="detailModal" class="modal">
+                        <div class="modal-box max-w-lg">
+                            <form method="dialog">
+                                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+                            </form>
+                            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                                <i class="fas fa-flask text-primary"></i>
+                                ${escapeHtml(run.run_code)}
+                                <span class="badge ${cfg.class} gap-1"><i class="fas ${cfg.icon}"></i> ${cfg.label}</span>
+                            </h3>
+
+                            <div class="grid grid-cols-2 gap-3 mb-4">
+                                <div class="bg-base-200 rounded-xl p-3">
+                                    <div class="text-xs text-base-content/60 mb-1">Input Milk</div>
+                                    <div class="text-lg font-bold">${parseFloat(run.input_milk_liters).toLocaleString()} L</div>
+                                </div>
+                                <div class="bg-base-200 rounded-xl p-3">
+                                    <div class="text-xs text-base-content/60 mb-1">Output Milk</div>
+                                    <div class="text-lg font-bold ${run.output_milk_liters > 0 ? 'text-success' : 'text-base-content/40'}">
+                                        ${run.output_milk_liters > 0 ? parseFloat(run.output_milk_liters).toLocaleString() + ' L' : '-'}
+                                    </div>
+                                </div>
+                                <div class="bg-base-200 rounded-xl p-3">
+                                    <div class="text-xs text-base-content/60 mb-1">Temperature</div>
+                                    <div class="text-lg font-bold">${run.temperature}°C</div>
+                                </div>
+                                <div class="bg-base-200 rounded-xl p-3">
+                                    <div class="text-xs text-base-content/60 mb-1">Duration</div>
+                                    <div class="text-lg font-bold">${run.duration_mins} ${unitLabel}</div>
+                                </div>
+                            </div>
+
+                            ${shrinkage !== null ? `
+                                <div class="alert alert-warning mb-4">
+                                    <i class="fas fa-percentage"></i>
+                                    <span>Shrinkage: <strong>${shrinkage}%</strong></span>
+                                </div>
+                            ` : ''}
+
+                            <table class="table table-xs w-full text-sm">
+                                <tbody>
+                                    <tr><td class="text-base-content/60 w-1/3">Performed by</td><td>${escapeHtml(run.performed_by_name || '-')}</td></tr>
+                                    <tr><td class="text-base-content/60">Started</td><td>${formatDateTime(run.started_at)}</td></tr>
+                                    <tr><td class="text-base-content/60">Completed</td><td>${formatDateTime(run.completed_at)}</td></tr>
+                                    ${run.notes ? `<tr><td class="text-base-content/60">Notes</td><td>${escapeHtml(run.notes)}</td></tr>` : ''}
+                                </tbody>
+                            </table>
+
+                            <div class="modal-action">
+                                <button type="button" class="btn btn-ghost" onclick="document.getElementById('detailModal').close()">Close</button>
+                            </div>
+                        </div>
+                        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+                    </dialog>
+                `;
+
+                const existing = document.getElementById('detailModal');
+                if (existing) existing.remove();
+                document.body.insertAdjacentHTML('beforeend', html);
+                document.getElementById('detailModal').showModal();
+            } catch (error) {
+                console.error('Load run details error:', error);
+                showToast('Failed to load run details: ' + error.message, 'error');
+            }
         }
 
         function formatDateTime(dateStr) {

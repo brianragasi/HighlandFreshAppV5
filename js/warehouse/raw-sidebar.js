@@ -56,15 +56,20 @@
             title: 'Operations',
             items: [
                 { id: 'requisitions', label: 'Requisitions', icon: 'fa-clipboard-check', href: 'requisitions.html', badgeId: 'pendingReqsBadge', badgeClass: 'badge-warning' },
-                { id: 'purchase_requests', label: 'Purchase Requests', icon: 'fa-shopping-cart', href: 'purchase_requests.html' },
                 { id: 'receive_deliveries', label: 'Receive Deliveries', icon: 'fa-truck-ramp-box', href: 'receive_deliveries.html' },
                 { id: 'waste', label: 'Spoilage & Waste', icon: 'fa-trash-alt', href: 'waste.html' },
             ],
         },
         {
+            title: 'Procurement',
+            items: [
+                { id: 'reorder_alerts', label: 'Low Stock Alerts', icon: 'fa-exclamation-triangle', href: 'reorder_alerts.html', badgeId: 'lowStockBadge', badgeClass: 'badge-warning', iconAlwaysWarning: true },
+                { id: 'purchase_requests', label: 'Purchase Requests', icon: 'fa-file-signature', href: 'purchase_requests.html' },
+            ],
+        },
+        {
             title: 'Reports',
             items: [
-                { id: 'reorder_alerts', label: 'Reorder Alerts', icon: 'fa-exclamation-triangle', href: 'reorder_alerts.html', badgeId: 'reorderAlertsBadge', badgeClass: 'badge-warning', iconAlwaysWarning: true },
                 { id: 'inventory_report', label: 'Inventory Report', icon: 'fa-chart-bar', href: 'reports/inventory.html' },
                 { id: 'movements', label: 'Stock Movements', icon: 'fa-exchange-alt', href: 'reports/movements.html' },
             ],
@@ -77,10 +82,10 @@
         'ingredients.html': 'ingredients',
         'mro.html': 'mro',
         'requisitions.html': 'requisitions',
+        'reorder_alerts.html': 'reorder_alerts',
         'purchase_requests.html': 'purchase_requests',
         'receive_deliveries.html': 'receive_deliveries',
         'waste.html': 'waste',
-        'reorder_alerts.html': 'reorder_alerts',
         'inventory.html': 'inventory_report',
         'movements.html': 'movements',
     };
@@ -93,11 +98,11 @@
         const path = (window.location.pathname || '').replace(/\\/g, '/').toLowerCase();
         if (path.indexOf('/warehouse/raw/reports/inventory') !== -1) return 'inventory_report';
         if (path.indexOf('/warehouse/raw/reports/movements') !== -1) return 'movements';
-        if (path.indexOf('/warehouse/raw/reorder_alerts') !== -1) return 'reorder_alerts';
         if (path.indexOf('/warehouse/raw/receive_deliveries') !== -1) return 'receive_deliveries';
-        if (path.indexOf('/warehouse/raw/purchase_requests') !== -1) return 'purchase_requests';
         if (path.indexOf('/warehouse/raw/milk_storage') !== -1) return 'milk_storage';
         if (path.indexOf('/warehouse/raw/requisitions') !== -1) return 'requisitions';
+        if (path.indexOf('/warehouse/raw/reorder_alerts') !== -1) return 'reorder_alerts';
+        if (path.indexOf('/warehouse/raw/purchase_requests') !== -1) return 'purchase_requests';
         if (path.indexOf('/warehouse/raw/ingredients') !== -1) return 'ingredients';
         if (path.indexOf('/warehouse/raw/waste') !== -1) return 'waste';
         if (path.indexOf('/warehouse/raw/mro') !== -1) return 'mro';

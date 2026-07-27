@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Product Conversions — Production | Highland Fresh</title>
+    <link rel="stylesheet" href="../../css/tailwind.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar shell -->
+    <aside id="sidebar"
+        class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+    </aside>
+
+    <!-- Main Content -->
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        <!-- Top Navbar -->
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold text-base-content">Product Conversions</h1>
+                <div class="text-sm breadcrumbs py-0">
+                    <ul class="text-xs">
+                        <li><a href="dashboard.html">Dashboard</a></li>
+                        <li>Conversions</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="flex-none">
+                <button class="btn btn-ghost btn-square" onclick="loadData()" title="Refresh">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </header>
+
+        <main class="flex-1 p-4 lg:p-6">
+
+            <!-- Alert Banner -->
+            <div id="pendingAlert" class="hidden alert alert-warning mb-4 shadow-sm">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span id="pendingAlertText">You have pending conversions awaiting production.</span>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+                <div class="stat bg-base-100 rounded-xl shadow-sm border border-base-300 p-4 cursor-pointer hover:border-warning transition-colors"
+                     onclick="switchTab('pending')">
+                    <div class="stat-title text-xs">Pending (QC Approved)</div>
+                    <div class="stat-value text-warning text-2xl" id="pendingCount">0</div>
+                    <div class="stat-desc text-xs">Awaiting production start</div>
+                </div>
+                <div class="stat bg-base-100 rounded-xl shadow-sm border border-base-300 p-4 cursor-pointer hover:border-primary transition-colors"
+                     onclick="switchTab('active')">
+                    <div class="stat-title text-xs">In Progress</div>
+                    <div class="stat-value text-primary text-2xl" id="activeCount">0</div>
+                    <div class="stat-desc text-xs">Active conversion runs</div>
+                </div>
+                <div class="stat bg-base-100 rounded-xl shadow-sm border border-base-300 p-4 cursor-pointer hover:border-success transition-colors"
+                     onclick="switchTab('history')">
+                    <div class="stat-title text-xs">Completed</div>
+                    <div class="stat-value text-success text-2xl" id="completedCount">0</div>
+                    <div class="stat-desc text-xs">Finished conversions</div>
+                </div>
+                <div class="stat bg-base-100 rounded-xl shadow-sm border border-base-300 p-4">
+                    <div class="stat-title text-xs">Total</div>
+                    <div class="stat-value text-2xl" id="totalCount">0</div>
+                    <div class="stat-desc text-xs">All-time conversions</div>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="tabs tabs-boxed bg-base-100 mb-4 p-1">
+                <button class="tab tab-active" data-tab="pending" onclick="switchTab('pending')">
+                    <i class="fas fa-clock mr-1"></i> Pending Queue
+                </button>
+                <button class="tab" data-tab="active" onclick="switchTab('active')">
+                    <i class="fas fa-play-circle mr-1"></i> Active Runs
+                </button>
+                <button class="tab" data-tab="history" onclick="switchTab('history')">
+                    <i class="fas fa-history mr-1"></i> History
+                </button>
+            </div>
+
+            <!-- Pending Queue Section -->
+            <div id="pendingSection" class="tab-panel">
+                <div class="bg-base-100 rounded-xl shadow-sm border border-base-300">
+                    <div class="p-4 border-b border-base-300">
+                        <h3 class="font-semibold flex items-center gap-2">
+                            <i class="fas fa-clock text-warning"></i>
+                            QC-Approved Batches Awaiting Production
+                        </h3>
+                        <p class="text-xs text-base-content/60 mt-1">These batches have passed safety verification and are ready for yogurt conversion.</p>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="table table-zebra w-full">
+                            <thead>
+                                <tr>
+                                    <th>Code</th>
+                                    <th>Source Product</th>
+                                    <th class="text-right">Volume (L)</th>
+                                    <th>Target Recipe</th>
+                                    <th>Date</th>
+                                    <th>Safety Verified</th>
+                                    <th class="text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pendingTable">
+                                <tr>
+                                    <td colspan="7" class="text-center py-8 text-base-content/40">
+                                        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                                        <p>Loading...</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Runs Section -->
+            <div id="activeSection" class="tab-panel hidden">
+                <div class="bg-base-100 rounded-xl shadow-sm border border-base-300">
+                    <div class="p-4 border-b border-base-300">
+                        <h3 class="font-semibold flex items-center gap-2">
+                            <i class="fas fa-play-circle text-primary"></i>
+                            In-Progress Conversion Runs
+                        </h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="table table-zebra w-full">
+                            <thead>
+                                <tr>
+                                    <th>Conversion Code</th>
+                                    <th>Run Code</th>
+                                    <th>Source Product</th>
+                                    <th class="text-right">Volume (L)</th>
+                                    <th>Recipe</th>
+                                    <th>Started By</th>
+                                    <th class="text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="activeTable">
+                                <tr>
+                                    <td colspan="7" class="text-center py-8 text-base-content/40">
+                                        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                                        <p>Loading...</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- History Section -->
+            <div id="historySection" class="tab-panel hidden">
+                <div class="bg-base-100 rounded-xl shadow-sm border border-base-300">
+                    <div class="p-4 border-b border-base-300">
+                        <h3 class="font-semibold flex items-center gap-2">
+                            <i class="fas fa-history text-success"></i>
+                            Completed &amp; Cancelled Conversions
+                        </h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="table table-zebra w-full">
+                            <thead>
+                                <tr>
+                                    <th>Code</th>
+                                    <th>Source Product</th>
+                                    <th class="text-right">Volume (L)</th>
+                                    <th class="text-right">Actual Yield</th>
+                                    <th>Status</th>
+                                    <th>Completed</th>
+                                    <th>By</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTable">
+                                <tr>
+                                    <td colspan="7" class="text-center py-8 text-base-content/40">
+                                        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                                        <p>Loading...</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="historyPagination" class="flex justify-center p-4"></div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Start Conversion Modal -->
+    <dialog id="startModal" class="modal">
+        <div class="modal-box max-w-lg">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-play text-primary"></i>
+                Start Conversion Run
+            </h3>
+
+            <form id="startForm" onsubmit="submitStart(event)">
+                <input type="hidden" id="startConversionId">
+
+                <div class="space-y-4">
+                    <div class="bg-primary/10 border border-primary/30 rounded-xl p-4">
+                        <h5 class="font-semibold text-sm flex items-center gap-2 mb-3">
+                            <i class="fas fa-info-circle text-primary"></i>
+                            Conversion Details
+                        </h5>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <p class="text-xs text-base-content/60">Code</p>
+                                <p class="font-medium text-sm" id="startCode">-</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-base-content/60">Source Product</p>
+                                <p class="font-medium text-sm" id="startSourceProduct">-</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-base-content/60">Volume to Process</p>
+                                <p class="font-medium text-sm" id="startVolume">- L</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-base-content/60">Target Recipe</p>
+                                <p class="font-medium text-sm" id="startRecipe">-</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Initial Volume for Run (mL) <span class="text-error">*</span></span>
+                        </label>
+                        <input type="number" class="input input-bordered w-full" id="startVolumeMl" min="1" required
+                            placeholder="e.g. 4500">
+                        <label class="label">
+                            <span class="label-text-alt text-base-content/60">Volume in milliliters to load into pasteurizer</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('startModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="submitStartBtn">
+                        <i class="fas fa-play"></i>
+                        Start Conversion Run
+                    </button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Complete Conversion Modal -->
+    <dialog id="completeModal" class="modal">
+        <div class="modal-box max-w-lg">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-check-circle text-success"></i>
+                Complete Conversion
+            </h3>
+
+            <form id="completeForm" onsubmit="submitComplete(event)">
+                <input type="hidden" id="completeConversionId">
+
+                <div class="space-y-4">
+                    <div class="bg-success/10 border border-success/30 rounded-xl p-4">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <p class="text-xs text-base-content/60">Code</p>
+                                <p class="font-medium text-sm" id="completeCode">-</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-base-content/60">Run Code</p>
+                                <p class="font-medium text-sm" id="completeRunCode">-</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-base-content/60">Expected Yield</p>
+                                <p class="font-medium text-sm" id="completeExpectedYield">- L</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Actual Yield (pieces/bottles) <span class="text-error">*</span></span>
+                        </label>
+                        <input type="number" class="input input-bordered w-full" id="completeActualYield" min="1" required
+                            placeholder="e.g. 900">
+                        <label class="label">
+                            <span class="label-text-alt text-base-content/60">Final output quantity after production</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('completeModal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-success" id="submitCompleteBtn">
+                        <i class="fas fa-check-circle"></i>
+                        Mark Complete
+                    </button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+
+    <!-- Scripts -->
+    <script src="../../js/vendor/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script>window.PRODUCTION_ACTIVE_PAGE = "conversions";</script>
+    <script src="../../js/production/sidebar.js"></script>
+    <script src="../../js/production/production.service.js"></script>
+
+    <script>
+        let currentTab = 'pending';
+        let pendingData = [];
+        let activeData = [];
+        let historyPage = 1;
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+
+        // ── Toast ──
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            const alertClass = type === 'error' ? 'alert-error' : type === 'success' ? 'alert-success' : 'alert-info';
+            toast.className = `alert ${alertClass} text-sm shadow-lg`;
+            toast.innerHTML = `<span>${escapeHtml(message)}</span>`;
+            document.getElementById('toastContainer').appendChild(toast);
+            setTimeout(() => toast.remove(), 4000);
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            const div = document.createElement('div');
+            div.appendChild(document.createTextNode(str));
+            return div.innerHTML;
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        // ── Tabs ──
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tabs .tab').forEach(b => b.classList.remove('tab-active'));
+            document.querySelector(`[data-tab="${tab}"]`).classList.add('tab-active');
+
+            document.querySelectorAll('.tab-panel').forEach(s => s.classList.add('hidden'));
+            document.getElementById(`${tab}Section`).classList.remove('hidden');
+
+            if (tab === 'history') loadHistory();
+        }
+
+        // ── Load Data ──
+        async function loadData() {
+            await Promise.all([loadSummary(), loadPending(), loadActive()]);
+        }
+
+        async function loadSummary() {
+            try {
+                const res = await axios.get(`${API_BASE_URL}/production/conversions.php`, { params: { action: 'summary' } });
+                if (res.data.success) {
+                    const d = res.data.data;
+                    document.getElementById('pendingCount').textContent = d.pending;
+                    document.getElementById('activeCount').textContent = d.active;
+                    document.getElementById('completedCount').textContent = d.completed;
+                    document.getElementById('totalCount').textContent = d.total;
+
+                    // Update sidebar badge
+                    if (typeof ProductionSidebar !== 'undefined') {
+                        ProductionSidebar.showBadge('conversionsBadge', d.pending);
+                    }
+
+                    // Show alert if pending
+                    if (d.pending > 0) {
+                        document.getElementById('pendingAlert').classList.remove('hidden');
+                        document.getElementById('pendingAlertText').textContent =
+                            `${d.pending} conversion(s) awaiting production start.`;
+                    } else {
+                        document.getElementById('pendingAlert').classList.add('hidden');
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to load summary:', e);
+            }
+        }
+
+        async function loadPending() {
+            const tbody = document.getElementById('pendingTable');
+            try {
+                const res = await axios.get(`${API_BASE_URL}/production/conversions.php`, { params: { action: 'pending' } });
+                if (res.data.success) {
+                    pendingData = res.data.data.pending || [];
+                    if (pendingData.length === 0) {
+                        tbody.innerHTML = `
+                            <tr>
+                                <td colspan="7" class="text-center py-12">
+                                    <i class="fas fa-check-circle text-success text-5xl mb-4 block"></i>
+                                    <h4 class="font-semibold text-lg">Queue Clear</h4>
+                                    <p class="text-base-content/60">No pending conversions — all batches have been picked up.</p>
+                                </td>
+                            </tr>`;
+                        return;
+                    }
+                    tbody.innerHTML = pendingData.map(c => `
+                        <tr class="hover">
+                            <td>
+                                <div class="font-semibold text-sm">${escapeHtml(c.transformation_code)}</div>
+                            </td>
+                            <td>
+                                <div class="font-medium text-sm">${escapeHtml(c.source_product_name || 'Milk')}</div>
+                            </td>
+                            <td class="text-right font-semibold">${Number(c.source_volume_liters || 0).toLocaleString()} L</td>
+                            <td>
+                                <span class="badge badge-info badge-sm">${escapeHtml(c.recipe_name || c.recipe_code || 'Yogurt')}</span>
+                            </td>
+                            <td class="text-sm">${formatDate(c.transformation_date)}</td>
+                            <td>
+                                ${c.safety_verified == 1
+                                    ? '<span class="badge badge-success badge-sm"><i class="fas fa-check mr-1"></i>Verified</span>'
+                                    : '<span class="badge badge-warning badge-sm">Pending</span>'}
+                            </td>
+                            <td class="text-center">
+                                <button class="btn btn-primary btn-sm" onclick="openStartModal(${c.id})">
+                                    <i class="fas fa-play"></i> Start
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-error">Failed to load pending queue</td></tr>';
+            }
+        }
+
+        async function loadActive() {
+            const tbody = document.getElementById('activeTable');
+            try {
+                const res = await axios.get(`${API_BASE_URL}/production/conversions.php`, { params: { action: 'active' } });
+                if (res.data.success) {
+                    activeData = res.data.data.active || [];
+                    if (activeData.length === 0) {
+                        tbody.innerHTML = `
+                            <tr>
+                                <td colspan="7" class="text-center py-12">
+                                    <i class="fas fa-inbox text-base-content/20 text-5xl mb-4 block"></i>
+                                    <p class="text-base-content/60">No active conversion runs</p>
+                                </td>
+                            </tr>`;
+                        return;
+                    }
+                    tbody.innerHTML = activeData.map(c => `
+                        <tr class="hover">
+                            <td>
+                                <div class="font-semibold text-sm">${escapeHtml(c.transformation_code)}</div>
+                            </td>
+                            <td>
+                                <span class="badge badge-primary badge-sm font-mono">${escapeHtml(c.run_code || '-')}</span>
+                            </td>
+                            <td>
+                                <div class="font-medium text-sm">${escapeHtml(c.source_product_name || 'Milk')}</div>
+                            </td>
+                            <td class="text-right font-semibold">${Number(c.source_volume_liters || 0).toLocaleString()} L</td>
+                            <td>
+                                <span class="badge badge-info badge-sm">${escapeHtml(c.recipe_name || 'Yogurt')}</span>
+                            </td>
+                            <td class="text-sm">${escapeHtml(c.started_by_name || '-')}</td>
+                            <td class="text-center">
+                                <div class="flex justify-center gap-1">
+                                    <a href="run-workbench.html?run=${c.production_run_id || ''}" class="btn btn-primary btn-xs" title="Open in Workbench">
+                                        <i class="fas fa-screwdriver-wrench"></i> Work
+                                    </a>
+                                    <button class="btn btn-success btn-xs" onclick="openCompleteModal(${c.id}, '${escapeHtml(c.run_code || '')}', ${c.source_volume_liters || 0})" title="Complete">
+                                        <i class="fas fa-check"></i>
+                                    </button>
+                                    <button class="btn btn-error btn-xs btn-outline" onclick="cancelConversion(${c.id})" title="Cancel">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-error">Failed to load active runs</td></tr>';
+            }
+        }
+
+        async function loadHistory() {
+            const tbody = document.getElementById('historyTable');
+            try {
+                const res = await axios.get(`${API_BASE_URL}/production/conversions.php`, { params: { action: 'history', page: historyPage } });
+                if (res.data.success) {
+                    const rows = res.data.data.history || [];
+                    if (rows.length === 0) {
+                        tbody.innerHTML = `
+                            <tr>
+                                <td colspan="7" class="text-center py-12">
+                                    <i class="fas fa-inbox text-base-content/20 text-5xl mb-4 block"></i>
+                                    <p class="text-base-content/60">No conversion history yet</p>
+                                </td>
+                            </tr>`;
+                        document.getElementById('historyPagination').innerHTML = '';
+                        return;
+                    }
+                    tbody.innerHTML = rows.map(c => `
+                        <tr class="hover">
+                            <td class="font-semibold text-sm">${escapeHtml(c.transformation_code)}</td>
+                            <td>${escapeHtml(c.source_product_name || 'Milk')}</td>
+                            <td class="text-right">${Number(c.source_volume_liters || 0).toLocaleString()} L</td>
+                            <td class="text-right font-semibold">${c.target_quantity ? Number(c.target_quantity).toLocaleString() : '-'}</td>
+                            <td>
+                                ${c.status === 'completed'
+                                    ? '<span class="badge badge-success badge-sm">Completed</span>'
+                                    : '<span class="badge badge-error badge-sm">Cancelled</span>'}
+                            </td>
+                            <td class="text-sm">${formatDate(c.completed_at)}</td>
+                            <td class="text-sm">${escapeHtml(c.completed_by_name || '-')}</td>
+                        </tr>
+                    `).join('');
+
+                    // Simple pagination
+                    const pages = res.data.data.pages || 1;
+                    const page = res.data.data.page || 1;
+                    let paginationHtml = '<div class="join">';
+                    for (let i = 1; i <= pages; i++) {
+                        paginationHtml += `<button class="join-item btn btn-sm ${i === page ? 'btn-active' : ''}" onclick="historyPage=${i};loadHistory()">${i}</button>`;
+                    }
+                    paginationHtml += '</div>';
+                    document.getElementById('historyPagination').innerHTML = pages > 1 ? paginationHtml : '';
+                }
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-error">Failed to load history</td></tr>';
+            }
+        }
+
+        // ── Start Modal ──
+        function openStartModal(conversionId) {
+            const c = pendingData.find(x => x.id === conversionId);
+            if (!c) return;
+
+            document.getElementById('startConversionId').value = c.id;
+            document.getElementById('startCode').textContent = c.transformation_code;
+            document.getElementById('startSourceProduct').textContent = c.source_product_name || 'Milk';
+            document.getElementById('startVolume').textContent = `${Number(c.source_volume_liters || 0).toLocaleString()} L`;
+            document.getElementById('startRecipe').textContent = c.recipe_name || 'Yogurt';
+            document.getElementById('startVolumeMl').value = Math.round((c.source_volume_liters || 0) * 1000);
+
+            document.getElementById('startModal').showModal();
+        }
+
+        async function submitStart(e) {
+            e.preventDefault();
+            const btn = document.getElementById('submitStartBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Starting...';
+
+            try {
+                const res = await axios.post(`${API_BASE_URL}/production/conversions.php`, {
+                    action: 'start',
+                    conversion_id: document.getElementById('startConversionId').value,
+                    initial_volume_ml: document.getElementById('startVolumeMl').value,
+                });
+
+                if (res.data.success) {
+                    showToast(res.data.message || 'Conversion started', 'success');
+                    document.getElementById('startModal').close();
+                    loadData();
+                } else {
+                    showToast(res.data.message || 'Failed to start', 'error');
+                }
+            } catch (err) {
+                showToast(err.response?.data?.message || err.message || 'Failed to start conversion', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-play"></i> Start Conversion Run';
+            }
+        }
+
+        // ── Complete Modal ──
+        function openCompleteModal(conversionId, runCode, volumeLiters) {
+            document.getElementById('completeConversionId').value = conversionId;
+            document.getElementById('completeRunCode').textContent = runCode || '-';
+            const expectedPieces = Math.floor(volumeLiters / 0.5 * 0.9);
+            document.getElementById('completeExpectedYield').textContent = `~${expectedPieces} pieces`;
+            document.getElementById('completeActualYield').value = '';
+            document.getElementById('completeModal').showModal();
+        }
+
+        async function submitComplete(e) {
+            e.preventDefault();
+            const btn = document.getElementById('submitCompleteBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Completing...';
+
+            try {
+                const res = await axios.post(`${API_BASE_URL}/production/conversions.php`, {
+                    action: 'complete',
+                    conversion_id: document.getElementById('completeConversionId').value,
+                    actual_yield: document.getElementById('completeActualYield').value,
+                });
+
+                if (res.data.success) {
+                    showToast('Conversion completed successfully', 'success');
+                    document.getElementById('completeModal').close();
+                    loadData();
+                } else {
+                    showToast(res.data.message || 'Failed to complete', 'error');
+                }
+            } catch (err) {
+                showToast(err.response?.data?.message || err.message || 'Failed to complete', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-check-circle"></i> Mark Complete';
+            }
+        }
+
+        // ── Cancel ──
+        async function cancelConversion(conversionId) {
+            if (!confirm('Cancel this conversion? Inventory will be restored.')) return;
+
+            try {
+                const res = await axios.post(`${API_BASE_URL}/production/conversions.php`, {
+                    action: 'cancel',
+                    conversion_id: conversionId,
+                });
+
+                if (res.data.success) {
+                    showToast('Conversion cancelled', 'success');
+                    loadData();
+                } else {
+                    showToast(res.data.message || 'Failed to cancel', 'error');
+                }
+            } catch (err) {
+                showToast(err.response?.data?.message || err.message || 'Failed to cancel', 'error');
+            }
+        }
+
+        // ── Init ──
+        document.addEventListener('DOMContentLoaded', loadData);
+    </script>
+</body>
+</html>

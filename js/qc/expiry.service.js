@@ -100,11 +100,15 @@ const ExpiryService = {
     /**
      * Initiate yogurt transformation (legacy method)
      */
-    async initiateTransformation(inventoryId, quantity, notes = '') {
-        return await api.post('/qc/expiry_management.php', {
+    async initiateTransformation(inventoryId, quantity, notes = '', sourceType = 'finished_goods', targetProductId = null, reason = null) {
+        const payload = {
             inventory_id: inventoryId,
             quantity: quantity,
-            notes: notes
-        });
+            notes: notes,
+            source_type: sourceType
+        };
+        if (targetProductId) payload.target_product_id = targetProductId;
+        if (reason) payload.reason = reason;
+        return await api.post('/qc/expiry_management.php', payload);
     }
 };

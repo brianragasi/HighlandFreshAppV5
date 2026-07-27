@@ -263,7 +263,8 @@ const WarehouseFGService = {
     },
 
     /**
-     * Receive a batch from production (after QC release)
+     * Receive a QC-released batch from production into FG inventory.
+     * Creates one FG row per packaging line (per SKU/size).
      * @param {number} batchId - Production batch ID
      * @param {number} chillerId - Target chiller ID
      * @param {string} notes - Optional notes
@@ -278,7 +279,7 @@ const WarehouseFGService = {
     },
 
     /**
-     * Put away: assign packaged FG inventory to a chiller (location only; stock already booked)
+     * Put away: assign existing FG inventory to a chiller (location only)
      * @param {number} inventoryId - Finished goods inventory ID
      * @param {number} chillerId - Target chiller ID
      * @param {string} notes - Optional notes
@@ -293,7 +294,7 @@ const WarehouseFGService = {
     },
 
     /**
-     * Get packaged FG items awaiting put-away (no chiller assigned yet)
+     * Get QC-released batches awaiting warehouse receive
      */
     async getPendingBatches() {
         return await api.get(`${this.baseUrl}/inventory.php`, {
@@ -761,6 +762,97 @@ const WarehouseFGService = {
         return await api.get(`${this.baseUrl}/dispatch.php`, {
             params: { action: 'release_summary', dr_id: drId }
         });
+    },
+
+    // ========================================
+    // Customer Returns
+    // ========================================
+
+    /**
+     * List customer returns with optional status filter
+     */
+    async getCustomerReturns(params = {}) {
+        return await api.get(`${this.baseUrl}/customer_returns.php`, { params });
+    },
+
+    /**
+     * Get single customer return with items
+     */
+    async getCustomerReturn(id) {
+        return await api.get(`${this.baseUrl}/customer_returns.php`, { params: { id } });
+    },
+
+    /**
+     * Create a customer return receipt
+     */
+    async recordCustomerReturn(data) {
+        return await api.post(`${this.baseUrl}/customer_returns.php`, { action: 'record', ...data });
+    },
+
+    /**
+     * QC inspect a customer return (restock / dispose / rework)
+     */
+    async qcInspectReturn(id, qcDecision, inspectionNotes = '') {
+        return await api.put(`${this.baseUrl}/customer_returns.php`, {
+            action: 'qc_inspect', id, qc_decision: qcDecision, inspection_notes: inspectionNotes
+        });
+    },
+
+    /**
+     * Get customer return lookup data (reasons, dispositions, conditions)
+     */
+    async getReturnLookups() {
+        return await api.get(`${this.baseUrl}/customer_returns.php`, { params: { action: 'lookup' } });
+    },
+
+    /**
+     * Get customer returns stats
+     */
+    async getReturnStats() {
+        return await api.get(`${this.baseUrl}/customer_returns.php`, { params: { action: 'stats' } });
+    },
+
+    // ========================================
+    // Credit Memos (Finance)
+    // ========================================
+
+    /**
+     * Create a credit memo
+     */
+    async createCreditMemo(data) {
+        return await api.post('/finance/credit_memos.php', data);
+    },
+
+    /**
+     * GM approve credit memo
+     */
+    async approveCreditMemo(id, stepUpToken, approvalNotes = '') {
+        return await api.put('/finance/credit_memos.php', {
+            action: 'approve', id, step_up_token: stepUpToken, approval_notes: approvalNotes
+        });
+    },
+
+    /**
+     * Apply approved credit memo to an invoice
+     */
+    async applyCreditMemo(id, invoiceId) {
+        return await api.put('/finance/credit_memos.php', {
+            action: 'apply', id, invoice_id: invoiceId
+        });
+    },
+
+    /**
+     * List credit memos
+     */
+    async getCreditMemos(params = {}) {
+        return await api.get('/finance/credit_memos.php', { params });
+    },
+
+    /**
+     * Get credit memo stats
+     */
+    async getCreditMemoStats() {
+        return await api.get('/finance/credit_memos.php', { params: { action: 'stats' } });
     }
 };
 

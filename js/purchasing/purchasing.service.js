@@ -41,6 +41,10 @@ const PurchasingService = {
         return await api.get(`/purchasing/dashboard.php?action=monthly_spending&months=${months}`);
     },
 
+    async getNotifications() {
+        return await api.get('/purchasing/dashboard.php?action=notifications');
+    },
+
     // ========================================
     // SUPPLIERS
     // ========================================
@@ -92,7 +96,7 @@ const PurchasingService = {
     },
 
     /**
-     * Phase 1 (multi-supplier): create one or more POs from a single approved PR.
+     * Phase 1 (multi-supplier): create one or more POs from a submitted PRS.
      * Items with the same supplier are consolidated into a single PO;
      * items with different suppliers yield separate POs in one transaction.
      * Backend route: POST /purchasing/purchase_orders.php?action=create_from_pr
@@ -139,6 +143,17 @@ const PurchasingService = {
 
     async closePO(id) {
         return await api.put(`/purchasing/purchase_orders.php?action=close&id=${id}`, {});
+    },
+
+    async getReceivingReportDetail(id) {
+        return await api.get(`/purchasing/purchase_orders.php?action=rr_detail&id=${id}`);
+    },
+
+    async verifyReceivingReport(poId, rrId, notes = '') {
+        return await api.put(`/purchasing/purchase_orders.php?action=verify_rr&id=${poId}`, {
+            rr_id: rrId,
+            notes
+        });
     },
 
     async updatePaymentStatus(id, paymentStatus) {
@@ -208,10 +223,6 @@ const PurchasingService = {
         return await api.put(`/purchasing/purchase_requests.php?action=update&id=${id}`, data);
     },
 
-    async gmUpdatePurchaseRequest(id, data) {
-        return await api.put(`/purchasing/purchase_requests.php?action=gm_update&id=${id}`, data);
-    },
-
     async submitPR(id) {
         return await api.put(`/purchasing/purchase_requests.php?action=submit&id=${id}`, {});
     },
@@ -220,16 +231,8 @@ const PurchasingService = {
         return await api.put(`/purchasing/purchase_requests.php?action=reopen&id=${id}`, { reason });
     },
 
-    async approvePR(id, approvalRemarks = '') {
-        return await api.put(`/purchasing/purchase_requests.php?action=approve&id=${id}`, { approval_remarks: approvalRemarks });
-    },
-
-    async rejectPR(id, reason) {
-        return await api.put(`/purchasing/purchase_requests.php?action=reject&id=${id}`, { reason });
-    },
-
-    async getApprovedPRsForPO() {
-        return await api.get('/purchasing/purchase_requests.php?action=approved_for_po');
+    async getPRSInbox() {
+        return await api.get('/purchasing/purchase_requests.php?action=prs_inbox');
     },
 
     // ========================================
@@ -245,6 +248,16 @@ const PurchasingService = {
         return await api.get(`/purchasing/canvassing.php?action=detail&id=${id}`);
     },
 
+    async getPRSCanvassingWorkbench(prId) {
+        return await api.get(`/purchasing/canvassing.php?action=prs_workbench&pr_id=${encodeURIComponent(prId)}`);
+    },
+
+    async preparePRSCanvassing(prId) {
+        return await api.post('/purchasing/canvassing.php?action=ensure_prs_canvass', {
+            purchase_request_id: prId
+        });
+    },
+
     async createCanvass(data) {
         return await api.post('/purchasing/canvassing.php?action=create', data);
     },
@@ -253,8 +266,11 @@ const PurchasingService = {
         return await api.post('/purchasing/canvassing.php?action=add_quote', data);
     },
 
-    async selectCanvassQuote(quoteId) {
-        return await api.put('/purchasing/canvassing.php?action=select_quote', { quote_id: quoteId });
+    async overrideCanvassQuote(quoteId, reason) {
+        return await api.put('/purchasing/canvassing.php?action=override_quote', {
+            quote_id: quoteId,
+            reason
+        });
     },
 
     async cancelCanvass(id) {

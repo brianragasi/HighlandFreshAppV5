@@ -3,719 +3,408 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Byproducts - Production | Highland Fresh</title>
-    
-    <!-- Tailwind CSS + DaisyUI CDN -->
-    <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
+    <title>Waste & Byproducts - Production | Highland Fresh</title>
     <link rel="stylesheet" href="../../css/tailwind.css">
-    
-    <!-- Inter Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    
-    <!-- Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    
     <style>
         body { font-family: 'Inter', sans-serif; }
-        .bento-card { @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg; }
-        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
-        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
-        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
         .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         .stat-value { font-variant-numeric: tabular-nums; }
     </style>
 </head>
 <body class="bg-base-200 min-h-screen">
-    
-    <!-- Mobile Sidebar Backdrop (filled/used by ProductionSidebar) -->
     <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
-
-    <!-- Sidebar shell — content filled by ProductionSidebar -->
     <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col"></aside>
 
-    
-    <!-- Main Content -->
     <div class="lg:ml-72 min-h-screen flex flex-col">
-        
-        <!-- Top Navbar -->
         <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
             <div class="flex-none lg:hidden">
-                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()">
-                    <i class="fas fa-bars text-lg"></i>
-                </button>
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button>
             </div>
             <div class="flex-1">
-                <div>
-                    <h1 class="text-lg lg:text-xl font-bold text-base-content">Production Byproducts</h1>
-                    <div class="text-sm breadcrumbs py-0">
-                        <ul class="text-xs">
-                            <li><a href="dashboard.html">Dashboard</a></li>
-                            <li>Byproducts</li>
-                        </ul>
-                    </div>
+                <h1 class="text-lg lg:text-xl font-bold text-base-content">Waste & Byproducts</h1>
+                <div class="text-sm breadcrumbs py-0">
+                    <ul class="text-xs">
+                        <li><a href="dashboard.html">Dashboard</a></li>
+                        <li>Waste & Byproducts</li>
+                    </ul>
                 </div>
             </div>
-            <div class="flex-none flex items-center gap-2">
-                <label class="swap swap-rotate btn btn-ghost btn-circle">
-                    <input type="checkbox" id="themeToggle" />
-                    <i class="fas fa-sun swap-off text-lg"></i>
-                    <i class="fas fa-moon swap-on text-lg"></i>
-                </label>
+            <div class="flex-none flex gap-2">
+                <button class="btn btn-ghost btn-square" onclick="loadPage()" title="Refresh"><i class="fas fa-sync-alt"></i></button>
+                <button class="btn btn-primary gap-2" onclick="openByproductModal()"><i class="fas fa-plus"></i> Log Byproduct</button>
             </div>
         </header>
-        
-        <!-- Page Content -->
-        <main class="flex-1 p-4 lg:p-6">
-            
-            <!-- What are Byproducts Guide -->
-            <div class="card bg-warning/10 border-2 border-warning mb-6">
-                <div class="card-body">
-                    <div class="flex items-start gap-4">
-                        <div class="w-12 h-12 bg-warning rounded-full flex items-center justify-center flex-shrink-0">
-                            <i class="fas fa-question-circle text-warning-content text-xl"></i>
-                        </div>
-                        <div class="flex-1">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <h3 class="font-bold text-lg text-amber-800">What are Byproducts?</h3>
-                                    <p class="text-sm text-base-content/60">Extra stuff left over after making products</p>
-                                </div>
-                                <button class="btn btn-ghost btn-sm" onclick="this.closest('.card').style.display='none'" title="Hide this guide">
-                                    <i class="fas fa-times"></i>
-                                </button>
-                            </div>
-                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
-                                <div class="bg-base-100 rounded-xl p-4">
-                                    <strong class="text-sm"><i class="fas fa-cube mr-1"></i> Making Butter?</strong>
-                                    <p class="text-xs text-base-content/60">You'll get <strong>Buttermilk</strong> left over</p>
-                                </div>
-                                <div class="bg-base-100 rounded-xl p-4">
-                                    <strong class="text-sm"><i class="fas fa-cheese mr-1"></i> Making Cheese?</strong>
-                                    <p class="text-xs text-base-content/60">You'll get <strong>Whey</strong> left over</p>
-                                </div>
-                                <div class="bg-base-100 rounded-xl p-4">
-                                    <strong class="text-sm"><i class="fas fa-clipboard-list mr-1"></i> Record them here!</strong>
-                                    <p class="text-xs text-base-content/60">Don't waste them - track & reuse!</p>
-                                </div>
-                            </div>
-                        </div>
+
+        <main class="flex-1 p-4 lg:p-6 space-y-5">
+            <section class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <button class="stat bg-base-100 rounded-lg border border-base-300 text-left p-4" onclick="setStatus('pending')">
+                    <div class="stat-title text-xs">Pending Decision</div>
+                    <div class="stat-value text-warning text-2xl" id="statPending">0</div>
+                </button>
+                <button class="stat bg-base-100 rounded-lg border border-base-300 text-left p-4" onclick="setStatus('stored')">
+                    <div class="stat-title text-xs">Stored</div>
+                    <div class="stat-value text-success text-2xl" id="statStored">0</div>
+                </button>
+                <button class="stat bg-base-100 rounded-lg border border-base-300 text-left p-4" onclick="setStatus('used')">
+                    <div class="stat-title text-xs">Used / Reprocessed</div>
+                    <div class="stat-value text-info text-2xl" id="statUsed">0</div>
+                </button>
+                <button class="stat bg-base-100 rounded-lg border border-base-300 text-left p-4" onclick="setStatus('disposed')">
+                    <div class="stat-title text-xs">Sent to Disposal</div>
+                    <div class="stat-value text-error text-2xl" id="statDisposed">0</div>
+                </button>
+            </section>
+
+            <section class="bg-base-100 border border-base-300 rounded-lg">
+                <div class="p-4 border-b border-base-300 flex flex-col lg:flex-row gap-3 lg:items-end lg:justify-between">
+                    <div>
+                        <h2 class="font-semibold flex items-center gap-2"><i class="fas fa-recycle text-primary"></i> Byproduct Records</h2>
+                        <p class="text-sm text-base-content/60">Manual records for whey, skim milk, buttermilk, cream, and other leftovers from production.</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <select id="typeFilter" class="select select-bordered select-sm" onchange="loadByproducts()">
+                            <option value="">All types</option>
+                            <option value="buttermilk">Buttermilk</option>
+                            <option value="whey">Whey</option>
+                            <option value="cream">Cream</option>
+                            <option value="skim_milk">Skim Milk</option>
+                            <option value="other">Other</option>
+                        </select>
+                        <select id="statusFilter" class="select select-bordered select-sm" onchange="loadByproducts()">
+                            <option value="">All status</option>
+                            <option value="pending">Pending</option>
+                            <option value="stored">Stored</option>
+                            <option value="used">Used</option>
+                            <option value="disposed">Disposed</option>
+                        </select>
+                        <input id="searchInput" class="input input-bordered input-sm w-48" placeholder="Search run or notes" oninput="debouncedLoad()">
                     </div>
                 </div>
-            </div>
-            
-            <!-- Big Action Button -->
-            <div class="card bg-primary hover:bg-primary-focus cursor-pointer transition-colors mb-6" onclick="showRecordByproductModal()">
-                <div class="card-body items-center text-center py-8">
-                    <i class="fas fa-plus-circle text-5xl text-primary-content mb-2"></i>
-                    <h2 class="card-title text-primary-content text-2xl">Record a Byproduct</h2>
-                    <p class="text-primary-content/80">Click here to log leftover buttermilk, whey, or other byproducts</p>
+                <div class="overflow-x-auto">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Run</th>
+                                <th>Source</th>
+                                <th>Byproduct</th>
+                                <th class="text-right">Quantity</th>
+                                <th>Status</th>
+                                <th>Destination</th>
+                                <th>Notes</th>
+                                <th class="text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="byproductsTable">
+                            <tr><td colspan="8" class="text-center py-8 text-base-content/50">Loading...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
-            </div>
-            
-            <!-- Stats Cards -->
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <div class="bento-card card bg-base-100 border border-base-300 cursor-pointer" onclick="document.getElementById('statusFilter').value='pending';loadByproducts();">
-                    <div class="card-body p-4">
-                        <div class="flex items-center justify-between mb-2">
-                            <div class="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center">
-                                <i class="fas fa-hourglass-half text-warning"></i>
-                            </div>
-                            <span class="badge badge-warning badge-sm">Pending</span>
-                        </div>
-                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="statPending">0</p>
-                        <p class="text-sm text-base-content/60">Waiting for Action</p>
-                    </div>
+                <div class="p-4 border-t border-base-300 flex justify-between items-center">
+                    <span class="text-sm text-base-content/60" id="recordCount">0 records</span>
+                    <div class="join" id="pagination"></div>
                 </div>
-                
-                <div class="bento-card card bg-base-100 border border-base-300 cursor-pointer" onclick="document.getElementById('statusFilter').value='transferred';loadByproducts();">
-                    <div class="card-body p-4">
-                        <div class="flex items-center justify-between mb-2">
-                            <div class="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center">
-                                <i class="fas fa-warehouse text-success"></i>
-                            </div>
-                            <span class="badge badge-success badge-sm">Done</span>
-                        </div>
-                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="statTransferred">0</p>
-                        <p class="text-sm text-base-content/60">Sent to Warehouse</p>
-                    </div>
+            </section>
+
+            <section class="bg-base-100 border border-base-300 rounded-lg p-4 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+                <div>
+                    <h2 class="font-semibold">Waste from spills or failed material</h2>
+                    <p class="text-sm text-base-content/60">Use Yield Tracking for normal floor losses. Send unusable byproducts to disposal from this page.</p>
                 </div>
-                
-                <div class="bento-card card bg-base-100 border border-base-300 cursor-pointer" onclick="document.getElementById('typeFilter').value='buttermilk';loadByproducts();">
-                    <div class="card-body p-4">
-                        <div class="flex items-center justify-between mb-2">
-                            <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                                <i class="fas fa-tint text-primary"></i>
-                            </div>
-                            <span class="badge badge-primary badge-sm">Liters</span>
-                        </div>
-                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="statButtermilk">0</p>
-                        <p class="text-sm text-base-content/60">Buttermilk</p>
-                    </div>
+                <div class="flex gap-2">
+                    <a href="yield-tracking.html" class="btn btn-outline btn-sm gap-2"><i class="fas fa-chart-line"></i> Yield Tracking</a>
                 </div>
-                
-                <div class="bento-card card bg-base-100 border border-base-300 cursor-pointer" onclick="document.getElementById('typeFilter').value='whey';loadByproducts();">
-                    <div class="card-body p-4">
-                        <div class="flex items-center justify-between mb-2">
-                            <div class="w-10 h-10 rounded-xl bg-info/10 flex items-center justify-center">
-                                <i class="fas fa-water text-info"></i>
-                            </div>
-                            <span class="badge badge-info badge-sm">Liters</span>
-                        </div>
-                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="statWhey">0</p>
-                        <p class="text-sm text-base-content/60">Whey</p>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Filters Card -->
-            <div class="card bg-base-100 border border-base-300 mb-4">
-                <div class="card-body p-4">
-                    <div class="flex items-center gap-2 mb-3">
-                        <i class="fas fa-search text-primary"></i>
-                        <h3 class="font-semibold">Find Byproducts</h3>
-                        <span class="text-sm text-base-content/60">Filter the list below</span>
-                    </div>
-                    <div class="flex flex-wrap gap-3 items-end">
-                        <div class="form-control w-full sm:w-auto">
-                            <label class="label py-1">
-                                <span class="label-text text-xs">Type</span>
-                            </label>
-                            <select id="typeFilter" class="select select-bordered select-sm w-full sm:w-40" onchange="loadByproducts()">
-                                <option value="">All Types</option>
-                                <option value="buttermilk">Buttermilk</option>
-                                <option value="whey">Whey</option>
-                                <option value="cream">Cream</option>
-                                <option value="skim_milk">Skim Milk</option>
-                                <option value="other">Other</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-control w-full sm:w-auto">
-                            <label class="label py-1">
-                                <span class="label-text text-xs">Status</span>
-                            </label>
-                            <select id="statusFilter" class="select select-bordered select-sm w-full sm:w-40" onchange="loadByproducts()">
-                                <option value="">All Status</option>
-                                <option value="pending">Pending</option>
-                                <option value="transferred">Transferred</option>
-                                <option value="disposed">Disposed</option>
-                            </select>
-                        </div>
-                        
-                        <button class="btn btn-ghost btn-sm" onclick="resetFilters()">
-                            <i class="fas fa-redo"></i>
-                            Reset
-                        </button>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Byproducts Table -->
-            <div class="card bg-base-100 border border-base-300">
-                <div class="card-body p-0">
-                    <div class="flex items-center justify-between p-4 border-b border-base-300">
-                        <h3 class="font-semibold flex items-center gap-2">
-                            <i class="fas fa-list text-primary"></i>
-                            Byproduct Records
-                        </h3>
-                        <span class="text-sm text-base-content/60" id="totalRecords">0 records</span>
-                    </div>
-                    
-                    <div class="overflow-x-auto">
-                        <table class="table table-sm">
-                            <thead>
-                                <tr>
-                                    <th>Production Run</th>
-                                    <th>Source Product</th>
-                                    <th>Byproduct Type</th>
-                                    <th class="text-right">Quantity</th>
-                                    <th>Status</th>
-                                    <th>Destination</th>
-                                    <th>Recorded</th>
-                                    <th class="text-center">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="byproductsTable">
-                                <tr>
-                                    <td colspan="8" class="text-center py-8 text-base-content/40">
-                                        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-                                        <p>Loading...</p>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <div class="p-4 border-t border-base-300">
-                        <div class="join" id="pagination"></div>
-                    </div>
-                </div>
-            </div>
-            
+            </section>
         </main>
     </div>
-    
-    <!-- Record Byproduct Modal -->
-    <dialog id="recordByproductModal" class="modal">
-        <div class="modal-box max-w-lg">
+
+    <dialog id="byproductModal" class="modal">
+        <div class="modal-box max-w-xl">
             <form method="dialog">
-                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">x</button>
             </form>
-            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
-                <i class="fas fa-recycle text-primary"></i>
-                Record Byproduct
-            </h3>
-            
-            <form id="byproductForm" onsubmit="recordByproduct(event)">
-                <div class="form-control mb-4">
-                    <label class="label">
-                        <span class="label-text font-medium">
-                            <i class="fas fa-industry text-primary"></i>
-                            Production Run <span class="text-error">*</span>
-                        </span>
-                    </label>
-                    <select id="runSelect" class="select select-bordered w-full" required>
-                        <option value="">Select production run...</option>
-                    </select>
-                    <label class="label">
-                        <span class="label-text-alt">Link this byproduct to a production run</span>
-                    </label>
-                </div>
-                
-                <div class="form-control mb-4">
-                    <label class="label">
-                        <span class="label-text font-medium">
-                            <i class="fas fa-tag text-primary"></i>
-                            Byproduct Type <span class="text-error">*</span>
-                        </span>
-                    </label>
-                    <select id="byproductType" class="select select-bordered w-full" required>
-                        <option value="">Select type...</option>
-                        <option value="buttermilk">Buttermilk (from butter production)</option>
-                        <option value="whey">Whey (from cheese production)</option>
-                        <option value="cream">Cream</option>
-                        <option value="skim_milk">Skim Milk</option>
-                        <option value="other">Other</option>
+            <h3 class="font-bold text-lg mb-1">Log Byproduct</h3>
+            <p class="text-sm text-base-content/60 mb-5">Record the actual leftover material from the production floor.</p>
+            <form id="byproductForm" class="space-y-4" onsubmit="submitByproduct(event)">
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Production Run *</span></label>
+                    <select id="runSelect" class="select select-bordered" required>
+                        <option value="">Select run...</option>
                     </select>
                 </div>
-                
-                <div class="grid grid-cols-3 gap-3 mb-4">
-                    <div class="form-control col-span-2">
-                        <label class="label">
-                            <span class="label-text font-medium">
-                                <i class="fas fa-balance-scale text-success"></i>
-                                Quantity <span class="text-error">*</span>
-                            </span>
-                        </label>
-                        <input type="number" id="quantity" class="input input-bordered" required min="0.01" step="0.01" placeholder="e.g., 25.5">
-                    </div>
-                    
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div class="form-control">
-                        <label class="label">
-                            <span class="label-text font-medium">
-                                <i class="fas fa-ruler text-info"></i>
-                                Unit <span class="text-error">*</span>
-                            </span>
-                        </label>
-                        <select id="unit" class="select select-bordered" required>
-                            <option value="liters">Liters</option>
-                            <option value="kg">Kilograms</option>
-                            <option value="grams">Grams</option>
+                        <label class="label"><span class="label-text">Byproduct *</span></label>
+                        <select id="byproductType" class="select select-bordered" required>
+                            <option value="">Select type...</option>
+                            <option value="whey">Whey</option>
+                            <option value="skim_milk">Skim Milk</option>
+                            <option value="buttermilk">Buttermilk</option>
+                            <option value="cream">Cream</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Next Step</span></label>
+                        <select id="destination" class="select select-bordered">
+                            <option value="">Decide later</option>
+                            <option value="warehouse">Store in warehouse</option>
+                            <option value="reprocess">Use for reprocessing</option>
+                            <option value="sale">For sale</option>
+                            <option value="dispose">Send to disposal</option>
                         </select>
                     </div>
                 </div>
-                
-                <div class="form-control mb-4">
-                    <label class="label">
-                        <span class="label-text font-medium">
-                            <i class="fas fa-map-marker-alt text-warning"></i>
-                            Destination
-                        </span>
-                    </label>
-                    <select id="destination" class="select select-bordered">
-                        <option value="">Pending decision...</option>
-                        <option value="warehouse">Transfer to Warehouse</option>
-                        <option value="reprocess">Reprocess</option>
-                        <option value="sale">For Sale</option>
-                        <option value="dispose">Dispose</option>
-                    </select>
-                    <label class="label">
-                        <span class="label-text-alt">What will happen to this byproduct?</span>
-                    </label>
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="form-control col-span-2">
+                        <label class="label"><span class="label-text">Quantity *</span></label>
+                        <input id="quantity" class="input input-bordered" type="number" min="0.01" step="0.01" required placeholder="0.00">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Unit *</span></label>
+                        <select id="unit" class="select select-bordered" required>
+                            <option value="liters">liters</option>
+                            <option value="kg">kg</option>
+                            <option value="grams">grams</option>
+                            <option value="pieces">pieces</option>
+                        </select>
+                    </div>
                 </div>
-                
-                <div class="form-control mb-4">
-                    <label class="label">
-                        <span class="label-text font-medium">
-                            <i class="fas fa-sticky-note text-base-content/60"></i>
-                            Notes
-                        </span>
-                    </label>
-                    <textarea id="notes" class="textarea textarea-bordered" rows="2" placeholder="Any additional notes..."></textarea>
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Storage Location</span></label>
+                    <input id="storageLocation" class="input input-bordered" placeholder="Example: Chiller 2, byproduct hold">
                 </div>
-                
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Notes</span></label>
+                    <textarea id="notes" class="textarea textarea-bordered" rows="3" placeholder="Condition, reason, or handling notes"></textarea>
+                </div>
                 <div class="modal-action">
-                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('recordByproductModal').close()">
-                        <i class="fas fa-times"></i> Cancel
-                    </button>
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-save"></i> Record Byproduct
-                    </button>
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('byproductModal').close()">Cancel</button>
+                    <button class="btn btn-primary" type="submit"><i class="fas fa-save"></i> Save</button>
                 </div>
             </form>
         </div>
-        <form method="dialog" class="modal-backdrop">
-            <button>close</button>
-        </form>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
-    
-    <!-- Toast Container -->
-    <div class="toast toast-end" id="toastContainer"></div>
-    
-    <!-- Scripts -->
+
+    <div class="toast toast-end toast-top z-50" id="toastContainer"></div>
+
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js"></script>
-    <script>window.PRODUCTION_ACTIVE_PAGE = "byproducts";</script>
+    <script>window.PRODUCTION_ACTIVE_PAGE = 'byproducts';</script>
     <script src="../../js/production/sidebar.js"></script>
     <script src="../../js/production/production.service.js"></script>
-<script>
+    <script>
         let currentPage = 1;
-        
-        // Sidebar Toggle
+        let searchTimer = null;
+
         function toggleSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            const backdrop = document.getElementById('sidebarBackdrop');
-            sidebar.classList.toggle('-translate-x-full');
-            backdrop.classList.toggle('hidden');
+            document.getElementById('sidebar').classList.toggle('-translate-x-full');
+            document.getElementById('sidebarBackdrop').classList.toggle('hidden');
         }
-        
-        // Theme Toggle
-        document.getElementById('themeToggle').addEventListener('change', function() {
-            document.documentElement.setAttribute('data-theme', this.checked ? 'forest' : 'emerald');
-            localStorage.setItem('theme', this.checked ? 'forest' : 'emerald');
-        });
-        
+
         document.addEventListener('DOMContentLoaded', async () => {
             if (!AuthService.isAuthenticated()) {
                 window.location.href = '../login.html';
                 return;
             }
-            
-            const user = AuthService.getCurrentUser();
-            if (user) {
-                document.getElementById('sidebarUserName').textContent = `${user.first_name} ${user.last_name}`;
-                document.getElementById('userInitials').textContent = (user.first_name[0] + user.last_name[0]).toUpperCase();
-            }
-            
-            const savedTheme = localStorage.getItem('theme');
-            if (savedTheme === 'forest') {
-                document.getElementById('themeToggle').checked = true;
-                document.documentElement.setAttribute('data-theme', 'forest');
-            }
-            
             await loadRuns();
-            loadStats();
-            loadByproducts();
+            await loadPage();
         });
-        
-        async function loadStats() {
-            try {
-                const [pendingRes, transferredRes, allRes] = await Promise.all([
-                    ProductionService.getByproducts({ status: 'pending', limit: 1 }),
-                    ProductionService.getByproducts({ status: 'transferred', limit: 1 }),
-                    ProductionService.getByproducts({ limit: 200 })
-                ]);
-                
-                document.getElementById('statPending').textContent = pendingRes.pagination?.total || 0;
-                document.getElementById('statTransferred').textContent = transferredRes.pagination?.total || 0;
-                
-                let buttermilkTotal = 0;
-                let wheyTotal = 0;
-                
-                if (allRes.data) {
-                    allRes.data.forEach(bp => {
-                        if (bp.byproduct_type === 'buttermilk' && bp.unit === 'liters') {
-                            buttermilkTotal += parseFloat(bp.quantity) || 0;
-                        }
-                        if (bp.byproduct_type === 'whey' && bp.unit === 'liters') {
-                            wheyTotal += parseFloat(bp.quantity) || 0;
-                        }
-                    });
-                }
-                
-                document.getElementById('statButtermilk').textContent = buttermilkTotal.toFixed(1);
-                document.getElementById('statWhey').textContent = wheyTotal.toFixed(1);
-            } catch (error) {
-                console.error('Error loading stats:', error);
-            }
+
+        async function loadPage() {
+            await Promise.all([loadStats(), loadByproducts()]);
         }
-        
-        function resetFilters() {
-            document.getElementById('typeFilter').value = '';
-            document.getElementById('statusFilter').value = '';
+
+        async function loadRuns() {
+            const res = await ProductionService.getRuns({ limit: 100 });
+            const runs = res.data || [];
+            document.getElementById('runSelect').innerHTML = '<option value="">Select run...</option>' + runs.map(run => {
+                const label = `${escapeHtml(run.run_code || ('Run #' + run.id))} - ${escapeHtml(run.product_name || run.product_type || 'Production')}`;
+                return `<option value="${run.id}">${label}</option>`;
+            }).join('');
+        }
+
+        async function loadStats() {
+            const statuses = ['pending', 'stored', 'used', 'disposed'];
+            const results = await Promise.all(statuses.map(status => ProductionService.getByproducts({ status, limit: 1 })));
+            document.getElementById('statPending').textContent = results[0].pagination?.total || 0;
+            document.getElementById('statStored').textContent = results[1].pagination?.total || 0;
+            document.getElementById('statUsed').textContent = results[2].pagination?.total || 0;
+            document.getElementById('statDisposed').textContent = results[3].pagination?.total || 0;
+        }
+
+        function setStatus(status) {
+            document.getElementById('statusFilter').value = status;
             currentPage = 1;
             loadByproducts();
         }
-        
-        async function loadRuns() {
-            try {
-                const response = await ProductionService.getRuns({ limit: 100 });
-                if (response.success) {
-                    const select = document.getElementById('runSelect');
-                    select.innerHTML = '<option value="">Select production run...</option>' +
-                        (response.data || []).map(r => 
-                            `<option value="${r.id}">${r.run_code} - ${r.product_name}</option>`
-                        ).join('');
-                }
-            } catch (error) {
-                console.error('Error loading runs:', error);
-            }
+
+        function debouncedLoad() {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                currentPage = 1;
+                loadByproducts();
+            }, 250);
         }
-        
+
         async function loadByproducts() {
-            try {
-                const params = {
-                    page: currentPage,
-                    limit: 20,
-                    byproduct_type: document.getElementById('typeFilter').value,
-                    status: document.getElementById('statusFilter').value
-                };
-                
-                const response = await ProductionService.getByproducts(params);
-                
-                if (response.success) {
-                    renderByproducts(response.data || []);
-                    renderPagination(response.pagination);
-                    
-                    const total = response.pagination?.total || (response.data?.length || 0);
-                    document.getElementById('totalRecords').textContent = `${total} record${total !== 1 ? 's' : ''}`;
-                }
-            } catch (error) {
-                console.error('Error loading byproducts:', error);
-                // Show empty state instead of error toast for production-ready UI
-                renderByproducts([]);
-            }
+            const params = {
+                page: currentPage,
+                limit: 20,
+                byproduct_type: document.getElementById('typeFilter').value,
+                status: document.getElementById('statusFilter').value,
+                search: document.getElementById('searchInput').value.trim()
+            };
+            const res = await ProductionService.getByproducts(params);
+            renderRows(res.data || []);
+            renderPagination(res.pagination);
+            const total = res.pagination?.total || 0;
+            document.getElementById('recordCount').textContent = `${total} record${total === 1 ? '' : 's'}`;
         }
-        
-        function renderByproducts(byproducts) {
+
+        function renderRows(rows) {
             const tbody = document.getElementById('byproductsTable');
-            
-            if (!byproducts.length) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="8" class="text-center py-8">
-                            <div class="text-base-content/40">
-                                <i class="fas fa-recycle text-4xl mb-2"></i>
-                                <p>No byproducts recorded yet</p>
-                                <button class="btn btn-primary btn-sm mt-2" onclick="showRecordByproductModal()">
-                                    <i class="fas fa-plus"></i> Record Byproduct
-                                </button>
-                            </div>
-                        </td>
-                    </tr>`;
+            if (!rows.length) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-base-content/50">No byproducts found.</td></tr>';
                 return;
             }
-            
-            const statusConfig = {
-                'pending': { badge: 'badge-warning', icon: 'fa-hourglass-half' },
-                'transferred': { badge: 'badge-success', icon: 'fa-check-circle' },
-                'disposed': { badge: 'badge-ghost', icon: 'fa-trash' }
-            };
-            
-            const typeConfig = {
-                'buttermilk': { icon: 'fa-droplet', color: 'text-primary' },
-                'whey': { icon: 'fa-water', color: 'text-info' },
-                'cream': { icon: 'fa-cloud', color: 'text-warning' },
-                'skim_milk': { icon: 'fa-glass-water', color: 'text-primary' },
-                'other': { icon: 'fa-box', color: 'text-base-content/60' }
-            };
-            
-            tbody.innerHTML = byproducts.map(bp => {
-                const statusCfg = statusConfig[bp.status] || { badge: 'badge-ghost', icon: 'fa-question' };
-                const typeCfg = typeConfig[bp.byproduct_type] || { icon: 'fa-box', color: 'text-base-content/60' };
-                
+            tbody.innerHTML = rows.map(row => {
+                const status = statusBadge(row.status);
                 return `
-                <tr class="hover">
-                    <td>
-                        <code class="text-xs bg-base-200 px-2 py-1 rounded">${bp.run_code}</code>
-                    </td>
-                    <td class="text-sm">${bp.source_product || '-'}</td>
-                    <td>
-                        <span class="${typeCfg.color}">
-                            <i class="fas ${typeCfg.icon} mr-1"></i>
-                            ${bp.byproduct_type.replace('_', ' ')}
-                        </span>
-                    </td>
-                    <td class="text-right">
-                        <span class="font-semibold">${parseFloat(bp.quantity).toLocaleString()}</span>
-                        <span class="text-base-content/60 text-sm">${bp.unit}</span>
-                    </td>
-                    <td>
-                        <span class="badge ${statusCfg.badge} badge-sm gap-1">
-                            <i class="fas ${statusCfg.icon}"></i>
-                            ${bp.status}
-                        </span>
-                    </td>
-                    <td class="text-sm">${bp.destination ? bp.destination.replace('_', ' ') : '<span class="text-base-content/40">-</span>'}</td>
-                    <td class="text-sm text-base-content/60">${formatDate(bp.created_at)}</td>
-                    <td class="text-center">
-                        ${bp.status === 'pending' ? `
-                            <div class="join">
-                                <button class="btn btn-success btn-xs join-item" onclick="transferByproduct(${bp.id})" title="Transfer to Warehouse">
-                                    <i class="fas fa-warehouse"></i>
-                                </button>
-                                <button class="btn btn-ghost btn-xs join-item" onclick="disposeByproduct(${bp.id})" title="Dispose">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </div>
-                        ` : '<span class="text-base-content/40">-</span>'}
-                    </td>
-                </tr>
-            `}).join('');
+                    <tr class="hover">
+                        <td><code class="text-xs">${escapeHtml(row.run_code || '-')}</code></td>
+                        <td>${escapeHtml(row.source_product || '-')}</td>
+                        <td class="font-medium">${formatType(row.byproduct_type)}</td>
+                        <td class="text-right font-semibold">${formatNumber(row.quantity)} ${escapeHtml(row.unit || '')}</td>
+                        <td><span class="badge ${status.cls} badge-sm">${status.label}</span></td>
+                        <td>${escapeHtml(row.storage_location || row.destination || '-')}</td>
+                        <td class="max-w-xs truncate" title="${escapeHtml(row.notes || '')}">${escapeHtml(row.notes || '-')}</td>
+                        <td class="text-right">${renderActions(row)}</td>
+                    </tr>
+                `;
+            }).join('');
         }
-        
-        function renderPagination(pagination) {
-            if (!pagination || pagination.total_pages <= 1) {
-                document.getElementById('pagination').innerHTML = '';
-                return;
-            }
-            
-            const container = document.getElementById('pagination');
-            container.innerHTML = `
-                <button class="join-item btn btn-sm" ${pagination.page <= 1 ? 'disabled' : ''} 
-                        onclick="goToPage(${pagination.page - 1})">
-                    <i class="fas fa-chevron-left"></i>
-                </button>
-                <button class="join-item btn btn-sm">Page ${pagination.page} of ${pagination.total_pages}</button>
-                <button class="join-item btn btn-sm" ${pagination.page >= pagination.total_pages ? 'disabled' : ''} 
-                        onclick="goToPage(${pagination.page + 1})">
-                    <i class="fas fa-chevron-right"></i>
-                </button>
+
+        function renderActions(row) {
+            if (row.status !== 'pending') return '<span class="text-base-content/40">-</span>';
+            return `
+                <div class="join">
+                    <button class="btn btn-xs btn-success join-item" onclick="storeByproduct(${row.id})" title="Store"><i class="fas fa-warehouse"></i></button>
+                    <button class="btn btn-xs btn-info join-item" onclick="markUsed(${row.id})" title="Mark used"><i class="fas fa-check"></i></button>
+                    <button class="btn btn-xs btn-error join-item" onclick="sendToDisposal(${row.id})" title="Send to Disposal Report"><i class="fas fa-trash"></i></button>
+                </div>
             `;
         }
-        
+
+        function renderPagination(p) {
+            const el = document.getElementById('pagination');
+            if (!p || p.total_pages <= 1) {
+                el.innerHTML = '';
+                return;
+            }
+            el.innerHTML = `
+                <button class="join-item btn btn-sm" ${p.page <= 1 ? 'disabled' : ''} onclick="goToPage(${p.page - 1})">Prev</button>
+                <button class="join-item btn btn-sm">Page ${p.page} of ${p.total_pages}</button>
+                <button class="join-item btn btn-sm" ${p.page >= p.total_pages ? 'disabled' : ''} onclick="goToPage(${p.page + 1})">Next</button>
+            `;
+        }
+
         function goToPage(page) {
             currentPage = page;
             loadByproducts();
         }
-        
-        function showRecordByproductModal() {
+
+        function openByproductModal() {
             document.getElementById('byproductForm').reset();
-            document.getElementById('recordByproductModal').showModal();
+            document.getElementById('byproductModal').showModal();
         }
-        
-        async function recordByproduct(event) {
+
+        async function submitByproduct(event) {
             event.preventDefault();
-            
+            const data = {
+                run_id: document.getElementById('runSelect').value,
+                byproduct_type: document.getElementById('byproductType').value,
+                quantity: document.getElementById('quantity').value,
+                unit: document.getElementById('unit').value,
+                destination: document.getElementById('destination').value,
+                storage_location: document.getElementById('storageLocation').value,
+                notes: document.getElementById('notes').value
+            };
             try {
-                const data = {
-                    run_id: document.getElementById('runSelect').value,
-                    byproduct_type: document.getElementById('byproductType').value,
-                    quantity: document.getElementById('quantity').value,
-                    unit: document.getElementById('unit').value,
-                    destination: document.getElementById('destination').value || null,
-                    notes: document.getElementById('notes').value
-                };
-                
-                const response = await ProductionService.recordByproduct(data);
-                
-                if (response.success) {
-                    showToast('Byproduct recorded successfully', 'success');
-                    document.getElementById('recordByproductModal').close();
-                    loadStats();
-                    loadByproducts();
-                } else {
-                    showToast(response.message || 'Failed to record byproduct', 'error');
-                }
+                const res = await ProductionService.recordByproduct(data);
+                document.getElementById('byproductModal').close();
+                showToast(res.message || 'Byproduct saved', 'success');
+                await loadPage();
             } catch (error) {
-                console.error('Error recording byproduct:', error);
-                showToast(error.message || 'Failed to record byproduct', 'error');
+                showToast(error.response?.data?.message || error.message || 'Could not save byproduct', 'error');
             }
         }
-        
-        async function transferByproduct(id) {
-            const confirmed = await AuthService.confirmAction({
-                title: 'Transfer Byproduct',
-                message: 'Transfer this byproduct to warehouse?',
-                confirmText: 'Transfer',
-                tone: 'success',
-                icon: 'fa-right-left'
-            });
-            if (!confirmed) return;
-            
+
+        async function storeByproduct(id) {
             try {
-                const response = await ProductionService.transferByproduct(id);
-                if (response.success) {
-                    showToast('Byproduct transferred to warehouse', 'success');
-                    loadStats();
-                    loadByproducts();
-                } else {
-                    showToast(response.message || 'Failed to transfer', 'error');
-                }
+                await ProductionService.storeByproduct(id, 'Warehouse byproduct hold');
+                showToast('Marked as stored', 'success');
+                await loadPage();
             } catch (error) {
-                showToast(error.message || 'Failed to transfer byproduct', 'error');
+                showToast(error.response?.data?.message || 'Could not store byproduct', 'error');
             }
         }
-        
-        async function disposeByproduct(id) {
-            const confirmed = await AuthService.confirmAction({
-                title: 'Dispose Byproduct',
-                message: 'Mark this byproduct as disposed?',
-                confirmText: 'Mark Disposed',
-                tone: 'error',
-                icon: 'fa-trash'
-            });
-            if (!confirmed) return;
-            
+
+        async function markUsed(id) {
             try {
-                const response = await axios.put('../../api/production/byproducts.php', {
-                    id: id,
-                    action: 'dispose'
-                });
-                
-                if (response.data.success) {
-                    showToast('Byproduct marked as disposed', 'success');
-                    loadStats();
-                    loadByproducts();
-                } else {
-                    showToast(response.data.message || 'Failed to dispose', 'error');
-                }
+                await ProductionService.markByproductUsed(id);
+                showToast('Marked as used', 'success');
+                await loadPage();
             } catch (error) {
-                showToast('Failed to dispose byproduct', 'error');
+                showToast(error.response?.data?.message || 'Could not update byproduct', 'error');
             }
         }
-        
-        function formatDate(dateStr) {
-            if (!dateStr) return '-';
-            return new Date(dateStr).toLocaleString('en-PH', { 
-                month: 'short', 
-                day: 'numeric', 
-                hour: '2-digit', 
-                minute: '2-digit' 
-            });
+
+        async function sendToDisposal(id) {
+            try {
+                await ProductionService.sendByproductToDisposal(id, 'Byproduct cannot be reused and needs disposal');
+                showToast('Sent to Disposal Report for approval', 'success');
+                await loadPage();
+            } catch (error) {
+                showToast(error.response?.data?.message || 'Could not send to disposal', 'error');
+            }
         }
-        
+
+        function statusBadge(status) {
+            const map = {
+                pending: { cls: 'badge-warning', label: 'Pending' },
+                stored: { cls: 'badge-success', label: 'Stored' },
+                used: { cls: 'badge-info', label: 'Used' },
+                disposed: { cls: 'badge-error', label: 'Disposed' }
+            };
+            return map[status] || { cls: 'badge-ghost', label: status || '-' };
+        }
+
+        function formatType(value) {
+            return escapeHtml(String(value || '-').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
+        }
+
+        function formatNumber(value) {
+            return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, ch => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[ch]));
+        }
+
         function showToast(message, type = 'info') {
-            const container = document.getElementById('toastContainer');
-            const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
-            const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle';
-            
             const toast = document.createElement('div');
-            toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `
-                <i class="fas fa-${icon}"></i>
-                <span>${message}</span>
-            `;
-            container.appendChild(toast);
-            
-            setTimeout(() => {
-                toast.style.opacity = '0';
-                toast.style.transition = 'opacity 0.3s';
-                setTimeout(() => toast.remove(), 300);
-            }, 3000);
+            toast.className = `alert alert-${type} shadow-lg`;
+            toast.innerHTML = `<span>${escapeHtml(message)}</span>`;
+            document.getElementById('toastContainer').appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
         }
     </script>
 </body>

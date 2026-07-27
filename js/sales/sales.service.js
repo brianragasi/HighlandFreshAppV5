@@ -741,24 +741,6 @@ const SalesService = {
     },
 
     /**
-     * Record payment against invoice
-     * @param {number} invoiceId - Invoice ID
-     * @param {Object} paymentData - Payment details (amount, payment_method, reference_number, payment_date, notes)
-     */
-    async recordPayment(invoiceId, paymentData) {
-        try {
-            return await api.post(`${this.baseUrl}/invoices.php`, {
-                action: 'record_payment',
-                invoice_id: invoiceId,
-                ...paymentData
-            });
-        } catch (error) {
-            console.error('Error recording payment:', error);
-            throw error;
-        }
-    },
-
-    /**
      * Get payment history for an invoice
      * @param {number} invoiceId - Invoice ID
      */
@@ -1024,45 +1006,6 @@ const SalesService = {
             });
         } catch (error) {
             console.error('Error fetching customer orders:', error);
-            throw error;
-        }
-    },
-
-    /**
-     * Get unpaid delivery receipts for a specific customer
-     * Used by Record Collection modal to populate invoice dropdown
-     * @param {number} customerId - Customer ID
-     */
-    async getCustomerUnpaidInvoices(customerId) {
-        try {
-            const response = await api.get(`${this.baseUrl}/invoices.php`, {
-                params: { action: 'customer_unpaid_drs', customer_id: customerId }
-            });
-            return { data: response.data || [] };
-        } catch (error) {
-            console.error('Error fetching customer unpaid DRs:', error);
-            throw error;
-        }
-    },
-
-    /**
-     * Record a collection/payment against a delivery receipt
-     * @param {Object} data - Collection data (customer_id, dr_id, amount, collection_date, payment_method, reference)
-     */
-    async recordCollection(data) {
-        try {
-            return await api.post(`${this.baseUrl}/invoices.php`, {
-                action: 'record_dr_payment',
-                dr_id: data.invoice_id,
-                customer_id: data.customer_id,
-                amount: data.amount,
-                payment_method: data.payment_method,
-                collection_date: data.collection_date,
-                reference: data.reference,
-                notes: data.notes || ''
-            });
-        } catch (error) {
-            console.error('Error recording collection:', error);
             throw error;
         }
     },

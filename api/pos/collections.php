@@ -375,14 +375,30 @@ function handleGet($db, $action, $currentUser) {
                 $c['payment_metadata'] = $c['payment_metadata'] ? json_decode($c['payment_metadata'], true) : null;
             }
             
-            $totalCollected = array_sum(array_map(function($c) {
-                return $c['status'] === 'confirmed' ? floatval($c['amount_collected']) : 0;
-            }, $collections));
+            $totalCollected = 0;
+            $cashTotal = 0;
+            $otherTotal = 0;
+            foreach ($collections as $c) {
+                if ($c['status'] !== 'confirmed') continue;
+                $amt = floatval($c['amount_collected']);
+                $totalCollected += $amt;
+                if ($c['payment_method'] === 'cash') {
+                    $cashTotal += $amt;
+                } else {
+                    $otherTotal += $amt;
+                }
+            }
             
             Response::success([
                 'collections' => $collections,
                 'count' => count($collections),
-                'total_collected' => $totalCollected
+                'total_collected' => $totalCollected,
+                'summary' => [
+                    'total_count' => count($collections),
+                    'total_amount' => $totalCollected,
+                    'cash_amount' => $cashTotal,
+                    'other_amount' => $otherTotal,
+                ]
             ], 'Collection history retrieved');
             break;
         
@@ -417,6 +433,8 @@ function handleGet($db, $action, $currentUser) {
             }
             
             $collection['payment_metadata'] = json_decode($collection['payment_metadata'], true);
+            $collection['is_collection'] = true;
+            $collection['cashier_name'] = trim(($collection['collected_by_first_name'] ?? '') . ' ' . ($collection['collected_by_last_name'] ?? ''));
             
             Response::success($collection, 'Collection detail retrieved');
             break;

@@ -95,12 +95,15 @@ const ProductionService = {
     },
 
     /**
-     * Complete a production run
+     * Complete a production run with packaging output
      * @param {number} id - Run ID
-     * @param {number} actualQuantity - Actual output quantity
+     * @param {number} actualQuantity - Actual output quantity (total pieces)
      * @param {string} varianceReason - Reason for variance (optional)
+     * @param {string} reconciliationNotes - Reconciliation notes (optional)
+     * @param {Array} packagingItems - Packaging line items [{product_id, product_name, size_ml, unit_measure, quantity, product_variant}]
+     * @param {number} processLossMl - Process loss in ml (optional)
      */
-    async completeRun(id, actualQuantity, varianceReason = '', reconciliationNotes = '') {
+    async completeRun(id, actualQuantity, varianceReason = '', reconciliationNotes = '', packagingItems = null, processLossMl = 0) {
         const payload = {
             id,
             action: 'complete',
@@ -109,6 +112,12 @@ const ProductionService = {
         };
         if (reconciliationNotes) {
             payload.reconciliation_notes = reconciliationNotes;
+        }
+        if (packagingItems && packagingItems.length > 0) {
+            payload.packaging_items = packagingItems;
+        }
+        if (processLossMl > 0) {
+            payload.process_loss_ml = processLossMl;
         }
         return await api.put(`${this.baseUrl}/runs.php`, payload);
     },
@@ -236,27 +245,6 @@ const ProductionService = {
     },
 
     /**
-     * Approve requisition (GM only)
-     * @param {number} id - Requisition ID
-     */
-    async approveRequisition(id) {
-        return await api.put(`${this.baseUrl}/requisitions.php`, { id, action: 'approve' });
-    },
-
-    /**
-     * Reject requisition (GM only)
-     * @param {number} id - Requisition ID
-     * @param {string} reason - Rejection reason
-     */
-    async rejectRequisition(id, reason = '') {
-        return await api.put(`${this.baseUrl}/requisitions.php`, {
-            id,
-            action: 'reject',
-            rejection_reason: reason
-        });
-    },
-
-    /**
      * Fulfill requisition (Warehouse only)
      * @param {number} id - Requisition ID
      */
@@ -276,28 +264,32 @@ const ProductionService = {
     // Byproducts
     // ========================================
 
-    /**
-     * Get byproducts
-     * @param {Object} params - Filter parameters
-     */
     async getByproducts(params = {}) {
         return await api.get(`${this.baseUrl}/byproducts.php`, { params });
     },
 
-    /**
-     * Record byproduct
-     * @param {Object} byproductData - Byproduct data
-     */
     async recordByproduct(byproductData) {
         return await api.post(`${this.baseUrl}/byproducts.php`, byproductData);
     },
 
-    /**
-     * Transfer byproduct to warehouse
-     * @param {number} id - Byproduct ID
-     */
-    async transferByproduct(id) {
-        return await api.put(`${this.baseUrl}/byproducts.php`, { id, action: 'transfer_to_warehouse' });
+    async storeByproduct(id, storageLocation = '') {
+        return await api.put(`${this.baseUrl}/byproducts.php`, {
+            id,
+            action: 'store',
+            storage_location: storageLocation
+        });
+    },
+
+    async markByproductUsed(id) {
+        return await api.put(`${this.baseUrl}/byproducts.php`, { id, action: 'mark_used' });
+    },
+
+    async sendByproductToDisposal(id, reason = '') {
+        return await api.put(`${this.baseUrl}/byproducts.php`, {
+            id,
+            action: 'send_to_disposal',
+            reason
+        });
     },
 
     // ========================================

@@ -100,13 +100,17 @@
                             <span id="reorderHeroTotal">0</span> ingredients need attention
                         </div>
                         <div class="text-sm opacity-90 mt-1" id="reorderHeroBreakdown">
-                            Review the list below and start purchase requests for items below their reorder point.
+                            Low-stock items are shown here so Warehouse Raw can generate a Purchase Request Slip (PRS) when needed.
                         </div>
                     </div>
                     <div class="flex gap-2 flex-shrink-0">
-                        <button class="btn btn-neutral" id="reorderHeroCta" onclick="bulkCreatePRs()">
+                        <div class="badge badge-lg badge-neutral gap-2 py-3">
+                            <i class="fas fa-robot"></i>
+                            Manual PRS workflow
+                        </div>
+                        <button id="reorderHeroCta" class="btn btn-neutral" onclick="bulkCreatePRs()">
                             <i class="fas fa-file-signature"></i>
-                            <span id="reorderHeroCtaLabel">Create all 0 Purchase Requisitions</span>
+                            <span id="reorderHeroCtaLabel">Create Purchase Requisition</span>
                         </button>
                     </div>
                 </div>
@@ -128,7 +132,7 @@
 
             <!-- Summary Cards. Low Stock is the single low-inventory state;
                  clicking it filters the table to low-stock rows so the user
-                 can immediately start Purchase Requests. -->
+                 can immediately generate PRS records. -->
             <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
                 <div class="bento-card card bg-error/10 border border-error/40">
                     <div class="card-body p-4">
@@ -144,7 +148,7 @@
                         </div>
                     </div>
                 </div>
-                <button type="button" onclick="focusLowStock()" class="bento-card card bg-warning/10 border border-warning/30 text-left cursor-pointer hover:-translate-y-0.5 hover:shadow-lg transition-all" title="Show low-stock items and start Purchase Requests">
+                <button type="button" onclick="focusLowStock()" class="bento-card card bg-warning/10 border border-warning/30 text-left cursor-pointer hover:-translate-y-0.5 hover:shadow-lg transition-all" title="Show low-stock items and generate PRS">
                     <div class="card-body p-4">
                         <div class="flex items-center gap-3">
                             <div class="w-12 h-12 rounded-xl bg-warning flex items-center justify-center">
@@ -196,7 +200,7 @@
                             <span class="badge badge-warning badge-sm flex-shrink-0">LOW</span>
                             <div>
                                 <p class="font-medium">Low Stock</p>
-                                <p class="text-base-content/60 text-xs">At or below the reorder point. Start a Purchase Request now to stay ahead of lead time.</p>
+                                <p class="text-base-content/60 text-xs">At or below the reorder point. Generate a PRS now to stay ahead of lead time.</p>
                             </div>
                         </div>
                     </div>
@@ -227,19 +231,21 @@
                 </div>
             </div>
 
-            <!-- Bulk action bar. Shown only when ≥1 row is selected. The primary
-                 CTA mirrors the hero's "Create all N PRs" so the user can act
-                 from either spot. -->
-            <div id="bulkActionBar" class="hidden mb-3 rounded-xl bg-primary/10 border border-primary/30 px-4 py-2.5 flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                    <i class="fas fa-check-square text-primary"></i>
-                    <span class="text-sm"><span id="bulkSelectedCount" class="font-bold">0</span> selected</span>
-                    <button class="btn btn-ghost btn-xs ml-2" onclick="clearSelection()">Clear</button>
+            <!-- Low-stock alerts feed the manual PRS workflow. -->
+
+            <div id="bulkActionBar" class="hidden mb-4 rounded-lg border border-primary/30 bg-primary/10 p-3">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div class="text-sm font-medium">
+                        <span id="bulkSelectedCount">0</span> selected for PRS
+                    </div>
+                    <div class="flex gap-2">
+                        <button class="btn btn-ghost btn-sm" onclick="clearSelection()">Clear</button>
+                        <button id="bulkCreateBtn" class="btn btn-primary btn-sm" onclick="bulkCreatePRs()">
+                            <i class="fas fa-file-signature"></i>
+                            <span id="bulkCreateBtnLabel">Create PR</span>
+                        </button>
+                    </div>
                 </div>
-                <button class="btn btn-primary btn-sm" id="bulkCreateBtn" onclick="bulkCreatePRs()" disabled>
-                    <i class="fas fa-file-signature"></i>
-                    <span id="bulkCreateBtnLabel">Create 0 PRs</span>
-                </button>
             </div>
 
             <!-- Alerts Table (dense, sortable, with row checkboxes for bulk action) -->
@@ -248,10 +254,9 @@
                     <table class="table table-sm">
                         <thead>
                             <tr class="bg-base-200/50 text-base-content/70">
-                                <th class="w-10">
-                                    <input type="checkbox" id="selectAllCheckbox" class="checkbox checkbox-xs" onchange="toggleSelectAll(this.checked)" aria-label="Select all rows" />
+                                <th class="w-12">
+                                    <input type="checkbox" id="selectAllCheckbox" class="checkbox checkbox-xs checkbox-primary" onchange="toggleSelectAll(this.checked)" aria-label="Select all orderable alerts">
                                 </th>
-                                <th class="w-10"></th>
                                 <th class="cursor-pointer hover:bg-base-300/50 select-none" onclick="setSort('name')">
                                     Item <span class="sort-indicator" data-col="name"></span>
                                 </th>
@@ -273,7 +278,7 @@
                         </thead>
                         <tbody id="alertsTable">
                             <tr>
-                                <td colspan="9" class="text-center py-12">
+                                <td colspan="8" class="text-center py-12">
                                     <span class="loading loading-spinner loading-md text-primary"></span>
                                     <p class="text-base-content/60 mt-2 text-sm">Loading reorder alerts…</p>
                                 </td>
@@ -296,8 +301,8 @@
     <script src="../../../js/purchasing/purchasing.service.js"></script>
     <script src="../../../js/warehouse/raw.service.js"></script>
     <script>window.WAREHOUSE_RAW_ACTIVE_PAGE = "reorder_alerts";</script>
-    <script src="../../../js/warehouse/raw-sidebar.js?v=20260712c"></script>
-    <script src="../../../js/warehouse/sidebar.stats.js?v=20260712c"></script>
+    <script src="../../../js/warehouse/raw-sidebar.js?v=20260727a"></script>
+    <script src="../../../js/warehouse/sidebar.stats.js?v=20260727a"></script>
 
 
     <script>
@@ -415,7 +420,7 @@
                 // Show error state instead of permanent loading
                 document.getElementById('alertsTable').innerHTML = `
                     <tr>
-                        <td colspan="9" class="text-center py-12">
+                        <td colspan="8" class="text-center py-12">
                             <i class="fas fa-exclamation-triangle text-4xl text-error mb-3"></i>
                             <h3 class="font-semibold">Failed to Load</h3>
                             <p class="text-base-content/60">Could not fetch reorder alerts. Please try again.</p>
@@ -612,7 +617,7 @@
             const countEl = document.getElementById('bulkSelectedCount');
             const btn = document.getElementById('bulkCreateBtn');
             const labelEl = document.getElementById('bulkCreateBtnLabel');
-            if (!bar) return;
+            if (!bar || !countEl || !btn || !labelEl) return;
             const n = selectedItemIds.size;
             countEl.textContent = n;
             labelEl.textContent = n === 1 ? `Create PR` : `Create PR (${n} items)`;
@@ -642,7 +647,7 @@
                 return;
             }
             hero.classList.remove('hidden');
-            totalEl.textContent = total;
+            if (totalEl) totalEl.textContent = total;
             // Build the breakdown. Use real numbers so the user can scan
             // exactly what to act on.
             const parts = [];
@@ -650,7 +655,7 @@
             if (low) parts.push(`${low} low`);
             const pendingCount = actionable.filter(a => getOrderQty(a) > 0 && hasCoveredPR(a)).length;
             if (pendingCount) parts.push(`${pendingCount} already pending`);
-            breakdownEl.textContent = parts.join(' · ');
+            if (breakdownEl) breakdownEl.textContent = parts.join(' · ');
             // The CTA count is the number of items that can actually have a
             // PR created — those with a positive orderable quantity
             // (below par). Items flagged Low but already at par (qty == 0)
@@ -660,9 +665,11 @@
             const orderableCount = actionable.filter(a => {
                 return getOrderQty(a) > 0 && !hasCoveredPR(a);
             }).length;
-            ctaLabelEl.textContent = orderableCount === 1
-                ? `Create Purchase Requisition`
-                : `Create Purchase Requisition (${orderableCount} items)`;
+            if (ctaLabelEl) {
+                ctaLabelEl.textContent = orderableCount === 1
+                    ? `Create Purchase Requisition`
+                    : `Create Purchase Requisition (${orderableCount} items)`;
+            }
         }
 
         // Bulk-create PRs for all selected items, plus any actionable items
@@ -812,7 +819,7 @@
             if (filteredAlerts.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="9" class="text-center py-12 text-base-content/60">
+                        <td colspan="8" class="text-center py-12 text-base-content/60">
                             <i class="fas fa-check-circle text-4xl text-success/30 mb-2"></i>
                             <h3 class="font-semibold mt-2">All Clear!</h3>
                             <p class="text-sm">No reorder alerts at this time.</p>
@@ -932,8 +939,8 @@
                 const btnIcon = pendingPR ? 'fa-hourglass-half' : (hasCreatedPR ? 'fa-check' : 'fa-file-signature');
                 const btnTitle = pendingPR
                     ? `${pendingPR.pr_number || 'This item'} is already requested`
-                    : (hasCreatedPR ? 'Purchase Request started' : 'Start Purchase Request');
-                const btnLabel = pendingPR ? 'Pending' : (hasCreatedPR ? 'Created' : 'Start PR');
+                    : (hasCreatedPR ? 'Purchase Request Slip started' : 'Generate PRS');
+                const btnLabel = pendingPR ? 'Pending' : (hasCreatedPR ? 'Created' : 'PRS');
 
                 const safeName = escapeHtml(alert.item_name || 'Unnamed');
                 const safeCode = escapeHtml(alert.item_code || '');
@@ -941,14 +948,12 @@
 
                 return `
                     <tr class="hover:bg-base-200/50">
-                        <td onclick="event.stopPropagation()">
-                            <input type="checkbox" class="checkbox checkbox-xs"
-                                ${isChecked ? 'checked' : ''}
-                                ${canCreate ? '' : 'disabled'}
-                                onchange="toggleItemSelection('${itemIdStr}', this.checked)"
-                                aria-label="Select ${safeName}" />
+                        <td>
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" class="checkbox checkbox-xs checkbox-primary" ${isChecked ? 'checked' : ''} ${canCreate ? '' : 'disabled'} onchange="toggleItemSelection(${alert.item_id}, this.checked)" aria-label="Select ${safeName}">
+                                <span class="inline-block w-2.5 h-2.5 rounded-full ${statusDot}" title="${escapeHtml(alert.stock_status || '')}"></span>
+                            </div>
                         </td>
-                        <td><span class="inline-block w-2.5 h-2.5 rounded-full ${statusDot}" title="${escapeHtml(alert.stock_status || '')}"></span></td>
                         <td>
                             <div class="flex items-center gap-3">
                                 <div class="w-9 h-9 rounded-xl ${avatarColor} flex items-center justify-center flex-shrink-0">
@@ -978,7 +983,7 @@
                             <span class="badge ${leadBadge} badge-sm">${leadDays}d</span>
                         </td>
                         <td class="text-right" onclick="event.stopPropagation()">
-                            <div class="flex gap-1 justify-end">
+                            <div class="flex gap-1 justify-end items-center">
                                 <a href="ingredients.html?id=${alert.item_id}" class="btn btn-ghost btn-xs btn-square" title="View details">
                                     <i class="fas fa-eye"></i>
                                 </a>
@@ -1015,7 +1020,7 @@
 
         // Click handler for the Low Stock summary card: filter the table to
         // low-stock rows and scroll to it so the user can immediately start
-        // Purchase Requests. This is the "Low Stock prompts the PR workflow"
+        // Purchase Request Slips. This is the "Low Stock prompts the PRS workflow"
         // entry point — no separate Critical stage to wait for.
         function focusLowStock() {
             const filter = document.getElementById('statusFilter');

@@ -579,7 +579,7 @@ function handlePut($db, $currentUser) {
                 $stmt->execute([$quantity, $ingredientId]);
                 
                 $db->commit();
-                
+
                 Response::success([
                     'ingredient_code' => $ingredientData['ingredient_code'],
                     'total_issued' => $quantity,
@@ -705,7 +705,7 @@ function handlePut($db, $currentUser) {
                 );
                 
                 $db->commit();
-                
+
                 Response::success([
                     'old_quantity' => $oldQuantity,
                     'new_quantity' => $newQuantity,
@@ -848,7 +848,7 @@ function handlePut($db, $currentUser) {
                 ]);
                 
                 $db->commit();
-                
+
                 Response::success([
                     'disposed_quantity' => $disposedQuantity,
                     'transaction_code' => $txCode

@@ -179,7 +179,21 @@ try {
       $lowStockStmt->execute();
       $stats['low_stock_alerts'] = $lowStockStmt->fetchAll(PDO::FETCH_ASSOC);
       $stats['low_stock_count'] = count($stats['low_stock_alerts']);
-    
+
+    // V4.1: Unread procurement notifications for the GM (PO approval, finance/receiving updates, etc.)
+    try {
+        $notifStmt = $pdo->prepare("
+            SELECT id, notification_type, title, message, reference_type, reference_id, created_at
+            FROM procurement_notifications
+            WHERE target_role = 'general_manager' AND is_read = 0
+            ORDER BY created_at DESC LIMIT 8
+        ");
+        $notifStmt->execute();
+        $stats['notifications'] = $notifStmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        $stats['notifications'] = [];
+    }
+
     Response::success($stats);
     
 } catch (Exception $e) {

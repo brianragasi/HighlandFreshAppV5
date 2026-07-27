@@ -4,21 +4,20 @@
  *
  * Handles ingredient requests from Production to Warehouse Raw.
  *
- * Workflow (V4.0 — no GM approval gate):
+ * Workflow:
  *   1. Production staff creates a requisition     -> status 'pending'
  *   2. Production staff explicitly acknowledges
  *      any stock shortage on submit (audit row in
  *      requisition_stock_warnings)                -> status still 'pending'
- *   3. Warehouse Raw sees the 'pending' request
- *      immediately and fulfills / partially
- *      fulfills it                                -> status 'fulfilled' / 'partial'
+ *   3. GM approves the requisition                -> status 'approved'
+ *   4. Warehouse Raw sees approved requests and
+ *      fulfills / partially fulfills them         -> status 'fulfilled' / 'partial'
  *
  * GET    - List requisitions / Get single requisition
  * POST   - Create new requisition (with stock validation gate)
  * PUT    - Cancel pending requisition (own only)
  *
- * Approve / Reject are no longer exposed here. The 'approved' status is kept
- * in the enum for legacy rows but is not set by new requisitions.
+ * Approve / Reject are handled by api/admin/gm_approvals.php.
  *
  * @package HighlandFresh
  * @version 4.0
@@ -28,8 +27,8 @@ require_once dirname(__DIR__) . '/bootstrap.php';
 
 // Require Production, GM, or Warehouse Raw role.
 //   - production_staff: create + cancel own pending
-//   - warehouse_raw: read (so they see pending requests immediately)
-//   - general_manager: read-only oversight
+//   - warehouse_raw: read approved/fulfilled requests through their own endpoint
+//   - general_manager: read-only oversight here; decisions use GM approvals API
 $currentUser = Auth::requireRole(['production_staff', 'general_manager', 'warehouse_raw']);
 
 function requisitionParseIngredientAdjustments($ingredientAdjustmentsJson) {
@@ -946,7 +945,7 @@ try {
             switch ($workflow) {
                 case 'active':
                     $where .= "
-                        AND ir.status IN ('pending', 'partial', 'fulfilled')
+                        AND ir.status IN ('pending', 'approved', 'partial', 'fulfilled')
                         AND NOT (ir.status = 'fulfilled' AND ir.production_run_id IS NOT NULL)
                         AND NOT (ir.planned_recipe_id IS NOT NULL AND pmr.id IS NULL)
                         AND NOT (
@@ -1395,8 +1394,8 @@ try {
                 }
 
                 $message = $hasShortage
-                    ? "Requisition {$requisitionCode} submitted with acknowledged stock shortage. Warehouse Raw has been notified."
-                    : "Requisition {$requisitionCode} submitted. Warehouse Raw has been notified.";
+                    ? "Requisition {$requisitionCode} submitted with acknowledged stock shortage. It is waiting for GM approval."
+                    : "Requisition {$requisitionCode} submitted. It is waiting for GM approval.";
 
                 Response::created([
                     'id' => $requisitionId,
@@ -1450,13 +1449,10 @@ try {
 
             $action = getParam('action');
 
-            // V4.0 — Approve / Reject / Fulfill / Partially-fulfill were
-            // removed from this endpoint. There is no GM gate anymore (pending
-            // requisitions are visible to warehouse immediately), and the
-            // warehouse fulfillment flow lives entirely in
-            // api/warehouse/raw/requisitions.php. The only mutating action
-            // exposed to production staff here is `cancel` for their own
-            // pending requisitions. Any other action returns 400.
+            // Approval happens in api/admin/gm_approvals.php. Warehouse
+            // fulfillment happens in api/warehouse/raw/requisitions.php.
+            // The only mutating action exposed to production staff here is
+            // `cancel` for their own pending requisitions.
             switch ($action) {
                 case 'cancel':
                     if ($requisition['status'] !== 'pending') {
@@ -1478,9 +1474,8 @@ try {
                 case 'fulfill':
                 case 'partially_fulfill':
                     Response::error(
-                        "The '{$action}' action is no longer supported. " .
-                        "Production requisitions are visible to Warehouse Raw immediately on submit. " .
-                        "Use api/warehouse/raw/requisitions.php for fulfillment actions.",
+                        "The '{$action}' action is not handled here. " .
+                        "GM approval uses api/admin/gm_approvals.php, and Warehouse Raw issues approved requests only.",
                         400
                     );
                     break;

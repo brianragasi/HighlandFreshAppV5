@@ -138,6 +138,18 @@ define('STEP_UP_TOKEN_EXPIRY', 300); // 5 minutes in seconds
 define('AUDIT_LOG_SECRET', envOrDefault('AUDIT_LOG_SECRET', JWT_SECRET));
 define('PASSWORD_COST', 12);
 
+// Password Policy
+define('PASSWORD_MIN_LENGTH', 12);
+define('PASSWORD_REQUIRE_UPPERCASE', true);
+define('PASSWORD_REQUIRE_LOWERCASE', true);
+define('PASSWORD_REQUIRE_NUMBER', true);
+define('PASSWORD_REQUIRE_SPECIAL', true);
+define('PASSWORD_MAX_LENGTH', 128);
+
+// Rate Limiting
+define('RATE_LIMIT_SET_PASSWORD_ATTEMPTS', 5); // Max attempts per window
+define('RATE_LIMIT_SET_PASSWORD_WINDOW', 900); // 15 minutes in seconds
+
 // Email / SMTP Settings (Gmail)
 define('SMTP_HOST', envOrDefault('SMTP_HOST', 'smtp.gmail.com'));
 define('SMTP_PORT', (int) envOrDefault('SMTP_PORT', 587));

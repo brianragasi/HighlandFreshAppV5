@@ -625,8 +625,13 @@ function handlePutRequest($db, $currentUser) {
                         'step_up_verified' => true
                     ]
                 );
-                
+
+                // ── Auto-create Credit Memo if disposal came from a customer return ──
+                $creditMemoResult = autoCreateCreditMemoForReturn($db, $disposal, $currentUser);
                 $message = 'Disposal approved successfully';
+                if ($creditMemoResult) {
+                    $message .= ". Credit memo {$creditMemoResult['credit_code']} (₱" . number_format($creditMemoResult['credit_amount'], 2) . ") created for {$creditMemoResult['customer_name']}.";
+                }
                 break;
                 
             case 'reject':
@@ -1051,4 +1056,99 @@ function generateDisposalCode($db) {
     $count = $stmt->fetchColumn() + 1;
     
     return 'DSP-' . $date . '-' . str_pad($count, 4, '0', STR_PAD_LEFT);
+}
+
+/**
+ * Auto-create a credit memo when a disposal is approved and originated from a customer return.
+ * Returns ['credit_code', 'credit_amount', 'customer_name'] on success, null otherwise.
+ */
+function autoCreateCreditMemoForReturn(PDO $db, array $disposal, array $currentUser): ?array {
+    // Only for source_type = finished_goods with source_reference starting with 'RET-'
+    $sourceRef = $disposal['source_reference'] ?? '';
+    if (($disposal['source_type'] ?? '') !== 'finished_goods' || !str_starts_with($sourceRef, 'RET-')) {
+        return null;
+    }
+
+    // Find the customer return by return_code
+    $retStmt = $db->prepare("SELECT * FROM customer_returns WHERE return_code = ? LIMIT 1");
+    $retStmt->execute([$sourceRef]);
+    $return = $retStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$return || empty($return['customer_id'])) return null;
+
+    // Check if credit memo already exists for this return
+    $dupStmt = $db->prepare("SELECT id FROM credit_memos WHERE return_id = ? AND status != 'voided' LIMIT 1");
+    $dupStmt->execute([$return['id']]);
+    if ($dupStmt->fetch()) return null; // Already created
+
+    // Calculate credit amount from disposal total_value
+    $creditAmount = (float) ($disposal['total_value'] ?? 0);
+    if ($creditAmount <= 0) {
+        // Fallback: sum from disposal_items
+        $diStmt = $db->prepare("SELECT COALESCE(SUM(line_total), 0) FROM disposal_items WHERE disposal_id = ?");
+        $diStmt->execute([$disposal['id']]);
+        $creditAmount = (float) $diStmt->fetchColumn();
+    }
+    if ($creditAmount <= 0) return null; // No value to credit
+
+    // Generate credit code
+    $today = date('Ymd');
+    $codeStmt = $db->prepare("SELECT COUNT(*) FROM credit_memos WHERE credit_code LIKE ?");
+    $codeStmt->execute(["CRM-{$today}-%"]);
+    $cmCount = (int) $codeStmt->fetchColumn() + 1;
+    $creditCode = "CRM-{$today}-" . str_pad($cmCount, 3, '0', STR_PAD_LEFT);
+
+    // Map return reason to credit reason
+    $reasonMap = [
+        'damaged_transit'    => 'return_damaged',
+        'expired'            => 'return_expired',
+        'quality_issue'      => 'return_quality',
+        'customer_rejection' => 'return_damaged',
+        'wrong_order'        => 'other',
+        'overage'            => 'other',
+        'other'              => 'other',
+    ];
+    $creditReason = $reasonMap[$return['return_reason'] ?? 'other'] ?? 'other';
+
+    $db->prepare("
+        INSERT INTO credit_memos
+            (credit_code, customer_id, customer_name, return_id, disposal_id,
+             dr_number, credit_amount, reason, description, status,
+             initiated_by, initiated_at, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, NOW(), ?)
+    ")->execute([
+        $creditCode,
+        $return['customer_id'],
+        $return['customer_name'],
+        $return['id'],
+        $disposal['id'],
+        $return['dr_number'] ?? null,
+        $creditAmount,
+        $creditReason,
+        "Auto-generated from approved disposal {$disposal['disposal_code']} for return {$return['return_code']}",
+        $currentUser['user_id'],
+        "Auto-created: disposal {$disposal['disposal_code']} approved → credit memo {$creditCode}."
+    ]);
+
+    $cmId = (int) $db->lastInsertId();
+
+    // Update customer balance
+    $db->prepare("UPDATE customers SET current_balance = GREATEST(0, current_balance - ?), updated_at = NOW() WHERE id = ?")
+       ->execute([$creditAmount, $return['customer_id']]);
+
+    // Link credit memo back to return
+    $db->prepare("UPDATE customer_returns SET credit_memo_id = ? WHERE id = ?")
+       ->execute([$cmId, $return['id']]);
+
+    logAudit($currentUser['user_id'], 'CREATE', 'credit_memos', $cmId, null, [
+        'credit_code' => $creditCode,
+        'auto_from_disposal' => $disposal['id'],
+        'return_id' => $return['id'],
+        'amount' => $creditAmount,
+    ]);
+
+    return [
+        'credit_code' => $creditCode,
+        'credit_amount' => $creditAmount,
+        'customer_name' => $return['customer_name'],
+    ];
 }

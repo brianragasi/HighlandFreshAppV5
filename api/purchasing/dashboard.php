@@ -2,7 +2,7 @@
 /**
  * Highland Fresh System - Purchasing Dashboard API
  * 
- * GET - Dashboard stats, low stock alerts, recent POs, pending requisitions
+ * GET - Dashboard stats, PRS inbox, recent POs, pending requisitions
  * 
  * @package HighlandFresh
  * @version 4.0
@@ -46,6 +46,9 @@ function handleGet($db, $action) {
             break;
         case 'monthly_spending':
             getMonthlySpending($db);
+            break;
+        case 'notifications':
+            getPurchaserNotifications($db);
             break;
         default:
             Response::error('Invalid action', 400);
@@ -111,6 +114,20 @@ function getDashboardStats($db) {
         WHERE status IN ('pending', 'approved')
     ");
     $stats['pending_requisitions'] = (int) $stmt->fetch()['count'];
+
+    // Submitted PRS records routed from Warehouse Raw to Purchasing
+    $stmt = $db->query("
+        SELECT COUNT(*) as count
+        FROM purchase_requests
+        WHERE status IN ('pending', 'approved')
+          AND id NOT IN (
+              SELECT COALESCE(purchase_request_id, 0)
+              FROM purchase_orders
+              WHERE status NOT IN ('cancelled', 'rejected')
+                AND purchase_request_id IS NOT NULL
+          )
+    ");
+    $stats['prs_inbox'] = (int) $stmt->fetch()['count'];
     
     // Unpaid POs amount
     $stmt = $db->query("
@@ -263,4 +280,39 @@ function getMonthlySpending($db) {
     $spending = $stmt->fetchAll();
     
     Response::success($spending, 'Monthly spending retrieved');
+}
+
+/**
+ * Fetch unread procurement notifications for the Purchaser role.
+ * Includes manually submitted PRS records and other procurement events.
+ */
+function getPurchaserNotifications($db) {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS `procurement_notifications` (
+            `id` INT(11) NOT NULL AUTO_INCREMENT,
+            `target_role` VARCHAR(50) NOT NULL,
+            `notification_type` VARCHAR(50) NOT NULL,
+            `title` VARCHAR(150) NOT NULL,
+            `message` TEXT NOT NULL,
+            `reference_type` VARCHAR(50) DEFAULT NULL,
+            `reference_id` INT(11) DEFAULT NULL,
+            `is_read` TINYINT(1) NOT NULL DEFAULT 0,
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_procurement_notifications_role` (`target_role`, `is_read`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    ");
+
+    $stmt = $db->prepare("
+        SELECT id, notification_type, title, message, reference_type, reference_id, created_at
+        FROM procurement_notifications
+        WHERE target_role = 'purchaser'
+          AND is_read = 0
+        ORDER BY created_at DESC
+        LIMIT 10
+    ");
+    $stmt->execute();
+    $notifications = $stmt->fetchAll();
+
+    Response::success($notifications, 'Notifications retrieved');
 }

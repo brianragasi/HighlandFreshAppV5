@@ -19,6 +19,7 @@ $action = getParam('action', 'list');
 
 try {
     $db = Database::getInstance()->getConnection();
+    ensureCanvassingTables($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -139,6 +140,16 @@ function handleGet($db, $action) {
             
             Response::success($canvass, 'Canvass details retrieved');
             break;
+
+        case 'prs_workbench':
+            $prId = getParam('pr_id') ?? getParam('id');
+            if (!$prId) {
+                Response::error('PRS ID required', 400);
+            }
+
+            $prs = getSubmittedPRSForCanvassing($db, (int) $prId);
+            Response::success($prs, 'PRS canvassing details retrieved');
+            break;
             
         case 'price_history':
             $type = getParam('type', 'ingredient');
@@ -207,17 +218,7 @@ function handlePost($db, $action, $currentUser) {
                 }
             }
             
-            // Generate canvass code
-            $stmt = $db->query("SELECT canvass_code FROM price_canvass ORDER BY id DESC LIMIT 1");
-            $last = $stmt->fetch();
-            if ($last) {
-                preg_match('/CNV-(\d{4})-(\d+)/', $last['canvass_code'], $matches);
-                $year = date('Y');
-                $seq = ($matches[1] == $year) ? ((int)$matches[2] + 1) : 1;
-            } else {
-                $seq = 1;
-            }
-            $canvassCode = sprintf('CNV-%s-%04d', date('Y'), $seq);
+            $canvassCode = nextCanvassCode($db);
             
             $stmt = $db->prepare("
                 INSERT INTO price_canvass 
@@ -261,7 +262,7 @@ function handlePost($db, $action, $currentUser) {
             if (!$canvass) {
                 Response::error('Canvass not found', 404);
             }
-            if ($canvass['status'] !== 'open') {
+            if (!in_array($canvass['status'], ['open', 'completed'], true)) {
                 Response::error('Canvass is no longer open for quotes', 400);
             }
             
@@ -287,13 +288,305 @@ function handlePost($db, $action, $currentUser) {
                 $data['validity_date'] ?? null,
                 $data['notes'] ?? null
             ]);
-            
-            Response::success(['id' => $db->lastInsertId()], 'Quote added', 201);
+
+            $quoteId = (int) $db->lastInsertId();
+            $autoSelection = autoSelectCheapestQuoteIfReady($db, (int) $data['canvass_id']);
+            $wasAutoSelected = $autoSelection && ($autoSelection['selection_method'] ?? null) === 'auto_cheapest';
+
+            Response::success([
+                'id' => $quoteId,
+                'auto_selected' => $wasAutoSelected,
+                'selected_quote_id' => $autoSelection['quote_id'] ?? null,
+                'selected_supplier_id' => $autoSelection['supplier_id'] ?? null,
+                'selected_unit_price' => $autoSelection['unit_price'] ?? null
+            ], $wasAutoSelected ? 'Quote added. Cheapest quote was selected automatically.' : 'Quote added', 201);
+            break;
+
+        case 'ensure_prs_canvass':
+            $prId = (int) ($data['purchase_request_id'] ?? $data['pr_id'] ?? 0);
+            if ($prId <= 0) {
+                Response::error('PRS ID required', 400);
+            }
+
+            $prs = getSubmittedPRSForCanvassing($db, $prId);
+            $created = 0;
+
+            foreach ($prs['items'] as $item) {
+                if (!empty($item['canvass'])) {
+                    continue;
+                }
+                createCanvassForPRSItem($db, $prs, $item, $currentUser);
+                $created++;
+            }
+
+            $fresh = getSubmittedPRSForCanvassing($db, $prId);
+            Response::success([
+                'created' => $created,
+                'prs' => $fresh
+            ], $created > 0 ? 'Canvass records prepared' : 'Canvass records already prepared', 201);
             break;
             
         default:
             Response::error('Invalid action', 400);
     }
+}
+
+function ensureCanvassingTables(PDO $db): void {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS `price_canvass` (
+            `id` INT(11) NOT NULL AUTO_INCREMENT,
+            `canvass_code` VARCHAR(30) NOT NULL,
+            `item_type` ENUM('ingredient','mro','other') DEFAULT 'ingredient',
+            `ingredient_id` INT(11) DEFAULT NULL,
+            `mro_item_id` INT(11) DEFAULT NULL,
+            `purchase_request_id` INT(11) DEFAULT NULL,
+            `purchase_request_item_id` INT(11) DEFAULT NULL,
+            `item_description` VARCHAR(255) NOT NULL,
+            `quantity` DECIMAL(12,2) NOT NULL,
+            `unit` VARCHAR(30) NOT NULL DEFAULT 'units',
+            `status` ENUM('open','completed','cancelled') DEFAULT 'open',
+            `selected_quote_id` INT(11) DEFAULT NULL,
+            `created_by` INT(11) DEFAULT NULL,
+            `notes` TEXT DEFAULT NULL,
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_canvass_code` (`canvass_code`),
+            KEY `idx_canvass_pr` (`purchase_request_id`),
+            KEY `idx_canvass_pr_item` (`purchase_request_item_id`),
+            KEY `idx_canvass_status` (`status`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    ");
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS `canvass_quotes` (
+            `id` INT(11) NOT NULL AUTO_INCREMENT,
+            `canvass_id` INT(11) NOT NULL,
+            `supplier_id` INT(11) NOT NULL,
+            `unit_price` DECIMAL(12,2) NOT NULL,
+            `delivery_days` INT(11) DEFAULT 7,
+            `payment_terms` VARCHAR(30) DEFAULT 'cash',
+            `validity_date` DATE DEFAULT NULL,
+            `notes` TEXT DEFAULT NULL,
+            `is_selected` TINYINT(1) NOT NULL DEFAULT 0,
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_quote_canvass` (`canvass_id`),
+            KEY `idx_quote_supplier` (`supplier_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    ");
+
+    if (!auditColumnExists($db, 'price_canvass', 'purchase_request_id')) {
+        $db->exec("ALTER TABLE `price_canvass` ADD COLUMN `purchase_request_id` INT(11) DEFAULT NULL AFTER `mro_item_id`");
+    }
+    if (!auditColumnExists($db, 'price_canvass', 'purchase_request_item_id')) {
+        $db->exec("ALTER TABLE `price_canvass` ADD COLUMN `purchase_request_item_id` INT(11) DEFAULT NULL AFTER `purchase_request_id`");
+    }
+    if (!auditColumnExists($db, 'price_canvass', 'selected_quote_id')) {
+        $db->exec("ALTER TABLE `price_canvass` ADD COLUMN `selected_quote_id` INT(11) DEFAULT NULL AFTER `status`");
+    }
+    if (!auditColumnExists($db, 'price_canvass', 'selection_method')) {
+        $db->exec("ALTER TABLE `price_canvass` ADD COLUMN `selection_method` VARCHAR(30) DEFAULT NULL AFTER `selected_quote_id`");
+    }
+    if (!auditColumnExists($db, 'price_canvass', 'selection_reason')) {
+        $db->exec("ALTER TABLE `price_canvass` ADD COLUMN `selection_reason` TEXT DEFAULT NULL AFTER `selection_method`");
+    }
+}
+
+function nextCanvassCode(PDO $db): string {
+    $stmt = $db->query("SELECT canvass_code FROM price_canvass ORDER BY id DESC LIMIT 1");
+    $last = $stmt->fetch(PDO::FETCH_ASSOC);
+    $year = date('Y');
+    $seq = 1;
+    if ($last && preg_match('/CNV-(\d{4})-(\d+)/', $last['canvass_code'], $matches)) {
+        $seq = ($matches[1] === $year) ? ((int) $matches[2] + 1) : 1;
+    }
+    return sprintf('CNV-%s-%04d', $year, $seq);
+}
+
+function getSubmittedPRSForCanvassing(PDO $db, int $prId): array {
+    $stmt = $db->prepare("
+        SELECT pr.*, u.full_name as requested_by_name
+        FROM purchase_requests pr
+        LEFT JOIN users u ON pr.requested_by = u.id
+        WHERE pr.id = ?
+          AND pr.status IN ('pending', 'approved')
+    ");
+    $stmt->execute([$prId]);
+    $prs = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$prs) {
+        Response::error('Submitted PRS not found or already converted to PO', 404);
+    }
+
+    $itemsStmt = $db->prepare("
+        SELECT
+            pri.*,
+            i.ingredient_name,
+            i.ingredient_code,
+            m.item_name as mro_item_name,
+            m.item_code as mro_item_code
+        FROM purchase_request_items pri
+        LEFT JOIN ingredients i ON pri.ingredient_id = i.id
+        LEFT JOIN mro_items m ON pri.mro_item_id = m.id
+        WHERE pri.purchase_request_id = ?
+        ORDER BY pri.id ASC
+    ");
+    $itemsStmt->execute([$prId]);
+    $items = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($items as &$item) {
+        $canvassStmt = $db->prepare("
+            SELECT *
+            FROM price_canvass
+            WHERE purchase_request_item_id = ?
+              AND status != 'cancelled'
+            ORDER BY id DESC
+            LIMIT 1
+        ");
+        $canvassStmt->execute([$item['id']]);
+        $canvass = $canvassStmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($canvass) {
+            autoSelectCheapestQuoteIfReady($db, (int) $canvass['id']);
+
+            $quotesStmt = $db->prepare("
+                SELECT
+                    q.*,
+                    s.supplier_name,
+                    s.supplier_code,
+                    s.contact_person,
+                    s.phone
+                FROM canvass_quotes q
+                JOIN suppliers s ON q.supplier_id = s.id
+                WHERE q.canvass_id = ?
+                ORDER BY q.is_selected DESC, q.unit_price ASC
+            ");
+            $quotesStmt->execute([$canvass['id']]);
+            $canvass['quotes'] = $quotesStmt->fetchAll(PDO::FETCH_ASSOC);
+            $canvass['quote_count'] = count($canvass['quotes']);
+        }
+
+        $item['canvass'] = $canvass ?: null;
+    }
+    unset($item);
+
+    $prs['items'] = $items;
+    return $prs;
+}
+
+function autoSelectCheapestQuoteIfReady(PDO $db, int $canvassId): ?array {
+    $stmt = $db->prepare("
+        SELECT
+            q.id as quote_id,
+            q.supplier_id,
+            q.unit_price,
+            q.delivery_days,
+            q.is_selected,
+            c.status as canvass_status,
+            c.selected_quote_id,
+            c.selection_method
+        FROM canvass_quotes q
+        JOIN price_canvass c ON c.id = q.canvass_id
+        WHERE q.canvass_id = ?
+        ORDER BY q.unit_price ASC, q.delivery_days ASC, q.id ASC
+    ");
+    $stmt->execute([$canvassId]);
+    $quotes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (count($quotes) < 3) {
+        return null;
+    }
+
+    $selected = null;
+    foreach ($quotes as $quote) {
+        if ((int) ($quote['is_selected'] ?? 0) === 1) {
+            $selected = $quote;
+            break;
+        }
+    }
+
+    if ($selected && (($selected['selection_method'] ?? null) === 'manual_override'
+        || (($selected['selection_method'] ?? null) === null && ($selected['canvass_status'] ?? null) === 'completed'))) {
+        return $selected;
+    }
+
+    $best = $quotes[0];
+    if ((int) ($best['is_selected'] ?? 0) === 1 && (int) ($best['selected_quote_id'] ?? 0) === (int) $best['quote_id']) {
+        return $best;
+    }
+
+    return selectCanvassQuote($db, $canvassId, (int) $best['quote_id'], 'auto_cheapest', 'System recommendation: lowest unit price; ties use faster delivery, then earliest quote.');
+}
+
+function selectCanvassQuote(PDO $db, int $canvassId, int $quoteId, string $method, ?string $reason = null): array {
+    $quoteStmt = $db->prepare("
+        SELECT q.id as quote_id, q.supplier_id, q.unit_price, q.delivery_days
+        FROM canvass_quotes q
+        WHERE q.id = ?
+          AND q.canvass_id = ?
+        LIMIT 1
+    ");
+    $quoteStmt->execute([$quoteId, $canvassId]);
+    $quote = $quoteStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$quote) {
+        Response::error('Quote not found for this canvass', 404);
+    }
+
+    $db->beginTransaction();
+    try {
+        $db->prepare("UPDATE canvass_quotes SET is_selected = 0 WHERE canvass_id = ?")
+           ->execute([$canvassId]);
+
+        $db->prepare("UPDATE canvass_quotes SET is_selected = 1 WHERE id = ?")
+           ->execute([$quoteId]);
+
+        $db->prepare("
+            UPDATE price_canvass
+            SET selected_quote_id = ?,
+                selection_method = ?,
+                selection_reason = ?,
+                status = 'completed'
+            WHERE id = ?
+        ")->execute([$quoteId, $method, $reason, $canvassId]);
+
+        $db->commit();
+    } catch (Exception $e) {
+        $db->rollBack();
+        throw $e;
+    }
+
+    $quote['selection_method'] = $method;
+    $quote['selection_reason'] = $reason;
+    return $quote;
+}
+
+function createCanvassForPRSItem(PDO $db, array $prs, array $item, array $currentUser): int {
+    $itemType = !empty($item['ingredient_id']) ? 'ingredient' : (!empty($item['mro_item_id']) ? 'mro' : 'other');
+    $itemName = $item['ingredient_name'] ?? $item['mro_item_name'] ?? $item['item_description'] ?? 'Requested item';
+    $notes = 'Created from ' . ($prs['pr_number'] ?? ('PRS #' . $prs['id']));
+
+    $stmt = $db->prepare("
+        INSERT INTO price_canvass
+            (canvass_code, item_type, ingredient_id, mro_item_id, purchase_request_id, purchase_request_item_id,
+             item_description, quantity, unit, status, created_by, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+    ");
+    $stmt->execute([
+        nextCanvassCode($db),
+        $itemType,
+        $item['ingredient_id'] ?? null,
+        $item['mro_item_id'] ?? null,
+        $prs['id'],
+        $item['id'],
+        $itemName,
+        $item['quantity'],
+        $item['unit'],
+        $currentUser['user_id'],
+        $notes
+    ]);
+
+    return (int) $db->lastInsertId();
 }
 
 function handlePut($db, $action, $currentUser) {
@@ -320,8 +613,8 @@ function handlePut($db, $action, $currentUser) {
             if (!$quote) {
                 Response::error('Quote not found', 404);
             }
-            if ($quote['canvass_status'] !== 'open') {
-                Response::error('Canvass is no longer open', 400);
+            if (!in_array($quote['canvass_status'], ['open', 'completed'], true)) {
+                Response::error('Canvass is no longer available for selection', 400);
             }
 
             // Enforce Rule of 3: canvass must have at least 3 supplier quotes before selection
@@ -333,31 +626,54 @@ function handlePut($db, $action, $currentUser) {
                 Response::error('At least 3 supplier quotes are required before selecting a winner', 400);
             }
             
-            $db->beginTransaction();
-            try {
-                // Clear any previously selected quote
-                $db->prepare("UPDATE canvass_quotes SET is_selected = 0 WHERE canvass_id = ?")
-                   ->execute([$quote['canvass_id']]);
-                
-                // Select this quote
-                $db->prepare("UPDATE canvass_quotes SET is_selected = 1 WHERE id = ?")
-                   ->execute([$quoteId]);
-                
-                // Update canvass
-                $db->prepare("UPDATE price_canvass SET selected_quote_id = ?, status = 'completed' WHERE id = ?")
-                   ->execute([$quoteId, $quote['canvass_id']]);
-                
-                $db->commit();
-                
-                Response::success([
-                    'canvass_id' => $quote['canvass_id'],
-                    'selected_supplier_id' => $quote['supplier_id'],
-                    'unit_price' => $quote['unit_price']
-                ], 'Quote selected and canvass completed');
-            } catch (Exception $e) {
-                $db->rollBack();
-                throw $e;
+            $autoSelection = autoSelectCheapestQuoteIfReady($db, (int) $quote['canvass_id']);
+            Response::success([
+                'canvass_id' => $quote['canvass_id'],
+                'selected_quote_id' => $autoSelection['quote_id'] ?? null,
+                'selected_supplier_id' => $autoSelection['supplier_id'] ?? null,
+                'unit_price' => $autoSelection['unit_price'] ?? null
+            ], 'Cheapest quote selected automatically');
+            break;
+
+        case 'override_quote':
+            $quoteId = (int) ($data['quote_id'] ?? 0);
+            $reason = trim((string) ($data['reason'] ?? ''));
+            if ($quoteId <= 0) {
+                Response::error('Quote ID required', 400);
             }
+            if ($reason === '') {
+                Response::error('Reason is required when choosing a supplier other than the system recommendation', 400);
+            }
+
+            $quoteCheck = $db->prepare("
+                SELECT q.*, c.id as canvass_id, c.status as canvass_status
+                FROM canvass_quotes q
+                JOIN price_canvass c ON q.canvass_id = c.id
+                WHERE q.id = ?
+            ");
+            $quoteCheck->execute([$quoteId]);
+            $quote = $quoteCheck->fetch(PDO::FETCH_ASSOC);
+            if (!$quote) {
+                Response::error('Quote not found', 404);
+            }
+            if (!in_array($quote['canvass_status'], ['open', 'completed'], true)) {
+                Response::error('Canvass is no longer available for supplier choice', 400);
+            }
+
+            $quoteCountStmt = $db->prepare("SELECT COUNT(*) as quote_count FROM canvass_quotes WHERE canvass_id = ?");
+            $quoteCountStmt->execute([$quote['canvass_id']]);
+            if ((int) $quoteCountStmt->fetch()['quote_count'] < 3) {
+                Response::error('At least 3 supplier quotes are required before choosing a supplier', 400);
+            }
+
+            $selected = selectCanvassQuote($db, (int) $quote['canvass_id'], $quoteId, 'manual_override', $reason);
+            Response::success([
+                'canvass_id' => (int) $quote['canvass_id'],
+                'selected_quote_id' => $selected['quote_id'],
+                'selected_supplier_id' => $selected['supplier_id'],
+                'unit_price' => $selected['unit_price'],
+                'reason' => $reason
+            ], 'Supplier choice saved');
             break;
             
         case 'cancel':

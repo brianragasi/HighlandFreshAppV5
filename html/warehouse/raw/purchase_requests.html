@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Purchase Requests - Warehouse Raw | Highland Fresh</title>
+    <title>Purchase Request Slips - Warehouse Raw | Highland Fresh</title>
     <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
     <link rel="stylesheet" href="../../../css/tailwind.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -63,9 +63,9 @@
     <div class="lg:ml-72 min-h-screen flex flex-col">
         <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
             <div class="flex-none lg:hidden"><button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button></div>
-            <div class="flex-1"><h1 class="text-lg lg:text-xl font-bold">Purchase Requests</h1></div>
+            <div class="flex-1"><h1 class="text-lg lg:text-xl font-bold">Purchase Request Slips</h1></div>
             <div class="flex-none flex items-center gap-2">
-                <button class="btn btn-primary btn-sm gap-2" onclick="openCreateModal()"><i class="fas fa-plus"></i><span class="hidden sm:inline">New PR</span></button>
+                <button class="btn btn-primary btn-sm gap-2" data-pr-create onclick="openCreateModal()"><i class="fas fa-plus"></i><span class="hidden sm:inline">New PRS</span></button>
                 <button class="btn btn-ghost btn-sm" onclick="loadPRs()"><i class="fas fa-sync-alt"></i></button>
             </div>
         </header>
@@ -78,10 +78,10 @@
                     <div class="card-body p-3 gap-0"><p class="text-2xl font-bold stat-value" id="statDraft">0</p><p class="text-xs text-base-content/60">Draft</p></div>
                 </button>
                 <button type="button" data-stat-filter="pending" onclick="applyStatFilter('pending')" class="card bg-base-100 border border-base-300">
-                    <div class="card-body p-3 gap-0"><p class="text-2xl font-bold stat-value text-warning" id="statPending">0</p><p class="text-xs text-base-content/60">Pending</p></div>
+                    <div class="card-body p-3 gap-0"><p class="text-2xl font-bold stat-value text-warning" id="statPending">0</p><p class="text-xs text-base-content/60">Purchaser Inbox</p></div>
                 </button>
                 <button type="button" data-stat-filter="approved" onclick="applyStatFilter('approved')" class="card bg-base-100 border border-base-300">
-                    <div class="card-body p-3 gap-0"><p class="text-2xl font-bold stat-value text-success" id="statApproved">0</p><p class="text-xs text-base-content/60">Approved</p></div>
+                    <div class="card-body p-3 gap-0"><p class="text-2xl font-bold stat-value text-success" id="statApproved">0</p><p class="text-xs text-base-content/60">Legacy Approved</p></div>
                 </button>
                 <button type="button" data-stat-filter="rejected" onclick="applyStatFilter('rejected')" class="card bg-base-100 border border-base-300">
                     <div class="card-body p-3 gap-0"><p class="text-2xl font-bold stat-value text-error" id="statRejected">0</p><p class="text-xs text-base-content/60">Rejected</p></div>
@@ -100,9 +100,9 @@
                             <input type="search" id="prSearch" class="grow" placeholder="Search PR#, purpose..." oninput="onPRSearch()" autocomplete="off">
                         </label>
                         <div class="flex flex-wrap gap-1.5" id="statusTabs" role="tablist" aria-label="Filter by status">
-                            <button type="button" class="filter-chip btn btn-xs rounded-full border border-base-300" data-status="pending">Pending</button>
+                            <button type="button" class="filter-chip btn btn-xs rounded-full border border-base-300" data-status="pending">Purchaser Inbox</button>
                             <button type="button" class="filter-chip btn btn-xs rounded-full border border-base-300" data-status="draft">Draft</button>
-                            <button type="button" class="filter-chip btn btn-xs rounded-full border border-base-300" data-status="approved">Approved</button>
+                            <button type="button" class="filter-chip btn btn-xs rounded-full border border-base-300" data-status="approved">Legacy Approved</button>
                             <button type="button" class="filter-chip btn btn-xs rounded-full border border-base-300" data-status="rejected">Rejected</button>
                             <button type="button" class="filter-chip btn btn-xs rounded-full border border-base-300" data-status="converted">Converted</button>
                             <button type="button" class="filter-chip btn btn-xs rounded-full border border-base-300" data-status="">All</button>
@@ -118,7 +118,7 @@
                         <thead>
                             <tr>
                                 <th class="w-8"></th>
-                                <th>PR #</th>
+                                <th>PRS #</th>
                                 <th>Status</th>
                                 <th>Priority</th>
                                 <th>Purpose</th>
@@ -174,7 +174,7 @@
                             <option value="ingredient">Ingredients</option>
                             <option value="mro">MRO</option>
                         </select>
-                        <button type="button" class="btn btn-primary btn-sm ml-auto" onclick="openCreateModalFromSelection()"><i class="fas fa-plus"></i> Create PR from selected</button>
+                        <button type="button" class="btn btn-primary btn-sm ml-auto" data-pr-create onclick="openCreateModalFromSelection()"><i class="fas fa-plus"></i> Create PR from selected</button>
                         <button type="button" class="btn btn-ghost btn-sm" onclick="clearReorderSelection()">Clear</button>
                     </div>
                     <div id="reorderList" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2"></div>
@@ -198,7 +198,7 @@
                         <img src="../../../highland_fresh_logo.png" alt="Highland Fresh Logo" class="w-16 h-16 object-contain">
                         <div>
                             <h3 class="font-extrabold text-xl">Highland Fresh Dairy</h3>
-                            <p class="text-sm text-base-content/70">Internal Purchase Request</p>
+                            <p class="text-sm text-base-content/70">Purchase Request Slip (PRS)</p>
                             <p class="text-xs text-base-content/60">Warehouse Raw Department</p>
                         </div>
                     </div>
@@ -281,7 +281,7 @@
             <div class="modal-action">
                 <button class="btn btn-ghost" onclick="document.getElementById('createModal').close()">Cancel</button>
                 <button class="btn btn-outline" id="saveDraftPRBtn" onclick="submitPR('draft')"><i class="fas fa-save"></i> Save Draft</button>
-                <button class="btn btn-primary" id="submitPRBtn" onclick="submitPR('pending')"><i class="fas fa-paper-plane"></i> Submit PR</button>
+                <button class="btn btn-primary" id="submitPRBtn" onclick="submitPR('pending')"><i class="fas fa-paper-plane"></i> Submit PRS</button>
             </div>
         </div>
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
@@ -305,7 +305,7 @@
     <script src="../../../js/warehouse/raw.service.js"></script>
     <script src="../../../js/warehouse/sidebar.stats.js"></script>
     <script>window.WAREHOUSE_RAW_ACTIVE_PAGE = "purchase_requests";</script>
-    <script src="../../../js/warehouse/raw-sidebar.js?v=20260712c"></script>
+    <script src="../../../js/warehouse/raw-sidebar.js?v=20260727a"></script>
 
     <script>
         let allPRs = [];
@@ -347,7 +347,7 @@
         function applyInitialPRRoute(){
             const params=new URLSearchParams(window.location.search);
             const status=params.get('status');
-            if(['draft','pending','approved','rejected','converted',''].includes(status)){
+            if(['draft','pending','approved','rejected','converted','partially_converted',''].includes(status)){
                 currentStatus=status;
             }
             linkedPRId=params.get('pr_id');
@@ -570,14 +570,14 @@
             if (filtered.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="10" class="text-center py-14">
                     <i class="fas fa-inbox text-3xl text-base-content/20 mb-2"></i>
-                    <p class="font-semibold">No purchase requests</p>
-                    <p class="text-sm text-base-content/55 mt-1">${prSearchQuery ? 'Try a different search.' : (currentStatus === 'pending' ? 'Nothing pending GM approval.' : 'Try another status or create a new PR.')}</p>
+                    <p class="font-semibold">No purchase request slips</p>
+                    <p class="text-sm text-base-content/55 mt-1">${prSearchQuery ? 'Try a different search.' : (currentStatus === 'pending' ? 'No PRS records in the Purchaser inbox.' : 'Try another status or create a new PRS.')}</p>
                 </td></tr>`;
                 return;
             }
 
             const priorityBadge = { urgent: 'badge-error', high: 'badge-warning', normal: 'badge-ghost', low: 'badge-ghost' };
-            const statusBadge = { draft: 'badge-ghost', pending: 'badge-warning', approved: 'badge-success', rejected: 'badge-error', converted: 'badge-info' };
+            const statusBadge = { draft: 'badge-ghost', pending: 'badge-warning', approved: 'badge-success', rejected: 'badge-error', converted: 'badge-info', partially_converted: 'badge-info' };
 
             tbody.innerHTML = filtered.map(pr => {
                 const id = pr.id;
@@ -652,7 +652,7 @@
                 const pr=res?.data;
                 if(!pr){content.innerHTML='<p class="text-error">Not found</p>';return;}
 
-                const statusColors={draft:'ghost',pending:'warning',approved:'success',rejected:'error',converted:'info'};
+                const statusColors={draft:'ghost',pending:'warning',approved:'success',rejected:'error',converted:'info',partially_converted:'info'};
                 const c=statusColors[pr.status]||'ghost';
 
                 const itemsTotal=(pr.items||[]).reduce((sum,i)=>sum+parseFloat(i.estimated_total||0),0);
@@ -674,7 +674,8 @@
                     </div>
 
                     ${pr.purpose?`<p class="text-sm text-base-content/70 mb-3"><i class="fas fa-info-circle text-base-content/40 mr-1"></i>${pr.purpose}</p>`:''}
-                    ${pr.status==='approved'&&pr.approved_by_name?`<div class="alert alert-success mb-3 py-2 text-sm"><i class="fas fa-check-circle"></i><span>Approved by ${pr.approved_by_name} on ${formatDate(pr.approved_at)}</span></div>`:''}
+                    ${pr.status==='pending'?`<div class="alert alert-warning mb-3 py-2 text-sm"><i class="fas fa-inbox"></i><span>Submitted to Purchaser for canvassing and PO creation.</span></div>`:''}
+                    ${pr.status==='approved'&&pr.approved_by_name?`<div class="alert alert-success mb-3 py-2 text-sm"><i class="fas fa-check-circle"></i><span>Legacy PR approval by ${pr.approved_by_name} on ${formatDate(pr.approved_at)}</span></div>`:''}
                     ${pr.status==='rejected'?`<div class="alert alert-error mb-3 py-2 text-sm"><i class="fas fa-times-circle"></i><span>Rejected: ${pr.rejection_reason||'No reason'}</span></div>`:''}
                     ${pr.status==='converted'?`<div class="alert alert-info mb-3 py-2 text-sm"><i class="fas fa-lock"></i><span>Locked — converted to Purchase Order. GM can reopen if needed.</span></div>`:''}
 
@@ -733,7 +734,7 @@
         async function submitDraftPR(id){
             try{
                 const res=await PurchasingService.submitPR(id);
-                showToast(res?.message||'Purchase Request submitted','success');
+                showToast(res?.message||'Purchase Request Slip submitted','success');
                 document.getElementById('detailModal').close();
                 await Promise.all([loadPRs(), loadRequestedItems()]);
             }catch(e){
@@ -754,7 +755,7 @@
 
         async function reopenConvertedPR(id){
             const reason=await AppDialogs.prompt({
-                title:'Reopen Purchase Request',
+                title:'Reopen Purchase Request Slip',
                 message:'Provide the reason for reopening this converted PR.',
                 label:'Reason',
                 placeholder:'Example: Supplier conversion needs correction',
@@ -765,7 +766,7 @@
             if(!reason)return;
             try{
                 const res=await PurchasingService.reopenPR(id,reason);
-                showToast(res?.message||'Purchase Request reopened','success');
+                showToast(res?.message||'Purchase Request Slip reopened','success');
                 document.getElementById('detailModal').close();
                 await Promise.all([loadPRs(), loadRequestedItems()]);
             }catch(e){
@@ -1206,7 +1207,7 @@
                     notes:document.getElementById('prNotes').value.trim()||null,
                     items
                 });
-                showToast(res?.message||'Purchase Request created!','success');
+                showToast(res?.message||'Purchase Request Slip created!','success');
                 document.getElementById('createModal').close();
                 await Promise.all([loadPRs(), loadRequestedItems()]);
             }catch(e){
@@ -1226,7 +1227,7 @@
                 submitBtn.disabled=false;
                 draftBtn.disabled=false;
                 draftBtn.innerHTML='<i class="fas fa-save"></i> Save Draft';
-                submitBtn.innerHTML='<i class="fas fa-paper-plane"></i> Submit PR';
+                submitBtn.innerHTML='<i class="fas fa-paper-plane"></i> Submit PRS';
             }
         }
 
@@ -1234,11 +1235,11 @@
         function formatDate(d){if(!d)return'—';return new Date(d).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'});}
         function formatDateTime(d){if(!d)return'â€”';return new Date(d).toLocaleString('en-PH',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});}
         function formatPRStatus(status){
-            const labels={draft:'Draft',pending:'Pending GM Approval',approved:'Approved',rejected:'Rejected',converted:'Converted to PO'};
+            const labels={draft:'Draft',pending:'Submitted to Purchaser',approved:'Legacy Approved',rejected:'Rejected',converted:'Converted to PO',partially_converted:'Partially Converted'};
             return labels[status]||PurchasingService.formatStatus(status||'');
         }
         function formatPRStatusShort(status){
-            const labels={draft:'Draft',pending:'Pending',approved:'Approved',rejected:'Rejected',converted:'Converted'};
+            const labels={draft:'Draft',pending:'Inbox',approved:'Legacy',rejected:'Rejected',converted:'Converted',partially_converted:'Partial'};
             return labels[status]||formatPRStatus(status);
         }
         function formatItemStockReference(item){

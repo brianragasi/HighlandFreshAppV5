@@ -951,76 +951,48 @@ function handleGet($db, $action) {
             break;
             
         case 'pending_batches':
-            // Packaged FG rows awaiting put-away (chiller assignment).
-            // Source of truth: finished_goods_inventory created by production packaging
-            // with chiller_id IS NULL. Do NOT query production_batches alone — packaging
-            // already books stock into FG before warehouse receives into a chiller.
+            // V4.1: QC-released production batches awaiting warehouse receive.
+            // Source of truth: production_batches with qc_status='released' and not yet
+            // received into FG (fg_received = 0). FG inventory rows are created HERE,
+            // per packaging line, when the warehouse receives the batch into a chiller.
             try {
-                $hasQcRelease = false;
-                try {
-                    $db->query('SELECT id FROM qc_batch_release LIMIT 0');
-                    $hasQcRelease = true;
-                } catch (Throwable $e) {
-                    $hasQcRelease = false;
-                }
-
-                $qcSelect = $hasQcRelease
-                    ? 'qbr.release_decision as qc_decision, qbr.inspection_datetime as qc_release_date,'
-                    : 'NULL as qc_decision, NULL as qc_release_date,';
-                $qcJoin = $hasQcRelease
-                    ? 'LEFT JOIN qc_batch_release qbr ON fgi.qc_release_id = qbr.id'
-                    : '';
-
                 $stmt = $db->prepare("
-                    SELECT 
-                        fgi.id,
-                        fgi.id as inventory_id,
-                        fgi.batch_id,
-                        fgi.product_id,
-                        COALESCE(pb.batch_code, CONCAT('FG-', fgi.id)) as batch_code,
-                        COALESCE(pb.batch_code, CONCAT('FG-', fgi.id)) as batch_number,
-                        fgi.product_type,
-                        fgi.product_name,
-                        COALESCE(fgi.product_variant, fgi.variant) as variant,
-                        fgi.size_ml,
-                        fgi.quantity,
-                        fgi.remaining_quantity,
-                        fgi.quantity_available,
-                        fgi.quantity_available as total_pieces,
-                        fgi.quantity_available as actual_yield,
-                        COALESCE(fgi.boxes_available, fgi.quantity_boxes, 0) as quantity_boxes,
-                        COALESCE(fgi.pieces_available, fgi.quantity_pieces, 0) as quantity_pieces,
-                        COALESCE(fgi.boxes_available, fgi.quantity_boxes, 0) as boxes_available,
-                        COALESCE(fgi.pieces_available, fgi.quantity_pieces, 0) as pieces_available,
-                        COALESCE(p.pieces_per_box, 1) as pieces_per_box,
-                        COALESCE(p.base_unit, 'piece') as base_unit,
-                        COALESCE(p.box_unit, 'box') as box_unit,
-                        fgi.unit,
-                        fgi.notes,
-                        fgi.manufacturing_date as production_date,
-                        fgi.expiry_date,
-                        fgi.status,
-                        fgi.received_at as packaged_at,
-                        fgi.received_by as packaged_by,
+                    SELECT
+                        pb.id,
+                        pb.id AS batch_id,
+                        pb.batch_code,
+                        pb.batch_code AS batch_number,
+                        pb.product_id,
+                        pb.product_type,
+                        pb.product_variant,
+                        COALESCE(p.product_name, mr.product_name, pb.product_type) AS product_name,
+                        COALESCE(p.pieces_per_box, 1) AS pieces_per_box,
+                        COALESCE(p.base_unit, 'piece') AS base_unit,
+                        COALESCE(p.box_unit, 'box') AS box_unit,
+                        pb.manufacturing_date,
+                        pb.manufacturing_date AS production_date,
+                        pb.expiry_date,
                         pb.qc_status,
-                        {$qcSelect}
-                        mr.id as recipe_id,
-                        1 as awaiting_putaway
-                    FROM finished_goods_inventory fgi
-                    LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
-                    LEFT JOIN products p ON fgi.product_id = p.id
-                    {$qcJoin}
+                        pb.actual_yield,
+                        pb.expected_yield,
+                        pb.packaging_run_id,
+                        pb.run_id,
+                        qbr.release_decision AS qc_decision,
+                        qbr.inspection_datetime AS qc_release_date,
+                        (SELECT COALESCE(SUM(pri.quantity), 0)
+                           FROM packaging_run_items pri
+                           JOIN packaging_runs pr ON pri.packaging_run_id = pr.id
+                          WHERE pr.batch_id = pb.id OR pr.production_run_id = pb.run_id) AS packed_total,
+                        (SELECT MAX(pr.created_at)
+                           FROM packaging_runs pr
+                          WHERE pr.batch_id = pb.id OR pr.production_run_id = pb.run_id) AS packaged_at
+                    FROM production_batches pb
+                    LEFT JOIN products p ON pb.product_id = p.id
                     LEFT JOIN master_recipes mr ON pb.recipe_id = mr.id
-                    WHERE fgi.chiller_id IS NULL
-                      AND COALESCE(fgi.status, 'available') IN ('available', 'low_stock')
-                      AND (
-                        COALESCE(fgi.remaining_quantity, 0) > 0
-                        OR COALESCE(fgi.quantity_available, 0) > 0
-                        OR COALESCE(fgi.pieces_available, 0) > 0
-                        OR COALESCE(fgi.boxes_available, 0) > 0
-                        OR COALESCE(fgi.quantity, 0) > 0
-                      )
-                    ORDER BY fgi.received_at ASC, fgi.id ASC
+                    LEFT JOIN qc_batch_release qbr ON qbr.batch_id = pb.id
+                    WHERE pb.qc_status = 'released'
+                      AND COALESCE(pb.fg_received, 0) = 0
+                    ORDER BY pb.manufacturing_date ASC, pb.id ASC
                 ");
                 $stmt->execute();
                 $pendingItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -1030,26 +1002,47 @@ function handleGet($db, $action) {
                 break;
             }
 
+            // Attach packaging lines (per SKU/size) to each batch for display
+            $lineStmt = $db->prepare("
+                SELECT pri.product_name, pri.product_variant, pri.size_ml, pri.unit_measure, pri.quantity
+                FROM packaging_run_items pri
+                JOIN packaging_runs pr ON pri.packaging_run_id = pr.id
+                WHERE pr.batch_id = ? OR pr.production_run_id = ?
+                ORDER BY pri.size_ml DESC, pri.id ASC
+            ");
+
             foreach ($pendingItems as &$pending) {
-                $ppb = max(1, (int)($pending['pieces_per_box'] ?? 1));
-                $boxes = (int)($pending['boxes_available'] ?? 0);
-                $pieces = (int)($pending['pieces_available'] ?? 0);
-                $booked = (int)($pending['quantity_available']
-                    ?? $pending['remaining_quantity']
-                    ?? $pending['quantity']
-                    ?? 0);
-                // Prefer multi-unit columns when they look consistent with booked qty
-                $multi = ($boxes * $ppb) + $pieces;
-                if ($multi <= 0 && $booked > 0) {
-                    $boxes = $ppb > 1 ? intdiv($booked, $ppb) : 0;
-                    $pieces = $ppb > 1 ? ($booked % $ppb) : $booked;
-                    $multi = $booked;
+                $batchId = (int) $pending['id'];
+                $runId = (int) ($pending['run_id'] ?? 0);
+                $lineStmt->execute([$batchId, $runId]);
+                $lines = $lineStmt->fetchAll(PDO::FETCH_ASSOC);
+
+                // Total pieces: prefer sum of packaging lines, fall back to batch yield
+                $totalPieces = 0;
+                foreach ($lines as $l) {
+                    $totalPieces += (int) ($l['quantity'] ?? 0);
                 }
+                if ($totalPieces <= 0) {
+                    $totalPieces = (int) ($pending['actual_yield'] ?? $pending['expected_yield'] ?? 0);
+                }
+
+                $ppb = max(1, (int) ($pending['pieces_per_box'] ?? 1));
+                $boxes = $ppb > 1 ? intdiv($totalPieces, $ppb) : 0;
+                $pieces = $ppb > 1 ? ($totalPieces % $ppb) : $totalPieces;
+
+                // Representative size/variant for single-line batches
+                $pending['size_ml'] = count($lines) === 1 ? ($lines[0]['size_ml'] ?? null) : null;
+                $pending['variant'] = $pending['product_variant']
+                    ?? (count($lines) === 1 ? ($lines[0]['product_variant'] ?? null) : null);
+                $pending['packaging_lines'] = $lines;
+                $pending['line_count'] = count($lines);
+                $pending['quantity_available'] = $totalPieces;
+                $pending['total_pieces'] = $totalPieces;
+                $pending['actual_yield'] = $totalPieces;
                 $pending['boxes_available'] = $boxes;
                 $pending['pieces_available'] = $pieces;
                 $pending['quantity_boxes'] = $boxes;
                 $pending['quantity_pieces'] = $pieces;
-                $pending['total_pieces'] = $multi > 0 ? $multi : $booked;
                 $pending['inventory_display'] = formatMultiUnitDisplay(
                     $boxes,
                     $pieces,
@@ -1066,7 +1059,7 @@ function handleGet($db, $action) {
             Response::success([
                 'batches' => $pendingItems,
                 'count' => count($pendingItems)
-            ], 'Items awaiting put-away retrieved');
+            ], 'QC-released batches awaiting receive retrieved');
             break;
             
         case 'transactions':
@@ -1512,179 +1505,201 @@ function handlePost($db, $action, $currentUser) {
             break;
             
         case 'receive_batch':
-            // Receive a production batch from QC into FG inventory
+            // V4.1: Receive a QC-released batch into FG inventory.
+            // Creates one FG row per packaging line (per SKU/size) instead of one row for the whole batch.
             if (empty($data['batch_id'])) {
                 Response::error('Batch ID is required', 400);
             }
             if (empty($data['chiller_id'])) {
                 Response::error('Chiller ID is required', 400);
             }
-            
-            $batchId = $data['batch_id'];
-            $chillerId = $data['chiller_id'];
+
+            $batchId = (int) $data['batch_id'];
+            $chillerId = (int) $data['chiller_id'];
             $notes = $data['notes'] ?? '';
-            
-            // Get batch details with QC release info
+
+            // Get batch — must be QC released
             $batchStmt = $db->prepare("
-                SELECT 
-                    pb.*,
-                    pb.product_id as batch_product_id,
-                    COALESCE(pb.actual_yield, pb.expected_yield, 0) as quantity,
-                    COALESCE(mr.product_id, pb.product_id) as resolved_product_id,
-                    COALESCE(mr.product_name, pb.product_type) as product_name,
-                    COALESCE(mr.product_type, pb.product_type) as product_type,
-                    mr.variant,
-                    qbr.id as qc_release_id
+                SELECT pb.*, mr.product_name AS recipe_product_name, mr.product_type AS recipe_product_type
                 FROM production_batches pb
                 LEFT JOIN master_recipes mr ON pb.recipe_id = mr.id
-                LEFT JOIN qc_batch_release qbr ON qbr.batch_id = pb.id AND qbr.release_decision = 'approved'
                 WHERE pb.id = ? AND pb.qc_status = 'released'
             ");
             $batchStmt->execute([$batchId]);
-            $batch = $batchStmt->fetch();
-            
+            $batch = $batchStmt->fetch(PDO::FETCH_ASSOC);
+
             if (!$batch) {
-                Response::error('Batch not found or not released by QC', 404);
+                Response::error('Batch not found or not yet released by QC', 404);
             }
-            
+
             // Check if already received
-            $checkStmt = $db->prepare("SELECT id FROM finished_goods_inventory WHERE batch_id = ?");
+            $checkStmt = $db->prepare("SELECT id FROM finished_goods_inventory WHERE batch_id = ? LIMIT 1");
             $checkStmt->execute([$batchId]);
             if ($checkStmt->fetch()) {
-                Response::error('This batch has already been received', 400);
+                Response::error('This batch has already been received into FG inventory', 400);
             }
-            
-            // Get product_id - prefer batch's own product_id, then recipe's, then lookup
-            $productId = $batch['batch_product_id'] ?? $batch['resolved_product_id'];
-            if (!$productId) {
-                // Look up by product_type or product_name in products table
-                $prodStmt = $db->prepare("
-                    SELECT id FROM products 
-                    WHERE product_name = ? OR category = ? OR product_name LIKE ? 
-                    LIMIT 1
-                ");
-                $prodStmt->execute([
-                    $batch['product_name'], 
-                    $batch['product_type'], 
-                    '%' . $batch['product_type'] . '%'
-                ]);
-                $prod = $prodStmt->fetch();
-                if (!$prod) {
-                    Response::error('Cannot find matching product in products table for this batch. Please create the product first.', 400);
-                }
-                $productId = $prod['id'];
-            }
-            
-            // Get qc_release_id - if not already in batch, look it up
-            $qcReleaseId = $batch['qc_release_id'];
-            if (!$qcReleaseId) {
-                $qcStmt = $db->prepare("SELECT id FROM qc_batch_release WHERE batch_id = ? ORDER BY id DESC LIMIT 1");
-                $qcStmt->execute([$batchId]);
-                $qcRelease = $qcStmt->fetch();
-                $qcReleaseId = $qcRelease ? $qcRelease['id'] : null;
-            }
-            
-            // Ensure we have qc_release_id (required field)
-            if (!$qcReleaseId) {
-                // Create a placeholder QC release record
-                $insertQcStmt = $db->prepare("
-                    INSERT INTO qc_batch_release (release_code, batch_id, inspection_datetime, release_decision, inspected_by)
-                    VALUES (?, ?, NOW(), 'approved', ?)
-                ");
-                $qcCode = 'QCR-' . date('Ymd') . '-' . str_pad($batchId, 4, '0', STR_PAD_LEFT);
-                $insertQcStmt->execute([$qcCode, $batchId, $currentUser['user_id']]);
-                $qcReleaseId = $db->lastInsertId();
-            }
-            
-            $quantity = intval($batch['quantity']);
 
-            $unitConfig = getProductUnitConfig($db, $productId);
-            $piecesPerBox = (int) ($unitConfig['pieces_per_box'] ?? 1);
-            $converted = piecesToBoxes($quantity, $piecesPerBox);
-            $boxes = $converted['boxes'];
-            $pieces = $converted['pieces'];
-            
+            // Get packaging lines for this batch (what production actually packed)
+            $pkgStmt = $db->prepare("
+                SELECT pri.id AS item_id, pri.product_id, pri.product_name, pri.product_variant,
+                       pri.size_ml, pri.unit_measure, pri.quantity
+                FROM packaging_run_items pri
+                JOIN packaging_runs pr ON pri.packaging_run_id = pr.id
+                WHERE pr.batch_id = ? OR pr.production_run_id = ?
+                ORDER BY pri.id
+            ");
+            $pkgStmt->execute([$batchId, (int) ($batch['run_id'] ?? 0)]);
+            $packagingLines = $pkgStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Fallback: if no packaging records (legacy batch), create a single row from batch totals
+            if (empty($packagingLines)) {
+                $fallbackQty = (int) ($batch['actual_yield'] ?? $batch['expected_yield'] ?? 0);
+                if ($fallbackQty <= 0) {
+                    Response::error('No packaging records and no yield on this batch. Cannot receive.', 400);
+                }
+                $packagingLines = [[
+                    'item_id' => null,
+                    'product_id' => $batch['product_id'] ?? null,
+                    'product_name' => $batch['recipe_product_name'] ?? $batch['product_type'] ?? 'Product',
+                    'product_variant' => null,
+                    'size_ml' => null,
+                    'unit_measure' => 'ml',
+                    'quantity' => $fallbackQty,
+                ]];
+            }
+
+            // Resolve QC release ID
+            $qcReleaseId = null;
+            $qcStmt = $db->prepare("SELECT id FROM qc_batch_release WHERE batch_id = ? ORDER BY id DESC LIMIT 1");
+            $qcStmt->execute([$batchId]);
+            $qcRelease = $qcStmt->fetch();
+            $qcReleaseId = $qcRelease ? $qcRelease['id'] : null;
+
             $db->beginTransaction();
-            
+
             try {
-                // Create inventory record with all required fields
-                $stmt = $db->prepare("
-                    INSERT INTO finished_goods_inventory 
-                    (product_id, batch_id, qc_release_id, milk_type_id, product_name, product_type, product_variant,
-                     quantity, quantity_available, remaining_quantity,
-                     quantity_boxes, quantity_pieces, boxes_available, pieces_available,
-                     manufacturing_date, expiry_date, chiller_id, status, received_by, received_at, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?, NOW(), ?)
-                ");
-                
-                $stmt->execute([
-                    $productId,
-                    $batchId,
-                    $qcReleaseId,
-                    $batch['milk_type_id'],
-                    $batch['product_name'] ?? 'Unknown Product',
-                    $batch['product_type'] ?? 'bottled_milk',
-                    $batch['variant'] ?? null,
-                    $quantity,
-                    $quantity,
-                    $quantity,
-                    $boxes,
-                    $pieces,
-                    $boxes,
-                    $pieces,
-                    $batch['manufacturing_date'],
-                    $batch['expiry_date'],
-                    $chillerId,
-                    $currentUser['user_id'],
-                    $notes
-                ]);
-                
-                $inventoryId = $db->lastInsertId();
-                
-                // Mark batch as received
-                $db->prepare("UPDATE production_batches SET fg_received = 1 WHERE id = ?")->execute([$batchId]);
-                
+                $createdIds = [];
+                $totalReceived = 0;
+
+                foreach ($packagingLines as $line) {
+                    $qty = (int) $line['quantity'];
+                    if ($qty <= 0) continue;
+
+                    $productId = $line['product_id'] ? (int) $line['product_id'] : null;
+                    $productName = $line['product_name'] ?: ($batch['recipe_product_name'] ?? 'Product');
+                    $variant = $line['product_variant'] ?? null;
+                    $sizeMl = $line['size_ml'] ? (float) $line['size_ml'] : null;
+
+                    // Resolve product if missing
+                    if (!$productId) {
+                        $prodLookup = $db->prepare("
+                            SELECT id FROM products
+                            WHERE product_name = ? OR category = ?
+                            LIMIT 1
+                        ");
+                        $prodLookup->execute([$productName, $batch['product_type'] ?? 'bottled_milk']);
+                        $found = $prodLookup->fetchColumn();
+                        $productId = $found ? (int) $found : null;
+                    }
+
+                    // Compute boxes/pieces from product pack config
+                    $unitConfig = $productId ? getProductUnitConfig($db, $productId) : ['pieces_per_box' => 1];
+                    $piecesPerBox = max(1, (int) ($unitConfig['pieces_per_box'] ?? 1));
+                    $converted = piecesToBoxes($qty, $piecesPerBox);
+                    $boxes = $converted['boxes'];
+                    $pieces = $converted['pieces'];
+
+                    // Product type mapping
+                    $productTypeMap = [
+                        'bottled_milk' => 'bottled_milk', 'pasteurized_milk' => 'bottled_milk',
+                        'flavored_milk' => 'flavored_milk', 'yogurt' => 'yogurt',
+                        'cheese' => 'cheese', 'butter' => 'butter', 'cream' => 'cream', 'milk_bar' => 'milk_bar',
+                    ];
+                    $fgProductType = $productTypeMap[$batch['product_type'] ?? ''] ?? 'bottled_milk';
+
+                    // Create FG inventory row
+                    $insStmt = $db->prepare("
+                        INSERT INTO finished_goods_inventory
+                        (product_id, batch_id, qc_release_id, milk_type_id, product_name, product_type,
+                         product_variant, variant, size_ml,
+                         quantity, quantity_available, remaining_quantity,
+                         quantity_boxes, quantity_pieces, boxes_available, pieces_available,
+                         unit, manufacturing_date, expiry_date, chiller_id, status,
+                         received_by, received_at, last_movement_at, notes)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pcs', ?, ?, ?, 'available', ?, NOW(), NOW(), ?)
+                    ");
+                    $insStmt->execute([
+                        $productId,
+                        $batchId,
+                        $qcReleaseId,
+                        $batch['milk_type_id'] ?? null,
+                        $productName,
+                        $fgProductType,
+                        $variant,
+                        $variant,
+                        $sizeMl,
+                        $qty, $qty, $qty,
+                        $boxes, $pieces, $boxes, $pieces,
+                        $batch['manufacturing_date'],
+                        $batch['expiry_date'],
+                        $chillerId,
+                        $currentUser['user_id'],
+                        trim(($notes ? $notes . ' · ' : '') . 'Batch ' . ($batch['batch_code'] ?? $batchId) . ' · ' . $productName . ($sizeMl ? " {$sizeMl}ml" : ''))
+                    ]);
+
+                    $fgId = (int) $db->lastInsertId();
+                    $createdIds[] = $fgId;
+                    $totalReceived += $qty;
+
+                    // Link back to packaging_run_item
+                    if ($line['item_id']) {
+                        $db->prepare("UPDATE packaging_run_items SET fg_inventory_id = ? WHERE id = ?")
+                           ->execute([$fgId, (int) $line['item_id']]);
+                    }
+
+                    // Log transaction per line
+                    $logStmt = $db->prepare("
+                        INSERT INTO fg_inventory_transactions
+                        (transaction_code, transaction_type, inventory_id, product_id, quantity,
+                         boxes_quantity, pieces_quantity, quantity_before, quantity_after,
+                         boxes_before, pieces_before, boxes_after, pieces_after,
+                         to_chiller_id, performed_by, reason)
+                        VALUES (?, 'receive', ?, ?, ?, ?, ?, 0, ?, 0, 0, ?, ?, ?, ?, ?)
+                    ");
+                    $logStmt->execute([
+                        'FGT-' . date('Ymd') . '-' . str_pad($fgId, 6, '0', STR_PAD_LEFT),
+                        $fgId,
+                        $productId,
+                        $qty,
+                        $boxes,
+                        $pieces,
+                        $qty,
+                        $boxes,
+                        $pieces,
+                        $chillerId,
+                        $currentUser['user_id'],
+                        'Received from batch ' . ($batch['batch_code'] ?? $batchId) . ' · ' . $productName
+                    ]);
+                }
+
+                // Mark batch as fully received
+                $db->prepare("UPDATE production_batches SET fg_received = 1, updated_at = NOW() WHERE id = ?")
+                   ->execute([$batchId]);
+
                 // Update chiller count
                 $db->prepare("UPDATE chiller_locations SET current_count = current_count + ? WHERE id = ?")
-                   ->execute([$quantity, $chillerId]);
-                
-                // Log transaction
-                $logStmt = $db->prepare("
-                    INSERT INTO fg_inventory_transactions
-                    (transaction_code, transaction_type, inventory_id, product_id, quantity, 
-                     boxes_quantity, pieces_quantity, quantity_before, quantity_after,
-                     boxes_before, pieces_before, boxes_after, pieces_after,
-                     to_chiller_id, performed_by, reason)
-                    VALUES (?, 'receive', ?, ?, ?, ?, ?, 0, ?, 0, 0, ?, ?, ?, ?, ?)
-                ");
-                
-                $logStmt->execute([
-                    'FGT-' . date('Ymd') . '-' . str_pad($inventoryId, 4, '0', STR_PAD_LEFT),
-                    $inventoryId,
-                    $productId,
-                    $quantity,
-                    $boxes,
-                    $pieces,
-                    $quantity,
-                    $boxes,
-                    $pieces,
-                    $chillerId,
-                    $currentUser['user_id'],
-                    'Received from production batch ' . $batch['batch_code']
-                ]);
-                
+                   ->execute([$totalReceived, $chillerId]);
+
                 $db->commit();
-                
+
                 Response::success([
-                    'id' => $inventoryId,
+                    'inventory_ids' => $createdIds,
                     'batch_code' => $batch['batch_code'],
-                    'product_name' => $batch['product_name'] ?? $batch['product_type'],
-                    'quantity' => $quantity,
-                    'boxes' => $boxes,
-                    'pieces' => $pieces,
-                    'chiller_id' => $chillerId
-                ], 'Batch received successfully into FG inventory', 201);
-                
+                    'lines_received' => count($createdIds),
+                    'total_pieces' => $totalReceived,
+                    'chiller_id' => $chillerId,
+                ], "Batch received: {$totalReceived} pieces across " . count($createdIds) . " product line(s) into chiller.", 201);
+
             } catch (Exception $e) {
                 $db->rollBack();
                 throw $e;
@@ -1811,7 +1826,7 @@ function handlePut($db, $action, $currentUser) {
         $check = $db->prepare("
             SELECT fg.*, p.pieces_per_box, p.base_unit, p.box_unit
             FROM finished_goods_inventory fg
-            JOIN products p ON fg.product_id = p.id
+            LEFT JOIN products p ON fg.product_id = p.id
             WHERE fg.id = ?
         ");
         $check->execute([$id]);
@@ -2037,31 +2052,34 @@ function handlePut($db, $action, $currentUser) {
                         quantity_boxes = 0,
                         boxes_available = 0,
                         quantity_pieces = 0,
-                        pieces_available = 0
+                        pieces_available = 0,
+                        disposed_at = NOW(),
+                        disposal_reason = ?
                     WHERE id = ?
                 ");
-                $stmt->execute([$id]);
+                $stmt->execute([$data['reason'] ?? 'Disposed', $id]);
                 
                 // Update chiller count
-                if ($current['chiller_id']) {
-                    $db->prepare("UPDATE chiller_locations SET current_count = current_count - ? WHERE id = ?")
+                if ($current['chiller_id'] && $oldTotal > 0) {
+                    $db->prepare("UPDATE chiller_locations SET current_count = GREATEST(0, current_count - ?) WHERE id = ?")
                        ->execute([$oldTotal, $current['chiller_id']]);
                 }
                 
-                // Log transaction
+                // Log transaction (product_id may be NULL for corrupted items)
+                $productId = $current['product_id'] ?? 0;
                 $logStmt = $db->prepare("
                     INSERT INTO fg_inventory_transactions
                     (transaction_code, transaction_type, inventory_id, product_id, quantity,
                      boxes_quantity, pieces_quantity, quantity_before, quantity_after,
                      boxes_before, pieces_before, boxes_after, pieces_after,
                      performed_by, reason)
-                    VALUES (?, 'dispose', ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, 0, ?, ?)
+                    VALUES (?, 'disposal', ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, 0, ?, ?)
                 ");
                 
                 $logStmt->execute([
                     'FGT-' . date('Ymd') . '-' . uniqid(),
                     $id,
-                    $current['product_id'],
+                    $productId,
                     $oldTotal,
                     $oldBoxes,
                     $oldPieces,
@@ -2083,6 +2101,56 @@ function handlePut($db, $action, $currentUser) {
             } catch (Exception $e) {
                 $db->rollBack();
                 throw $e;
+            }
+            break;
+
+        case 'force_delete':
+            // Force-delete a corrupted inventory record.
+            // Removes all FK-linked children first, then the inventory row itself.
+            // Requires GM role to prevent accidental data loss.
+            if (($currentUser['role'] ?? '') !== 'general_manager') {
+                Response::error('Only GM can force-delete inventory records', 403);
+            }
+
+            $db->beginTransaction();
+            try {
+                // Log what we're about to delete
+                error_log("FG Inventory force_delete: id={$id}, product={$current['product_name']}, batch_id={$current['batch_id']}");
+
+                // 1. Delete dispatch log references
+                $db->prepare("DELETE FROM fg_dispatch_log WHERE inventory_id = ?")->execute([$id]);
+
+                // 2. Delete disposal item references
+                $db->prepare("DELETE FROM disposal_items WHERE source_id = ? AND source_type = 'finished_goods'")->execute([$id]);
+
+                // 3. Delete inventory transaction log
+                $db->prepare("DELETE FROM fg_inventory_transactions WHERE inventory_id = ?")->execute([$id]);
+
+                // 4. Update chiller count if assigned
+                if ($current['chiller_id'] && ($current['boxes_available'] > 0 || $current['pieces_available'] > 0)) {
+                    $totalPieces = boxesToPieces($current['boxes_available'] ?? 0, $current['pieces_available'] ?? 0, $current['pieces_per_box'] ?? 1);
+                    $db->prepare("UPDATE chiller_locations SET current_count = GREATEST(0, current_count - ?) WHERE id = ?")
+                       ->execute([$totalPieces, $current['chiller_id']]);
+                }
+
+                // 5. Delete the inventory row
+                $db->prepare("DELETE FROM finished_goods_inventory WHERE id = ?")->execute([$id]);
+
+                // 6. Clean up orphaned batch if it has no other FG references
+                if ($current['batch_id']) {
+                    $checkBatch = $db->prepare("SELECT COUNT(*) FROM finished_goods_inventory WHERE batch_id = ?");
+                    $checkBatch->execute([$current['batch_id']]);
+                    if ($checkBatch->fetchColumn() == 0) {
+                        $db->prepare("DELETE FROM production_batches WHERE id = ?")->execute([$current['batch_id']]);
+                    }
+                }
+
+                $db->commit();
+                Response::success(null, 'Corrupted inventory record force-deleted successfully');
+
+            } catch (Exception $e) {
+                $db->rollBack();
+                Response::error('Force delete failed: ' . $e->getMessage(), 500);
             }
             break;
             

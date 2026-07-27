@@ -194,7 +194,7 @@
                     <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
                         <div class="form-control">
                             <label class="label py-0"><span class="label-text text-xs">Search</span></label>
-                            <input type="text" id="searchQuery" class="input input-bordered input-sm" 
+                            <input type="text" id="searchQuery" class="input input-bordered input-sm"
                                 placeholder="Transaction # / Customer" onkeyup="handleSearch(event)">
                         </div>
                         <div class="form-control">
@@ -278,7 +278,7 @@
                                     <th>Transaction #</th>
                                     <th>Date/Time</th>
                                     <th>Customer</th>
-                                    <th>Items</th>
+                                    <th id="thItems">Items</th>
                                     <th>Amount</th>
                                     <th>Payment</th>
                                     <th>Status</th>
@@ -419,6 +419,89 @@
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
 
+    <!-- Collection Detail Modal -->
+    <dialog id="collectionDetailModal" class="modal">
+        <div class="modal-box max-w-lg">
+            <h3 class="font-bold text-lg mb-4">
+                <i class="fas fa-hand-holding-dollar text-info mr-2"></i>
+                Official Receipt Details
+            </h3>
+
+            <div class="space-y-4" id="collectionDetailContent">
+                <!-- OR Header -->
+                <div class="bg-base-200 rounded-lg p-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <p class="text-xs text-base-content/60">OR Number</p>
+                            <p class="font-mono font-bold text-lg" id="colDetailOR">--</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-base-content/60">Date & Time</p>
+                            <p class="font-semibold" id="colDetailDate">--</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-base-content/60">Customer</p>
+                            <p class="font-semibold" id="colDetailCustomer">--</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-base-content/60">Cashier</p>
+                            <p class="font-semibold" id="colDetailCashier">--</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Payment Breakdown -->
+                <div class="bg-base-200 rounded-lg p-4">
+                    <h4 class="font-semibold text-sm mb-3">Payment Breakdown</h4>
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <span class="text-base-content/60">DR Number</span>
+                            <span class="font-mono font-semibold" id="colDetailDR">--</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-base-content/60">Balance Before</span>
+                            <span id="colDetailBalanceBefore">₱0.00</span>
+                        </div>
+                        <div class="divider my-1"></div>
+                        <div class="flex justify-between text-lg font-bold">
+                            <span>Amount Collected</span>
+                            <span class="text-success" id="colDetailAmount">₱0.00</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-base-content/60">Payment Method</span>
+                            <span id="colDetailPaymentMethod">--</span>
+                        </div>
+                        <div class="flex justify-between" id="colDetailMetaRow">
+                            <span class="text-base-content/60" id="colDetailMetaLabel">--</span>
+                            <span class="font-mono text-sm" id="colDetailMetaValue">--</span>
+                        </div>
+                        <div class="divider my-1"></div>
+                        <div class="flex justify-between">
+                            <span class="text-base-content/60">Balance After</span>
+                            <span class="font-semibold text-warning" id="colDetailBalanceAfter">₱0.00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Notes -->
+                <div id="colDetailNotesSection" class="hidden bg-base-200 rounded-lg p-4">
+                    <p class="text-xs text-base-content/60 mb-1">Notes</p>
+                    <p class="text-sm" id="colDetailNotes">--</p>
+                </div>
+            </div>
+
+            <div class="modal-action">
+                <button class="btn btn-outline" onclick="printCollection()">
+                    <i class="fas fa-print"></i> Print
+                </button>
+                <form method="dialog">
+                    <button class="btn">Close</button>
+                </form>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
     <!-- Toast Container -->
     <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
 
@@ -524,13 +607,16 @@
             navCollections.classList.toggle('bg-primary', tab === 'collections');
             navCollections.classList.toggle('text-primary-content', tab === 'collections');
 
-            // Update page title
+            // Update page title + hide Items column for collections
+            const thItems = document.getElementById('thItems');
             if (tab === 'sales') {
                 document.getElementById('pageTitle').textContent = 'Sales Transaction History';
                 document.getElementById('tableTitle').innerHTML = '<i class="fas fa-receipt text-primary mr-2"></i> Sales Transactions';
+                if (thItems) thItems.classList.remove('hidden');
             } else {
                 document.getElementById('pageTitle').textContent = 'Collection History';
                 document.getElementById('tableTitle').innerHTML = '<i class="fas fa-hand-holding-dollar text-info mr-2"></i> Collections';
+                if (thItems) thItems.classList.add('hidden');
             }
 
             // Update URL without reload
@@ -556,7 +642,9 @@
             loadHistory();
         }
 
+        let loadHistorySeq = 0;
         async function loadHistory() {
+            const seq = ++loadHistorySeq;
             const params = {
                 from_date: document.getElementById('dateFrom').value,
                 to_date: document.getElementById('dateTo').value,
@@ -574,6 +662,8 @@
                 } else {
                     response = await POSService.getCollectionHistory(params);
                 }
+
+                if (seq !== loadHistorySeq) return;
 
                 if (response && response.data) {
                     // Handle different response formats:
@@ -596,15 +686,22 @@
                         historyData = historyData.map(col => ({
                             ...col,
                             amount: col.amount_collected || col.amount || 0,
-                            status: col.status === 'confirmed' ? 'completed' 
+                            status: col.status === 'confirmed' ? 'completed'
                                   : col.status === 'bounced' ? 'voided'
-                                  : col.status === 'cancelled' ? 'voided' 
+                                  : col.status === 'cancelled' ? 'voided'
                                   : 'pending',
                             cashier_name: `${col.collected_by_first_name || ''} ${col.collected_by_last_name || ''}`.trim()
                         }));
+                        // Deduplicate by id in case of race-condition re-fetch
+                        const seen = new Set();
+                        historyData = historyData.filter(col => {
+                            if (seen.has(col.id)) return false;
+                            seen.add(col.id);
+                            return true;
+                        });
                     }
                     totalPages = response.pagination?.total_pages || response.data?.total_pages || 1;
-                    
+
                     updateStats(response.data.summary || { total_count: response.data.count, total_amount: response.data.total_collected });
                     renderTable();
                     updatePagination(response.pagination?.total || response.data?.count || historyData.length);
@@ -649,7 +746,7 @@
 
             if (currentTab === 'sales') {
                 tbody.innerHTML = historyData.map(tx => {
-                    const statusBadge = tx.status === 'completed' 
+                    const statusBadge = tx.status === 'completed'
                         ? '<span class="badge badge-success badge-sm">Completed</span>'
                         : tx.status === 'voided'
                             ? '<span class="badge badge-error badge-sm">Voided</span>'
@@ -660,7 +757,7 @@
                             <td class="font-mono text-sm">${tx.transaction_code}</td>
                             <td>${formatDateTime(tx.created_at)}</td>
                             <td>${tx.customer_name}</td>
-                            <td class="text-center">${tx.items_count}</td>
+                            <td class="colItems text-center">${tx.items_count}</td>
                             <td class="font-semibold">${formatCurrency(tx.total_amount)}</td>
                             <td>
                                 <span class="badge badge-ghost badge-sm">
@@ -679,7 +776,7 @@
                 }).join('');
             } else {
                 tbody.innerHTML = historyData.map(col => {
-                    const statusBadge = col.status === 'completed' 
+                    const statusBadge = col.status === 'completed'
                         ? '<span class="badge badge-success badge-sm">Completed</span>'
                         : col.status === 'voided'
                             ? '<span class="badge badge-error badge-sm">Voided</span>'
@@ -688,14 +785,14 @@
                     return `
                         <tr class="hover cursor-pointer" onclick="viewTransaction(${col.id}, 'collection')">
                             <td class="font-mono text-sm">${col.or_number}</td>
-                            <td>${formatDateTime(col.created_at)}</td>
+                            <td>${formatDateTime(col.collected_at || col.created_at)}</td>
                             <td>
                                 <div>
                                     <p>${col.customer_name}</p>
                                     <p class="text-xs text-base-content/60">${col.dr_number}</p>
                                 </div>
                             </td>
-                            <td>--</td>
+                            <td class="colItems hidden"></td>
                             <td class="font-semibold text-success">${formatCurrency(col.amount)}</td>
                             <td>
                                 <span class="badge badge-ghost badge-sm">
@@ -718,8 +815,8 @@
         function formatDateTime(dateStr) {
             if (!dateStr) return '--';
             const date = new Date(dateStr);
-            return date.toLocaleString('en-US', { 
-                month: 'short', 
+            return date.toLocaleString('en-US', {
+                month: 'short',
                 day: 'numeric',
                 hour: '2-digit',
                 minute: '2-digit'
@@ -749,12 +846,12 @@
         function updatePagination(total) {
             const from = total === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1;
             const to = Math.min(currentPage * itemsPerPage, total);
-            
+
             document.getElementById('showingFrom').textContent = from;
             document.getElementById('showingTo').textContent = to;
             document.getElementById('showingTotal').textContent = total;
             document.getElementById('pageInfo').textContent = `Page ${currentPage}`;
-            
+
             document.getElementById('btnPrev').disabled = currentPage <= 1;
             document.getElementById('btnNext').disabled = currentPage >= totalPages;
         }
@@ -780,13 +877,16 @@
                 let response;
                 if (type === 'sale') {
                     response = await POSService.getTransaction(id);
+                    if (response && response.data) {
+                        showTransactionDetail(response.data);
+                        return;
+                    }
                 } else {
                     response = await POSService.getCollectionReceipt(id);
-                }
-
-                if (response && response.data) {
-                    showTransactionDetail(response.data);
-                    return;
+                    if (response && response.data) {
+                        showCollectionDetail(response.data);
+                        return;
+                    }
                 }
             } catch (error) {
                 console.error('Error fetching details:', error);
@@ -802,61 +902,96 @@
             document.getElementById('detailCustomer').textContent = data.customer_name || 'Walk-in Customer';
             document.getElementById('detailCashier').textContent = data.cashier_name || '--';
 
-            if (data.is_collection) {
-                // Collection detail
-                document.getElementById('detailItems').innerHTML = `
-                    <tr>
-                        <td colspan="4" class="text-center text-base-content/60">
-                            <p>DR: ${data.dr_number || '--'}</p>
-                            <p class="text-success font-bold text-lg mt-2">${formatCurrency(data.total_amount)}</p>
-                        </td>
-                    </tr>
-                `;
-                document.getElementById('detailSubtotal').textContent = formatCurrency(data.total_amount);
-                document.getElementById('detailDiscountRow').classList.add('hidden');
-                document.getElementById('detailTotal').textContent = formatCurrency(data.total_amount);
-                document.getElementById('detailPaymentMethod').textContent = formatPaymentMethod(data.payment_method);
-                document.getElementById('detailAmountPaidRow').classList.add('hidden');
-                document.getElementById('detailChangeRow').classList.add('hidden');
-                document.getElementById('btnVoid').classList.add('hidden');
+            // Sale detail (collections now handled by showCollectionDetail)
+            const items = data.items || [];
+            document.getElementById('detailItems').innerHTML = items.map(item => `
+                <tr>
+                    <td>${item.product_name}</td>
+                    <td class="text-right">${item.quantity}</td>
+                    <td class="text-right">${formatCurrency(item.unit_price)}</td>
+                    <td class="text-right font-semibold">${formatCurrency(item.total_price)}</td>
+                </tr>
+            `).join('');
+
+            document.getElementById('detailSubtotal').textContent = formatCurrency(data.subtotal);
+
+            if (data.discount_amount > 0) {
+                document.getElementById('detailDiscountRow').classList.remove('hidden');
+                document.getElementById('detailDiscount').textContent = '-' + formatCurrency(data.discount_amount);
             } else {
-                // Sale detail
-                const items = data.items || [];
-                document.getElementById('detailItems').innerHTML = items.map(item => `
-                    <tr>
-                        <td>${item.product_name}</td>
-                        <td class="text-right">${item.quantity}</td>
-                        <td class="text-right">${formatCurrency(item.unit_price)}</td>
-                        <td class="text-right font-semibold">${formatCurrency(item.total_price)}</td>
-                    </tr>
-                `).join('');
-
-                document.getElementById('detailSubtotal').textContent = formatCurrency(data.subtotal);
-                
-                if (data.discount_amount > 0) {
-                    document.getElementById('detailDiscountRow').classList.remove('hidden');
-                    document.getElementById('detailDiscount').textContent = '-' + formatCurrency(data.discount_amount);
-                } else {
-                    document.getElementById('detailDiscountRow').classList.add('hidden');
-                }
-
-                document.getElementById('detailTotal').textContent = formatCurrency(data.total_amount);
-                document.getElementById('detailPaymentMethod').textContent = formatPaymentMethod(data.payment_method);
-                
-                if (data.payment_method === 'cash' && data.amount_paid) {
-                    document.getElementById('detailAmountPaidRow').classList.remove('hidden');
-                    document.getElementById('detailAmountPaid').textContent = formatCurrency(data.amount_paid);
-                    document.getElementById('detailChangeRow').classList.remove('hidden');
-                    document.getElementById('detailChange').textContent = formatCurrency(data.change || 0);
-                } else {
-                    document.getElementById('detailAmountPaidRow').classList.add('hidden');
-                    document.getElementById('detailChangeRow').classList.add('hidden');
-                }
-
-                document.getElementById('btnVoid').classList.toggle('hidden', data.status === 'voided');
+                document.getElementById('detailDiscountRow').classList.add('hidden');
             }
 
+            document.getElementById('detailTotal').textContent = formatCurrency(data.total_amount);
+            document.getElementById('detailPaymentMethod').textContent = formatPaymentMethod(data.payment_method);
+
+            if (data.payment_method === 'cash' && data.amount_paid) {
+                document.getElementById('detailAmountPaidRow').classList.remove('hidden');
+                document.getElementById('detailAmountPaid').textContent = formatCurrency(data.amount_paid);
+                document.getElementById('detailChangeRow').classList.remove('hidden');
+                document.getElementById('detailChange').textContent = formatCurrency(data.change || 0);
+            } else {
+                document.getElementById('detailAmountPaidRow').classList.add('hidden');
+                document.getElementById('detailChangeRow').classList.add('hidden');
+            }
+
+            document.getElementById('btnVoid').classList.toggle('hidden', data.status === 'voided');
             document.getElementById('detailModal').showModal();
+        }
+
+        function showCollectionDetail(data) {
+            document.getElementById('colDetailOR').textContent = data.or_number || '--';
+            document.getElementById('colDetailDate').textContent = formatDateTime(data.collected_at || data.created_at);
+            document.getElementById('colDetailCustomer').textContent = data.customer_name || '--';
+            document.getElementById('colDetailCashier').textContent = data.cashier_name || '--';
+
+            document.getElementById('colDetailDR').textContent = data.dr_number || '--';
+            document.getElementById('colDetailBalanceBefore').textContent = formatCurrency(data.balance_before);
+            document.getElementById('colDetailAmount').textContent = formatCurrency(data.amount_collected);
+            document.getElementById('colDetailPaymentMethod').innerHTML =
+                `<span class="badge badge-ghost badge-sm"><i class="fas ${getPaymentIcon(data.payment_method)} mr-1"></i> ${formatPaymentMethod(data.payment_method)}</span>`;
+            document.getElementById('colDetailBalanceAfter').textContent = formatCurrency(data.balance_after);
+
+            // Show payment metadata (check number, GCash ref, etc.)
+            const metaRow = document.getElementById('colDetailMetaRow');
+            const metaLabel = document.getElementById('colDetailMetaLabel');
+            const metaValue = document.getElementById('colDetailMetaValue');
+            const meta = data.payment_metadata;
+            if (meta) {
+                if (data.payment_method === 'check' && meta.check_number) {
+                    metaLabel.textContent = 'Check #';
+                    metaValue.textContent = meta.check_number + (meta.check_bank ? ` (${meta.check_bank})` : '');
+                    metaRow.classList.remove('hidden');
+                } else if (data.payment_method === 'gcash' && meta.gcash_ref) {
+                    metaLabel.textContent = 'GCash Ref';
+                    metaValue.textContent = meta.gcash_ref;
+                    metaRow.classList.remove('hidden');
+                } else if (data.payment_method === 'bank_transfer' && meta.bank_ref) {
+                    metaLabel.textContent = 'Bank Ref';
+                    metaValue.textContent = meta.bank_ref;
+                    metaRow.classList.remove('hidden');
+                } else {
+                    metaRow.classList.add('hidden');
+                }
+            } else {
+                metaRow.classList.add('hidden');
+            }
+
+            // Notes
+            const notesSection = document.getElementById('colDetailNotesSection');
+            if (data.notes) {
+                document.getElementById('colDetailNotes').textContent = data.notes;
+                notesSection.classList.remove('hidden');
+            } else {
+                notesSection.classList.add('hidden');
+            }
+
+            document.getElementById('collectionDetailModal').showModal();
+        }
+
+        function printCollection() {
+            showToast('Printing...', 'info');
+            window.print();
         }
 
         function printTransaction() {
@@ -866,7 +1001,7 @@
 
         async function voidTransaction() {
             if (!selectedTransaction) return;
-            
+
             const reason = await AuthService.promptText({
                 title: 'Void Transaction',
                 message: 'Enter the reason for voiding this transaction.',

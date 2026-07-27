@@ -1,7 +1,7 @@
 /**
  * Highland Fresh — Production module shared sidebar
  *
- * Floor-first navigation: daily work up top, less-used tools under "More".
+ * Floor-first navigation: requisition -> run -> safety logs -> output -> QC.
  * Include after auth.js / api.js (needs APP_BASE):
  *   <script>window.PRODUCTION_ACTIVE_PAGE = 'dashboard';</script>
  *   <script src="../../js/production/sidebar.js"></script>
@@ -40,26 +40,28 @@
             title: 'Main Menu',
             items: [
                 { id: 'dashboard', label: 'Dashboard', icon: 'fa-th-large', href: 'dashboard.html' },
-                { id: 'workbench', label: 'My Active Runs', icon: 'fa-screwdriver-wrench', href: 'run-workbench.html', badgeId: 'activeRunsBadge', badgeClass: 'badge-warning' },
             ],
         },
         {
-            title: 'Daily Floor Work',
+            title: 'Production Flow',
             items: [
-                { id: 'ccp', label: 'CCP / Temperatures', icon: 'fa-thermometer-half', href: 'ccp_logging.html', badgeId: 'ccpAlertsBadge', badgeClass: 'badge-error' },
-                { id: 'packaging', label: 'Packaging', icon: 'fa-boxes', href: 'packaging.html' },
-                { id: 'requisitions', label: 'Request Materials', icon: 'fa-clipboard-list', href: 'requisitions.html', badgeId: 'pendingReqsBadge', badgeClass: 'badge-warning' },
+                { id: 'requisitions', label: '1 Request Materials', icon: 'fa-clipboard-list', href: 'requisitions.html', badgeId: 'pendingReqsBadge', badgeClass: 'badge-warning' },
+                { id: 'workbench', label: '2 Active Runs', icon: 'fa-screwdriver-wrench', href: 'run-workbench.html', badgeId: 'activeRunsBadge', badgeClass: 'badge-warning' },
+                { id: 'ccp', label: '3 CCP Logs', icon: 'fa-thermometer-half', href: 'run-workbench.html?panel=ccp', badgeId: 'ccpAlertsBadge', badgeClass: 'badge-error' },
+                { id: 'processing', label: '4 Product Processing', icon: 'fa-stream', href: 'run-workbench.html?panel=stages' },
+                { id: 'byproducts', label: '5 Waste & Byproducts', icon: 'fa-recycle', href: 'byproducts.html' },
+                { id: 'qc_handoff', label: '6 Finish & Send to QC', icon: 'fa-clipboard-check', href: 'run-workbench.html?panel=reconcile' },
             ],
         },
         {
-            title: 'More',
+            title: 'Reference & History',
             items: [
                 { id: 'batches', label: 'All Batches', icon: 'fa-box', href: 'batches.html' },
-                { id: 'pasteurization', label: 'Pasteurization', icon: 'fa-fire-alt', href: 'pasteurization.html', badgeId: 'pasteurizationBadge', badgeClass: 'badge-info' },
+                { id: 'pasteurization', label: 'Pasteurization History', icon: 'fa-fire-alt', href: 'pasteurization.html', badgeId: 'pasteurizationBadge', badgeClass: 'badge-info' },
                 { id: 'yield_tracking', label: 'Yield Tracking', icon: 'fa-chart-line', href: 'yield-tracking.html' },
                 { id: 'reconciliation', label: 'Reconciliation', icon: 'fa-balance-scale', href: 'reconciliation.html' },
                 { id: 'recipes', label: 'Recipes', icon: 'fa-book', href: 'recipes.html' },
-                { id: 'byproducts', label: 'Byproducts', icon: 'fa-recycle', href: 'byproducts.html' },
+                { id: 'conversions', label: 'Yogurt Conversions', icon: 'fa-rotate', href: 'conversions.html', badgeId: 'conversionsBadge', badgeClass: 'badge-warning' },
             ],
         },
     ];
@@ -73,10 +75,10 @@
         'ccp_logging.html': 'ccp',
         'ccp.html': 'ccp',
         'yield-tracking.html': 'yield_tracking',
-        'packaging.html': 'packaging',
         'reconciliation.html': 'reconciliation',
         'requisitions.html': 'requisitions',
         'byproducts.html': 'byproducts',
+        'conversions.html': 'conversions',
     };
 
     function detectActivePage() {
@@ -87,11 +89,11 @@
         if (path.indexOf('/production/run-workbench') !== -1) return 'workbench';
         if (path.indexOf('/production/ccp') !== -1) return 'ccp';
         if (path.indexOf('/production/yield-tracking') !== -1) return 'yield_tracking';
-        if (path.indexOf('/production/packaging') !== -1) return 'packaging';
         if (path.indexOf('/production/requisitions') !== -1) return 'requisitions';
+        if (path.indexOf('/production/byproducts') !== -1) return 'byproducts';
         if (path.indexOf('/production/pasteurization') !== -1) return 'pasteurization';
         if (path.indexOf('/production/reconciliation') !== -1) return 'reconciliation';
-        if (path.indexOf('/production/byproducts') !== -1) return 'byproducts';
+        if (path.indexOf('/production/conversions') !== -1) return 'conversions';
         if (path.indexOf('/production/batches') !== -1) return 'batches';
         if (path.indexOf('/production/recipes') !== -1) return 'recipes';
         if (path.indexOf('/production/dashboard') !== -1) return 'dashboard';

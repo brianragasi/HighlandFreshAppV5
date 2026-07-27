@@ -1,16 +1,16 @@
 <?php
 /**
  * Highland Fresh - Pasteurization API
- * 
+ *
  * Handles pasteurization runs: converting raw milk to pasteurized milk
- * 
+ *
  * Endpoints:
  *   GET    ?action=available_raw_milk  - Get available raw milk for pasteurization
  *   GET    ?action=runs               - List pasteurization runs
  *   GET    ?id=X                      - Get single run details
  *   POST   action=create              - Create new pasteurization run
  *   PUT    action=complete            - Complete pasteurization run
- * 
+ *
  * @version 1.0
  */
 
@@ -23,14 +23,60 @@ try {
     $db = Database::getInstance()->getConnection();
     // Use $requestMethod from bootstrap — it already resolves X-HTTP-Method-Override
     global $requestMethod;
-    
+
     switch ($requestMethod) {
         case 'GET':
             $action = getParam('action');
             $runId = getParam('id');
-            
+
             // Get available raw milk for pasteurization
             if ($action === 'available_raw_milk') {
+                $reqId = getParam('req_id');
+
+                // When a specific requisition is provided, return the raw milk
+                // *issued for that requisition* — the warehouse already approved
+                // and dispatched this exact quantity to production. This is the
+                // real "available for this run" number, not the general tank.
+                if ($reqId) {
+                    // Subtract volume already consumed by completed/in-progress
+                    // pasteurization runs linked to this requisition.
+                    $riStmt = $db->prepare("
+                        SELECT ri.issued_quantity, ri.requested_quantity,
+                               ir.requisition_code, ir.status as req_status,
+                               ri.issued_quantity - COALESCE(p_consumed.total_consumed, 0) AS remaining_liters
+                        FROM requisition_items ri
+                        JOIN material_requisitions ir ON ir.id = ri.requisition_id
+                        LEFT JOIN (
+                            SELECT requisition_id, SUM(input_milk_liters) AS total_consumed
+                            FROM pasteurization_runs
+                            WHERE requisition_id = ?
+                              AND status IN ('in_progress', 'completed')
+                        ) p_consumed ON p_consumed.requisition_id = ri.requisition_id
+                        WHERE ri.requisition_id = ?
+                          AND ri.item_name = 'Raw Milk'
+                        LIMIT 1
+                    ");
+                    $riStmt->execute([$reqId, $reqId]);
+                    $riRow = $riStmt->fetch();
+
+                    $issued = (float) ($riRow['issued_quantity'] ?? 0);
+                    $requested = (float) ($riRow['requested_quantity'] ?? 0);
+                    $remaining = max(0, (float) ($riRow['remaining_liters'] ?? $issued));
+
+                    Response::success([
+                        'available_liters' => $remaining,
+                        'req_id' => (int) $reqId,
+                        'req_code' => $riRow['requisition_code'] ?? null,
+                        'req_status' => $riRow['req_status'] ?? null,
+                        'issued_liters' => $issued,
+                        'requested_liters' => $requested,
+                        'consumed_liters' => $issued - $remaining,
+                        'source' => 'requisition'
+                    ], 'Raw milk issued for this requisition retrieved');
+                    return;
+                }
+
+                // Fallback: general available raw milk (no specific requisition)
                 // Get usable milk issued to production via requisitions.
                 // Issued milk is usable only while its original Warehouse Raw batch is not expired.
                 $issuedMilkStmt = $db->prepare("
@@ -47,7 +93,7 @@ try {
                 ");
                 $issuedMilkStmt->execute();
                 $issuedStats = $issuedMilkStmt->fetch();
-                
+
                 // Get milk already used in production runs (raw milk only)
                 $usedMilkSql = "
                     SELECT COALESCE(SUM(milk_liters_used), 0) as total_used
@@ -63,7 +109,7 @@ try {
                 $usedMilkStmt = $db->prepare($usedMilkSql);
                 $usedMilkStmt->execute($usedMilkParams);
                 $usedStats = $usedMilkStmt->fetch();
-                
+
                 // Get milk used in pasteurization runs. V4.0: only count runs that
                 // have actual backing inventory_transactions rows debiting raw
                 // milk. A "completed" run that has no matching transaction (e.g.
@@ -83,37 +129,38 @@ try {
                 ");
                 $pastUsedStmt->execute();
                 $pastStats = $pastUsedStmt->fetch();
-                
+
                 $totalIssued = (float) ($issuedStats['total_issued'] ?? 0);
                 $totalUsed = (float) ($usedStats['total_used'] ?? 0);
                 $pasteurizationUsed = (float) ($pastStats['pasteurization_used'] ?? 0);
                 $availableLiters = max(0, $totalIssued - $totalUsed - $pasteurizationUsed);
-                
+
                 Response::success([
                     'available_liters' => $availableLiters,
                     'total_issued' => $totalIssued,
                     'used_in_production' => $totalUsed,
-                    'used_in_pasteurization' => $pasteurizationUsed
+                    'used_in_pasteurization' => $pasteurizationUsed,
+                    'source' => 'general_tank'
                 ], 'Available raw milk retrieved');
             }
-            
+
             // List pasteurization runs
             if ($action === 'runs' || !$runId) {
                 $status = getParam('status');
                 $limit = (int) getParam('limit', 20);
                 $page = (int) getParam('page', 1);
                 $offset = ($page - 1) * $limit;
-                
+
                 $where = "1=1";
                 $params = [];
-                
+
                 if ($status) {
                     $where .= " AND pr.status = ?";
                     $params[] = $status;
                 }
-                
+
                 $stmt = $db->prepare("
-                    SELECT 
+                    SELECT
                         pr.*,
                         CONCAT(u.first_name, ' ', u.last_name) as performed_by_name
                     FROM pasteurization_runs pr
@@ -124,12 +171,12 @@ try {
                 ");
                 $stmt->execute($params);
                 $runs = $stmt->fetchAll();
-                
+
                 // Get total count
                 $countStmt = $db->prepare("SELECT COUNT(*) FROM pasteurization_runs pr WHERE {$where}");
                 $countStmt->execute($params);
                 $total = $countStmt->fetchColumn();
-                
+
                 Response::success([
                     'runs' => $runs,
                     'pagination' => [
@@ -140,11 +187,11 @@ try {
                     ]
                 ]);
             }
-            
+
             // Get single run
             if ($runId) {
                 $stmt = $db->prepare("
-                    SELECT 
+                    SELECT
                         pr.*,
                         CONCAT(u.first_name, ' ', u.last_name) as performed_by_name
                     FROM pasteurization_runs pr
@@ -153,90 +200,202 @@ try {
                 ");
                 $stmt->execute([$runId]);
                 $run = $stmt->fetch();
-                
+
                 if (!$run) {
                     Response::notFound('Pasteurization run not found');
                 }
-                
+
                 Response::success($run);
             }
             break;
-            
+
         case 'POST':
+            $action = getParam('action');
+            // ----------------------------------------------------------------
+            // Supplemental requisition for raw milk shortfall
+            // ----------------------------------------------------------------
+            if ($action === 'create_supplemental_requisition') {
+                $sourceReqId = (int) getParam('source_requisition_id');
+                $shortfallLiters = (float) getParam('shortfall_liters');
+                $recipeId = (int) getParam('recipe_id');
+                $plannedQty = (float) getParam('planned_quantity');
+                $yieldUnit = getParam('yield_unit', 'liters');
+
+                if (!$sourceReqId || $shortfallLiters <= 0) {
+                    Response::error('Missing source_requisition_id or invalid shortfall_liters', 400);
+                }
+
+                $db->beginTransaction();
+                try {
+                    // Generate supplemental requisition code: REQ-YYYYMMDD-NNN-SUPP
+                    $today = date('Ymd');
+                    $codeStmt = $db->prepare("SELECT COUNT(*) as count FROM material_requisitions WHERE requisition_code LIKE ?");
+                    $codeStmt->execute(["REQ-{$today}-%"]);
+                    $count = $codeStmt->fetch()['count'] + 1;
+                    $reqCode = "REQ-{$today}-" . str_pad($count, 3, '0', STR_PAD_LEFT) . "-SUPP";
+
+                    // Insert the supplemental requisition
+                    $insStmt = $db->prepare("
+                        INSERT INTO material_requisitions (
+                            requisition_code, planned_recipe_id, planned_quantity, planned_yield_unit,
+                            requested_by, department, priority, needed_by_date, purpose,
+                            total_items, status
+                        ) VALUES (?, ?, ?, ?, ?, 'production', 'urgent', CURDATE(), ?, 1, 'pending')
+                    ");
+                    $insStmt->execute([
+                        $reqCode,
+                        $recipeId ?: null,
+                        $plannedQty ?: null,
+                        $yieldUnit,
+                        $currentUser['user_id'],
+                        "Supplemental raw milk ({$shortfallLiters} L) for original requisition #" . $sourceReqId
+                    ]);
+
+                    $newReqId = $db->lastInsertId();
+
+                    // Insert the raw milk item
+                    $itemStmt = $db->prepare("
+                        INSERT INTO requisition_items (
+                            requisition_id, item_name, item_type, requested_quantity,
+                            unit, status, notes
+                        ) VALUES (?, 'Raw Milk', 'raw_milk', ?, 'liters', 'pending', ?)
+                    ");
+                    $itemStmt->execute([
+                        $newReqId,
+                        $shortfallLiters,
+                        "Supplemental request — shortfall from original requisition #" . $sourceReqId
+                    ]);
+
+                    $db->commit();
+
+                    Response::success([
+                        'requisition_id' => $newReqId,
+                        'requisition_code' => $reqCode,
+                        'shortfall_liters' => $shortfallLiters,
+                        'status' => 'pending',
+                        'priority' => 'urgent'
+                    ], "Supplemental requisition {$reqCode} created for {$shortfallLiters} L raw milk. It is waiting for GM approval.");
+
+                } catch (Exception $e) {
+                    $db->rollBack();
+                    Response::error('Failed to create supplemental requisition: ' . $e->getMessage(), 500);
+                }
+                return;
+            }
+
             // Create new pasteurization run
             $inputLiters = (float) getParam('input_liters');
             $temperature = (float) getParam('temperature', 75.0);
             $durationMins = (int) getParam('duration_mins', 15);
+            $durationUnit = getParam('duration_unit', 'minutes');
             $notes = trim(getParam('notes', ''));
-            
+
+            // Normalize duration_unit
+            if (!in_array($durationUnit, ['minutes', 'seconds'])) {
+                $durationUnit = 'minutes';
+            }
+
             // Validation
             $errors = [];
             if ($inputLiters <= 0) $errors['input_liters'] = 'Input liters must be greater than 0';
             if ($temperature < 60 || $temperature > 100) $errors['temperature'] = 'Temperature must be between 60-100°C';
-            if ($durationMins < 1 || $durationMins > 120) $errors['duration_mins'] = 'Duration must be between 1-120 minutes';
-            
-            // Check available raw milk
-            $issuedMilkStmt = $db->prepare("
-                SELECT COALESCE(SUM(it.quantity), 0) as total_issued,
-                       MIN(it.created_at) as earliest_issued_at
-                FROM inventory_transactions it
-                JOIN material_requisitions ir ON ir.id = it.reference_id
-                JOIN raw_milk_inventory rmi ON rmi.id = it.batch_id
-                WHERE it.item_type = 'raw_milk'
-                  AND it.reference_type = 'requisition'
-                  AND it.quantity > 0
-                  AND ir.department = 'production'
-                  AND rmi.expiry_date >= CURDATE()
-            ");
-            $issuedMilkStmt->execute();
-            $issuedStats = $issuedMilkStmt->fetch();
-            
-            $usedMilkSql = "
-                SELECT COALESCE(SUM(milk_liters_used), 0) as total_used
-                FROM production_runs
-                WHERE status IN ('planned', 'in_progress', 'completed', 'pasteurization', 'processing', 'cooling', 'packaging')
-                  AND (milk_source_type IS NULL OR milk_source_type = 'raw')
-            ";
-            $usedMilkParams = [];
-            if (!empty($issuedStats['earliest_issued_at'])) {
-                $usedMilkSql .= " AND created_at >= ?";
-                $usedMilkParams[] = $issuedStats['earliest_issued_at'];
+            if ($durationUnit === 'seconds') {
+                if ($durationMins < 1 || $durationMins > 120) $errors['duration_mins'] = 'Duration must be between 1-120 seconds for HTST';
+            } else {
+                if ($durationMins < 1 || $durationMins > 120) $errors['duration_mins'] = 'Duration must be between 1-120 minutes';
             }
-            $usedMilkStmt = $db->prepare($usedMilkSql);
-            $usedMilkStmt->execute($usedMilkParams);
-            $usedStats = $usedMilkStmt->fetch();
-            
-            $pastUsedStmt = $db->prepare("
-                SELECT COALESCE(SUM(pr.input_milk_liters), 0) as pasteurization_used
-                FROM pasteurization_runs pr
-                WHERE pr.status IN ('in_progress', 'completed')
-                  AND EXISTS (
-                      SELECT 1 FROM inventory_transactions it
-                      WHERE it.item_type = 'raw_milk'
-                        AND it.reference_type = 'pasteurization_run'
-                        AND it.reference_id = pr.id
-                  )
-            ");
-            $pastUsedStmt->execute();
-            $pastStats = $pastUsedStmt->fetch();
-            
-            $availableLiters = max(0, ($issuedStats['total_issued'] ?? 0) - ($usedStats['total_used'] ?? 0) - ($pastStats['pasteurization_used'] ?? 0));
-            
+
+            // Check available raw milk
+            // When a specific requisition is provided, the milk was already
+            // issued by the warehouse for this run. Check the requisition's
+            // issued_quantity (the source of truth), NOT the global tank
+            // (which may have been decremented by the warehouse already).
+            $requisitionId = getParam('requisition_id');
+            $availableLiters = 0;
+
+            if ($requisitionId) {
+                // Subtract volume already consumed by completed/in-progress
+                // pasteurization runs linked to this requisition.
+                $riStmt = $db->prepare("
+                    SELECT ri.issued_quantity - COALESCE(p_consumed.total_consumed, 0) AS remaining_liters
+                    FROM requisition_items ri
+                    LEFT JOIN (
+                        SELECT requisition_id, SUM(input_milk_liters) AS total_consumed
+                        FROM pasteurization_runs
+                        WHERE requisition_id = ?
+                          AND status IN ('in_progress', 'completed')
+                    ) p_consumed ON p_consumed.requisition_id = ri.requisition_id
+                    WHERE ri.requisition_id = ?
+                      AND ri.item_name = 'Raw Milk'
+                    LIMIT 1
+                ");
+                $riStmt->execute([$requisitionId, $requisitionId]);
+                $riRow = $riStmt->fetch();
+                $availableLiters = max(0, (float) ($riRow['remaining_liters'] ?? 0));
+            } else {
+                // Fallback: general available raw milk (no specific requisition)
+                $issuedMilkStmt = $db->prepare("
+                    SELECT COALESCE(SUM(it.quantity), 0) as total_issued,
+                           MIN(it.created_at) as earliest_issued_at
+                    FROM inventory_transactions it
+                    JOIN material_requisitions ir ON ir.id = it.reference_id
+                    JOIN raw_milk_inventory rmi ON rmi.id = it.batch_id
+                    WHERE it.item_type = 'raw_milk'
+                      AND it.reference_type = 'requisition'
+                      AND it.quantity > 0
+                      AND ir.department = 'production'
+                      AND rmi.expiry_date >= CURDATE()
+                ");
+                $issuedMilkStmt->execute();
+                $issuedStats = $issuedMilkStmt->fetch();
+
+                $usedMilkSql = "
+                    SELECT COALESCE(SUM(milk_liters_used), 0) as total_used
+                    FROM production_runs
+                    WHERE status IN ('planned', 'in_progress', 'completed', 'pasteurization', 'processing', 'cooling', 'packaging')
+                      AND (milk_source_type IS NULL OR milk_source_type = 'raw')
+                ";
+                $usedMilkParams = [];
+                if (!empty($issuedStats['earliest_issued_at'])) {
+                    $usedMilkSql .= " AND created_at >= ?";
+                    $usedMilkParams[] = $issuedStats['earliest_issued_at'];
+                }
+                $usedMilkStmt = $db->prepare($usedMilkSql);
+                $usedMilkStmt->execute($usedMilkParams);
+                $usedStats = $usedMilkStmt->fetch();
+
+                $pastUsedStmt = $db->prepare("
+                    SELECT COALESCE(SUM(pr.input_milk_liters), 0) as pasteurization_used
+                    FROM pasteurization_runs pr
+                    WHERE pr.status IN ('in_progress', 'completed')
+                      AND EXISTS (
+                          SELECT 1 FROM inventory_transactions it
+                          WHERE it.item_type = 'raw_milk'
+                            AND it.reference_type = 'pasteurization_run'
+                            AND it.reference_id = pr.id
+                      )
+                ");
+                $pastUsedStmt->execute();
+                $pastStats = $pastUsedStmt->fetch();
+
+                $availableLiters = max(0, ($issuedStats['total_issued'] ?? 0) - ($usedStats['total_used'] ?? 0) - ($pastStats['pasteurization_used'] ?? 0));
+            }
+
             if ($inputLiters > $availableLiters) {
                 $errors['input_liters'] = "Not enough raw milk available. Required: {$inputLiters}L, Available: {$availableLiters}L";
             }
-            
+
             if (!empty($errors)) {
                 Response::validationError($errors);
             }
-            
+
             // Generate run code
             $today = date('Ymd');
             $codeStmt = $db->prepare("SELECT COUNT(*) as count FROM pasteurization_runs WHERE run_code LIKE ?");
             $codeStmt->execute(["PAST-{$today}-%"]);
             $count = $codeStmt->fetch()['count'] + 1;
             $runCode = "PAST-{$today}-" . str_pad($count, 3, '0', STR_PAD_LEFT);
-            
+
             // V4.0 — wrap the run creation + inventory debit in a transaction
             // so they're atomic. Previously the system only inserted into
             // pasteurization_runs with no inventory_transactions debit, which
@@ -272,12 +431,15 @@ try {
                 $stmt = $db->prepare("
                     INSERT INTO pasteurization_runs (
                         run_code, input_milk_liters, output_milk_liters,
-                        temperature, duration_mins,
+                        temperature, duration_mins, duration_unit,
+                        requisition_id,
                         started_at, performed_by, status, notes
-                    ) VALUES (?, ?, 0, ?, ?, NOW(), ?, 'in_progress', ?)
+                    ) VALUES (?, ?, 0, ?, ?, ?, ?, NOW(), ?, 'in_progress', ?)
                 ");
                 $stmt->execute([
-                    $runCode, $inputLiters, $temperature, $durationMins, $currentUser['user_id'], $notes
+                    $runCode, $inputLiters, $temperature, $durationMins, $durationUnit,
+                    $requisitionId ?: null,
+                    $currentUser['user_id'], $notes
                 ]);
                 $runId = $db->lastInsertId();
 
@@ -312,7 +474,7 @@ try {
                 $db->rollBack();
                 throw $e;
             }
-            
+
             Response::created([
                 'id' => $runId,
                 'run_code' => $runCode,
@@ -322,39 +484,39 @@ try {
                 'duration_mins' => $durationMins
             ], 'Pasteurization run started');
             break;
-            
+
         case 'PUT':
             $runId = getParam('id');
             $action = getParam('action');
-            
+
             if (!$runId) {
                 Response::validationError(['id' => 'Run ID is required']);
             }
-            
+
             // Get current run
             $stmt = $db->prepare("SELECT * FROM pasteurization_runs WHERE id = ?");
             $stmt->execute([$runId]);
             $run = $stmt->fetch();
-            
+
             if (!$run) {
                 Response::notFound('Pasteurization run not found');
             }
-            
+
             if ($action === 'complete') {
                 if ($run['status'] !== 'in_progress') {
                     Response::error('Can only complete runs that are in progress');
                 }
-                
+
                 $outputLiters = (float) getParam('output_liters');
                 $expiryDays = (int) getParam('expiry_days', 2); // Pasteurized milk typically expires in 2-3 days
-                
+
                 if ($outputLiters <= 0) {
                     Response::validationError(['output_liters' => 'Output liters must be greater than 0']);
                 }
-                
+
                 // Calculate shrinkage
                 $shrinkagePercent = round((1 - ($outputLiters / $run['input_milk_liters'])) * 100, 2);
-                
+
                 $db->beginTransaction();
 
                 try {
@@ -401,7 +563,7 @@ try {
                     ]);
 
                     $db->commit();
-                    
+
                     Response::success([
                         'id' => $runId,
                         'status' => 'completed',
@@ -410,29 +572,29 @@ try {
                         'batch_code' => $batchCode,
                         'expiry_date' => $expiryDate
                     ], 'Pasteurization completed. Pasteurized milk added to inventory.');
-                    
+
                 } catch (Exception $e) {
                     $db->rollBack();
                     throw $e;
                 }
             }
-            
+
             if ($action === 'cancel') {
                 if ($run['status'] !== 'in_progress') {
                     Response::error('Can only cancel runs that are in progress');
                 }
-                
+
                 $stmt = $db->prepare("UPDATE pasteurization_runs SET status = 'failed' WHERE id = ?");
                 $stmt->execute([$runId]);
-                
+
                 Response::success(['id' => $runId, 'status' => 'failed'], 'Pasteurization run cancelled');
             }
             break;
-            
+
         default:
             Response::error('Method not allowed', 405);
     }
-    
+
 } catch (Exception $e) {
     error_log("Pasteurization API Error: " . $e->getMessage());
     Response::error('An error occurred: ' . $e->getMessage());

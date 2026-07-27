@@ -158,12 +158,14 @@ try {
                 Response::error('actual_units is required', 400);
             }
 
-            $stmt = $db->prepare("UPDATE packaging_estimates SET actual_units = ? WHERE id = ?");
-            $stmt->execute([(int)$actualUnits, $id]);
-
-            if ($stmt->rowCount() === 0) {
+            $chk = $db->prepare("SELECT id FROM packaging_estimates WHERE id = ? LIMIT 1");
+            $chk->execute([$id]);
+            if (!$chk->fetch()) {
                 Response::error('Estimate not found', 404);
             }
+
+            $stmt = $db->prepare("UPDATE packaging_estimates SET actual_units = ? WHERE id = ?");
+            $stmt->execute([(int)$actualUnits, $id]);
 
             Response::success(['id' => (int)$id, 'actual_units' => (int)$actualUnits], 'Actual units recorded');
             break;

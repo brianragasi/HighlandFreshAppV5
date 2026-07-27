@@ -132,9 +132,9 @@
                 </div>
             </div>
             <div class="flex-none gap-2">
-                <button class="btn btn-primary btn-sm" onclick="openRecordCollectionModal()">
-                    <i class="fas fa-plus"></i> Record Collection
-                </button>
+                <span class="badge badge-outline gap-2 py-3 px-4">
+                    <i class="fas fa-cash-register"></i> Cashier records payments in POS
+                </span>
             </div>
         </header>
         
@@ -142,7 +142,7 @@
             <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                 <div>
                     <h1 class="text-2xl font-bold text-base-content">Collections Due</h1>
-                    <p class="text-base-content/60">Track and manage customer payment collections</p>
+                    <p class="text-base-content/60">Monitor customer balances. Payments are recorded by the Cashier.</p>
                 </div>
             </div>
             
@@ -240,68 +240,6 @@
         </footer>
     </div>
     
-    <!-- Record Collection Modal -->
-    <dialog id="collectionModal" class="modal">
-        <div class="modal-box max-w-lg">
-            <form method="dialog">
-                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-            </form>
-            <h3 class="font-bold text-lg mb-4"><i class="fas fa-money-check-alt text-primary mr-2"></i>Record Collection</h3>
-            
-            <form id="collectionForm" class="space-y-4">
-                <div class="form-control">
-                    <label class="label"><span class="label-text">Customer *</span></label>
-                    <select id="collectionCustomer" class="select select-bordered" required onchange="loadCustomerInvoices()">
-                        <option value="">Select customer...</option>
-                    </select>
-                </div>
-                
-                <div class="form-control">
-                    <label class="label"><span class="label-text">Invoice</span></label>
-                    <select id="collectionInvoice" class="select select-bordered">
-                        <option value="">Apply to oldest unpaid invoice</option>
-                    </select>
-                </div>
-                
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Amount Collected *</span></label>
-                        <div class="input-group">
-                            <span class="bg-base-200 px-3 flex items-center">₱</span>
-                            <input type="number" id="collectionAmount" class="input input-bordered w-full" required min="0.01" step="0.01">
-                        </div>
-                    </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Date *</span></label>
-                        <input type="date" id="collectionDate" class="input input-bordered" required>
-                    </div>
-                </div>
-                
-                <div class="form-control">
-                    <label class="label"><span class="label-text">Payment Method</span></label>
-                    <select id="paymentMethod" class="select select-bordered">
-                        <option value="cash">Cash</option>
-                        <option value="check">Check</option>
-                        <option value="bank_transfer">Bank Transfer</option>
-                        <option value="gcash">GCash</option>
-                    </select>
-                </div>
-                
-                <div class="form-control">
-                    <label class="label"><span class="label-text">Reference # / Notes</span></label>
-                    <input type="text" id="collectionReference" class="input input-bordered" placeholder="Check #, transaction ID, etc.">
-                </div>
-                
-                <div class="modal-action">
-                    <button type="button" class="btn" onclick="document.getElementById('collectionModal').close()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-save"></i> Record Collection
-                    </button>
-                </div>
-            </form>
-        </div>
-    </dialog>
-    
     <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
     
     <script src="../../js/vendor/axios.min.js"></script>
@@ -311,7 +249,6 @@
     
     <script>
         let collections = [];
-        let customers = [];
         
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -340,7 +277,7 @@
                 
                 document.getElementById('collectionDate').value = new Date().toISOString().split('T')[0];
                 
-                await Promise.all([loadCollectionsDue(), loadCustomers()]);
+                await loadCollectionsDue();
                 
                 // Check URL params
                 const params = new URLSearchParams(window.location.search);
@@ -377,19 +314,6 @@
                         <p>Failed to load collections data</p>
                         <button class="btn btn-sm btn-ghost mt-2" onclick="loadCollectionsDue()">Retry</button>
                     </td></tr>`;
-            }
-        }
-        
-        async function loadCustomers() {
-            try {
-                const response = await SalesService.getCustomers({ status: 'active' });
-                customers = response.data || [];
-                
-                const select = document.getElementById('collectionCustomer');
-                select.innerHTML = '<option value="">Select customer...</option>' +
-                    customers.map(c => `<option value="${c.id}">${c.customer_name || c.name}</option>`).join('');
-            } catch (error) {
-                console.error('Error loading customers:', error);
             }
         }
         
@@ -472,8 +396,6 @@
                 
                 const code = inv.customer_code || '';
                 const typeLabel = formatCustomerType(inv.customer_type);
-                const safeName = (inv.customer_name || '').replace(/'/g, "\\'");
-                
                 return `
                 <tr class="${rowClass}">
                     <td>
@@ -490,9 +412,9 @@
                     <td><span class="badge ${statusBadge} badge-sm">${statusText}</span></td>
                     <td>
                         ${balance > 0 ? `
-                            <button class="btn btn-primary btn-xs" onclick="quickCollect(${inv.id}, '${safeName}', ${balance})">
-                                <i class="fas fa-hand-holding-usd"></i> Collect
-                            </button>
+                            <span class="badge badge-outline badge-sm gap-1" title="Cashier records payment in POS Collections">
+                                <i class="fas fa-cash-register"></i> Cashier
+                            </span>
                         ` : '-'}
                     </td>
                 </tr>
@@ -541,110 +463,6 @@
             
             renderCollections(filtered);
         }
-        
-        function openRecordCollectionModal() {
-            document.getElementById('collectionForm').reset();
-            document.getElementById('collectionDate').value = new Date().toISOString().split('T')[0];
-            document.getElementById('collectionInvoice').innerHTML = '<option value="">Apply to oldest unpaid invoice</option>';
-            document.getElementById('collectionModal').showModal();
-        }
-        
-        function quickCollect(invoiceId, customerName, balance) {
-            document.getElementById('collectionForm').reset();
-            document.getElementById('collectionDate').value = new Date().toISOString().split('T')[0];
-            document.getElementById('collectionAmount').value = balance.toFixed(2);
-            
-            // Find and select customer, then load their invoices
-            const customerSelect = document.getElementById('collectionCustomer');
-            const customer = customers.find(c => (c.customer_name || c.name) === customerName);
-            if (customer) {
-                customerSelect.value = customer.id;
-                loadCustomerInvoices().then(() => {
-                    // After invoices load, select the specific one if provided
-                    if (invoiceId) {
-                        const invSelect = document.getElementById('collectionInvoice');
-                        invSelect.value = invoiceId;
-                    }
-                });
-            }
-            
-            document.getElementById('collectionModal').showModal();
-        }
-        
-        let loadedCustomerOrders = [];
-
-        async function loadCustomerInvoices() {
-            const customerId = document.getElementById('collectionCustomer').value;
-            const invoiceSelect = document.getElementById('collectionInvoice');
-            const amountInput = document.getElementById('collectionAmount');
-
-            if (!customerId) {
-                invoiceSelect.innerHTML = '<option value="">Select a customer first</option>';
-                loadedCustomerOrders = [];
-                return;
-            }
-
-            try {
-                const response = await SalesService.getCustomerUnpaidInvoices(customerId);
-                const invoices = response.data || [];
-
-                loadedCustomerOrders = invoices;
-
-                if (invoices.length === 0) {
-                    invoiceSelect.innerHTML = '<option value="">No unpaid invoices found</option>';
-                    amountInput.value = '';
-                    return;
-                }
-
-                invoiceSelect.innerHTML = invoices.map(inv => {
-                    const label = inv.dr_number || `DR-${inv.id}`;
-                    const balance = parseFloat(inv.balance_due || 0);
-                    return `<option value="${inv.id}">${label} — Balance: ${formatCurrency(balance)}</option>`;
-                }).join('');
-
-                // Auto-select oldest (first in list, sorted oldest by backend) and pre-fill amount
-                const oldest = invoices[0];
-                amountInput.value = parseFloat(oldest.balance_due || 0).toFixed(2);
-            } catch (error) {
-                console.error('Error loading invoices:', error);
-                invoiceSelect.innerHTML = '<option value="">Failed to load invoices</option>';
-                loadedCustomerOrders = [];
-            }
-        }
-        
-        document.getElementById('collectionForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-
-            let invoiceId = document.getElementById('collectionInvoice').value;
-            if (!invoiceId && loadedCustomerOrders.length > 0) {
-                invoiceId = loadedCustomerOrders[0].id;
-            }
-            invoiceId = parseInt(invoiceId, 10) || null;
-
-            if (!invoiceId) {
-                showToast('No unpaid invoice found for this customer', 'error');
-                return;
-            }
-
-            const data = {
-                customer_id: parseInt(document.getElementById('collectionCustomer').value),
-                invoice_id: invoiceId,
-                amount: parseFloat(document.getElementById('collectionAmount').value),
-                collection_date: document.getElementById('collectionDate').value,
-                payment_method: document.getElementById('paymentMethod').value,
-                reference: document.getElementById('collectionReference').value
-            };
-            
-            try {
-                await SalesService.recordCollection(data);
-                document.getElementById('collectionModal').close();
-                showToast('Collection recorded successfully', 'success');
-                loadCollectionsDue();
-            } catch (error) {
-                console.error('Error recording collection:', error);
-                showToast(error.response?.data?.message || 'Failed to record collection', 'error');
-            }
-        });
     </script>
 </body>
 </html>

@@ -407,7 +407,7 @@ function handlePut($db, $currentUser) {
                 $stmt->execute([$quantity, $mroItemId]);
                 
                 $db->commit();
-                
+
                 Response::success([
                     'item_code' => $itemData['item_code'],
                     'total_issued' => $quantity,

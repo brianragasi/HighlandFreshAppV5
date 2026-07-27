@@ -49,6 +49,7 @@ function handleGet($db, $action, $currentUser) {
             $stats['credit_overrides'] = count(array_filter($items, fn($i) => ($i['category'] ?? '') === 'credit'));
             $stats['disposals'] = count(array_filter($items, fn($i) => ($i['category'] ?? '') === 'disposal'));
             $stats['procurement'] = count(array_filter($items, fn($i) => ($i['category'] ?? '') === 'procurement'));
+            $stats['production_materials'] = count(array_filter($items, fn($i) => ($i['category'] ?? '') === 'production'));
             $stats['all_queues'] = count($items);
             Response::success([
                 'items' => $items,
@@ -208,30 +209,6 @@ function handleGet($db, $action, $currentUser) {
             $reqs = $stmt->fetchAll();
             $pending = array_merge($pending, $reqs);
             
-            // Pending Purchase Requests (Phase 1)
-            try {
-                $stmt = $db->query("
-                    SELECT 
-                        'purchase_request' as type,
-                        pr.id,
-                        pr.pr_number as reference,
-                        CONCAT('PR: ', COALESCE(pr.purpose, 'Purchase request')) as description,
-                        (SELECT COALESCE(SUM(estimated_total), 0) FROM purchase_request_items WHERE purchase_request_id = pr.id) as amount,
-                        NULL as payment_terms,
-                        u.full_name as requested_by,
-                        pr.created_at,
-                        pr.status,
-                        pr.priority
-                    FROM purchase_requests pr
-                    LEFT JOIN users u ON pr.requested_by = u.id
-                    WHERE pr.status = 'pending'
-                ");
-                $prs = $stmt->fetchAll();
-                $pending = array_merge($pending, $prs);
-            } catch (Exception $e) {
-                // purchase_requests table may not exist yet
-            }
-            
             // Sort by priority and date
             usort($pending, function($a, $b) {
                 $priorityOrder = ['urgent' => 0, 'high' => 1, 'normal' => 2, 'low' => 3];
@@ -245,33 +222,7 @@ function handleGet($db, $action, $currentUser) {
             break;
             
         case 'pending_purchase_requests':
-            // Phase 1: pending PRs from Warehouse Raw
-            try {
-                $stmt = $db->query("
-                    SELECT 
-                        pr.*,
-                        u.full_name as requested_by_name,
-                        (SELECT COUNT(*) FROM purchase_request_items WHERE purchase_request_id = pr.id) as item_count,
-                        (SELECT COALESCE(SUM(estimated_total), 0) FROM purchase_request_items WHERE purchase_request_id = pr.id) as estimated_total
-                    FROM purchase_requests pr
-                    LEFT JOIN users u ON pr.requested_by = u.id
-                    WHERE pr.status = 'pending'
-                    ORDER BY 
-                        FIELD(pr.priority, 'urgent', 'high', 'normal', 'low'),
-                        pr.created_at ASC
-                ");
-                $prs = $stmt->fetchAll();
-
-                foreach ($prs as &$pr) {
-                    $itemsStmt = $db->prepare("SELECT * FROM purchase_request_items WHERE purchase_request_id = ?");
-                    $itemsStmt->execute([$pr['id']]);
-                    $pr['items'] = $itemsStmt->fetchAll();
-                }
-
-                Response::success($prs, 'Pending purchase requests retrieved');
-            } catch (Exception $e) {
-                Response::success([], 'No purchase requests table yet');
-            }
+            Response::success([], 'PRS records route to Purchaser; GM approval happens on the Purchase Order');
             break;
             
         default:
@@ -296,37 +247,27 @@ function buildGmApprovalStats(PDO $db): array {
         'count' => (int) $poStats['count'],
         'total_amount' => (float) $poStats['total_amount']
     ];
-    $stats['procurement'] = (int) $poStats['count'];
+    $poCount = (int) $poStats['count'];
 
-    // Requisitions (legacy)
+    // PRS records route to Purchaser. GM approval starts after a PO is submitted.
+    $prCount = 0;
+    $stats['pending_purchase_requests'] = 0;
+
+    $stats['procurement'] = $poCount + $prCount;
+
+    // Production material requisitions waiting for GM approval
     try {
         $stmt = $db->query("SELECT COUNT(*) as count FROM material_requisitions WHERE status = 'pending'");
-        $stats['pending_requisitions'] = (int) $stmt->fetch()['count'];
+        $stats['production_materials'] = (int) $stmt->fetch()['count'];
     } catch (Exception $e) {
-        $stats['pending_requisitions'] = 0;
+        $stats['production_materials'] = 0;
     }
 
-    try {
-        $stmt = $db->query("SELECT COUNT(*) as count FROM purchase_requests WHERE status = 'pending'");
-        $stats['pending_purchase_requests'] = (int) $stmt->fetch()['count'];
-    } catch (Exception $e) {
-        $stats['pending_purchase_requests'] = 0;
-    }
-
-    try {
-        $stmt = $db->query("SELECT COUNT(*) as count FROM item_requests WHERE status = 'pending'");
-        $stats['pending_item_requests'] = (int) $stmt->fetch()['count'];
-    } catch (Exception $e) {
-        $stats['pending_item_requests'] = 0;
-    }
-
-    // Disposals
+    // Disposals awaiting GM signature
     try {
         $stmt = $db->query("SELECT COUNT(*) as count FROM disposals WHERE status = 'pending'");
-        $stats['pending_disposals'] = (int) $stmt->fetch()['count'];
-        $stats['disposals'] = $stats['pending_disposals'];
+        $stats['disposals'] = (int) $stmt->fetch()['count'];
     } catch (Exception $e) {
-        $stats['pending_disposals'] = 0;
         $stats['disposals'] = 0;
     }
 
@@ -354,7 +295,8 @@ function buildGmApprovalStats(PDO $db): array {
 
     $stats['all_queues'] = (int)$stats['credit_overrides']
         + (int)$stats['disposals']
-        + (int)$stats['procurement'];
+        + (int)$stats['procurement']
+        + (int)$stats['production_materials'];
 
     // Today's approvals
     try {
@@ -538,6 +480,12 @@ function processApprovalDecision(PDO $db, string $decision, $currentUser) {
                 break;
 
             case 'purchase_order':
+                // V4.1: PO approvals require the digital signature (password re-entry).
+                // Frontends must call /purchasing/purchase_orders.php?action=approve which enforces it.
+                if ($decision === 'approve') {
+                    $poStepUp = $input['step_up_token'] ?? null;
+                    Auth::requireStepUp($currentUser, 'po_approval', $poStepUp);
+                }
                 $stmt = $db->prepare("
                     UPDATE purchase_orders
                     SET status = ?, approved_by = ?, approved_at = ?,
@@ -547,6 +495,23 @@ function processApprovalDecision(PDO $db, string $decision, $currentUser) {
                 $stmt->execute([$newStatus, $gmId, $now, ucfirst($decision), $remarks, $sourceId]);
                 if ($stmt->rowCount() === 0) {
                     throw new Exception('PO not found or already processed');
+                }
+
+                // V4.1: Notify warehouse + finance when GM approves a PO
+                if ($newStatus === 'approved') {
+                    $poStmt = $db->prepare("SELECT po_number, total_amount, payment_terms FROM purchase_orders WHERE id = ?");
+                    $poStmt->execute([$sourceId]);
+                    $poInfo = $poStmt->fetch(PDO::FETCH_ASSOC);
+                    $poNum = $poInfo['po_number'] ?? ('#' . $sourceId);
+                    $poAmt = number_format((float)($poInfo['total_amount'] ?? 0), 2);
+                    $poTerms = $poInfo['payment_terms'] ?? 'N/A';
+
+                    $notifStmt = $db->prepare("
+                        INSERT INTO procurement_notifications (target_role, notification_type, title, message, reference_type, reference_id)
+                        VALUES (?, ?, ?, ?, 'purchase_order', ?)
+                    ");
+                    $notifStmt->execute(['warehouse_raw', 'po_approved_pending_delivery', 'Approved PO pending delivery', "PO {$poNum} has been approved by GM and is ready for Warehouse receiving.", $sourceId]);
+                    $notifStmt->execute(['finance_officer', 'po_approved_prepare_funds', 'PO approved — prepare funds', "PO {$poNum} ({$poAmt}) was approved by GM. Payment terms: {$poTerms}. Please prepare funds.", $sourceId]);
                 }
                 break;
 
@@ -573,10 +538,12 @@ function processApprovalDecision(PDO $db, string $decision, $currentUser) {
                 INSERT INTO audit_logs (user_id, action, table_name, record_id, new_values, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
             ");
+            $tableName = $type === 'credit_override' ? 'sales_orders' :
+                         ($type === 'purchase_order' ? 'purchase_orders' : $type . 's');
             $auditStmt->execute([
                 $gmId,
                 strtoupper($decision),
-                $type === 'credit_override' ? 'sales_orders' : ($type === 'purchase_order' ? 'purchase_orders' : $type . 's'),
+                $tableName,
                 $sourceId,
                 json_encode(['summary' => ucfirst($decision) . 'd ' . $type . ' #' . $sourceId . ($remarks ? " — $remarks" : ''), 'remarks' => $remarks]),
                 $now,
@@ -696,6 +663,43 @@ function buildGmUnifiedQueue(PDO $db): array {
             ];
         }
     } catch (Exception $e) { /* ignore */     }
+
+    // Production material requisitions
+    try {
+        $stmt = $db->query("
+            SELECT mr.id, mr.requisition_code, mr.purpose, mr.priority, mr.created_at,
+                   mr.department, mr.planned_quantity, mr.planned_yield_unit,
+                   pmr.product_name as planned_product_name,
+                   pmr.variant as planned_variant,
+                   u.full_name as requested_by_name,
+                   (SELECT COUNT(*) FROM requisition_items ri WHERE ri.requisition_id = mr.id) as item_count
+            FROM material_requisitions mr
+            LEFT JOIN master_recipes pmr ON pmr.id = mr.planned_recipe_id
+            LEFT JOIN users u ON u.id = mr.requested_by
+            WHERE mr.status = 'pending'
+            ORDER BY FIELD(mr.priority, 'urgent', 'high', 'normal', 'low'), mr.created_at ASC
+        ");
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $code = $row['requisition_code'] ?: ('REQ-' . $row['id']);
+            $product = trim(($row['planned_product_name'] ?? '') . ($row['planned_variant'] ? ' (' . $row['planned_variant'] . ')' : ''));
+            $qty = $row['planned_quantity'] ? trim($row['planned_quantity'] . ' ' . ($row['planned_yield_unit'] ?? '')) : '';
+            $items[] = [
+                'id' => 'req-' . $row['id'],
+                'source_id' => (int)$row['id'],
+                'category' => 'production',
+                'type' => 'requisition',
+                'priority' => in_array($row['priority'], ['urgent', 'high'], true) ? 'high' : 'medium',
+                'reference' => $code,
+                'title' => 'Production Requisition #' . $code . ' - Awaiting GM Approval',
+                'detail' => trim(($product ?: ($row['purpose'] ?: 'Material request')) . ($qty ? ' - ' . $qty : '') . ' - ' . ($row['requested_by_name'] ?: 'Production')),
+                'amount' => null,
+                'meta' => ((int)($row['item_count'] ?? 0)) . ' item(s)',
+                'requested_at' => $row['created_at'],
+                'href' => 'gm_approvals.html',
+                'status' => 'pending',
+            ];
+        }
+    } catch (Exception $e) { /* ignore */ }
 
     $rank = ['critical' => 0, 'high' => 1, 'medium' => 2, 'low' => 3];
     usort($items, function ($a, $b) use ($rank) {

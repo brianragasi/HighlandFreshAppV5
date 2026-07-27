@@ -481,6 +481,84 @@
         </main>
     </div>
 
+    <!-- Safety Verification Modal -->
+    <dialog id="safetyVerificationModal" class="modal">
+        <div class="modal-box max-w-lg">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onclick="closeSafetyModal()">✕</button>
+            </form>
+            <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
+                <i class="fas fa-clipboard-check text-success"></i>
+                Safety Verification
+            </h3>
+
+            <form id="safetyVerificationForm" onsubmit="submitSafetyVerification(event)">
+                <input type="hidden" id="svInventoryId">
+                <input type="hidden" id="svSourceType">
+                <input type="hidden" id="svProductName">
+                <input type="hidden" id="svBatchCode">
+
+                <div class="bg-base-200 rounded-xl p-4 mb-4">
+                    <p class="text-xs text-base-content/60 mb-1">Product to Transform</p>
+                    <p class="font-semibold" id="svProductNameDisplay">-</p>
+                    <p class="text-xs text-base-content/50" id="svBatchDisplay">Batch: -</p>
+                </div>
+
+                <div class="space-y-3">
+                    <div class="form-control">
+                        <label class="label cursor-pointer justify-start gap-3">
+                            <input type="checkbox" class="checkbox checkbox-success checkbox-sm" id="svOrganoleptic" required>
+                            <span class="label-text">Organoleptic Check (taste, smell, appearance OK)</span>
+                        </label>
+                    </div>
+                    <div class="form-control">
+                        <label class="label cursor-pointer justify-start gap-3">
+                            <input type="checkbox" class="checkbox checkbox-success checkbox-sm" id="svTemperature" required>
+                            <span class="label-text">Temperature Within Safe Range</span>
+                        </label>
+                    </div>
+                    <div class="form-control">
+                        <label class="label cursor-pointer justify-start gap-3">
+                            <input type="checkbox" class="checkbox checkbox-success checkbox-sm" id="svPackaging" required>
+                            <span class="label-text">Packaging Integrity Intact</span>
+                        </label>
+                    </div>
+                    <div class="form-control">
+                        <label class="label cursor-pointer justify-start gap-3">
+                            <input type="checkbox" class="checkbox checkbox-success checkbox-sm" id="svVisual" required>
+                            <span class="label-text">Visual Inspection Passed (no discoloration, curdling)</span>
+                        </label>
+                    </div>
+
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Temperature Reading (°C)</span>
+                        </label>
+                        <input type="number" class="input input-bordered input-sm" id="svTempReading"
+                            step="0.1" min="-10" max="100" placeholder="e.g. 4.5">
+                    </div>
+
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">QC Notes</span>
+                        </label>
+                        <textarea class="textarea textarea-bordered textarea-sm" id="svNotes" rows="2"
+                            placeholder="Any observations or concerns..."></textarea>
+                    </div>
+                </div>
+
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="closeSafetyModal()">Cancel</button>
+                    <button type="submit" class="btn btn-success btn-sm" id="submitSafetyBtn">
+                        <i class="fas fa-check-circle"></i>
+                        Approve & Authorize Transformation
+                    </button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button onclick="closeSafetyModal()">close</button></form>
+    </dialog>
+
     <!-- Transform to Yogurt Modal -->
     <dialog id="transformModal" class="modal">
         <div class="modal-box max-w-lg">
@@ -655,6 +733,7 @@
 
         // State
         let currentSourceData = null;
+        const rawMilkInventoryIndex = new Map();
         let yogurtProducts = [];
 
         // Initialize
@@ -775,9 +854,18 @@
                                 : daysLeft <= 2 ? 'expiry-row-critical'
                                 : daysLeft <= 7 ? 'expiry-row-warning' : '';
 
-                            const qty = p.remaining_liters || p.quantity_available || p.quantity_remaining || 0;
-                            const unit = p.unit_measure || p.unit || 'units';
+                            let qty, unit;
+                            if (p.type === 'finished_goods' && p.base_unit) {
+                                qty = p.quantity_available || p.remaining_liters || 0;
+                                unit = p.base_unit.endsWith('s') ? p.base_unit : p.base_unit + 's';
+                            } else {
+                                qty = p.remaining_liters || p.quantity_available || p.quantity_remaining || 0;
+                                unit = 'L';
+                            }
                             const location = p.location || p.storage_location || 'Warehouse';
+                            const productName = (p.product_name || '').toLowerCase();
+                            const isFlavored = productName.includes('basta') || productName.includes('chocolate') || productName.includes('flavored') || productName.includes('flavoured');
+                            const canTransform = p.can_transform && !isFlavored;
 
                             return `
                                 <tr class="${rowClass} hover">
@@ -792,8 +880,12 @@
                                     <td class="text-right font-bold ${urgency.textClass}">${daysLeft < 0 ? 'EXPIRED' : daysLeft + 'd'}</td>
                                     <td class="text-center">
                                         <div class="flex justify-center gap-1">
-                                            ${p.can_transform ? `
+                                            ${canTransform ? `
                                                 <button class="btn btn-primary btn-xs" onclick="openTransformModal('${escapeHtml(p.type || 'finished_goods')}', ${p.id})" title="Transform to Yogurt">
+                                                    <i class="fas fa-blender"></i>
+                                                </button>
+                                            ` : isFlavored ? `
+                                                <button class="btn btn-ghost btn-xs btn-disabled opacity-40" disabled title="Only plain or white milk can be transformed into yogurt.">
                                                     <i class="fas fa-blender"></i>
                                                 </button>
                                             ` : ''}
@@ -839,6 +931,8 @@
 
                 if (response.success) {
                     const inventory = response.data || [];
+                    rawMilkInventoryIndex.clear();
+                    inventory.forEach(item => rawMilkInventoryIndex.set(String(item.inventory_id || item.id), item));
 
                     if (inventory.length > 0) {
                         table.innerHTML = inventory.map(item => {
@@ -864,12 +958,19 @@
                                     <td class="text-center">
                                         <div class="flex justify-center gap-1">
                                             ${daysLeft <= 2 && daysLeft >= 0 ? `
-                                                <button class="btn btn-primary btn-xs" onclick="openTransformModal('raw_milk', ${item.id})" title="Transform">
+                                                <button class="btn btn-primary btn-xs"
+                                                    onclick="openRawMilkTransformModal(this)"
+                                                    data-inventory-id="${escapeHtml(String(item.inventory_id || item.id))}"
+                                                    data-remaining-liters="${escapeHtml(String(item.remaining_liters || 0))}"
+                                                    data-expiry-date="${escapeHtml(String(item.expiry_date || ''))}"
+                                                    data-batch-number="${escapeHtml(String(item.batch_code || item.receiving_code || '-'))}"
+                                                    data-product-name="${escapeHtml(String(item.product_name || 'Raw Milk'))}"
+                                                    title="Transform">
                                                     <i class="fas fa-blender"></i>
                                                 </button>
                                             ` : ''}
                                             ${daysLeft < 0 ? `
-                                                <button class="btn btn-error btn-xs" onclick="openDisposeModal('raw_milk', ${item.id})" title="Dispose">
+                                                <button class="btn btn-error btn-xs" onclick="openDisposeModal('raw_milk', ${item.inventory_id || item.id})" title="Dispose">
                                                     <i class="fas fa-trash"></i>
                                                 </button>
                                             ` : ''}
@@ -1003,31 +1104,98 @@
                 // Get product details
                 let product;
                 if (type === 'raw_milk') {
-                    const response = await ExpiryService.getRawMilkById(id);
-                    product = response.data;
+                    const cachedItem = rawMilkInventoryIndex.get(String(id));
+                    if (cachedItem) {
+                        product = cachedItem;
+                    } else {
+                        const response = await ExpiryService.getRawMilkById(id);
+                        product = response.data;
+                    }
                 } else {
                     const response = await ExpiryService.getFinishedGoodsById(id);
                     product = response.data;
                 }
 
                 if (product) {
-                    currentSourceData = { type, id, product };
+                    const sourceId = product.inventory_id || product.id || id;
+                    const sourceQty = product.remaining_liters ?? product.quantity_available ?? product.quantity_remaining ?? 0;
+                    const sourceExpiry = product.expiry_date || product.received_date || null;
+                    currentSourceData = { type, id: sourceId, product };
 
-                    document.getElementById('transformSourceId').value = id;
-                    document.getElementById('transformSourceType').value = type;
-                    document.getElementById('transformSourceProduct').textContent = product.product_name || product.type || 'Raw Milk';
-                    document.getElementById('transformSourceQty').textContent = `${(product.remaining_liters || product.quantity_remaining || 0).toLocaleString()} L`;
-                    document.getElementById('transformSourceBatch').textContent = product.batch_number || '-';
-                    document.getElementById('transformSourceExpiry').textContent = formatDate(product.expiry_date);
+                    // Check if safety verification already exists
+                    const svResponse = await axios.get(`${API_BASE_URL}/qc/safety_verification.php`, {
+                        params: { action: 'check', inventory_id: sourceId, source_type: type }
+                    });
 
-                    document.getElementById('transformQuantity').max = product.remaining_liters || product.quantity_remaining || 0;
-                    document.getElementById('transformQuantity').value = '';
-                    document.getElementById('yieldPreview').textContent = '- L';
-
-                    document.getElementById('transformModal').showModal();
+                    if (svResponse.data.success && svResponse.data.data.verified) {
+                        // Already verified — go straight to transform modal
+                        openTransformModalDirect(sourceId, type, product, sourceQty, sourceExpiry);
+                    } else {
+                        // Must verify first
+                        openSafetyVerificationModal(sourceId, type, product);
+                    }
                 }
             } catch (error) {
                 showToast('Failed to load product details', 'error');
+            }
+        }
+
+        function openTransformModalDirect(sourceId, type, product, sourceQty, sourceExpiry) {
+            document.getElementById('transformSourceId').value = sourceId;
+            document.getElementById('transformSourceType').value = type;
+            document.getElementById('transformSourceProduct').textContent = product.product_name || product.type || 'Raw Milk';
+            document.getElementById('transformSourceQty').textContent = `${Number(sourceQty || 0).toLocaleString()} L`;
+            document.getElementById('transformSourceBatch').textContent = product.batch_number || product.receiving_code || '-';
+            document.getElementById('transformSourceExpiry').textContent = formatDate(sourceExpiry);
+
+            document.getElementById('transformQuantity').max = sourceQty || 0;
+            document.getElementById('transformQuantity').value = '';
+            document.getElementById('yieldPreview').textContent = '- L';
+
+            document.getElementById('transformModal').showModal();
+        }
+
+        async function openRawMilkTransformModal(button) {
+            const sourceId = button?.dataset?.inventoryId || '';
+            const sourceQty = parseFloat(button?.dataset?.remainingLiters || '0') || 0;
+            const sourceExpiry = button?.dataset?.expiryDate || '';
+            const sourceBatch = button?.dataset?.batchNumber || '-';
+            const productName = button?.dataset?.productName || 'Raw Milk';
+
+            if (!sourceId) {
+                showToast('Missing raw milk inventory ID', 'error');
+                return;
+            }
+
+            const product = {
+                id: sourceId,
+                inventory_id: sourceId,
+                product_name: productName,
+                remaining_liters: sourceQty,
+                quantity_available: sourceQty,
+                expiry_date: sourceExpiry,
+                batch_number: sourceBatch,
+                type: 'raw_milk'
+            };
+
+            currentSourceData = { type: 'raw_milk', id: sourceId, product };
+
+            // Check if safety verification already exists
+            try {
+                const svResponse = await axios.get(`${API_BASE_URL}/qc/safety_verification.php`, {
+                    params: { action: 'check', inventory_id: sourceId, source_type: 'raw_milk' }
+                });
+
+                if (svResponse.data.success && svResponse.data.data.verified) {
+                    // Already verified — go straight to transform modal
+                    openTransformModalDirect(sourceId, 'raw_milk', product, sourceQty, sourceExpiry);
+                } else {
+                    // Must verify first
+                    openSafetyVerificationModal(sourceId, 'raw_milk', product);
+                }
+            } catch (err) {
+                // If verification check fails, show transform modal anyway
+                openTransformModalDirect(sourceId, 'raw_milk', product, sourceQty, sourceExpiry);
             }
         }
 
@@ -1056,17 +1224,24 @@
             btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Processing...';
 
             try {
+                const inventoryId = currentSourceData?.id || document.getElementById('transformSourceId').value;
+                const sourceType = document.getElementById('transformSourceType').value || currentSourceData?.type || 'finished_goods';
                 const data = {
-                    inventory_id: document.getElementById('transformSourceId').value,
+                    inventory_id: inventoryId,
                     quantity: parseFloat(document.getElementById('transformQuantity').value),
                     notes: document.getElementById('transformNotes').value,
-                    create_production_run: true
+                    create_production_run: true,
+                    target_product_id: document.getElementById('transformOutput').value,
+                    reason: document.getElementById('transformReason').value
                 };
 
                 const response = await ExpiryService.initiateTransformation(
                     data.inventory_id,
                     data.quantity,
-                    data.notes
+                    data.notes,
+                    sourceType,
+                    data.target_product_id,
+                    data.reason
                 );
 
                 if (response.success) {
@@ -1080,6 +1255,76 @@
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-blender"></i> Process Transformation';
+            }
+        }
+
+        function openSafetyVerificationModal(sourceId, type, product) {
+            document.getElementById('svInventoryId').value = sourceId;
+            document.getElementById('svSourceType').value = type;
+            document.getElementById('svProductName').value = product.product_name || 'Raw Milk';
+            document.getElementById('svBatchCode').value = product.batch_number || product.receiving_code || '-';
+            document.getElementById('svProductNameDisplay').textContent = product.product_name || 'Raw Milk';
+            document.getElementById('svBatchDisplay').textContent = 'Batch: ' + (product.batch_number || product.receiving_code || '-');
+
+            // Reset form
+            document.getElementById('svOrganoleptic').checked = false;
+            document.getElementById('svTemperature').checked = false;
+            document.getElementById('svPackaging').checked = false;
+            document.getElementById('svVisual').checked = false;
+            document.getElementById('svTempReading').value = '';
+            document.getElementById('svNotes').value = '';
+
+            document.getElementById('safetyVerificationModal').showModal();
+        }
+
+        function closeSafetyModal() {
+            document.getElementById('safetyVerificationModal').close();
+        }
+
+        async function submitSafetyVerification(e) {
+            e.preventDefault();
+
+            const btn = document.getElementById('submitSafetyBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Submitting...';
+
+            try {
+                const payload = {
+                    inventory_id: document.getElementById('svInventoryId').value,
+                    source_type: document.getElementById('svSourceType').value,
+                    organoleptic_passed: document.getElementById('svOrganoleptic').checked ? 1 : 0,
+                    temperature_passed: document.getElementById('svTemperature').checked ? 1 : 0,
+                    packaging_integrity_passed: document.getElementById('svPackaging').checked ? 1 : 0,
+                    visual_inspection_passed: document.getElementById('svVisual').checked ? 1 : 0,
+                    temperature_reading: document.getElementById('svTempReading').value || null,
+                    notes: document.getElementById('svNotes').value
+                };
+
+                const response = await axios.post(`${API_BASE_URL}/qc/safety_verification.php`, payload);
+
+                if (response.data.success) {
+                    showToast('Safety verification approved — ' + response.data.message, 'success');
+                    closeSafetyModal();
+
+                    // Now open the Transform modal
+                    const type = payload.source_type;
+                    const id = payload.inventory_id;
+                    const product = currentSourceData?.product;
+                    const sourceQty = product?.remaining_liters ?? product?.quantity_available ?? 0;
+                    const sourceExpiry = product?.expiry_date || null;
+
+                    if (product) {
+                        openTransformModalDirect(id, type, product, sourceQty, sourceExpiry);
+                    }
+                } else {
+                    showToast(response.data.message || 'Verification failed', 'error');
+                }
+            } catch (error) {
+                const msg = error.response?.data?.message || error.message || 'Failed to submit verification';
+                showToast(msg, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-check-circle"></i> Approve & Authorize Transformation';
             }
         }
 

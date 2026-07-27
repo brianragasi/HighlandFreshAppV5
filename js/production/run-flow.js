@@ -105,21 +105,21 @@
             const qc = run.qc_status || run.batch_qc_status;
             if (qc === 'released') {
                 return {
-                    key: 'package',
-                    title: 'Package finished goods',
-                    detail: 'Run complete and QC released — record packaging.',
-                    href: `packaging.html?run_id=${run.id}`,
-                    cta: 'Open Packaging',
+                    key: 'released',
+                    title: 'QC released — ready for warehouse',
+                    detail: 'Batch released by QC. Warehouse FG can now receive it into chillers.',
+                    href: workbench,
+                    cta: 'View Run',
                     tone: 'success',
-                    icon: 'fa-boxes',
+                    icon: 'fa-check-circle',
                     ccp,
                 };
             }
             if (qc === 'pending' || qc === 'on_hold' || !qc) {
                 return {
                     key: 'await_qc',
-                    title: 'Waiting for QC release',
-                    detail: 'Production is done. QC must release the batch before packaging.',
+                    title: 'Waiting for QC verification',
+                    detail: 'Production is done and packed. QC must verify counts, packaging, and safety before release.',
                     href: workbench,
                     cta: 'View Status',
                     tone: 'warning',
@@ -239,7 +239,7 @@
             return {
                 key: 'complete',
                 title: 'Complete the run',
-                detail: 'Material balance OK — finish the run. QC must still release the batch before finished-goods packaging.',
+                detail: 'Material balance OK — record packaging output and finish. QC will then verify your counts.',
                 href: workbench + '&panel=reconcile',
                 cta: 'Complete Run',
                 tone: 'success',
@@ -307,7 +307,7 @@
             title: 'Process stages',
             short: 'Process',
             icon: 'fa-stream',
-            description: 'Advance one floor stage at a time. Record any milk losses here so yield recalculates. (FG packaging still needs QC later.)',
+            description: 'Advance one floor stage at a time. Record any milk losses here so yield recalculates.',
         },
         {
             id: 'yield',
@@ -325,7 +325,7 @@
             title: 'Complete run',
             short: 'Finish',
             icon: 'fa-check-double',
-            description: 'Reconcile materials and complete the run. A QC officer must then release the batch before finished-goods packaging.',
+            description: 'Record what you packed (bottle sizes + counts), reconcile materials, and complete. QC will verify your counts before releasing.',
         },
     ];
 

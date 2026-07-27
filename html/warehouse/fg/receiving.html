@@ -275,8 +275,8 @@
                             <i class="fas fa-dolly mr-2"></i>
                             Receive from Production
                         </h2>
-                        <p class="text-primary-content/80">Assign packaged production output to chiller storage.
-                            Inventory is already booked from packaging � this step only sets location (put-away).</p>
+                        <p class="text-primary-content/80">Receive QC-released batches into chiller storage.
+                            Inventory is created here per product line when you receive.</p>
                     </div>
                     <div class="flex gap-2">
                         <a href="inventory.html"
@@ -349,7 +349,7 @@
                         <span class="badge badge-warning" id="pendingBadge">0</span>
                     </div>
                     <p class="text-sm text-base-content/60 mb-4">
-                        Packaged goods from Production that are booked in FG inventory but not yet assigned to a chiller.
+                        QC-released batches from Production waiting to be received into a chiller.
                     </p>
 
                     <div class="overflow-x-auto">
@@ -838,7 +838,7 @@
 
         document.getElementById('receiveForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const inventoryId = document.getElementById('receiveBatchId').value;
+            const batchId = document.getElementById('receiveBatchId').value;
             const chillerId = document.getElementById('receiveChiller').value;
             const notes = document.getElementById('receiveNotes').value;
 
@@ -848,19 +848,24 @@
             }
 
             try {
-                const result = await WarehouseFGService.assignToChiller(inventoryId, chillerId, notes);
-                const display = result?.data?.display || result?.display;
-                const chillerName = result?.data?.chiller_name || result?.chiller_name || 'chiller';
-                showToast(display
-                    ? `Put away ${display} ? ${chillerName}`
-                    : `Put away complete ? ${chillerName}`, 'success');
+                // V4.1: Receive QC-released batch into FG inventory (creates per-size rows)
+                const result = await WarehouseFGService.receiveBatchFromProduction(batchId, chillerId, notes);
+                const d = result?.data || {};
+                const chillerName = chillers.find(c => c.id == chillerId)?.chiller_name
+                    || chillers.find(c => c.id == chillerId)?.name
+                    || 'chiller';
+                const total = d.total_pieces ?? '';
+                const lines = d.lines_received ?? '';
+                showToast(total
+                    ? `Received ${total} pieces (${lines} line${lines == 1 ? '' : 's'}) into ${chillerName}`
+                    : `Batch received into ${chillerName}`, 'success');
                 document.getElementById('receiveModal').close();
                 await loadPendingBatches();
                 await loadRecentReceipts();
                 await loadChillers();
             } catch (error) {
-                console.error('Failed to put away:', error);
-                showToast(error?.response?.data?.message || error?.message || 'Failed to put away', 'error');
+                console.error('Failed to receive batch:', error);
+                showToast(error?.response?.data?.message || error?.message || 'Failed to receive batch', 'error');
             }
         });
     </script>

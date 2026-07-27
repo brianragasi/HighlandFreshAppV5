@@ -80,7 +80,7 @@
                         </div>
                         <div>
                             <h2 class="font-semibold text-base-content">Material Requests</h2>
-                            <p class="text-sm text-base-content/60">Create and track ingredient requests sent to Warehouse Raw.</p>
+                            <p class="text-sm text-base-content/60">Create and track material requests waiting for GM approval and Warehouse Raw release.</p>
                         </div>
                     </div>
                     <button class="btn btn-primary" onclick="showNewRequisitionModal()">
@@ -100,7 +100,7 @@
                             </div>
                             <div>
                                 <div class="text-2xl font-bold stat-value" id="statPending">0</div>
-                                <div class="text-sm text-base-content/60">Pending</div>
+                                <div class="text-sm text-base-content/60">Waiting GM</div>
                             </div>
                         </div>
                     </div>
@@ -180,8 +180,8 @@
                             </label>
                             <select id="statusFilter" class="select select-bordered select-sm" onchange="loadRequisitions()">
                                 <option value="">All Status</option>
-                                <option value="pending">Pending</option>
-                                <option value="approved">Approved (legacy)</option>
+                                <option value="pending">Waiting for GM</option>
+                                <option value="approved">Approved for Release</option>
                                 <option value="partial">Partial</option>
                                 <option value="fulfilled">Fulfilled</option>
                                 <option value="rejected">Rejected</option>
@@ -261,7 +261,7 @@
                 <div class="flex items-start justify-between gap-3">
                     <div>
                         <h3 class="text-lg font-semibold tracking-tight">Request materials</h3>
-                        <p class="text-sm text-base-content/55 mt-0.5">For Warehouse Raw · amounts follow your batch size</p>
+                        <p class="text-sm text-base-content/55 mt-0.5">For GM approval - amounts follow your batch size</p>
                     </div>
                     <form method="dialog">
                         <button type="submit" class="btn btn-ghost btn-sm btn-circle" aria-label="Close">
@@ -365,7 +365,7 @@
                 <div class="px-5 py-3 border-t border-base-300 bg-base-100 flex items-center justify-end gap-2 shrink-0">
                     <button type="button" class="btn btn-ghost" onclick="document.getElementById('newRequisitionModal').close()">Cancel</button>
                     <button type="submit" class="btn btn-primary">
-                        Send to Warehouse Raw
+                        Submit for GM Approval
                     </button>
                 </div>
             </form>
@@ -822,7 +822,11 @@
                 const hasPack = option?.dataset?.packSize && Number(option.dataset.packSize) > 0
                     && option?.dataset?.type === 'ingredient';
                 qtyMode.classList.toggle('hidden', !hasPack);
-                if (!hasPack) {
+                // V4.1 — never flip an enforced whole-pack row back to break-pack.
+                // Rows locked to 'packs' must stay in packs mode; resetting them
+                // here made the toggle read "Break-pack" while the qty/unit still
+                // showed whole packs (e.g. "1 Bags"), which looked broken.
+                if (!hasPack && row.dataset.lockMode !== 'packs') {
                     // Reset to base mode when the user picks something with no pack
                     const baseRadio = row.querySelector('.item-qty-mode-base');
                     if (baseRadio) baseRadio.checked = true;
@@ -1106,21 +1110,22 @@
 
         function createItemRow(item = null) {
             const row = document.createElement('div');
-            // Recipe-driven lock policy (break-pack default):
-            //   lock_mode=base  → qty is scaled need in kg/L (e.g. 0.13 kg sugar)
-            //   lock_mode=packs → only when enforce_whole_packs; qty is whole pack count
             const packCount = item && item.pack_count != null ? Number(item.pack_count) : null;
             const enforceWholePacks = !!(item && item.enforce_whole_packs);
-            const lockMode = (item && item.lock_mode)
-                ? item.lock_mode
-                : ((enforceWholePacks && packCount != null) ? 'packs' : 'base');
+            const lockMode = (enforceWholePacks || (item && item.lock_mode === 'packs'))
+                ? 'packs' : 'base';
             const hasRecipeQty = item && item.quantity != null && Number(item.quantity) > 0;
             const initialLocked = hasRecipeQty || (lockMode === 'packs' && packCount != null);
+            // V4.1 — always record the pack lock mode on the row (not only when
+            // locked). handleItemChange() and refreshItemPackPreview() read this
+            // to avoid flipping an enforced whole-pack row back to break-pack.
+            row.dataset.lockMode = lockMode;
             if (initialLocked) {
                 row.dataset.locked = '1';
-                row.dataset.lockMode = lockMode;
             }
-            if (lockMode === 'packs' && packCount != null) {
+            // V4.0.2 — always store packCount so relock can restore it
+            // if the operator switches to packs mode via the radio button
+            if (packCount != null) {
                 row.dataset.recipePackCount = String(packCount);
             }
             if (item) {
@@ -1173,18 +1178,18 @@
                         <div class="item-stock-preview hidden"></div>
                         <div class="item-pack-preview hidden"></div>
                     </div>
-                    ${initialLocked ? '' : `
+                    ${packCount != null ? `
                     <div class="item-qty-mode flex items-center gap-3 text-[11px] text-base-content/50">
-                        <label class="cursor-pointer flex items-center gap-1">
-                            <input type="radio" name="${qtyModeName}" value="base" class="radio radio-xs item-qty-mode-base" checked onchange="onQtyModeChange(this.closest('.item-row'))">
-                            kg / L
+                        <label class="${lockMode === 'packs' ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'} flex items-center gap-1">
+                            <input type="radio" name="${qtyModeName}" value="base" class="radio radio-xs item-qty-mode-base" ${lockMode === 'base' ? 'checked' : ''} ${lockMode === 'packs' ? 'disabled' : ''} onchange="onQtyModeChange(this.closest('.item-row'))">
+                            Break-pack
                         </label>
                         <label class="cursor-pointer flex items-center gap-1">
-                            <input type="radio" name="${qtyModeName}" value="packs" class="radio radio-xs item-qty-mode-packs" onchange="onQtyModeChange(this.closest('.item-row'))">
+                            <input type="radio" name="${qtyModeName}" value="packs" class="radio radio-xs item-qty-mode-packs" ${lockMode === 'packs' ? 'checked' : ''} onchange="onQtyModeChange(this.closest('.item-row'))">
                             Full packs
                         </label>
-                        <span class="item-pack-mode-warn hidden text-warning">Whole bag will be requested</span>
-                    </div>`}
+                        <span class="item-pack-mode-warn ${lockMode === 'packs' ? '' : 'hidden'} text-warning">Whole bag will be requested</span>
+                    </div>` : ''}
                     <div class="item-override-reason hidden">
                         <input type="text" class="input input-bordered input-xs w-full item-override-reason-input" placeholder="Override reason (required)">
                     </div>
@@ -1200,18 +1205,20 @@
                 handleItemChange(select);
                 let unitValue;
                 let initialQty;
-                if (initialLocked && lockMode === 'packs') {
+                if (lockMode === 'packs') {
                     const packWord = parsePackContainerWord(item.pack_label) || 'pack';
                     unitValue = packWord;
                     const unitSelect = row.querySelector('.item-unit');
                     ensurePackUnitOption(unitSelect, packWord);
                     unitSelect.value = packWord;
-                    initialQty = packCount;
+                    initialQty = packCount != null ? packCount
+                        : (item.quantity != null ? item.quantity : '');
                 } else {
                     unitValue = item.unit || 'units';
                     ensureUnitOption(row.querySelector('.item-unit'), unitValue);
                     row.querySelector('.item-unit').value = unitValue;
-                    initialQty = item.quantity != null ? item.quantity : '';
+                    initialQty = item.scaled_need != null ? item.scaled_need
+                        : (item.quantity != null ? item.quantity : '');
                 }
                 row.querySelector('.item-qty').value = initialQty;
                 row.querySelector('.item-notes').value = item.notes || '';
@@ -1234,6 +1241,8 @@
                 if (packsRadio && packsRadio.checked) warn.classList.remove('hidden');
                 else warn.classList.add('hidden');
             }
+            // V4.0.2 — sync lockMode so pack preview reflects the chosen mode
+            row.dataset.lockMode = packsRadio?.checked ? 'packs' : 'base';
             refreshItemPackPreview(row);
             refreshItemStockPreview(row);
             scheduleMaterialSummary();
@@ -1692,9 +1701,9 @@
                                 <i class="fas fa-eye"></i>
                             </button>
                             ${isReadyForProduction ? `
-                                <button class="btn btn-success btn-xs join-item" onclick="startProductionFromRequisition(${req.id})" title="Start production run from this requisition">
-                                    <i class="fas fa-industry"></i> Start
-                                </button>
+                                <a class="btn btn-success btn-xs join-item" href="dashboard.html" title="Continue from the Production dashboard">
+                                    <i class="fas fa-arrow-right"></i> Dashboard
+                                </a>
                             ` : ''}
                             ${needsPlan && !hasLinkedRun ? `
                                 <button class="btn btn-warning btn-xs join-item" onclick="viewRequisition(${req.id})" title="Set the planned recipe and quantity before starting production">
@@ -1964,8 +1973,8 @@
                 if (response && response.success) {
                     const overrideAck = response.data?.stock_override_acknowledged;
                     const msg = overrideAck
-                        ? 'Request sent with stock shortage noted. Warehouse Raw will issue only what they have.'
-                        : 'Request sent to Warehouse Raw. They will issue the listed amounts.';
+                        ? 'Request sent with stock shortage noted. It is waiting for GM approval.'
+                        : 'Request submitted. It is waiting for GM approval.';
                     showToast(msg, 'success');
                     document.getElementById('newRequisitionModal').close();
                     closeStockShortageModal();
@@ -2489,128 +2498,6 @@
             `;
         }
         
-        async function approveRequisition(id) {
-            const confirmed = await AuthService.confirmAction({
-                title: 'Approve Requisition',
-                message: 'Approve this requisition?',
-                confirmText: 'Approve',
-                tone: 'success',
-                icon: 'fa-check-circle'
-            });
-            if (!confirmed) return;
-            
-            try {
-                const response = await ProductionService.approveRequisition(id);
-                if (response.success) {
-                    showToast('Requisition approved', 'success');
-                    loadRequisitions();
-                    loadStats();
-                } else {
-                    showToast(response.message || 'Failed to approve', 'error');
-                }
-            } catch (error) {
-                showToast(error.message || 'Failed to approve requisition', 'error');
-            }
-        }
-        
-        async function rejectRequisition(id) {
-            const reason = await AuthService.promptText({
-                title: 'Reject Requisition',
-                message: 'Enter the rejection reason.',
-                label: 'Rejection reason',
-                placeholder: 'Required reason',
-                confirmText: 'Reject',
-                tone: 'error',
-                icon: 'fa-times-circle',
-                required: true
-            });
-            if (reason === null) return;
-            
-            try {
-                const response = await ProductionService.rejectRequisition(id, reason);
-                if (response.success) {
-                    showToast('Requisition rejected', 'success');
-                    loadRequisitions();
-                    loadStats();
-                } else {
-                    showToast(response.message || 'Failed to reject', 'error');
-                }
-            } catch (error) {
-                showToast(error.message || 'Failed to reject requisition', 'error');
-            }
-        }
-        
-        /**
-         * Start a production run directly from a fulfilled requisition.
-         * Fetches the requisition to confirm state + grab the planned recipe/qty,
-         * prompts the user to confirm, then hands off to batches.html with the
-         * pre-fill params. The batches page opens the new-run modal pre-filled;
-         * createRun sends material_requisition_id back so the backend can do the
-         * REQ -> RUN link. The modal's "Create Run" button is the final commit,
-         * which gives the user one last chance to review the scaled ingredients.
-         */
-        async function startProductionFromRequisition(reqId) {
-            let req;
-            try {
-                const response = await ProductionService.getRequisition(reqId);
-                if (!response.success || !response.data) {
-                    showToast('Could not load requisition details', 'error');
-                    return;
-                }
-                req = response.data;
-            } catch (error) {
-                showToast(error.message || 'Failed to load requisition', 'error');
-                return;
-            }
-
-            if (!req.planned_recipe_id || !req.planned_quantity) {
-                showToast('This requisition is missing a planned recipe or quantity. Open it to add them first.', 'warning');
-                return;
-            }
-            if (req.planned_recipe_id && !req.planned_recipe_exists && !req.planned_product_name) {
-                showToast('This requisition points to a recipe that no longer exists. Create a new requisition from an active recipe.', 'warning');
-                return;
-            }
-            if (req.production_run_id) {
-                showToast('This requisition is already linked to a production run.', 'warning');
-                loadRequisitions();
-                return;
-            }
-            const itemMismatch = (req.items || []).some(item => {
-                const requested = Number(item.requested_quantity || 0);
-                const issued = Number(item.issued_quantity || 0);
-                return item.status !== 'fulfilled' || issued + 0.0005 < requested;
-            });
-            if (req.status !== 'fulfilled' || itemMismatch) {
-                showToast(`Requisition is not ready (status: ${req.status}). Wait for Warehouse Raw to fulfill it.`, 'warning');
-                return;
-            }
-
-            const productName = req.planned_product_name || 'this product';
-            const variant = req.planned_variant ? ` (${req.planned_variant})` : '';
-            const qty = `${req.planned_quantity} ${req.planned_yield_unit || 'units'}`;
-            const confirmed = await AuthService.confirmAction({
-                title: 'Start Production Run',
-                message: `Start a production run for ${productName}${variant} at ${qty}? All materials have been issued by Warehouse Raw. The new run will be linked back to this requisition.`,
-                confirmText: 'Start Run',
-                tone: 'success',
-                icon: 'fa-industry'
-            });
-            if (!confirmed) return;
-
-            // Hand off to batches.html?action=new with the pre-fill params. The modal
-            // there opens pre-filled, and createRun sends material_requisition_id back
-            // so the backend can do the REQ -> RUN link.
-            const params = new URLSearchParams({
-                action: 'new',
-                req_id: String(req.id),
-                recipe_id: String(req.planned_recipe_id),
-                planned_quantity: String(req.planned_quantity),
-                req_code: req.requisition_code || ''
-            });
-            window.location.href = `batches.html?${params.toString()}`;
-        }
-
         async function cancelRequisition(id) {
             const confirmed = await AuthService.confirmAction({
                 title: 'Cancel Requisition',
@@ -2662,6 +2549,13 @@
         }
 
         function formatStatusLabel(status) {
+            const labels = {
+                pending: 'Waiting for GM',
+                approved: 'Approved for Release',
+                partial: 'Partially Released',
+                fulfilled: 'Released'
+            };
+            if (labels[status]) return labels[status];
             return String(status || 'pending')
                 .replace(/_/g, ' ')
                 .replace(/\b\w/g, char => char.toUpperCase());

@@ -508,6 +508,40 @@
                         </label>
                     </div>
 
+                    <!-- V4.1: Physical Count Verification -->
+                    <div class="bg-base-200 rounded-xl p-4 space-y-3">
+                        <h4 class="font-semibold text-sm flex items-center gap-2">
+                            <i class="fas fa-calculator text-primary"></i> Physical Count Verification
+                        </h4>
+                        <div id="productionPackedInfo" class="text-sm text-base-content/70">
+                            <span class="loading loading-spinner loading-xs"></span> Loading production output...
+                        </div>
+                        <!-- Default: single pieces count (used when product has no box config) -->
+                        <div id="countSimple" class="form-control">
+                            <label class="label py-1">
+                                <span class="label-text text-xs font-medium" id="countSimpleLabel">Pieces you counted</span>
+                            </label>
+                            <input type="number" min="0" class="input input-bordered input-sm max-w-xs" id="qcVerifiedPieces" placeholder="0">
+                        </div>
+                        <!-- Boxed products only: boxes + loose split -->
+                        <div id="countBoxed" class="grid grid-cols-2 gap-3 hidden">
+                            <div class="form-control">
+                                <label class="label py-1">
+                                    <span class="label-text text-xs font-medium">Full boxes physically counted</span>
+                                </label>
+                                <input type="number" min="0" class="input input-bordered input-sm" id="qcVerifiedBoxes" placeholder="0">
+                            </div>
+                            <div class="form-control">
+                                <label class="label py-1">
+                                    <span class="label-text text-xs font-medium">Extra loose pieces physically counted</span>
+                                </label>
+                                <input type="number" min="0" class="input input-bordered input-sm" id="qcVerifiedPiecesBoxed" placeholder="0">
+                            </div>
+                        </div>
+                        <p id="countBoxedGuide" class="text-xs text-base-content/60 hidden"></p>
+                        <p id="countComparisonHint" class="text-xs text-base-content/50 hidden"></p>
+                    </div>
+
                     <!-- Verification Decision -->
                     <div class="form-control">
                         <label class="label">
@@ -1076,6 +1110,98 @@
             toggleRejectReason();
         }
 
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        // V4.1: Show what production packed so QC knows what to verify
+        function renderProductionPackedInfo(batch) {
+            const el = document.getElementById('productionPackedInfo');
+            const total = batch.production_packed_total || 0;
+            const lines = batch.packaging_lines || [];
+
+            if (total <= 0 && lines.length === 0) {
+                el.innerHTML = '<span class="text-warning"><i class="fas fa-exclamation-triangle"></i> No packaging records found for this batch. Count against actual yield: <strong>' + (batch.actual_yield || 0) + ' pieces</strong></span>';
+                return;
+            }
+
+            let html = '<p class="font-medium mb-1">Production recorded: <strong>' + total + ' pieces</strong> across ' + lines.length + ' line(s)</p>';
+            if (batchHasBoxConfig(batch)) {
+                const split = getExpectedBoxSplit(batch, total);
+                html += '<p class="text-xs text-base-content/60 mb-2">Expected count format: <strong>' + split.boxes + ' full ' + escapeHtml(batch.box_unit || 'box') + '(es)</strong> + <strong>' + split.loose + ' loose ' + escapeHtml(batch.base_unit || 'piece') + '(s)</strong> (' + split.piecesPerBox + ' pieces per box).</p>';
+            }
+            if (lines.length > 0) {
+                html += '<ul class="list-disc list-inside text-xs space-y-0.5">';
+                lines.forEach(l => {
+                    const size = l.size_ml ? l.size_ml + (l.unit_measure || 'ml') : '';
+                    const variant = l.product_variant ? ' (' + l.product_variant + ')' : '';
+                    html += '<li>' + (l.product_name || 'Product') + variant + (size ? ' · ' + size : '') + ' — <strong>' + l.quantity + ' pcs</strong></li>';
+                });
+                html += '</ul>';
+            }
+            el.innerHTML = html;
+        }
+
+        function getExpectedBoxSplit(batch, totalPieces = null) {
+            const pieces = Number(totalPieces ?? batch?.production_packed_total ?? batch?.actual_yield ?? 0) || 0;
+            const piecesPerBox = Math.max(1, Number(batch?.pieces_per_box) || 1);
+            return {
+                boxes: Math.floor(pieces / piecesPerBox),
+                loose: pieces % piecesPerBox,
+                piecesPerBox,
+            };
+        }
+
+        // V4.1: Does this product actually get packed into boxes? (pieces_per_box > 1)
+        function batchHasBoxConfig(batch) {
+            const ppb = Number(batch?.pieces_per_box) || 0;
+            return ppb > 1;
+        }
+
+        // V4.1: Read QC's physical count as total pieces, based on active mode
+        function readQcCountPieces() {
+            if (currentVerifyBatch && batchHasBoxConfig(currentVerifyBatch)) {
+                const boxes = parseInt(document.getElementById('qcVerifiedBoxes').value) || 0;
+                const loose = parseInt(document.getElementById('qcVerifiedPiecesBoxed').value) || 0;
+                const ppb = Number(currentVerifyBatch.pieces_per_box) || 1;
+                return (boxes * ppb) + loose;
+            }
+            return parseInt(document.getElementById('qcVerifiedPieces').value) || 0;
+        }
+
+        // V4.1: Live count comparison as QC types
+        function updateCountHint() {
+            const hint = document.getElementById('countComparisonHint');
+            if (!currentVerifyBatch) { hint.classList.add('hidden'); return; }
+            const qcTotal = readQcCountPieces();
+            if (qcTotal === 0) { hint.classList.add('hidden'); return; }
+            const prodTotal = currentVerifyBatch.production_packed_total || currentVerifyBatch.actual_yield || 0;
+            const diff = qcTotal - prodTotal;
+            hint.classList.remove('hidden');
+            if (diff === 0) {
+                hint.className = 'text-xs text-success';
+                hint.innerHTML = '<i class="fas fa-check-circle"></i> Your count matches production (' + prodTotal + ' pieces)';
+            } else {
+                hint.className = 'text-xs text-error';
+                if (batchHasBoxConfig(currentVerifyBatch)) {
+                    const boxes = parseInt(document.getElementById('qcVerifiedBoxes').value) || 0;
+                    const loose = parseInt(document.getElementById('qcVerifiedPiecesBoxed').value) || 0;
+                    const ppb = Number(currentVerifyBatch.pieces_per_box) || 1;
+                    hint.innerHTML = '<i class="fas fa-exclamation-circle"></i> You entered ' + boxes + ' box(es) x ' + ppb + ' plus ' + loose + ' loose = ' + qcTotal + ' pieces. Production recorded ' + prodTotal + '. Variance: ' + (diff > 0 ? '+' : '') + diff + '. Release will be blocked.';
+                } else {
+                    hint.innerHTML = '<i class="fas fa-exclamation-circle"></i> Variance: ' + (diff > 0 ? '+' : '') + diff + ' (you: ' + qcTotal + ', production: ' + prodTotal + '). Release will be blocked.';
+                }
+            }
+        }
+        document.getElementById('qcVerifiedBoxes')?.addEventListener('input', updateCountHint);
+        document.getElementById('qcVerifiedPieces')?.addEventListener('input', updateCountHint);
+        document.getElementById('qcVerifiedPiecesBoxed')?.addEventListener('input', updateCountHint);
+
         async function openVerifyModal(batchId) {
             currentBatchId = batchId;
             currentVerifyBatch = null;
@@ -1090,7 +1216,8 @@
                     document.getElementById('verifyBatchId').value = b.id;
                     document.getElementById('verifyBatchNumber').textContent = b.batch_code;
                     document.getElementById('verifyProduct').textContent = b.product_name || b.product_type || '-';
-                    document.getElementById('verifyQuantity').textContent = `${b.raw_milk_liters?.toLocaleString() || '-'} L (Expected: ${b.expected_yield || '-'} units)`;
+                    const packedPieces = b.production_packed_total || b.actual_yield || 0;
+                    document.getElementById('verifyQuantity').textContent = `${b.raw_milk_liters?.toLocaleString() || '-'} L input / ${packedPieces.toLocaleString()} pieces packed`;
                     document.getElementById('verifyProduced').textContent = b.manufacturing_date ? formatDate(b.manufacturing_date) : '-';
 
                     // Side-by-side actual (production) vs standard — auto-populated
@@ -1104,6 +1231,29 @@
                     document.getElementById('verifyNotes').value = '';
                     document.getElementById('rejectReason').value = '';
                     document.getElementById('rejectReasonGroup').classList.add('hidden');
+
+                    // V4.1: Reset count fields and show production's packaging output
+                    document.getElementById('qcVerifiedBoxes').value = '';
+                    document.getElementById('qcVerifiedPieces').value = '';
+                    document.getElementById('qcVerifiedPiecesBoxed').value = '';
+                    document.getElementById('countComparisonHint').classList.add('hidden');
+                    // Show boxes+loose split only for products actually packed in boxes
+                    const boxed = batchHasBoxConfig(b);
+                    document.getElementById('countSimple').classList.toggle('hidden', boxed);
+                    document.getElementById('countBoxed').classList.toggle('hidden', !boxed);
+                    const boxGuide = document.getElementById('countBoxedGuide');
+                    if (boxed) {
+                        const split = getExpectedBoxSplit(b, packedPieces);
+                        document.getElementById('qcVerifiedBoxes').placeholder = String(split.boxes);
+                        document.getElementById('qcVerifiedPiecesBoxed').placeholder = String(split.loose);
+                        boxGuide.classList.remove('hidden');
+                        boxGuide.innerHTML = 'Production count equals <strong>' + split.boxes + ' full ' + escapeHtml(b.box_unit || 'box') + '(es)</strong> and <strong>' + split.loose + ' loose ' + escapeHtml(b.base_unit || 'piece') + '(s)</strong>. Enter what you physically counted.';
+                    } else {
+                        document.getElementById('qcVerifiedPieces').placeholder = String(packedPieces || 0);
+                        boxGuide.classList.add('hidden');
+                        boxGuide.textContent = '';
+                    }
+                    renderProductionPackedInfo(b);
 
                     applyCcpGateToVerifyForm(b.ccp_summary);
 
@@ -1151,6 +1301,13 @@
                     organoleptic_appearance: document.getElementById('checkAppearance').checked,
                     organoleptic_smell: document.getElementById('checkSmell').checked,
                     ccp_acknowledged: document.getElementById('checkCCP').checked,
+                    // V4.1: Packaging integrity + physical count
+                    packaging_integrity_passed: document.getElementById('checkPackaging').checked,
+                    labeling_passed: document.getElementById('checkLabeling').checked,
+                    qc_verified_boxes: batchHasBoxConfig(currentVerifyBatch) ? (document.getElementById('qcVerifiedBoxes').value || null) : null,
+                    qc_verified_pieces: batchHasBoxConfig(currentVerifyBatch)
+                        ? (document.getElementById('qcVerifiedPiecesBoxed').value || null)
+                        : (document.getElementById('qcVerifiedPieces').value || null),
                 };
 
                 if (decision === 'rejected') {

@@ -458,7 +458,21 @@
                 }
                 document.getElementById('runsInProgress').textContent = activeRuns.length;
 
+                // Update conversions badge
+                try {
+                    const convRes = await axios.get(`${API_BASE_URL}/production/conversions.php`, { params: { action: 'summary' } });
+                    if (convRes.data.success && window.ProductionSidebar) {
+                        ProductionSidebar.showBadge('conversionsBadge', convRes.data.data.pending || 0);
+                    }
+                } catch (e) { /* optional */ }
+
                 if (!activeRuns.length) {
+                    const readyReqs = await loadReadyRequisitions();
+                    if (readyReqs.length) {
+                        container.innerHTML = readyReqs.map((req, index) => renderReadyRequisitionCard(req, index === 0)).join('');
+                        return;
+                    }
+
                     const canStart = dashState.availableMilk > 0;
                     container.innerHTML = `
                         <div class="text-center py-8 px-2">
@@ -519,6 +533,72 @@
                         <a class="link font-semibold" href="run-workbench.html">Open workbench</a>
                     </div>`;
             }
+        }
+
+        async function loadReadyRequisitions() {
+            try {
+                const response = await ProductionService.getRequisitions({
+                    workflow: 'active',
+                    status: 'fulfilled',
+                    limit: 8
+                });
+                const rows = response?.data || [];
+                return rows.filter(req => {
+                    const hasRun = !!(req.production_run_id || req.run_code);
+                    const hasPlan = Number(req.planned_recipe_id || 0) > 0 && Number(req.planned_quantity || 0) > 0;
+                    const recipeOk = Number(req.planned_recipe_exists || 0) > 0 || !!req.planned_product_name;
+                    const pendingLines = Number(req.pending_item_count || 0);
+                    const partialLines = Number(req.partial_item_count || 0);
+                    return !hasRun && hasPlan && recipeOk && pendingLines === 0 && partialLines === 0;
+                });
+            } catch (error) {
+                console.error('Ready requisitions error:', error);
+                return [];
+            }
+        }
+
+        function renderReadyRequisitionCard(req, isPrimary) {
+            const product = `${req.planned_product_name || 'Production batch'}${req.planned_variant ? ` (${req.planned_variant})` : ''}`;
+            const qty = `${req.planned_quantity || ''} ${req.planned_yield_unit || ''}`.trim();
+            const isYogurt = String(req.planned_product_type || '').toLowerCase() === 'yogurt';
+            const href = isYogurt
+                ? `pasteurization.html?from_requisition=${encodeURIComponent(req.id)}`
+                : buildRunStartHref(req);
+            const cta = isYogurt ? 'Pasteurize Milk' : 'Prepare Run';
+            const title = isYogurt ? 'Pasteurize released milk' : 'Materials released';
+            const detail = isYogurt
+                ? 'Warehouse Raw released the materials. Yogurt must use pasteurized milk before the run starts.'
+                : 'Warehouse Raw released the materials. Prepare the planned run from this request.';
+
+            return `
+                <div class="work-queue-item ${isPrimary ? 'is-primary' : ''}">
+                    <div class="wq-meta">
+                        ${isPrimary ? '<p class="text-[0.65rem] font-bold uppercase tracking-wide text-primary mb-0.5">Do this next</p>' : ''}
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="font-mono font-bold text-sm">${escapeHtml(req.requisition_code || '')}</span>
+                            <span class="badge badge-success badge-xs">Released</span>
+                        </div>
+                        <p class="text-sm text-base-content/75 truncate">${escapeHtml(product)}${qty ? ` - ${escapeHtml(qty)}` : ''}</p>
+                        <p class="text-sm font-semibold mt-1">${escapeHtml(title)}</p>
+                        <p class="text-xs text-base-content/55">${escapeHtml(detail)}</p>
+                    </div>
+                    <div class="flex gap-2 shrink-0 w-full md:w-auto">
+                        <a href="${href}" class="btn btn-primary btn-sm flex-1 md:flex-none gap-1 min-w-[9rem]">
+                            ${escapeHtml(cta)} <i class="fas fa-arrow-right text-xs"></i>
+                        </a>
+                    </div>
+                </div>`;
+        }
+
+        function buildRunStartHref(req) {
+            const params = new URLSearchParams({
+                action: 'new',
+                req_id: String(req.id),
+                recipe_id: String(req.planned_recipe_id),
+                planned_quantity: String(req.planned_quantity),
+                req_code: req.requisition_code || ''
+            });
+            return `batches.html?${params.toString()}`;
         }
 
         function escapeHtml(s) {

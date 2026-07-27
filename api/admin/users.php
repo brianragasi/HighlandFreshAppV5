@@ -498,6 +498,12 @@ function createUser() {
     $hasOnboarding = hasOnboardingColumns();
     $hasMethodCol = hasOnboardingMethodColumn();
 
+    // Ensure auth_invites table exists BEFORE starting transaction
+    // CREATE TABLE causes implicit commit in MySQL, must be outside transaction
+    if ($onboardingMethod === 'email_invite') {
+        ensureAdminAuthInvitesTable();
+    }
+
     $pdo->beginTransaction();
     try {
         if ($hasOnboarding) {
@@ -553,8 +559,6 @@ function createUser() {
         ];
 
         if ($onboardingMethod === 'email_invite') {
-            ensureAdminAuthInvitesTable();
-
             // Invalidate unused invites (none yet for new user, but keep pattern)
             $pdo->prepare("UPDATE auth_invites SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL")
                 ->execute([$userId]);
@@ -575,33 +579,10 @@ function createUser() {
                 'email_sent_to' => $data['email'],
                 'expires_at' => $expiresAt,
                 'email_sent' => false,
+                'invite_url' => $inviteUrl,
             ];
 
-            try {
-                if (!class_exists('Mailer')) {
-                    require_once __DIR__ . '/../config/mailer.php';
-                }
-                $roleName = formatRoleDisplayName($data['role']);
-                $bodyHtml = buildUserInviteEmailBody($data['full_name'], $roleName, $inviteUrl, $expiresAt);
-                $emailHtml = Mailer::buildTemplate('Welcome to Highland Fresh', $bodyHtml);
-                Mailer::send(
-                    $data['email'],
-                    'Welcome to Highland Fresh — Set Your Password',
-                    $emailHtml
-                );
-                $responseData['invite']['email_sent'] = true;
-            } catch (Throwable $mailErr) {
-                error_log('Create-user invite email error: ' . $mailErr->getMessage());
-                $responseData['invite']['email_sent'] = false;
-                $responseData['invite']['email_error'] = $mailErr->getMessage();
-                // Admin can copy the link if SMTP fails (token only in this response)
-                $responseData['invite']['invite_url'] = $inviteUrl;
-            }
-
-            // Never return the raw token except as invite_url on mail failure
-            $message = !empty($responseData['invite']['email_sent'])
-                ? 'User created. Invitation email sent.'
-                : 'User created, but the invitation email failed. Use the invite link shown once.';
+            $message = 'User created. Invitation email will be sent.';
         } else {
             // Path B — return plaintext password exactly once
             $responseData['temp_credential'] = [
@@ -614,12 +595,61 @@ function createUser() {
         }
 
         $pdo->commit();
+    } catch (PDOException $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log('User create failed: ' . $e->getMessage());
+        // Handle MySQL duplicate entry error (1062) as validation error
+        if ($e->getCode() === '23000' || $e->getCode() === 1062) {
+            $msg = $e->getMessage();
+            if (strpos($msg, 'username') !== false || strpos($msg, 'Duplicate entry') !== false) {
+                Response::error('Username already exists', 400);
+            }
+            if (strpos($msg, 'email') !== false) {
+                Response::error('Email already exists', 400);
+            }
+            if (strpos($msg, 'employee_id') !== false) {
+                Response::error('Employee ID already exists', 400);
+            }
+            if (strpos($msg, 'login_identifier') !== false) {
+                Response::error('A user with this login identifier already exists', 400);
+            }
+            Response::error('Duplicate entry: ' . $msg, 400);
+        }
+        Response::error('Failed to create user: ' . $e->getMessage(), 500);
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
         error_log('User create failed: ' . $e->getMessage());
         Response::error('Failed to create user: ' . $e->getMessage(), 500);
+    }
+
+    // Send invitation email OUTSIDE the transaction (decoupled from DB)
+    if ($onboardingMethod === 'email_invite') {
+        try {
+            if (!class_exists('Mailer')) {
+                require_once __DIR__ . '/../config/mailer.php';
+            }
+            $roleName = formatRoleDisplayName($data['role']);
+            $bodyHtml = buildUserInviteEmailBody($data['full_name'], $roleName, $inviteUrl, $expiresAt);
+            $emailHtml = Mailer::buildTemplate('Welcome to Highland Fresh', $bodyHtml);
+            Mailer::send(
+                $data['email'],
+                'Welcome to Highland Fresh — Set Your Password',
+                $emailHtml
+            );
+            $responseData['invite']['email_sent'] = true;
+            $message = 'User created. Invitation email sent.';
+        } catch (Throwable $mailErr) {
+            error_log('Create-user invite email error: ' . $mailErr->getMessage());
+            $responseData['invite']['email_sent'] = false;
+            $responseData['invite']['email_error'] = $mailErr->getMessage();
+            // Admin can copy the link if SMTP fails (token only in this response)
+            $responseData['invite']['invite_url'] = $inviteUrl;
+            $message = 'User created, but the invitation email failed. Use the invite link shown once.';
+        }
     }
 
     try {

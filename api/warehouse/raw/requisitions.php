@@ -4,10 +4,10 @@
  *
  * Manages requisition fulfillment from production/maintenance.
  *
- * Workflow (V4.0 — no GM approval gate):
- *   1. Production creates a requisition   -> status 'pending' (see
- *      api/production/requisitions.php). Warehouse Raw sees it immediately.
- *   2. Warehouse Raw issues the materials -> status 'fulfilled' (all lines
+ * Workflow:
+ *   1. Production creates a requisition   -> status 'pending' for GM approval.
+ *   2. GM approves the requisition        -> status 'approved'.
+ *   3. Warehouse Raw issues the materials -> status 'fulfilled' (all lines
  *      full) or 'partial' (some lines issued, top-up expected).
  *
  * GET    - List requisitions, get details
@@ -107,12 +107,12 @@ function handleGet($db, $currentUser) {
             ";
             $params = [];
 
-            // V4.0 — no GM approval gate. Warehouse sees 'pending' requests
-            // immediately and can act on them. 'approved' is kept in the
-            // filter for legacy rows that pre-date this change.
+            // Warehouse Raw can only act after GM approval.
+
+
             if (!$status) {
                 if (in_array($currentUser['role'], ['warehouse_raw', 'general_manager'])) {
-                    $sql .= " AND ir.status IN ('pending', 'approved', 'partial', 'fulfilled')";
+                    $sql .= " AND ir.status IN ('approved', 'partial', 'fulfilled')";
                 } else {
                     // Requesters see their own requisitions
                     $sql .= " AND ir.requested_by = ?";
@@ -133,11 +133,11 @@ function handleGet($db, $currentUser) {
                 $params[] = $priority;
             }
 
-            // 'pending' is the actionable state now. Sort it first so
-            // warehouse staff see the queue in the right order.
+            // Approved requests are the actionable queue for warehouse staff.
+
             $sql .= " ORDER BY
                 ir.created_at DESC,
-                CASE ir.status WHEN 'pending' THEN 1 WHEN 'approved' THEN 2 WHEN 'partial' THEN 3 ELSE 4 END,
+                CASE ir.status WHEN 'approved' THEN 1 WHEN 'partial' THEN 2 WHEN 'fulfilled' THEN 3 ELSE 4 END,
                 CASE ir.priority
                     WHEN 'urgent' THEN 1
                     WHEN 'high' THEN 2
@@ -287,8 +287,8 @@ function handleGet($db, $currentUser) {
             
         case 'pending_count':
             // Get count of requisitions awaiting warehouse action.
-            // V4.0 — 'pending' is the actionable state; 'approved' is kept
-            // for legacy rows that pre-date the workflow change.
+            // Approved requisitions are waiting for Warehouse Raw release.
+
             $stmt = $db->prepare("
                 SELECT
                     COUNT(*) as total,
@@ -296,7 +296,7 @@ function handleGet($db, $currentUser) {
                     SUM(CASE WHEN priority = 'high' THEN 1 ELSE 0 END) as high,
                     SUM(CASE WHEN needed_by_date <= CURDATE() THEN 1 ELSE 0 END) as overdue
                 FROM material_requisitions
-                WHERE status IN ('pending', 'approved')
+                WHERE status = 'approved'
             ");
             $stmt->execute();
             $counts = $stmt->fetch();
@@ -326,14 +326,14 @@ function handlePut($db, $currentUser) {
     }
     
     switch ($action) {
-        // V4.0 — Approve / Reject are no longer supported on this endpoint.
-        // Production requisitions are visible to warehouse immediately on
-        // submit. Kept as explicit 400 responses so any legacy client that
-        // still POSTs these gets a clear migration message instead of a
-        // silent 404.
+        // Approve / Reject are handled by the GM approval queue.
+
+
+
+
         case 'approve':
             Response::error(
-                "The 'approve' action is no longer required. Production requisitions become visible to Warehouse Raw as soon as production submits them (status 'pending').",
+                "GM approval is handled in the Admin Pending Approvals page.",
                 400
             );
             break;
@@ -350,10 +350,10 @@ function handlePut($db, $currentUser) {
             $db->beginTransaction();
 
             try {
-                // V4.0 — no GM approval gate. 'pending' is the new actionable
-                // state; 'approved' and 'in_progress' kept for legacy rows.
+                // Only GM-approved requisitions can be released by Warehouse Raw.
+
                 $requisition = $db->prepare("
-                    SELECT * FROM material_requisitions WHERE id = ? AND status IN ('pending', 'approved', 'partial', 'in_progress')
+                    SELECT * FROM material_requisitions WHERE id = ? AND status IN ('approved', 'partial', 'in_progress')
                 ");
                 $requisition->execute([$id]);
                 $reqData = $requisition->fetch();
@@ -536,9 +536,8 @@ function handlePut($db, $currentUser) {
                     throw new Exception('Item not found');
                 }
 
-                // V4.0 — see note in `fulfill` case. 'pending' is the new
-                // actionable state; legacy statuses kept for back-compat.
-                if (!in_array($itemData['req_status'], ['pending', 'approved', 'partial', 'in_progress'])) {
+                // Only GM-approved requisitions can be released by Warehouse Raw.
+                if (!in_array($itemData['req_status'], ['approved', 'partial', 'in_progress'])) {
                     throw new Exception('Requisition is not in a fulfillable status');
                 }
 

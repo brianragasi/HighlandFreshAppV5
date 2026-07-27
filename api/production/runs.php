@@ -918,10 +918,11 @@ try {
                 
                 $totalAvailableLiters = array_sum(array_column($pasteurizedBatches, 'remaining_liters'));
                 
+                $shrinkageTolerance = 0.95;
                 if (empty($pasteurizedBatches)) {
                     $errors['milk_source'] = '⚠️ YOGURT requires PASTEURIZED MILK. No pasteurized milk available. Please run pasteurization first.';
-                } else if ($totalAvailableLiters < $requiredMilkLiters - 0.01) {
-                    $errors['milk_source'] = "⚠️ Not enough PASTEURIZED milk. Required: {$requiredMilkLiters}L, Available: {$totalAvailableLiters}L. Please pasteurize more milk.";
+                } else if ($totalAvailableLiters < $requiredMilkLiters * $shrinkageTolerance) {
+                    $errors['milk_source'] = "⚠️ Not enough PASTEURIZED milk. Required: {$requiredMilkLiters}L (5% shrinkage allowed), Available: {$totalAvailableLiters}L. Please pasteurize more milk.";
                 } else {
                     // Auto-select batch (FIFO - oldest first)
                     $pasteurizedBatchId = $pasteurizedBatches[0]['id'];
@@ -1346,6 +1347,48 @@ try {
                     $outputUnit = getParam('output_unit', 'pieces'); // pieces, boxes, crates, cases
                     $varianceReason = trim(getParam('variance_reason', ''));
                     $reconNotes = trim(getParam('reconciliation_notes', ''));
+
+                    // =====================================================
+                    // V4.1 — PACKAGING ITEMS (merged into run completion)
+                    // Production reports what they physically packed:
+                    // e.g., [{product_id:2, size_ml:500, quantity:298, ...}]
+                    // This replaces the old post-QC packaging step.
+                    // =====================================================
+                    $packagingItems = getParam('packaging_items', null);
+                    $processLossMl = (float) getParam('process_loss_ml', 0);
+
+                    // Decode JSON string if sent as form-encoded
+                    if (is_string($packagingItems)) {
+                        $decoded = json_decode($packagingItems, true);
+                        $packagingItems = is_array($decoded) ? $decoded : null;
+                    }
+
+                    // Validate packaging items when provided
+                    $packagingErrors = [];
+                    $totalPackagedPieces = 0;
+                    $totalPackagedVolumeMl = 0;
+                    if (is_array($packagingItems) && count($packagingItems) > 0) {
+                        foreach ($packagingItems as $idx => $pItem) {
+                            $pQty = (int) ($pItem['quantity'] ?? 0);
+                            if ($pQty <= 0) {
+                                $packagingErrors["packaging_items.{$idx}.quantity"] = 'Quantity must be greater than 0';
+                                continue;
+                            }
+                            $totalPackagedPieces += $pQty;
+                            $pSizeMl = (float) ($pItem['size_ml'] ?? 0);
+                            if ($pSizeMl > 0) {
+                                $totalPackagedVolumeMl += $pSizeMl * $pQty;
+                            }
+                        }
+                    }
+                    if (!empty($packagingErrors)) {
+                        Response::validationError($packagingErrors);
+                    }
+
+                    // When packaging items are provided, they define the actual output
+                    if ($totalPackagedPieces > 0) {
+                        $actualQuantity = $totalPackagedPieces;
+                    }
                     
                     // Fallback: use packaging estimate units when actual not provided
                     if ($actualQuantity <= 0) {
@@ -1558,6 +1601,94 @@ try {
                         ]);
                         
                         $batchId = $db->lastInsertId();
+
+                        // =====================================================
+                        // V4.1 — CREATE PACKAGING RECORDS AT COMPLETION
+                        // Production reports what they physically packed.
+                        // This happens BEFORE QC so QC can verify counts.
+                        // FG inventory is NOT created here — only at warehouse receive.
+                        // =====================================================
+                        $packagingRunId = null;
+                        if (is_array($packagingItems) && count($packagingItems) > 0) {
+                            // Get recipe product name for fallback
+                            $recipeProductName = $productType;
+                            try {
+                                $rpnStmt = $db->prepare("SELECT product_name FROM master_recipes WHERE id = ? LIMIT 1");
+                                $rpnStmt->execute([(int) $run['recipe_id']]);
+                                $rpn = $rpnStmt->fetchColumn();
+                                if ($rpn) $recipeProductName = $rpn;
+                            } catch (Throwable $e) { /* use productType fallback */ }
+
+                            // Generate packaging code
+                            $pkgToday = date('Ymd');
+                            $maxPkgStmt = $db->prepare("
+                                SELECT COALESCE(MAX(CAST(SUBSTRING(packaging_code, -3) AS UNSIGNED)), 0)
+                                FROM packaging_runs
+                                WHERE packaging_code LIKE ?
+                            ");
+                            $maxPkgStmt->execute(["PKG-{$pkgToday}-%"]);
+                            $pkgSeq = (int) $maxPkgStmt->fetchColumn() + 1;
+                            $packagingCode = "PKG-{$pkgToday}-" . str_pad($pkgSeq, 3, '0', STR_PAD_LEFT);
+
+                            $pkgInsStmt = $db->prepare("
+                                INSERT INTO packaging_runs
+                                    (packaging_code, production_run_id, batch_id, batch_code,
+                                     product_type, total_pieces_packaged, packaging_date,
+                                     packaged_by, notes, process_loss_ml, status)
+                                VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, 'completed')
+                            ");
+                            $pkgInsStmt->execute([
+                                $packagingCode,
+                                $runId,
+                                $batchId,
+                                $batchCode,
+                                $productType,
+                                $totalPackagedPieces,
+                                $currentUser['user_id'],
+                                'Recorded at run completion (V4.1 flow)',
+                                $processLossMl
+                            ]);
+                            $packagingRunId = (int) $db->lastInsertId();
+
+                            // Insert individual packaging line items
+                            $pkgItemStmt = $db->prepare("
+                                INSERT INTO packaging_run_items
+                                    (packaging_run_id, product_id, product_name, product_variant,
+                                     size_ml, unit_measure, quantity, fg_inventory_id)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+                            ");
+
+                            foreach ($packagingItems as $pItem) {
+                                $pProductId = !empty($pItem['product_id']) ? (int) $pItem['product_id'] : null;
+                                $pName = $pItem['product_name'] ?? $recipeProductName;
+                                $pVariant = $pItem['product_variant'] ?? null;
+                                $pSizeMl = isset($pItem['size_ml']) && $pItem['size_ml'] !== '' ? (float) $pItem['size_ml'] : null;
+                                $pUnitMeasure = $pItem['unit_measure'] ?? 'ml';
+                                $pQty = (int) $pItem['quantity'];
+
+                                // Auto-generate variant from size when empty
+                                if (($pVariant === null || $pVariant === '') && $pSizeMl > 0) {
+                                    $pVariant = rtrim(rtrim(number_format($pSizeMl, 0, '.', ''), '0'), '.') . ($pUnitMeasure ?: 'ml');
+                                }
+
+                                $pkgItemStmt->execute([
+                                    $packagingRunId,
+                                    $pProductId,
+                                    $pName,
+                                    $pVariant,
+                                    $pSizeMl,
+                                    $pUnitMeasure,
+                                    $pQty
+                                ]);
+                            }
+
+                            // Link packaging run to the batch
+                            $db->prepare("
+                                UPDATE production_batches SET packaging_run_id = ? WHERE id = ?
+                            ")->execute([$packagingRunId, $batchId]);
+
+                            error_log("Production run {$run['run_code']}: Created packaging run {$packagingCode} with " . count($packagingItems) . " items ({$totalPackagedPieces} pieces)");
+                        }
                         
                         // =====================================================
                         // CRITICAL GAP #1 FIX: Record Ingredient Consumption
@@ -1626,6 +1757,9 @@ try {
                             'batch_id' => $batchId,
                             'batch_code' => $batchCode,
                             'qc_status' => 'pending',
+                            'packaging_run_id' => $packagingRunId,
+                            'packaging_items_count' => is_array($packagingItems) ? count($packagingItems) : 0,
+                            'process_loss_ml' => $processLossMl,
                             'message' => 'Production completed! Batch sent to QC for final verification.',
                             'output_breakdown' => [
                                 'total_pieces' => $totalPieces,

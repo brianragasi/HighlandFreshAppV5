@@ -499,11 +499,44 @@
                         <div>
                             <h3 class="card-title text-base mb-1"><i class="fas fa-balance-scale text-warning"></i> Finish this run</h3>
                             <p class="text-sm text-base-content/60">
-                                Review the material balance, then complete once. QC still has to release the batch before finished-goods packaging.
+                                Record what you physically packed, then complete. QC will verify your counts before releasing.
                             </p>
                         </div>
                         <div id="reconBox" class="space-y-2 text-sm"></div>
                         <div id="reconLossBox" class="space-y-1"></div>
+
+                        <!-- V4.1: Packaging Output (merged into completion) -->
+                        <div class="divider text-primary text-sm"><i class="fas fa-box-open"></i> Packaging Output</div>
+                        <p class="text-xs text-base-content/60 -mt-3">
+                            The system pre-fills the recommended counts from your yield estimate. Adjust only if your actual count differed (e.g., breakage). QC will physically recount and compare.
+                        </p>
+                        <div id="pkgRecommendBox" class="alert alert-success py-2 text-sm hidden">
+                            <i class="fas fa-lightbulb"></i>
+                            <span id="pkgRecommendText">—</span>
+                        </div>
+                        <div id="packagingLines" class="space-y-3"></div>
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button" class="btn btn-outline btn-sm gap-2" onclick="addPackagingLine()">
+                                <i class="fas fa-plus"></i> Add another size
+                            </button>
+                            <button type="button" id="pkgResetRecommendBtn" class="btn btn-ghost btn-sm gap-2 hidden" onclick="applyRecommendedPackaging()">
+                                <i class="fas fa-rotate-left"></i> Reset to recommended
+                            </button>
+                        </div>
+
+                        <!-- Process loss -->
+                        <div class="form-control">
+                            <label class="label"><span class="label-text font-medium">Process loss (ml) — optional</span></label>
+                            <input type="number" id="pkgProcessLoss" class="input input-bordered w-full max-w-xs" min="0" step="0.1" placeholder="0">
+                            <label class="label"><span class="label-text-alt text-base-content/50">Spillage, purge, or leftover that was NOT bottled</span></label>
+                        </div>
+
+                        <!-- Packaging totals summary -->
+                        <div id="pkgTotalsBox" class="alert alert-info hidden">
+                            <i class="fas fa-calculator"></i>
+                            <span id="pkgTotalsText">—</span>
+                        </div>
+
                         <div class="form-control">
                             <label class="label"><span class="label-text">Notes (required if over tolerance)</span></label>
                             <textarea id="reconNotes" class="textarea textarea-bordered" rows="2" placeholder="Optional override notes"></textarea>
@@ -625,6 +658,7 @@
             const pre = params.get('run_id');
             const panel = params.get('panel');
             const forceFree = params.get('free') === '1';
+            const validPanels = ['overview', 'ccp', 'stages', 'yield', 'reconcile'];
             if (forceFree) {
                 wizardMode = false;
                 localStorage.setItem('hf_wizard_mode', '0');
@@ -633,8 +667,14 @@
             if (pre) {
                 document.getElementById('runSelector').value = pre;
                 await onRunPicked();
-                if (panel && !wizardMode) showPanel(panel);
-                // wizard mode auto-opens current step in onRunPicked/renderWorkbench
+                if (validPanels.includes(panel)) showPanel(panel);
+            } else if (validPanels.includes(panel)) {
+                const selector = document.getElementById('runSelector');
+                if (selector && selector.options.length > 1) {
+                    selector.selectedIndex = 1;
+                    await onRunPicked();
+                    showPanel(panel);
+                }
             }
         });
 
@@ -676,6 +716,13 @@
                 if (window.ProductionSidebar) {
                     ProductionSidebar.showBadge('activeRunsBadge', active.length);
                 }
+                // Update conversions badge
+                try {
+                    const convRes = await axios.get(`${API_BASE_URL}/production/conversions.php`, { params: { action: 'summary' } });
+                    if (convRes.data.success && window.ProductionSidebar) {
+                        ProductionSidebar.showBadge('conversionsBadge', convRes.data.data.pending || 0);
+                    }
+                } catch (e) { /* optional */ }
             } catch (e) {
                 sel.innerHTML = '<option value="">Failed to load runs</option>';
                 showToast(e.message || 'Failed to load runs', 'error');
@@ -1123,6 +1170,10 @@
                     renderEstimates();
                     renderProcessBalance();
                 }).catch(() => {});
+            }
+            // V4.1: Initialize packaging form when Finish panel opens
+            if (name === 'reconcile') {
+                initPackagingForm();
             }
             // Keep sticky footer clearance in sync (loss list can grow)
             syncStickyFooterSpace();
@@ -1603,6 +1654,230 @@
             }
         }
 
+        // =====================================================
+        // V4.1 — PACKAGING OUTPUT FORM (SKU dropdown, no free-text sizes)
+        // =====================================================
+        let pkgLineCounter = 0;
+
+        function getPackConfig() {
+            const run = wb?.run || {};
+            return {
+                productName: run.product_name || run.product_type || 'Product',
+                productType: run.product_type || '',
+                productId: run.product_id || null,
+                piecesPerBox: Number(run.pieces_per_box || 1),
+                baseUnit: run.base_unit || 'piece',
+                boxUnit: run.box_unit || 'box',
+            };
+        }
+
+        /** Get available SKUs from estimates (product catalog sizes) */
+        function getAvailableSkus() {
+            return wb?.estimates?.available_skus || [];
+        }
+
+        function addPackagingLine(prefill = {}) {
+            pkgLineCounter++;
+            const cfg = getPackConfig();
+            const skus = getAvailableSkus();
+            const id = pkgLineCounter;
+            const container = document.getElementById('packagingLines');
+            const div = document.createElement('div');
+            div.id = `pkgLine_${id}`;
+            div.className = 'bg-base-200 rounded-xl p-4 space-y-3 relative';
+
+            // Build SKU dropdown options
+            let skuOptions = '';
+            if (skus.length > 0) {
+                skuOptions = '<option value="" disabled>Select a product/size...</option>';
+                skus.forEach((sku, idx) => {
+                    const selected = (prefill.size_ml && Number(sku.packaging_size_ml) === Number(prefill.size_ml)) ? 'selected' : '';
+                    skuOptions += `<option value="${idx}" ${selected}>${sku.packaging_label || (sku.product_name + ' · ' + sku.packaging_size_ml + 'ml')}</option>`;
+                });
+            } else {
+                // Fallback: no SKUs in catalog, allow manual entry
+                skuOptions = '<option value="manual" selected>Manual entry (no catalog sizes)</option>';
+            }
+
+            const hasSkus = skus.length > 0;
+            div.innerHTML = `
+                <button type="button" class="btn btn-ghost btn-xs btn-circle absolute right-2 top-2 text-error" onclick="removePackagingLine(${id})" title="Remove line">
+                    <i class="fas fa-times"></i>
+                </button>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text text-xs">Product / Size</span></label>
+                        <select class="select select-bordered select-sm" data-pkg="sku_select" onchange="onSkuSelect(${id})">
+                            ${skuOptions}
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text text-xs">Quantity (pieces)</span></label>
+                        <input type="number" class="input input-bordered input-sm" data-pkg="quantity"
+                            value="${prefill.quantity || ''}" min="1" step="1" placeholder="How many did you pack?"
+                            oninput="updatePkgTotals()">
+                    </div>
+                </div>
+                ${!hasSkus ? `
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text text-xs">Product name</span></label>
+                        <input type="text" class="input input-bordered input-sm" data-pkg="product_name"
+                            value="${(prefill.product_name || cfg.productName).replace(/"/g, '&quot;')}" placeholder="e.g., Fresh Milk">
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text text-xs">Size (ml)</span></label>
+                        <input type="number" class="input input-bordered input-sm" data-pkg="size_ml"
+                            value="${prefill.size_ml || ''}" min="0" step="0.1" placeholder="e.g., 500">
+                    </div>
+                </div>` : ''}
+                <input type="hidden" data-pkg="product_id" value="${prefill.product_id || ''}">
+                <input type="hidden" data-pkg="product_name" value="${hasSkus ? (prefill.product_name || '') : ''}">
+                <input type="hidden" data-pkg="size_ml" value="${hasSkus ? (prefill.size_ml || '') : ''}">
+                <input type="hidden" data-pkg="product_variant" value="${prefill.product_variant || ''}">
+                <input type="hidden" data-pkg="unit_measure" value="${prefill.unit_measure || 'ml'}">
+            `;
+            container.appendChild(div);
+
+            // Auto-fill hidden fields if prefill has a matching SKU
+            if (hasSkus && prefill.size_ml) {
+                onSkuSelect(id);
+            }
+            updatePkgTotals();
+        }
+
+        /** When user picks a SKU from dropdown, auto-fill hidden fields */
+        function onSkuSelect(lineId) {
+            const line = document.getElementById(`pkgLine_${lineId}`);
+            if (!line) return;
+            const select = line.querySelector('[data-pkg="sku_select"]');
+            const skus = getAvailableSkus();
+            const idx = parseInt(select.value, 10);
+            if (isNaN(idx) || !skus[idx]) return;
+            const sku = skus[idx];
+            line.querySelector('[data-pkg="product_id"]').value = sku.product_id || '';
+            line.querySelector('[data-pkg="product_name"]').value = sku.product_name || '';
+            line.querySelector('[data-pkg="size_ml"]').value = sku.packaging_size_ml || '';
+            line.querySelector('[data-pkg="product_variant"]').value = sku.packaging_label || '';
+            line.querySelector('[data-pkg="unit_measure"]').value = 'ml';
+            updatePkgTotals();
+        }
+
+        function removePackagingLine(id) {
+            const el = document.getElementById(`pkgLine_${id}`);
+            if (el) el.remove();
+            updatePkgTotals();
+        }
+
+        function updatePkgTotals() {
+            const items = collectPackagingItems();
+            const totalPieces = items.reduce((s, i) => s + i.quantity, 0);
+            const cfg = getPackConfig();
+            const ppb = cfg.piecesPerBox;
+            const boxes = ppb > 1 ? Math.floor(totalPieces / ppb) : 0;
+            const loose = ppb > 1 ? (totalPieces % ppb) : totalPieces;
+
+            const box = document.getElementById('pkgTotalsBox');
+            const txt = document.getElementById('pkgTotalsText');
+            if (totalPieces > 0) {
+                box.classList.remove('hidden');
+                let display = `Total: ${totalPieces} ${cfg.baseUnit}(s)`;
+                if (ppb > 1) {
+                    display += ` = ${boxes} ${cfg.boxUnit}(s) + ${loose} loose`;
+                }
+                txt.textContent = display;
+            } else {
+                box.classList.add('hidden');
+                txt.textContent = '—';
+            }
+        }
+
+        function collectPackagingItems() {
+            const lines = document.querySelectorAll('#packagingLines [id^="pkgLine_"]');
+            const items = [];
+            lines.forEach(line => {
+                const get = (key) => line.querySelector(`[data-pkg="${key}"]`)?.value?.trim() || '';
+                const qty = parseInt(get('quantity'), 10);
+                if (!qty || qty <= 0) return; // skip empty lines
+
+                // If SKU dropdown exists, make sure something was selected
+                const skuSelect = line.querySelector('[data-pkg="sku_select"]');
+                if (skuSelect && skuSelect.value === '') return; // no SKU selected, skip
+
+                items.push({
+                    product_name: get('product_name'),
+                    product_id: get('product_id') ? parseInt(get('product_id'), 10) : null,
+                    product_variant: get('product_variant') || null,
+                    size_ml: get('size_ml') ? parseFloat(get('size_ml')) : null,
+                    unit_measure: get('unit_measure') || 'ml',
+                    quantity: qty,
+                });
+            });
+            return items;
+        }
+
+        /** Get the system's recommended packaging counts (revised estimate if losses were logged) */
+        function getRecommendedPackaging() {
+            const est = wb?.estimates;
+            if (!est) return [];
+            const items = (est.has_revision && est.revised_estimate?.items?.length)
+                ? est.revised_estimate.items
+                : (est.initial_estimate?.items || []);
+            return items.filter(i => Number(i.estimated_units) > 0);
+        }
+
+        /** Fill the form with the system's recommended counts (one line per size) */
+        function applyRecommendedPackaging() {
+            const container = document.getElementById('packagingLines');
+            container.innerHTML = '';
+            const rec = getRecommendedPackaging();
+            if (rec.length === 0) {
+                addPackagingLine();
+                return;
+            }
+            rec.forEach(item => {
+                addPackagingLine({
+                    size_ml: item.packaging_size_ml,
+                    quantity: Number(item.estimated_units),
+                    product_variant: item.packaging_label,
+                });
+            });
+        }
+
+        /** Initialize packaging form when reconcile panel is shown */
+        async function initPackagingForm() {
+            const container = document.getElementById('packagingLines');
+            if (container.children.length > 0) return; // already initialized
+
+            // Refresh estimates so the recommendation reflects the latest losses
+            if (selectedRunId) {
+                try {
+                    const est = await ProductionService.getEstimates(selectedRunId);
+                    if (est.success) wb.estimates = est.data;
+                } catch (e) { /* proceed with whatever we have */ }
+            }
+
+            const rec = getRecommendedPackaging();
+            const banner = document.getElementById('pkgRecommendBox');
+            const bannerText = document.getElementById('pkgRecommendText');
+            const resetBtn = document.getElementById('pkgResetRecommendBtn');
+
+            if (rec.length > 0) {
+                const est = wb.estimates;
+                const basisMl = est.has_revision ? est.revised_estimate?.basis_volume_ml : est.initial_estimate?.basis_volume_ml;
+                const summary = rec.map(i => `${i.estimated_units} × ${i.packaging_label || (i.packaging_size_ml + 'ml')}`).join(' + ');
+                if (banner && bannerText) {
+                    bannerText.textContent = `Recommended from ${fmtLitersFromMl(basisMl)} L remaining milk: ${summary}. Adjust below only if your real count differed.`;
+                    banner.classList.remove('hidden');
+                }
+                if (resetBtn) resetBtn.classList.remove('hidden');
+                applyRecommendedPackaging();
+            } else {
+                // No estimate available — start with one empty line
+                addPackagingLine();
+            }
+        }
+
         async function completeFromWorkbench() {
             if (!selectedRunId) return;
             const ccp = ProductionRunFlow.ccpStatus(wb.run);
@@ -1616,22 +1891,29 @@
                 showPanel('stages', { force: true });
                 return;
             }
+
+            // V4.1: Collect packaging line items
+            const packagingItems = collectPackagingItems();
+            if (packagingItems.length === 0) {
+                showToast('Enter at least one packaging line (what did you pack?)', 'warning');
+                return;
+            }
+            const processLossMl = parseFloat(document.getElementById('pkgProcessLoss')?.value) || 0;
+
             const notes = document.getElementById('reconNotes').value.trim();
             try {
                 try {
                     await ProductionService.reconcileRun(selectedRunId, notes || 'Completed from workbench', !!notes);
                 } catch (e) { /* continue */ }
-                let qty = 0;
-                if (wb.estimates) {
-                    const items = wb.estimates.has_revision
-                        ? (wb.estimates.revised_estimate.items || [])
-                        : (wb.estimates.initial_estimate.items || []);
-                    qty = items.reduce((s, e) => s + Number(e.actual_units ?? e.estimated_units ?? 0), 0);
-                }
-                if (!qty) qty = Number(wb.run.planned_quantity || 0);
-                const r = await ProductionService.completeRun(selectedRunId, qty, notes, notes);
+
+                // Total pieces from packaging lines (authoritative)
+                const qty = packagingItems.reduce((s, i) => s + i.quantity, 0);
+
+                const r = await ProductionService.completeRun(
+                    selectedRunId, qty, notes, notes, packagingItems, processLossMl
+                );
                 if (!r.success) throw new Error(r.message || 'Complete failed');
-                showToast('Run completed — QC can release for packaging', 'success');
+                showToast('Run completed — batch sent to QC for verification', 'success');
                 await loadRunList();
                 await refreshAll();
             } catch (e) {

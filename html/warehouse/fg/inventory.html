@@ -1384,6 +1384,15 @@
             if (state.dispatchable) {
                 right.push(`<button type="button" class="btn btn-sm bg-[#1f7a4d] border-[#1f7a4d] text-white hover:bg-[#155c3a]" onclick="batchDetailModal.close(); transferItem(${item.id})">Transfer</button>`);
             }
+            // Force-delete for GM: shows when item is corrupted (empty status, NULL product_id, or zero stock but not disposed)
+            if (typeof AuthService !== 'undefined') {
+                const user = AuthService.getCurrentUser?.();
+                const isGM = user && (user.role === 'general_manager' || user.role === 'admin');
+                const isCorrupted = (!item.status || item.status === '') && item.quantity_available > 0;
+                if (isGM && isCorrupted) {
+                    right.push(`<button type="button" class="btn btn-error btn-sm" onclick="batchDetailModal.close(); forceDeleteStock(${item.id})"><i class="fas fa-trash-alt mr-1"></i>Force Delete</button>`);
+                }
+            }
 
             document.getElementById('detailActions').innerHTML = `
                 <button type="button" class="btn btn-sm btn-secondary-outline" onclick="batchDetailModal.close()">Close</button>
@@ -1400,21 +1409,63 @@
 
         async function disposeStock(id) {
             const item = inventory.find(i => Number(i.id) === Number(id));
+            if (!item) return;
+
             const confirmed = await AuthService.confirmAction({
-                title: 'Dispose Expired Stock',
-                message: `Dispose ${item?.product_name || 'this item'} (${item?.batch_code || 'N/A'})?`,
-                confirmText: 'Dispose',
+                title: 'Submit for Disposal Approval',
+                message: `Submit ${item.product_name || 'this item'} (${item.batch_code || 'N/A'}) for GM disposal approval? This will NOT immediately dispose the item — it enters the approval queue first.`,
+                confirmText: 'Submit for Approval',
+                tone: 'warning',
+                icon: 'fa-paper-plane'
+            });
+            if (!confirmed) return;
+
+            try {
+                const qty = item.quantity_available || item.remaining_quantity || item.quantity || 0;
+                const unitCost = item.unit_price || item.unit_cost || 0;
+
+                const response = await api.post(`${ApiConfig.baseUrl}/qc/disposals.php`, {
+                    source_type: 'finished_goods',
+                    source_id: item.id,
+                    quantity: qty,
+                    unit: 'pcs',
+                    unit_cost: unitCost,
+                    disposal_category: 'expired',
+                    disposal_reason: `FG inventory disposal — ${item.product_name} (${item.batch_code || 'N/A'}). Qty: ${qty}. Submitted from inventory page.`,
+                    disposal_method: 'drain',
+                    notes: `Auto-submitted from FG Inventory page. Inventory ID: ${item.id}. Batch: ${item.batch_code || 'N/A'}.`
+                });
+
+                if (response.success) {
+                    showToast('Disposal request submitted. Pending GM approval.', 'success');
+                } else {
+                    showToast(response.message || 'Failed to submit disposal', 'error');
+                }
+            } catch (error) {
+                showToast(error?.response?.data?.message || error.message || 'Failed to submit disposal request', 'error');
+            }
+        }
+
+        async function forceDeleteStock(id) {
+            const item = inventory.find(i => Number(i.id) === Number(id));
+            const confirmed = await AuthService.confirmAction({
+                title: 'Force Delete Corrupted Record',
+                message: `Permanently delete ${item?.product_name || 'this item'} (${item?.batch_code || 'N/A'})? This action cannot be undone and removes all related records.`,
+                confirmText: 'Force Delete',
                 tone: 'error',
                 icon: 'fa-trash-alt'
             });
             if (!confirmed) return;
 
             try {
-                await WarehouseFGService.disposeInventory(id, 'Expired stock disposal');
-                showToast('Expired stock disposed', 'success');
+                await api.put(`${ApiConfig.baseUrl}/warehouse/fg/inventory.php`, {
+                    action: 'force_delete',
+                    id: id
+                });
+                showToast('Corrupted record deleted', 'success');
                 await loadInventory();
             } catch (error) {
-                showToast(error.message || 'Failed to dispose stock', 'error');
+                showToast(error.message || 'Failed to force delete', 'error');
             }
         }
 

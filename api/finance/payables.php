@@ -394,12 +394,19 @@ function recordPayment($db, $user) {
 
     $latestRR = null;
     if (tableExists($db, 'receiving_reports')) {
-        $rrStmt = $db->prepare("SELECT rr_number, invoice_number FROM receiving_reports WHERE po_id = ? ORDER BY received_at DESC, id DESC LIMIT 1");
+        $rrStmt = $db->prepare("SELECT rr_number, invoice_number, status FROM receiving_reports WHERE po_id = ? ORDER BY received_at DESC, id DESC LIMIT 1");
         $rrStmt->execute([$poId]);
         $latestRR = $rrStmt->fetch();
     }
     if (!$latestRR) Response::error('Receiving Report is required before payment', 400);
     if (empty($latestRR['invoice_number'])) Response::error('Invoice number is required before payment', 400);
+
+    // V4.1: The Purchaser must have verified the RR against the PO before Finance can pay.
+    // RR status 'verified' or 'completed' means the Purchaser cross-checked it.
+    $rrStatus = $latestRR['status'] ?? 'pending_verification';
+    if (!in_array($rrStatus, ['verified', 'completed'])) {
+        Response::error('The Purchaser must verify the Receiving Report against the PO before payment can be released. Current RR status: ' . $rrStatus, 400);
+    }
 
     $payableStmt = $db->prepare("
         SELECT COALESCE(SUM(

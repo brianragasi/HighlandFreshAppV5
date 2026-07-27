@@ -218,9 +218,11 @@ function handleGet($db, $action) {
                 $rrStmt = $db->prepare("
                     SELECT
                         rr.*,
-                        u.full_name as received_by_name
+                        u.full_name as received_by_name,
+                        uv.full_name as verified_by_name
                     FROM receiving_reports rr
                     LEFT JOIN users u ON rr.received_by = u.id
+                    LEFT JOIN users uv ON rr.verified_by = uv.id
                     WHERE rr.po_id = ?
                     ORDER BY rr.received_at DESC, rr.id DESC
                     LIMIT 1
@@ -242,6 +244,10 @@ function handleGet($db, $action) {
             }
 
             Response::success($order, 'Purchase order details retrieved');
+            break;
+
+        case 'rr_detail':
+            getReceivingReportDetailForPurchasing($db);
             break;
 
         case 'next_number':
@@ -325,7 +331,7 @@ function ensurePRConversionSupport($db) {
 
     $db->exec("
         ALTER TABLE `purchase_requests`
-        MODIFY COLUMN `status` ENUM('draft','pending','approved','rejected','converted') DEFAULT 'pending'
+        MODIFY COLUMN `status` ENUM('draft','pending','approved','rejected','converted','partially_converted') DEFAULT 'pending'
     ");
 
     $db->exec("
@@ -480,6 +486,13 @@ function ensureWarehouseReceivingSupport($db) {
         }
     }
 
+    if (!auditColumnExists($db, 'receiving_reports', 'verified_by')) {
+        $db->exec("ALTER TABLE `receiving_reports` ADD COLUMN `verified_by` INT(11) DEFAULT NULL AFTER `status`");
+    }
+    if (!auditColumnExists($db, 'receiving_reports', 'verified_at')) {
+        $db->exec("ALTER TABLE `receiving_reports` ADD COLUMN `verified_at` DATETIME DEFAULT NULL AFTER `verified_by`");
+    }
+
     $db->exec("
         CREATE TABLE IF NOT EXISTS `receiving_report_items` (
             `id` INT(11) NOT NULL AUTO_INCREMENT,
@@ -574,6 +587,252 @@ function createProcurementNotification($db, $targetRole, $type, $title, $message
     $stmt->execute([$targetRole, $type, $title, $message, $referenceType, $referenceId]);
 }
 
+function getLatestReceivingReportForPO(PDO $db, int $poId) {
+    if (!tableExists($db, 'receiving_reports')) {
+        return null;
+    }
+
+    $stmt = $db->prepare("
+        SELECT rr.*, u.full_name as received_by_name, uv.full_name as verified_by_name
+        FROM receiving_reports rr
+        LEFT JOIN users u ON rr.received_by = u.id
+        LEFT JOIN users uv ON rr.verified_by = uv.id
+        WHERE rr.po_id = ?
+        ORDER BY rr.received_at DESC, rr.id DESC
+        LIMIT 1
+    ");
+    $stmt->execute([$poId]);
+    return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+
+function getReceivingReportDetailForPurchasing(PDO $db): void {
+    $rrId = (int) (getParam('id') ?? 0);
+    if ($rrId <= 0) {
+        Response::error('RR ID required', 400);
+    }
+
+    $stmt = $db->prepare("
+        SELECT
+            rr.*,
+            po.po_number,
+            po.status as po_status,
+            po.total_amount as po_total,
+            po.order_date,
+            po.expected_delivery,
+            s.supplier_name,
+            s.supplier_code,
+            u.full_name as received_by_name,
+            uv.full_name as verified_by_name
+        FROM receiving_reports rr
+        JOIN purchase_orders po ON rr.po_id = po.id
+        JOIN suppliers s ON rr.supplier_id = s.id
+        LEFT JOIN users u ON rr.received_by = u.id
+        LEFT JOIN users uv ON rr.verified_by = uv.id
+        WHERE rr.id = ?
+    ");
+    $stmt->execute([$rrId]);
+    $rr = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$rr) {
+        Response::error('Receiving Report not found', 404);
+    }
+
+    $itemsStmt = $db->prepare("
+        SELECT
+            poi.id as po_item_id,
+            poi.ingredient_id,
+            poi.mro_item_id,
+            poi.item_description,
+            poi.quantity as po_quantity,
+            poi.unit as po_unit,
+            poi.unit_price as po_unit_price,
+            poi.total_amount as po_line_total,
+            COALESCE(agg.quantity_received, 0) as quantity_received,
+            COALESCE(agg.quantity_rejected, 0) as quantity_rejected,
+            agg.rejection_reason,
+            agg.rejection_notes
+        FROM purchase_order_items poi
+        LEFT JOIN (
+            SELECT
+                rri.po_item_id,
+                SUM(rri.quantity_received) as quantity_received,
+                SUM(rri.quantity_rejected) as quantity_rejected,
+                GROUP_CONCAT(NULLIF(rri.rejection_reason, '') SEPARATOR '; ') as rejection_reason,
+                GROUP_CONCAT(NULLIF(rri.rejection_notes, '') SEPARATOR '; ') as rejection_notes
+            FROM receiving_report_items rri
+            JOIN receiving_reports rr2 ON rr2.id = rri.rr_id
+            WHERE rr2.po_id = ?
+            GROUP BY rri.po_item_id
+        ) agg ON agg.po_item_id = poi.id
+        WHERE poi.po_id = ?
+        ORDER BY poi.id ASC
+    ");
+    $itemsStmt->execute([$rr['po_id'], $rr['po_id']]);
+    $rr['items'] = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    Response::success($rr, 'Receiving Report detail retrieved');
+}
+
+function verifyReceivingReportAgainstPO(PDO $db, array $currentUser, array $data): void {
+    $poId = (int) (getParam('id') ?? 0);
+    $rrId = (int) ($data['rr_id'] ?? 0);
+    if ($poId <= 0) {
+        Response::error('PO ID required', 400);
+    }
+
+    $poStmt = $db->prepare("SELECT * FROM purchase_orders WHERE id = ?");
+    $poStmt->execute([$poId]);
+    $po = $poStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$po) {
+        Response::error('Purchase order not found', 404);
+    }
+    if ($po['status'] !== 'received') {
+        Response::error('Only fully received POs can have their Receiving Report verified', 400);
+    }
+
+    $rr = $rrId > 0 ? getReceivingReportById($db, $rrId) : getLatestReceivingReportForPO($db, $poId);
+    if (!$rr || (int)$rr['po_id'] !== $poId) {
+        Response::error('Receiving Report not found for this PO', 404);
+    }
+    if (!in_array($rr['status'], ['pending_verification', 'discrepancy'], true)) {
+        Response::error('This Receiving Report has already been verified or cannot be verified', 400);
+    }
+
+    $mismatch = findReceivingReportMismatch($db, (int)$rr['id'], $poId);
+    if ($mismatch !== null) {
+        Response::error($mismatch, 400);
+    }
+
+    $notes = trim((string)($data['notes'] ?? ''));
+    $db->beginTransaction();
+    try {
+        $rrNotes = $rr['notes'] ?? null;
+        if ($notes !== '') {
+            $rrNotes = ($rrNotes ? $rrNotes . "\n" : '') . '[Purchaser Verification] ' . $notes;
+        }
+
+        $updRR = $db->prepare("
+            UPDATE receiving_reports
+            SET status = 'verified',
+                verified_by = ?,
+                verified_at = NOW(),
+                notes = ?,
+                updated_at = NOW()
+            WHERE id = ?
+        ");
+        $updRR->execute([$currentUser['user_id'], $rrNotes, $rr['id']]);
+
+        $db->prepare("
+            UPDATE receiving_reports
+            SET status = 'verified',
+                verified_by = COALESCE(verified_by, ?),
+                verified_at = COALESCE(verified_at, NOW()),
+                updated_at = NOW()
+            WHERE po_id = ?
+              AND status IN ('pending_verification', 'discrepancy')
+        ")->execute([$currentUser['user_id'], $poId]);
+
+        $updPO = $db->prepare("
+            UPDATE purchase_orders
+            SET status = 'closed',
+                updated_at = NOW()
+            WHERE id = ?
+        ");
+        $updPO->execute([$poId]);
+
+        logAudit($currentUser['user_id'], 'VERIFY', 'receiving_reports', $rr['id'],
+            ['status' => $rr['status']],
+            ['status' => 'verified', 'po_status' => 'closed']
+        );
+
+        logAudit($currentUser['user_id'], 'CLOSE', 'purchase_orders', $poId,
+            ['status' => $po['status']],
+            ['status' => 'closed', 'reason' => 'rr_verified']
+        );
+
+        createProcurementNotification(
+            $db,
+            'finance_officer',
+            'rr_verified_transaction_closed',
+            'RR verified, transaction closed',
+            'Purchasing verified RR ' . $rr['rr_number'] . ' against PO ' . $po['po_number'] . '. The transaction is closed and ready for payment processing.',
+            'purchase_order',
+            $poId
+        );
+
+        $db->commit();
+    } catch (Exception $e) {
+        $db->rollBack();
+        throw $e;
+    }
+
+    Response::success([
+        'id' => $poId,
+        'rr_id' => (int)$rr['id'],
+        'rr_status' => 'verified',
+        'status' => 'closed'
+    ], 'Receiving Report verified and PO closed');
+}
+
+function getReceivingReportById(PDO $db, int $rrId) {
+    $stmt = $db->prepare("SELECT * FROM receiving_reports WHERE id = ?");
+    $stmt->execute([$rrId]);
+    return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+
+function findReceivingReportMismatch(PDO $db, int $rrId, int $poId): ?string {
+    $poItemsStmt = $db->prepare("
+        SELECT id, item_description, quantity, quantity_received, quantity_rejected, unit
+        FROM purchase_order_items
+        WHERE po_id = ?
+        ORDER BY id ASC
+    ");
+    $poItemsStmt->execute([$poId]);
+    $poItems = $poItemsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $rrItemsStmt = $db->prepare("
+        SELECT
+            rri.po_item_id,
+            SUM(rri.quantity_received) as quantity_received,
+            SUM(rri.quantity_rejected) as quantity_rejected
+        FROM receiving_report_items rri
+        JOIN receiving_reports rr ON rr.id = rri.rr_id
+        WHERE rr.po_id = ?
+        GROUP BY rri.po_item_id
+    ");
+    $rrItemsStmt->execute([$poId]);
+    $rrItems = [];
+    foreach ($rrItemsStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $rrItems[(int)$row['po_item_id']] = $row;
+    }
+
+    foreach ($poItems as $poItem) {
+        $ordered = (float)$poItem['quantity'];
+        $received = (float)$poItem['quantity_received'];
+        $rejected = (float)$poItem['quantity_rejected'];
+        $rrReceived = isset($rrItems[(int)$poItem['id']]) ? (float)$rrItems[(int)$poItem['id']]['quantity_received'] : 0.0;
+        $rrRejected = isset($rrItems[(int)$poItem['id']]) ? (float)$rrItems[(int)$poItem['id']]['quantity_rejected'] : 0.0;
+        $name = $poItem['item_description'] ?: ('PO item #' . $poItem['id']);
+
+        if ($received + 0.0001 < $ordered) {
+            return $name . ' is not fully received yet.';
+        }
+        if ($rejected > 0.0001) {
+            return $name . ' has rejected quantity. Resolve the discrepancy before closing this transaction.';
+        }
+        if (!isset($rrItems[(int)$poItem['id']])) {
+            return $name . ' is missing from the Receiving Report.';
+        }
+        if ($rrReceived + 0.0001 < $ordered) {
+            return $name . ' does not fully match the Receiving Report quantities yet.';
+        }
+        if ($rrRejected > 0.0001) {
+            return $name . ' has rejected quantity in the Receiving Report. Resolve the discrepancy before closing this transaction.';
+        }
+    }
+
+    return null;
+}
+
 function ensurePriceHistorySupport($db) {
     if (!auditColumnExists($db, 'ingredients', 'market_price')) {
         $db->exec("ALTER TABLE `ingredients` ADD COLUMN `market_price` DECIMAL(12,2) NULL AFTER `unit_cost`");
@@ -650,7 +909,7 @@ function getCurrentGeneralManagerName($db) {
     return $name ?: null;
 }
 
-function getApprovedPurchaseRequestForPO($db, $purchaseRequestId) {
+function getSubmittedPurchaseRequestSlipForPO($db, $purchaseRequestId) {
     $stmt = $db->prepare("
         SELECT pr.*, u.full_name as requested_by_name
         FROM purchase_requests pr
@@ -665,8 +924,8 @@ function getApprovedPurchaseRequestForPO($db, $purchaseRequestId) {
         Response::error('Purchase Request not found', 404);
     }
 
-    if ($pr['status'] !== 'approved' || empty($pr['approved_by']) || empty($pr['approved_at'])) {
-        Response::error('Only GM-approved Purchase Requests are available for PO creation. Current PR status: ' . $pr['status'], 400);
+    if (!in_array($pr['status'], ['pending', 'approved'], true)) {
+        Response::error('Only submitted Purchase Request Slips are available for PO creation. Current PRS status: ' . $pr['status'], 400);
     }
 
     return $pr;
@@ -690,7 +949,7 @@ function getPurchaseRequestItemsForPO($db, $purchaseRequestId) {
     $items = $stmt->fetchAll();
 
     if (empty($items)) {
-        Response::error('The selected approved PR has no line items to convert into a PO', 400);
+        Response::error('The selected PRS has no line items to convert into a PO', 400);
     }
 
     return $items;
@@ -714,13 +973,13 @@ function indexSubmittedPOItemsByPRItemId($submittedItems) {
     return $indexed;
 }
 
-function buildPOItemsFromApprovedPR($prItems, $submittedItems) {
+function buildPOItemsFromSubmittedPRS($prItems, $submittedItems) {
     $submittedByPRItemId = indexSubmittedPOItemsByPRItemId($submittedItems);
     $approvedIds = array_map(fn($item) => (int) $item['id'], $prItems);
 
     foreach (array_keys($submittedByPRItemId) as $submittedId) {
         if (!in_array((int) $submittedId, $approvedIds, true)) {
-            Response::error('PO lines can only come from the selected GM-approved Purchase Request', 400);
+            Response::error('PO lines can only come from the selected Purchase Request Slip', 400);
         }
     }
 
@@ -788,11 +1047,19 @@ function handlePost($db, $action, $currentUser) {
                 }
             }
 
-            // ===== REQUIRE APPROVED PURCHASE REQUEST â€” Phase 1 Enforcement =====
+            // Require a submitted PRS before a formal PO can be drafted.
             $purchaseRequestId = $data['purchase_request_id'];
-            $prData = getApprovedPurchaseRequestForPO($db, $purchaseRequestId);
+            $prData = getSubmittedPurchaseRequestSlipForPO($db, $purchaseRequestId);
             $prItems = getPurchaseRequestItemsForPO($db, $purchaseRequestId);
-            $poItems = buildPOItemsFromApprovedPR($prItems, $data['items'] ?? []);
+            $poItems = buildPOItemsFromSubmittedPRS($prItems, $data['items'] ?? []);
+            validateAssignmentsAgainstSelectedCanvassQuotes($db, array_map(function ($item) use ($data) {
+                return [
+                    'pr_item_id' => (int) $item['purchase_request_item_id'],
+                    'supplier_id' => (int) $data['supplier_id'],
+                    'unit_price' => (float) $item['unit_price'],
+                    'item_description' => $item['item_description'] ?? 'PRS item'
+                ];
+            }, $poItems));
 
             // Check if this PR already has an active PO
             $existingPO = $db->prepare("SELECT id, po_number FROM purchase_orders WHERE purchase_request_id = ? AND status NOT IN ('cancelled', 'rejected')");
@@ -891,15 +1158,16 @@ function handlePost($db, $action, $currentUser) {
 
                 recordPOCreationPriceHistory($db, $poItems, $poId, $data['supplier_id'], $currentUser);
 
+                $oldPrStatus = $prData['status'];
                 $prUpdate = $db->prepare("
                     UPDATE purchase_requests
                     SET status = 'converted',
                         updated_at = NOW()
                     WHERE id = ?
-                      AND status = 'approved'
+                      AND status IN ('pending', 'approved')
                 ");
                 $prUpdate->execute([$purchaseRequestId]);
-                addPRStatusHistory($db, $purchaseRequestId, 'approved', 'converted', $currentUser['user_id'], 'Converted to PO ' . $poNumber);
+                addPRStatusHistory($db, $purchaseRequestId, $oldPrStatus, 'converted', $currentUser['user_id'], 'Converted to PO ' . $poNumber);
 
                 $db->commit();
 
@@ -921,7 +1189,7 @@ function handlePost($db, $action, $currentUser) {
                     'total_amount' => $totalAmount,
                     'payment_terms' => $paymentTerms,
                     'due_date' => $dueDate
-                ], 'Purchase order created from PR ' . $prData['pr_number'], 201);
+                ], 'Purchase order created from PRS ' . $prData['pr_number'], 201);
 
             } catch (Exception $e) {
                 $db->rollBack();
@@ -937,7 +1205,7 @@ function handlePost($db, $action, $currentUser) {
                 Response::error('purchase_request_id is required', 400);
             }
 
-            $validated = loadAndValidateApprovedPRForSplit($db, (int) $data['purchase_request_id'], $data);
+            $validated = loadAndValidateSubmittedPRSForSplit($db, (int) $data['purchase_request_id'], $data);
             $prData      = $validated['pr'];
             $prItems     = $validated['prItems'];
             $assignments = $validated['assignments'];
@@ -951,6 +1219,7 @@ function handlePost($db, $action, $currentUser) {
                     Response::error("Supplier $sid is invalid or inactive", 400);
                 }
             }
+            validateAssignmentsAgainstSelectedCanvassQuotes($db, $assignments);
             $groups = groupAssignmentsBySupplier($assignments);
 
             $paymentTerms = $data['payment_terms'] ?? 'cash';
@@ -1046,7 +1315,7 @@ function handlePost($db, $action, $currentUser) {
                     'pr_status'       => $finalPrStatus,
                     'po_count'        => count($createdPOs),
                     'purchase_orders' => $createdPOs,
-                ], count($createdPOs) . ' purchase order(s) generated from PR ' . $prData['pr_number'], 201);
+                ], count($createdPOs) . ' purchase order(s) generated from PRS ' . $prData['pr_number'], 201);
 
             } catch (Exception $e) {
                 $db->rollBack();
@@ -1078,52 +1347,39 @@ function handlePut($db, $action, $currentUser) {
 
     switch ($action) {
         case 'submit':
-            requireActionRole($currentUser, ['purchaser'], 'Only the Purchaser can finalize purchase orders');
+            requireActionRole($currentUser, ['purchaser'], 'Only the Purchaser can submit purchase orders for approval');
 
-            // Finalize PO (draft/pending -> approved) â€” no GM approval required
-            if (!in_array($current['status'], ['draft', 'pending'])) {
-                Response::error('Only draft or pending POs can be finalized', 400);
-            }
-
-            $approverStmt = $db->prepare("SELECT full_name FROM users WHERE id = ?");
-            $approverStmt->execute([$currentUser['user_id']]);
-            $approverName = $approverStmt->fetchColumn() ?: 'Purchaser';
-            $approvedAt = date('Y-m-d H:i:s');
-            $approvalRemarks = trim((string)($data['approval_remarks'] ?? $data['remarks'] ?? 'Auto-approved by Purchasing'));
-            if ($approvalRemarks === '') {
-                $approvalRemarks = 'Auto-approved by Purchasing';
+            // V4.1: Submit PO for GM approval (draft -> pending).
+            // The Purchaser no longer self-approves. The GM must sign off.
+            if ($current['status'] !== 'draft') {
+                Response::error('Only draft POs can be submitted for approval', 400);
             }
 
             $stmt = $db->prepare("
                 UPDATE purchase_orders
-                SET status = 'approved',
-                    approved_by = ?,
-                    approved_at = ?,
-                    approver_name = ?,
-                    approval_remarks = ?,
-                    sent_to_supplier_at = NULL,
-                    sent_to_supplier_by = NULL,
+                SET status = 'pending',
                     updated_at = NOW()
                 WHERE id = ?
             ");
-            $stmt->execute([$currentUser['user_id'], $approvedAt, $approverName, $approvalRemarks, $id]);
+            $stmt->execute([$id]);
 
-            logAudit($currentUser['user_id'], 'APPROVE', 'purchase_orders', $id,
-                ['status' => $current['status']],
-                ['status' => 'approved', 'approved_by' => $currentUser['user_id'], 'approver_name' => $approverName, 'approved_at' => $approvedAt, 'approval_remarks' => $approvalRemarks, 'auto_approved' => true]
+            logAudit($currentUser['user_id'], 'SUBMIT', 'purchase_orders', $id,
+                ['status' => 'draft'],
+                ['status' => 'pending', 'submitted_by' => $currentUser['user_id']]
             );
 
+            // Notify the GM that a PO is waiting for their signature
             createProcurementNotification(
                 $db,
-                'warehouse_raw',
-                'po_approved_pending_delivery',
-                'Approved PO pending delivery',
-                'PO ' . $current['po_number'] . ' has been approved by Purchasing and is ready for Warehouse receiving.',
+                'general_manager',
+                'po_pending_approval',
+                'PO awaiting your approval',
+                'PO ' . $current['po_number'] . ' (' . number_format($current['total_amount'] ?? 0, 2) . ') has been submitted by Purchasing and needs your approval.',
                 'purchase_order',
                 $id
             );
 
-            Response::success(null, 'Purchase order finalized and approved');
+            Response::success(null, 'Purchase order submitted for GM approval');
             break;
 
         case 'approve':
@@ -1177,6 +1433,17 @@ function handlePut($db, $action, $currentUser) {
                 $id
             );
 
+            // V4.1: Notify Finance so they can prepare funds for the upcoming bill
+            createProcurementNotification(
+                $db,
+                'finance_officer',
+                'po_approved_prepare_funds',
+                'PO approved — prepare funds',
+                'PO ' . $current['po_number'] . ' (' . number_format($current['total_amount'] ?? 0, 2) . ') was approved by GM. Payment terms: ' . ($current['payment_terms'] ?? 'N/A') . '. Please prepare funds for the upcoming supplier bill.',
+                'purchase_order',
+                $id
+            );
+
             Response::success([
                 'id' => $id,
                 'po_number' => $current['po_number'],
@@ -1224,13 +1491,13 @@ function handlePut($db, $action, $currentUser) {
             if (!empty($current['purchase_request_id']) && tableExists($db, 'purchase_requests')) {
                 $prUpdate = $db->prepare("
                     UPDATE purchase_requests
-                    SET status = 'approved',
+                    SET status = 'pending',
                         updated_at = NOW()
                     WHERE id = ?
                       AND status = 'converted'
                 ");
                 $prUpdate->execute([$current['purchase_request_id']]);
-                addPRStatusHistory($db, $current['purchase_request_id'], 'converted', 'approved', $currentUser['user_id'], 'Linked PO rejected: ' . $reason);
+                addPRStatusHistory($db, $current['purchase_request_id'], 'converted', 'pending', $currentUser['user_id'], 'Linked PO rejected: ' . $reason);
             }
 
             logAudit($currentUser['user_id'], 'REJECT', 'purchase_orders', $id,
@@ -1333,6 +1600,11 @@ function handlePut($db, $action, $currentUser) {
                 Response::error('Only fully received POs can be closed', 400);
             }
 
+            $verifiedRR = getLatestReceivingReportForPO($db, $id);
+            if (!$verifiedRR || $verifiedRR['status'] !== 'verified') {
+                Response::error('The Purchaser must verify the Receiving Report before this PO can be closed', 400);
+            }
+
             $stmt = $db->prepare("
                 UPDATE purchase_orders
                 SET status = 'closed',
@@ -1347,6 +1619,11 @@ function handlePut($db, $action, $currentUser) {
             );
 
             Response::success(['id' => $id, 'status' => 'closed'], 'Purchase order closed');
+            break;
+
+        case 'verify_rr':
+            requireActionRole($currentUser, ['purchaser'], 'Only the Purchaser can verify Receiving Reports');
+            verifyReceivingReportAgainstPO($db, $currentUser, $data);
             break;
 
         case 'receive_with_prices':
@@ -1556,10 +1833,10 @@ function handlePut($db, $action, $currentUser) {
 
                 createProcurementNotification(
                     $db,
-                    'finance_officer',
-                    $newStatus === 'received' ? 'po_received_pending_payment' : 'po_partially_received_pending_payment',
-                    $newStatus === 'received' ? 'PO received for payment review' : 'PO partially received',
-                    'PO ' . $current['po_number'] . ' has been ' . ($newStatus === 'received' ? 'fully received' : 'partially received') . ' by Warehouse and is ready for Finance review.',
+                    'purchaser',
+                    $newStatus === 'received' ? 'rr_ready_for_verification' : 'po_partially_received',
+                    $newStatus === 'received' ? 'Receiving Report ready for verification' : 'PO partially received',
+                    'Warehouse Raw recorded delivery for PO ' . $current['po_number'] . '. ' . ($newStatus === 'received' ? 'Please verify the RR against the approved PO.' : 'Some items are still pending delivery.'),
                     'purchase_order',
                     $id
                 );
@@ -2392,23 +2669,23 @@ function buildReceivingNotes($receivingMeta, $itemData) {
 
 /**
  * ============================================================
- * PR -> PO Supplier Consolidation (create_from_pr)
+ * PRS -> PO Supplier Consolidation (create_from_pr)
  * ============================================================
- * Allows a single approved Purchase Request to be split into
+ * Allows a single submitted Purchase Request Slip to be split into
  * multiple POs (one per distinct supplier). Items that share a
- * supplier are consolidated into a single PO. The PR's status
+ * supplier are consolidated into a single PO. The PRS status
  * becomes `converted` only when every line is fully allocated;
  * otherwise it becomes `partially_converted`.
  */
 
 /**
  * Validate the assignments payload submitted to create_from_pr.
- * Returns the indexed list of approved PR items + the validated
+ * Returns the indexed list of submitted PRS items + the validated
  * assignments array. On error, calls Response::error() which
  * short-circuits the request.
  */
-function loadAndValidateApprovedPRForSplit($db, $purchaseRequestId, $data) {
-    $prData = getApprovedPurchaseRequestForPO($db, $purchaseRequestId);
+function loadAndValidateSubmittedPRSForSplit($db, $purchaseRequestId, $data) {
+    $prData = getSubmittedPurchaseRequestSlipForPO($db, $purchaseRequestId);
     $prItems = getPurchaseRequestItemsForPO($db, $purchaseRequestId);
 
     if (empty($data['items']) || !is_array($data['items'])) {
@@ -2469,10 +2746,60 @@ function loadAndValidateApprovedPRForSplit($db, $purchaseRequestId, $data) {
             'is_vat_item'    => !empty($row['is_vat_item']) ? 1 : 0,
             'notes'          => isset($row['notes']) ? trim((string) $row['notes']) : null,
             'pr_item_qty'    => $prItemQty,
+            'item_description' => $prItemsById[$prItemId]['item_description'] ?? ('PRS line ' . $prItemId),
         ];
     }
 
     return ['pr' => $prData, 'prItems' => $prItems, 'assignments' => $assignments];
+}
+
+function validateAssignmentsAgainstSelectedCanvassQuotes(PDO $db, array $assignments): void {
+    if (!tableExists($db, 'price_canvass') || !tableExists($db, 'canvass_quotes')) {
+        Response::error('Complete canvassing before creating a PO. The system will auto-pick the cheapest quote after 3 quotes.', 400);
+    }
+
+    foreach ($assignments as $assignment) {
+        $prItemId = (int) ($assignment['pr_item_id'] ?? 0);
+        $supplierId = (int) ($assignment['supplier_id'] ?? 0);
+        $unitPrice = (float) ($assignment['unit_price'] ?? 0);
+        $itemName = $assignment['item_description'] ?? ('PRS line ' . $prItemId);
+
+        if ($prItemId <= 0) {
+            Response::error('Every PO line must come from a PRS item', 400);
+        }
+
+        $stmt = $db->prepare("
+            SELECT
+                pc.id as canvass_id,
+                pc.status,
+                q.id as quote_id,
+                q.supplier_id,
+                q.unit_price,
+                s.supplier_name
+            FROM price_canvass pc
+            JOIN canvass_quotes q ON q.id = pc.selected_quote_id
+            JOIN suppliers s ON s.id = q.supplier_id
+            WHERE pc.purchase_request_item_id = ?
+              AND pc.status = 'completed'
+              AND q.is_selected = 1
+            ORDER BY pc.id DESC
+            LIMIT 1
+        ");
+        $stmt->execute([$prItemId]);
+        $selected = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$selected) {
+            Response::error('Add 3 supplier quotes for ' . $itemName . '. The system will auto-pick the cheapest quote before creating a PO.', 400);
+        }
+
+        if ((int) $selected['supplier_id'] !== $supplierId) {
+            Response::error($itemName . ' must use the auto-selected cheapest supplier: ' . $selected['supplier_name'], 400);
+        }
+
+        if (abs((float) $selected['unit_price'] - $unitPrice) > 0.0001) {
+            Response::error($itemName . ' must use the auto-selected cheapest price: ' . number_format((float) $selected['unit_price'], 2), 400);
+        }
+    }
 }
 
 function groupAssignmentsBySupplier($assignments) {

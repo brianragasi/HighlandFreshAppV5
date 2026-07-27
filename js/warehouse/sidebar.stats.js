@@ -52,8 +52,8 @@
 
             // Keep classic badge ids in sync (shared sidebar + older page scripts)
             setStat('pendingReqsBadge', reqs);
-            setStat('reorderAlertsBadge', low);
             setStat('pendingMilkBadge', milk);
+            setStat('lowStockBadge', low);
         } catch (err) {
             // Silently keep the "0" placeholders; the dashboard page itself
             // surfaces the real error to the user via its own try/catch.

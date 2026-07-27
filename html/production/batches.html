@@ -958,7 +958,8 @@
                         ? getRequiredMilkLiters(selectedRecipeData, plannedQty)
                         : (parseFloat(selectedRecipeData?.base_milk_liters) || 0);
                     const available = parseFloat(data.total_available_liters) || 0;
-                    const isEnough = available >= required - 0.01;
+                    const shrinkageTolerance = 0.95;
+                    const isEnough = available >= (required * shrinkageTolerance);
                     const line = document.getElementById('statusMilkLine');
                     if (!line) return;
                     line.innerHTML = isEnough
@@ -971,12 +972,25 @@
                             <div class="flex-1">
                                 <div class="text-warning font-semibold">Yogurt needs pasteurized milk</div>
                                 <div class="text-xs text-base-content/60 mb-1">${data.message || `Need ${required.toFixed(1)} L; only ${available.toFixed(1)} L pasteurized available. Run pasteurization first.`}</div>
-                                <a href="pasteurization.html" class="link link-hover text-xs font-semibold inline-flex items-center gap-1">
-                                    <i class="fas fa-arrow-right text-[10px]"></i>
-                                    Open Pasteurization page
-                                </a>
+                                ${(() => {
+                                    const pVol = required > 0 ? required.toFixed(2) : '';
+                                    const tTemp = selectedRecipeData?.pasteurization_temp || '';
+                                    const tDur = selectedRecipeData?.pasteurization_time_mins || '';
+                                    const durUnit = (tTemp >= 80 && tDur >= 20) ? 'minutes' : 'minutes';
+                                    const bUrl = new URL('pasteurization.html', window.location.href);
+                                    bUrl.searchParams.set('action', 'new');
+                                    if (activeRequisitionPrefill?.id) bUrl.searchParams.set('req_id', activeRequisitionPrefill.id);
+                                    if (pVol) bUrl.searchParams.set('planned_volume', pVol);
+                                    if (tTemp) bUrl.searchParams.set('target_temp', tTemp);
+                                    if (tDur) bUrl.searchParams.set('target_duration', tDur);
+                                    bUrl.searchParams.set('duration_unit', durUnit);
+                                    return `<a href="${bUrl.pathname + bUrl.search}" class="link link-hover text-xs font-semibold inline-flex items-center gap-1">
+                                        <i class="fas fa-arrow-right text-[10px]"></i>
+                                        Open Pasteurization page
+                                    </a>`;
+                                })()}
                             </div>`;
-                    setNewRunSubmitEnabled(isEnough || available > 0);
+                    setNewRunSubmitEnabled(isEnough);
                 } else {
                     setStatusMilk({ ok: false, message: response.message || 'Could not check pasteurized milk availability.' });
                     setNewRunSubmitEnabled(true); // backend re-validates on submit

@@ -584,10 +584,10 @@ function createReceivingReport($db, $currentUser) {
 
         createProcurementNotification(
             $db,
-            'finance_officer',
-            $newStatus === 'received' ? 'po_received_pending_payment' : 'po_partially_received_pending_payment',
-            $newStatus === 'received' ? 'PO received for payment review' : 'PO partially received',
-            'PO ' . $po['po_number'] . ' has been ' . ($newStatus === 'received' ? 'fully received' : 'partially received') . ' by Warehouse and is ready for Finance review.',
+            'purchaser',
+            $newStatus === 'received' ? 'rr_ready_for_verification' : 'po_partially_received',
+            $newStatus === 'received' ? 'Receiving Report ready for verification' : 'PO partially received',
+            'Warehouse Raw recorded delivery for PO ' . $po['po_number'] . '. ' . ($newStatus === 'received' ? 'Please verify the RR against the approved PO.' : 'Some items are still pending delivery.'),
             'purchase_order',
             $poId
         );
@@ -805,9 +805,8 @@ function handlePut($db, $action, $currentUser) {
  * Verify receiving report (Purchaser action)
  */
 function verifyReceivingReport($db, $currentUser) {
-    // Only purchaser or GM can verify
-    if (!in_array($currentUser['role'], ['purchaser', 'general_manager'])) {
-        Response::error('Only Purchaser or GM can verify receiving reports', 403);
+    if ($currentUser['role'] !== 'purchaser') {
+        Response::error('Only the Purchaser can verify receiving reports', 403);
     }
     
     $id = getParam('id');
@@ -829,6 +828,11 @@ function verifyReceivingReport($db, $currentUser) {
     if ($rr['status'] !== 'pending_verification' && $rr['status'] !== 'discrepancy') {
         Response::error('This receiving report cannot be verified', 400);
     }
+
+    $mismatch = findReceivingMismatchForPO($db, (int)$rr['po_id']);
+    if ($mismatch !== null) {
+        Response::error($mismatch, 400);
+    }
     
     // Update RR status
     $newStatus = 'verified';
@@ -843,6 +847,22 @@ function verifyReceivingReport($db, $currentUser) {
         SET status = ?, verified_by = ?, verified_at = NOW(), notes = ?, updated_at = NOW()
         WHERE id = ?
     ")->execute([$newStatus, $currentUser['user_id'], $notes, $id]);
+
+    $db->prepare("
+        UPDATE receiving_reports
+        SET status = 'verified',
+            verified_by = COALESCE(verified_by, ?),
+            verified_at = COALESCE(verified_at, NOW()),
+            updated_at = NOW()
+        WHERE po_id = ?
+          AND status IN ('pending_verification', 'discrepancy')
+    ")->execute([$currentUser['user_id'], $rr['po_id']]);
+
+    $db->prepare("
+        UPDATE purchase_orders
+        SET status = 'closed', updated_at = NOW()
+        WHERE id = ?
+    ")->execute([$rr['po_id']]);
     
     // Adjust payable amount based on actual received
     if ($rr['total_rejected'] > 0) {
@@ -852,10 +872,61 @@ function verifyReceivingReport($db, $currentUser) {
     // Log audit
     logAudit($currentUser['user_id'], 'VERIFY', 'receiving_reports', $id, 
         ['status' => $rr['status']], 
-        ['status' => 'verified']
+        ['status' => 'verified', 'po_status' => 'closed']
+    );
+
+    createProcurementNotification(
+        $db,
+        'finance_officer',
+        'rr_verified_transaction_closed',
+        'RR verified, transaction closed',
+        'Purchasing verified RR ' . $rr['rr_number'] . ' against the approved PO. The transaction is closed and ready for payment processing.',
+        'purchase_order',
+        $rr['po_id']
     );
     
-    Response::success(null, 'Receiving report verified successfully');
+    Response::success(null, 'Receiving report verified and PO closed');
+}
+
+function findReceivingMismatchForPO($db, $poId) {
+    $stmt = $db->prepare("
+        SELECT id, item_description, quantity, quantity_received, quantity_rejected
+        FROM purchase_order_items
+        WHERE po_id = ?
+    ");
+    $stmt->execute([$poId]);
+    $items = $stmt->fetchAll();
+
+    $rrStmt = $db->prepare("
+        SELECT rri.po_item_id, SUM(rri.quantity_received) as quantity_received, SUM(rri.quantity_rejected) as quantity_rejected
+        FROM receiving_report_items rri
+        JOIN receiving_reports rr ON rr.id = rri.rr_id
+        WHERE rr.po_id = ?
+        GROUP BY rri.po_item_id
+    ");
+    $rrStmt->execute([$poId]);
+    $rrItems = [];
+    foreach ($rrStmt->fetchAll() as $row) {
+        $rrItems[(int)$row['po_item_id']] = $row;
+    }
+
+    foreach ($items as $item) {
+        $ordered = (float)$item['quantity'];
+        $received = (float)$item['quantity_received'];
+        $rejected = (float)$item['quantity_rejected'];
+        $rrReceived = isset($rrItems[(int)$item['id']]) ? (float)$rrItems[(int)$item['id']]['quantity_received'] : 0.0;
+        $rrRejected = isset($rrItems[(int)$item['id']]) ? (float)$rrItems[(int)$item['id']]['quantity_rejected'] : 0.0;
+        $name = $item['item_description'] ?: ('PO item #' . $item['id']);
+
+        if ($received + 0.0001 < $ordered || $rrReceived + 0.0001 < $ordered) {
+            return $name . ' is not fully received yet.';
+        }
+        if ($rejected > 0.0001 || $rrRejected > 0.0001) {
+            return $name . ' has rejected quantity. Resolve the discrepancy before closing this transaction.';
+        }
+    }
+
+    return null;
 }
 
 /**

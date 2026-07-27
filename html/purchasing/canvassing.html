@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canvassing - Purchasing | Highland Fresh</title>
+    <link rel="stylesheet" href="../../css/tailwind.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen">
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-4 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <img src="../../images/logo.jpg" alt="Highland Fresh Logo" class="w-10 h-10 rounded-xl object-cover">
+                <div class="flex-1 min-w-0">
+                    <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
+                    <p class="text-xs text-base-content/60 truncate">Purchasing Department</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square lg:hidden" onclick="toggleSidebar()"><i class="fas fa-times"></i></button>
+            </div>
+        </div>
+        <nav class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Main Menu</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="dashboard.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-th-large w-5 text-center text-base-content/60"></i><span class="flex-1">Dashboard</span></a></li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Procurement</h2>
+                <ul class="menu menu-sm p-0 gap-1">
+                    <li><a href="canvassing.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                        <i class="fas fa-scale-balanced w-5 text-center"></i><span class="flex-1">Canvassing</span></a></li>
+                    <li><a href="purchase_orders.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-file-invoice-dollar w-5 text-center text-base-content/60"></i><span class="flex-1">Purchase Orders</span></a></li>
+                    <li><a href="suppliers.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-truck-field w-5 text-center text-base-content/60"></i><span class="flex-1">Suppliers</span></a></li>
+                </ul>
+            </div>
+        </nav>
+        <div class="p-4 border-t border-base-300">
+            <div class="flex items-center gap-3">
+                <div class="avatar placeholder"><div class="w-10 rounded-xl bg-primary text-primary-content"><span class="text-sm font-semibold" id="userInitials">PU</span></div></div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate" id="sidebarUserName">Purchaser</p>
+                    <p class="text-xs text-base-content/60 truncate">Purchasing</p>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-square" onclick="AuthService.logout()"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+    </aside>
+
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <div class="flex-none lg:hidden">
+                <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button>
+            </div>
+            <div class="flex-1">
+                <h1 class="text-lg lg:text-xl font-bold text-base-content">Canvassing</h1>
+            </div>
+            <div class="flex-none flex items-center gap-2">
+                <a href="purchase_orders.html" class="btn btn-ghost btn-sm gap-2"><i class="fas fa-file-invoice-dollar"></i><span class="hidden sm:inline">PO List</span></a>
+                <label class="swap swap-rotate btn btn-ghost btn-circle">
+                    <input type="checkbox" id="themeToggle">
+                    <i class="fas fa-sun swap-off text-lg"></i>
+                    <i class="fas fa-moon swap-on text-lg"></i>
+                </label>
+            </div>
+        </header>
+
+        <main class="flex-1 p-4 lg:p-6 space-y-6">
+            <section class="bg-base-100 border border-base-300 rounded-lg p-4">
+                <div class="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-end">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Warehouse PRS</span></label>
+                        <select id="prsSelect" class="select select-bordered w-full">
+                            <option value="">Loading PRS inbox...</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary gap-2" onclick="openSelectedPRS()">
+                        <i class="fas fa-folder-open"></i>
+                        Open
+                    </button>
+                </div>
+            </section>
+
+            <section id="emptyState" class="bg-base-100 border border-base-300 rounded-lg p-10 text-center">
+                <i class="fas fa-inbox text-4xl text-base-content/20 mb-3"></i>
+                <p class="font-semibold">Choose a submitted PRS</p>
+                <p class="text-sm text-base-content/60 mt-1">Record 3 supplier quotes per item. The system automatically picks the cheapest valid quote.</p>
+            </section>
+
+            <section id="workbench" class="hidden space-y-6">
+                <div class="bg-base-100 border border-base-300 rounded-lg p-4">
+                    <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                        <div>
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="badge badge-primary badge-outline">PRS</span>
+                                <span class="font-mono font-semibold" id="prsNumber">-</span>
+                            </div>
+                            <h2 class="text-xl font-bold" id="prsPurpose">Warehouse request</h2>
+                            <p class="text-sm text-base-content/60 mt-1" id="prsMeta">-</p>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button class="btn btn-outline btn-sm gap-2" onclick="refreshWorkbench()"><i class="fas fa-rotate"></i>Refresh</button>
+                            <button id="createPOBtn" class="btn btn-primary btn-sm gap-2" onclick="createPOFromQuotes()" disabled>
+                                <i class="fas fa-file-invoice-dollar"></i>
+                                Create PO
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="progressBand" class="alert bg-warning/10 border border-warning/30">
+                    <i class="fas fa-scale-balanced text-warning"></i>
+                    <span id="progressText">Preparing quote status...</span>
+                </div>
+
+                <div class="bg-base-100 border border-base-300 rounded-lg p-4">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="form-control">
+                            <label class="label"><span class="label-text">Order Date</span></label>
+                            <input id="orderDate" type="date" class="input input-bordered">
+                        </div>
+                        <div class="form-control">
+                            <label class="label"><span class="label-text">Expected Delivery</span></label>
+                            <input id="expectedDelivery" type="date" class="input input-bordered">
+                        </div>
+                        <div class="form-control">
+                            <label class="label"><span class="label-text">Payment Terms</span></label>
+                            <select id="paymentTerms" class="select select-bordered">
+                                <option value="cash">Cash</option>
+                                <option value="credit_7">Credit - 7 Days</option>
+                                <option value="credit_15">Credit - 15 Days</option>
+                                <option value="credit_30" selected>Credit - 30 Days</option>
+                                <option value="credit_45">Credit - 45 Days</option>
+                                <option value="credit_60">Credit - 60 Days</option>
+                            </select>
+                        </div>
+                        <div class="form-control md:col-span-3">
+                            <label class="label"><span class="label-text">Notes</span></label>
+                            <input id="poNotes" class="input input-bordered" placeholder="Optional PO notes">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="itemList" class="space-y-4"></div>
+            </section>
+        </main>
+    </div>
+
+    <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
+
+    <script src="../../js/vendor/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/purchasing/purchasing.service.js"></script>
+
+    <script>
+        let currentPRS = null;
+        let suppliers = [];
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!AuthService.isAuthenticated()) {
+                window.location.href = '../login.html';
+                return;
+            }
+
+            const user = AuthService.getCurrentUser();
+            if (user?.role !== 'purchaser' && user?.role !== 'general_manager') {
+                window.location.href = '../login.html';
+                return;
+            }
+
+            document.getElementById('sidebarUserName').textContent = user.full_name || user.username || 'Purchaser';
+            document.getElementById('userInitials').textContent = getInitials(user.full_name || user.username || 'PU');
+            setupTheme();
+            setDefaultDates();
+
+            await Promise.all([loadSuppliers(), loadPRSInbox()]);
+
+            const prId = new URLSearchParams(window.location.search).get('pr_id');
+            if (prId) {
+                document.getElementById('prsSelect').value = prId;
+                await openPRS(prId);
+            }
+        });
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('-translate-x-full');
+            document.getElementById('sidebarBackdrop').classList.toggle('hidden');
+        }
+
+        function setupTheme() {
+            const toggle = document.getElementById('themeToggle');
+            const saved = localStorage.getItem('theme') || 'emerald';
+            document.documentElement.setAttribute('data-theme', saved);
+            toggle.checked = saved === 'dark';
+            toggle.addEventListener('change', () => {
+                const theme = toggle.checked ? 'dark' : 'emerald';
+                document.documentElement.setAttribute('data-theme', theme);
+                localStorage.setItem('theme', theme);
+            });
+        }
+
+        function setDefaultDates() {
+            const today = new Date();
+            const soon = new Date();
+            soon.setDate(today.getDate() + 7);
+            document.getElementById('orderDate').value = today.toISOString().slice(0, 10);
+            document.getElementById('expectedDelivery').value = soon.toISOString().slice(0, 10);
+        }
+
+        async function loadSuppliers() {
+            const response = await PurchasingService.getSuppliers({ status: 'active' });
+            suppliers = response?.data || [];
+        }
+
+        async function loadPRSInbox() {
+            const select = document.getElementById('prsSelect');
+            try {
+                const response = await PurchasingService.getPRSInbox();
+                const prs = response?.data || [];
+                select.innerHTML = '<option value="">Select submitted PRS...</option>' + prs.map(pr => {
+                    const label = `${pr.pr_number} - ${pr.purpose || 'Warehouse request'}`;
+                    return `<option value="${pr.id}">${escapeHtml(label)}</option>`;
+                }).join('');
+                if (prs.length === 0) {
+                    select.innerHTML = '<option value="">No submitted PRS in inbox</option>';
+                }
+            } catch (error) {
+                select.innerHTML = '<option value="">Failed to load PRS inbox</option>';
+                showToast('Could not load PRS inbox', 'error');
+            }
+        }
+
+        async function openSelectedPRS() {
+            const prId = document.getElementById('prsSelect').value;
+            if (!prId) {
+                showToast('Choose a PRS first', 'error');
+                return;
+            }
+            await openPRS(prId);
+        }
+
+        async function openPRS(prId) {
+            try {
+                document.getElementById('emptyState').classList.add('hidden');
+                document.getElementById('workbench').classList.remove('hidden');
+                document.getElementById('itemList').innerHTML = loadingMarkup('Preparing canvassing records...');
+
+                const prepared = await PurchasingService.preparePRSCanvassing(prId);
+                currentPRS = prepared?.data?.prs || null;
+                if (!currentPRS) {
+                    const detail = await PurchasingService.getPRSCanvassingWorkbench(prId);
+                    currentPRS = detail?.data || null;
+                }
+                renderWorkbench();
+                history.replaceState(null, '', `canvassing.html?pr_id=${encodeURIComponent(prId)}`);
+            } catch (error) {
+                showToast(error?.message || 'Failed to open PRS', 'error');
+                document.getElementById('itemList').innerHTML = errorMarkup('Could not open this PRS.');
+            }
+        }
+
+        async function refreshWorkbench() {
+            if (!currentPRS?.id) return;
+            try {
+                const detail = await PurchasingService.getPRSCanvassingWorkbench(currentPRS.id);
+                currentPRS = detail?.data || currentPRS;
+                renderWorkbench();
+                showToast('Quote status refreshed', 'success');
+            } catch (error) {
+                showToast('Refresh failed', 'error');
+            }
+        }
+
+        function renderWorkbench() {
+            if (!currentPRS) return;
+            document.getElementById('prsNumber').textContent = currentPRS.pr_number || '-';
+            document.getElementById('prsPurpose').textContent = currentPRS.purpose || 'Warehouse request';
+            document.getElementById('prsMeta').textContent = `Requested by ${currentPRS.requested_by_name || 'Warehouse Raw'} | Priority: ${currentPRS.priority || 'normal'} | ${currentPRS.items?.length || 0} item(s)`;
+
+            const items = currentPRS.items || [];
+            document.getElementById('itemList').innerHTML = items.map(renderItem).join('');
+            updateProgress();
+        }
+
+        function renderItem(item, index) {
+            const canvass = item.canvass || {};
+            const quotes = canvass.quotes || [];
+            const selected = quotes.find(q => Number(q.is_selected) === 1);
+            const isManualChoice = canvass.selection_method === 'manual_override';
+            const itemName = item.ingredient_name || item.mro_item_name || item.item_description || 'Requested item';
+            const usedSupplierIds = new Set(quotes.map(q => String(q.supplier_id)));
+            const supplierOptions = suppliers
+                .filter(s => !usedSupplierIds.has(String(s.id)))
+                .map(s => `<option value="${s.id}">${escapeHtml(s.supplier_name)} (${escapeHtml(s.supplier_code || '')})</option>`)
+                .join('');
+            const canAddQuote = canvass.status !== 'cancelled' && supplierOptions !== '';
+
+            return `
+                <article class="bg-base-100 border border-base-300 rounded-lg p-4">
+                    <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-4">
+                        <div>
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="badge badge-ghost">Line ${index + 1}</span>
+                                <span class="badge ${selected ? 'badge-success' : quotes.length >= 3 ? 'badge-warning' : 'badge-ghost'}">${selected ? (isManualChoice ? 'Purchaser choice' : 'Recommended cheapest') : `${quotes.length}/3 quotes`}</span>
+                            </div>
+                            <h3 class="font-bold text-lg">${escapeHtml(itemName)}</h3>
+                            <p class="text-sm text-base-content/60">${formatQty(item.quantity)} ${escapeHtml(item.unit || 'units')} requested</p>
+                        </div>
+                        <div class="text-sm lg:text-right">
+                            <p class="text-base-content/50">Canvass</p>
+                            <p class="font-mono font-semibold">${escapeHtml(canvass.canvass_code || '-')}</p>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto mb-4">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Supplier</th>
+                                    <th class="text-right">Unit Price</th>
+                                    <th>Delivery</th>
+                                    <th>Terms</th>
+                                    <th>Status</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${quotes.length ? quotes.map(q => renderQuoteRow(q, quotes.length, selected, canvass)).join('') : `
+                                    <tr><td colspan="6" class="text-center py-6 text-base-content/50">No quotes yet</td></tr>
+                                `}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    ${selected ? `
+                        <div class="alert ${isManualChoice ? 'alert-info' : 'alert-success'} py-2 mb-4">
+                            <i class="fas ${isManualChoice ? 'fa-user-check' : 'fa-check-circle'}"></i>
+                            <span>
+                                ${isManualChoice
+                                    ? `Purchaser chose ${escapeHtml(selected.supplier_name)} at ${formatCurrency(selected.unit_price)} per ${escapeHtml(item.unit || 'unit')}. Reason: ${escapeHtml(canvass.selection_reason || 'No reason recorded')}.`
+                                    : `System recommended cheapest quote: ${escapeHtml(selected.supplier_name)} at ${formatCurrency(selected.unit_price)} per ${escapeHtml(item.unit || 'unit')}.`}
+                            </span>
+                        </div>
+                    ` : ''}
+
+                    ${canAddQuote ? `
+                        <div class="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+                            <div class="form-control md:col-span-2">
+                                <label class="label"><span class="label-text">Supplier</span></label>
+                                <select id="supplier-${item.id}" class="select select-bordered select-sm">
+                                    <option value="">Select supplier...</option>
+                                    ${supplierOptions}
+                                </select>
+                            </div>
+                            <div class="form-control">
+                                <label class="label"><span class="label-text">Price</span></label>
+                                <input id="price-${item.id}" type="number" min="0.01" step="0.01" class="input input-bordered input-sm" placeholder="0.00">
+                            </div>
+                            <div class="form-control">
+                                <label class="label"><span class="label-text">Days</span></label>
+                                <input id="days-${item.id}" type="number" min="0" step="1" class="input input-bordered input-sm" value="7">
+                            </div>
+                            <div class="form-control">
+                                <label class="label"><span class="label-text">Terms</span></label>
+                                <select id="terms-${item.id}" class="select select-bordered select-sm">
+                                    <option value="cash">Cash</option>
+                                    <option value="credit_7">7 Days</option>
+                                    <option value="credit_15">15 Days</option>
+                                    <option value="credit_30" selected>30 Days</option>
+                                    <option value="credit_45">45 Days</option>
+                                    <option value="credit_60">60 Days</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-primary btn-sm gap-2" onclick="addQuote(${item.id})">
+                                <i class="fas fa-plus"></i>Add Quote
+                            </button>
+                        </div>
+                    ` : ''}
+                </article>
+            `;
+        }
+
+        function renderQuoteRow(quote, quoteCount, selected, canvass) {
+            const isSelected = Number(quote.is_selected) === 1;
+            const isManualChoice = canvass.selection_method === 'manual_override';
+            const canOverride = quoteCount >= 3 && !isSelected;
+            return `
+                <tr class="${isSelected ? 'bg-success/5' : ''}">
+                    <td>
+                        <div class="font-semibold">${escapeHtml(quote.supplier_name)}</div>
+                        <div class="text-xs text-base-content/50">${escapeHtml(quote.supplier_code || '')}</div>
+                    </td>
+                    <td class="text-right font-semibold">${formatCurrency(quote.unit_price)}</td>
+                    <td>${parseInt(quote.delivery_days || 0, 10)} day(s)</td>
+                    <td>${formatTerms(quote.payment_terms)}</td>
+                    <td>${isSelected ? `<span class="badge ${isManualChoice ? 'badge-info' : 'badge-success'} badge-sm">${isManualChoice ? 'Chosen by Purchaser' : 'Recommended cheapest'}</span>` : '<span class="badge badge-ghost badge-sm">Quoted</span>'}</td>
+                    <td class="text-right">
+                        ${canOverride ? `<button class="btn btn-outline btn-xs gap-1" onclick="overrideQuote(${quote.id})"><i class="fas fa-user-check"></i>Use this supplier</button>` : ''}
+                        ${!selected && quoteCount < 3 ? '<span class="text-xs text-base-content/50">Need 3 quotes</span>' : ''}
+                        ${!selected && quoteCount >= 3 ? '<span class="text-xs text-base-content/50">Auto-picking cheapest...</span>' : ''}
+                    </td>
+                </tr>
+            `;
+        }
+
+        async function addQuote(itemId) {
+            const item = (currentPRS.items || []).find(x => String(x.id) === String(itemId));
+            if (!item?.canvass?.id) {
+                showToast('Canvass record is missing. Refresh and try again.', 'error');
+                return;
+            }
+            const supplierId = document.getElementById(`supplier-${itemId}`).value;
+            const price = parseFloat(document.getElementById(`price-${itemId}`).value || '0');
+            const days = parseInt(document.getElementById(`days-${itemId}`).value || '7', 10);
+            const terms = document.getElementById(`terms-${itemId}`).value;
+
+            if (!supplierId) {
+                showToast('Pick a supplier for this quote', 'error');
+                return;
+            }
+            if (price <= 0) {
+                showToast('Enter a price greater than zero', 'error');
+                return;
+            }
+
+            try {
+                const response = await PurchasingService.addCanvassQuote({
+                    canvass_id: item.canvass.id,
+                    supplier_id: supplierId,
+                    unit_price: price,
+                    delivery_days: days,
+                    payment_terms: terms
+                });
+                await refreshWorkbench();
+                showToast(response?.data?.auto_selected ? 'Quote added. Cheapest quote was picked automatically.' : 'Quote added', 'success');
+            } catch (error) {
+                showToast(error?.message || 'Could not add quote', 'error');
+            }
+        }
+
+        async function overrideQuote(quoteId) {
+            const reason = await AuthService.promptText({
+                title: 'Use This Supplier',
+                message: 'Add the business reason for choosing this supplier instead of the system recommendation.',
+                label: 'Reason',
+                placeholder: 'Example: Faster delivery needed, better quality record, preferred credit terms',
+                confirmText: 'Use Supplier',
+                icon: 'fa-user-check',
+                tone: 'primary',
+                required: true
+            });
+            if (reason === null) return;
+
+            try {
+                await PurchasingService.overrideCanvassQuote(quoteId, reason);
+                await refreshWorkbench();
+                showToast('Supplier choice saved', 'success');
+            } catch (error) {
+                showToast(error?.message || 'Could not save supplier choice', 'error');
+            }
+        }
+
+        function getSelectedLines() {
+            return (currentPRS?.items || []).map(item => {
+                const selected = (item.canvass?.quotes || []).find(q => Number(q.is_selected) === 1);
+                return { item, selected };
+            });
+        }
+
+        function updateProgress() {
+            const lines = getSelectedLines();
+            const ready = lines.filter(line => line.selected).length;
+            const total = lines.length;
+            const complete = total > 0 && ready === total;
+
+            document.getElementById('progressText').textContent = `${ready} of ${total} line item(s) have an auto-selected cheapest quote.`;
+            document.getElementById('createPOBtn').disabled = !complete;
+            document.getElementById('progressBand').className = complete
+                ? 'alert bg-success/10 border border-success/30'
+                : 'alert bg-warning/10 border border-warning/30';
+        }
+
+        async function createPOFromQuotes() {
+            const lines = getSelectedLines();
+            if (!currentPRS?.id || lines.length === 0) {
+                showToast('Open a PRS first', 'error');
+                return;
+            }
+            if (lines.some(line => !line.selected)) {
+                showToast('Add 3 supplier quotes for every PRS item. The system will pick the cheapest quote automatically.', 'error');
+                return;
+            }
+
+            const confirmed = await AuthService.confirmAction({
+                title: 'Create Purchase Order',
+                message: 'Create draft PO records from the auto-selected cheapest quotes?',
+                confirmText: 'Create PO',
+                icon: 'fa-file-invoice-dollar',
+                tone: 'primary'
+            });
+            if (!confirmed) return;
+
+            const payload = {
+                purchase_request_id: currentPRS.id,
+                order_date: document.getElementById('orderDate').value,
+                expected_delivery: document.getElementById('expectedDelivery').value || null,
+                payment_terms: document.getElementById('paymentTerms').value,
+                notes: document.getElementById('poNotes').value.trim() || `Created after canvassing ${currentPRS.pr_number}`,
+                items: lines.map(line => ({
+                    purchase_request_item_id: parseInt(line.item.id, 10),
+                    supplier_id: parseInt(line.selected.supplier_id, 10),
+                    unit_price: parseFloat(line.selected.unit_price),
+                    quantity: parseFloat(line.item.quantity || 0)
+                }))
+            };
+
+            try {
+                const response = await PurchasingService.createPurchaseOrdersFromPR(payload);
+                const created = response?.data?.purchase_orders || [];
+                showToast(`${created.length || 1} draft PO record(s) created`, 'success');
+                setTimeout(() => {
+                    window.location.href = 'purchase_orders.html';
+                }, 900);
+            } catch (error) {
+                showToast(error?.message || 'Could not create PO', 'error');
+            }
+        }
+
+        function loadingMarkup(text) {
+            return `<div class="bg-base-100 border border-base-300 rounded-lg p-10 text-center">
+                <span class="loading loading-spinner loading-md"></span>
+                <p class="mt-3 text-sm text-base-content/60">${escapeHtml(text)}</p>
+            </div>`;
+        }
+
+        function errorMarkup(text) {
+            return `<div class="bg-base-100 border border-error/30 rounded-lg p-10 text-center text-error">
+                <i class="fas fa-exclamation-circle text-3xl mb-3"></i>
+                <p>${escapeHtml(text)}</p>
+            </div>`;
+        }
+
+        function getInitials(name) {
+            return String(name || 'PU').split(' ').filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase();
+        }
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function formatQty(value) {
+            return parseFloat(value || 0).toLocaleString('en-PH', { maximumFractionDigits: 2 });
+        }
+
+        function formatCurrency(value) {
+            return 'PHP ' + parseFloat(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatTerms(value) {
+            const labels = {
+                cash: 'Cash',
+                credit_7: '7 Days',
+                credit_15: '15 Days',
+                credit_30: '30 Days',
+                credit_45: '45 Days',
+                credit_60: '60 Days'
+            };
+            return labels[value] || value || '-';
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
+            const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle';
+            const toast = document.createElement('div');
+            toast.className = `alert ${alertClass} shadow-lg text-sm`;
+            toast.innerHTML = `<i class="fas fa-${icon}"></i><span>${escapeHtml(message)}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+    </script>
+</body>
+
+</html>

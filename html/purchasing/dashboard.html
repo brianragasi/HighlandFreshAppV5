@@ -246,6 +246,13 @@
                 </h2>
                 <ul class="menu menu-sm p-0 gap-1">
                     <li>
+                        <a href="canvassing.html"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-scale-balanced w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Canvassing</span>
+                        </a>
+                    </li>
+                    <li>
                         <a href="purchase_orders.html"
                             class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-file-invoice-dollar w-5 text-center text-base-content/60"></i>
@@ -379,9 +386,9 @@
                         <p class="text-white/80 text-sm lg:text-base">Here's your procurement overview for today.</p>
                     </div>
                     <div class="flex gap-2 flex-wrap">
-                        <a href="purchase_orders.html?action=new"
+                        <a href="canvassing.html"
                             class="btn btn-sm bg-white/20 border-white/30 text-white hover:bg-white/30 backdrop-blur-sm">
-                            <i class="fas fa-plus"></i> New PO
+                            <i class="fas fa-scale-balanced"></i> Canvass PRS
                         </a>
                         <a href="suppliers.html"
                             class="btn btn-sm bg-white/20 border-white/30 text-white hover:bg-white/30 backdrop-blur-sm">
@@ -391,17 +398,17 @@
                 </div>
             </div>
 
-            <!-- ── Approved PR Alert ── -->
+            <!-- PRS Inbox Alert -->
             <div id="approvedPrAlert" class="hidden alert bg-warning/10 border border-warning/30 items-start">
                 <i class="fas fa-bell text-warning mt-1"></i>
                 <div class="flex-1">
-                    <h3 class="font-bold text-base-content" id="approvedPrAlertTitle">Approved warehouse requests are ready</h3>
+                    <h3 class="font-bold text-base-content" id="approvedPrAlertTitle">Warehouse PRS inbox</h3>
                     <p class="text-sm text-base-content/70" id="approvedPrAlertText"></p>
                     <div id="approvedPrAlertItems" class="flex flex-wrap gap-2 mt-3"></div>
                 </div>
-                <a href="purchase_orders.html?action=new" class="btn btn-warning btn-sm">
-                    <i class="fas fa-file-invoice-dollar"></i>
-                    Create PO
+                <a href="canvassing.html" class="btn btn-warning btn-sm">
+                    <i class="fas fa-scale-balanced"></i>
+                    Canvass
                 </a>
             </div>
 
@@ -460,21 +467,21 @@
                     </div>
                 </a>
 
-                <!-- Pending Requisitions -->
-                <div class="bento-card card bg-base-100 border border-base-300 cursor-pointer" onclick="scrollToRequisitions()" id="cardRequisitions">
+                <!-- PRS Inbox -->
+                <a href="canvassing.html" class="bento-card card bg-base-100 border border-base-300 cursor-pointer" id="cardRequisitions">
                     <div class="card-body p-4 lg:p-5">
                         <div class="flex items-center justify-between mb-3">
                             <div class="stat-icon cyan">
-                                <i class="fas fa-clipboard-list"></i>
+                                <i class="fas fa-file-signature"></i>
                             </div>
                             <span class="badge badge-info badge-sm" id="requisitionsCountBadgeTop">0</span>
                         </div>
                         <p class="text-2xl lg:text-3xl font-extrabold stat-value text-base-content" id="statRequisitions">
                             <span class="loading loading-dots loading-sm"></span>
                         </p>
-                        <p class="text-sm text-base-content/60 font-medium">Pending Requisitions</p>
+                        <p class="text-sm text-base-content/60 font-medium">PRS Inbox</p>
                     </div>
-                </div>
+                </a>
             </div>
 
             <!-- ═══════════════════════════════════
@@ -530,12 +537,12 @@
                     <div class="card-body p-4 lg:p-5">
                         <h3 class="font-bold text-sm text-base-content/70 uppercase tracking-wide mb-2">Quick Actions</h3>
                         <div class="space-y-1">
-                            <a href="purchase_orders.html?action=new" class="quick-action">
+                            <a href="canvassing.html" class="quick-action">
                                 <div class="qa-icon" style="background: linear-gradient(135deg, #3b82f6, #2563eb);">
                                     <i class="fas fa-plus"></i>
                                 </div>
                                 <div>
-                                    <p class="text-sm font-semibold">New Purchase Order</p>
+                                    <p class="text-sm font-semibold">Canvass PRS</p>
                                     <p class="text-xs text-base-content/50">Create a new PO</p>
                                 </div>
                             </a>
@@ -721,16 +728,21 @@
                 loadStats().catch(e => console.error('Stats error:', e)),
                 loadRecentPOs().catch(e => console.error('Recent POs error:', e)),
                 loadPendingRequisitions().catch(e => console.error('Requisitions error:', e)),
-                loadApprovedPurchaseRequestNotifications().catch(e => console.error('Approved PR notification error:', e)),
+                loadApprovedPurchaseRequestNotifications().catch(e => console.error('PRS inbox notification error:', e)),
                 loadSpendingSparkline().catch(e => console.error('Sparkline error:', e)),
             ];
             await Promise.all(loaders);
         }
 
         async function loadApprovedPurchaseRequestNotifications() {
-            const response = await PurchasingService.getApprovedPRsForPO();
-            const approvedPRs = response?.data || [];
-            const count = approvedPRs.length;
+            const [prResponse, notifResponse] = await Promise.all([
+                PurchasingService.getPRSInbox(),
+                PurchasingService.getNotifications().catch(() => ({ data: [] }))
+            ]);
+            const prsInbox = prResponse?.data || [];
+            const procNotifs = notifResponse?.data || [];
+            const count = prsInbox.length;
+            const totalNotifs = count + procNotifs.length;
             const notifCount = document.getElementById('notifCount');
             const notificationList = document.getElementById('notificationList');
             const alert = document.getElementById('approvedPrAlert');
@@ -738,45 +750,69 @@
             const text = document.getElementById('approvedPrAlertText');
             const items = document.getElementById('approvedPrAlertItems');
 
-            notifCount.textContent = count;
-            notifCount.className = `indicator-item badge badge-xs ${count ? 'badge-warning' : 'badge-primary'}`;
+            notifCount.textContent = totalNotifs;
+            notifCount.className = `indicator-item badge badge-xs ${totalNotifs ? 'badge-warning' : 'badge-primary'}`;
 
-            if (!count) {
+            // Build notification list: submitted PRS records first, then procurement notices.
+            let listHtml = '';
+
+            if (procNotifs.length) {
+                listHtml += procNotifs.map(n => `
+                    <li>
+                            <a href="canvassing.html" class="items-start">
+                            <i class="fas fa-file-signature text-warning mt-1"></i>
+                            <div>
+                                <p class="font-medium">${escapeHtml(n.title)}</p>
+                                <p class="text-xs text-base-content/60">${escapeHtml(n.message)}</p>
+                            </div>
+                        </a>
+                    </li>
+                `).join('');
+            }
+
+            if (!count && !procNotifs.length) {
                 alert.classList.add('hidden');
                 notificationList.innerHTML = '<li class="text-center py-4 text-base-content/60">No new notifications</li>';
                 items.innerHTML = '';
                 return;
             }
 
-            const noun = count === 1 ? 'warehouse request' : 'warehouse requests';
-            title.textContent = `${count} approved ${noun} ready for PO`;
-            text.textContent = 'GM already approved these requests. Purchasing can now canvass/select a supplier and create the PO.';
-            items.innerHTML = approvedPRs.slice(0, 4).map(pr => {
-                const prLink = `purchase_orders.html?action=new&pr_id=${encodeURIComponent(pr.id)}`;
-                return `
-                    <a href="${prLink}" class="badge badge-warning badge-outline gap-1 h-auto py-2">
-                        <i class="fas fa-clipboard-check"></i>
-                        ${escapeHtml(pr.pr_number)} - ${escapeHtml(getPurchaseRequestItemPreview(pr))}
-                    </a>
-                `;
-            }).join('');
-            alert.classList.remove('hidden');
-
-            notificationList.innerHTML = approvedPRs.map(pr => {
-                const prLink = `purchase_orders.html?action=new&pr_id=${encodeURIComponent(pr.id)}`;
-                return `
-                    <li>
-                        <a href="${prLink}" class="items-start">
-                            <i class="fas fa-clipboard-check text-warning mt-1"></i>
-                            <div>
-                                <p class="font-medium">${escapeHtml(pr.pr_number)} is approved</p>
-                                <p class="text-xs text-base-content/60">${escapeHtml(pr.purpose || 'Warehouse request')}</p>
-                                <p class="text-xs text-base-content/50">${escapeHtml(getPurchaseRequestItemPreview(pr))}</p>
-                            </div>
+            if (count) {
+                const noun = count === 1 ? 'PRS' : 'PRS records';
+                title.textContent = `${count} submitted ${noun} ready for canvassing`;
+                text.textContent = 'Warehouse Raw submitted these slips. Canvass 3 suppliers, select the supplier/prices, and create the formal PO for GM approval.';
+                items.innerHTML = prsInbox.slice(0, 4).map(pr => {
+                    const prLink = `canvassing.html?pr_id=${encodeURIComponent(pr.id)}`;
+                    return `
+                        <a href="${prLink}" class="badge badge-warning badge-outline gap-1 h-auto py-2">
+                            <i class="fas fa-file-signature"></i>
+                            ${escapeHtml(pr.pr_number)} - ${escapeHtml(getPurchaseRequestItemPreview(pr))}
                         </a>
-                    </li>
-                `;
-            }).join('');
+                    `;
+                }).join('');
+                alert.classList.remove('hidden');
+
+                listHtml += prsInbox.map(pr => {
+                    const prLink = `canvassing.html?pr_id=${encodeURIComponent(pr.id)}`;
+                    return `
+                        <li>
+                            <a href="${prLink}" class="items-start">
+                                <i class="fas fa-file-signature text-warning mt-1"></i>
+                                <div>
+                                    <p class="font-medium">${escapeHtml(pr.pr_number)} is ready for canvassing</p>
+                                    <p class="text-xs text-base-content/60">${escapeHtml(pr.purpose || 'Purchase request')}</p>
+                                    <p class="text-xs text-base-content/50">${escapeHtml(getPurchaseRequestItemPreview(pr))}</p>
+                                </div>
+                            </a>
+                        </li>
+                    `;
+                }).join('');
+            } else {
+                alert.classList.add('hidden');
+                items.innerHTML = '';
+            }
+
+            notificationList.innerHTML = listHtml;
         }
 
         // ========================================
@@ -793,7 +829,7 @@
                 animateValue('statSuppliers', stats.total_suppliers);
                 animateValue('statPOsMonth', stats.pos_this_month);
                 animateValue('statPendingPOs', stats.pending_pos);
-                animateValue('statRequisitions', stats.pending_requisitions);
+                animateValue('statRequisitions', stats.prs_inbox);
 
                 document.getElementById('statMonthlySpend').textContent =
                     formatCurrency(stats.monthly_spending);
@@ -806,7 +842,7 @@
                 // Update sidebar badges
                 document.getElementById('pendingPOBadge').textContent = stats.pending_pos;
                 document.getElementById('requisitionBadge').textContent = stats.pending_requisitions;
-                document.getElementById('requisitionsCountBadgeTop').textContent = stats.pending_requisitions;
+                document.getElementById('requisitionsCountBadgeTop').textContent = stats.prs_inbox;
 
             } catch (error) {
                 console.error('Error loading stats:', error);
