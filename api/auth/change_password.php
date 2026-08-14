@@ -36,9 +36,34 @@ if (empty($currentPassword)) {
 }
 if (empty($newPassword)) {
     $errors['new_password'] = 'New password is required';
-}
-if (strlen($newPassword) < 6) {
-    $errors['new_password'] = 'New password must be at least 6 characters';
+} else {
+    $minLen = defined('PASSWORD_MIN_LENGTH') ? PASSWORD_MIN_LENGTH : 12;
+    $maxLen = defined('PASSWORD_MAX_LENGTH') ? PASSWORD_MAX_LENGTH : 128;
+
+    if (strlen($newPassword) < $minLen) {
+        $errors['new_password'] = "New password must be at least {$minLen} characters";
+    }
+    if (strlen($newPassword) > $maxLen) {
+        $errors['new_password'] = "New password must not exceed {$maxLen} characters";
+    }
+    if (defined('PASSWORD_REQUIRE_UPPERCASE') && PASSWORD_REQUIRE_UPPERCASE && !preg_match('/[A-Z]/', $newPassword)) {
+        $errors['new_password'] = 'New password must contain at least one uppercase letter';
+    }
+    if (defined('PASSWORD_REQUIRE_LOWERCASE') && PASSWORD_REQUIRE_LOWERCASE && !preg_match('/[a-z]/', $newPassword)) {
+        $errors['new_password'] = 'New password must contain at least one lowercase letter';
+    }
+    if (defined('PASSWORD_REQUIRE_NUMBER') && PASSWORD_REQUIRE_NUMBER && !preg_match('/[0-9]/', $newPassword)) {
+        $errors['new_password'] = 'New password must contain at least one number';
+    }
+    if (defined('PASSWORD_REQUIRE_SPECIAL') && PASSWORD_REQUIRE_SPECIAL && !preg_match('/[^A-Za-z0-9]/', $newPassword)) {
+        $errors['new_password'] = 'New password must contain at least one special character';
+    }
+    if (preg_match('/(.)\1{3,}/', $newPassword)) {
+        $errors['new_password'] = 'New password cannot contain 4 or more repeating characters';
+    }
+    if (preg_match('/^(?:password|admin|welcome|highland|fresh|123456|qwerty)/i', $newPassword)) {
+        $errors['new_password'] = 'New password is too common. Please choose a stronger password';
+    }
 }
 if ($newPassword !== $confirmPassword) {
     $errors['confirm_password'] = 'Passwords do not match';

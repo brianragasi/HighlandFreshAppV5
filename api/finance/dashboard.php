@@ -116,7 +116,7 @@ function getDashboardStats($db) {
         SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total
         FROM purchase_orders 
         WHERE payment_status IN ('unpaid', 'partial')
-        AND status IN ('received', 'partial_received')
+        AND status IN ('received', 'partial_received', 'closed')
         AND expected_delivery < DATE_SUB(CURDATE(), INTERVAL 30 DAY)
     ");
     $overdue = $stmt->fetch();
@@ -161,8 +161,8 @@ function getDashboardStats($db) {
     $stmt = $db->query("
         SELECT COALESCE(SUM(amount_collected), 0) as total, COUNT(*) as count
         FROM payment_collections 
-        WHERE DATE(collected_at) = CURDATE()
-        AND status = 'confirmed'
+        WHERE DATE(COALESCE(cleared_at, collected_at)) = CURDATE()
+        AND status IN ('confirmed', 'cleared')
     ");
     $todayCollections = $stmt->fetch();
     $stats['today_collections_amount'] = (float) $todayCollections['total'];
@@ -172,9 +172,9 @@ function getDashboardStats($db) {
     $stmt = $db->query("
         SELECT COALESCE(SUM(amount_collected), 0) as total
         FROM payment_collections 
-        WHERE YEAR(collected_at) = YEAR(CURDATE()) 
-        AND MONTH(collected_at) = MONTH(CURDATE())
-        AND status = 'confirmed'
+        WHERE YEAR(COALESCE(cleared_at, collected_at)) = YEAR(CURDATE())
+        AND MONTH(COALESCE(cleared_at, collected_at)) = MONTH(CURDATE())
+        AND status IN ('confirmed', 'cleared')
     ");
     $stats['monthly_collections'] = (float) $stmt->fetch()['total'];
     
@@ -235,11 +235,12 @@ function getPayablesSummary($db) {
 function getCollectionsSummary($db) {
     $period = getParam('period', 'month'); // today, week, month
     
+    $effectiveDate = "COALESCE(pc.cleared_at, pc.collected_at)";
     $dateFilter = match($period) {
-        'today' => "DATE(pc.collected_at) = CURDATE()",
-        'week' => "pc.collected_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)",
-        'month' => "YEAR(pc.collected_at) = YEAR(CURDATE()) AND MONTH(pc.collected_at) = MONTH(CURDATE())",
-        default => "YEAR(pc.collected_at) = YEAR(CURDATE()) AND MONTH(pc.collected_at) = MONTH(CURDATE())"
+        'today' => "DATE({$effectiveDate}) = CURDATE()",
+        'week' => "{$effectiveDate} >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)",
+        'month' => "YEAR({$effectiveDate}) = YEAR(CURDATE()) AND MONTH({$effectiveDate}) = MONTH(CURDATE())",
+        default => "YEAR({$effectiveDate}) = YEAR(CURDATE()) AND MONTH({$effectiveDate}) = MONTH(CURDATE())"
     };
     
     $stmt = $db->query("
@@ -254,12 +255,13 @@ function getCollectionsSummary($db) {
             pc.balance_after,
             pc.status,
             pc.collected_at,
+            pc.cleared_at,
             pc.notes,
             u.full_name as collected_by_name
         FROM payment_collections pc
         LEFT JOIN users u ON pc.collected_by = u.id
         WHERE {$dateFilter}
-        ORDER BY pc.collected_at DESC
+        ORDER BY COALESCE(pc.cleared_at, pc.collected_at) DESC
     ");
     $collections = $stmt->fetchAll();
     
@@ -272,7 +274,7 @@ function getCollectionsSummary($db) {
             COALESCE(SUM(amount_collected), 0) as total
         FROM payment_collections 
         WHERE {$dateFilterNoAlias}
-        AND status = 'confirmed'
+        AND status IN ('confirmed', 'cleared')
         GROUP BY payment_method
     ");
     $byMethod = $stmt2->fetchAll();

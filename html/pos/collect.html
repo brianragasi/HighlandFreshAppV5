@@ -360,8 +360,9 @@
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <div class="card bg-base-100 border border-base-300">
                     <div class="card-body p-4">
-                        <p class="text-xs text-base-content/60 uppercase">Total Outstanding</p>
+                        <p class="text-xs text-base-content/60 uppercase">Recorded AR Balance</p>
                         <p class="text-2xl font-bold text-error stat-value" id="totalOutstanding">₱0.00</p>
+                        <p class="text-xs text-base-content/50">Includes checks waiting for bank clearing</p>
                     </div>
                 </div>
                 <div class="card bg-base-100 border border-base-300">
@@ -378,7 +379,7 @@
                 </div>
                 <div class="card bg-base-100 border border-base-300">
                     <div class="card-body p-4">
-                        <p class="text-xs text-base-content/60 uppercase">Pending DRs</p>
+                        <p class="text-xs text-base-content/60 uppercase">Ready to Collect</p>
                         <p class="text-2xl font-bold text-info stat-value" id="pendingDRs">0</p>
                     </div>
                 </div>
@@ -405,6 +406,8 @@
                                     </select>
                                     <select id="filterStatus" class="select select-bordered select-sm" onchange="filterOutstanding()">
                                         <option value="">All Status</option>
+                                        <option value="ready_to_collect">Ready to Collect</option>
+                                        <option value="pending_check">Checks Pending</option>
                                         <option value="overdue">Overdue Only</option>
                                         <option value="due_today">Due Today</option>
                                         <option value="upcoming">Upcoming</option>
@@ -470,6 +473,10 @@
                                         <p class="font-bold text-error" id="drBalance">₱0.00</p>
                                     </div>
                                 </div>
+                                <div id="pendingCheckNotice" class="alert alert-warning py-3 hidden">
+                                    <i class="fas fa-clock"></i>
+                                    <span>A check already covers part or all of this balance and is still pending for clearing.</span>
+                                </div>
 
                                 <!-- Payment Amount -->
                                 <div class="form-control">
@@ -533,6 +540,10 @@
 
                                 <!-- Check Fields -->
                                 <div id="checkFields" class="hidden space-y-3">
+                                    <div class="alert alert-warning py-3 text-sm">
+                                        <i class="fas fa-clock"></i>
+                                        <span>This check will stay Pending for Clearing. It will not reduce AR or appear in sales totals until the bank clears it.</span>
+                                    </div>
                                     <div class="grid grid-cols-2 gap-3">
                                         <div class="form-control">
                                             <label class="label"><span class="label-text">Bank *</span></label>
@@ -552,7 +563,12 @@
                                     </div>
                                     <div class="form-control">
                                         <label class="label"><span class="label-text">Check Date *</span></label>
-                                        <input type="date" id="checkDate" class="input input-bordered">
+                                        <input type="date" id="checkDate" class="input input-bordered" onchange="updateCheckDateNotice()" oninput="updateCheckDateNotice()">
+                                        <div id="checkDateNotice" class="alert alert-info py-2 px-3 text-sm mt-2 hidden"></div>
+                                    </div>
+                                    <div class="form-control">
+                                        <label class="label"><span class="label-text">Account Owner</span></label>
+                                        <input type="text" id="checkAccountOwner" class="input input-bordered" maxlength="150" placeholder="Name printed on the check">
                                     </div>
                                 </div>
 
@@ -595,7 +611,8 @@
                 <div class="w-20 h-20 mx-auto bg-success/20 rounded-full flex items-center justify-center mb-4">
                     <i class="fas fa-check text-success text-4xl"></i>
                 </div>
-                <h3 class="font-bold text-2xl text-success mb-2">Collection Recorded!</h3>
+                <h3 class="font-bold text-2xl text-success mb-2" id="successTitle">Collection Recorded!</h3>
+                <p class="text-sm text-base-content/60 mb-2" id="successMessage"></p>
                 <p class="text-lg" id="successORNumber">OR-2026-0000</p>
                 <div class="divider"></div>
                 <div class="text-left bg-base-200 rounded-lg p-4 space-y-2">
@@ -618,7 +635,7 @@
                 </div>
             </div>
             <div class="modal-action justify-center gap-3">
-                <button class="btn btn-outline" onclick="printOR()">
+                <button class="btn btn-outline" id="printORButton" onclick="printOR()">
                     <i class="fas fa-print"></i> Print OR
                 </button>
                 <button class="btn btn-primary" onclick="closeSuccessModal()">
@@ -635,7 +652,8 @@
     <!-- Scripts -->
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
-    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="cashier,general_manager"></script>
     <script src="../../js/pos/pos.service.js"></script>
 
     <script>
@@ -729,7 +747,13 @@
             try {
                 const response = await POSService.searchByDR(drNumber);
                 if (response && response.data) {
-                    selectDR(response.data);
+                    const dr = response.data;
+                    selectDR({
+                        ...dr,
+                        actual_balance: Number(dr.calculated_balance ?? (Number(dr.total_amount || 0) - Number(dr.amount_paid || 0))),
+                        pending_check_amount: Number(dr.pending_check_amount || 0),
+                        balance: Number(dr.collectible_balance ?? dr.calculated_balance ?? 0)
+                    });
                 } else {
                     showToast('DR not found', 'error');
                 }
@@ -753,15 +777,18 @@
                         customer_name: dr.customer_name,
                         customer_type: dr.customer_type,
                         total_amount: parseFloat(dr.total_amount) || 0,
-                        balance: parseFloat(dr.amount_due) || (parseFloat(dr.total_amount) - parseFloat(dr.amount_paid || 0)),
+                        actual_balance: parseFloat(dr.amount_due) || (parseFloat(dr.total_amount) - parseFloat(dr.amount_paid || 0)),
+                        pending_check_amount: parseFloat(dr.pending_check_amount) || 0,
+                        pending_collection_id: Number(dr.pending_collection_id || 0),
+                        balance: Math.max(0, parseFloat(dr.collectible_balance ?? dr.amount_due) || 0),
                         due_date: dr.delivered_at || dr.created_at,
                         days_overdue: parseInt(dr.days_outstanding) || 0
                     }));
                     
                     // Calculate summary from data
                     const totalOutstanding = outstandingList.reduce((sum, dr) => sum + dr.balance, 0);
-                    const overdueCount = outstandingList.filter(dr => dr.days_overdue > 7).length;
-                    const pendingCount = outstandingList.length;
+                    const overdueCount = outstandingList.filter(dr => dr.balance > 0 && dr.days_overdue > 7).length;
+                    const pendingCount = outstandingList.filter(dr => dr.balance > 0).length;
                     
                     // Update stats
                     document.getElementById('totalOutstanding').textContent = formatCurrency(response.data.total_outstanding || totalOutstanding);
@@ -802,6 +829,8 @@
 
             let filtered = outstandingList.filter(dr => {
                 if (typeFilter && dr.customer_type !== typeFilter) return false;
+                if (statusFilter === 'ready_to_collect' && dr.balance <= 0) return false;
+                if (statusFilter === 'pending_check' && !(dr.pending_check_amount > 0 && dr.balance <= 0)) return false;
                 if (statusFilter === 'overdue' && dr.days_overdue <= 0) return false;
                 if (statusFilter === 'due_today' && dr.days_overdue !== 0) return false;
                 if (statusFilter === 'upcoming' && dr.days_overdue > 0) return false;
@@ -825,8 +854,11 @@
                 const isToday = dr.days_overdue === 0;
                 const days = Math.abs(Number(dr.days_overdue) || 0);
 
+                const isCoveredByPendingCheck = dr.balance <= 0 && dr.pending_check_amount > 0;
                 let statusBadge;
-                if (isOverdue) {
+                if (isCoveredByPendingCheck) {
+                    statusBadge = '<span class="status-pill status-pill--today"><i class="fas fa-clock mr-1"></i>Check pending</span>';
+                } else if (isOverdue) {
                     statusBadge = `<span class="status-pill status-pill--overdue">${days}d overdue</span>`;
                 } else if (isToday) {
                     statusBadge = `<span class="status-pill status-pill--today">Due today</span>`;
@@ -840,7 +872,7 @@
                 const custType = escapeHtml(formatCustomerType(dr.customer_type));
 
                 return `
-                    <tr class="cursor-pointer ${isOverdue ? 'is-overdue' : ''}" onclick="selectDR(${drPayload})">
+                    <tr class="cursor-pointer ${isOverdue && !isCoveredByPendingCheck ? 'is-overdue' : ''}" onclick="${isCoveredByPendingCheck ? `openPendingCheckReview(${dr.pending_collection_id})` : `selectDR(${drPayload})`}">
                         <td><span class="dr-number">${drNum}</span></td>
                         <td>
                             <div class="cell-customer-name">${custName}</div>
@@ -848,14 +880,15 @@
                         </td>
                         <td><span class="cell-money">${formatCurrency(dr.total_amount)}</span></td>
                         <td>
-                            <span class="cell-money cell-money--balance ${isOverdue ? 'is-overdue' : ''}">${formatCurrency(dr.balance)}</span>
+                            <span class="cell-money cell-money--balance ${isOverdue && !isCoveredByPendingCheck ? 'is-overdue' : ''}">${formatCurrency(dr.actual_balance)}</span>
+                            ${dr.pending_check_amount > 0 ? `<div class="text-xs text-warning">Covered by ${formatCurrency(dr.pending_check_amount)} pending check</div>` : ''}
                         </td>
                         <td><span class="cell-date">${formatDate(dr.due_date)}</span></td>
                         <td>${statusBadge}</td>
                         <td class="col-actions">
-                            <button type="button" class="collect-action-btn" title="Collect payment"
-                                onclick="event.stopPropagation(); selectDR(${drPayload})">
-                                <i class="fas fa-hand-holding-dollar"></i>
+                            <button type="button" class="collect-action-btn" title="${dr.balance > 0 ? 'Collect payment' : 'Review pending check'}"
+                                onclick="event.stopPropagation(); ${dr.balance > 0 ? `selectDR(${drPayload})` : `openPendingCheckReview(${dr.pending_collection_id})`}">
+                                <i class="fas ${dr.balance > 0 ? 'fa-hand-holding-dollar' : 'fa-building-circle-check'}"></i>
                             </button>
                         </td>
                     </tr>
@@ -889,6 +922,10 @@
         }
 
         function selectDR(dr) {
+            if (Number(dr.balance || 0) <= 0) {
+                openPendingCheckReview(Number(dr.pending_collection_id || 0));
+                return;
+            }
             selectedDRData = dr;
 
             // Show form
@@ -899,7 +936,8 @@
             document.getElementById('selectedDR').textContent = dr.dr_number;
             document.getElementById('selectedCustomer').textContent = dr.customer_name;
             document.getElementById('drTotalAmount').textContent = formatCurrency(dr.total_amount);
-            document.getElementById('drBalance').textContent = formatCurrency(dr.balance);
+            document.getElementById('drBalance').textContent = formatCurrency(dr.actual_balance);
+            document.getElementById('pendingCheckNotice').classList.toggle('hidden', Number(dr.pending_check_amount || 0) <= 0);
 
             // Set default payment amount to full balance
             document.getElementById('paymentAmount').value = parseFloat(dr.balance).toFixed(2);
@@ -913,6 +951,13 @@
             // Focus on amount
             document.getElementById('paymentAmount').focus();
             document.getElementById('paymentAmount').select();
+        }
+
+        function openPendingCheckReview(collectionId) {
+            const target = Number(collectionId) > 0
+                ? `history.html?type=collections&collection_id=${Number(collectionId)}`
+                : 'history.html?type=collections';
+            window.location.href = target;
         }
 
         function cancelCollection() {
@@ -947,6 +992,36 @@
             document.getElementById('gcashFields').classList.toggle('hidden', method !== 'gcash');
             document.getElementById('bankFields').classList.toggle('hidden', method !== 'bank_transfer');
             document.getElementById('checkFields').classList.toggle('hidden', method !== 'check');
+            document.getElementById('btnRecordCollection').innerHTML = method === 'check'
+                ? '<i class="fas fa-clock"></i> Log Check - Pending Clearing'
+                : '<i class="fas fa-check-circle"></i> Record Collection';
+            if (method === 'check') updateCheckDateNotice();
+        }
+
+        function localDateValue() {
+            const now = new Date();
+            const pad = value => String(value).padStart(2, '0');
+            return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+        }
+
+        function updateCheckDateNotice() {
+            const input = document.getElementById('checkDate');
+            const notice = document.getElementById('checkDateNotice');
+            const button = document.getElementById('btnRecordCollection');
+            if (!input?.value || document.getElementById('paymentMethod').value !== 'check') {
+                notice.classList.add('hidden');
+                button.innerHTML = '<i class="fas fa-clock"></i> Log Check - Pending Clearing';
+                return;
+            }
+            const displayDate = new Date(`${input.value}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+            const postDated = input.value > localDateValue();
+            notice.className = `alert ${postDated ? 'alert-warning' : 'alert-info'} py-2 px-3 text-sm mt-2`;
+            notice.innerHTML = postDated
+                ? `<i class="fas fa-calendar-clock"></i><span><strong>Post-dated check.</strong> Log it now, but it cannot be cleared before ${escapeHtml(displayDate)}.</span>`
+                : '<i class="fas fa-building-circle-check"></i><span>Keep this pending until the bank confirms that the check cleared.</span>';
+            button.innerHTML = postDated
+                ? '<i class="fas fa-calendar-clock"></i> Log Post-dated Check'
+                : '<i class="fas fa-clock"></i> Log Check - Pending Clearing';
         }
 
         async function handleCollectionSubmit(event) {
@@ -1004,6 +1079,7 @@
                 collectionData.check_bank = document.getElementById('checkBank').value;
                 collectionData.check_number = document.getElementById('checkNumber').value.trim();
                 collectionData.check_date = document.getElementById('checkDate').value;
+                collectionData.check_account_owner = document.getElementById('checkAccountOwner').value.trim();
             }
 
             try {
@@ -1016,7 +1092,10 @@
                         dr_number: selectedDRData.dr_number,
                         amount: amount,
                         method: method,
-                        remaining: result.balance_after ?? (selectedDRData.balance - amount)
+                        remaining: result.balance_after ?? selectedDRData.actual_balance,
+                        status: result.collection_status || 'confirmed',
+                        checkDate: result.check_date || collectionData.check_date || null,
+                        postDated: Boolean(result.is_post_dated)
                     };
                     showSuccessModal();
                     // Reload outstanding DRs after successful collection
@@ -1034,12 +1113,20 @@
 
         function showSuccessModal() {
             if (!lastCollectionData) return;
+            const pending = lastCollectionData.status === 'pending_clearing';
 
             document.getElementById('successORNumber').textContent = lastCollectionData.or_number;
             document.getElementById('successDRNumber').textContent = lastCollectionData.dr_number;
             document.getElementById('successAmount').textContent = formatCurrency(lastCollectionData.amount);
             document.getElementById('successMethod').textContent = formatPaymentMethod(lastCollectionData.method);
             document.getElementById('successRemaining').textContent = formatCurrency(lastCollectionData.remaining);
+            document.getElementById('successTitle').textContent = pending ? 'Check Logged' : 'Collection Recorded!';
+            document.getElementById('successMessage').textContent = pending
+                ? (lastCollectionData.postDated
+                    ? `Post-dated check. Pending for Clearing until at least ${formatDate(lastCollectionData.checkDate)}. The customer balance and reports have not been updated.`
+                    : 'Pending for Clearing. The customer balance and reports have not been updated yet.')
+                : 'The payment has been applied to Accounts Receivable.';
+            document.getElementById('printORButton').classList.toggle('hidden', pending);
 
             document.getElementById('successModal').showModal();
         }

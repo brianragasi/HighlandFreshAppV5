@@ -319,6 +319,7 @@
                                 <th>Expiry</th>
                                 <th>Current Stock</th>
                                 <th>Reorder Point</th>
+                                <th>Accredited Suppliers</th>
                                 <th>Unit Cost</th>
                                 <th>Status</th>
                                 <th>Actions</th>
@@ -326,7 +327,7 @@
                         </thead>
                         <tbody id="dataTable">
                             <tr>
-                                <td colspan="10" class="text-center py-8">
+                                <td colspan="11" class="text-center py-8">
                                     <i class="fas fa-spinner fa-spin text-2xl text-base-content/40"></i>
                                     <p class="mt-2 text-base-content/60">Loading...</p>
                                 </td>
@@ -346,7 +347,7 @@
 
     <!-- Add/Edit Modal -->
     <dialog id="formModal" class="modal">
-        <div class="modal-box w-11/12 max-w-2xl">
+        <div class="modal-box w-11/12 max-w-4xl max-h-[90vh] overflow-y-auto">
             <form method="dialog">
                 <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
@@ -396,6 +397,14 @@
                                 <option value="0">Inactive</option>
                             </select>
                         </div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="border border-base-300 rounded-xl p-4">
+                    <legend class="text-sm font-semibold px-2 text-base-content/70">Accredited Suppliers *</legend>
+                    <p class="text-xs text-base-content/50 mb-3">Choose every approved supplier that can provide this ingredient. Three quotes are preferred, but Purchasing can record a limited-supplier reason when fewer are genuinely available.</p>
+                    <div id="ingredientSupplierCatalog" class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-56 overflow-y-auto">
+                        <p class="text-sm text-base-content/60 p-2">Loading suppliers...</p>
                     </div>
                 </fieldset>
 
@@ -539,13 +548,21 @@
     <div class="toast toast-end" id="toastContainer"></div>
 
     <script src="../../js/config/api.js"></script>
-    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="general_manager,admin"></script>
     <script src="../../js/admin/admin.service.js"></script>
 
     <script>
         let currentPage = 1;
         let searchTimeout = null;
         let categories = [];
+        let availableSuppliers = [];
+
+        function escapeHtml(value) {
+            const div = document.createElement('div');
+            div.textContent = value == null ? '' : String(value);
+            return div.innerHTML;
+        }
 
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
@@ -592,6 +609,40 @@
             } catch (error) {
                 console.error('Error loading categories:', error);
             }
+        }
+
+        async function loadSupplierOptions() {
+            try {
+                const response = await AdminService.getSuppliers({ is_active: 1, limit: 100 });
+                availableSuppliers = response?.data?.suppliers || [];
+                renderSupplierCatalog([]);
+            } catch (error) {
+                availableSuppliers = [];
+                document.getElementById('ingredientSupplierCatalog').innerHTML = '<p class="text-sm text-error p-2">Suppliers could not be loaded.</p>';
+            }
+        }
+
+        function renderSupplierCatalog(selectedSuppliers = []) {
+            const selectedIds = new Set((selectedSuppliers || []).map(s => String(s.supplier_id ?? s.id)));
+            const container = document.getElementById('ingredientSupplierCatalog');
+            if (!availableSuppliers.length) {
+                container.innerHTML = '<p class="text-sm text-base-content/60 p-2">No accredited suppliers are available.</p>';
+                return;
+            }
+
+            container.innerHTML = availableSuppliers.map(supplier => `
+                <label class="border border-base-300 rounded-md p-3 flex items-start gap-3 cursor-pointer hover:bg-base-200/60">
+                    <input type="checkbox" class="checkbox checkbox-primary checkbox-sm mt-1 ingredient-supplier-link" value="${supplier.id}" ${selectedIds.has(String(supplier.id)) ? 'checked' : ''}>
+                    <span class="min-w-0">
+                        <span class="font-semibold block truncate">${escapeHtml(supplier.supplier_name)}</span>
+                        <span class="text-xs text-base-content/50">${escapeHtml(supplier.supplier_code || '')}</span>
+                    </span>
+                </label>
+            `).join('');
+        }
+
+        function getSelectedSupplierIds() {
+            return [...document.querySelectorAll('.ingredient-supplier-link:checked')].map(input => Number(input.value));
         }
 
         /** Allowed UOM options by logical group (value, label). */
@@ -729,7 +780,7 @@
 
         async function loadData() {
             const tableBody = document.getElementById('dataTable');
-            tableBody.innerHTML = '<tr><td colspan="10" class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl"></i></td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="11" class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl"></i></td></tr>';
 
             try {
                 const params = {
@@ -773,7 +824,7 @@
             const tableBody = document.getElementById('dataTable');
 
             if (!ingredients || ingredients.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="10" class="text-center py-8 text-base-content/60">No ingredients found</td></tr>';
+                tableBody.innerHTML = '<tr><td colspan="11" class="text-center py-8 text-base-content/60">No ingredients found</td></tr>';
                 return;
             }
 
@@ -803,6 +854,10 @@
                         </span>
                     </td>
                     <td class="text-base-content/70">${reorderPoint.toLocaleString()}</td>
+                    <td>
+                        <span class="badge badge-outline badge-sm">${Number(i.supplier_count || 0)} supplier(s)</span>
+                        <div class="text-xs text-base-content/50 mt-1 max-w-52 truncate" title="${escapeHtml(i.supplier_names || '')}">${escapeHtml(i.supplier_names || 'None linked')}</div>
+                    </td>
                     <td>${i.unit_cost ? formatCurrency(i.unit_cost) : '-'}</td>
                     <td>
                         <span class="badge ${i.is_active == 1 ? 'badge-success' : 'badge-warning'} badge-sm">
@@ -814,8 +869,8 @@
                             <button class="btn btn-ghost btn-xs" onclick="editRecord(${i.id})" title="Edit">
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <button class="btn btn-ghost btn-xs text-error" onclick="deleteRecord(${i.id})" title="Deactivate">
-                                <i class="fas fa-trash"></i>
+                            <button class="btn btn-ghost btn-xs text-warning" onclick="deleteRecord(${i.id})" title="Archive">
+                                <i class="fas fa-box-archive"></i>
                             </button>
                         </div>
                     </td>
@@ -850,6 +905,7 @@
             // Reset UOM to placeholder until category is chosen
             populateUnitOfMeasureOptions(null, true);
             updateUnitBadges();
+            renderSupplierCatalog([]);
             document.getElementById('formModal').showModal();
         }
 
@@ -900,6 +956,7 @@
                     storageSelect.value = storageVal;
                     document.getElementById('storage_requirements').value = i.storage_requirements || '';
                     document.getElementById('is_active').value = i.is_active;
+                    renderSupplierCatalog(i.suppliers || []);
                     updateUnitBadges();
 
                     document.getElementById('modalTitle').textContent = 'Edit Ingredient';
@@ -913,10 +970,10 @@
 
         async function deleteRecord(id) {
             const confirmed = await AuthService.confirmAction({
-                title: 'Deactivate Ingredient',
-                message: 'Are you sure you want to deactivate this ingredient?',
-                confirmText: 'Deactivate',
-                tone: 'error',
+                title: 'Archive Ingredient',
+                message: 'Archive this ingredient? This hides it from active use, but keeps inventory history.',
+                confirmText: 'Archive',
+                tone: 'warning',
                 icon: 'fa-box-archive'
             });
             if (!confirmed) return;
@@ -924,14 +981,14 @@
             try {
                 const response = await AdminService.deleteIngredient(id);
                 if (response.success) {
-                    showToast('Ingredient deactivated successfully', 'success');
+                    showToast(response.message || 'Ingredient archived successfully', 'success');
                     loadData();
                 } else {
-                    showToast(response.message || 'Failed to deactivate', 'error');
+                    showToast(response.message || 'Failed to archive ingredient', 'error');
                 }
             } catch (error) {
-                console.error('Error deleting record:', error);
-                showToast('Error deactivating ingredient', 'error');
+                console.error('Error archiving ingredient:', error);
+                showToast('Error archiving ingredient', 'error');
             }
         }
 
@@ -941,6 +998,12 @@
             const recordId = document.getElementById('recordId').value;
             const categoryId = document.getElementById('category_id').value || null;
             const unitOfMeasure = document.getElementById('unit_of_measure').value;
+            const supplierIds = getSelectedSupplierIds();
+
+            if (document.getElementById('is_active').value === '1' && supplierIds.length < 1) {
+                showToast('Choose at least one accredited supplier for this ingredient', 'error');
+                return;
+            }
 
             // Guard: unit must be allowed for selected category
             if (!unitOfMeasure) {
@@ -976,7 +1039,8 @@
                 is_perishable: document.getElementById('is_perishable').value,
                 storage_location: document.getElementById('storage_location').value,
                 storage_requirements: document.getElementById('storage_requirements').value,
-                is_active: document.getElementById('is_active').value
+                is_active: document.getElementById('is_active').value,
+                supplier_ids: supplierIds
             };
 
             try {
@@ -1019,7 +1083,7 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
-            await loadCategories();
+            await Promise.all([loadCategories(), loadSupplierOptions()]);
             loadData();
         });
     </script>

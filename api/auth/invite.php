@@ -286,9 +286,7 @@ function formatRoleDisplay($role) {
         'sales_custodian' => 'Sales Custodian',
         'cashier' => 'Cashier',
         'purchaser' => 'Purchaser',
-        'finance_officer' => 'Finance Officer',
-        'bookkeeper' => 'Bookkeeper',
-        'maintenance_head' => 'Maintenance Head'
+        'finance_officer' => 'Finance Officer'
     ];
     return $roles[$role] ?? $role;
 }

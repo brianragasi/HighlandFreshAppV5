@@ -120,8 +120,16 @@ try {
     // Low stock ingredients
     $lowStockIngredients = $db->prepare("
         SELECT COUNT(*) as count
-        FROM ingredients
-        WHERE is_active = 1 AND current_stock <= " . StockRule::lowThresholdSql('reorder_point', 'minimum_stock') . "
+        FROM ingredients i
+        WHERE i.is_active = 1
+          AND COALESCE((
+                SELECT SUM(ib.remaining_quantity)
+                FROM ingredient_batches ib
+                WHERE ib.ingredient_id = i.id
+                  AND ib.status IN ('available', 'partially_used')
+                  AND ib.remaining_quantity > 0
+                  AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())
+              ), 0) <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . "
     ");
     $lowStockIngredients->execute();
     $lowStockData = $lowStockIngredients->fetch();
@@ -150,8 +158,15 @@ try {
     // Low stock MRO items
     $lowStockMRO = $db->prepare("
         SELECT COUNT(*) as count
-        FROM mro_items
-        WHERE is_active = 1 AND current_stock <= " . StockRule::lowThresholdSql('reorder_point', 'minimum_stock') . "
+        FROM mro_items m
+        WHERE m.is_active = 1
+          AND COALESCE((
+                SELECT SUM(mi.remaining_quantity)
+                FROM mro_inventory mi
+                WHERE mi.mro_item_id = m.id
+                  AND mi.status IN ('available', 'partially_used')
+                  AND mi.remaining_quantity > 0
+              ), 0) <= " . StockRule::lowThresholdSql('m.reorder_point', 'm.minimum_stock') . "
     ");
     $lowStockMRO->execute();
     $lowStockMROData = $lowStockMRO->fetch();
@@ -159,8 +174,15 @@ try {
     // Critical MRO items low stock
     $criticalMRO = $db->prepare("
         SELECT COUNT(*) as count
-        FROM mro_items
-        WHERE is_active = 1 AND is_critical = 1 AND current_stock <= " . StockRule::lowThresholdSql('reorder_point', 'minimum_stock') . "
+        FROM mro_items m
+        WHERE m.is_active = 1 AND m.is_critical = 1
+          AND COALESCE((
+                SELECT SUM(mi.remaining_quantity)
+                FROM mro_inventory mi
+                WHERE mi.mro_item_id = m.id
+                  AND mi.status IN ('available', 'partially_used')
+                  AND mi.remaining_quantity > 0
+              ), 0) <= " . StockRule::lowThresholdSql('m.reorder_point', 'm.minimum_stock') . "
     ");
     $criticalMRO->execute();
     $criticalMROData = $criticalMRO->fetch();
@@ -288,21 +310,49 @@ try {
             'ingredient' as type,
             ingredient_code as code,
             ingredient_name as name,
-            current_stock,
+            COALESCE((
+                SELECT SUM(ib.remaining_quantity)
+                FROM ingredient_batches ib
+                WHERE ib.ingredient_id = i.id
+                  AND ib.status IN ('available', 'partially_used')
+                  AND ib.remaining_quantity > 0
+                  AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())
+            ), 0) AS current_stock,
             minimum_stock,
             unit_of_measure
-        FROM ingredients
-        WHERE is_active = 1 AND current_stock <= " . StockRule::lowThresholdSql('reorder_point', 'minimum_stock') . "
+        FROM ingredients i
+        WHERE i.is_active = 1
+          AND COALESCE((
+                SELECT SUM(ib.remaining_quantity)
+                FROM ingredient_batches ib
+                WHERE ib.ingredient_id = i.id
+                  AND ib.status IN ('available', 'partially_used')
+                  AND ib.remaining_quantity > 0
+                  AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())
+              ), 0) <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . "
         UNION ALL
         SELECT
             'mro' as type,
             item_code as code,
             item_name as name,
-            current_stock,
+            COALESCE((
+                SELECT SUM(mi.remaining_quantity)
+                FROM mro_inventory mi
+                WHERE mi.mro_item_id = m.id
+                  AND mi.status IN ('available', 'partially_used')
+                  AND mi.remaining_quantity > 0
+            ), 0) AS current_stock,
             minimum_stock,
             unit_of_measure
-        FROM mro_items
-        WHERE is_active = 1 AND current_stock <= " . StockRule::lowThresholdSql('reorder_point', 'minimum_stock') . "
+        FROM mro_items m
+        WHERE m.is_active = 1
+          AND COALESCE((
+                SELECT SUM(mi.remaining_quantity)
+                FROM mro_inventory mi
+                WHERE mi.mro_item_id = m.id
+                  AND mi.status IN ('available', 'partially_used')
+                  AND mi.remaining_quantity > 0
+              ), 0) <= " . StockRule::lowThresholdSql('m.reorder_point', 'm.minimum_stock') . "
         ORDER BY (current_stock / NULLIF(minimum_stock, 0)) ASC
         LIMIT 10
     ");

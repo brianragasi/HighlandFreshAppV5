@@ -534,15 +534,15 @@
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
     
-    <!-- Delete Confirmation -->
+    <!-- Archive Confirmation -->
     <dialog id="deleteModal" class="modal">
         <div class="modal-box">
-            <h3 class="font-bold text-lg text-error"><i class="fas fa-exclamation-triangle mr-2"></i>Confirm Delete</h3>
-            <p class="py-4">Are you sure you want to delete <strong id="deleteName"></strong>?</p>
+            <h3 class="font-bold text-lg text-warning"><i class="fas fa-box-archive mr-2"></i>Archive Standard</h3>
+            <p class="py-4">Archive <strong id="deleteName"></strong>? This keeps old QC records traceable, but removes the standard from active use.</p>
             <div class="modal-action">
                 <button class="btn btn-ghost" onclick="document.getElementById('deleteModal').close()">Cancel</button>
-                <button class="btn btn-error" onclick="confirmDelete()">
-                    <i class="fas fa-trash mr-2"></i>Delete
+                <button class="btn btn-warning" onclick="confirmDelete()">
+                    <i class="fas fa-box-archive mr-2"></i>Archive
                 </button>
             </div>
         </div>
@@ -552,7 +552,8 @@
     <div id="toastContainer" class="toast toast-end"></div>
     
     <script src="../../js/config/api.js"></script>
-    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="general_manager,admin"></script>
     <script src="../../js/admin/admin.service.js"></script>
     
     <script>
@@ -620,7 +621,7 @@
                     <td>
                         <div class="flex gap-1">
                             <button class="btn btn-ghost btn-xs" onclick="editGrading(${item.id})"><i class="fas fa-edit"></i></button>
-                            <button class="btn btn-ghost btn-xs text-error" onclick="deleteRecord('grading', ${item.id}, '${item.grade_name}')"><i class="fas fa-trash"></i></button>
+                            <button class="btn btn-ghost btn-xs text-warning" onclick="deleteRecord('grading', ${item.id}, '${item.grade_name}')" title="Archive"><i class="fas fa-box-archive"></i></button>
                         </div>
                     </td>
                 </tr>
@@ -721,7 +722,7 @@
                             <label tabindex="0" class="btn btn-ghost btn-xs"><i class="fas fa-ellipsis-v"></i></label>
                             <ul tabindex="0" class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-32 z-10">
                                 <li><a onclick="editParameter(${item.id})"><i class="fas fa-edit mr-2"></i>Edit</a></li>
-                                <li><a class="text-error" onclick="deleteRecord('parameter', ${item.id}, '${item.parameter_name}')"><i class="fas fa-trash mr-2"></i>Delete</a></li>
+                                <li><a class="text-warning" onclick="deleteRecord('parameter', ${item.id}, '${item.parameter_name}')"><i class="fas fa-box-archive mr-2"></i>Archive</a></li>
                             </ul>
                         </div>
                     </div>
@@ -832,7 +833,7 @@
                     <td>
                         <div class="flex gap-1">
                             <button class="btn btn-ghost btn-xs" onclick="editCcp(${item.id})"><i class="fas fa-edit"></i></button>
-                            <button class="btn btn-ghost btn-xs text-error" onclick="deleteRecord('ccp', ${item.id}, '${item.ccp_name}')"><i class="fas fa-trash"></i></button>
+                            <button class="btn btn-ghost btn-xs text-warning" onclick="deleteRecord('ccp', ${item.id}, '${item.ccp_name}')" title="Archive"><i class="fas fa-box-archive"></i></button>
                         </div>
                     </td>
                 </tr>
@@ -894,7 +895,7 @@
             }
         }
         
-        // Delete
+        // Archive
         function deleteRecord(type, id, name) {
             deleteType = type;
             recordToDelete = id;
@@ -923,13 +924,13 @@
                 }
                 
                 if (response?.success) {
-                    showToast('Deleted successfully', 'success');
+                    showToast(response.message || 'Archived successfully', 'success');
                     document.getElementById('deleteModal').close();
                 } else {
-                    showToast(response?.message || 'Failed to delete', 'error');
+                    showToast(response?.message || 'Failed to archive', 'error');
                 }
             } catch (error) {
-                showToast('Error deleting', 'error');
+                showToast('Error archiving', 'error');
             }
             
             deleteType = null;

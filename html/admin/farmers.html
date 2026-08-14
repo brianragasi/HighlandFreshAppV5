@@ -400,7 +400,9 @@
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Contact Number</span></label>
-                        <input type="text" id="contact_number" class="input input-bordered" />
+                        <input type="tel" id="contact_number" class="input input-bordered" inputmode="tel"
+                            maxlength="16" placeholder="09171234567" />
+                        <span class="label-text-alt text-base-content/55 mt-1">Philippine mobile or landline</span>
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Base Price per Liter</span></label>
@@ -434,15 +436,17 @@
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
     
-    <!-- Delete Confirmation -->
-    <dialog id="deleteModal" class="modal">
+    <!-- Archive Confirmation -->
+    <dialog id="archiveModal" class="modal">
         <div class="modal-box">
-            <h3 class="font-bold text-lg text-error"><i class="fas fa-exclamation-triangle mr-2"></i>Confirm Delete</h3>
-            <p class="py-4">Are you sure you want to delete <strong id="deleteName"></strong>?</p>
+            <h3 class="font-bold text-lg text-warning"><i class="fas fa-box-archive mr-2"></i>Archive Farmer</h3>
+            <p class="py-4">
+                Archive <strong id="deleteName"></strong>? This hides the farmer from active work, but keeps their record and history in the database.
+            </p>
             <div class="modal-action">
-                <button class="btn btn-ghost" onclick="document.getElementById('deleteModal').close()">Cancel</button>
-                <button class="btn btn-error" id="confirmDeleteBtn" onclick="confirmDelete()">
-                    <i class="fas fa-trash mr-2"></i>Delete
+                <button class="btn btn-ghost" onclick="document.getElementById('archiveModal').close()">Cancel</button>
+                <button class="btn btn-warning" id="confirmArchiveBtn" onclick="confirmArchive()">
+                    <i class="fas fa-box-archive mr-2"></i>Archive
                 </button>
             </div>
         </div>
@@ -452,7 +456,8 @@
     <div id="toastContainer" class="toast toast-end"></div>
     
     <script src="../../js/config/api.js"></script>
-    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="general_manager,admin"></script>
     <script src="../../js/admin/admin.service.js"></script>
     
     <script>
@@ -460,7 +465,7 @@
         let filteredData = [];
         let currentPage = 1;
         const pageSize = 10;
-        let recordToDelete = null;
+        let recordToArchive = null;
         
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -549,7 +554,6 @@
                                 </div>
                                 <div>
                                     <div class="font-semibold">${item.full_name || item.first_name || '-'}</div>
-                                    <div class="text-xs text-base-content/60">${item.contact_number || 'No contact'}</div>
                                 </div>
                             </div>
                         </td>
@@ -558,7 +562,7 @@
                                 ${item.milk_type_name || '-'}
                             </span>
                         </td>
-                        <td class="text-sm">${item.contact_number || '-'}</td>
+                        <td class="text-sm">${farmerContactHtml(item.contact_number)}</td>
                         <td>
                             <span class="badge badge-sm badge-ghost">${item.membership_type === 'member' ? 'Member' : 'Non-Member'}</span>
                         </td>
@@ -572,8 +576,8 @@
                                 <button class="btn btn-ghost btn-sm btn-square" onclick="editRecord(${item.id})" title="Edit">
                                     <i class="fas fa-edit text-primary"></i>
                                 </button>
-                                <button class="btn btn-ghost btn-sm btn-square" onclick="deleteRecord(${item.id}, '${item.full_name || item.first_name}')" title="Delete">
-                                    <i class="fas fa-trash text-error"></i>
+                                <button class="btn btn-ghost btn-sm btn-square" onclick="archiveRecord(${item.id}, '${item.full_name || item.first_name}')" title="Archive">
+                                    <i class="fas fa-box-archive text-warning"></i>
                                 </button>
                             </div>
                         </td>
@@ -642,8 +646,33 @@
             }
         }
         
+        function normalizePhilippineContact(value) {
+            return String(value || '').trim().replace(/[\s().-]+/g, '').replace(/^\+63/, '0').replace(/^63(?=\d{10}$)/, '0');
+        }
+
+        function isValidPhilippineContact(value) {
+            const contact = normalizePhilippineContact(value);
+            return contact === '' || /^09\d{9}$/.test(contact) || /^02\d{8}$/.test(contact) || /^0[3-8]\d{8,9}$/.test(contact);
+        }
+
+        function farmerContactHtml(value) {
+            if (!value) return '-';
+            const safe = String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
+            return isValidPhilippineContact(value)
+                ? safe
+                : `<span class="text-error">${safe}</span><div class="text-xs text-error">Invalid number - edit required</div>`;
+        }
+
         async function saveData(event) {
             event.preventDefault();
+
+            const contactInput = document.getElementById('contact_number');
+            const normalizedContact = normalizePhilippineContact(contactInput.value);
+            if (!isValidPhilippineContact(normalizedContact)) {
+                showToast('Use an 11-digit mobile number beginning with 09, or a valid Philippine landline.', 'warning');
+                contactInput.focus();
+                return;
+            }
             
             const recordId = document.getElementById('recordId').value;
             const formData = {
@@ -652,7 +681,7 @@
                 milk_type_id: document.getElementById('milk_type_id').value,
                 membership_type: document.getElementById('membership_type').value,
                 address: document.getElementById('address').value,
-                contact_number: document.getElementById('contact_number').value,
+                contact_number: normalizedContact,
                 base_price_per_liter: document.getElementById('base_price_per_liter').value,
                 bank_name: document.getElementById('bank_name').value,
                 bank_account_number: document.getElementById('bank_account_number').value,
@@ -688,29 +717,29 @@
             }
         }
         
-        function deleteRecord(id, name) {
-            recordToDelete = id;
+        function archiveRecord(id, name) {
+            recordToArchive = id;
             document.getElementById('deleteName').textContent = name;
-            document.getElementById('deleteModal').showModal();
+            document.getElementById('archiveModal').showModal();
         }
         
-        async function confirmDelete() {
-            if (!recordToDelete) return;
+        async function confirmArchive() {
+            if (!recordToArchive) return;
             
             try {
-                const response = await AdminService.deleteFarmer(recordToDelete);
+                const response = await AdminService.deleteFarmer(recordToArchive);
                 if (response.success) {
-                    showToast('Farmer deleted/deactivated successfully', 'success');
-                    document.getElementById('deleteModal').close();
+                    showToast(response.message || 'Farmer archived successfully', 'success');
+                    document.getElementById('archiveModal').close();
                     loadData();
                 } else {
-                    showToast(response.message || 'Failed to delete farmer', 'error');
+                    showToast(response.message || 'Failed to archive farmer', 'error');
                 }
             } catch (error) {
-                console.error('Error deleting:', error);
-                showToast('Failed to delete farmer', 'error');
+                console.error('Error archiving farmer:', error);
+                showToast('Failed to archive farmer', 'error');
             }
-            recordToDelete = null;
+            recordToArchive = null;
         }
         
         function showToast(message, type = 'info') {

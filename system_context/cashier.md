@@ -18,7 +18,8 @@ A major function of the Cashier is to act as the collection point for credit acc
 The Cashier is responsible for the accuracy of non-cash payment records. As discussed, they must record:
 *   **Payment Type:** Differentiating between **Cash, GCash, Bank Transfer, and Checks.**
 *   **Validation Data:** Recording **Check Numbers, Issuing Banks, Account Owners, and Maturity Dates.**
-*   **Reference Numbers:** Capturing GCash or Bank Transfer reference IDs to assist the Bookkeeper with reconciliation.
+*   **Check Clearing:** A received check is logged as **Pending for Clearing**. It does not reduce Accounts Receivable or enter collection totals until the Cashier records the bank confirmation and marks it **Cleared**. A rejected check is marked **Bounced** and leaves the customer's balance unpaid.
+*   **Reference Numbers:** Capturing GCash or Bank Transfer reference IDs to assist the Finance Officer with reconciliation.
 
 ### 4. Generation of Sales Invoices (SI)
 The Cashier is the primary issuer of daily sales documentation.
@@ -28,7 +29,7 @@ The Cashier is the primary issuer of daily sales documentation.
 ### 5. Daily Reconciliation & the "5:00 PM Rule"
 The Cashier is governed by a strict timeline to ensure financial integrity.
 *   **Daily Cut-off:** All transactions must be entered and reconciled by **5:00 PM**.
-*   **Reporting:** Providing the daily "hagsa" (automated entry) to the Bookkeeper, ensuring that the physical cash in the drawer matches the digital sales recorded for the day.
+*   **Reporting:** Providing the daily "hagsa" (automated entry) to the Finance Officer, ensuring that the physical cash in the drawer matches the digital sales recorded for the day.
 
 ### 6. Internal "Staff Credit" Management
 The Cashier also manages small-scale internal accounts.

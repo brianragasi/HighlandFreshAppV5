@@ -401,6 +401,7 @@
                     <input type="hidden" id="productName">
                     <input type="hidden" id="productId">
                     <input type="hidden" id="unitCost">
+                    <input type="hidden" id="costBasis">
                     <div class="grid grid-cols-2 gap-4">
                         <div class="form-control"><label class="label"><span class="label-text">Quantity
                                     *</span></label>
@@ -413,6 +414,15 @@
                                 <option value="liters">Liters</option>
                                 <option value="kg">Kilograms</option>
                             </select>
+                        </div>
+                    </div>
+                    <div id="lossPreview" class="rounded-lg border border-base-300 bg-base-200/60 px-4 py-3 hidden">
+                        <div class="flex items-center justify-between gap-4">
+                            <div>
+                                <p class="text-xs text-base-content/55">Estimated inventory loss</p>
+                                <p id="lossPreviewBasis" class="text-xs text-base-content/45 mt-0.5"></p>
+                            </div>
+                            <strong id="lossPreviewValue" class="text-lg text-error tabular-nums">₱0.00</strong>
                         </div>
                     </div>
                     <div class="form-control"><label class="label"><span class="label-text">Category *</span></label>
@@ -549,7 +559,8 @@
 
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
-    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="qc_officer,general_manager"></script>
     <script>
         const API_URL = API_BASE_URL + '/qc/disposals.php';
         let currentDisposalId = null;
@@ -592,6 +603,7 @@
             }
             loadStats();
             loadDisposals();
+            document.getElementById('quantity').addEventListener('input', updateLossPreview);
 
             // Handle URL params from Expiry Management redirect
             const urlParams = new URLSearchParams(window.location.search);
@@ -701,7 +713,27 @@
             loadDisposals();
         }
 
-        function openNewDisposalModal() { document.getElementById('disposalForm').reset(); document.getElementById('newDisposalModal').showModal(); }
+        function openNewDisposalModal() {
+            document.getElementById('disposalForm').reset();
+            document.getElementById('lossPreview').classList.add('hidden');
+            document.getElementById('newDisposalModal').showModal();
+        }
+
+        function updateLossPreview() {
+            const quantity = parseFloat(document.getElementById('quantity').value || 0);
+            const unitCost = parseFloat(document.getElementById('unitCost').value || 0);
+            const basis = document.getElementById('costBasis').value;
+            const preview = document.getElementById('lossPreview');
+            if (quantity <= 0 || unitCost <= 0) {
+                preview.classList.add('hidden');
+                return;
+            }
+            document.getElementById('lossPreviewValue').textContent = formatCurrencyLocal(quantity * unitCost);
+            document.getElementById('lossPreviewBasis').textContent = basis === 'catalog_estimate'
+                ? 'Uses the current catalog value because production cost is not recorded.'
+                : 'Uses the recorded production cost.';
+            preview.classList.remove('hidden');
+        }
 
         async function submitDisposal(e) {
             e.preventDefault();
@@ -1126,12 +1158,14 @@
                 document.getElementById('productName').value = source.product_name || '';
                 document.getElementById('productId').value = source.product_id || '';
                 document.getElementById('unitCost').value = source.unit_cost || 0;
+                document.getElementById('costBasis').value = source.cost_basis || '';
                 document.getElementById('unit').value = source.unit || 'pcs';
 
-                // Suggest quantity (up to available)
+                // Start with the full reported balance; QC may lower it after the physical check.
                 const qtyField = document.getElementById('quantity');
                 if (!qtyField.value) {
                     qtyField.max = source.available_quantity;
+                    qtyField.value = source.available_quantity;
                     qtyField.placeholder = `Max: ${parseFloat(source.available_quantity).toLocaleString()}`;
                 }
 
@@ -1141,6 +1175,7 @@
                 } else if (source.status === 'Expiring Soon') {
                     document.getElementById('category').value = 'near_expiry';
                 }
+                updateLossPreview();
             }
         }
     </script>

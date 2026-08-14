@@ -154,10 +154,29 @@ define('RATE_LIMIT_SET_PASSWORD_WINDOW', 900); // 15 minutes in seconds
 define('SMTP_HOST', envOrDefault('SMTP_HOST', 'smtp.gmail.com'));
 define('SMTP_PORT', (int) envOrDefault('SMTP_PORT', 587));
 define('SMTP_USERNAME', envOrDefault('SMTP_USERNAME', $isInfinityFree ? 'ragasibrian2@gmail.com' : 'highlandfreshdairy@gmail.com'));
-define('SMTP_PASSWORD', envOrDefault('SMTP_PASSWORD', $isInfinityFree ? 'ydtqfhczgchrothw' : ''));
+define('SMTP_PASSWORD', envOrDefault('SMTP_PASSWORD', ''));
 define('SMTP_FROM_EMAIL', envOrDefault('SMTP_FROM_EMAIL', $isInfinityFree ? 'ragasibrian2@gmail.com' : 'highlandfreshdairy@gmail.com'));
 define('SMTP_FROM_NAME', envOrDefault('SMTP_FROM_NAME', 'Highland Fresh Dairy'));
 define('SMTP_ENCRYPTION', envOrDefault('SMTP_ENCRYPTION', 'tls'));
+
+// Institutional customer PO inbox (POP3, read-only; messages are never deleted)
+define('ORDER_MAILBOX_ENABLED', filter_var(
+    envOrDefault('ORDER_MAILBOX_ENABLED', 'false'),
+    FILTER_VALIDATE_BOOLEAN
+));
+define('ORDER_MAILBOX_HOST', envOrDefault('ORDER_MAILBOX_HOST', 'pop.gmail.com'));
+define('ORDER_MAILBOX_PORT', (int) envOrDefault('ORDER_MAILBOX_PORT', 995));
+define('ORDER_MAILBOX_ENCRYPTION', envOrDefault('ORDER_MAILBOX_ENCRYPTION', 'ssl'));
+define('ORDER_MAILBOX_USERNAME', envOrDefault('ORDER_MAILBOX_USERNAME', SMTP_USERNAME));
+define('ORDER_MAILBOX_PASSWORD', envOrDefault('ORDER_MAILBOX_PASSWORD', SMTP_PASSWORD));
+define('ORDER_MAILBOX_RECENT_MODE', filter_var(
+    envOrDefault('ORDER_MAILBOX_RECENT_MODE', 'false'),
+    FILTER_VALIDATE_BOOLEAN
+));
+define('ORDER_MAILBOX_MAX_MESSAGES', max(1, min(
+    100,
+    (int) envOrDefault('ORDER_MAILBOX_MAX_MESSAGES', 20)
+)));
 
 // Invitation Token Settings
 define('INVITE_TOKEN_EXPIRY_HOURS', 48);   // Invite links valid for 48 hours

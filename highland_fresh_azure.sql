@@ -3617,7 +3617,7 @@ CREATE TABLE `users` (
   `first_name` varchar(100) DEFAULT NULL,
   `last_name` varchar(100) DEFAULT NULL,
   `employee_id` varchar(100) DEFAULT NULL,
-  `role` enum('general_manager','qc_officer','production_staff','warehouse_raw','warehouse_fg','sales_custodian','cashier','purchaser','finance_officer','bookkeeper','maintenance_head') NOT NULL,
+  `role` enum('general_manager','qc_officer','production_staff','warehouse_raw','warehouse_fg','sales_custodian','cashier','purchaser','finance_officer') NOT NULL,
   `email` varchar(100) DEFAULT NULL,
   `is_active` tinyint(1) DEFAULT 1,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
@@ -3639,7 +3639,7 @@ INSERT INTO `users` (`id`, `username`, `password`, `full_name`, `first_name`, `l
 (8, 'general_manager', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'General Manager', 'General', 'Manager', NULL, 'general_manager', 'gm@highlandfresh.com', 1, '2026-02-03 07:57:05', '2026-02-03 08:00:03'),
 (10, 'purchaser', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Rosa Villanueva', 'Rosa', 'Villanueva', NULL, 'purchaser', 'purchasing@highlandfresh.com', 1, '2026-02-10 10:25:56', '2026-02-10 10:31:35'),
 (11, 'finance_officer', '$2y$12$huffGwsovTEJOO6dBJ/Nx.4tuDgPgqEO8E8SQf.441HIH7BiafeW2', 'Maria Santos', 'Maria', 'Santos', 'EMP-FIN-001', 'finance_officer', 'finance@highlandfresh.com', 1, '2026-02-10 15:43:16', '2026-02-10 15:49:04'),
-(12, 'maintenance_head', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', '', 'Juan', 'Dela Cruz', NULL, 'maintenance_head', 'maintenance@highlandfresh.com', 1, '2026-02-10 17:15:31', '2026-02-10 17:15:31');
+(12, 'retired_equipment_account_12', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', '', 'Juan', 'Dela Cruz', NULL, 'warehouse_raw', NULL, 0, '2026-02-10 17:15:31', '2026-02-10 17:15:31');
 
 -- --------------------------------------------------------
 

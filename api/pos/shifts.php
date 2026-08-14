@@ -573,7 +573,7 @@ function getShiftTransactions($db, $shiftId, $startTime, $endTime = null) {
     $collParams = [$startTime];
     if ($endTime) $collParams[] = $endTime;
     
-    $collEndCondition = $endTime ? " AND collected_at <= ?" : "";
+    $collEndCondition = $endTime ? " AND COALESCE(cleared_at, collected_at) <= ?" : "";
     $collStmt = $db->prepare("
         SELECT 
             COUNT(*) as count,
@@ -583,8 +583,8 @@ function getShiftTransactions($db, $shiftId, $startTime, $endTime = null) {
             COALESCE(SUM(CASE WHEN payment_method = 'check' THEN amount_collected ELSE 0 END), 0) as check_amount,
             COALESCE(SUM(CASE WHEN payment_method = 'bank_transfer' THEN amount_collected ELSE 0 END), 0) as bank_amount
         FROM payment_collections 
-        WHERE collected_at >= ? {$collEndCondition}
-        AND status = 'confirmed'
+        WHERE COALESCE(cleared_at, collected_at) >= ? {$collEndCondition}
+        AND status IN ('confirmed', 'cleared')
     ");
     $collStmt->execute($collParams);
     $collections = $collStmt->fetch();

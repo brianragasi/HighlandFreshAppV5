@@ -7,12 +7,13 @@ The Purchaser is the first point of contact when a department needs to spend mon
 *   **Need Verification:** When Production needs sugar or Maintenance needs a bolt, they send a request to the Purchaser.
 *   **Inventory Cross-Check:** Before buying, the Purchaser must coordinate with the **Warehouse Custodian** to verify if the item is truly out of stock. As Ma'am noted, they shouldn't buy what the company already has.
 *   **Canvassing:** While not detailed in depth, the Purchaser is responsible for identifying where to buy the materials (e.g., finding suppliers like "Great Harvest").
+*   **Approved Supplier Rule:** The Purchaser can view only suppliers registered and accredited by the General Manager. For each requested ingredient, canvassing shows only suppliers whose accreditation includes that ingredient. Three quotes are collected when at least three suppliers are available. If only one or two accredited suppliers genuinely provide the item, the Purchaser records every available quote and a written reason for GM review. The Purchaser cannot add suppliers or change the supplier-ingredient catalog.
 
 ### 2. Purchase Order (PO) Management
 The Purchaser is the owner of the formal "Buy" document.
 *   **PO Creation:** They translate approved requests into a formal **Purchase Order (PO)**.
 *   **Term Specification:** They must identify if the purchase is **"Cash"** or **"Utang" (Credit)**. This is a critical functional requirement because it dictates how the Finance Officer will eventually process the payment.
-*   **Supplier Communication:** Ma'am mentioned that for raw materials, the Purchaser **"manawag" (calls)** the suppliers to confirm current market prices and availability before finalizing the order.
+*   **Supplier Communication:** The Purchaser may call suppliers while canvassing to confirm current prices and availability. After GM approval, the system sends the final PO to the supplier's registered email. A follow-up call confirms receipt; the Purchaser does not recreate or manually email the approved PO.
 
 ### 3. Approval Workflow Navigation
 The Purchaser manages the strict hierarchy of spending discussed in the audio.
@@ -28,6 +29,7 @@ This was a major concern for Ma'am regarding the system's ability to track marke
 ### 5. Document Handling (PRS, PO, RR)
 The Purchaser manages the "Paper Trail" (which the students are digitizing).
 *   **PRS (Purchase Request Slip):** Managing the initial internal request.
+*   **Approved PO Delivery:** Triggering the system-generated PDF email to the selected supplier and checking the recorded send result.
 *   **Receiving Report (RR) Verification:** When the goods arrive at the Warehouse, the Purchaser ensures the items delivered match the PO they issued.
 *   **Manual-to-Digital Transition:** They are responsible for moving the manual "logbooks" into the new digital system to ensure no record is lost.
 

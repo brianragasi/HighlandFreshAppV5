@@ -72,7 +72,7 @@
                             <div class="w-10 h-10 rounded-xl bg-info/10 flex items-center justify-center"><i class="fas fa-coins text-info"></i></div>
                             <div>
                                 <p class="text-2xl font-bold stat-value" id="statValue">₱0</p>
-                                <p class="text-xs text-base-content/60">Total Value</p>
+                                <p class="text-xs text-base-content/60">Usable Stock Value</p>
                             </div>
                         </div>
                     </div>
@@ -98,6 +98,14 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div id="stockCheckAlert" class="alert alert-warning mb-6 hidden" role="alert">
+                <i class="fas fa-clipboard-check"></i>
+                <div>
+                    <div class="font-semibold" id="stockCheckTitle">Stock check required</div>
+                    <div class="text-sm" id="stockCheckMessage"></div>
                 </div>
             </div>
 
@@ -139,16 +147,17 @@
                                 <th>Name</th>
                                 <th>Category</th>
                                 <th>Type</th>
-                                <th class="text-right">Current</th>
-                                <th class="text-right">Min</th>
-                                <th class="text-right">Max</th>
+                                <th class="text-right" title="Balance saved on the item record">On File</th>
+                                <th class="text-right" title="Quantity in usable, unexpired stock records">Usable</th>
+                                <th class="text-right" title="Low-stock warning starts at this quantity">Low At</th>
+                                <th class="text-right" title="Configured maximum stock level">Target</th>
                                 <th>Status</th>
                                 <th>Last Movement</th>
                             </tr>
                         </thead>
                         <tbody id="reportTableBody">
                             <tr>
-                                <td colspan="9" class="text-center py-12">
+                                <td colspan="10" class="text-center py-12">
                                     <span class="loading loading-spinner loading-md text-primary"></span>
                                     <p class="text-base-content/60 mt-2 text-sm">Loading inventory...</p>
                                 </td>
@@ -170,7 +179,8 @@
     </script>
     <script src="../../../../js/vendor/axios.min.js"></script>
     <script src="../../../../js/config/api.js"></script>
-    <script src="../../../../js/config/auth.js"></script>
+    <script src="../../../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../../../js/security/role-guard.js" data-allowed-roles="warehouse_raw,general_manager"></script>
     <script src="../../../../js/warehouse/raw.service.js"></script>
     <script>window.WAREHOUSE_RAW_ACTIVE_PAGE = "inventory_report";</script>
     <script src="../../../../js/warehouse/raw-sidebar.js?v=20260727a"></script>
@@ -199,7 +209,7 @@
 
         async function loadReport() {
             const tbody = document.getElementById('reportTableBody');
-            tbody.innerHTML = `<tr><td colspan="9" class="text-center py-12"><span class="loading loading-spinner loading-md text-primary"></span><p class="text-base-content/60 mt-2 text-sm">Loading inventory…</p></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10" class="text-center py-12"><span class="loading loading-spinner loading-md text-primary"></span><p class="text-base-content/60 mt-2 text-sm">Loading inventory...</p></td></tr>`;
             try {
                 const response = await WarehouseRawService.getInventoryReport(state.filters);
                 if (response.success) {
@@ -214,11 +224,11 @@
                     renderStats();
                     renderTable();
                 } else {
-                    tbody.innerHTML = `<tr><td colspan="9" class="text-center py-12 text-base-content/60">${escapeHtml(response.message || 'Failed to load report')}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="10" class="text-center py-12 text-base-content/60">${escapeHtml(response.message || 'Failed to load report')}</td></tr>`;
                 }
             } catch (err) {
                 console.error(err);
-                tbody.innerHTML = `<tr><td colspan="9" class="text-center py-12 text-error">Failed to load report: ${escapeHtml(err.message || 'unknown error')}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="10" class="text-center py-12 text-error">Failed to load report: ${escapeHtml(err.message || 'unknown error')}</td></tr>`;
             }
         }
 
@@ -229,11 +239,21 @@
             document.getElementById('statValue').textContent = '₱' + Number(s.total_value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             document.getElementById('statLow').textContent = ((s.low_count || 0) + (s.critical_count || 0)).toLocaleString();
             document.getElementById('statOut').textContent = (s.out_count || 0).toLocaleString();
+
+            const checkCount = Number(s.stock_check_count || 0);
+            const alert = document.getElementById('stockCheckAlert');
+            if (checkCount > 0) {
+                document.getElementById('stockCheckTitle').textContent = `${checkCount} stock ${checkCount === 1 ? 'balance needs' : 'balances need'} checking`;
+                document.getElementById('stockCheckMessage').textContent = 'The saved balance and usable stock records do not match. Confirm the physical count before issuing these items.';
+                alert.classList.remove('hidden');
+            } else {
+                alert.classList.add('hidden');
+            }
         }
 
         function statusBadge(status) {
             const map = {
-                out: { cls: 'badge-ghost',   text: 'Out' },
+                out: { cls: 'badge-error',   text: 'Out' },
                 low: { cls: 'badge-warning', text: 'Low' },
                 ok:  { cls: 'badge-success', text: 'OK' },
             };
@@ -242,14 +262,14 @@
         }
 
         function statusDot(status) {
-            const map = { out: 'bg-base-300', low: 'bg-warning', ok: 'bg-success' };
+            const map = { out: 'bg-error', low: 'bg-warning', ok: 'bg-success' };
             return `<span class="inline-block w-2.5 h-2.5 rounded-full ${map[status] || 'bg-base-300'}"></span>`;
         }
 
         function renderTable() {
             const tbody = document.getElementById('reportTableBody');
             if (!state.items.length) {
-                tbody.innerHTML = `<tr><td colspan="9" class="text-center py-12 text-base-content/60"><i class="fas fa-inbox text-4xl text-base-content/20 mb-2"></i><h3 class="font-semibold mt-2">No items match your filters</h3><p class="text-sm">Try adjusting the search or filters above</p></td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="10" class="text-center py-12 text-base-content/60"><i class="fas fa-inbox text-4xl text-base-content/20 mb-2"></i><h3 class="font-semibold mt-2">No items match your filters</h3><p class="text-sm">Try adjusting the search or filters above</p></td></tr>`;
                 return;
             }
 
@@ -258,9 +278,9 @@
                 : '<span class="badge badge-outline badge-sm">Ingredient</span>';
 
             tbody.innerHTML = state.items.map(item => {
-                const stockPct = item.maximum_stock > 0 ? Math.min(100, (item.current_stock / item.maximum_stock) * 100) : 0;
+                const needsCheck = Boolean(item.needs_stock_check);
                 return `
-                    <tr class="hover:bg-base-200/50">
+                    <tr class="hover:bg-base-200/50 ${needsCheck ? 'bg-warning/5' : ''}">
                         <td><div class="flex items-center gap-2">${statusDot(item.status)}<span class="font-mono text-xs">${escapeHtml(item.code || '-')}</span></div></td>
                         <td>
                             <div class="font-semibold text-sm">${escapeHtml(item.name || '-')}</div>
@@ -270,14 +290,15 @@
                         <td>${typeBadge(item.item_type)}</td>
                         <td class="text-right">
                             <div class="font-mono font-bold">${item.current_stock.toLocaleString()} <span class="text-xs font-normal text-base-content/60">${escapeHtml(item.unit || '')}</span></div>
-                            <div class="w-20 h-1 bg-base-200 rounded-full overflow-hidden mt-1 inline-block">
-                                <div class="h-full rounded-full ${item.status === 'ok' ? 'bg-success' : item.status === 'low' ? 'bg-warning' : 'bg-error'}" style="width: ${stockPct}%"></div>
-                            </div>
                         </td>
-                        <td class="text-right font-mono text-sm text-base-content/70">${item.minimum_stock.toLocaleString()}</td>
-                        <td class="text-right font-mono text-sm text-base-content/70">${item.maximum_stock.toLocaleString()}</td>
+                        <td class="text-right">
+                            <div class="font-mono font-bold ${needsCheck ? 'text-warning' : ''}">${Number(item.usable_stock || 0).toLocaleString()} <span class="text-xs font-normal text-base-content/60">${escapeHtml(item.unit || '')}</span></div>
+                            ${needsCheck ? '<div class="text-[11px] text-warning whitespace-nowrap"><i class="fas fa-triangle-exclamation"></i> Check stock</div>' : ''}
+                        </td>
+                        <td class="text-right font-mono text-sm text-base-content/70">${Number(item.low_stock_at || 0).toLocaleString()}</td>
+                        <td class="text-right font-mono text-sm text-base-content/70">${item.maximum_stock == null ? '<span class="font-sans text-base-content/40">Not set</span>' : Number(item.maximum_stock).toLocaleString()}</td>
                         <td>${statusBadge(item.status)}</td>
-                        <td class="text-sm text-base-content/60">${item.last_movement ? new Date(item.last_movement).toLocaleString() : '—'}</td>
+                        <td class="text-sm text-base-content/60">${item.last_movement ? new Date(item.last_movement).toLocaleString() : 'No recorded movement'}</td>
                     </tr>
                 `;
             }).join('');
@@ -294,7 +315,7 @@
 
         function exportCSV() {
             if (!state.items.length) return;
-            const rows = [['Code', 'Name', 'Type', 'Category', 'Unit', 'Current Stock', 'Min', 'Max', 'Status', 'Value (PHP)', 'Last Movement']];
+            const rows = [['Code', 'Name', 'Type', 'Category', 'Unit', 'Stock On File', 'Usable Stock', 'Low At', 'Minimum', 'Target', 'Status', 'Usable Value (PHP)', 'Needs Stock Check', 'Last Movement']];
             state.items.forEach(item => {
                 rows.push([
                     item.code || '',
@@ -303,10 +324,13 @@
                     item.category || '',
                     item.unit || '',
                     item.current_stock,
+                    item.usable_stock,
+                    item.low_stock_at,
                     item.minimum_stock,
-                    item.maximum_stock,
+                    item.maximum_stock == null ? '' : item.maximum_stock,
                     item.status || '',
                     item.value || 0,
+                    item.needs_stock_check ? 'Yes' : 'No',
                     item.last_movement || ''
                 ]);
             });

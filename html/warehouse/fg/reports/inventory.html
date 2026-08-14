@@ -149,6 +149,22 @@
                 </div>
             </div>
 
+            <section class="bg-base-100 border border-base-300 rounded-lg mb-6">
+                <div class="px-4 py-3 border-b border-base-300 flex items-center gap-2">
+                    <i class="fas fa-route text-primary"></i>
+                    <div>
+                        <h2 class="font-semibold">Delivery stock position</h2>
+                        <p class="text-xs text-base-content/55">Goods remain company-owned until the customer accepts them.</p>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 lg:grid-cols-4 divide-x divide-base-300">
+                    <div class="p-4"><p class="text-xs text-base-content/55">Available</p><p class="text-2xl font-bold text-success" id="stateAvailable">0</p></div>
+                    <div class="p-4"><p class="text-xs text-base-content/55">Reserved</p><p class="text-2xl font-bold text-warning" id="stateReserved">0</p></div>
+                    <div class="p-4"><p class="text-xs text-base-content/55">In Transit</p><p class="text-2xl font-bold text-info" id="stateInTransit">0</p></div>
+                    <div class="p-4"><p class="text-xs text-base-content/55">Company-owned</p><p class="text-2xl font-bold" id="stateCompanyOwned">0</p></div>
+                </div>
+            </section>
+
             <!-- Report Filters -->
             <div class="card bg-base-100 shadow-sm mb-6 no-print">
                 <div class="card-body p-4">
@@ -342,8 +358,9 @@
 
     <script src="../../../../js/vendor/axios.min.js"></script>
     <script src="../../../../js/config/api.js"></script>
-    <script src="../../../../js/config/auth.js"></script>
-    <script src="../../../../js/warehouse/fg.service.js"></script>
+    <script src="../../../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../../../js/security/role-guard.js" data-allowed-roles="warehouse_fg,general_manager"></script>
+    <script src="../../../../js/warehouse/fg.service.js?v=20260729"></script>
     <script>
         let reportData = [];
 
@@ -376,8 +393,21 @@
             document.getElementById('reportDate').value = new Date().toISOString().split('T')[0];
             
             // Load chillers for filter
-            loadChillers();
+            await Promise.all([loadChillers(), loadStockPosition()]);
         });
+
+        async function loadStockPosition() {
+            try {
+                const response = await WarehouseFGService.getDeliveryStockPosition();
+                const stock = response.data || {};
+                document.getElementById('stateAvailable').textContent = formatNumber(stock.available);
+                document.getElementById('stateReserved').textContent = formatNumber(stock.reserved);
+                document.getElementById('stateInTransit').textContent = formatNumber(stock.in_transit);
+                document.getElementById('stateCompanyOwned').textContent = formatNumber(stock.company_owned);
+            } catch (error) {
+                console.error('Error loading delivery stock position:', error);
+            }
+        }
 
         async function loadChillers() {
             try {
@@ -437,6 +467,7 @@
                     reportData = data;
                     renderReport(data);
                     updateSummary(data);
+                    await loadStockPosition();
                     document.getElementById('categorySummary').style.display = 'grid';
                 }
             } catch (error) {

@@ -5,15 +5,17 @@
  */
 
 require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../helpers/supplier_ingredient_catalog.php';
 
-// Require authentication
-Auth::requireAuth();
+// Require GM/Admin role
+$currentUser = Auth::requireRole(['general_manager', 'admin']);
 
 // Get database connection
 $conn = Database::getInstance()->getConnection();
+ensureSupplierIngredientCatalog($conn);
 
 // Get request method and handle routing
-$method = $_SERVER['REQUEST_METHOD'];
+$method = $requestMethod;
 $id = isset($_GET['id']) ? intval($_GET['id']) : null;
 $action = isset($_GET['action']) ? $_GET['action'] : null;
 
@@ -29,18 +31,18 @@ try {
             }
             break;
         case 'POST':
-            createSupplier($conn);
+            createSupplier($conn, $currentUser);
             break;
         case 'PUT':
             if ($id) {
-                updateSupplier($conn, $id);
+                updateSupplier($conn, $id, $currentUser);
             } else {
                 sendError('Supplier ID required', 400);
             }
             break;
         case 'DELETE':
             if ($id) {
-                deleteSupplier($conn, $id);
+                deleteSupplier($conn, $id, $currentUser);
             } else {
                 sendError('Supplier ID required', 400);
             }
@@ -68,7 +70,7 @@ function getSuppliers($conn) {
     $params = [];
     
     if ($search) {
-        $where[] = "(supplier_name LIKE ? OR supplier_code LIKE ? OR contact_person LIKE ? OR email LIKE ?)";
+        $where[] = "(s.supplier_name LIKE ? OR s.supplier_code LIKE ? OR s.contact_person LIKE ? OR s.email LIKE ?)";
         $searchParam = "%$search%";
         $params[] = $searchParam;
         $params[] = $searchParam;
@@ -77,20 +79,29 @@ function getSuppliers($conn) {
     }
     
     if ($isActive !== '') {
-        $where[] = "is_active = ?";
+        $where[] = "s.is_active = ?";
         $params[] = intval($isActive);
     }
     
     $whereClause = count($where) > 0 ? 'WHERE ' . implode(' AND ', $where) : '';
     
     // Get total count
-    $countSql = "SELECT COUNT(*) as total FROM suppliers $whereClause";
+    $countSql = "SELECT COUNT(*) as total FROM suppliers s $whereClause";
     $countStmt = $conn->prepare($countSql);
     $countStmt->execute($params);
     $total = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
     
     // Get suppliers
-    $sql = "SELECT * FROM suppliers $whereClause ORDER BY supplier_name ASC LIMIT $limit OFFSET $offset";
+    $sql = "SELECT s.*,
+                   COUNT(DISTINCT CASE WHEN si.is_active = 1 AND i.is_active = 1 THEN si.ingredient_id END) AS ingredient_count,
+                   GROUP_CONCAT(DISTINCT CASE WHEN si.is_active = 1 AND i.is_active = 1 THEN i.ingredient_name END ORDER BY i.ingredient_name SEPARATOR ', ') AS supplied_ingredients
+            FROM suppliers s
+            LEFT JOIN supplier_ingredients si ON si.supplier_id = s.id
+            LEFT JOIN ingredients i ON i.id = si.ingredient_id
+            $whereClause
+            GROUP BY s.id
+            ORDER BY s.supplier_name ASC
+            LIMIT $limit OFFSET $offset";
     $stmt = $conn->prepare($sql);
     $stmt->execute($params);
     $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -117,6 +128,8 @@ function getSupplier($conn, $id) {
     if (!$supplier) {
         sendError('Supplier not found', 404);
     }
+
+    $supplier['ingredients'] = supplierCatalogGetSupplierIngredients($conn, (int) $id);
     
     sendSuccess(['supplier' => $supplier]);
 }
@@ -144,18 +157,26 @@ function getSupplierStatistics($conn) {
 /**
  * Create new supplier
  */
-function createSupplier($conn) {
+function createSupplier($conn, $currentUser) {
     $data = json_decode(file_get_contents('php://input'), true);
+    $isActive = isset($data['is_active']) ? intval($data['is_active']) : 1;
+    $ingredientLinks = supplierCatalogNormalizeIngredientLinks($data['ingredients'] ?? []);
     
     // Validation
     $errors = [];
     if (empty($data['supplier_name'])) {
         $errors['supplier_name'] = 'Supplier name is required';
     }
+    $contactCheck = hfValidateContactPayload($data, ['phone'], 'email');
+    $data = $contactCheck['data'];
+    $errors = array_merge($errors, $contactCheck['errors']);
     
     if (!empty($errors)) {
         sendValidationError($errors);
     }
+    // A supplier can be accredited before its first ingredient is registered.
+    // Purchasing only sees this supplier after an ingredient link is added.
+    supplierCatalogValidateIngredientLinks($conn, $ingredientLinks, false);
     
     // Generate supplier code if not provided
     if (empty($data['supplier_code'])) {
@@ -170,29 +191,48 @@ function createSupplier($conn) {
     if ($stmt->fetch()) {
         sendValidationError(['supplier_code' => 'Supplier code already exists']);
     }
+
+    $stmt = $conn->prepare("SELECT id FROM suppliers WHERE LOWER(TRIM(supplier_name)) = LOWER(TRIM(?))");
+    $stmt->execute([$data['supplier_name']]);
+    if ($stmt->fetch()) {
+        sendValidationError(['supplier_name' => 'A supplier with this name already exists']);
+    }
     
     $sql = "INSERT INTO suppliers (supplier_code, supplier_name, contact_person, phone, email, address, payment_terms, is_active, notes)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
-    $stmt = $conn->prepare($sql);
-    $stmt->execute([
-        $data['supplier_code'],
-        $data['supplier_name'],
-        $data['contact_person'] ?? null,
-        $data['phone'] ?? null,
-        $data['email'] ?? null,
-        $data['address'] ?? null,
-        $data['payment_terms'] ?? '30 days',
-        isset($data['is_active']) ? intval($data['is_active']) : 1,
-        $data['notes'] ?? null
-    ]);
-    
-    $newId = $conn->lastInsertId();
+    $conn->beginTransaction();
+    try {
+        $stmt = $conn->prepare($sql);
+        $stmt->execute([
+            $data['supplier_code'],
+            $data['supplier_name'],
+            $data['contact_person'] ?? null,
+            $data['phone'] ?? null,
+            $data['email'] ?? null,
+            $data['address'] ?? null,
+            $data['payment_terms'] ?? '30 days',
+            $isActive,
+            $data['notes'] ?? null
+        ]);
+
+        $newId = (int) $conn->lastInsertId();
+        supplierCatalogSyncSupplier($conn, $newId, $ingredientLinks, (int) $currentUser['user_id']);
+        $conn->commit();
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        throw $e;
+    }
     
     // Get the created supplier
     $stmt = $conn->prepare("SELECT * FROM suppliers WHERE id = ?");
     $stmt->execute([$newId]);
     $supplier = $stmt->fetch(PDO::FETCH_ASSOC);
+    $supplier['ingredients'] = supplierCatalogGetSupplierIngredients($conn, $newId);
+
+    logAudit($currentUser['user_id'], 'CREATE', 'suppliers', $newId, null, $supplier);
     
     sendSuccess(['supplier' => $supplier], 'Supplier created successfully');
 }
@@ -200,14 +240,41 @@ function createSupplier($conn) {
 /**
  * Update supplier
  */
-function updateSupplier($conn, $id) {
+function updateSupplier($conn, $id, $currentUser) {
     $data = json_decode(file_get_contents('php://input'), true);
+    $hasIngredientLinks = array_key_exists('ingredients', $data);
+    $contactCheck = hfValidateContactPayload($data, ['phone'], 'email');
+    if (!empty($contactCheck['errors'])) {
+        sendValidationError($contactCheck['errors']);
+    }
+    $data = $contactCheck['data'];
     
     // Check if supplier exists
-    $stmt = $conn->prepare("SELECT id FROM suppliers WHERE id = ?");
+    $stmt = $conn->prepare("SELECT * FROM suppliers WHERE id = ?");
     $stmt->execute([$id]);
-    if (!$stmt->fetch()) {
+    $currentSupplier = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$currentSupplier) {
         sendError('Supplier not found', 404);
+    }
+
+    $ingredientLinks = $hasIngredientLinks
+        ? supplierCatalogNormalizeIngredientLinks($data['ingredients'])
+        : supplierCatalogNormalizeIngredientLinks(supplierCatalogGetSupplierIngredients($conn, (int) $id));
+    $nextIsActive = isset($data['is_active']) ? intval($data['is_active']) : intval($currentSupplier['is_active']);
+    supplierCatalogValidateIngredientLinks($conn, $ingredientLinks, false);
+    supplierCatalogValidateSupplierCoverageAfterChange(
+        $conn,
+        (int) $id,
+        $ingredientLinks,
+        $nextIsActive === 1
+    );
+
+    if (isset($data['supplier_name'])) {
+        $stmt = $conn->prepare("SELECT id FROM suppliers WHERE LOWER(TRIM(supplier_name)) = LOWER(TRIM(?)) AND id != ?");
+        $stmt->execute([$data['supplier_name'], $id]);
+        if ($stmt->fetch()) {
+            sendValidationError(['supplier_name' => 'A supplier with this name already exists']);
+        }
     }
     
     // Build update query
@@ -223,37 +290,73 @@ function updateSupplier($conn, $id) {
         }
     }
     
-    if (empty($fields)) {
+    if (empty($fields) && !$hasIngredientLinks) {
         sendError('No fields to update', 400);
     }
-    
-    $params[] = $id;
-    $sql = "UPDATE suppliers SET " . implode(', ', $fields) . " WHERE id = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->execute($params);
+
+    $conn->beginTransaction();
+    try {
+        if ($fields) {
+            $params[] = $id;
+            $sql = "UPDATE suppliers SET " . implode(', ', $fields) . " WHERE id = ?";
+            $stmt = $conn->prepare($sql);
+            $stmt->execute($params);
+        }
+        if ($hasIngredientLinks) {
+            supplierCatalogSyncSupplier($conn, (int) $id, $ingredientLinks, (int) $currentUser['user_id']);
+        }
+        $conn->commit();
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        throw $e;
+    }
     
     // Get updated supplier
     $stmt = $conn->prepare("SELECT * FROM suppliers WHERE id = ?");
     $stmt->execute([$id]);
     $supplier = $stmt->fetch(PDO::FETCH_ASSOC);
+    $supplier['ingredients'] = supplierCatalogGetSupplierIngredients($conn, (int) $id);
+
+    logAudit($currentUser['user_id'], 'UPDATE', 'suppliers', $id, $currentSupplier, $supplier);
     
     sendSuccess(['supplier' => $supplier], 'Supplier updated successfully');
 }
 
 /**
- * Delete supplier
+ * Archive supplier by deactivating the row.
+ * Supplier rows are kept so PRS, canvass, PO, and receiving history remain traceable.
  */
-function deleteSupplier($conn, $id) {
+function deleteSupplier($conn, $id, $currentUser) {
     // Check if supplier exists
-    $stmt = $conn->prepare("SELECT id FROM suppliers WHERE id = ?");
+    $stmt = $conn->prepare("SELECT * FROM suppliers WHERE id = ?");
     $stmt->execute([$id]);
-    if (!$stmt->fetch()) {
+    $currentSupplier = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$currentSupplier) {
         sendError('Supplier not found', 404);
     }
+
+    $currentLinks = supplierCatalogNormalizeIngredientLinks(
+        supplierCatalogGetSupplierIngredients($conn, (int) $id)
+    );
+    supplierCatalogValidateSupplierCoverageAfterChange($conn, (int) $id, $currentLinks, false);
     
-    // Soft delete (set is_active to 0)
     $stmt = $conn->prepare("UPDATE suppliers SET is_active = 0 WHERE id = ?");
     $stmt->execute([$id]);
+
+    logAudit(
+        $currentUser['user_id'],
+        'UPDATE',
+        'suppliers',
+        $id,
+        $currentSupplier,
+        array_merge($currentSupplier, ['is_active' => 0])
+    );
     
-    sendSuccess(null, 'Supplier deactivated successfully');
+    sendSuccess([
+        'supplier_id' => (int) $id,
+        'is_active' => 0,
+        'archived' => true
+    ], 'Supplier archived successfully');
 }

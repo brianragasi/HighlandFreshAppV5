@@ -521,8 +521,6 @@
                         <option value="cashier">Cashier</option>
                         <option value="purchaser">Purchaser</option>
                         <option value="finance_officer">Finance Officer</option>
-                        <option value="bookkeeper">Bookkeeper</option>
-                        <option value="maintenance_head">Maintenance Head</option>
                     </select>
                     <select id="statusFilter" class="select select-bordered w-full md:w-40" onchange="filterUsers()">
                         <option value="">All Status</option>
@@ -617,24 +615,33 @@
                         <input type="text" id="username" name="username" class="input input-bordered"
                             required maxlength="50" pattern="[A-Za-z0-9._\-]+" autocomplete="username"
                             title="Letters, numbers, dots, underscores, hyphens only" />
+                        <label class="label">
+                            <span class="label-text-alt text-base-content/60">Auto-filled from the name. The user can sign in with this.</span>
+                        </label>
                     </div>
 
                     <!-- Email → users.email varchar(100) NULL -->
-                    <div class="form-control">
+                    <div class="form-control" id="emailField">
                         <label class="label" for="email">
-                            <span class="label-text">Email</span>
+                            <span class="label-text" id="emailLabelText">Email</span>
                         </label>
                         <input type="email" id="email" name="email" class="input input-bordered"
                             maxlength="100" autocomplete="email" />
+                        <label class="label">
+                            <span class="label-text-alt text-base-content/60" id="emailFieldHint">Needed only when sending an email invite.</span>
+                        </label>
                     </div>
 
                     <!-- Employee ID → users.employee_id varchar(100) NULL -->
-                    <div class="form-control">
+                    <div class="form-control" id="employeeIdField">
                         <label class="label" for="employeeId">
-                            <span class="label-text">Employee ID</span>
+                            <span class="label-text" id="employeeIdLabelText">Employee ID</span>
                         </label>
                         <input type="text" id="employeeId" name="employee_id" class="input input-bordered"
-                            maxlength="100" autocomplete="off" />
+                            maxlength="100" autocomplete="off" placeholder="Generated when saved" />
+                        <label class="label">
+                            <span class="label-text-alt text-base-content/60" id="employeeIdHint">Generated automatically from the selected role.</span>
+                        </label>
                     </div>
 
                     <!-- Role → users.role ENUM (must match DB) -->
@@ -653,8 +660,6 @@
                             <option value="cashier">Cashier</option>
                             <option value="purchaser">Purchaser</option>
                             <option value="finance_officer">Finance Officer</option>
-                            <option value="bookkeeper">Bookkeeper</option>
-                            <option value="maintenance_head">Maintenance Head</option>
                         </select>
                     </div>
 
@@ -707,7 +712,7 @@
                             <span>
                                 <span class="font-semibold text-sm block">Generate Temporary Credentials</span>
                                 <span class="text-xs text-base-content/60 leading-relaxed block mt-1">
-                                    Creates a random password shown <strong>once</strong>. User must change it at first login.
+                                    For staff without email. Creates a random password shown <strong>once</strong>. User must change it at first login.
                                 </span>
                             </span>
                         </label>
@@ -764,47 +769,67 @@
 
     <!-- Temp Credential Modal (shown once after temp_credentials onboarding) -->
     <dialog id="tempCredentialModal" class="modal">
-        <div class="modal-box">
+        <div class="modal-box max-w-xl rounded-xl">
             <form method="dialog">
-                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-3 top-3">x</button>
             </form>
-            <h3 class="font-bold text-lg text-warning">
-                <i class="fas fa-key mr-2"></i>
-                Temporary Credentials Generated
-            </h3>
-            <div class="alert alert-warning mt-4">
-                <i class="fas fa-exclamation-triangle"></i>
-                <span>These credentials are shown <strong>only once</strong>. Copy or print them now and hand them to the employee securely.</span>
-            </div>
-            <div class="bg-base-200 rounded-xl p-6 mt-4 space-y-4">
+            <div class="flex items-start gap-3 pr-8">
+                <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <i class="fas fa-key"></i>
+                </div>
                 <div>
-                    <label class="text-xs text-base-content/60 uppercase tracking-wider font-semibold">Login ID</label>
-                    <div class="flex items-center gap-2 mt-1">
-                        <code class="text-lg font-mono font-bold text-base-content flex-1" id="tempLoginId"></code>
-                        <button class="btn btn-ghost btn-sm btn-square" onclick="copyToClipboard('tempLoginId')" title="Copy">
+                    <p class="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Staff hand-off</p>
+                    <h3 class="mt-1 text-xl font-bold">Temporary credentials are ready</h3>
+                    <p class="mt-1 text-sm text-base-content/60">Give these to the employee. They will change the password at first login.</p>
+                </div>
+            </div>
+
+            <div class="mt-5 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm">
+                <div class="flex items-start gap-3">
+                    <i class="fas fa-circle-exclamation mt-0.5 text-warning"></i>
+                    <span>Shown only once. Copy or print before closing this window.</span>
+                </div>
+            </div>
+
+            <div class="mt-5 grid gap-3">
+                <div class="rounded-lg border border-base-300 bg-base-100 p-4">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="min-w-0">
+                            <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Login ID</p>
+                            <code class="mt-1 block break-all font-mono text-lg font-bold text-base-content" id="tempLoginId"></code>
+                            <p class="mt-1 text-xs text-base-content/50" id="tempLoginType"></p>
+                        </div>
+                        <button type="button" class="btn btn-ghost btn-sm btn-square" onclick="copyToClipboard('tempLoginId')" title="Copy login ID">
                             <i class="fas fa-copy"></i>
                         </button>
                     </div>
-                    <p class="text-xs text-base-content/50 mt-1" id="tempLoginType"></p>
                 </div>
-                <div class="divider my-1"></div>
-                <div>
-                    <label class="text-xs text-base-content/60 uppercase tracking-wider font-semibold">Temporary Password</label>
-                    <div class="flex items-center gap-2 mt-1">
-                        <code class="text-lg font-mono font-bold text-primary flex-1" id="tempPassword"></code>
-                        <button class="btn btn-ghost btn-sm btn-square" onclick="copyToClipboard('tempPassword')" title="Copy">
+
+                <div class="rounded-lg border border-primary/25 bg-primary/5 p-4">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="min-w-0">
+                            <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Temporary Password</p>
+                            <code class="mt-1 block break-all font-mono text-lg font-bold text-primary" id="tempPassword"></code>
+                        </div>
+                        <button type="button" class="btn btn-ghost btn-sm btn-square" onclick="copyToClipboard('tempPassword')" title="Copy password">
                             <i class="fas fa-copy"></i>
                         </button>
                     </div>
                 </div>
             </div>
-            <p class="text-sm text-base-content/60 mt-4">
-                <i class="fas fa-info-circle mr-1"></i>
-                The user will be required to change this password at their first login.
-            </p>
+
+            <div class="mt-5 grid gap-2 rounded-lg bg-base-200/70 p-3 text-xs text-base-content/60 sm:grid-cols-3">
+                <div><i class="fas fa-user-check mr-1 text-primary"></i> Login once</div>
+                <div><i class="fas fa-lock mr-1 text-primary"></i> Change password</div>
+                <div><i class="fas fa-right-to-bracket mr-1 text-primary"></i> Continue to dashboard</div>
+            </div>
+
             <div class="modal-action">
-                <button class="btn btn-ghost" onclick="window.print()"><i class="fas fa-print mr-2"></i>Print</button>
-                <button class="btn btn-primary" onclick="document.getElementById('tempCredentialModal').close()">Done</button>
+                <button type="button" class="btn btn-ghost" onclick="copyTempCredentialBundle()">
+                    <i class="fas fa-copy mr-2"></i>Copy both
+                </button>
+                <button type="button" class="btn btn-ghost" onclick="window.print()"><i class="fas fa-print mr-2"></i>Print</button>
+                <button type="button" class="btn btn-primary" onclick="document.getElementById('tempCredentialModal').close()">Done</button>
             </div>
         </div>
         <form method="dialog" class="modal-backdrop">
@@ -814,30 +839,56 @@
 
     <!-- Invite result modal (email path) -->
     <dialog id="inviteResultModal" class="modal">
-        <div class="modal-box">
+        <div class="modal-box max-w-xl rounded-xl overflow-hidden p-0">
             <form method="dialog">
-                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-3 top-3 z-10">x</button>
             </form>
-            <h3 class="font-bold text-lg text-success" id="inviteResultTitle">
-                <i class="fas fa-envelope mr-2"></i>
-                Invitation Sent
-            </h3>
-            <div class="mt-4 space-y-3">
-                <p class="text-sm" id="inviteResultMessage"></p>
-                <div id="inviteUrlBlock" class="hidden">
-                    <label class="text-xs text-base-content/60 uppercase tracking-wider font-semibold">One-time invite link</label>
-                    <div class="flex items-center gap-2 mt-1">
-                        <code class="text-xs font-mono break-all flex-1 bg-base-200 p-2 rounded" id="inviteUrlText"></code>
-                        <button class="btn btn-ghost btn-sm btn-square" onclick="copyToClipboard('inviteUrlText')" title="Copy">
-                            <i class="fas fa-copy"></i>
+            <div class="bg-primary/10 px-6 pb-5 pt-6">
+                <div class="flex items-start gap-4 pr-8">
+                    <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-content shadow-sm" id="inviteResultIconBox">
+                        <i class="fas fa-envelope-open-text" id="inviteResultIcon"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-xs font-semibold uppercase tracking-[0.16em] text-primary" id="inviteResultKicker">Email invite</p>
+                        <h3 class="mt-1 text-xl font-bold text-base-content" id="inviteResultTitle">Invitation sent</h3>
+                        <p class="mt-1 text-sm text-base-content/70" id="inviteResultMessage"></p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-4 p-6">
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <div class="rounded-lg border border-base-300 bg-base-100 p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Recipient</p>
+                        <p class="mt-1 truncate font-semibold text-base-content" id="inviteRecipientText">-</p>
+                    </div>
+                    <div class="rounded-lg border border-base-300 bg-base-100 p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Link expires</p>
+                        <p class="mt-1 font-semibold text-base-content" id="inviteExpiresText">-</p>
+                    </div>
+                </div>
+
+                <div id="inviteUrlBlock" class="hidden rounded-lg border border-base-300 bg-base-100 p-4">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50" id="inviteUrlLabel">Fallback link</p>
+                            <p class="mt-1 text-xs text-base-content/60" id="inviteUrlHint">Use this only if the employee did not receive the email.</p>
+                        </div>
+                        <button type="button" class="btn btn-ghost btn-sm" onclick="copyToClipboard('inviteUrlText')" title="Copy invite link">
+                            <i class="fas fa-copy mr-2"></i>Copy
                         </button>
                     </div>
-                    <p class="text-xs text-warning mt-2">Share this link securely. It is shown only once if email delivery failed.</p>
+                    <code class="mt-3 block max-h-24 overflow-y-auto rounded-lg bg-base-200 p-3 font-mono text-xs leading-relaxed break-all text-base-content/80" id="inviteUrlText"></code>
                 </div>
-                <p class="text-xs text-base-content/50" id="inviteExpiresText"></p>
+
+                <div class="rounded-lg bg-base-200/70 p-3 text-xs text-base-content/60">
+                    <i class="fas fa-shield-halved mr-1 text-primary"></i>
+                    The employee sets their own password from this one-time link.
+                </div>
             </div>
-            <div class="modal-action">
-                <button class="btn btn-primary" onclick="document.getElementById('inviteResultModal').close()">Done</button>
+
+            <div class="flex justify-end gap-2 border-t border-base-300 bg-base-100 px-6 py-4">
+                <button type="button" class="btn btn-primary" onclick="document.getElementById('inviteResultModal').close()">Done</button>
             </div>
         </div>
         <form method="dialog" class="modal-backdrop">
@@ -914,7 +965,8 @@
 
     <!-- Scripts -->
     <script src="../../js/config/api.js"></script>
-    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="general_manager,admin"></script>
     <script src="../../js/admin/admin.service.js"></script>
 
     <script>
@@ -923,6 +975,7 @@
         let currentPage = 1;
         const pageSize = 10;
         let userToDelete = null;
+        let usernameEditedByAdmin = false;
 
         // Sidebar toggle
         function toggleSidebar() {
@@ -954,9 +1007,7 @@
                 'sales_custodian': 'Sales Custodian',
                 'cashier': 'Cashier',
                 'purchaser': 'Purchaser',
-                'finance_officer': 'Finance Officer',
-                'bookkeeper': 'Bookkeeper',
-                'maintenance_head': 'Maintenance Head'
+                'finance_officer': 'Finance Officer'
             };
             return roles[role] || role;
         }
@@ -1193,14 +1244,28 @@
             const isCreate = !document.getElementById('userId').value;
             const onboardSection = document.getElementById('onboardingSection');
             const pwdFields = document.getElementById('passwordFields');
+            const emailField = document.getElementById('emailField');
             const emailInput = document.getElementById('email');
+            const employeeInput = document.getElementById('employeeId');
+            const employeeHint = document.getElementById('employeeIdHint');
+            const employeeLabel = document.getElementById('employeeIdLabelText');
             const emailHint = document.getElementById('onboardingEmailHint');
             const inviteRadio = document.getElementById('onboardEmailInvite');
 
             if (!isCreate) {
                 if (onboardSection) onboardSection.classList.add('hidden');
                 if (pwdFields) pwdFields.classList.add('hidden'); // use Reset Password action instead
-                if (emailInput) emailInput.required = false;
+                if (emailField) emailField.classList.remove('hidden');
+                if (emailInput) {
+                    emailInput.required = false;
+                    emailInput.disabled = false;
+                }
+                if (employeeInput) {
+                    employeeInput.disabled = false;
+                    employeeInput.placeholder = '';
+                }
+                if (employeeLabel) employeeLabel.textContent = 'Employee ID';
+                if (employeeHint) employeeHint.textContent = 'Usually generated by the system. Edit only if HR corrected the ID.';
                 return;
             }
 
@@ -1210,10 +1275,24 @@
             const method = inviteRadio && inviteRadio.checked ? 'email_invite' : 'temp_credentials';
             if (emailInput) {
                 emailInput.required = method === 'email_invite';
+                emailInput.disabled = method === 'temp_credentials';
+                if (method === 'temp_credentials') {
+                    emailInput.value = '';
+                }
+            }
+            if (emailField) {
+                emailField.classList.toggle('hidden', method === 'temp_credentials');
             }
             if (emailHint) {
                 emailHint.classList.toggle('hidden', method !== 'email_invite');
             }
+            if (employeeInput) {
+                employeeInput.value = '';
+                employeeInput.disabled = true;
+                employeeInput.placeholder = 'Generated when saved';
+            }
+            if (employeeLabel) employeeLabel.textContent = 'Employee ID (auto)';
+            if (employeeHint) employeeHint.textContent = 'The system assigns this automatically after you save the user.';
         }
 
         // Back-compat alias if anything still calls the old name
@@ -1224,6 +1303,25 @@
         function getSelectedOnboardingMethod() {
             const checked = document.querySelector('input[name="onboarding_method"]:checked');
             return checked ? checked.value : 'email_invite';
+        }
+
+        function makeUsername(firstName, lastName) {
+            const base = `${firstName || ''}.${lastName || ''}`.toLowerCase()
+                .replace(/[^a-z0-9._-]+/g, '')
+                .replace(/^\.+|\.+$/g, '')
+                .replace(/\.+/g, '.');
+            return base.substring(0, 50) || '';
+        }
+
+        function updateUsernameSuggestion() {
+            const isCreate = !document.getElementById('userId').value;
+            if (!isCreate || usernameEditedByAdmin) return;
+            const firstName = document.getElementById('firstName').value.trim();
+            const lastName = document.getElementById('lastName').value.trim();
+            const suggestion = makeUsername(firstName, lastName);
+            if (suggestion) {
+                document.getElementById('username').value = suggestion;
+            }
         }
 
         function showTempCredentialResult(cred) {
@@ -1237,22 +1335,40 @@
         function showInviteResult(invite) {
             if (!invite) return;
             const sent = !!invite.email_sent;
-            document.getElementById('inviteResultTitle').innerHTML = sent
-                ? '<i class="fas fa-envelope mr-2"></i>Invitation Sent'
-                : '<i class="fas fa-exclamation-triangle mr-2 text-warning"></i>Invite Created (email failed)';
+            const recipient = invite.email_sent_to || invite.email || 'the employee';
+            const iconBox = document.getElementById('inviteResultIconBox');
+            const icon = document.getElementById('inviteResultIcon');
+            const kicker = document.getElementById('inviteResultKicker');
+            iconBox.className = sent
+                ? 'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-content shadow-sm'
+                : 'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-warning text-warning-content shadow-sm';
+            icon.className = sent ? 'fas fa-envelope-open-text' : 'fas fa-triangle-exclamation';
+            kicker.className = sent
+                ? 'text-xs font-semibold uppercase tracking-[0.16em] text-primary'
+                : 'text-xs font-semibold uppercase tracking-[0.16em] text-warning';
+            kicker.textContent = sent ? 'Email invite' : 'Manual hand-off needed';
+            document.getElementById('inviteResultTitle').textContent = sent
+                ? 'Invitation sent'
+                : 'Invite link created';
             document.getElementById('inviteResultMessage').textContent = sent
-                ? `A one-time set-password link was emailed to ${invite.email_sent_to || 'the user'}.`
+                ? 'The employee can open the email and set their own password.'
                 : `Email could not be delivered${invite.email_error ? ': ' + invite.email_error : ''}. Copy the link below and share it securely.`;
+            document.getElementById('inviteRecipientText').textContent = recipient;
             const urlBlock = document.getElementById('inviteUrlBlock');
             if (invite.invite_url) {
                 urlBlock.classList.remove('hidden');
                 document.getElementById('inviteUrlText').textContent = invite.invite_url;
+                document.getElementById('inviteUrlLabel').textContent = sent ? 'Fallback link' : 'One-time invite link';
+                document.getElementById('inviteUrlHint').textContent = sent
+                    ? 'Use this only if the employee did not receive the email.'
+                    : 'Copy this link now and give it only to this employee.';
             } else {
                 urlBlock.classList.add('hidden');
+                document.getElementById('inviteUrlText').textContent = '';
             }
             document.getElementById('inviteExpiresText').textContent = invite.expires_at
-                ? `Link expires: ${new Date(invite.expires_at).toLocaleString()}`
-                : '';
+                ? new Date(invite.expires_at).toLocaleString()
+                : '-';
             document.getElementById('inviteResultModal').showModal();
         }
 
@@ -1263,6 +1379,7 @@
             document.getElementById('userForm').reset();
             document.getElementById('userId').value = '';
             document.getElementById('isActive').checked = true;
+            usernameEditedByAdmin = false;
             const inviteRadio = document.getElementById('onboardEmailInvite');
             if (inviteRadio) inviteRadio.checked = true;
             toggleOnboardingMode();
@@ -1278,6 +1395,7 @@
                 if (response.success) {
                     const user = response.data;
                     document.getElementById('modalTitle').textContent = 'Edit User';
+                    usernameEditedByAdmin = true;
                     document.getElementById('userId').value = user.id;
                     document.getElementById('firstName').value = user.first_name || '';
                     document.getElementById('lastName').value = user.last_name || '';
@@ -1313,6 +1431,7 @@
             const userId = document.getElementById('userId').value;
             const isCreate = !userId;
             const onboardingMethod = isCreate ? getSelectedOnboardingMethod() : null;
+            const cleanEmail = isCreate && onboardingMethod === 'temp_credentials' ? '' : email;
 
             if (!firstName || !lastName) {
                 showUserFormAlert('First name and last name are required.');
@@ -1337,7 +1456,7 @@
                     return;
                 }
                 // Basic client check; server validates fully
-                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
                     showUserFormAlert('Please enter a valid email address.');
                     return;
                 }
@@ -1353,7 +1472,7 @@
                 last_name: lastName,
                 full_name: fullName,
                 username: username,
-                email: email,
+                email: cleanEmail,
                 employee_id: employeeId,
                 role: role,
                 is_active: document.getElementById('isActive').checked ? 1 : 0
@@ -1758,6 +1877,24 @@
             }
         }
 
+        async function copyTempCredentialBundle() {
+            const loginId = document.getElementById('tempLoginId').textContent.trim();
+            const password = document.getElementById('tempPassword').textContent.trim();
+            const text = `Login ID: ${loginId}\nTemporary Password: ${password}`;
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast('Login ID and password copied', 'success');
+            } catch (e) {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                ta.remove();
+                showToast('Login ID and password copied', 'success');
+            }
+        }
+
         // Show toast
         function showToast(message, type = 'info') {
             const container = document.getElementById('toastContainer');
@@ -1781,6 +1918,12 @@
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
             try {
+                document.getElementById('firstName')?.addEventListener('input', updateUsernameSuggestion);
+                document.getElementById('lastName')?.addEventListener('input', updateUsernameSuggestion);
+                document.getElementById('username')?.addEventListener('input', () => {
+                    usernameEditedByAdmin = true;
+                });
+
                 const user = await AuthService.getCurrentUser();
                 if (user) {
                     document.getElementById('sidebarUserName').textContent = user.full_name;

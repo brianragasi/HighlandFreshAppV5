@@ -56,6 +56,56 @@ function requisitionParseIngredientAdjustments($ingredientAdjustmentsJson) {
     return $adjustments;
 }
 
+/**
+ * Return an unfinished requisition for the same production plan.
+ *
+ * A second request for an identical active plan is almost always an
+ * accidental repeat. Additional batches must be represented by a separate
+ * production run so Production and Warehouse can distinguish them.
+ */
+function findActiveDuplicateRequisition(
+    $db,
+    $requestedBy,
+    $productionRunId,
+    $plannedRecipeId,
+    $plannedQuantity,
+    $plannedYieldUnit
+) {
+    if ($productionRunId) {
+        $stmt = $db->prepare("
+            SELECT id, requisition_code, status
+            FROM material_requisitions
+            WHERE requested_by = ?
+              AND production_run_id = ?
+              AND status IN ('pending', 'approved', 'partial')
+            ORDER BY id DESC
+            LIMIT 1
+        ");
+        $stmt->execute([(int) $requestedBy, (int) $productionRunId]);
+        return $stmt->fetch() ?: null;
+    }
+
+    $stmt = $db->prepare("
+        SELECT id, requisition_code, status
+        FROM material_requisitions
+        WHERE requested_by = ?
+          AND production_run_id IS NULL
+          AND planned_recipe_id = ?
+          AND ABS(COALESCE(planned_quantity, 0) - ?) < 0.001
+          AND LOWER(TRIM(COALESCE(planned_yield_unit, ''))) = LOWER(TRIM(?))
+          AND status IN ('pending', 'approved', 'partial')
+        ORDER BY id DESC
+        LIMIT 1
+    ");
+    $stmt->execute([
+        (int) $requestedBy,
+        (int) $plannedRecipeId,
+        (float) $plannedQuantity,
+        (string) $plannedYieldUnit,
+    ]);
+    return $stmt->fetch() ?: null;
+}
+
 function ensureProductionRequisitionPlanColumns($db) {
     if (!auditColumnExists($db, 'material_requisitions', 'planned_recipe_id')) {
         $db->exec("ALTER TABLE material_requisitions ADD COLUMN planned_recipe_id INT(11) DEFAULT NULL AFTER production_run_id");
@@ -1114,6 +1164,48 @@ try {
             
             if (!empty($errors)) {
                 Response::validationError($errors);
+            }
+
+            // Serialize submissions for the same employee and plan. This
+            // closes both the fast double-click case and two matching requests
+            // arriving in separate browser tabs at nearly the same time.
+            $planLockKey = $productionRunId
+                ? "prod_req_{$currentUser['user_id']}_run_" . (int) $productionRunId
+                : "prod_req_{$currentUser['user_id']}_recipe_" . (int) $plannedRecipeId
+                    . '_' . number_format((float) $plannedQuantity, 3, '.', '')
+                    . '_' . strtolower(trim((string) $plannedYieldUnit));
+            $planLockKey = substr($planLockKey, 0, 64);
+            $lockStmt = $db->prepare('SELECT GET_LOCK(?, 5) AS lock_acquired');
+            $lockStmt->execute([$planLockKey]);
+            $lockRow = $lockStmt->fetch();
+            if ((int) ($lockRow['lock_acquired'] ?? 0) !== 1) {
+                Response::error('The request is still being submitted. Please wait a moment and try again.', 409);
+            }
+
+            $duplicate = findActiveDuplicateRequisition(
+                $db,
+                $currentUser['user_id'],
+                $productionRunId,
+                $plannedRecipeId,
+                $plannedQuantity,
+                $plannedYieldUnit
+            );
+            if ($duplicate) {
+                $statusLabel = $duplicate['status'] === 'pending'
+                    ? 'waiting for GM approval'
+                    : ($duplicate['status'] === 'approved'
+                        ? 'approved for Warehouse Raw'
+                        : 'being released by Warehouse Raw');
+                Response::error(
+                    "{$duplicate['requisition_code']} already covers this production plan and is {$statusLabel}. Open that request instead of sending another one.",
+                    409,
+                    [
+                        'error_code' => 'duplicate_active_requisition',
+                        'existing_requisition_id' => (int) $duplicate['id'],
+                        'existing_requisition_code' => $duplicate['requisition_code'],
+                        'existing_status' => $duplicate['status'],
+                    ]
+                );
             }
 
             // ----------------------------------------------------------------

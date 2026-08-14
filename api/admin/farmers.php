@@ -6,8 +6,8 @@
 
 require_once __DIR__ . '/../bootstrap.php';
 
-// Require authentication
-Auth::requireAuth();
+// Require GM/Admin role
+Auth::requireRole(['general_manager', 'admin']);
 
 // Get database connection
 $conn = Database::getInstance()->getConnection();
@@ -226,6 +226,11 @@ function getFarmer($conn, $id) {
  */
 function createFarmer($conn) {
     $data = json_decode(file_get_contents('php://input'), true);
+    $contactCheck = hfValidateContactPayload($data, ['contact_number'], '__no_email_field__');
+    if (!empty($contactCheck['errors'])) {
+        sendValidationError($contactCheck['errors']);
+    }
+    $data = $contactCheck['data'];
     
     // Validate required fields
     $required = ['first_name', 'milk_type_id'];
@@ -288,6 +293,11 @@ function createFarmer($conn) {
  */
 function updateFarmer($conn, $id) {
     $data = json_decode(file_get_contents('php://input'), true);
+    $contactCheck = hfValidateContactPayload($data, ['contact_number'], '__no_email_field__');
+    if (!empty($contactCheck['errors'])) {
+        sendValidationError($contactCheck['errors']);
+    }
+    $data = $contactCheck['data'];
     
     // Check if farmer exists
     $checkStmt = $conn->prepare("SELECT id, farmer_code FROM farmers WHERE id = ?");
@@ -341,34 +351,40 @@ function updateFarmer($conn, $id) {
 }
 
 /**
- * Delete (deactivate) farmer
+ * Archive farmer by deactivating the row.
+ * Farmer records are never hard-deleted because milk receiving, QC, and
+ * payment history may need the original farmer ID later.
  */
 function deleteFarmer($conn, $id) {
     // Check if farmer exists
-    $checkStmt = $conn->prepare("SELECT id FROM farmers WHERE id = ?");
+    $checkStmt = $conn->prepare("SELECT id, is_active FROM farmers WHERE id = ?");
     $checkStmt->execute([$id]);
+    $farmer = $checkStmt->fetch(PDO::FETCH_ASSOC);
     
-    if (!$checkStmt->fetch()) {
+    if (!$farmer) {
         sendError('Farmer not found', 404);
         return;
     }
-    
-    // Check for related deliveries
-    $relatedStmt = $conn->prepare("SELECT COUNT(*) as count FROM milk_receiving WHERE farmer_id = ?");
-    $relatedStmt->execute([$id]);
-    $related = $relatedStmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($related['count'] > 0) {
-        // Soft delete - deactivate
-        $stmt = $conn->prepare("UPDATE farmers SET is_active = 0 WHERE id = ?");
-        $stmt->execute([$id]);
-        sendSuccess(['message' => 'Farmer deactivated (has related deliveries)']);
-    } else {
-        // Hard delete if no related records
-        $stmt = $conn->prepare("DELETE FROM farmers WHERE id = ?");
-        $stmt->execute([$id]);
-        sendSuccess(['message' => 'Farmer deleted successfully']);
+
+    if ((int) $farmer['is_active'] === 0) {
+        sendSuccess([
+            'message' => 'Farmer is already archived',
+            'farmer_id' => (int) $id,
+            'is_active' => 0,
+            'archived' => true
+        ], 'Farmer is already archived');
+        return;
     }
+
+    $stmt = $conn->prepare("UPDATE farmers SET is_active = 0 WHERE id = ?");
+    $stmt->execute([$id]);
+
+    sendSuccess([
+        'message' => 'Farmer archived successfully',
+        'farmer_id' => (int) $id,
+        'is_active' => 0,
+        'archived' => true
+    ], 'Farmer archived successfully');
 }
 
 /**

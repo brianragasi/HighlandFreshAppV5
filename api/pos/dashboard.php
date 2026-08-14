@@ -72,8 +72,8 @@ function handleGet($db, $action, $currentUser) {
                     COALESCE(SUM(CASE WHEN payment_method = 'check' THEN amount_collected ELSE 0 END), 0) as check_collections,
                     COALESCE(SUM(CASE WHEN payment_method = 'bank_transfer' THEN amount_collected ELSE 0 END), 0) as bank_transfer_collections
                 FROM payment_collections 
-                WHERE DATE(collected_at) = ?
-                AND status = 'confirmed'
+                WHERE DATE(COALESCE(cleared_at, collected_at)) = ?
+                AND status IN ('confirmed', 'cleared')
             ");
             $collectionsStmt->execute([$date]);
             $collectionsData = $collectionsStmt->fetch();
@@ -100,15 +100,14 @@ function handleGet($db, $action, $currentUser) {
             $voidedStmt->execute([$date]);
             $voidedData = $voidedStmt->fetch();
             
-            // Pending check collections (post-dated)
+            // Checks received but not yet cleared by the bank
             $pendingChecksStmt = $db->prepare("
                 SELECT 
                     COUNT(*) as pending_count,
                     COALESCE(SUM(amount_collected), 0) as pending_amount
                 FROM payment_collections 
                 WHERE payment_method = 'check'
-                AND status = 'confirmed'
-                AND JSON_UNQUOTE(JSON_EXTRACT(payment_metadata, '$.check_date')) > CURDATE()
+                AND status = 'pending_clearing'
             ");
             $pendingChecksStmt->execute();
             $pendingChecks = $pendingChecksStmt->fetch();
@@ -226,9 +225,9 @@ function handleGet($db, $action, $currentUser) {
             $collStmt = $db->prepare("
                 SELECT COALESCE(SUM(amount_collected), 0) as total
                 FROM payment_collections 
-                WHERE DATE(collected_at) = ?
+                WHERE DATE(COALESCE(cleared_at, collected_at)) = ?
                 AND payment_method = 'cash'
-                AND status = 'confirmed'
+                AND status IN ('confirmed', 'cleared')
             ");
             $collStmt->execute([$date]);
             $cashCollections = floatval($collStmt->fetchColumn());
@@ -284,7 +283,7 @@ function handleGet($db, $action, $currentUser) {
                 FROM payment_collections pc
                 WHERE DATE(pc.collected_at) = ?
                 AND pc.payment_method = 'cash'
-                AND pc.status = 'confirmed'
+                AND pc.status IN ('confirmed', 'cleared')
                 ORDER BY pc.collected_at ASC
             ");
             $collTxStmt->execute([$date]);

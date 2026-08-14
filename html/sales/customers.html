@@ -224,8 +224,11 @@
             <div>
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Orders</h2>
                 <ul class="menu menu-sm p-0 gap-1">
-                    <li><a href="orders.html?action=new" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
-                        <i class="fas fa-plus-circle w-5 text-center text-base-content/60"></i><span>New Order</span>
+                    <li><a href="orders.html?action=direct" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-user-tag w-5 text-center text-base-content/60"></i><span>Direct Order</span>
+                    </a></li>
+                    <li><a href="order_inbox.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-inbox w-5 text-center text-base-content/60"></i><span>Customer PO Inbox</span>
                     </a></li>
                     <li><a href="orders.html?status=pending" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                         <i class="fas fa-clock w-5 text-center text-base-content/60"></i><span>Pending Orders</span>
@@ -325,8 +328,8 @@
                                 <option value="supermarket">Supermarket</option>
                                 <option value="institutional">Institutional</option>
                                 <option value="feeding_program">Feeding Program</option>
-                                <option value="wholesaler">Wholesaler</option>
-                                <option value="individual">Individual</option>
+                                <option value="distributor">Wholesaler</option>
+                                <option value="walk_in">Direct / Small Retail</option>
                             </select>
                         </div>
                         <div class="form-control">
@@ -369,7 +372,7 @@
                     <div class="stat-value text-2xl" id="wholesalerCount">0</div>
                 </div>
                 <div class="stat bg-base-100 rounded-box shadow-sm p-4">
-                    <div class="stat-title text-xs">Individuals</div>
+                    <div class="stat-title text-xs">Direct / Small Retail</div>
                     <div class="stat-value text-2xl" id="individualCount">0</div>
                 </div>
             </div>
@@ -428,8 +431,8 @@
                             <option value="supermarket">Supermarket</option>
                             <option value="institutional">Institutional</option>
                             <option value="feeding_program">Feeding Program (DepEd)</option>
-                            <option value="wholesaler">Wholesaler</option>
-                            <option value="individual">Individual</option>
+                            <option value="distributor">Wholesaler</option>
+                            <option value="walk_in">Direct / Small Retail</option>
                         </select>
                     </div>
                     
@@ -445,12 +448,14 @@
                     
                     <div class="form-control">
                         <label class="label"><span class="label-text">Phone Number</span></label>
-                        <input type="text" id="customerPhone" class="input input-bordered" placeholder="09XX XXX XXXX">
+                        <input type="tel" id="customerPhone" class="input input-bordered" inputmode="tel"
+                            maxlength="16" placeholder="09171234567">
                     </div>
                     
                     <div class="form-control">
                         <label class="label"><span class="label-text">Email</span></label>
-                        <input type="email" id="customerEmail" class="input input-bordered" placeholder="email@example.com">
+                        <input type="email" id="customerEmail" class="input input-bordered" maxlength="254"
+                            placeholder="name@example.com">
                     </div>
                     
                     <div class="form-control md:col-span-2">
@@ -637,7 +642,8 @@
     
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
-    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="sales_custodian,general_manager"></script>
     <script src="../../js/sales/sales.service.js?v=20260716-cust1"></script>
     
     <script>
@@ -732,7 +738,8 @@
                 'feeding_program': 'fa-school',
                 'wholesaler': 'fa-truck',
                 'distributor': 'fa-truck',
-                'individual': 'fa-user'
+                'individual': 'fa-user',
+                'walk_in': 'fa-user'
             };
             
             const typeLabels = {
@@ -741,8 +748,8 @@
                 'school': 'School',
                 'feeding_program': 'Feeding Program',
                 'wholesaler': 'Wholesaler',
-                'distributor': 'Distributor',
-                'individual': 'Individual'
+                'distributor': 'Wholesaler',
+                'walk_in': 'Direct / Small Retail'
             };
             
             tbody.innerHTML = list.map(c => {
@@ -794,9 +801,6 @@
                             <button class="btn btn-ghost btn-xs" onclick="editCustomer(${c.id})" title="Edit">
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <button class="btn btn-ghost btn-xs" onclick="window.location.href='orders.html?action=new&customer=${c.id}'" title="New Order">
-                                <i class="fas fa-plus"></i>
-                            </button>
                         </div>
                     </td>
                 </tr>
@@ -807,8 +811,8 @@
             document.getElementById('totalCustomers').textContent = customers.length;
             document.getElementById('supermarketCount').textContent = customers.filter(c => c.customer_type === 'supermarket').length;
             document.getElementById('institutionalCount').textContent = customers.filter(c => c.customer_type === 'institutional' || c.customer_type === 'feeding_program').length;
-            document.getElementById('wholesalerCount').textContent = customers.filter(c => c.customer_type === 'wholesaler').length;
-            document.getElementById('individualCount').textContent = customers.filter(c => c.customer_type === 'individual').length;
+            document.getElementById('wholesalerCount').textContent = customers.filter(c => c.customer_type === 'distributor').length;
+            document.getElementById('individualCount').textContent = customers.filter(c => c.customer_type === 'walk_in').length;
         }
         
         function filterCustomers() {
@@ -894,7 +898,7 @@
                 await loadCustomers();
             } catch (error) {
                 console.error('Failed to save customer:', error);
-                showToast(error.response?.data?.error || 'Failed to save customer', 'error');
+                showToast(Object.values(error?.errors || {})[0] || error?.message || 'Failed to save customer', 'error');
             }
         });
         
@@ -960,8 +964,8 @@
                     'school': 'School',
                     'feeding_program': 'Feeding Program',
                     'wholesaler': 'Wholesaler',
-                    'distributor': 'Distributor',
-                    'individual': 'Individual'
+                    'distributor': 'Wholesaler',
+                    'walk_in': 'Direct / Small Retail'
                 };
                 
                 document.getElementById('detailType').textContent =

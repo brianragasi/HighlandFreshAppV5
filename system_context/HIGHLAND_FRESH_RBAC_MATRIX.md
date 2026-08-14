@@ -21,7 +21,6 @@ Copy the HTML table below and paste directly into Word.
 <th style="text-align:center;padding:10px;">Cashier</th>
 <th style="text-align:center;padding:10px;">Purchaser</th>
 <th style="text-align:center;padding:10px;">Finance Officer</th>
-<th style="text-align:center;padding:10px;">Maintenance Head</th>
 </tr>
 <tr>
 <td><strong>User Management (Add, Edit, Archive)</strong></td>
@@ -34,16 +33,14 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr style="background-color:#f8f8f8;">
-<td colspan="11"><strong>QUALITY CONTROL</strong></td>
+<td colspan="10"><strong>QUALITY CONTROL</strong></td>
 </tr>
 <tr>
 <td>Grade inbound milk</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
@@ -63,13 +60,11 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr>
 <td>Manage expiry dates</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
@@ -89,17 +84,15 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr style="background-color:#f8f8f8;">
-<td colspan="11"><strong>PRODUCTION</strong></td>
+<td colspan="10"><strong>PRODUCTION</strong></td>
 </tr>
 <tr>
 <td>Execute production batch</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
@@ -118,14 +111,12 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr>
 <td>Request ingredients</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
@@ -144,10 +135,9 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr style="background-color:#f8f8f8;">
-<td colspan="11"><strong>INVENTORY - RAW MATERIALS</strong></td>
+<td colspan="10"><strong>INVENTORY - RAW MATERIALS</strong></td>
 </tr>
 <tr>
 <td>Receive raw milk</td>
@@ -155,7 +145,6 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
@@ -173,7 +162,6 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#E84855;">✗</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr>
 <td>Issue materials to production</td>
@@ -181,7 +169,6 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
@@ -199,10 +186,9 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#E84855;">✗</td>
-<td style="text-align:center;color:#6B5B95;">✓</td>
 </tr>
 <tr style="background-color:#f8f8f8;">
-<td colspan="11"><strong>INVENTORY - FINISHED GOODS</strong></td>
+<td colspan="10"><strong>INVENTORY - FINISHED GOODS</strong></td>
 </tr>
 <tr>
 <td>Receive batch from production</td>
@@ -211,7 +197,6 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
@@ -228,7 +213,6 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr>
 <td>Dispatch products / Generate DR</td>
@@ -237,7 +221,6 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
@@ -254,7 +237,6 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr>
 <td>View FG inventory levels</td>
@@ -267,20 +249,18 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr style="background-color:#f8f8f8;">
-<td colspan="11"><strong>SALES</strong></td>
+<td colspan="10"><strong>SALES</strong></td>
 </tr>
 <tr>
-<td>Create institutional PO</td>
+<td>Review and confirm imported institutional PO</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
@@ -296,7 +276,6 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr>
 <td>Collect payments / Search DR</td>
@@ -309,7 +288,6 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr>
 <td>Manage customer records</td>
@@ -320,7 +298,6 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 </tr>
@@ -335,10 +312,9 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr style="background-color:#f8f8f8;">
-<td colspan="11"><strong>PROCUREMENT</strong></td>
+<td colspan="10"><strong>PROCUREMENT</strong></td>
 </tr>
 <tr>
 <td>Create purchase order</td>
@@ -351,12 +327,10 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#E84855;">✗</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr>
 <td>Approve purchase order</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
@@ -375,7 +349,6 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
-<td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 </tr>
@@ -390,10 +363,9 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#E84855;">✗</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr style="background-color:#f8f8f8;">
-<td colspan="11"><strong>FINANCE (DISBURSEMENTS)</strong></td>
+<td colspan="10"><strong>FINANCE (DISBURSEMENTS)</strong></td>
 </tr>
 <tr>
 <td>Process farmer payouts</td>
@@ -406,7 +378,6 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr>
 <td>Process supplier payments</td>
@@ -419,7 +390,6 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr>
 <td>Record payment metadata</td>
@@ -432,7 +402,6 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr>
 <td>View payables/receivables</td>
@@ -445,10 +414,9 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr style="background-color:#f8f8f8;">
-<td colspan="11"><strong>MAINTENANCE (MRO)</strong></td>
+<td colspan="10"><strong>MAINTENANCE (MRO)</strong></td>
 </tr>
 <tr>
 <td>Request spare parts</td>
@@ -461,7 +429,6 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
-<td style="text-align:center;color:#6B5B95;">✓</td>
 </tr>
 <tr>
 <td>Release MRO items</td>
@@ -469,7 +436,6 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
@@ -487,10 +453,9 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
-<td style="text-align:center;color:#6B5B95;">✓</td>
 </tr>
 <tr style="background-color:#f8f8f8;">
-<td colspan="11"><strong>REPORTING & LOGS</strong></td>
+<td colspan="10"><strong>REPORTING & LOGS</strong></td>
 </tr>
 <tr>
 <td>Generate all reports</td>
@@ -503,12 +468,10 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr>
 <td>View audit logs</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
@@ -529,15 +492,13 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr style="background-color:#f8f8f8;">
-<td colspan="11"><strong>SYSTEM</strong></td>
+<td colspan="10"><strong>SYSTEM</strong></td>
 </tr>
 <tr>
 <td>Manage product definitions (recipes)</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
@@ -558,12 +519,10 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr>
 <td>Approve requisitions</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
@@ -584,11 +543,9 @@ Copy the HTML table below and paste directly into Word.
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
 <td style="text-align:center;color:#E84855;">✗</td>
-<td style="text-align:center;color:#E84855;">✗</td>
 </tr>
 <tr>
 <td>View module dashboard</td>
-<td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
 <td style="text-align:center;color:#6B5B95;">✓</td>
@@ -618,7 +575,6 @@ Copy the HTML table below and paste directly into Word.
 - **Cashier** = POS / Collection User
 - **Purchaser** = Procurement User
 - **Finance Officer** = Disbursement Manager
-- **Maintenance Head** = Internal Requester
 
 ---
 

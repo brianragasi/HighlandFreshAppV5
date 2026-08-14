@@ -351,6 +351,7 @@ function handlePost($db, $action, $currentUser) {
                 
                 // If DR provided, update or add to DR items
                 if ($drId) {
+                    $drItemId = null;
                     // Check if item already exists in DR (from order creation)
                     $checkStmt = $db->prepare("
                         SELECT id, quantity_ordered, COALESCE(quantity_packed, 0) as quantity_packed
@@ -386,6 +387,7 @@ function handlePost($db, $action, $currentUser) {
                             $newPacked,
                             $existingItem['id']
                         ]);
+                        $drItemId = (int) $existingItem['id'];
                     } else {
                         // Ad-hoc DRs: first line sets ordered = released; still reject zero qty
                         $driStmt = $db->prepare("
@@ -401,7 +403,16 @@ function handlePost($db, $action, $currentUser) {
                             $quantity,
                             $quantity
                         ]);
+                        $drItemId = (int) $db->lastInsertId();
                     }
+
+                    fgDeliveryRecordAllocation(
+                        $db,
+                        $drId,
+                        $drItemId,
+                        $deductResult,
+                        !empty($inventory['batch_id']) ? (int) $inventory['batch_id'] : null
+                    );
                     
                     // Ready only when every line is exactly fully packed (not over)
                     $checkAllPickedStmt = $db->prepare("
@@ -620,6 +631,7 @@ function handlePost($db, $action, $currentUser) {
                     
                     // Add to DR items (accumulate packed qty across batches for same product)
                     if ($drId) {
+                        $drItemId = null;
                         $checkStmt = $db->prepare("
                             SELECT id, quantity_ordered, COALESCE(quantity_packed, 0) as quantity_packed
                             FROM delivery_receipt_items 
@@ -649,6 +661,7 @@ function handlePost($db, $action, $currentUser) {
                                 $newPacked,
                                 $existingItem['id']
                             ]);
+                            $drItemId = (int) $existingItem['id'];
                         } else {
                             // Insert new item (for ad-hoc DRs not from orders)
                             $driStmt = $db->prepare("
@@ -664,7 +677,16 @@ function handlePost($db, $action, $currentUser) {
                                 $quantity,
                                 $quantity
                             ]);
+                            $drItemId = (int) $db->lastInsertId();
                         }
+
+                        fgDeliveryRecordAllocation(
+                            $db,
+                            $drId,
+                            $drItemId,
+                            $deductResult,
+                            !empty($inventory['batch_id']) ? (int) $inventory['batch_id'] : null
+                        );
                     }
                     
                     $released[] = [

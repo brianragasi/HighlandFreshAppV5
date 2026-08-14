@@ -234,26 +234,28 @@
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <div class="card bg-base-100 border border-base-300">
                     <div class="card-body p-4">
-                        <p class="text-xs text-base-content/60 uppercase">Total Transactions</p>
+                        <p class="text-xs text-base-content/60 uppercase" id="statCountLabel">Total Transactions</p>
                         <p class="text-2xl font-bold stat-value" id="statCount">0</p>
                     </div>
                 </div>
                 <div class="card bg-base-100 border border-base-300">
                     <div class="card-body p-4">
-                        <p class="text-xs text-base-content/60 uppercase">Total Amount</p>
+                        <p class="text-xs text-base-content/60 uppercase" id="statTotalLabel">Total Amount</p>
                         <p class="text-2xl font-bold text-primary stat-value" id="statTotal">₱0.00</p>
+                        <p class="text-xs text-base-content/50 hidden" id="statTotalHint">Confirmed or bank-cleared payments only</p>
                     </div>
                 </div>
                 <div class="card bg-base-100 border border-base-300" id="statCashCard">
                     <div class="card-body p-4">
-                        <p class="text-xs text-base-content/60 uppercase">Cash</p>
+                        <p class="text-xs text-base-content/60 uppercase" id="statCashLabel">Cash</p>
                         <p class="text-2xl font-bold text-success stat-value" id="statCash">₱0.00</p>
                     </div>
                 </div>
                 <div class="card bg-base-100 border border-base-300" id="statOtherCard">
                     <div class="card-body p-4">
-                        <p class="text-xs text-base-content/60 uppercase">Other Payments</p>
+                        <p class="text-xs text-base-content/60 uppercase" id="statOtherLabel">Other Payments</p>
                         <p class="text-2xl font-bold text-info stat-value" id="statOther">₱0.00</p>
+                        <p class="text-xs text-base-content/50 hidden" id="statOtherHint">Not counted until the bank clears them</p>
                     </div>
                 </div>
             </div>
@@ -422,7 +424,7 @@
     <!-- Collection Detail Modal -->
     <dialog id="collectionDetailModal" class="modal">
         <div class="modal-box max-w-lg">
-            <h3 class="font-bold text-lg mb-4">
+            <h3 class="font-bold text-lg mb-4" id="collectionDetailTitle">
                 <i class="fas fa-hand-holding-dollar text-info mr-2"></i>
                 Official Receipt Details
             </h3>
@@ -446,6 +448,10 @@
                         <div>
                             <p class="text-xs text-base-content/60">Cashier</p>
                             <p class="font-semibold" id="colDetailCashier">--</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-base-content/60">Status</p>
+                            <p class="font-semibold" id="colDetailStatus">--</p>
                         </div>
                     </div>
                 </div>
@@ -488,10 +494,20 @@
                     <p class="text-xs text-base-content/60 mb-1">Notes</p>
                     <p class="text-sm" id="colDetailNotes">--</p>
                 </div>
+                <div id="colDetailClearingSection" class="hidden bg-success/10 border border-success/25 rounded-lg p-4">
+                    <p class="font-semibold text-success">Bank Cleared</p>
+                    <p class="text-sm mt-1" id="colDetailClearingInfo">--</p>
+                </div>
             </div>
 
             <div class="modal-action">
-                <button class="btn btn-outline" onclick="printCollection()">
+                <button class="btn btn-success hidden" id="btnClearCheck" onclick="openClearCheckModal()">
+                    <i class="fas fa-building-circle-check"></i> Mark Cleared
+                </button>
+                <button class="btn btn-error btn-outline hidden" id="btnBounceCheck" onclick="markSelectedCheckBounced()">
+                    <i class="fas fa-ban"></i> Mark Bounced
+                </button>
+                <button class="btn btn-outline" id="btnPrintCollection" onclick="printCollection()">
                     <i class="fas fa-print"></i> Print
                 </button>
                 <form method="dialog">
@@ -502,13 +518,30 @@
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
 
+    <dialog id="clearCheckModal" class="modal">
+        <div class="modal-box max-w-md">
+            <div class="flex items-start gap-3 mb-5">
+                <div class="w-10 h-10 rounded-lg bg-success/15 text-success flex items-center justify-center"><i class="fas fa-building-circle-check"></i></div>
+                <div><h3 class="font-bold text-lg">Confirm Bank Clearing</h3><p class="text-sm text-base-content/60">Apply this check only after bank confirmation.</p></div>
+            </div>
+            <form id="clearCheckForm" class="space-y-4" onsubmit="submitCheckClearing(event)">
+                <label class="form-control"><span class="label-text font-medium">Cleared date and time</span><input id="clearedAt" class="input input-bordered" type="datetime-local" required><span id="clearCheckDateHint" class="label-text-alt text-warning mt-1"></span></label>
+                <label class="form-control"><span class="label-text font-medium">Bank confirmation/reference</span><input id="clearingReference" class="input input-bordered" maxlength="120" placeholder="Bank reference or confirmation number" required></label>
+                <div class="alert alert-info py-3 text-sm"><i class="fas fa-circle-info"></i><span>This will reduce the DR balance and include the payment in reports.</span></div>
+                <div class="flex justify-end gap-2"><button type="button" class="btn btn-ghost" onclick="clearCheckModal.close()">Cancel</button><button id="confirmClearCheck" type="submit" class="btn btn-success"><i class="fas fa-check"></i>Confirm Cleared</button></div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
     <!-- Toast Container -->
     <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
 
     <!-- Scripts -->
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
-    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="cashier,general_manager"></script>
     <script src="../../js/pos/pos.service.js"></script>
 
     <script>
@@ -519,6 +552,8 @@
         let totalPages = 1;
         let itemsPerPage = 20;
         let selectedTransaction = null;
+        let selectedCollection = null;
+        let linkedCollectionOpened = false;
 
         // Sidebar toggle
         function toggleSidebar() {
@@ -580,20 +615,34 @@
                 }
             }
 
-            // Set default date range (today)
-            const today = new Date().toISOString().split('T')[0];
-            document.getElementById('dateFrom').value = today;
-            document.getElementById('dateTo').value = today;
-
             // Check URL params for tab
             const urlParams = new URLSearchParams(window.location.search);
             const type = urlParams.get('type') || 'sales';
+            setDefaultDateRange(type);
             switchTab(type);
         });
 
+        function localDateValue(date = new Date()) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function setDefaultDateRange(tab) {
+            const today = new Date();
+            const from = tab === 'collections'
+                ? new Date(today.getFullYear(), today.getMonth(), 1)
+                : today;
+            document.getElementById('dateFrom').value = localDateValue(from);
+            document.getElementById('dateTo').value = localDateValue(today);
+        }
+
         function switchTab(tab) {
+            const previousTab = currentTab;
             currentTab = tab;
             currentPage = 1;
+            if (previousTab !== tab) setDefaultDateRange(tab);
 
             // Update tabs
             document.getElementById('tabSales').classList.toggle('tab-active', tab === 'sales');
@@ -634,10 +683,8 @@
         }
 
         function clearFilters() {
-            const today = new Date().toISOString().split('T')[0];
             document.getElementById('searchQuery').value = '';
-            document.getElementById('dateFrom').value = today;
-            document.getElementById('dateTo').value = today;
+            setDefaultDateRange(currentTab);
             document.getElementById('filterPayment').value = '';
             loadHistory();
         }
@@ -681,12 +728,11 @@
                     } else {
                         historyData = response.data.collections || response.data.items || [];
                         // Map collection fields to expected format
-                        // API returns: amount_collected, status ('confirmed'|'bounced'|'cancelled')
-                        // Frontend expects: amount, status ('completed'|'voided'|'pending')
                         historyData = historyData.map(col => ({
                             ...col,
                             amount: col.amount_collected || col.amount || 0,
-                            status: col.status === 'confirmed' ? 'completed'
+                            raw_status: col.status,
+                            status: ['confirmed', 'cleared'].includes(col.status) ? 'completed'
                                   : col.status === 'bounced' ? 'voided'
                                   : col.status === 'cancelled' ? 'voided'
                                   : 'pending',
@@ -705,6 +751,7 @@
                     updateStats(response.data.summary || { total_count: response.data.count, total_amount: response.data.total_collected });
                     renderTable();
                     updatePagination(response.pagination?.total || response.data?.count || historyData.length);
+                    openLinkedCollection();
                 } else {
                     // No data returned
                     historyData = [];
@@ -722,11 +769,27 @@
             }
         }
 
+        function openLinkedCollection() {
+            if (linkedCollectionOpened || currentTab !== 'collections') return;
+            const id = Number(new URLSearchParams(window.location.search).get('collection_id') || 0);
+            if (id <= 0) return;
+            linkedCollectionOpened = true;
+            openPendingCheck(id);
+        }
+
         function updateStats(summary) {
+            const isCollections = currentTab === 'collections';
+            document.getElementById('statCountLabel').textContent = isCollections ? 'Collection Records' : 'Total Transactions';
+            document.getElementById('statTotalLabel').textContent = isCollections ? 'Cleared Collections' : 'Total Amount';
+            document.getElementById('statCashLabel').textContent = isCollections ? 'Cleared Cash' : 'Cash';
+            document.getElementById('statOtherLabel').textContent = isCollections ? 'Pending Checks' : 'Other Payments';
+            document.getElementById('statTotalHint').classList.toggle('hidden', !isCollections);
+            document.getElementById('statOtherHint').classList.toggle('hidden', !isCollections);
             document.getElementById('statCount').textContent = summary.total_count || historyData.length;
             document.getElementById('statTotal').textContent = formatCurrency(summary.total_amount || 0);
             document.getElementById('statCash').textContent = formatCurrency(summary.cash_amount || 0);
-            document.getElementById('statOther').textContent = formatCurrency(summary.other_amount || 0);
+            document.getElementById('statOther').textContent = formatCurrency(isCollections ? summary.pending_check_amount || 0 : summary.other_amount || 0);
+            document.getElementById('statOther').className = `text-2xl font-bold stat-value ${isCollections ? 'text-warning' : 'text-info'}`;
         }
 
         function renderTable() {
@@ -737,7 +800,7 @@
                     <tr>
                         <td colspan="8" class="text-center py-8 text-base-content/60">
                             <i class="fas fa-inbox text-4xl mb-2 opacity-30"></i>
-                            <p>No transactions found</p>
+                            <p>${currentTab === 'collections' ? 'No collection records found for these dates' : 'No sales transactions found for these dates'}</p>
                         </td>
                     </tr>
                 `;
@@ -776,11 +839,13 @@
                 }).join('');
             } else {
                 tbody.innerHTML = historyData.map(col => {
-                    const statusBadge = col.status === 'completed'
-                        ? '<span class="badge badge-success badge-sm">Completed</span>'
+                    const statusBadge = col.raw_status === 'cleared'
+                        ? '<span class="badge badge-success badge-sm">Cleared</span>'
+                        : col.status === 'completed'
+                        ? '<span class="badge badge-success badge-sm">Confirmed</span>'
                         : col.status === 'voided'
-                            ? '<span class="badge badge-error badge-sm">Voided</span>'
-                            : '<span class="badge badge-warning badge-sm">Pending</span>';
+                            ? `<span class="badge badge-error badge-sm">${col.raw_status === 'bounced' ? 'Bounced' : 'Cancelled'}</span>`
+                            : '<span class="badge badge-warning badge-sm">Pending for Clearing</span>';
 
                     return `
                         <tr class="hover cursor-pointer" onclick="viewTransaction(${col.id}, 'collection')">
@@ -793,7 +858,7 @@
                                 </div>
                             </td>
                             <td class="colItems hidden"></td>
-                            <td class="font-semibold text-success">${formatCurrency(col.amount)}</td>
+                            <td class="font-semibold ${col.raw_status === 'pending_clearing' ? 'text-warning' : 'text-success'}">${formatCurrency(col.amount)}</td>
                             <td>
                                 <span class="badge badge-ghost badge-sm">
                                     <i class="fas ${getPaymentIcon(col.payment_method)} mr-1"></i>
@@ -802,6 +867,7 @@
                             </td>
                             <td>${statusBadge}</td>
                             <td>
+                                ${col.raw_status === 'pending_clearing' ? `<button class="btn btn-success btn-xs" title="Mark check cleared" onclick="event.stopPropagation(); openPendingCheck(${col.id})"><i class="fas fa-building-circle-check"></i></button>` : ''}
                                 <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation(); viewTransaction(${col.id}, 'collection')">
                                     <i class="fas fa-eye"></i>
                                 </button>
@@ -940,10 +1006,15 @@
         }
 
         function showCollectionDetail(data) {
+            selectedCollection = data;
+            document.getElementById('collectionDetailTitle').innerHTML = data.status === 'pending_clearing'
+                ? '<i class="fas fa-clock text-warning mr-2"></i>Pending Check Details'
+                : '<i class="fas fa-hand-holding-dollar text-info mr-2"></i>Official Receipt Details';
             document.getElementById('colDetailOR').textContent = data.or_number || '--';
             document.getElementById('colDetailDate').textContent = formatDateTime(data.collected_at || data.created_at);
             document.getElementById('colDetailCustomer').textContent = data.customer_name || '--';
             document.getElementById('colDetailCashier').textContent = data.cashier_name || '--';
+            document.getElementById('colDetailStatus').textContent = formatCollectionStatus(data.status);
 
             document.getElementById('colDetailDR').textContent = data.dr_number || '--';
             document.getElementById('colDetailBalanceBefore').textContent = formatCurrency(data.balance_before);
@@ -986,7 +1057,102 @@
                 notesSection.classList.add('hidden');
             }
 
+            const clearingSection = document.getElementById('colDetailClearingSection');
+            if (data.status === 'cleared') {
+                document.getElementById('colDetailClearingInfo').textContent = `${formatDateTime(data.cleared_at)} | ${data.clearing_reference || 'No reference'}`;
+                clearingSection.classList.remove('hidden');
+            } else {
+                clearingSection.classList.add('hidden');
+            }
+            const pendingCheck = data.payment_method === 'check' && data.status === 'pending_clearing';
+            document.getElementById('btnClearCheck').classList.toggle('hidden', !pendingCheck);
+            document.getElementById('btnBounceCheck').classList.toggle('hidden', !pendingCheck);
+            document.getElementById('btnPrintCollection').classList.toggle('hidden', pendingCheck);
+
             document.getElementById('collectionDetailModal').showModal();
+        }
+
+        function formatCollectionStatus(status) {
+            return ({ pending_clearing: 'Pending for Clearing', confirmed: 'Confirmed', cleared: 'Cleared', bounced: 'Bounced', cancelled: 'Cancelled' })[status] || status || '--';
+        }
+
+        async function openPendingCheck(id) {
+            selectedCollection = null;
+            await viewTransaction(id, 'collection');
+            if (!selectedCollection || Number(selectedCollection.id) !== Number(id)) return;
+            openClearCheckModal();
+        }
+
+        function localDateTimeValue() {
+            const now = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+            return now.toISOString().slice(0, 16);
+        }
+
+        function openClearCheckModal() {
+            if (!selectedCollection || selectedCollection.status !== 'pending_clearing') return;
+            const clearedAt = document.getElementById('clearedAt');
+            const checkDate = selectedCollection.payment_metadata?.check_date || '';
+            const minimumDateTime = checkDate ? `${checkDate}T00:00` : '';
+            const currentDateTime = localDateTimeValue();
+            const checkDateIsFuture = minimumDateTime && minimumDateTime > currentDateTime;
+            clearedAt.min = minimumDateTime;
+            clearedAt.value = minimumDateTime && currentDateTime < minimumDateTime ? minimumDateTime : currentDateTime;
+            clearedAt.disabled = Boolean(checkDateIsFuture);
+            document.getElementById('confirmClearCheck').disabled = Boolean(checkDateIsFuture);
+            document.getElementById('clearCheckDateHint').textContent = checkDateIsFuture
+                ? `This check is dated ${new Date(`${checkDate}T00:00:00`).toLocaleDateString()}. It cannot be cleared until that date or later.`
+                : checkDate
+                    ? `This check is dated ${new Date(`${checkDate}T00:00:00`).toLocaleDateString()}. Choose this date or later.`
+                    : '';
+            document.getElementById('clearingReference').value = '';
+            document.getElementById('clearCheckModal').showModal();
+        }
+
+        async function submitCheckClearing(event) {
+            event.preventDefault();
+            if (!selectedCollection) return;
+            const clearedAt = document.getElementById('clearedAt').value;
+            const checkDate = selectedCollection.payment_metadata?.check_date || '';
+            if (checkDate && `${checkDate}T00:00` > localDateTimeValue()) {
+                showToast('This post-dated check cannot be cleared until its printed date.', 'warning');
+                return;
+            }
+            if (checkDate && clearedAt < `${checkDate}T00:00`) {
+                showToast('The clearing date must be on or after the date printed on the check.', 'warning');
+                return;
+            }
+            const button = document.getElementById('confirmClearCheck');
+            button.disabled = true;
+            button.classList.add('loading');
+            try {
+                await POSService.clearCheck(selectedCollection.id, {
+                    cleared_at: clearedAt,
+                    clearing_reference: document.getElementById('clearingReference').value.trim()
+                });
+                document.getElementById('clearCheckModal').close();
+                document.getElementById('collectionDetailModal').close();
+                showToast('Check cleared and applied to Accounts Receivable.', 'success');
+                await loadHistory();
+            } catch (error) {
+                showToast(error.message || 'Could not clear the check.', 'error');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
+        }
+
+        async function markSelectedCheckBounced() {
+            if (!selectedCollection || selectedCollection.status !== 'pending_clearing') return;
+            const reason = await AuthService.promptText({ title: 'Mark Check Bounced', message: 'Enter the bank rejection reason.', label: 'Reason', confirmText: 'Mark Bounced', tone: 'error', icon: 'fa-ban', required: true });
+            if (reason === null || !reason.trim()) return;
+            try {
+                await POSService.markCheckBounced(selectedCollection.id, reason.trim());
+                document.getElementById('collectionDetailModal').close();
+                showToast('Check marked as bounced. AR was not reduced.', 'warning');
+                await loadHistory();
+            } catch (error) {
+                showToast(error.message || 'Could not update the check.', 'error');
+            }
         }
 
         function printCollection() {

@@ -339,6 +339,22 @@ const POSService = {
         }
     },
 
+    async clearCheck(id, data) {
+        return await api.post(`${this.baseUrl}/collections.php`, {
+            action: 'clear_check',
+            id,
+            ...data
+        });
+    },
+
+    async markCheckBounced(id, reason) {
+        return await api.post(`${this.baseUrl}/collections.php`, {
+            action: 'mark_bounced',
+            id,
+            reason
+        });
+    },
+
     /**
      * Get collection history
      * @param {Object} params - Filter parameters (customer_id, from_date, to_date, payment_method, page, limit)

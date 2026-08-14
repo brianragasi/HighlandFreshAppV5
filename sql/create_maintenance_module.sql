@@ -2,7 +2,7 @@
 -- Highland Fresh - Maintenance Module Schema
 -- ============================================
 -- Created: 2026-02-11
--- Purpose: Tables for Maintenance Head workflow
+-- Purpose: Equipment, repair, and MRO records owned by Warehouse Raw
 -- - Equipment/Machine registry
 -- - Repair logging with parts tracking
 -- - MRO requisitions (separate from Production requisitions)
@@ -101,8 +101,8 @@ CREATE TABLE IF NOT EXISTS repair_parts_used (
     INDEX idx_mro_item (mro_item_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 4. Maintenance Requisitions
--- MRO part requests from Maintenance to Warehouse (requires GM approval)
+-- 4. MRO Requisitions
+-- MRO part requests from Warehouse Raw (requires GM approval)
 CREATE TABLE IF NOT EXISTS maintenance_requisitions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     requisition_code VARCHAR(30) NOT NULL UNIQUE,
@@ -202,16 +202,5 @@ INSERT INTO machines (machine_code, machine_name, machine_type, location, status
 ('MCH-TANK-002', 'Storage Tank B', 'tank', 'Cold Storage', 'operational', 30),
 ('MCH-PUMP-001', 'Transfer Pump #1', 'pump', 'Processing Area', 'operational', 30),
 ('MCH-CHLR-001', 'Main Chiller Unit', 'chiller', 'Utility Room', 'operational', 30);
-
--- ============================================
--- Add maintenance_head user if not exists
--- ============================================
-INSERT INTO users (username, password, role, first_name, last_name, email, is_active) 
-SELECT 'maintenance_head', '$2y$10$YourHashedPasswordHere', 'maintenance_head', 'Juan', 'Dela Cruz', 'maintenance@highlandfresh.com', 1
-WHERE NOT EXISTS (SELECT 1 FROM users WHERE role = 'maintenance_head' LIMIT 1);
-
--- Update the password to 'password' (bcrypt hash)
-UPDATE users SET password = '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi' 
-WHERE role = 'maintenance_head' AND password = '$2y$10$YourHashedPasswordHere';
 
 SELECT 'Maintenance Module tables created successfully!' as status;

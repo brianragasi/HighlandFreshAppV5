@@ -89,13 +89,14 @@ const SalesService = {
             const buckets = summaryRes.data?.buckets || {};
             const customers = customersRes.data || [];
 
-            // Transform: Total is ALWAYS sum of the four buckets (no independent total field)
+            // Keep not-yet-due balances separate from balances that are already late.
             const transformedCustomers = customers.map(c => {
-                const current = Math.round((parseFloat(c.balance_0_30) || 0) * 100) / 100;
+                const current = Math.round((parseFloat(c.balance_current) || 0) * 100) / 100;
+                const d130 = Math.round((parseFloat(c.balance_1_30) || 0) * 100) / 100;
                 const d3160 = Math.round((parseFloat(c.balance_31_60) || 0) * 100) / 100;
                 const d6190 = Math.round((parseFloat(c.balance_61_90) || 0) * 100) / 100;
                 const over90 = Math.round((parseFloat(c.balance_91_plus) || 0) * 100) / 100;
-                const total = Math.round((current + d3160 + d6190 + over90) * 100) / 100;
+                const total = Math.round((current + d130 + d3160 + d6190 + over90) * 100) / 100;
                 const creditLimit = parseFloat(c.credit_limit) || 0;
                 const overBy = creditLimit > 0 && total > creditLimit
                     ? Math.round((total - creditLimit) * 100) / 100
@@ -113,11 +114,12 @@ const SalesService = {
                     email: c.email || '',
                     credit_limit: creditLimit,
                     current,
+                    days_1_30: d130,
                     days_31_60: d3160,
                     days_61_90: d6190,
                     over_90: over90,
                     total,
-                    past_due: Math.round((d3160 + d6190 + over90) * 100) / 100,
+                    past_due: Math.round((d130 + d3160 + d6190 + over90) * 100) / 100,
                     over_limit: creditLimit > 0 && total > creditLimit,
                     over_by: overBy,
                     available_credit: avail
@@ -126,11 +128,12 @@ const SalesService = {
 
             // Portfolio totals from corrected customer rows (source of truth for the page)
             const current = transformedCustomers.reduce((s, c) => s + c.current, 0);
+            const days_1_30 = transformedCustomers.reduce((s, c) => s + c.days_1_30, 0);
             const days_31_60 = transformedCustomers.reduce((s, c) => s + c.days_31_60, 0);
             const days_61_90 = transformedCustomers.reduce((s, c) => s + c.days_61_90, 0);
             const over_90 = transformedCustomers.reduce((s, c) => s + c.over_90, 0);
-            const total = Math.round((current + days_31_60 + days_61_90 + over_90) * 100) / 100;
-            const pastDue = days_31_60 + days_61_90 + over_90;
+            const total = Math.round((current + days_1_30 + days_31_60 + days_61_90 + over_90) * 100) / 100;
+            const pastDue = days_1_30 + days_31_60 + days_61_90 + over_90;
             const overLimitCount = transformedCustomers.filter(c => c.over_limit).length;
             const pastDueCount = transformedCustomers.filter(c => c.past_due > 0).length;
             const over90Count = transformedCustomers.filter(c => c.over_90 > 0).length;
@@ -140,7 +143,7 @@ const SalesService = {
             let dso = null;
             if (total > 0) {
                 const weighted =
-                    (current * 15) +
+                    (days_1_30 * 15) +
                     (days_31_60 * 45) +
                     (days_61_90 * 75) +
                     (over_90 * 105);
@@ -150,7 +153,7 @@ const SalesService = {
             return {
                 data: {
                     // For dashboard
-                    bucket_0_30: current,
+                    bucket_0_30: current + days_1_30,
                     bucket_0_30_count: (buckets.current?.count || 0) + (buckets.days_1_30?.count || 0),
                     bucket_31_60: days_31_60,
                     bucket_31_60_count: buckets.days_31_60?.count || 0,
@@ -165,6 +168,7 @@ const SalesService = {
                     summary: {
                         total,
                         current,
+                        days_1_30,
                         days_31_60,
                         days_61_90,
                         over_90,
@@ -181,12 +185,12 @@ const SalesService = {
             };
         } catch (error) {
             console.error('Error fetching aging summary:', error);
-            return { data: { customers: [], summary: {} } };
+            throw error;
         }
     },
 
     /**
-     * Open AR documents for a customer — aging drill-down (bucket-level invoices)
+     * Open unpaid Delivery Receipts for a customer's selected payment-timing group.
      */
     async getAgingOpenItems(customerId, bucket = '') {
         try {
@@ -519,76 +523,116 @@ const SalesService = {
         }
     },
 
-    /**
-     * Create new sales order
-     * @param {Object} data - Order data (customer_id, delivery_date, delivery_address, items, notes)
-     */
-    async createOrder(data) {
-        try {
-            return await api.post(`${this.baseUrl}/orders.php`, {
-                action: 'create',
-                ...data
-            });
-        } catch (error) {
-            console.error('Error creating order:', error);
-            throw error;
-        }
+    /** Products that Warehouse FG can currently release. */
+    async getDirectOrderProducts() {
+        return await api.get('/warehouse/fg/products.php', {
+            params: { action: 'for_sale' }
+        });
+    },
+
+    /** Record an in-person or phone order for a wholesaler/small business. */
+    async createDirectOrder(data) {
+        return await api.post(`${this.baseUrl}/orders.php`, {
+            action: 'create_direct',
+            ...data
+        });
     },
 
     /**
-     * Add item to existing order
-     * @param {number} orderId - Order ID
-     * @param {Object} itemData - Item data (product_id, quantity, unit_price)
+     * Get customer POs received through the company order mailbox.
      */
-    async addOrderItem(orderId, itemData) {
-        try {
-            return await api.post(`${this.baseUrl}/orders.php`, {
-                action: 'add_item',
-                order_id: orderId,
-                ...itemData
-            });
-        } catch (error) {
-            console.error('Error adding order item:', error);
-            throw error;
-        }
+    async getOrderInbox(params = {}) {
+        return await api.get(`${this.baseUrl}/order_inbox.php`, {
+            params: { action: 'list', ...params }
+        });
     },
 
-    /**
-     * Update order item
-     * @param {number} orderId - Order ID
-     * @param {number} itemId - Order item ID
-     * @param {Object} itemData - Updated item data
-     */
-    async updateOrderItem(orderId, itemId, itemData) {
-        try {
-            return await api.put(`${this.baseUrl}/orders.php`, {
-                action: 'update_item',
-                order_id: orderId,
-                item_id: itemId,
-                ...itemData
-            });
-        } catch (error) {
-            console.error('Error updating order item:', error);
-            throw error;
-        }
+    async getOrderInboxSummary() {
+        return await api.get(`${this.baseUrl}/order_inbox.php`, {
+            params: { action: 'summary' }
+        });
     },
 
-    /**
-     * Remove item from order
-     * @param {number} orderId - Order ID
-     * @param {number} itemId - Order item ID
-     */
-    async removeOrderItem(orderId, itemId) {
-        try {
-            return await api.put(`${this.baseUrl}/orders.php`, {
-                action: 'remove_item',
-                order_id: orderId,
-                item_id: itemId
-            });
-        } catch (error) {
-            console.error('Error removing order item:', error);
-            throw error;
-        }
+    async getOrderImport(id) {
+        return await api.get(`${this.baseUrl}/order_inbox.php`, {
+            params: { action: 'detail', id }
+        });
+    },
+
+    async getOrderAttachmentPreview(id) {
+        return await api.get(`${this.baseUrl}/order_inbox.php`, {
+            params: { action: 'preview', id }
+        });
+    },
+
+    async getOrderInboxConfig() {
+        return await api.get(`${this.baseUrl}/order_inbox.php`, {
+            params: { action: 'config' }
+        });
+    },
+
+    async getApprovedCustomerOrderProducts() {
+        // Use the same active finished-goods list as direct sales. It includes
+        // products with zero stock so an incoming request can still be checked
+        // and recorded as unavailable when necessary.
+        return await api.get('/warehouse/fg/products.php', {
+            params: { action: 'for_sale', include_unavailable: 1 }
+        });
+    },
+
+    async syncOrderMailbox() {
+        return await api.post(`${this.baseUrl}/order_inbox.php`, {
+            action: 'sync'
+        });
+    },
+
+    async confirmOrderImport(id, acceptWarnings = false) {
+        return await api.post(`${this.baseUrl}/order_inbox.php`, {
+            action: 'confirm',
+            id,
+            accept_warnings: acceptWarnings
+        });
+    },
+
+    async adjustCustomerOrderImport(importId, lineId, data) {
+        return await api.post(`${this.baseUrl}/order_inbox.php`, {
+            action: 'adjust',
+            id: importId,
+            line_id: lineId,
+            ...data
+        });
+    },
+
+    async saveCustomerOrderDetails(importId, data) {
+        return await api.post(`${this.baseUrl}/order_inbox.php`, {
+            action: 'save_details',
+            id: importId,
+            ...data
+        });
+    },
+
+    async recordCustomerOrderCall(importId, data) {
+        return await api.post(`${this.baseUrl}/order_inbox.php`, {
+            action: 'record_call',
+            id: importId,
+            ...data
+        });
+    },
+
+    async correctCustomerOrderEncoding(importId, reason) {
+        return await api.post(`${this.baseUrl}/order_inbox.php`, {
+            action: 'correct_encoding',
+            id: importId,
+            reason
+        });
+    },
+
+    async rejectCustomerOrderEmail(importId, reason) {
+        return await api.post(`${this.baseUrl}/order_inbox.php`, {
+            action: 'reject',
+            id: importId,
+            reason
+        });
     },
 
     /**
@@ -605,22 +649,6 @@ const SalesService = {
             });
         } catch (error) {
             console.error('Error updating order status:', error);
-            throw error;
-        }
-    },
-
-    /**
-     * Approve sales order for fulfillment
-     * @param {number} id - Order ID
-     */
-    async approveOrder(id) {
-        try {
-            return await api.put(`${this.baseUrl}/orders.php`, {
-                action: 'approve',
-                id
-            });
-        } catch (error) {
-            console.error('Error approving order:', error);
             throw error;
         }
     },
@@ -1025,50 +1053,6 @@ const SalesService = {
         }
     },
 
-    /**
-     * Get aging report with customer details for aging page
-     */
-    async getAgingReportWithCustomers() {
-        try {
-            const response = await api.get(`${this.baseUrl}/dashboard.php`, {
-                params: { action: 'aging_summary' }
-            });
-
-            // Get customer aging details
-            const customersResponse = await api.get(`${this.baseUrl}/customers.php`, {
-                params: { action: 'aging' }
-            });
-
-            const buckets = response.data?.buckets || {};
-            const customers = customersResponse.data || [];
-
-            return {
-                data: {
-                    summary: {
-                        total: response.data?.total_outstanding || 0,
-                        current: buckets.current?.amount || buckets.days_1_30?.amount || 0,
-                        days_31_60: buckets.days_31_60?.amount || 0,
-                        days_61_90: buckets.days_61_90?.amount || 0,
-                        over_90: buckets.days_91_plus?.amount || 0
-                    },
-                    customers: customers.map(c => ({
-                        id: c.id,
-                        customer_name: c.customer_name,
-                        customer_code: c.customer_code,
-                        customer_type: c.customer_type,
-                        credit_limit: c.credit_limit || 0,
-                        current: c.balance_current || 0,
-                        days_31_60: c.balance_31_60 || 0,
-                        days_61_90: c.balance_61_90 || 0,
-                        over_90: c.balance_91_plus || 0
-                    }))
-                }
-            };
-        } catch (error) {
-            console.error('Error fetching aging report with customers:', error);
-            throw error;
-        }
-    }
 };
 
 // Make service available globally

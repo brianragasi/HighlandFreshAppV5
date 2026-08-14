@@ -72,7 +72,7 @@ function handleGet($db, $action) {
                             ELSE 0 END) as available_qty
                     FROM finished_goods_inventory fi
                     JOIN products p2 ON fi.product_id = p2.id
-                    WHERE fi.expiry_date > CURDATE()
+                    WHERE fi.expiry_date >= CURDATE()
                     GROUP BY fi.product_id
                 ) inv ON p.id = inv.product_id
                 WHERE 1=1
@@ -183,6 +183,7 @@ function handleGet($db, $action) {
             // Pack config (pieces_per_box, base_unit, box_unit) is for UI conversion only.
             $category = getParam('category');
             $search = getParam('search');
+            $includeUnavailable = getParam('include_unavailable', '0') === '1';
 
             // Linked products (normal path)
             $sql = "
@@ -203,13 +204,13 @@ function handleGet($db, $action) {
                     COALESCE(res.reserved_qty, 0) AS reserved_qty,
                     GREATEST(0, COALESCE(stock.on_hand, 0) - COALESCE(res.reserved_qty, 0)) AS available_qty
                 FROM products p
-                INNER JOIN (
+                " . ($includeUnavailable ? "LEFT JOIN" : "INNER JOIN") . " (
                     SELECT fi.product_id,
                            SUM(GREATEST(0, COALESCE(fi.quantity_available, 0))) AS on_hand
                     FROM finished_goods_inventory fi
                     WHERE fi.product_id IS NOT NULL
                       AND fi.status = 'available'
-                      AND (fi.expiry_date IS NULL OR fi.expiry_date > CURDATE())
+                      AND (fi.expiry_date IS NULL OR fi.expiry_date >= CURDATE())
                       AND COALESCE(fi.quantity_available, 0) > 0
                     GROUP BY fi.product_id
                 ) stock ON stock.product_id = p.id
@@ -219,7 +220,7 @@ function handleGet($db, $action) {
                     FROM sales_order_items soi
                     JOIN sales_orders so ON soi.order_id = so.id
                     WHERE soi.product_id IS NOT NULL
-                      AND so.status IN ('pending', 'approved', 'preparing')
+                      AND so.status IN ('pending', 'approved', 'picking', 'preparing')
                     GROUP BY soi.product_id
                 ) res ON res.product_id = p.id
                 WHERE p.is_active = 1
@@ -237,8 +238,10 @@ function handleGet($db, $action) {
                 $params[] = $searchTerm;
             }
 
-            $sql .= " HAVING available_qty > 0 OR reserved_qty > 0
-                      ORDER BY p.product_name ASC";
+            if (!$includeUnavailable) {
+                $sql .= " HAVING available_qty > 0";
+            }
+            $sql .= " ORDER BY p.product_name ASC";
 
             $stmt = $db->prepare($sql);
             $stmt->execute($params);
@@ -271,7 +274,9 @@ function handleGet($db, $action) {
             }
             unset($prod);
 
-            Response::success($products, 'Available products retrieved');
+            Response::success($products, $includeUnavailable
+                ? 'Active products and stock readiness retrieved'
+                : 'Available products retrieved');
             break;
             
         default:

@@ -282,7 +282,7 @@
                         <div class="p-4 border-b border-base-300">
                             <h3 class="font-semibold">Notifications</h3>
                         </div>
-                        <ul class="menu menu-sm p-2 max-h-64 overflow-y-auto">
+                        <ul class="menu menu-sm p-2 max-h-64 overflow-y-auto" id="notificationList">
                             <li class="text-center py-4 text-base-content/60">No new notifications</li>
                         </ul>
                     </div>
@@ -567,7 +567,8 @@
     <!-- Scripts -->
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
-    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="qc_officer,general_manager"></script>
     <script src="../../js/qc/dashboard.service.js"></script>
 
     <script>
@@ -613,6 +614,38 @@
             toast.innerHTML = `<span>${message}</span>`;
             container.appendChild(toast);
             setTimeout(() => { toast.remove(); }, 3000);
+        }
+
+        function escapeHtml(value) {
+            const div = document.createElement('div');
+            div.textContent = String(value ?? '');
+            return div.innerHTML;
+        }
+
+        function renderNotifications(notifications) {
+            const list = document.getElementById('notificationList');
+            if (!list) return;
+            if (!notifications.length) {
+                list.innerHTML = '<li class="text-center py-4 text-base-content/60">No new notifications</li>';
+                return;
+            }
+
+            list.innerHTML = notifications.map(notification => {
+                const isDisposalReport = notification.notification_type === 'fg_disposal_review';
+                const href = isDisposalReport
+                    ? `disposals.html?new=1&source_type=finished_goods&source_id=${encodeURIComponent(notification.reference_id)}&category=expired&reason=${encodeURIComponent(notification.message || '')}`
+                    : '#';
+                return `
+                    <li>
+                        <a href="${href}" class="items-start gap-3 py-3">
+                            <i class="fas ${isDisposalReport ? 'fa-flag text-error' : 'fa-bell text-info'} mt-1"></i>
+                            <span>
+                                <strong class="block text-sm">${escapeHtml(notification.title)}</strong>
+                                <span class="block text-xs text-base-content/60 mt-1">${escapeHtml(notification.message)}</span>
+                            </span>
+                        </a>
+                    </li>`;
+            }).join('');
         }
 
         // Get grade badge class
@@ -687,8 +720,10 @@
                     document.getElementById('pendingDeliveriesBadge').textContent = data.today.pending_tests || 0;
                     document.getElementById('pendingBatchesBadge').textContent = data.pending_batch_releases || 0;
                     document.getElementById('expiryAlertsBadge').textContent = data.expiry_alerts?.count || 0;
+                    const notifications = data.notifications || [];
                     document.getElementById('notificationCount').textContent =
-                        (data.today.pending_tests || 0) + (data.pending_batch_releases || 0);
+                        (data.today.pending_tests || 0) + (data.pending_batch_releases || 0) + notifications.length;
+                    renderNotifications(notifications);
 
                     // Update grade distribution
                     const gradeMap = { A: 0, B: 0, C: 0, D: 0, Rejected: 0 };

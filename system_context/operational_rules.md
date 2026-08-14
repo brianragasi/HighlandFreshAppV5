@@ -101,11 +101,13 @@ Stock Level: ████████████│░░░░░░░░░�
 ### Alert Workflow
 
 1. **System Detects:** Stock level reaches or falls below threshold
-2. **Alert Sent:** Notification to Purchaser and GM
-3. **Purchaser Action:** Generate Purchase Order (PO)
-4. **GM Approval:** Approve the PO
-5. **Supplier Delivery:** Supplier ships and delivers
-6. **Stock In:** Items received and added to Raw Materials Inventory
+2. **Warehouse Check:** Warehouse Raw confirms the physical stock condition
+3. **Manual PRS:** Warehouse Raw submits a Purchase Request Slip
+4. **Purchaser Action:** Canvass at least three suppliers and prepare the PO
+5. **GM Approval:** Approve or reject the PO
+6. **Supplier Delivery:** The system sends the approved PO; supplier ships and delivers
+7. **Receiving Report:** Warehouse Raw receives the items and generates the RR
+8. **Final Verification:** Purchaser verifies the RR against the approved PO
 
 ### Dashboard Indicator Example
 
@@ -432,6 +434,68 @@ The initial system design assumed customers are either "cash customers" OR "cred
 3. **Individual → Credit:** Requires explicit approval before proceeding
 4. **Institutional → Cash:** No approval needed; simply process as cash
 5. **Reporting:** System can report by customer AND by payment mode separately
+
+### Institutional Customer PO Email Intake
+
+Large customer orders start with the customer's own purchase order. The system
+keeps the original request as evidence, while Sales enters the order details in
+a clear, checked form.
+
+1. The customer emails its order to the company order address. The order may
+   be written clearly in the message or supplied as an attached PO document.
+2. The system saves the original email and any attached PO and matches the
+   sender to a customer.
+3. The inbox shows the email as **For Encoding**. It does not automatically
+   create product lines from free-form writing or different document layouts.
+4. Sales reads the original email or opens the attachment and enters the customer PO number,
+   requested delivery date, product, quantity, order unit, customer price when
+   shown, and optional remarks.
+5. The system checks the entered customer, product, unit, price, and available
+   stock. Unclear or missing details stay visible for Sales to resolve.
+6. A stock shortage does not silently change the customer's requested quantity.
+   Sales may adjust it only after customer approval is recorded. Without that
+   approval, the full demand remains and picking stays locked.
+7. If the customer agrees by phone to a different quantity, product, unit,
+   delivery date, or removal, Sales records what changed, why it changed, the
+   person contacted, **Phone call** as the confirmation method, the date/time,
+   and optional notes. Sales then saves the agreed order details.
+8. The original email and any attachment are never changed. The saved order keeps
+   both the original requested values and the final agreed values.
+9. Picking and Delivery Receipt creation stay locked until Production finishes
+   the required batches, QC releases them, and Warehouse FG receives enough
+   stock for the saved order.
+10. A repeated email or repeated customer PO must not create a second order.
+11. The sender address must match exactly one active customer record. Unknown
+   or ambiguous senders are rejected and cannot be manually reassigned by
+   Sales. The customer field shown in the inbox is controlled by the sender.
+12. An attachment's contents must match its filename type. Renaming an unsafe
+   or unrelated file to PDF, Excel, Word, or an image extension does not make
+   it an accepted customer PO.
+13. Confirmed orders continue through the normal approval, warehouse, delivery,
+   invoice, aging, and Cashier collection flow.
+
+The customer does not need to understand internal product codes, base units, or
+pack-size columns. Sales selects an active Finished Goods product from the
+system and enters the unit shown on the customer's PO. The original customer
+file is kept unchanged for checking later.
+
+### Direct Wholesaler and Small Business Orders
+
+The email rule applies to large PO-based customers. It does not prevent a
+registered wholesaler or small business from ordering directly through Sales.
+
+1. Supermarkets, feeding programs, and large institutions use the Customer PO
+   Inbox.
+2. Registered wholesalers and small business customers may order in person or
+   by phone through **Direct Order**.
+3. Sales selects only released Finished Goods and records box plus loose-unit
+   quantities.
+4. The system uses the registered customer, official product price, available
+   stock, payment terms, and credit limit.
+5. The Direct Order is sent to the GM approval queue before Warehouse FG can
+   prepare it.
+6. Ordinary retail walk-ins are processed by the Cashier through Quick Cash,
+   not through the Sales Custodian's Direct Order screen.
 
 ---
 

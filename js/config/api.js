@@ -80,6 +80,13 @@ if (typeof axios !== 'undefined') {
             return response.data;
         },
         (error) => {
+            if (error.code === 'ECONNABORTED') {
+                return Promise.reject({
+                    type: 'timeout',
+                    message: 'The server took too long to answer. Please check that Apache and MySQL are running, then try again.'
+                });
+            }
+
             if (error.response) {
                 // Server responded with error
                 const { status, data } = error.response;
@@ -116,7 +123,7 @@ if (typeof axios !== 'undefined') {
             // Network error
             return Promise.reject({
                 type: 'network',
-                message: 'Network error. Please check your connection.'
+                message: 'Cannot reach the server. Please check that Apache and MySQL are running, then try again.'
             });
         }
         

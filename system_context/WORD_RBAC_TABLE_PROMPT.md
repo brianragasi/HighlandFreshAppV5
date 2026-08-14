@@ -163,7 +163,6 @@ For the Highland Fresh system, use these standard roles:
 | Cashier | POS / Collection User |
 | Purchaser | Procurement User |
 | Finance Officer | Disbursement Manager |
-| Maintenance Head | Internal Requester |
 
 ---
 

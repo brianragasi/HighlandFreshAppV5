@@ -6,8 +6,8 @@
 
 require_once __DIR__ . '/../bootstrap.php';
 
-// Require authentication
-Auth::requireAuth();
+// Require GM/Admin role
+Auth::requireRole(['general_manager', 'admin']);
 
 // Get database connection
 $conn = Database::getInstance()->getConnection();
@@ -369,34 +369,41 @@ function updateTank($conn, $id) {
 }
 
 /**
- * Delete (deactivate) tank
+ * Archive tank by taking it offline.
+ * Tank rows are kept so inventory and receiving history remain traceable.
  */
 function deleteTank($conn, $id) {
     // Check if tank exists
-    $checkStmt = $conn->prepare("SELECT id FROM storage_tanks WHERE id = ?");
+    $checkStmt = $conn->prepare("SELECT id, is_active FROM storage_tanks WHERE id = ?");
     $checkStmt->execute([$id]);
+    $tank = $checkStmt->fetch(PDO::FETCH_ASSOC);
     
-    if (!$checkStmt->fetch()) {
+    if (!$tank) {
         sendError('Tank not found', 404);
         return;
     }
-    
-    // Check for related inventory
-    $relatedStmt = $conn->prepare("SELECT COUNT(*) as count FROM raw_milk_inventory WHERE tank_id = ?");
-    $relatedStmt->execute([$id]);
-    $related = $relatedStmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($related['count'] > 0) {
-        // Soft delete - deactivate
-        $stmt = $conn->prepare("UPDATE storage_tanks SET is_active = 0, status = 'offline' WHERE id = ?");
-        $stmt->execute([$id]);
-        sendSuccess(['message' => 'Tank deactivated (has inventory records)']);
-    } else {
-        // Hard delete if no related records
-        $stmt = $conn->prepare("DELETE FROM storage_tanks WHERE id = ?");
-        $stmt->execute([$id]);
-        sendSuccess(['message' => 'Tank deleted successfully']);
+
+    if ((int) $tank['is_active'] === 0) {
+        sendSuccess([
+            'message' => 'Tank is already archived',
+            'tank_id' => (int) $id,
+            'is_active' => 0,
+            'status' => 'offline',
+            'archived' => true
+        ], 'Tank is already archived');
+        return;
     }
+
+    $stmt = $conn->prepare("UPDATE storage_tanks SET is_active = 0, status = 'offline' WHERE id = ?");
+    $stmt->execute([$id]);
+
+    sendSuccess([
+        'message' => 'Tank archived successfully',
+        'tank_id' => (int) $id,
+        'is_active' => 0,
+        'status' => 'offline',
+        'archived' => true
+    ], 'Tank archived successfully');
 }
 
 /**

@@ -16,7 +16,7 @@
 require_once dirname(__DIR__) . '/bootstrap.php';
 
 // Allowed roles: warehouse_raw creates PRS, purchaser converts PRS to PO, GM approves POs.
-$currentUser = Auth::requireRole(['warehouse_raw', 'purchaser', 'general_manager', 'production_staff', 'maintenance_head']);
+$currentUser = Auth::requireRole(['warehouse_raw', 'purchaser', 'general_manager', 'production_staff']);
 
 $action = getParam('action', 'list');
 

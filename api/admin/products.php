@@ -6,8 +6,8 @@
 
 require_once __DIR__ . '/../bootstrap.php';
 
-// Require authentication
-Auth::requireAuth();
+// Require GM/Admin role
+Auth::requireRole(['general_manager', 'admin']);
 
 // Get database connection
 $conn = Database::getInstance()->getConnection();
@@ -71,6 +71,12 @@ try {
  * GET /api/admin/products.php?action=base_products
  */
 function getBaseProducts($conn) {
+    // Product stock changes throughout dispatch and receiving. Never let a browser
+    // reuse an old catalog response after Warehouse FG has moved inventory.
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+    header('Expires: 0');
+
     try {
         $conn->query('SELECT id FROM base_products LIMIT 0');
     } catch (Throwable $e) {
@@ -106,7 +112,7 @@ function getBaseProducts($conn) {
                         ), 0)
                       FROM finished_goods_inventory fgi
                      WHERE fgi.product_id = p.id
-                       AND fgi.status IN ('available', 'low_stock')
+                       AND fgi.status IN ('available', 'low_stock', 'reserved')
                        AND (fgi.expiry_date IS NULL OR fgi.expiry_date >= CURDATE())
                    ) AS current_stock
             FROM products p
@@ -517,10 +523,30 @@ function createProduct($conn) {
 
     // ── Duplicate volume/weight detection ─────────────────────────────────────
     // Prevents creating '1L' when '1000ml' already exists (or vice versa).
+    $baseProductId = !empty($data['base_product_id']) ? (int) $data['base_product_id'] : null;
+    try {
+        $conn->query('SELECT base_product_id FROM products LIMIT 0');
+        $conn->query('SELECT id FROM base_products LIMIT 0');
+        if (!$baseProductId) {
+            $find = $conn->prepare("SELECT id FROM base_products WHERE name = ? AND category = ? LIMIT 1");
+            $find->execute([trim($data['product_name']), $data['category']]);
+            $baseProductId = $find->fetchColumn() ?: null;
+        }
+    } catch (Throwable $e) {
+        $baseProductId = null;
+    }
+
     if (!empty($data['unit_size']) && !empty($data['unit_measure'])) {
-        $canonicalMl = normalizeToBaseUnit((float) $data['unit_size'], $data['unit_measure']);
-        if ($canonicalMl !== null) {
-            $existingDup = findEquivalentSku($conn, $data['category'], $canonicalMl, $data['product_name'] ?? null);
+        $canonicalSize = normalizeToBaseUnit((float) $data['unit_size'], $data['unit_measure']);
+        if ($canonicalSize !== null) {
+            $existingDup = findEquivalentSku(
+                $conn,
+                $data['category'],
+                $canonicalSize,
+                $baseProductId,
+                $data['product_name'] ?? null,
+                $data['variant'] ?? null
+            );
             if ($existingDup) {
                 sendError(
                     "A packaging size of equivalent volume ({$existingDup['unit_size']} {$existingDup['unit_measure']}) already exists for this product: \"{$existingDup['product_name']}\" (SKU: {$existingDup['product_code']})",
@@ -531,7 +557,6 @@ function createProduct($conn) {
         }
     }
 
-    $baseProductId = !empty($data['base_product_id']) ? (int) $data['base_product_id'] : null;
     // Resolve / create base product when architecture is present
     try {
         $conn->query('SELECT base_product_id FROM products LIMIT 0');
@@ -747,7 +772,11 @@ function updateProduct($conn, $id) {
     $data = json_decode(file_get_contents('php://input'), true);
     
     // Check if product exists
-    $checkStmt = $conn->prepare("SELECT id, product_code FROM products WHERE id = ?");
+    $checkStmt = $conn->prepare("
+        SELECT id, product_code, product_name, category, variant, unit_size, unit_measure, base_product_id
+        FROM products
+        WHERE id = ?
+    ");
     $checkStmt->execute([$id]);
     $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
     
@@ -800,6 +829,35 @@ function updateProduct($conn, $id) {
         if ($dupStmt->fetch()) {
             sendError('Product code already exists', 409);
             return;
+        }
+    }
+
+    $nextUnitSize = array_key_exists('unit_size', $data) ? (float) $data['unit_size'] : (float) $existing['unit_size'];
+    $nextUnitMeasure = array_key_exists('unit_measure', $data) ? $data['unit_measure'] : $existing['unit_measure'];
+    $nextCategory = array_key_exists('category', $data) ? $data['category'] : $existing['category'];
+    $nextProductName = array_key_exists('product_name', $data) ? $data['product_name'] : $existing['product_name'];
+    $nextVariant = array_key_exists('variant', $data) ? $data['variant'] : $existing['variant'];
+    $nextBaseProductId = !empty($existing['base_product_id']) ? (int) $existing['base_product_id'] : null;
+
+    if ($nextUnitSize > 0 && !empty($nextUnitMeasure)) {
+        $canonicalSize = normalizeToBaseUnit($nextUnitSize, $nextUnitMeasure);
+        if ($canonicalSize !== null) {
+            $existingDup = findEquivalentSku(
+                $conn,
+                $nextCategory,
+                $canonicalSize,
+                $nextBaseProductId,
+                $nextProductName,
+                $nextVariant,
+                (int) $id
+            );
+            if ($existingDup) {
+                sendError(
+                    "A packaging size of equivalent volume ({$existingDup['unit_size']} {$existingDup['unit_measure']}) already exists for this product: \"{$existingDup['product_name']}\" (SKU: {$existingDup['product_code']})",
+                    409
+                );
+                return;
+            }
         }
     }
     
@@ -1044,24 +1102,50 @@ function normalizeToBaseUnit(float $size, string $measure): ?float {
 }
 
 /**
- * Find an active product with the same category whose normalized volume/weight
- * matches the given canonical value (within 0.01 tolerance).
+ * Find an active SKU with the same base product, variant, and normalized
+ * volume/weight (within 0.01 tolerance).
  */
-function findEquivalentSku(PDO $conn, string $category, float $canonicalValue, ?string $productName): ?array {
-    $stmt = $conn->prepare(
-        "SELECT id, product_code, product_name, unit_size, unit_measure
-           FROM products
-          WHERE is_active = 1
-            AND category = :category"
-    );
-    $stmt->execute([':category' => $category]);
+function findEquivalentSku(
+    PDO $conn,
+    string $category,
+    float $canonicalValue,
+    ?int $baseProductId = null,
+    ?string $productName = null,
+    ?string $variant = null,
+    ?int $excludeId = null
+): ?array {
+    $sql = "
+        SELECT id, product_code, product_name, variant, unit_size, unit_measure, base_product_id
+          FROM products
+         WHERE is_active = 1
+           AND category = :category
+    ";
+    $params = [':category' => $category];
+
+    if ($excludeId) {
+        $sql .= " AND id != :exclude_id";
+        $params[':exclude_id'] = $excludeId;
+    }
+
+    if ($baseProductId) {
+        $sql .= " AND base_product_id = :base_product_id";
+        $params[':base_product_id'] = $baseProductId;
+    } elseif ($productName !== null && trim($productName) !== '') {
+        $sql .= " AND LOWER(TRIM(product_name)) = LOWER(TRIM(:product_name))";
+        $params[':product_name'] = $productName;
+    }
+
+    $stmt = $conn->prepare($sql);
+    $stmt->execute($params);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $targetVariant = strtolower(trim((string) ($variant ?? '')));
 
     foreach ($rows as $row) {
         $existing = normalizeToBaseUnit((float) $row['unit_size'], $row['unit_measure']);
         if ($existing === null) continue;
 
-        if (abs($existing - $canonicalValue) < 0.01) {
+        $existingVariant = strtolower(trim((string) ($row['variant'] ?? '')));
+        if ($existingVariant === $targetVariant && abs($existing - $canonicalValue) < 0.01) {
             return $row;
         }
     }

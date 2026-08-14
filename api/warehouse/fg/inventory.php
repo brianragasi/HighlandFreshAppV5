@@ -4,8 +4,8 @@
  * Multi-Unit Support: Boxes and Pieces
  * 
  * GET - List inventory, get details, expiring items, convert units
- * POST - Receive inventory, open box
- * PUT - Transfer, adjust, dispose, release
+ * POST - Receive inventory, open box, report stock to QC
+ * PUT - Transfer, adjust, release
  * 
  * @package HighlandFresh
  * @version 4.1
@@ -284,7 +284,7 @@ function releaseMultiUnit($db, $inventoryId, $releasedBoxes, $releasedPieces, $u
         throw new Exception('Only available inventory can be released.');
     }
 
-    if (!empty($inventory['expiry_date']) && $inventory['expiry_date'] <= date('Y-m-d')) {
+    if (!empty($inventory['expiry_date']) && $inventory['expiry_date'] < date('Y-m-d')) {
         throw new Exception('Expired inventory cannot be released. Dispose or quarantine this stock instead.');
     }
     
@@ -438,6 +438,51 @@ function releaseMultiUnit($db, $inventoryId, $releasedBoxes, $releasedPieces, $u
 
 function handleGet($db, $action) {
     switch ($action) {
+        case 'delivery_state_summary':
+            $availableStmt = $db->query("
+                SELECT COALESCE(SUM(
+                    CASE
+                        WHEN fg.status IN ('available', 'low_stock')
+                         AND fg.expiry_date >= CURDATE()
+                        THEN CASE
+                            WHEN COALESCE(fg.boxes_available, 0) > 0
+                              OR COALESCE(fg.pieces_available, 0) > 0
+                            THEN (COALESCE(fg.boxes_available, 0)
+                                  * COALESCE(NULLIF(p.pieces_per_box, 0), 1))
+                                 + COALESCE(fg.pieces_available, 0)
+                            ELSE GREATEST(
+                                COALESCE(fg.quantity_available, 0),
+                                COALESCE(fg.remaining_quantity, 0)
+                            )
+                        END
+                        ELSE 0
+                    END
+                ), 0)
+                FROM finished_goods_inventory fg
+                LEFT JOIN products p ON p.id = fg.product_id
+            ");
+            $available = (int) $availableStmt->fetchColumn();
+
+            $movementStmt = $db->query("
+                SELECT
+                    COALESCE(SUM(CASE WHEN state = 'reserved'
+                        THEN quantity_allocated ELSE 0 END), 0) AS reserved,
+                    COALESCE(SUM(CASE WHEN state = 'in_transit'
+                        THEN quantity_allocated ELSE 0 END), 0) AS in_transit
+                FROM delivery_stock_allocations
+            ");
+            $movement = $movementStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+            $reserved = (int) ($movement['reserved'] ?? 0);
+            $inTransit = (int) ($movement['in_transit'] ?? 0);
+
+            Response::success([
+                'available' => $available,
+                'reserved' => $reserved,
+                'in_transit' => $inTransit,
+                'company_owned' => $available + $reserved + $inTransit,
+            ], 'Delivery stock position retrieved');
+            break;
+
         case 'list':
             $productId = getParam('product_id');
             $chillerId = getParam('chiller_id');
@@ -746,7 +791,7 @@ function handleGet($db, $action) {
                 LEFT JOIN chiller_locations c ON fg.chiller_id = c.id
                 WHERE fg.status = 'available'
                 AND (fg.quantity_available > 0 OR fg.boxes_available > 0 OR fg.pieces_available > 0)
-                AND fg.expiry_date > CURDATE()
+                AND fg.expiry_date >= CURDATE()
             ";
             
             $params = [];
@@ -835,7 +880,7 @@ function handleGet($db, $action) {
                 FROM products p
                 LEFT JOIN finished_goods_inventory fg ON p.id = fg.product_id 
                     AND fg.status = 'available' 
-                    AND fg.expiry_date > CURDATE()
+                    AND fg.expiry_date >= CURDATE()
                 WHERE p.category IS NOT NULL
             ";
             
@@ -1174,6 +1219,113 @@ function handlePost($db, $action, $currentUser) {
     $data = getRequestBody();
     
     switch ($action) {
+        case 'report_for_disposal':
+            $inventoryId = intval($data['inventory_id'] ?? 0);
+            if ($inventoryId <= 0) {
+                Response::error('Inventory item is required', 400);
+            }
+
+            $stmt = $db->prepare("
+                SELECT fg.id, fg.product_name, fg.expiry_date, fg.status,
+                       fg.quantity_available, fg.boxes_available, fg.pieces_available,
+                       COALESCE(NULLIF(p.pieces_per_box, 0), 1) AS pieces_per_box,
+                       COALESCE(p.base_unit, fg.unit, 'piece') AS base_unit,
+                       COALESCE(pb.batch_code, CONCAT('FG-', fg.id)) AS batch_code,
+                       COALESCE(c.chiller_name, fg.chiller_location, 'Unassigned') AS location_name
+                FROM finished_goods_inventory fg
+                LEFT JOIN products p ON p.id = fg.product_id
+                LEFT JOIN production_batches pb ON pb.id = fg.batch_id
+                LEFT JOIN chiller_locations c ON c.id = fg.chiller_id
+                WHERE fg.id = ?
+                LIMIT 1
+            ");
+            $stmt->execute([$inventoryId]);
+            $item = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$item) {
+                Response::error('Finished Goods stock was not found', 404);
+            }
+            if (($item['status'] ?? '') === 'disposed') {
+                Response::error('This stock has already been disposed', 409);
+            }
+
+            $boxes = max(0, (int)($item['boxes_available'] ?? 0));
+            $pieces = max(0, (int)($item['pieces_available'] ?? 0));
+            $quantity = ($boxes > 0 || $pieces > 0)
+                ? (($boxes * max(1, (int)$item['pieces_per_box'])) + $pieces)
+                : max(0, (int)($item['quantity_available'] ?? 0));
+            if ($quantity <= 0) {
+                Response::error('This stock has no remaining quantity to report', 409);
+            }
+
+            $openDisposal = $db->prepare("
+                SELECT disposal_code, status
+                FROM disposals
+                WHERE source_type = 'finished_goods'
+                  AND source_id = ?
+                  AND status IN ('pending', 'approved')
+                ORDER BY id DESC
+                LIMIT 1
+            ");
+            $openDisposal->execute([$inventoryId]);
+            $existingDisposal = $openDisposal->fetch(PDO::FETCH_ASSOC);
+            if ($existingDisposal) {
+                Response::success([
+                    'inventory_id' => $inventoryId,
+                    'already_reported' => true,
+                    'disposal_code' => $existingDisposal['disposal_code'],
+                    'disposal_status' => $existingDisposal['status']
+                ], 'This stock already has an open disposal request: ' . $existingDisposal['disposal_code'] . '.');
+            }
+
+            $duplicate = $db->prepare("
+                SELECT id
+                FROM procurement_notifications
+                WHERE target_role = 'qc_officer'
+                  AND notification_type = 'fg_disposal_review'
+                  AND reference_type = 'finished_goods_inventory'
+                  AND reference_id = ?
+                  AND is_read = 0
+                LIMIT 1
+            ");
+            $duplicate->execute([$inventoryId]);
+            if ($duplicate->fetchColumn()) {
+                Response::success([
+                    'inventory_id' => $inventoryId,
+                    'already_reported' => true
+                ], 'QC already has an open report for this stock.');
+            }
+
+            $title = 'Finished Goods stock needs disposal review';
+            $message = sprintf(
+                '%s, batch %s, has %s %s in %s and expired on %s. Warehouse FG reported it for physical QC checking.',
+                $item['product_name'],
+                $item['batch_code'],
+                number_format($quantity),
+                $item['base_unit'],
+                $item['location_name'],
+                $item['expiry_date']
+            );
+            $insert = $db->prepare("
+                INSERT INTO procurement_notifications
+                    (target_role, notification_type, title, message, reference_type, reference_id)
+                VALUES ('qc_officer', 'fg_disposal_review', ?, ?, 'finished_goods_inventory', ?)
+            ");
+            $insert->execute([$title, $message, $inventoryId]);
+
+            logAudit($currentUser['user_id'], 'REPORT_FOR_DISPOSAL', 'finished_goods_inventory', $inventoryId, null, [
+                'batch_code' => $item['batch_code'],
+                'quantity' => $quantity,
+                'expiry_date' => $item['expiry_date'],
+                'reported_to' => 'qc_officer'
+            ]);
+
+            Response::success([
+                'inventory_id' => $inventoryId,
+                'already_reported' => false
+            ], 'QC has been notified. Keep this stock isolated until the approved disposal is completed.', 201);
+            break;
+
         case 'receive':
             // Receive inventory from production with multi-unit support
             $required = ['product_id', 'manufacturing_date', 'expiry_date'];
@@ -1889,7 +2041,7 @@ function handlePut($db, $action, $currentUser) {
                     Response::error('Only available inventory can be transferred', 400);
                 }
 
-                if (!empty($current['expiry_date']) && $current['expiry_date'] <= date('Y-m-d')) {
+                if (!empty($current['expiry_date']) && $current['expiry_date'] < date('Y-m-d')) {
                     Response::error('Expired inventory should be disposed or quarantined, not transferred as usable stock', 400);
                 }
 
@@ -2034,123 +2186,6 @@ function handlePut($db, $action, $currentUser) {
             } catch (Exception $e) {
                 $db->rollBack();
                 throw $e;
-            }
-            break;
-            
-        case 'dispose':
-            $db->beginTransaction();
-            
-            try {
-                $oldBoxes = $current['boxes_available'] ?? 0;
-                $oldPieces = $current['pieces_available'] ?? 0;
-                $oldTotal = boxesToPieces($oldBoxes, $oldPieces, $current['pieces_per_box'] ?? 1);
-                
-                $stmt = $db->prepare("
-                    UPDATE finished_goods_inventory 
-                    SET status = 'disposed', 
-                        quantity_available = 0,
-                        quantity_boxes = 0,
-                        boxes_available = 0,
-                        quantity_pieces = 0,
-                        pieces_available = 0,
-                        disposed_at = NOW(),
-                        disposal_reason = ?
-                    WHERE id = ?
-                ");
-                $stmt->execute([$data['reason'] ?? 'Disposed', $id]);
-                
-                // Update chiller count
-                if ($current['chiller_id'] && $oldTotal > 0) {
-                    $db->prepare("UPDATE chiller_locations SET current_count = GREATEST(0, current_count - ?) WHERE id = ?")
-                       ->execute([$oldTotal, $current['chiller_id']]);
-                }
-                
-                // Log transaction (product_id may be NULL for corrupted items)
-                $productId = $current['product_id'] ?? 0;
-                $logStmt = $db->prepare("
-                    INSERT INTO fg_inventory_transactions
-                    (transaction_code, transaction_type, inventory_id, product_id, quantity,
-                     boxes_quantity, pieces_quantity, quantity_before, quantity_after,
-                     boxes_before, pieces_before, boxes_after, pieces_after,
-                     performed_by, reason)
-                    VALUES (?, 'disposal', ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, 0, ?, ?)
-                ");
-                
-                $logStmt->execute([
-                    'FGT-' . date('Ymd') . '-' . uniqid(),
-                    $id,
-                    $productId,
-                    $oldTotal,
-                    $oldBoxes,
-                    $oldPieces,
-                    $oldTotal,
-                    $oldBoxes,
-                    $oldPieces,
-                    $currentUser['user_id'],
-                    $data['reason'] ?? 'Disposed'
-                ]);
-                
-                $db->commit();
-                
-                Response::success([
-                    'disposed_boxes' => $oldBoxes,
-                    'disposed_pieces' => $oldPieces,
-                    'disposed_total' => $oldTotal
-                ], 'Inventory disposed successfully');
-                
-            } catch (Exception $e) {
-                $db->rollBack();
-                throw $e;
-            }
-            break;
-
-        case 'force_delete':
-            // Force-delete a corrupted inventory record.
-            // Removes all FK-linked children first, then the inventory row itself.
-            // Requires GM role to prevent accidental data loss.
-            if (($currentUser['role'] ?? '') !== 'general_manager') {
-                Response::error('Only GM can force-delete inventory records', 403);
-            }
-
-            $db->beginTransaction();
-            try {
-                // Log what we're about to delete
-                error_log("FG Inventory force_delete: id={$id}, product={$current['product_name']}, batch_id={$current['batch_id']}");
-
-                // 1. Delete dispatch log references
-                $db->prepare("DELETE FROM fg_dispatch_log WHERE inventory_id = ?")->execute([$id]);
-
-                // 2. Delete disposal item references
-                $db->prepare("DELETE FROM disposal_items WHERE source_id = ? AND source_type = 'finished_goods'")->execute([$id]);
-
-                // 3. Delete inventory transaction log
-                $db->prepare("DELETE FROM fg_inventory_transactions WHERE inventory_id = ?")->execute([$id]);
-
-                // 4. Update chiller count if assigned
-                if ($current['chiller_id'] && ($current['boxes_available'] > 0 || $current['pieces_available'] > 0)) {
-                    $totalPieces = boxesToPieces($current['boxes_available'] ?? 0, $current['pieces_available'] ?? 0, $current['pieces_per_box'] ?? 1);
-                    $db->prepare("UPDATE chiller_locations SET current_count = GREATEST(0, current_count - ?) WHERE id = ?")
-                       ->execute([$totalPieces, $current['chiller_id']]);
-                }
-
-                // 5. Delete the inventory row
-                $db->prepare("DELETE FROM finished_goods_inventory WHERE id = ?")->execute([$id]);
-
-                // 6. Clean up orphaned batch if it has no other FG references
-                if ($current['batch_id']) {
-                    $checkBatch = $db->prepare("SELECT COUNT(*) FROM finished_goods_inventory WHERE batch_id = ?");
-                    $checkBatch->execute([$current['batch_id']]);
-                    if ($checkBatch->fetchColumn() == 0) {
-                        $db->prepare("DELETE FROM production_batches WHERE id = ?")->execute([$current['batch_id']]);
-                    }
-                }
-
-                $db->commit();
-                Response::success(null, 'Corrupted inventory record force-deleted successfully');
-
-            } catch (Exception $e) {
-                $db->rollBack();
-                Response::error('Force delete failed: ' . $e->getMessage(), 500);
             }
             break;
             

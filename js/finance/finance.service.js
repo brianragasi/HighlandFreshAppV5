@@ -61,6 +61,10 @@ const FinanceService = {
         return api.get(`/finance/payables.php?${params}`);
     },
 
+    getPayablesOverview() {
+        return api.get('/finance/payables.php?action=overview');
+    },
+
     getPayableDetail(id) {
         return api.get(`/finance/payables.php?action=detail&id=${id}`);
     },
@@ -112,7 +116,7 @@ const FinanceService = {
             'rejected': 'Rejected',
             'partial_received': 'Partially Received',
             'received': 'Fully Received',
-            'closed': 'Closed',
+            'closed': 'Purchasing Closed',
             'ordered': 'Approved',
             'cancelled': 'Cancelled',
             'unpaid': 'Unpaid',

@@ -9,6 +9,7 @@ Based on the discussion, the **Production Staff** are the "Engine" of Highland F
 The Production Staff follows this standardized process flow:
 
 ```
+
 RAW MILK RECEIVING
         ↓
    [Acceptance Criteria]
@@ -43,6 +44,12 @@ RAW MILK RECEIVING
     STORING
    Temperature: 4°C
 ```
+
+---
+
+## Customer Demand Queue
+
+When a GM-approved Sales Order cannot be covered by saleable Finished Goods stock, the shortage appears on the Production dashboard. Production reviews the product, amount still needed, customer, and delivery date, then opens **Plan Production**. This opens the existing material requisition form with the related recipe and customer demand identified. Production still decides the correct bulk batch volume and submits the material request for GM approval. Sales cannot directly start the batch.
 
 ---
 

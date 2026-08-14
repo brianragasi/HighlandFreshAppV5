@@ -2,7 +2,7 @@
 /**
  * Highland Fresh System - Maintenance Dashboard API
  * 
- * Provides dashboard statistics for Maintenance Head
+ * Provides equipment and repair statistics
  * - Machine health overview
  * - Pending repairs
  * - MRO requisition status
@@ -14,8 +14,8 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 
-// Require Maintenance Head or GM role
-$currentUser = Auth::requireRole(['maintenance_head', 'general_manager']);
+// Warehouse Raw maintains the records; the GM has oversight.
+$currentUser = Auth::requireRole(['warehouse_raw', 'general_manager']);
 
 try {
     $db = Database::getInstance()->getConnection();

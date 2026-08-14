@@ -17,7 +17,7 @@ require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
 require_once __DIR__ . '/mro_stock_helpers.php';
 
 // Require appropriate roles
-$currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'maintenance_head', 'purchaser']);
+$currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'purchaser']);
 
 try {
     $db = Database::getInstance()->getConnection();
@@ -64,12 +64,15 @@ function handleGet($db, $currentUser) {
             $categoryId = getParam('category_id');
             $lowStockOnly = getParam('low_stock') === '1';
             $criticalOnly = getParam('critical') === '1';
-            $search = getParam('search');
+            $search = trim((string) getParam('search', ''));
+            $stockStatus = strtolower(trim((string) getParam('stock_status', '')));
             
             $sql = "
                 SELECT 
                     m.*,
                     mc.category_name,
+                    mc.category_code,
+                    LOWER(REPLACE(UPPER(mc.category_code), 'MRO-', '')) as category_slug,
                     CASE
                         WHEN m.current_stock <= 0 THEN 'out_of_stock'
                         WHEN m.current_stock <= " . StockRule::lowThresholdSql('m.reorder_point', 'm.minimum_stock') . " THEN 'low_stock'
@@ -101,11 +104,34 @@ function handleGet($db, $currentUser) {
             if ($criticalOnly) {
                 $sql .= " AND m.is_critical = 1";
             }
+
+            if ($stockStatus) {
+                switch ($stockStatus) {
+                    case 'ok':
+                        $sql .= " AND m.current_stock > " . StockRule::lowThresholdSql('m.reorder_point', 'm.minimum_stock');
+                        break;
+                    case 'low':
+                        $sql .= " AND m.current_stock > 0 AND m.current_stock <= " . StockRule::lowThresholdSql('m.reorder_point', 'm.minimum_stock');
+                        break;
+                    case 'out':
+                    case 'out_of_stock':
+                        $sql .= " AND m.current_stock <= 0";
+                        break;
+                }
+            }
             
-            if ($search) {
-                $sql .= " AND (m.item_code LIKE ? OR m.item_name LIKE ?)";
-                $params[] = "%{$search}%";
-                $params[] = "%{$search}%";
+            if ($search !== '') {
+                $sql .= " AND (
+                    m.item_code LIKE ?
+                    OR m.item_name LIKE ?
+                    OR mc.category_name LIKE ?
+                    OR mc.category_code LIKE ?
+                )";
+                $searchTerm = "%{$search}%";
+                $params[] = $searchTerm;
+                $params[] = $searchTerm;
+                $params[] = $searchTerm;
+                $params[] = $searchTerm;
             }
             
             $sql .= " ORDER BY m.is_critical DESC, m.item_name ASC";
@@ -124,7 +150,7 @@ function handleGet($db, $currentUser) {
             
             // Get item details
             $item = $db->prepare("
-                SELECT m.*, mc.category_name
+                SELECT m.*, mc.category_name, mc.category_code, LOWER(REPLACE(UPPER(mc.category_code), 'MRO-', '')) as category_slug
                 FROM mro_items m
                 LEFT JOIN mro_categories mc ON m.category_id = mc.id
                 WHERE m.id = ? AND m.is_active = 1

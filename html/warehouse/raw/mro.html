@@ -643,7 +643,7 @@
                             </div>
                             <div>
                                 <p class="text-2xl font-bold" id="lowStockCount">0</p>
-                                <p class="text-xs text-base-content/60">Low Stock</p>
+                                <p class="text-xs text-base-content/60">Low MRO Stock</p>
                             </div>
                         </div>
                     </div>
@@ -940,7 +940,8 @@
     <!-- Scripts -->
     <script src="../../../js/vendor/axios.min.js"></script>
     <script src="../../../js/config/api.js"></script>
-    <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_raw,general_manager"></script>
     <script src="../../../js/ui/dialogs.js"></script>
     <script src="../../../js/warehouse/raw.service.js"></script>
     <script src="../../../js/warehouse/sidebar.stats.js"></script>
@@ -965,6 +966,7 @@
             stock: '',
             critical: ''
         };
+        let mroStatsItems = [];
 
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
@@ -990,20 +992,20 @@
         function setupEventListeners() {
             // Search input
             document.getElementById('searchInput').addEventListener('input', debounce(() => {
-                currentFilter.search = document.getElementById('searchInput').value;
-                renderMROItems();
+                currentFilter.search = document.getElementById('searchInput').value.trim();
+                loadMROItems();
             }, 300));
 
             // Stock filter
             document.getElementById('stockFilter').addEventListener('change', () => {
                 currentFilter.stock = document.getElementById('stockFilter').value;
-                renderMROItems();
+                loadMROItems();
             });
 
             // Critical filter
             document.getElementById('criticalFilter').addEventListener('change', () => {
                 currentFilter.critical = document.getElementById('criticalFilter').value;
-                renderMROItems();
+                loadMROItems();
             });
 
             // Issue reason change
@@ -1063,17 +1065,64 @@
                     btn.classList.remove('btn-ghost');
                     btn.classList.add('btn-primary');
                     currentFilter.category = btn.dataset.category;
-                    renderMROItems();
+                    loadMROItems();
                 });
             });
         }
 
+        function getMROListParams() {
+            const params = {};
+
+            if (currentFilter.category !== 'all') {
+                params.category_id = currentFilter.category;
+            }
+
+            if (currentFilter.search) {
+                params.search = currentFilter.search;
+            }
+
+            if (currentFilter.stock) {
+                params.stock_status = currentFilter.stock;
+            }
+
+            if (currentFilter.critical === 'critical_only') {
+                params.critical = '1';
+            }
+
+            return params;
+        }
+
+        function hasActiveMROFilter() {
+            return currentFilter.category !== 'all'
+                || Boolean(currentFilter.search)
+                || Boolean(currentFilter.stock)
+                || currentFilter.critical === 'critical_only';
+        }
+
+        function showMROTableLoading() {
+            const tbody = document.getElementById('mroTableBody');
+            if (!tbody) return;
+
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center py-12">
+                        <span class="loading loading-spinner loading-md text-primary"></span>
+                        <p class="text-base-content/60 mt-2 text-sm">Searching MRO items...</p>
+                    </td>
+                </tr>
+            `;
+        }
+
         async function loadMROItems() {
             try {
-                const response = await WarehouseRawService.getMROItems();
+                showMROTableLoading();
+                const response = await WarehouseRawService.getMROItems(getMROListParams());
                 if (response.success) {
                     mroItems = response.data.mro_items || response.data.items || response.data || [];
-                    updateStats();
+                    if (!hasActiveMROFilter()) {
+                        mroStatsItems = [...mroItems];
+                        updateStats();
+                    }
                     renderMROItems();
                 }
             } catch (error) {
@@ -1093,13 +1142,14 @@
         };
 
         function updateStats() {
-            const total = mroItems.length;
-            const inStock = mroItems.filter(i => parseFloat(i.current_stock) > lowStockReorderOf(i)).length;
-            const lowStock = mroItems.filter(i => {
+            const statsItems = mroStatsItems.length ? mroStatsItems : mroItems;
+            const total = statsItems.length;
+            const inStock = statsItems.filter(i => parseFloat(i.current_stock) > lowStockReorderOf(i)).length;
+            const lowStock = statsItems.filter(i => {
                 const stock = parseFloat(i.current_stock);
                 return stock > 0 && stock <= lowStockReorderOf(i);
             }).length;
-            const critical = mroItems.filter(i => i.is_critical == 1 && parseFloat(i.current_stock) <= parseFloat(i.minimum_stock)).length;
+            const critical = statsItems.filter(i => i.is_critical == 1 && parseFloat(i.current_stock) <= parseFloat(i.minimum_stock)).length;
 
             document.getElementById('totalItems').textContent = total;
             document.getElementById('inStockCount').textContent = inStock;
@@ -1124,38 +1174,6 @@
             const tbody = document.getElementById('mroTableBody');
             if (!tbody) return;
             let filtered = [...mroItems];
-
-            // Apply filters
-            if (currentFilter.category !== 'all') {
-                filtered = filtered.filter(i => i.category_id == currentFilter.category);
-            }
-
-            if (currentFilter.search) {
-                const search = currentFilter.search.toLowerCase();
-                filtered = filtered.filter(i =>
-                    (i.item_name || '').toLowerCase().includes(search) ||
-                    (i.item_code || '').toLowerCase().includes(search)
-                );
-            }
-
-            if (currentFilter.stock) {
-                filtered = filtered.filter(i => {
-                    const stock = parseFloat(i.current_stock);
-                    const min = parseFloat(i.minimum_stock);
-                    const reorder = parseFloat(i.reorder_point || min * 1.5);
-
-                    switch (currentFilter.stock) {
-                        case 'ok': return stock > reorder;
-                        case 'low': return stock > 0 && stock <= reorder;
-                        case 'out': return stock <= 0;
-                        default: return true;
-                    }
-                });
-            }
-
-            if (currentFilter.critical === 'critical_only') {
-                filtered = filtered.filter(i => i.is_critical == 1);
-            }
 
             // Sort: critical items first, then by name
             filtered.sort((a, b) => {

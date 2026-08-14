@@ -135,6 +135,12 @@ function handlePost($db, $action, $currentUser) {
     $data = getRequestBody();
     
     if ($action === 'create') {
+        $contactCheck = hfValidateContactPayload($data, ['phone', 'contact_number'], 'email');
+        if (!empty($contactCheck['errors'])) {
+            Response::validationError($contactCheck['errors']);
+        }
+        $data = $contactCheck['data'];
+
         $required = ['name', 'customer_type'];
         foreach ($required as $field) {
             if (empty($data[$field])) {
@@ -177,6 +183,11 @@ function handlePost($db, $action, $currentUser) {
 
 function handlePut($db, $action, $currentUser) {
     $data = getRequestBody();
+    $contactCheck = hfValidateContactPayload($data, ['phone', 'contact_number'], 'email');
+    if (!empty($contactCheck['errors'])) {
+        Response::validationError($contactCheck['errors']);
+    }
+    $data = $contactCheck['data'];
     $id = getParam('id') ?? ($data['id'] ?? null);
     
     if (!$id) {

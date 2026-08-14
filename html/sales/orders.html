@@ -19,6 +19,15 @@
         .scrollbar-thin::-webkit-scrollbar-track { background: oklch(var(--b2)); border-radius: 3px; }
         .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
         .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .direct-item-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 7.5rem 7.5rem 7rem;
+            gap: 0.75rem;
+            align-items: end;
+        }
+        @media (max-width: 767px) {
+            .direct-item-grid { grid-template-columns: minmax(0, 1fr); }
+        }
 
         /* ── Order Detail Modal (enterprise layout) ── */
         #orderDetailModal .modal-box {
@@ -292,8 +301,11 @@
             <div>
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Orders</h2>
                 <ul class="menu menu-sm p-0 gap-1">
-                    <li><a href="orders.html?action=new" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200" id="navNewOrder">
-                        <i class="fas fa-plus-circle w-5 text-center text-base-content/60"></i><span>New Order</span>
+                    <li><a href="orders.html?action=direct" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-user-tag w-5 text-center text-base-content/60"></i><span>Direct Order</span>
+                    </a></li>
+                    <li><a href="order_inbox.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-inbox w-5 text-center text-base-content/60"></i><span>Customer PO Inbox</span>
                     </a></li>
                     <li><a href="orders.html?status=pending" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200" id="navPending">
                         <i class="fas fa-clock w-5 text-center text-base-content/60"></i><span>Pending Orders</span>
@@ -361,9 +373,12 @@
                 </div>
             </div>
             <div class="flex-none gap-2">
-                <button class="btn btn-primary btn-sm" onclick="openNewOrderModal()">
-                    <i class="fas fa-plus"></i> New Order
+                <button class="btn btn-outline btn-sm" onclick="openDirectOrderModal()">
+                    <i class="fas fa-user-tag"></i> Direct Order
                 </button>
+                <a class="btn btn-primary btn-sm" href="order_inbox.html">
+                    <i class="fas fa-inbox"></i> Customer PO Inbox
+                </a>
             </div>
         </header>
         
@@ -472,172 +487,103 @@
             <p class="text-sm text-base-content/60">© 2026 Highland Fresh Dairy. All rights reserved.</p>
         </footer>
     </div>
-    
-    <!-- New Order Modal -->
-    <dialog id="newOrderModal" class="modal">
-        <div class="modal-box max-w-4xl max-h-[90vh]">
-            <form method="dialog">
-                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-            </form>
-            <h3 class="font-bold text-lg mb-4"><i class="fas fa-plus-circle text-primary mr-2"></i>New Order</h3>
 
-            <div class="rounded-lg border border-info/30 bg-info/10 px-3 py-2 mb-4 flex items-center gap-2 text-sm text-base-content/75">
-                <i class="fas fa-magic text-info"></i>
-                Draft order · Warehouse FG will review and prepare for delivery.
+    <dialog id="directOrderModal" class="modal">
+        <div class="modal-box max-w-4xl max-h-[92vh] p-0 overflow-hidden flex flex-col">
+            <div class="px-6 py-4 border-b border-base-300 flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                    <i class="fas fa-user-tag"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-semibold uppercase text-base-content/45">Wholesaler / Small Business</p>
+                    <h3 class="font-bold text-lg">Record Direct Order</h3>
+                </div>
+                <button class="btn btn-sm btn-circle btn-ghost ml-auto" onclick="directOrderModal.close()" aria-label="Close">x</button>
             </div>
 
-            <form id="newOrderForm">
-                <!-- Section 1: Customer & Delivery -->
-                <div class="mb-4">
-                    <h4 class="font-semibold text-base-content mb-3 pb-1.5 border-b-2 border-base-300 flex items-center gap-2">
-                        <span class="w-6 h-6 bg-primary text-primary-content rounded-full text-xs flex items-center justify-center">1</span>
-                        Customer &amp; Delivery
-                    </h4>
+            <div class="p-6 space-y-5 flex-1 min-h-0 overflow-y-auto">
+                <div class="flex items-start gap-3 border border-info/30 bg-info/10 px-4 py-3 rounded-lg">
+                    <i class="fas fa-route text-info mt-0.5"></i>
+                    <div class="min-w-0">
+                        <p class="font-semibold text-sm">Sales records it, GM decides, Warehouse FG prepares it.</p>
+                        <p class="text-xs text-base-content/65 mt-1">Use this only for registered wholesalers and small businesses ordering by phone or in person. Retail walk-ins use Cashier Quick Sale.</p>
+                    </div>
+                </div>
+                <div id="directCustomerNotice" class="alert alert-warning hidden"></div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div class="form-control">
-                            <label class="label py-1"><span class="label-text">Customer *</span></label>
-                            <select id="orderCustomer" class="select select-bordered" required onchange="onCustomerChange()">
-                                <option value="">Select customer...</option>
-                            </select>
-                            <label class="label py-0.5">
-                                <span class="label-text-alt text-base-content/60">Pick the buyer. Branches and credit limits appear after this is set.</span>
-                            </label>
-                        </div>
-                        <div class="form-control">
-                            <label class="label py-1"><span class="label-text">Customer PO Number</span></label>
-                            <input type="text" id="customerPONumber" class="input input-bordered" placeholder="Enter customer's PO number...">
-                        </div>
-                        <div class="form-control" id="subAccountContainer" style="display: none;">
-                            <label class="label py-1">
-                                <span class="label-text" id="subAccountLabel">Branch / Sub-Account</span>
-                            </label>
-                            <select id="subAccount" class="select select-bordered">
-                                <option value="">Select branch...</option>
-                            </select>
-                            <label class="label py-0.5">
-                                <span class="label-text-alt text-info" id="subAccountHint"></span>
-                            </label>
-                        </div>
-                        <div class="form-control">
-                            <label class="label py-1"><span class="label-text">Delivery Date</span></label>
-                            <input type="date" id="deliveryDate" class="input input-bordered">
-                            <label class="label py-0.5">
-                                <span class="label-text-alt text-base-content/60">Leave blank if no specific deadline yet.</span>
-                            </label>
-                        </div>
-                        <div class="form-control">
-                            <label class="label py-1"><span class="label-text">Payment Mode</span></label>
-                            <select id="paymentMode" class="select select-bordered">
-                                <option value="credit">Credit</option>
-                                <option value="cash">Cash</option>
-                                <option value="hybrid">Hybrid</option>
-                            </select>
-                        </div>
-                        <div class="form-control">
-                            <label class="label py-1"><span class="label-text">Credit Info</span></label>
-                            <div id="customerCreditInfo" class="input input-bordered flex items-center bg-base-200 text-sm text-base-content/70 min-h-10 px-3">
-                                Pick a customer to see credit limit and balance
-                            </div>
-                        </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <label class="form-control md:col-span-2">
+                        <span class="label-text mb-2">Customer *</span>
+                        <select id="directCustomer" class="select select-bordered w-full"></select>
+                    </label>
+                    <label class="form-control">
+                        <span class="label-text mb-2">Delivery Date *</span>
+                        <input id="directDeliveryDate" type="date" class="input input-bordered w-full">
+                    </label>
+                    <label class="form-control">
+                        <span class="label-text mb-2">Payment *</span>
+                        <select id="directPayment" class="select select-bordered w-full">
+                            <option value="credit">Credit</option>
+                            <option value="cash">Cash</option>
+                        </select>
+                    </label>
+                    <label class="form-control md:col-span-2">
+                        <span class="label-text mb-2">Delivery Address</span>
+                        <input id="directAddress" class="input input-bordered w-full" maxlength="500">
+                    </label>
+                </div>
+
+                <div id="directCustomerSummary" class="hidden border-y border-base-300 py-3">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                        <div><span class="block text-xs text-base-content/50">Customer type</span><strong id="directCustomerType">-</strong></div>
+                        <div><span class="block text-xs text-base-content/50">Payment terms</span><strong id="directCustomerTerms">-</strong></div>
+                        <div><span class="block text-xs text-base-content/50">Unpaid balance</span><strong id="directCustomerBalance">-</strong></div>
+                        <div><span class="block text-xs text-base-content/50">Credit available</span><strong id="directCustomerCredit">-</strong></div>
+                    </div>
+                    <p id="directCreditNotice" class="text-xs mt-3 hidden"></p>
+                </div>
+
+                <div class="border-t border-base-300 pt-5">
+                    <div class="direct-item-grid">
+                        <label class="form-control min-w-0">
+                            <span class="label-text mb-2">Product</span>
+                            <select id="directProduct" class="select select-bordered w-full" onchange="updateDirectProductHint()"></select>
+                            <span id="directProductHint" class="text-xs text-base-content/50 mt-1 min-h-4"></span>
+                        </label>
+                        <label class="form-control">
+                            <span class="label-text mb-2" id="directBoxLabel">Boxes</span>
+                            <input id="directBoxes" type="number" class="input input-bordered" min="0" step="1" value="0">
+                        </label>
+                        <label class="form-control">
+                            <span class="label-text mb-2" id="directPieceLabel">Extra Units</span>
+                            <input id="directPieces" type="number" class="input input-bordered" min="0" step="1" value="0">
+                        </label>
+                        <button class="btn btn-primary" type="button" onclick="addDirectOrderItem()"><i class="fas fa-plus"></i>Add</button>
                     </div>
                 </div>
 
-                <!-- Section 2: Order Items -->
-                <div class="mb-4">
-                    <h4 class="font-semibold text-base-content mb-3 pb-1.5 border-b-2 border-base-300 flex items-center gap-2">
-                        <span class="w-6 h-6 bg-primary text-primary-content rounded-full text-xs flex items-center justify-center">2</span>
-                        Order Items
-                        <span class="ml-auto text-xs font-normal text-base-content/60" id="itemsCountBadge">0 item(s) added</span>
-                    </h4>
-
-                    <div class="bg-base-200 rounded-lg p-3 mb-3">
-                        <p class="text-xs text-base-content/60 mb-2">
-                            Quantities are ordered and deducted in <strong>saleable base units</strong>
-                            (e.g. bottles, packs). Boxes are only a convenience for entry.
-                        </p>
-                        <div class="flex flex-wrap gap-3 items-end">
-                            <div class="form-control flex-1 min-w-[220px]">
-                                <label class="label py-1"><span class="label-text text-xs">Product</span></label>
-                                <select id="productSelect" class="select select-bordered select-sm">
-                                    <option value="">Select product...</option>
-                                </select>
-                            </div>
-                            <div class="form-control w-28">
-                                <label class="label py-1"><span class="label-text text-xs" id="itemBoxesLabel">Full boxes</span></label>
-                                <input type="number" id="itemBoxes" class="input input-bordered input-sm" placeholder="0" min="0" value="0"
-                                    onchange="updateTotalPieces()" oninput="updateTotalPieces()" title="Full sealed boxes">
-                            </div>
-                            <div class="form-control w-28">
-                                <label class="label py-1"><span class="label-text text-xs" id="itemPiecesLabel">Extra units</span></label>
-                                <input type="number" id="itemPieces" class="input input-bordered input-sm" placeholder="0" min="0" value="0"
-                                    onchange="updateTotalPieces()" oninput="updateTotalPieces()" title="Loose base units outside full boxes">
-                            </div>
-                            <div class="form-control w-44">
-                                <label class="label py-1">
-                                    <span class="label-text text-xs" id="totalPiecesLabel">Order total (base units)</span>
-                                </label>
-                                <input type="text" id="totalPiecesDisplay"
-                                    class="input input-bordered input-sm bg-base-100 font-mono text-primary font-semibold"
-                                    readonly value="—"
-                                    title="Calculated: (full boxes × pack size) + extra units">
-                            </div>
-                            <button type="button" class="btn btn-outline btn-primary btn-sm gap-1" onclick="addItem()">
-                                <i class="fas fa-plus"></i> Add
-                            </button>
-                        </div>
-                        <div class="mt-2 text-xs space-y-1" id="piecesPerBoxInfo">
-                            <p class="text-base-content/60">Select a product to see stock and pack size.</p>
-                        </div>
-                    </div>
-
-                    <div class="overflow-x-auto mb-3 max-h-60 border border-base-300 rounded-lg">
-                        <table class="table table-sm">
-                            <thead class="bg-base-200 sticky top-0">
-                                <tr>
-                                    <th>Product</th>
-                                    <th class="text-center" id="thBoxes">Full boxes</th>
-                                    <th class="text-center" id="thLoose">Extra units</th>
-                                    <th class="text-center" id="thTotal">Order total</th>
-                                    <th class="text-right">Unit price</th>
-                                    <th class="text-right">Line total</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody id="orderItemsTable">
-                                <tr>
-                                    <td colspan="7" class="text-center py-6 text-base-content/60">
-                                        <i class="fas fa-box-open text-2xl mb-2 block text-base-content/30"></i>
-                                        No items yet. Choose a product, enter full boxes and/or extra units, then <span class="font-semibold">Add</span>.
-                                    </td>
-                                </tr>
-                            </tbody>
-                            <tfoot class="bg-base-200">
-                                <tr>
-                                    <td colspan="5" class="text-right font-semibold">Total:</td>
-                                    <td class="text-right font-bold text-primary" id="orderTotal">₱0.00</td>
-                                    <td></td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
+                <div class="border border-base-300 rounded-lg overflow-x-auto">
+                    <table class="table table-sm">
+                        <thead><tr><th>Product</th><th>Order</th><th>Available</th><th class="text-right">Amount</th><th></th></tr></thead>
+                        <tbody id="directItemsTable">
+                            <tr><td colspan="5" class="text-center py-8 text-base-content/45">No products added</td></tr>
+                        </tbody>
+                        <tfoot><tr><th colspan="3" class="text-right">Total</th><th class="text-right" id="directOrderTotal">PHP 0.00</th><th></th></tr></tfoot>
+                    </table>
                 </div>
 
-                <div class="form-control">
-                    <label class="label py-1"><span class="label-text">Notes</span></label>
-                    <textarea id="orderNotes" class="textarea textarea-bordered" rows="2" placeholder="Special instructions for the warehouse or delivery team..."></textarea>
-                </div>
+                <label class="form-control">
+                    <span class="label-text mb-2">Notes</span>
+                    <textarea id="directNotes" class="textarea textarea-bordered" rows="2" maxlength="500"></textarea>
+                </label>
+            </div>
 
-                <div class="modal-action flex-wrap gap-2 sm:justify-end">
-                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('newOrderModal').close()">Cancel</button>
-                    <button type="button" id="btnSaveDraft" class="btn btn-outline gap-2" onclick="submitNewOrder('draft')">
-                        <i class="fas fa-file-alt"></i> Save as Draft
-                    </button>
-                    <button type="button" id="btnCreateSubmit" class="btn btn-primary gap-2" onclick="submitNewOrder('pending_approval')">
-                        <i class="fas fa-paper-plane"></i> Create &amp; Submit for Approval
-                    </button>
-                </div>
-            </form>
+            <div class="px-6 py-4 border-t border-base-300 flex justify-end gap-2">
+                <button class="btn btn-ghost" onclick="directOrderModal.close()">Cancel</button>
+                <button id="submitDirectOrder" class="btn btn-primary" onclick="submitDirectOrder()">
+                    <i class="fas fa-paper-plane"></i>Send for GM Approval
+                </button>
+            </div>
         </div>
     </dialog>
     
@@ -659,18 +605,19 @@
     
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
-    <script src="../../js/config/auth.js"></script>
-    <script src="../../js/utils/units.js?v=20260712"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="sales_custodian,general_manager"></script>
     <script src="../../js/sales/sales.service.js"></script>
     
     <script>
         let orders = [];
-        let customers = [];
-        let products = [];
-        let orderItems = [];
         let currentPage = 1;
         let searchTimeout = null;
         let currentUserRole = null;
+        let directCustomers = [];
+        let directProducts = [];
+        let directItems = [];
+        const directOrderModal = document.getElementById('directOrderModal');
         
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -687,6 +634,16 @@
         
         function formatCurrency(amount) {
             return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount || 0);
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, character => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            }[character]));
         }
 
         /** Y-m-d / datetime → M/D/YYYY without timezone off-by-one. */
@@ -746,6 +703,239 @@
             currentPage = 1;
             loadOrders();
         }
+
+        function getLocalDateISO() {
+            const now = new Date();
+            return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+        }
+
+        async function openDirectOrderModal() {
+            directItems = [];
+            renderDirectItems();
+            document.getElementById('directAddress').value = '';
+            document.getElementById('directNotes').value = '';
+            document.getElementById('directPayment').value = 'credit';
+            document.getElementById('directDeliveryDate').min = getLocalDateISO();
+            document.getElementById('directDeliveryDate').value = getLocalDateISO();
+            document.getElementById('directCustomer').innerHTML = '<option>Loading customers...</option>';
+            document.getElementById('directProduct').innerHTML = '<option>Loading products...</option>';
+            directOrderModal.showModal();
+
+            try {
+                const [customerResponse, productResponse] = await Promise.all([
+                    SalesService.getCustomers({ status: 'active', limit: 100 }),
+                    SalesService.getDirectOrderProducts()
+                ]);
+                directCustomers = (customerResponse.data || []).filter(customer =>
+                    ['distributor', 'restaurant'].includes(customer.customer_type)
+                );
+                // Direct orders can only use stock already released by QC and
+                // available in Finished Goods after existing reservations.
+                directProducts = (productResponse.data || []).filter(product => Number(product.available_qty || 0) > 0);
+                renderDirectCustomerOptions();
+                renderDirectProductOptions();
+            } catch (error) {
+                showToast(error.message || 'Could not load Direct Order information.', 'error');
+            }
+        }
+
+        function renderDirectCustomerOptions() {
+            const select = document.getElementById('directCustomer');
+            const notice = document.getElementById('directCustomerNotice');
+            if (!directCustomers.length) {
+                select.innerHTML = '<option value="">No wholesaler or small business customer found</option>';
+                notice.classList.remove('hidden');
+                notice.innerHTML = '<i class="fas fa-triangle-exclamation"></i><span>Add the customer as a Wholesaler before recording a Direct Order.</span><a class="btn btn-sm ml-auto" href="wholesalers.html">Open Wholesalers</a>';
+                document.getElementById('submitDirectOrder').disabled = true;
+                return;
+            }
+            notice.classList.add('hidden');
+            document.getElementById('submitDirectOrder').disabled = false;
+            select.innerHTML = '<option value="">Select customer...</option>' + directCustomers.map(customer =>
+                `<option value="${Number(customer.id)}">${escapeHtml(customer.name || customer.customer_name)}</option>`
+            ).join('');
+            select.onchange = () => {
+                const customer = directCustomers.find(item => Number(item.id) === Number(select.value));
+                document.getElementById('directAddress').value = customer?.address || '';
+                document.getElementById('directPayment').value = customer?.default_payment_type || 'credit';
+                updateDirectCustomerSummary();
+            };
+            document.getElementById('directPayment').onchange = updateDirectCustomerSummary;
+            updateDirectCustomerSummary();
+        }
+
+        function updateDirectCustomerSummary() {
+            const customer = directCustomers.find(item => Number(item.id) === Number(document.getElementById('directCustomer').value));
+            const summary = document.getElementById('directCustomerSummary');
+            if (!customer) {
+                summary.classList.add('hidden');
+                return;
+            }
+
+            const payment = document.getElementById('directPayment').value;
+            const limit = Math.max(0, Number(customer.credit_limit || 0));
+            const balance = Math.max(0, Number(customer.outstanding_balance || 0));
+            const orderTotal = directItems.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+            const projected = balance + orderTotal;
+            const available = Math.max(0, limit - balance);
+            const needsOverride = payment === 'credit' && projected > limit;
+
+            document.getElementById('directCustomerType').textContent = formatCustomerType(customer.customer_type);
+            document.getElementById('directCustomerTerms').textContent = payment === 'credit'
+                ? `${Number(customer.payment_terms_days || customer.payment_terms || 0)} days`
+                : 'Cash';
+            document.getElementById('directCustomerBalance').textContent = formatCurrency(balance);
+            document.getElementById('directCustomerCredit').textContent = payment === 'credit'
+                ? formatCurrency(available)
+                : 'Not used';
+
+            const notice = document.getElementById('directCreditNotice');
+            notice.classList.toggle('hidden', !needsOverride);
+            notice.className = `text-xs mt-3 ${needsOverride ? 'text-warning font-semibold' : 'hidden'}`;
+            notice.innerHTML = needsOverride
+                ? '<i class="fas fa-triangle-exclamation mr-1"></i>This order exceeds the available credit. The GM must approve the credit exception.'
+                : '';
+            summary.classList.remove('hidden');
+        }
+
+        function renderDirectProductOptions() {
+            const select = document.getElementById('directProduct');
+            select.innerHTML = '<option value="">Select product...</option>' + directProducts.map(product => {
+                const variant = product.variant ? ` - ${product.variant}` : '';
+                const available = Number(product.available_qty || 0);
+                const stockLabel = available > 0
+                    ? `${available} ${product.base_unit || 'unit'}${available === 1 ? '' : 's'} ready`
+                    : 'Waiting for QC / Finished Goods stock';
+                return `<option value="${Number(product.id)}"${available > 0 ? '' : ' disabled'}>${escapeHtml(product.product_name + variant)} (${escapeHtml(stockLabel)})</option>`;
+            }).join('');
+            updateDirectProductHint();
+        }
+
+        function updateDirectProductHint() {
+            const product = directProducts.find(item => Number(item.id) === Number(document.getElementById('directProduct').value));
+            const hint = document.getElementById('directProductHint');
+            if (!product) {
+                hint.textContent = '';
+                return;
+            }
+            const box = product.box_unit || 'box';
+            const base = product.base_unit || 'piece';
+            hint.textContent = `${product.available_qty} ${base}(s) available; ${product.pack_config_label}`;
+            const boxesLabel = box.endsWith('x') ? `${box}es` : (box.endsWith('s') ? box : `${box}s`);
+            document.getElementById('directBoxLabel').textContent = boxesLabel.charAt(0).toUpperCase() + boxesLabel.slice(1);
+            document.getElementById('directPieceLabel').textContent = `Extra ${base}s`;
+        }
+
+        function addDirectOrderItem() {
+            const product = directProducts.find(item => Number(item.id) === Number(document.getElementById('directProduct').value));
+            const boxes = Math.max(0, Number(document.getElementById('directBoxes').value) || 0);
+            const pieces = Math.max(0, Number(document.getElementById('directPieces').value) || 0);
+            if (!product || (!boxes && !pieces)) {
+                showToast('Choose a product and enter a quantity.', 'warning');
+                return;
+            }
+            const unitsPerBox = Math.max(1, Number(product.pieces_per_box) || 1);
+            const quantity = (boxes * unitsPerBox) + pieces;
+            if (quantity > Number(product.available_qty || 0)) {
+                showToast(`Only ${product.available_qty} units are available.`, 'error');
+                return;
+            }
+            const line = {
+                product_id: Number(product.id),
+                product,
+                quantity_boxes: boxes,
+                quantity_pieces: pieces,
+                quantity,
+                line_total: quantity * Number(product.selling_price || 0)
+            };
+            const existing = directItems.findIndex(item => item.product_id === line.product_id);
+            if (existing >= 0) directItems[existing] = line;
+            else directItems.push(line);
+            document.getElementById('directBoxes').value = 0;
+            document.getElementById('directPieces').value = 0;
+            renderDirectItems();
+        }
+
+        function removeDirectOrderItem(index) {
+            directItems.splice(index, 1);
+            renderDirectItems();
+        }
+
+        function renderDirectItems() {
+            const tbody = document.getElementById('directItemsTable');
+            if (!directItems.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-base-content/45">No products added</td></tr>';
+                document.getElementById('directOrderTotal').textContent = 'PHP 0.00';
+                return;
+            }
+            tbody.innerHTML = directItems.map((item, index) => {
+                const product = item.product;
+                const orderParts = [];
+                if (item.quantity_boxes) orderParts.push(`${item.quantity_boxes} ${product.box_unit || 'box'}`);
+                if (item.quantity_pieces) orderParts.push(`${item.quantity_pieces} ${product.base_unit || 'piece'}`);
+                return `<tr>
+                    <td><p class="font-semibold">${escapeHtml(product.product_name)}</p><p class="text-xs text-base-content/45">${escapeHtml(product.product_code || '')}</p></td>
+                    <td>${escapeHtml(orderParts.join(' + '))}<p class="text-xs text-base-content/45">${item.quantity} total units</p></td>
+                    <td>${Number(product.available_qty)} ${escapeHtml(product.base_unit || 'units')}</td>
+                    <td class="text-right font-mono">${formatCurrency(item.line_total)}</td>
+                    <td><button class="btn btn-ghost btn-xs btn-square text-error" onclick="removeDirectOrderItem(${index})" title="Remove"><i class="fas fa-trash"></i></button></td>
+                </tr>`;
+            }).join('');
+            document.getElementById('directOrderTotal').textContent = formatCurrency(
+                directItems.reduce((sum, item) => sum + item.line_total, 0)
+            );
+            updateDirectCustomerSummary();
+        }
+
+        async function submitDirectOrder() {
+            const customerId = Number(document.getElementById('directCustomer').value || 0);
+            if (!customerId || !directItems.length) {
+                showToast('Choose a customer and add at least one product.', 'warning');
+                return;
+            }
+            const deliveryDate = document.getElementById('directDeliveryDate').value;
+            if (!deliveryDate) {
+                showToast('Choose the requested delivery date.', 'warning');
+                return;
+            }
+            const customer = directCustomers.find(item => Number(item.id) === customerId);
+            const total = directItems.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+            const confirmed = await AuthService.confirmAction({
+                title: 'Send Direct Order to GM',
+                message: 'The order will stay pending. Warehouse FG cannot prepare or dispatch it until the GM approves.',
+                highlightLabel: 'Customer and order total',
+                highlight: `${customer?.name || customer?.customer_name || 'Customer'} - ${formatCurrency(total)}`,
+                confirmText: 'Send to GM',
+                tone: 'primary',
+                icon: 'fa-paper-plane'
+            });
+            if (!confirmed) return;
+            const button = document.getElementById('submitDirectOrder');
+            button.disabled = true;
+            button.classList.add('loading');
+            try {
+                const response = await SalesService.createDirectOrder({
+                    customer_id: customerId,
+                    delivery_date: deliveryDate,
+                    delivery_address: document.getElementById('directAddress').value.trim(),
+                    payment_type: document.getElementById('directPayment').value,
+                    notes: document.getElementById('directNotes').value.trim(),
+                    items: directItems.map(item => ({
+                        product_id: item.product_id,
+                        quantity_boxes: item.quantity_boxes,
+                        quantity_pieces: item.quantity_pieces
+                    }))
+                });
+                directOrderModal.close();
+                showToast(`${response.data.order_number} sent for GM approval.`, 'success');
+                await loadOrders();
+            } catch (error) {
+                showToast(error.message || 'Could not create the Direct Order.', 'error');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
+        }
         
         document.addEventListener('DOMContentLoaded', async () => {
             try {
@@ -759,24 +949,22 @@
                 // Check URL params
                 const params = new URLSearchParams(window.location.search);
                 const status = params.get('status');
+                const orderId = Number(params.get('id') || 0);
                 const action = params.get('action');
-                const customerId = params.get('customer_id');
                 
                 if (status) {
                     document.getElementById('statusFilter').value = status;
                     document.getElementById('pageTitle').textContent = status.charAt(0).toUpperCase() + status.slice(1) + ' Orders';
                 }
                 
-                await Promise.all([loadOrders(), loadCustomers(), loadProducts()]);
-                
-                // ?action=new → open New Order modal (matches nav link / deep link)
-                if (action === 'new') {
-                    openNewOrderModal();
-                    if (customerId) {
-                        document.getElementById('orderCustomer').value = customerId;
-                        onCustomerChange();
-                    }
-                    // Keep deep-link UX; URL remains ?action=new while modal is open
+                await loadOrders();
+
+                if (action === 'direct') {
+                    await openDirectOrderModal();
+                }
+
+                if (orderId > 0) {
+                    viewOrder(orderId);
                 }
             } catch (error) {
                 console.error('Init error:', error);
@@ -825,6 +1013,10 @@
                     'rejected': 'badge-error'
                 };
                 const statusListLabel = (s) => {
+                    if (s === 'approved') return 'Reserved';
+                    if (s === 'picking' || s === 'preparing') return 'Reserved - Picking';
+                    if (s === 'ready') return 'Reserved - DR Ready';
+                    if (s === 'dispatched') return 'In Transit';
                     if (s === 'partially_accepted') return 'Delivered (Returns)';
                     if (s === 'partially_fulfilled') return 'Partial';
                     return s || '—';
@@ -897,556 +1089,6 @@
             }
         }
         
-        async function loadCustomers() {
-            try {
-                const response = await SalesService.getCustomers({ status: 'active' });
-                customers = response.data || [];
-                
-                const select = document.getElementById('orderCustomer');
-                select.innerHTML = '<option value="">Select customer...</option>' +
-                    customers.map(c => `<option value="${c.id}" 
-                        data-credit="${c.credit_limit || 0}" 
-                        data-outstanding="${c.outstanding_balance || 0}" 
-                        data-payment="${c.default_payment_mode || 'cash'}"
-                        data-type="${c.customer_type || 'regular'}">${c.customer_name || c.name} (${c.customer_type})</option>`).join('');
-            } catch (error) {
-                console.error('Error loading customers:', error);
-            }
-        }
-        
-        async function loadProducts() {
-            try {
-                // for_sale: available_qty is always BASE units (bottles/packs/pieces)
-                const response = await api.get('/warehouse/fg/products.php?action=for_sale');
-                products = response.data || response || [];
-                
-                const select = document.getElementById('productSelect');
-                if (products.length === 0) {
-                    select.innerHTML = '<option value="">No products available</option>';
-                } else {
-                    select.innerHTML = '<option value="">Select product...</option>' +
-                        products.map(p => {
-                            const avail = parseInt(p.available_qty, 10) || 0;
-                            const reserved = parseInt(p.reserved_qty, 10) || 0;
-                            const base = p.base_unit || 'piece';
-                            const baseLabel = (typeof PackUnits !== 'undefined')
-                                ? PackUnits.pluralize(base, avail === 1 ? 1 : 2)
-                                : (avail === 1 ? base : base + 's');
-                            // Explicit unit so "5" is never ambiguous
-                            let displayText = `${p.product_name} — ${avail.toLocaleString()} ${baseLabel} available`;
-                            if (reserved > 0) {
-                                const rLabel = (typeof PackUnits !== 'undefined')
-                                    ? PackUnits.pluralize(base, reserved === 1 ? 1 : 2)
-                                    : (reserved === 1 ? base : base + 's');
-                                displayText += ` (${reserved.toLocaleString()} ${rLabel} reserved)`;
-                            }
-                            return `<option value="${p.id}" 
-                                data-name="${p.product_name}" 
-                                data-price="${p.selling_price || 0}"
-                                data-available="${avail}"
-                                data-reserved="${reserved}"
-                                data-pieces-per-box="${p.pieces_per_box || 1}"
-                                data-base-unit="${base}"
-                                data-box-unit="${p.box_unit || 'box'}"
-                                data-pack-label="${(p.pack_config_label || '').replace(/"/g, '&quot;')}">${displayText} · ${formatCurrency(p.selling_price)}</option>`;
-                        }).join('');
-                }
-                
-                select.removeEventListener('change', onProductChange);
-                select.addEventListener('change', onProductChange);
-            } catch (error) {
-                console.error('Error loading products:', error);
-                document.getElementById('productSelect').innerHTML = '<option value="">Failed to load products</option>';
-            }
-        }
-        
-        function onCustomerChange() {
-            const select = document.getElementById('orderCustomer');
-            const option = select.options[select.selectedIndex];
-            
-            if (option && option.value) {
-                const credit = parseFloat(option.dataset.credit) || 0;
-                const outstanding = parseFloat(option.dataset.outstanding) || 0;
-                const available = credit - outstanding;
-                const customerType = option.dataset.type || 'regular';
-                
-                document.getElementById('customerCreditInfo').innerHTML = `
-                    <span>Limit: <span class="font-mono">${formatCurrency(credit)}</span></span>
-                    <span class="text-base-content/40 mx-1">·</span>
-                    <span>Outstanding: <span class="font-mono ${outstanding > 0 ? 'text-warning' : ''}">${formatCurrency(outstanding)}</span></span>
-                    <span class="text-base-content/40 mx-1">·</span>
-                    <span>Available: <span class="font-mono font-semibold ${available < 0 ? 'text-error' : 'text-success'}">${formatCurrency(available)}</span></span>
-                `;
-                
-                document.getElementById('paymentMode').value = option.dataset.payment || 'credit';
-                
-                // Show sub-account dropdown for feeding program OR institutional customers
-                const subAccountContainer = document.getElementById('subAccountContainer');
-                if (customerType === 'feeding_program' || customerType === 'institutional') {
-                    subAccountContainer.style.display = 'block';
-                    
-                    // Dynamic label based on customer type
-                    const labelEl = document.getElementById('subAccountLabel');
-                    const hintEl = document.getElementById('subAccountHint');
-                    const selectEl = document.getElementById('subAccount');
-                    
-                    if (customerType === 'feeding_program') {
-                        labelEl.textContent = 'School / Sub-Account';
-                        hintEl.textContent = 'For Feeding Program: Select specific school';
-                        selectEl.options[0].textContent = 'Select school...';
-                    } else {
-                        labelEl.textContent = 'Branch / Location';
-                        hintEl.textContent = 'Optional: Select specific branch for delivery';
-                        selectEl.options[0].textContent = 'Select branch (optional)...';
-                    }
-                    
-                    loadSubAccounts(option.value);
-                } else {
-                    subAccountContainer.style.display = 'none';
-                    document.getElementById('subAccount').innerHTML = '<option value="">Select branch...</option>';
-                }
-            } else {
-                document.getElementById('customerCreditInfo').textContent = 'Pick a customer to see credit limit and balance';
-                document.getElementById('subAccountContainer').style.display = 'none';
-            }
-        }
-        
-        async function loadSubAccounts(customerId) {
-            try {
-                const response = await api.get(`/sales/customers.php?action=sub_accounts&customer_id=${customerId}`);
-                const subAccounts = response.data || [];
-                
-                const select = document.getElementById('subAccount');
-                select.innerHTML = '<option value="">Select school/branch...</option>' +
-                    subAccounts.map(s => `<option value="${s.id}">${s.name} - ${s.location || ''}</option>`).join('');
-            } catch (error) {
-                console.error('Error loading sub-accounts:', error);
-            }
-        }
-        
-        function productUnitMeta(option) {
-            if (!option || !option.value) {
-                return {
-                    pieces_per_box: 1,
-                    base_unit: 'piece',
-                    box_unit: 'box',
-                    available: 0,
-                    reserved: 0
-                };
-            }
-            return {
-                pieces_per_box: parseInt(option.dataset.piecesPerBox, 10) || 1,
-                base_unit: option.dataset.baseUnit || 'piece',
-                box_unit: option.dataset.boxUnit || 'box',
-                available: parseInt(option.dataset.available, 10) || 0,
-                reserved: parseInt(option.dataset.reserved, 10) || 0
-            };
-        }
-
-        function applyUnitLabels(meta) {
-            const labels = PackUnits.unitLabels(meta);
-            const packWord = labels.pack;           // e.g. Boxes
-            const baseWord = labels.base;           // e.g. Bottles
-            const packOne = labels.packSingular;    // Box
-            const baseOne = labels.baseSingular;    // Bottle
-
-            // Entry row: same words as table headers
-            document.getElementById('itemBoxesLabel').textContent = `Full ${packWord.toLowerCase()}`;
-            document.getElementById('itemPiecesLabel').textContent = `Extra ${baseWord.toLowerCase()}`;
-            document.getElementById('totalPiecesLabel').textContent = `Order total (${baseWord.toLowerCase()})`;
-            document.getElementById('thBoxes').textContent = `Full ${packWord.toLowerCase()}`;
-            document.getElementById('thLoose').textContent = `Extra ${baseWord.toLowerCase()}`;
-            document.getElementById('thTotal').textContent = `Order total (${baseWord.toLowerCase()})`;
-
-            return { packWord, baseWord, packOne, baseOne, labels };
-        }
-
-        function resetUnitLabels() {
-            document.getElementById('itemBoxesLabel').textContent = 'Full boxes';
-            document.getElementById('itemPiecesLabel').textContent = 'Extra units';
-            document.getElementById('totalPiecesLabel').textContent = 'Order total (base units)';
-            document.getElementById('thBoxes').textContent = 'Full boxes';
-            document.getElementById('thLoose').textContent = 'Extra units';
-            document.getElementById('thTotal').textContent = 'Order total';
-            document.getElementById('totalPiecesDisplay').value = '—';
-            document.getElementById('piecesPerBoxInfo').innerHTML =
-                '<p class="text-base-content/60">Select a product to see stock and pack size.</p>';
-        }
-
-        function onProductChange() {
-            const select = document.getElementById('productSelect');
-            const option = select.options[select.selectedIndex];
-            const infoEl = document.getElementById('piecesPerBoxInfo');
-            const meta = productUnitMeta(option);
-
-            if (!option || !option.value) {
-                resetUnitLabels();
-                document.getElementById('itemBoxes').value = 0;
-                document.getElementById('itemPieces').value = 0;
-                return;
-            }
-
-            const { baseWord, packOne, baseOne } = applyUnitLabels(meta);
-            const packLine = PackUnits.formatPackLine(meta);
-            const avail = meta.available;
-            const reserved = meta.reserved;
-            const ppb = meta.pieces_per_box;
-            const fullBoxes = ppb > 1 ? Math.floor(avail / ppb) : 0;
-            const loose = ppb > 1 ? (avail % ppb) : avail;
-            const availLabel = PackUnits.pluralize(meta.base_unit, avail === 1 ? 1 : 2);
-
-            let stockLine = `<strong class="text-success">${avail.toLocaleString()} ${availLabel} available</strong> to sell`;
-            if (ppb > 1 && avail > 0) {
-                stockLine += ` <span class="text-base-content/60">(= ${fullBoxes} full ${PackUnits.pluralize(meta.box_unit, fullBoxes === 1 ? 1 : 2).toLowerCase()}`;
-                if (loose > 0) {
-                    stockLine += ` + ${loose} ${PackUnits.pluralize(meta.base_unit, loose === 1 ? 1 : 2).toLowerCase()}`;
-                }
-                stockLine += ')</span>';
-            }
-            if (reserved > 0) {
-                stockLine += ` · <span class="text-warning">${reserved.toLocaleString()} ${PackUnits.pluralize(meta.base_unit, reserved === 1 ? 1 : 2)} reserved on open orders</span>`;
-            }
-
-            infoEl.innerHTML = `
-                <p><i class="fas fa-warehouse text-primary mr-1"></i>${stockLine}</p>
-                <p><i class="fas fa-box text-info mr-1"></i>Pack size: <strong>${packLine}</strong>
-                   · Entry: full ${packOne.toLowerCase()}s and/or extra ${baseOne.toLowerCase()}s
-                   · <em>Stock is always deducted in ${baseWord.toLowerCase()}</em></p>
-            `;
-
-            document.getElementById('itemBoxes').value = 0;
-            document.getElementById('itemPieces').value = 0;
-            updateTotalPieces();
-        }
-        
-        function updateTotalPieces() {
-            const select = document.getElementById('productSelect');
-            const option = select.options[select.selectedIndex];
-            if (!option || !option.value) {
-                document.getElementById('totalPiecesDisplay').value = '—';
-                return;
-            }
-            const meta = productUnitMeta(option);
-            const piecesPerBox = meta.pieces_per_box;
-            const boxes = parseInt(document.getElementById('itemBoxes').value, 10) || 0;
-            const pieces = parseInt(document.getElementById('itemPieces').value, 10) || 0;
-            const totalPieces = (boxes * piecesPerBox) + pieces;
-            const baseLabel = PackUnits.pluralize(meta.base_unit, totalPieces === 1 ? 1 : 2);
-            const avail = meta.available;
-
-            let text = `${totalPieces.toLocaleString()} ${baseLabel}`;
-            if (piecesPerBox > 1 && totalPieces > 0) {
-                text += `  [= ${boxes}×${piecesPerBox}`;
-                if (pieces > 0) text += ` + ${pieces}`;
-                text += ']';
-            }
-            document.getElementById('totalPiecesDisplay').value = text;
-
-            // Soft oversell warning
-            if (totalPieces > avail) {
-                document.getElementById('totalPiecesDisplay').classList.add('text-error');
-            } else {
-                document.getElementById('totalPiecesDisplay').classList.remove('text-error');
-            }
-        }
-        
-        function addItem() {
-            const select = document.getElementById('productSelect');
-            
-            if (!select.value) {
-                showToast('Please select a product', 'warning');
-                return;
-            }
-            
-            const option = select.options[select.selectedIndex];
-            const meta = productUnitMeta(option);
-            const boxes = parseInt(document.getElementById('itemBoxes').value, 10) || 0;
-            const pieces = parseInt(document.getElementById('itemPieces').value, 10) || 0;
-            const piecesPerBox = meta.pieces_per_box;
-            const totalPieces = (boxes * piecesPerBox) + pieces;
-            const baseLabel = PackUnits.pluralize(meta.base_unit, totalPieces === 1 ? 1 : 2);
-            
-            if (totalPieces <= 0) {
-                showToast(`Enter full ${PackUnits.pluralize(meta.box_unit, 2).toLowerCase()} and/or extra ${baseLabel}`, 'warning');
-                return;
-            }
-
-            if (totalPieces > meta.available) {
-                showToast(
-                    `Only ${meta.available.toLocaleString()} ${PackUnits.pluralize(meta.base_unit, meta.available === 1 ? 1 : 2)} available (you entered ${totalPieces.toLocaleString()})`,
-                    'error'
-                );
-                return;
-            }
-            
-            const price = parseFloat(option.dataset.price) || 0;
-            const productId = parseInt(select.value, 10);
-            
-            const existing = orderItems.find(i => i.product_id === productId);
-            if (existing) {
-                const nextQty = ((existing.quantity_boxes + boxes) * piecesPerBox)
-                    + (existing.quantity_pieces + pieces);
-                if (nextQty > meta.available) {
-                    showToast(
-                        `Line would be ${nextQty.toLocaleString()} ${baseLabel}; only ${meta.available.toLocaleString()} available`,
-                        'error'
-                    );
-                    return;
-                }
-                existing.quantity_boxes += boxes;
-                existing.quantity_pieces += pieces;
-                existing.quantity = nextQty;
-                existing.subtotal = existing.quantity * existing.price;
-            } else {
-                orderItems.push({
-                    product_id: productId,
-                    product_name: option.dataset.name,
-                    quantity_boxes: boxes,
-                    quantity_pieces: pieces,
-                    pieces_per_box: piecesPerBox,
-                    base_unit: meta.base_unit,
-                    box_unit: meta.box_unit,
-                    quantity: totalPieces,
-                    price: price,
-                    subtotal: totalPieces * price
-                });
-            }
-            
-            renderOrderItems();
-            select.value = '';
-            document.getElementById('itemBoxes').value = 0;
-            document.getElementById('itemPieces').value = 0;
-            resetUnitLabels();
-        }
-        
-        function renderOrderItems() {
-            const tbody = document.getElementById('orderItemsTable');
-            const badge = document.getElementById('itemsCountBadge');
-
-            if (orderItems.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="7" class="text-center py-6 text-base-content/60">
-                            <i class="fas fa-box-open text-2xl mb-2 block text-base-content/30"></i>
-                            No items yet. Choose a product, enter full boxes and/or extra units, then <span class="font-semibold">Add</span>.
-                        </td>
-                    </tr>`;
-                document.getElementById('orderTotal').textContent = '₱0.00';
-                if (badge) badge.textContent = '0 item(s) added';
-                return;
-            }
-
-            // Table headers follow the first line's units when all same; else keep generic
-            const first = orderItems[0];
-            applyUnitLabels({
-                pieces_per_box: first.pieces_per_box,
-                base_unit: first.base_unit,
-                box_unit: first.box_unit
-            });
-
-            tbody.innerHTML = orderItems.map((item, index) => {
-                const baseLabel = PackUnits.pluralize(item.base_unit || 'piece', item.quantity === 1 ? 1 : 2);
-                const packLine = PackUnits.formatPackLine(item);
-                const boxLabel = PackUnits.pluralize(item.box_unit || 'box', (item.quantity_boxes || 0) === 1 ? 1 : 2);
-                return `
-                <tr>
-                    <td>
-                        <div class="font-medium">${item.product_name}</div>
-                        <div class="text-xs text-info">${packLine}</div>
-                        <div class="text-xs text-base-content/50">Billed &amp; reserved as ${baseLabel}</div>
-                    </td>
-                    <td class="text-center">
-                        <input type="number" class="input input-bordered input-xs w-14 text-center"
-                               value="${item.quantity_boxes || 0}" min="0"
-                               title="Full ${boxLabel.toLowerCase()}"
-                               onchange="updateItemBoxes(${index}, this.value)">
-                    </td>
-                    <td class="text-center">
-                        <input type="number" class="input input-bordered input-xs w-14 text-center"
-                               value="${item.quantity_pieces || 0}" min="0"
-                               title="Extra ${baseLabel}"
-                               onchange="updateItemPieces(${index}, this.value)">
-                    </td>
-                    <td class="text-center text-sm font-semibold">${item.quantity.toLocaleString()} ${baseLabel}</td>
-                    <td class="text-right font-mono text-xs">${formatCurrency(item.price)}<div class="text-base-content/50">per ${PackUnits.singularize(item.base_unit || 'piece')}</div></td>
-                    <td class="text-right font-mono">${formatCurrency(item.subtotal)}</td>
-                    <td>
-                        <button type="button" class="btn btn-ghost btn-xs text-error" onclick="removeItem(${index})">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </td>
-                </tr>
-            `}).join('');
-
-            const total = orderItems.reduce((sum, item) => sum + item.subtotal, 0);
-            document.getElementById('orderTotal').textContent = formatCurrency(total);
-            if (badge) badge.textContent = `${orderItems.length} item(s) added`;
-        }
-        
-        function getProductAvailable(productId) {
-            const select = document.getElementById('productSelect');
-            for (const opt of select.options) {
-                if (parseInt(opt.value, 10) === productId) {
-                    return parseInt(opt.dataset.available, 10) || 0;
-                }
-            }
-            return 0;
-        }
-
-        function updateItemBoxes(index, boxes) {
-            const item = orderItems[index];
-            const newBoxes = parseInt(boxes) || 0;
-            const newQty = (newBoxes * item.pieces_per_box) + item.quantity_pieces;
-            const available = getProductAvailable(item.product_id);
-
-            if (newQty > available) {
-                showToast(`Insufficient stock. Only ${available.toLocaleString()} ${PackUnits.pluralize(item.base_unit, available === 1 ? 1 : 2)} available.`, 'error');
-                renderOrderItems();
-                return;
-            }
-
-            item.quantity_boxes = newBoxes;
-            item.quantity = newQty;
-            item.subtotal = item.quantity * item.price;
-            renderOrderItems();
-        }
-
-        function updateItemPieces(index, pieces) {
-            const item = orderItems[index];
-            const newPieces = parseInt(pieces) || 0;
-            const newQty = (item.quantity_boxes * item.pieces_per_box) + newPieces;
-            const available = getProductAvailable(item.product_id);
-
-            if (newQty > available) {
-                showToast(`Insufficient stock. Only ${available.toLocaleString()} ${PackUnits.pluralize(item.base_unit, available === 1 ? 1 : 2)} available.`, 'error');
-                renderOrderItems();
-                return;
-            }
-
-            item.quantity_pieces = newPieces;
-            item.quantity = newQty;
-            item.subtotal = item.quantity * item.price;
-            renderOrderItems();
-        }
-        
-        function updateItemQty(index, qty) {
-            const item = orderItems[index];
-            const newQty = parseInt(qty) || 1;
-            const available = getProductAvailable(item.product_id);
-
-            if (newQty > available) {
-                showToast(`Insufficient stock. Only ${available.toLocaleString()} ${PackUnits.pluralize(item.base_unit, available === 1 ? 1 : 2)} available.`, 'error');
-                renderOrderItems();
-                return;
-            }
-
-            item.quantity = newQty;
-            item.subtotal = item.quantity * item.price;
-            renderOrderItems();
-        }
-        
-        function removeItem(index) {
-            orderItems.splice(index, 1);
-            renderOrderItems();
-        }
-        
-        function openNewOrderModal() {
-            document.getElementById('newOrderForm').reset();
-            orderItems = [];
-            renderOrderItems();
-            document.getElementById('customerCreditInfo').textContent = 'Pick a customer to see credit limit and balance';
-            document.getElementById('deliveryDate').value = new Date().toISOString().split('T')[0];
-            document.getElementById('newOrderModal').showModal();
-        }
-        
-        // Prevent accidental Enter from defaulting to draft; require explicit dual actions
-        document.getElementById('newOrderForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            // Default Enter → submit for approval (primary path)
-            submitNewOrder('pending_approval');
-        });
-
-        /**
-         * Dual-action create:
-         *  - draft → status = draft (continue editing later)
-         *  - pending_approval → status = pending (GM queue immediately)
-         */
-        async function submitNewOrder(actionType) {
-            const customerId = document.getElementById('orderCustomer').value;
-            if (!customerId) {
-                showToast('Please select a customer', 'warning');
-                return;
-            }
-            if (orderItems.length === 0) {
-                showToast('Please add at least one item', 'warning');
-                return;
-            }
-
-            const isSubmit = actionType === 'pending_approval' || actionType === 'submit' || actionType === 'pending';
-            const data = {
-                customer_id: parseInt(customerId, 10),
-                customer_po_number: document.getElementById('customerPONumber').value || null,
-                sub_account_id: document.getElementById('subAccount').value || null,
-                delivery_date: document.getElementById('deliveryDate').value,
-                payment_mode: document.getElementById('paymentMode').value,
-                payment_type: document.getElementById('paymentMode').value,
-                notes: document.getElementById('orderNotes').value,
-                // Backend flag: draft | pending_approval
-                action_type: isSubmit ? 'pending_approval' : 'draft',
-                // Explicit status for clarity / older APIs
-                status: isSubmit ? 'pending' : 'draft',
-                items: orderItems.map(item => ({
-                    product_id: item.product_id,
-                    quantity: item.quantity,
-                    quantity_boxes: item.quantity_boxes || 0,
-                    quantity_pieces: item.quantity_pieces || 0,
-                    unit_type: item.quantity_boxes > 0 && item.quantity_pieces > 0 ? 'mixed'
-                        : (item.quantity_boxes > 0 ? 'box' : 'piece'),
-                    unit_price: item.price
-                }))
-            };
-
-            const draftBtn = document.getElementById('btnSaveDraft');
-            const submitBtn = document.getElementById('btnCreateSubmit');
-            const activeBtn = isSubmit ? submitBtn : draftBtn;
-            if (activeBtn) {
-                activeBtn.classList.add('loading');
-                activeBtn.disabled = true;
-            }
-            if (draftBtn) draftBtn.disabled = true;
-            if (submitBtn) submitBtn.disabled = true;
-
-            try {
-                const res = await SalesService.createOrder(data);
-                document.getElementById('newOrderModal').close();
-                const status = res?.data?.status || (isSubmit ? 'pending' : 'draft');
-                if (status === 'pending' || isSubmit) {
-                    showToast('Order created and submitted for GM approval', 'success');
-                } else {
-                    showToast('Order saved as draft', 'success');
-                }
-                loadOrders();
-            } catch (error) {
-                console.error('Error creating order:', error);
-                const stockErrors = error.errors?.stock_errors || error.response?.data?.errors?.stock_errors;
-                if (stockErrors && stockErrors.length) {
-                    const lines = stockErrors.map(e => e.message || `${e.product_name}: need ${e.requested}, only ${e.available} available`);
-                    showToast('Insufficient stock:\n' + lines.join('\n'), 'error');
-                } else {
-                    showToast(error.response?.data?.message || error.message || 'Failed to create order', 'error');
-                }
-            } finally {
-                if (draftBtn) {
-                    draftBtn.classList.remove('loading');
-                    draftBtn.disabled = false;
-                }
-                if (submitBtn) {
-                    submitBtn.classList.remove('loading');
-                    submitBtn.disabled = false;
-                }
-            }
-        }
-        
         async function viewOrder(id) {
             document.getElementById('orderDetailModal').showModal();
             document.getElementById('orderDetailContent').innerHTML = `
@@ -1480,12 +1122,29 @@
                 const orderDate = new Date(order.order_date || order.created_at).toLocaleDateString();
                 const deliveryDate = order.delivery_date ? new Date(order.delivery_date).toLocaleDateString() : '—';
                 const paymentMode = order.payment_mode || order.payment_type || 'Credit';
-                const statusLabel = order.status_label || order.status;
+                const statusLabel = order.status_label || ({
+                    approved: 'Reserved',
+                    preparing: 'Reserved - Preparing',
+                    picking: 'Reserved - Picking',
+                    ready: 'Reserved - DR Ready',
+                    dispatched: 'In Transit',
+                    partially_accepted: 'Delivered (Returns)'
+                }[order.status] || order.status);
                 const hasReturns = !!order.has_returns;
                 const fulfillmentVerified = !!order.fulfillment_verified;
                 const originalTotal = order.original_total != null ? order.original_total : order.total_amount;
                 const billableTotal = order.billable_total != null ? order.billable_total : order.total_amount;
                 const returnCredit = order.return_credit_total != null ? order.return_credit_total : 0;
+                const importedSourceHtml = order.source_type === 'customer_po_email' && order.source_import ? `
+                    <div class="alert alert-info mb-5 py-3">
+                        <i class="fas fa-envelope-open-text"></i>
+                        <div class="flex-1">
+                            <p class="font-semibold">Imported from customer email</p>
+                            <p class="text-xs">${escapeHtml(order.source_import.sender_email || '')} · ${escapeHtml(order.source_import.attachment_original_name || '')}</p>
+                        </div>
+                        <a class="btn btn-ghost btn-xs" href="order_inbox.html?open=${Number(order.source_import.id)}">Open source PO</a>
+                    </div>
+                ` : '';
 
                 const itemsHtml = (order.items || []).length
                     ? (order.items || []).map(item => {
@@ -1564,6 +1223,7 @@
                             <span class="od-meta__value">${paymentMode}</span>
                         </div>
                     </div>
+                    ${importedSourceHtml}
 
                     <h4 class="od-section-title">Order Items${fulfillmentVerified ? ' · Fulfillment' : ''}</h4>
                     <div class="od-table-wrap">

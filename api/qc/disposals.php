@@ -260,7 +260,18 @@ function handleGetRequest($db, $currentUser) {
                     pb.batch_code as reference,
                     (COALESCE(fgi.boxes_available, 0) * COALESCE(p.pieces_per_box, 1)) + COALESCE(fgi.pieces_available, 0) as available_quantity,
                     'pcs' as unit,
-                    COALESCE(fgi.unit_price, 0) as unit_cost,
+                    COALESCE(
+                        NULLIF(p.cost_price, 0),
+                        NULLIF(fgi.unit_price, 0),
+                        NULLIF(p.unit_price, 0),
+                        NULLIF(p.selling_price, 0),
+                        0
+                    ) as unit_cost,
+                    CASE
+                        WHEN COALESCE(p.cost_price, 0) > 0 THEN 'recorded_cost'
+                        WHEN COALESCE(fgi.unit_price, p.unit_price, p.selling_price, 0) > 0 THEN 'catalog_estimate'
+                        ELSE 'missing'
+                    END as cost_basis,
                     fgi.expiry_date,
                     fgi.manufacturing_date,
                     DATEDIFF(fgi.expiry_date, CURDATE()) as days_until_expiry,
@@ -273,6 +284,13 @@ function handleGetRequest($db, $currentUser) {
                 LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
                 LEFT JOIN products p ON fgi.product_id = p.id
                 WHERE (fgi.boxes_available > 0 OR fgi.pieces_available > 0)
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM disposals existing_disposal
+                      WHERE existing_disposal.source_type = 'finished_goods'
+                        AND existing_disposal.source_id = fgi.id
+                        AND existing_disposal.status IN ('pending', 'approved')
+                  )
                 ORDER BY fgi.expiry_date ASC
                 LIMIT 100
             ");
@@ -378,6 +396,9 @@ function handleGetRequest($db, $currentUser) {
                ui.role as initiated_by_role,
                ua.first_name as approved_by_name,
                p.product_code,
+               p.cost_price,
+               p.unit_price AS catalog_unit_price,
+               p.selling_price,
                TRIM(CONCAT(COALESCE(ui.first_name, ''), ' ', COALESCE(ui.last_name, ''))) as requested_by_name,
                TRIM(CONCAT(COALESCE(ui.first_name, ''), ' ', COALESCE(ui.last_name, ''))) as created_by_name
         FROM disposals d
@@ -404,14 +425,21 @@ function handleGetRequest($db, $currentUser) {
         if (empty($d['disposal_category'])) {
             $d['disposal_category'] = 'spoiled';
         }
-        // Guard zero financial loss in list payloads
+        // Use real product values for older records that were saved before
+        // finished-goods valuation was enforced. Never invent a flat cost.
         if ((float)($d['total_value'] ?? 0) <= 0 && (float)($d['quantity'] ?? 0) > 0) {
             $unitCost = (float)($d['unit_cost'] ?? 0);
             if ($unitCost <= 0) {
-                $unitCost = 35.0;
+                $unitCost = (float)($d['cost_price'] ?? 0);
             }
-            $d['unit_cost'] = $unitCost;
-            $d['total_value'] = round((float)$d['quantity'] * $unitCost, 2);
+            if ($unitCost <= 0) {
+                $unitCost = (float)($d['catalog_unit_price'] ?? $d['selling_price'] ?? 0);
+            }
+            if ($unitCost > 0) {
+                $d['unit_cost'] = $unitCost;
+                $d['total_value'] = round((float)$d['quantity'] * $unitCost, 2);
+                $d['value_is_estimate'] = (float)($d['cost_price'] ?? 0) <= 0;
+            }
         }
     }
     unset($d);
@@ -489,6 +517,24 @@ function handlePostRequest($db, $currentUser) {
     if (!empty($errors)) {
         Response::validationError($errors);
     }
+
+    $duplicateStmt = $db->prepare("
+        SELECT disposal_code, status
+        FROM disposals
+        WHERE source_type = ?
+          AND source_id = ?
+          AND status IN ('pending', 'approved')
+        ORDER BY id DESC
+        LIMIT 1
+    ");
+    $duplicateStmt->execute([$sourceType, $sourceId]);
+    $existingDisposal = $duplicateStmt->fetch(PDO::FETCH_ASSOC);
+    if ($existingDisposal) {
+        Response::error(
+            'This stock already has an open disposal request: ' . $existingDisposal['disposal_code'] . '.',
+            409
+        );
+    }
     
     // Validate source exists and get details
     $sourceDetails = validateSource($db, $sourceType, $sourceId, $quantity);
@@ -501,8 +547,22 @@ function handlePostRequest($db, $currentUser) {
     $disposalCode = generateDisposalCode($db);
     
     // Calculate total value
-    $unitCost = floatval(getParam('unit_cost', $sourceDetails['unit_cost'] ?? 0));
+    // The server owns the valuation. A hidden browser field must not be able
+    // to replace a known inventory cost with zero or another arbitrary value.
+    $unitCost = floatval($sourceDetails['unit_cost'] ?? 0);
+    if ($unitCost <= 0) {
+        Response::error(
+            'No inventory value is recorded for this item. Set its production cost or catalog price before submitting the disposal request.',
+            409
+        );
+    }
     $totalValue = $quantity * $unitCost;
+
+    $notes = trim((string)getParam('notes', ''));
+    if (($sourceDetails['cost_basis'] ?? '') === 'catalog_estimate') {
+        $valuationNote = 'Estimated using the current catalog price because no production cost was recorded.';
+        $notes = trim($notes === '' ? $valuationNote : ($notes . "\n" . $valuationNote));
+    }
     
     // Create disposal record
     $db->beginTransaction();
@@ -535,7 +595,7 @@ function handlePostRequest($db, $currentUser) {
             $reason,
             $method,
             $currentUser['user_id'],
-            getParam('notes'),
+            $notes !== '' ? $notes : null,
             $recallId
         ]);
         
@@ -549,6 +609,18 @@ function handlePostRequest($db, $currentUser) {
             'quantity' => $quantity,
             'category' => $category
         ]);
+
+        if ($sourceType === 'finished_goods') {
+            $noticeStmt = $db->prepare("
+                UPDATE procurement_notifications
+                SET is_read = 1
+                WHERE target_role = 'qc_officer'
+                  AND notification_type = 'fg_disposal_review'
+                  AND reference_type = 'finished_goods_inventory'
+                  AND reference_id = ?
+            ");
+            $noticeStmt->execute([$sourceId]);
+        }
         
         $db->commit();
         
@@ -684,7 +756,14 @@ function handlePutRequest($db, $currentUser) {
                 $witnessName = trim(getParam('witness_name', ''));
                 $disposalLocation = trim(getParam('disposal_location', ''));
                 $executionNotes = trim(getParam('notes', ''));
-                
+
+                if ($witnessName === '' || $disposalLocation === '') {
+                    Response::validationError([
+                        'witness_name' => $witnessName === '' ? 'Witness name is required' : null,
+                        'disposal_location' => $disposalLocation === '' ? 'Disposal location is required' : null
+                    ]);
+                }
+
                 // Execute the disposal - deduct from inventory
                 executeDisposal($db, $disposal, $currentUser);
                 
@@ -829,6 +908,7 @@ function validateSource($db, $sourceType, $sourceId, $quantity) {
         case 'finished_goods':
             $stmt = $db->prepare("
                 SELECT fgi.*, p.product_name, p.product_code, p.cost_price,
+                       p.unit_price AS catalog_unit_price, p.selling_price,
                        pb.batch_code as reference
                 FROM finished_goods_inventory fgi
                 LEFT JOIN products p ON fgi.product_id = p.id
@@ -852,7 +932,16 @@ function validateSource($db, $sourceType, $sourceId, $quantity) {
                 'reference' => $item['reference'],
                 'product_id' => $item['product_id'],
                 'product_name' => $item['product_name'],
-                'unit_cost' => floatval($item['cost_price'] ?? 0)
+                'unit_cost' => (float)(
+                    ((float)($item['cost_price'] ?? 0) > 0)
+                        ? $item['cost_price']
+                        : (((float)($item['unit_price'] ?? 0) > 0)
+                            ? $item['unit_price']
+                            : ($item['catalog_unit_price'] ?? $item['selling_price'] ?? 0))
+                ),
+                'cost_basis' => ((float)($item['cost_price'] ?? 0) > 0)
+                    ? 'recorded_cost'
+                    : 'catalog_estimate'
             ];
             
         case 'milk_receiving':
@@ -964,28 +1053,66 @@ function executeDisposal($db, $disposal, $currentUser) {
             break;
             
         case 'finished_goods':
-            // Deduct from finished_goods_inventory
+            $sourceStmt = $db->prepare("
+                SELECT fgi.quantity_available, fgi.remaining_quantity,
+                       fgi.boxes_available, fgi.pieces_available, fgi.chiller_id,
+                       COALESCE(NULLIF(p.pieces_per_box, 0), 1) AS pieces_per_box
+                FROM finished_goods_inventory fgi
+                LEFT JOIN products p ON p.id = fgi.product_id
+                WHERE fgi.id = ?
+                FOR UPDATE
+            ");
+            $sourceStmt->execute([$sourceId]);
+            $source = $sourceStmt->fetch(PDO::FETCH_ASSOC);
+            if (!$source) {
+                throw new Exception('Finished Goods inventory was not found');
+            }
+
+            $piecesPerBox = max(1, (int)$source['pieces_per_box']);
+            $available = max(
+                (int)($source['quantity_available'] ?? 0),
+                ((int)($source['boxes_available'] ?? 0) * $piecesPerBox) + (int)($source['pieces_available'] ?? 0)
+            );
+            if ($quantity > $available) {
+                throw new Exception("Only {$available} units remain in Finished Goods inventory");
+            }
+            $remaining = max(0, $available - (int)$quantity);
+            $remainingBoxes = intdiv($remaining, $piecesPerBox);
+            $remainingPieces = $remaining % $piecesPerBox;
+
             $stmt = $db->prepare("
                 UPDATE finished_goods_inventory SET
-                    quantity_available = GREATEST(0, COALESCE(quantity_available, remaining_quantity) - ?),
-                    remaining_quantity = GREATEST(0, COALESCE(remaining_quantity, 0) - ?),
+                    quantity_available = ?,
+                    remaining_quantity = ?,
+                    quantity_boxes = ?,
+                    boxes_available = ?,
+                    quantity_pieces = ?,
+                    pieces_available = ?,
                     disposed_quantity = COALESCE(disposed_quantity, 0) + ?,
                     disposal_id = ?,
                     disposed_at = NOW(),
                     disposal_reason = ?,
-                    status = CASE 
-                        WHEN COALESCE(quantity_available, remaining_quantity) - ? <= 0 THEN 'consumed'
-                        ELSE status 
-                    END
+                    status = CASE WHEN ? = 0 THEN 'disposed' ELSE status END
                 WHERE id = ?
             ");
             $stmt->execute([
-                $quantity, $quantity, $quantity,
+                $remaining, $remaining,
+                $remainingBoxes, $remainingBoxes,
+                $remainingPieces, $remainingPieces,
+                $quantity,
                 $disposal['id'],
                 $disposal['disposal_reason'],
-                $quantity,
+                $remaining,
                 $sourceId
             ]);
+
+            if (!empty($source['chiller_id'])) {
+                $db->prepare("
+                    UPDATE chiller_locations
+                    SET current_count = GREATEST(0, current_count - ?)
+                    WHERE id = ?
+                ")->execute([$quantity, $source['chiller_id']]);
+            }
             
             // Create inventory transaction record
             $txCode = 'DSP-' . date('Ymd') . '-' . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);

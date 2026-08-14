@@ -5,13 +5,15 @@
  */
 
 require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../helpers/supplier_ingredient_catalog.php';
 
-// Require authentication
-Auth::requireAuth();
+// Require GM/Admin role
+$currentUser = Auth::requireRole(['general_manager', 'admin']);
 
 // Get database connection
 $conn = Database::getInstance()->getConnection();
 ensureIngredientMasterSettings($conn);
+ensureSupplierIngredientCatalog($conn);
 
 // Get request method and handle routing
 $method = $_SERVER['REQUEST_METHOD'];
@@ -34,18 +36,18 @@ try {
             }
             break;
         case 'POST':
-            createIngredient($conn);
+            createIngredient($conn, $currentUser);
             break;
         case 'PUT':
             if ($id) {
-                updateIngredient($conn, $id);
+                updateIngredient($conn, $id, $currentUser);
             } else {
                 sendError('Ingredient ID required', 400);
             }
             break;
         case 'DELETE':
             if ($id) {
-                deleteIngredient($conn, $id);
+                deleteIngredient($conn, $id, $currentUser);
             } else {
                 sendError('Ingredient ID required', 400);
             }
@@ -99,10 +101,15 @@ function getIngredients($conn) {
     $total = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
     
     // Get ingredients with category
-    $sql = "SELECT i.*, c.category_name
+    $sql = "SELECT i.*, c.category_name,
+                   COUNT(DISTINCT CASE WHEN si.is_active = 1 AND s.is_active = 1 THEN si.supplier_id END) AS supplier_count,
+                   GROUP_CONCAT(DISTINCT CASE WHEN si.is_active = 1 AND s.is_active = 1 THEN s.supplier_name END ORDER BY s.supplier_name SEPARATOR ', ') AS supplier_names
             FROM ingredients i 
             LEFT JOIN ingredient_categories c ON i.category_id = c.id
+            LEFT JOIN supplier_ingredients si ON si.ingredient_id = i.id
+            LEFT JOIN suppliers s ON s.id = si.supplier_id
             $whereClause 
+            GROUP BY i.id
             ORDER BY i.ingredient_name ASC 
             LIMIT $limit OFFSET $offset";
     $stmt = $conn->prepare($sql);
@@ -153,6 +160,8 @@ function getIngredient($conn, $id) {
     if (!$ingredient) {
         sendError('Ingredient not found', 404);
     }
+
+    $ingredient['suppliers'] = supplierCatalogGetIngredientSuppliers($conn, (int) $id);
     
     sendSuccess(['ingredient' => $ingredient]);
 }
@@ -218,8 +227,10 @@ function getIngredientStatistics($conn) {
 /**
  * Create new ingredient
  */
-function createIngredient($conn) {
+function createIngredient($conn, $currentUser) {
     $data = json_decode(file_get_contents('php://input'), true);
+    $isActive = isset($data['is_active']) ? intval($data['is_active']) : 1;
+    $supplierIds = supplierCatalogNormalizeSupplierIds($data['supplier_ids'] ?? []);
     
     // Validation
     $errors = [];
@@ -233,6 +244,7 @@ function createIngredient($conn) {
     if (!empty($errors)) {
         sendValidationError($errors);
     }
+    supplierCatalogValidateSupplierIds($conn, $supplierIds, $isActive === 1);
     
     // Generate ingredient code if not provided
     if (empty($data['ingredient_code'])) {
@@ -253,31 +265,44 @@ function createIngredient($conn) {
             storage_location, storage_requirements, shelf_life_days, is_perishable, is_active)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
-    $stmt = $conn->prepare($sql);
-    $stmt->execute([
-        $data['ingredient_code'],
-        $data['ingredient_name'],
-        $data['category_id'] ?? null,
-        $data['unit_of_measure'],
-        $data['minimum_stock'] ?? 0,
-        $data['reorder_point'] ?? 0,
-        $data['maximum_stock'] ?? null,
-        $data['lead_time_days'] ?? 7,
-        0,
-        $data['unit_cost'] ?? null,
-        $data['storage_location'] ?? null,
-        $data['storage_requirements'] ?? null,
-        $data['shelf_life_days'] ?? null,
-        isset($data['is_perishable']) ? intval($data['is_perishable']) : 1,
-        isset($data['is_active']) ? intval($data['is_active']) : 1
-    ]);
-    
-    $newId = $conn->lastInsertId();
+    $conn->beginTransaction();
+    try {
+        $stmt = $conn->prepare($sql);
+        $stmt->execute([
+            $data['ingredient_code'],
+            $data['ingredient_name'],
+            $data['category_id'] ?? null,
+            $data['unit_of_measure'],
+            $data['minimum_stock'] ?? 0,
+            $data['reorder_point'] ?? 0,
+            $data['maximum_stock'] ?? null,
+            $data['lead_time_days'] ?? 7,
+            0,
+            $data['unit_cost'] ?? null,
+            $data['storage_location'] ?? null,
+            $data['storage_requirements'] ?? null,
+            $data['shelf_life_days'] ?? null,
+            isset($data['is_perishable']) ? intval($data['is_perishable']) : 1,
+            $isActive
+        ]);
+
+        $newId = (int) $conn->lastInsertId();
+        supplierCatalogSyncIngredient($conn, $newId, $supplierIds, (int) $currentUser['user_id']);
+        $conn->commit();
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        throw $e;
+    }
     
     // Get the created ingredient
     $stmt = $conn->prepare("SELECT i.*, c.category_name FROM ingredients i LEFT JOIN ingredient_categories c ON i.category_id = c.id WHERE i.id = ?");
     $stmt->execute([$newId]);
     $ingredient = $stmt->fetch(PDO::FETCH_ASSOC);
+    $ingredient['suppliers'] = supplierCatalogGetIngredientSuppliers($conn, $newId);
+
+    logAudit($currentUser['user_id'], 'CREATE', 'ingredients', $newId, null, $ingredient);
     
     sendSuccess(['ingredient' => $ingredient], 'Ingredient created successfully');
 }
@@ -285,15 +310,23 @@ function createIngredient($conn) {
 /**
  * Update ingredient
  */
-function updateIngredient($conn, $id) {
+function updateIngredient($conn, $id, $currentUser) {
     $data = json_decode(file_get_contents('php://input'), true);
+    $hasSupplierIds = array_key_exists('supplier_ids', $data);
     
     // Check if ingredient exists
-    $stmt = $conn->prepare("SELECT id FROM ingredients WHERE id = ?");
+    $stmt = $conn->prepare("SELECT * FROM ingredients WHERE id = ?");
     $stmt->execute([$id]);
-    if (!$stmt->fetch()) {
+    $currentIngredient = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$currentIngredient) {
         sendError('Ingredient not found', 404);
     }
+
+    $supplierIds = $hasSupplierIds
+        ? supplierCatalogNormalizeSupplierIds($data['supplier_ids'])
+        : supplierCatalogNormalizeSupplierIds(supplierCatalogGetIngredientSuppliers($conn, (int) $id));
+    $nextIsActive = isset($data['is_active']) ? intval($data['is_active']) : intval($currentIngredient['is_active']);
+    supplierCatalogValidateSupplierIds($conn, $supplierIds, $nextIsActive === 1);
     
     // Build update query
     $fields = [];
@@ -310,37 +343,68 @@ function updateIngredient($conn, $id) {
         }
     }
     
-    if (empty($fields)) {
+    if (empty($fields) && !$hasSupplierIds) {
         sendError('No fields to update', 400);
     }
-    
-    $params[] = $id;
-    $sql = "UPDATE ingredients SET " . implode(', ', $fields) . " WHERE id = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->execute($params);
+
+    $conn->beginTransaction();
+    try {
+        if ($fields) {
+            $params[] = $id;
+            $sql = "UPDATE ingredients SET " . implode(', ', $fields) . " WHERE id = ?";
+            $stmt = $conn->prepare($sql);
+            $stmt->execute($params);
+        }
+        if ($hasSupplierIds) {
+            supplierCatalogSyncIngredient($conn, (int) $id, $supplierIds, (int) $currentUser['user_id']);
+        }
+        $conn->commit();
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        throw $e;
+    }
     
     // Get updated ingredient
     $stmt = $conn->prepare("SELECT i.*, c.category_name FROM ingredients i LEFT JOIN ingredient_categories c ON i.category_id = c.id WHERE i.id = ?");
     $stmt->execute([$id]);
     $ingredient = $stmt->fetch(PDO::FETCH_ASSOC);
+    $ingredient['suppliers'] = supplierCatalogGetIngredientSuppliers($conn, (int) $id);
+
+    logAudit($currentUser['user_id'], 'UPDATE', 'ingredients', $id, $currentIngredient, $ingredient);
     
     sendSuccess(['ingredient' => $ingredient], 'Ingredient updated successfully');
 }
 
 /**
- * Delete ingredient
+ * Archive ingredient by deactivating the row.
+ * Ingredient rows are kept so inventory, production, and purchasing history remain traceable.
  */
-function deleteIngredient($conn, $id) {
+function deleteIngredient($conn, $id, $currentUser) {
     // Check if ingredient exists
-    $stmt = $conn->prepare("SELECT id FROM ingredients WHERE id = ?");
+    $stmt = $conn->prepare("SELECT * FROM ingredients WHERE id = ?");
     $stmt->execute([$id]);
-    if (!$stmt->fetch()) {
+    $currentIngredient = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$currentIngredient) {
         sendError('Ingredient not found', 404);
     }
     
-    // Soft delete (set is_active to 0)
     $stmt = $conn->prepare("UPDATE ingredients SET is_active = 0 WHERE id = ?");
     $stmt->execute([$id]);
+
+    logAudit(
+        $currentUser['user_id'],
+        'UPDATE',
+        'ingredients',
+        $id,
+        $currentIngredient,
+        array_merge($currentIngredient, ['is_active' => 0])
+    );
     
-    sendSuccess(null, 'Ingredient deactivated successfully');
+    sendSuccess([
+        'ingredient_id' => (int) $id,
+        'is_active' => 0,
+        'archived' => true
+    ], 'Ingredient archived successfully');
 }

@@ -22,6 +22,7 @@ const AdminService = {
             const error = new Error(errorData.message || `Request failed with status ${response.status}`);
             error.status = response.status;
             error.data = errorData;
+            error.errors = errorData.errors || null;
             throw error;
         }
 

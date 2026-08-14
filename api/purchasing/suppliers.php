@@ -2,9 +2,7 @@
 /**
  * Highland Fresh System - Suppliers API
  * 
- * GET - List suppliers, get details, search
- * POST - Create supplier
- * PUT - Update supplier, toggle status
+ * GET - Read-only list of accredited suppliers, details, and search
  * 
  * @package HighlandFresh
  * @version 4.0
@@ -12,8 +10,8 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 
-// Require Purchaser or GM role
-$currentUser = Auth::requireRole(['purchaser', 'general_manager']);
+// Supplier changes are handled only by the GM/Admin endpoint.
+$currentUser = Auth::requireRole(['purchaser', 'general_manager', 'admin']);
 
 $action = getParam('action', 'list');
 
@@ -22,23 +20,19 @@ try {
     
     switch ($requestMethod) {
         case 'GET':
-            handleGet($db, $action);
-            break;
-        case 'POST':
-            handlePost($db, $action, $currentUser);
-            break;
-        case 'PUT':
-            handlePut($db, $action, $currentUser);
+            handleGet($db, $action, $currentUser);
             break;
         default:
-            Response::error('Method not allowed', 405);
+            Response::error('This supplier directory is read-only', 405);
     }
 } catch (Exception $e) {
     error_log("Suppliers API Error: " . $e->getMessage());
     Response::error('Server error: ' . $e->getMessage(), 500);
 }
 
-function handleGet($db, $action) {
+function handleGet($db, $action, $currentUser) {
+    $isPurchaser = ($currentUser['role'] ?? '') === 'purchaser';
+
     switch ($action) {
         case 'list':
             $status = getParam('status');
@@ -47,7 +41,7 @@ function handleGet($db, $action) {
             $sql = "SELECT * FROM suppliers WHERE 1=1";
             $params = [];
             
-            if ($status === 'active') {
+            if ($isPurchaser || $status === 'active') {
                 $sql .= " AND is_active = 1";
             } elseif ($status === 'inactive') {
                 $sql .= " AND is_active = 0";
@@ -76,7 +70,11 @@ function handleGet($db, $action) {
                 Response::error('Supplier ID required', 400);
             }
             
-            $stmt = $db->prepare("SELECT * FROM suppliers WHERE id = ?");
+            $detailSql = "SELECT * FROM suppliers WHERE id = ?";
+            if ($isPurchaser) {
+                $detailSql .= " AND is_active = 1";
+            }
+            $stmt = $db->prepare($detailSql);
             $stmt->execute([$id]);
             $supplier = $stmt->fetch();
             
@@ -133,125 +131,6 @@ function handleGet($db, $action) {
             $results = $stmt->fetchAll();
             
             Response::success($results, 'Search results');
-            break;
-            
-        default:
-            Response::error('Invalid action', 400);
-    }
-}
-
-function handlePost($db, $action, $currentUser) {
-    $data = getRequestBody();
-    
-    if ($action === 'create') {
-        $required = ['supplier_name'];
-        foreach ($required as $field) {
-            if (empty($data[$field])) {
-                Response::error("$field is required", 400);
-            }
-        }
-        
-        // Generate supplier code
-        $stmt = $db->query("SELECT COUNT(*) as count FROM suppliers");
-        $count = (int) $stmt->fetch()['count'];
-        $supplierCode = 'SUP-' . str_pad($count + 1, 3, '0', STR_PAD_LEFT);
-        
-        // Check for duplicate name
-        $check = $db->prepare("SELECT id FROM suppliers WHERE supplier_name = ?");
-        $check->execute([$data['supplier_name']]);
-        if ($check->fetch()) {
-            Response::error('A supplier with this name already exists', 400);
-        }
-        
-        $stmt = $db->prepare("
-            INSERT INTO suppliers 
-            (supplier_code, supplier_name, contact_person, phone, email, address, payment_terms, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ");
-        
-        $stmt->execute([
-            $supplierCode,
-            $data['supplier_name'],
-            $data['contact_person'] ?? null,
-            $data['phone'] ?? null,
-            $data['email'] ?? null,
-            $data['address'] ?? null,
-            $data['payment_terms'] ?? '30 days',
-            $data['notes'] ?? null
-        ]);
-        
-        $supplierId = $db->lastInsertId();
-        
-        logAudit($currentUser['user_id'], 'CREATE', 'suppliers', $supplierId, null, $data);
-        
-        Response::success(['id' => $supplierId, 'supplier_code' => $supplierCode], 'Supplier created', 201);
-    }
-    
-    Response::error('Invalid action', 400);
-}
-
-function handlePut($db, $action, $currentUser) {
-    $data = getRequestBody();
-    $id = getParam('id') ?? ($data['id'] ?? null);
-    
-    if (!$id) {
-        Response::error('Supplier ID required', 400);
-    }
-    
-    // Get current supplier
-    $check = $db->prepare("SELECT * FROM suppliers WHERE id = ?");
-    $check->execute([$id]);
-    $current = $check->fetch();
-    
-    if (!$current) {
-        Response::error('Supplier not found', 404);
-    }
-    
-    switch ($action) {
-        case 'update':
-            $stmt = $db->prepare("
-                UPDATE suppliers SET
-                    supplier_name = COALESCE(?, supplier_name),
-                    contact_person = COALESCE(?, contact_person),
-                    phone = COALESCE(?, phone),
-                    email = COALESCE(?, email),
-                    address = COALESCE(?, address),
-                    payment_terms = COALESCE(?, payment_terms),
-                    notes = COALESCE(?, notes),
-                    updated_at = NOW()
-                WHERE id = ?
-            ");
-            
-            $stmt->execute([
-                $data['supplier_name'] ?? null,
-                $data['contact_person'] ?? null,
-                $data['phone'] ?? null,
-                $data['email'] ?? null,
-                $data['address'] ?? null,
-                $data['payment_terms'] ?? null,
-                $data['notes'] ?? null,
-                $id
-            ]);
-            
-            logAudit($currentUser['user_id'], 'UPDATE', 'suppliers', $id, $current, $data);
-            
-            Response::success(null, 'Supplier updated');
-            break;
-            
-        case 'toggle_status':
-            $newStatus = $current['is_active'] ? 0 : 1;
-            $stmt = $db->prepare("UPDATE suppliers SET is_active = ?, updated_at = NOW() WHERE id = ?");
-            $stmt->execute([$newStatus, $id]);
-            
-            logAudit($currentUser['user_id'], 'UPDATE', 'suppliers', $id, 
-                ['is_active' => $current['is_active']], 
-                ['is_active' => $newStatus]
-            );
-            
-            Response::success(
-                ['is_active' => $newStatus], 
-                $newStatus ? 'Supplier activated' : 'Supplier deactivated'
-            );
             break;
             
         default:

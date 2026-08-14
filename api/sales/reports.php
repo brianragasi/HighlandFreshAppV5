@@ -98,8 +98,8 @@ function getSalesSummary($db) {
     $stmt = $db->prepare("
         SELECT COALESCE(SUM(amount_collected), 0) as total_collections
         FROM payment_collections 
-        WHERE DATE(collected_at) BETWEEN ? AND ?
-        AND status = 'confirmed'
+        WHERE DATE(COALESCE(cleared_at, collected_at)) BETWEEN ? AND ?
+        AND status IN ('confirmed', 'cleared')
     ");
     $stmt->execute([$startDate, $endDate]);
     $collections = $stmt->fetch();
@@ -413,8 +413,8 @@ function getCollectionsReport($db) {
             COALESCE(SUM(amount_collected), 0) as total_collected,
             COUNT(*) as payment_count
         FROM payment_collections 
-        WHERE DATE(collected_at) BETWEEN ? AND ?
-        AND status = 'confirmed'
+        WHERE DATE(COALESCE(cleared_at, collected_at)) BETWEEN ? AND ?
+        AND status IN ('confirmed', 'cleared')
     ");
     $stmt->execute([$startDate, $endDate]);
     $summary = $stmt->fetch();
@@ -426,8 +426,8 @@ function getCollectionsReport($db) {
             COALESCE(SUM(amount_collected), 0) as total,
             COUNT(*) as count
         FROM payment_collections 
-        WHERE DATE(collected_at) BETWEEN ? AND ?
-        AND status = 'confirmed'
+        WHERE DATE(COALESCE(cleared_at, collected_at)) BETWEEN ? AND ?
+        AND status IN ('confirmed', 'cleared')
         GROUP BY payment_method
     ");
     $stmt->execute([$startDate, $endDate]);
@@ -436,12 +436,12 @@ function getCollectionsReport($db) {
     // Daily collections trend
     $stmt = $db->prepare("
         SELECT 
-            DATE(collected_at) as date,
+            DATE(COALESCE(cleared_at, collected_at)) as date,
             COALESCE(SUM(amount_collected), 0) as total
         FROM payment_collections 
-        WHERE DATE(collected_at) BETWEEN ? AND ?
-        AND status = 'confirmed'
-        GROUP BY DATE(collected_at)
+        WHERE DATE(COALESCE(cleared_at, collected_at)) BETWEEN ? AND ?
+        AND status IN ('confirmed', 'cleared')
+        GROUP BY DATE(COALESCE(cleared_at, collected_at))
         ORDER BY date ASC
     ");
     $stmt->execute([$startDate, $endDate]);

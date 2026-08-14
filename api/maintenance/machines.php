@@ -14,8 +14,8 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 
-// Require Maintenance Head or GM role
-$currentUser = Auth::requireRole(['maintenance_head', 'general_manager']);
+// Warehouse Raw maintains equipment records; the GM has oversight.
+$currentUser = Auth::requireRole(['warehouse_raw', 'general_manager']);
 
 try {
     $db = Database::getInstance()->getConnection();

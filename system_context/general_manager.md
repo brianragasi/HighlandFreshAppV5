@@ -5,12 +5,13 @@ Her function is not to perform daily data entry, but to **control, approve, and 
 ### 1. Ultimate Approval Authority (The "Final Say")
 The most emphasized function in the audio is that the GM is the **exclusive gatekeeper for all expenditures.** 
 *   **Purchasing Approval:** The Purchaser prepares a request, but the GM must provide the final digital signature before a Purchase Order (PO) is sent.
-*   **Inventory Requisition:** Even for internal needs (like the Maintenance Head needing a bolt or Production needing sugar), the GM must approve the digital "Requisition Slip" before the Warehouse is allowed to release the item.
+*   **Inventory Requisition:** For internal needs such as MRO parts or production ingredients, the GM must approve the digital requisition before Warehouse Raw releases the item.
 
 ### 2. Master Data & Recipe Ownership
 The GM is responsible for the **Financial Logic** of the production line.
 *   **Master Recipe Control:** Only the GM has the authority to define the "Standard Ratios" for products (e.g., exactly how much sugar, powder, and milk go into a 330ml Choco Milk). This is her tool for controlling costs and preventing "leakage" or theft of ingredients.
 *   **Pricing Authority:** She sets the "Plant Price" for finished goods and determines the "Incentive/Deduction" formulas for farmer milk grading.
+*   **Supplier Accreditation:** Only the GM/Admin registers, edits, accredits, or archives suppliers. During accreditation, the GM records every ingredient the supplier can provide. One ingredient may be linked to several suppliers. Three quotes are the normal target, but a specialized ingredient may have only one or two accredited suppliers. In that case, the GM reviews the Purchaser's written limited-market reason with the PO before deciding whether to approve it. The Purchaser can only view and canvass suppliers approved for the requested ingredient.
 
 ### 3. Strategic Market Analysis & Monitoring
 The GM monitors the external environment to make operational adjustments.
@@ -28,7 +29,7 @@ The GM is responsible for the company’s legal and safety standing.
 *   **The 5 PM Rule:** She enforces the daily cut-off and reconciliation to ensure that the Cashier’s physical money always matches the Finance module's digital records.
 
 ### 6. Resource & Asset Management
-*   **MRO Oversight:** She monitors the Maintenance Head’s requests for spare parts and machine repairs (Retort, Homogenizer, etc.) to ensure the plant’s assets are being maintained without overspending.
+*   **MRO Oversight:** She reviews Warehouse Raw requests for spare parts and monitors machine repairs (Retort, Homogenizer, etc.) to prevent uncontrolled spending.
 *   **Hardware Strategy:** As mentioned in the audio, she is the one who decides on and procures the physical POS hardware and ensures the software team integrates it correctly.
 
 ### Summary

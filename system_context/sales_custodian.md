@@ -9,10 +9,22 @@ While the Cashier handles walk-in individuals, the Sales Custodian is responsibl
 *   **Government Accounts:** Managing the "Feeding Program" sales (e.g., DepEd).
 
 ### 2. PO (Purchase Order) Processing
-The Sales Custodian is the primary user responsible for translating customer requests into system data.
-*   **Receiving POs:** They are the "receiver" of the official Purchase Orders sent by supermarkets.
-*   **Data Entry:** They input the PO details into the system—specifically "how much was ordered" vs. "how much was actually received" by the client.
+The Sales Custodian is the primary user responsible for checking customer POs received by the system.
+*   **Receiving POs:** They monitor the company order inbox for official Purchase Orders emailed by supermarkets.
+*   **Email or Document Intake:** The system saves the customer's original email and any attached document, then shows the request in the inbox as **For Encoding**. The customer may write the order in the email or attach a PO, usually a PDF. It does not require an Excel form or pretend to read every customer format automatically.
+*   **Manual Order Entry:** Sales reads the original email or attachment and enters the customer PO number, delivery date, product, quantity, order unit, customer price when shown, and optional remarks. The system checks the entered details, price, and available stock.
+*   **Customer-Approved Changes:** If the customer agrees by phone to a lower quantity, different product, different unit, later delivery, or removal, Sales records what changed, the reason, the person contacted, Phone call as the method, the date/time, and optional notes. Sales then saves the agreed details. The emailed PO remains unchanged.
+*   **Large Orders:** If the requested quantity is higher than released stock, Sales must either preserve the full demand and record the customer's agreement to wait, or record the customer's approved adjustment. After GM approval, the shortage appears in Production's customer-demand queue. Production plans the batch through the normal material requisition process. Warehouse FG cannot pick or create a Delivery Receipt until enough production has passed QC and reached Finished Goods.
+*   **Separation of Duties:** Sales cannot start a production run or release raw materials. Sales records the customer's order and decision; GM approves the Sales Order; Production plans the batch; GM approves the material requisition; Warehouse Raw releases materials.
+*   **Source Evidence:** The original email and PO file remain linked to the Sales Order. The original requested values and final agreed values remain available, and the same email or PO cannot create a duplicate order.
 *   **Order Fulfillment Coordination:** They ensure the order is recorded so that the Warehouse (Finished Goods) knows what to release.
+
+### 2.1 Direct Wholesaler Orders
+*   **In-Person or Phone Orders:** Registered wholesalers and small business customers may order directly through Sales.
+*   **Direct Order Screen:** Sales selects the customer and released products, then records boxes and loose units.
+*   **No Email Pretence:** These orders do not require a fake customer PO number or email attachment.
+*   **Controlled Scope:** Supermarkets, feeding programs, and large institutions cannot use this path; their official POs enter through the Customer PO Inbox.
+*   **Approval:** The completed Direct Order goes to the GM before Warehouse FG prepares it.
 
 ### 3. "Aging" & Debt Monitoring
 Because their primary domain is **Credit Sales (Utang)**, the Sales Custodian is responsible for monitoring the financial health of customer accounts.
@@ -37,7 +49,7 @@ Ma'am mentioned that she monitors sales weekly to adjust production. The Sales C
 The Sales Custodian must handle orders in both Box and Piece quantities, especially for smaller institutional clients and feeding programs.
 
 #### Unit Flexibility in Orders
-*   **PO Entry:** When recording a Purchase Order, the Sales Custodian can enter:
+*   **Imported PO Review:** When checking an imported Purchase Order, the Sales Custodian verifies:
     *   "50 Boxes of Fresh Milk 200ml" (for large supermarkets)
     *   "30 Boxes + 12 Pieces of Milk Bar" (for schools with odd student counts)
 *   **Unit Selector UI:**

@@ -95,6 +95,10 @@ function handleGet($db, $action) {
             requireActionRole($currentUser, ['finance_officer', 'general_manager'], 'Access forbidden');
             getPayablesList($db);
             break;
+        case 'overview':
+            requireActionRole($currentUser, ['finance_officer', 'general_manager'], 'Access forbidden');
+            getPayablesOverview($db);
+            break;
         case 'detail':
             requireActionRole($currentUser, ['finance_officer', 'general_manager'], 'Access forbidden');
             getPayableDetail($db);
@@ -119,8 +123,61 @@ function handlePost($db, $action, $user) {
     }
 }
 
+function getPayablesOverview($db) {
+    $hasReceivingReports = tableExists($db, 'receiving_reports');
+    $rrExpr = $hasReceivingReports
+        ? "(SELECT NULLIF(TRIM(rr_number), '') FROM receiving_reports WHERE po_id = po.id ORDER BY received_at DESC, id DESC LIMIT 1)"
+        : "NULL";
+    $invoiceExpr = $hasReceivingReports
+        ? "(SELECT NULLIF(TRIM(invoice_number), '') FROM receiving_reports WHERE po_id = po.id ORDER BY received_at DESC, id DESC LIMIT 1)"
+        : "NULL";
+    $rrStatusExpr = $hasReceivingReports
+        ? "(SELECT status FROM receiving_reports WHERE po_id = po.id ORDER BY received_at DESC, id DESC LIMIT 1)"
+        : "NULL";
+    $payableExpr = "(SELECT COALESCE(SUM(
+        CASE
+            WHEN po.status = 'partial_received' THEN IFNULL(quantity_received, 0)
+            WHEN IFNULL(quantity_received, 0) > 0 THEN quantity_received
+            ELSE GREATEST(quantity - IFNULL(quantity_rejected, 0), 0)
+        END * unit_price
+    ), 0) FROM purchase_order_items WHERE po_id = po.id)";
+    $overdueExpr = "CASE
+        WHEN po.due_date IS NOT NULL AND po.due_date < CURDATE() THEN 1
+        WHEN po.due_date IS NULL AND po.expected_delivery < DATE_SUB(CURDATE(), INTERVAL 30 DAY) THEN 1
+        ELSE 0
+    END";
+
+    $stmt = $db->query("
+        SELECT
+            SUM(CASE WHEN balance_due > 0 THEN 1 ELSE 0 END) AS open_count,
+            COALESCE(SUM(balance_due), 0) AS open_amount,
+            SUM(CASE WHEN rr_number IS NOT NULL AND invoice_number IS NOT NULL AND rr_status IN ('verified', 'completed') AND balance_due > 0 THEN 1 ELSE 0 END) AS ready_count,
+            COALESCE(SUM(CASE WHEN rr_number IS NOT NULL AND invoice_number IS NOT NULL AND rr_status IN ('verified', 'completed') THEN balance_due ELSE 0 END), 0) AS ready_amount,
+            SUM(CASE WHEN (rr_number IS NULL OR invoice_number IS NULL OR rr_status IS NULL OR rr_status NOT IN ('verified', 'completed')) AND balance_due > 0 THEN 1 ELSE 0 END) AS waiting_count,
+            COALESCE(SUM(CASE WHEN rr_number IS NULL OR invoice_number IS NULL OR rr_status IS NULL OR rr_status NOT IN ('verified', 'completed') THEN balance_due ELSE 0 END), 0) AS waiting_amount,
+            SUM(CASE WHEN is_overdue = 1 AND balance_due > 0 THEN 1 ELSE 0 END) AS overdue_count,
+            COALESCE(SUM(CASE WHEN is_overdue = 1 THEN balance_due ELSE 0 END), 0) AS overdue_amount
+        FROM (
+            SELECT
+                GREATEST({$payableExpr} - COALESCE(po.amount_paid, 0), 0) AS balance_due,
+                {$rrExpr} AS rr_number,
+                {$invoiceExpr} AS invoice_number,
+                {$rrStatusExpr} AS rr_status,
+                {$overdueExpr} AS is_overdue
+            FROM purchase_orders po
+            WHERE po.status IN ('received', 'partial_received', 'closed')
+              AND po.approved_by IS NOT NULL
+              AND po.approved_at IS NOT NULL
+              AND po.payment_status IN ('unpaid', 'partial')
+        ) payable_overview
+    ");
+
+    Response::success($stmt->fetch(), 'Payables overview retrieved');
+}
+
 function getPayablesList($db) {
     $status = getParam('payment_status', '');
+    $queue = getParam('queue', 'all');
     $search = getParam('search', '');
     $page = max(1, (int) getParam('page', 1));
     $limit = min(50, max(10, (int) getParam('limit', 15)));
@@ -133,8 +190,20 @@ function getPayablesList($db) {
     $invoiceSelect = $hasReceivingReports
         ? "(SELECT invoice_number FROM receiving_reports WHERE po_id = po.id ORDER BY received_at DESC, id DESC LIMIT 1) as invoice_number,"
         : "NULL as invoice_number,";
+    $rrStatusSelect = $hasReceivingReports
+        ? "(SELECT status FROM receiving_reports WHERE po_id = po.id ORDER BY received_at DESC, id DESC LIMIT 1) as rr_status,"
+        : "NULL as rr_status,";
+    $payableBalanceExpr = "(SELECT COALESCE(SUM(
+        CASE
+            WHEN po.status = 'partial_received' THEN IFNULL(quantity_received, 0)
+            WHEN IFNULL(quantity_received, 0) > 0 THEN quantity_received
+            ELSE GREATEST(quantity - IFNULL(quantity_rejected, 0), 0)
+        END * unit_price
+    ), 0) FROM purchase_order_items WHERE po_id = po.id) - COALESCE(po.amount_paid, 0)";
     
-    $where = ["po.status IN ('received','partial_received')", "po.approved_by IS NOT NULL", "po.approved_at IS NOT NULL"]; 
+    // Purchaser verification closes the procurement work, but Finance may still
+    // need to settle the supplier invoice afterward.
+    $where = ["po.status IN ('received','partial_received','closed')", "po.approved_by IS NOT NULL", "po.approved_at IS NOT NULL"];
     $params = [];
     
     if ($status) {
@@ -142,6 +211,7 @@ function getPayablesList($db) {
         $params[] = $status;
     } else {
         $where[] = "po.payment_status IN ('unpaid', 'partial')";
+        $where[] = "{$payableBalanceExpr} > 0";
     }
     
     if ($search) {
@@ -158,6 +228,29 @@ function getPayablesList($db) {
         $params[] = "%{$search}%";
         $params[] = "%{$search}%";
         $params[] = "%{$search}%";
+    }
+
+    if ($queue === 'ready') {
+        if ($hasReceivingReports) {
+            $where[] = "COALESCE((SELECT NULLIF(TRIM(rr_number), '') FROM receiving_reports WHERE po_id = po.id ORDER BY received_at DESC, id DESC LIMIT 1), '') <> ''";
+            $where[] = "COALESCE((SELECT NULLIF(TRIM(invoice_number), '') FROM receiving_reports WHERE po_id = po.id ORDER BY received_at DESC, id DESC LIMIT 1), '') <> ''";
+            $where[] = "COALESCE((SELECT status FROM receiving_reports WHERE po_id = po.id ORDER BY received_at DESC, id DESC LIMIT 1), '') IN ('verified', 'completed')";
+        } else {
+            $where[] = "1 = 0";
+        }
+    } elseif ($queue === 'waiting_documents') {
+        if ($hasReceivingReports) {
+            $where[] = "(
+                COALESCE((SELECT NULLIF(TRIM(rr_number), '') FROM receiving_reports WHERE po_id = po.id ORDER BY received_at DESC, id DESC LIMIT 1), '') = ''
+                OR COALESCE((SELECT NULLIF(TRIM(invoice_number), '') FROM receiving_reports WHERE po_id = po.id ORDER BY received_at DESC, id DESC LIMIT 1), '') = ''
+                OR COALESCE((SELECT status FROM receiving_reports WHERE po_id = po.id ORDER BY received_at DESC, id DESC LIMIT 1), '') NOT IN ('verified', 'completed')
+            )";
+        }
+    } elseif ($queue === 'overdue') {
+        $where[] = "(
+            (po.due_date IS NOT NULL AND po.due_date < CURDATE())
+            OR (po.due_date IS NULL AND po.expected_delivery < DATE_SUB(CURDATE(), INTERVAL 30 DAY))
+        )";
     }
     
     $whereClause = implode(' AND ', $where);
@@ -200,16 +293,18 @@ function getPayablesList($db) {
             (SELECT GROUP_CONCAT(item_description SEPARATOR ', ') FROM purchase_order_items WHERE po_id = po.id) as item_summary,
             (SELECT COALESCE(SUM(
                 CASE 
+                    WHEN po.status = 'partial_received' THEN IFNULL(quantity_received, 0)
                     WHEN IFNULL(quantity_received, 0) > 0 THEN quantity_received
                     ELSE GREATEST(quantity - IFNULL(quantity_rejected, 0), 0)
                 END * unit_price
             ), 0) FROM purchase_order_items WHERE po_id = po.id) as payable_total,
             {$rrSelect}
             {$invoiceSelect}
+            {$rrStatusSelect}
             CASE 
                 WHEN po.payment_status != 'paid' AND po.due_date IS NOT NULL AND po.due_date < CURDATE()
                 THEN 1
-                WHEN po.status = 'received' AND po.payment_status != 'paid' 
+                WHEN po.status IN ('received', 'closed') AND po.payment_status != 'paid'
                      AND po.due_date IS NULL AND po.expected_delivery < DATE_SUB(CURDATE(), INTERVAL 30 DAY)
                 THEN 1 ELSE 0 
             END as is_overdue
@@ -225,9 +320,10 @@ function getPayablesList($db) {
             END,
             CASE po.status
                 WHEN 'received' THEN 1
-                WHEN 'partial_received' THEN 2
-                WHEN 'ordered' THEN 3
-                WHEN 'approved' THEN 4
+                WHEN 'closed' THEN 2
+                WHEN 'partial_received' THEN 3
+                WHEN 'ordered' THEN 4
+                WHEN 'approved' THEN 5
                 ELSE 5
             END,
             po.order_date DESC,
@@ -376,7 +472,7 @@ function recordPayment($db, $user) {
     
     if (!$po) Response::error('Purchase order not found', 404);
     if (in_array($po['status'], ['cancelled', 'rejected'])) Response::error('Cannot release payment for rejected or cancelled POs', 400);
-    if (!in_array($po['status'], ['received', 'partial_received'])) Response::error('Only received or partially received POs are payable', 400);
+    if (!in_array($po['status'], ['received', 'partial_received', 'closed'])) Response::error('Only received purchase orders are payable', 400);
     if (empty($po['approved_by']) || empty($po['approved_at'])) Response::error('PO must be GM-approved before payment', 400);
     if ($po['payment_status'] === 'paid') Response::error('This PO is already fully paid', 400);
     if ($po['payment_status'] === 'cancelled') Response::error('Payment is cancelled for this PO', 400);
@@ -411,6 +507,7 @@ function recordPayment($db, $user) {
     $payableStmt = $db->prepare("
         SELECT COALESCE(SUM(
             CASE 
+                WHEN ? = 'partial_received' THEN IFNULL(quantity_received, 0)
                 WHEN IFNULL(quantity_received, 0) > 0 THEN quantity_received
                 ELSE GREATEST(quantity - IFNULL(quantity_rejected, 0), 0)
             END * unit_price
@@ -418,7 +515,7 @@ function recordPayment($db, $user) {
         FROM purchase_order_items
         WHERE po_id = ?
     ");
-    $payableStmt->execute([$poId]);
+    $payableStmt->execute([$po['status'], $poId]);
     $payableTotal = (float) ($payableStmt->fetchColumn() ?? 0);
     if ($payableTotal <= 0) Response::error('Payable amount is not available for this PO', 400);
 

@@ -5,7 +5,7 @@
  * Sales Order/PO processing for Sales Custodian
  * 
  * GET actions: list, detail, pending, by_customer
- * POST actions: create, add_item
+ * POST actions: emailed PO intake and limited direct orders for wholesalers/small businesses
  * PUT actions: update, approve, cancel, update_status
  * 
  * @package HighlandFresh
@@ -122,7 +122,7 @@ function validateItemsStock(PDO $db, array $items): array {
             FROM finished_goods_inventory fi
             WHERE fi.product_id IN ($placeholders)
               AND fi.status = 'available'
-              AND (fi.expiry_date IS NULL OR fi.expiry_date > CURDATE())
+              AND (fi.expiry_date IS NULL OR fi.expiry_date >= CURDATE())
               AND COALESCE(fi.quantity_available, 0) > 0
             GROUP BY fi.product_id
         ) stock ON stock.product_id = p.id
@@ -132,7 +132,7 @@ function validateItemsStock(PDO $db, array $items): array {
             FROM sales_order_items soi
             JOIN sales_orders so ON soi.order_id = so.id
             WHERE soi.product_id IN ($placeholders)
-              AND so.status IN ('pending', 'approved', 'preparing')
+              AND so.status IN ('pending', 'approved', 'picking', 'preparing')
             GROUP BY soi.product_id
         ) res ON res.product_id = p.id
         WHERE p.id IN ($placeholders)
@@ -163,6 +163,68 @@ function validateItemsStock(PDO $db, array $items): array {
     }
 
     return $errors;
+}
+
+function getOrderStockReadiness(PDO $db, int $orderId): array {
+    $itemsStmt = $db->prepare("
+        SELECT soi.product_id, MAX(p.product_name) AS product_name,
+               SUM(COALESCE(soi.quantity_ordered, 0)) AS requested
+        FROM sales_order_items soi
+        JOIN products p ON p.id = soi.product_id
+        WHERE soi.order_id = ?
+        GROUP BY soi.product_id
+    ");
+    $itemsStmt->execute([$orderId]);
+    $items = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
+    if (!$items) {
+        return ['ready' => false, 'shortages' => []];
+    }
+
+    $productIds = array_map('intval', array_column($items, 'product_id'));
+    $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+    $stockStmt = $db->prepare("
+        SELECT fgi.product_id,
+               COALESCE(SUM(
+                   CASE
+                       WHEN COALESCE(fgi.boxes_available, 0) > 0
+                            OR COALESCE(fgi.pieces_available, 0) > 0
+                            OR COALESCE(fgi.quantity_boxes, 0) > 0
+                            OR COALESCE(fgi.quantity_pieces, 0) > 0
+                       THEN (COALESCE(fgi.boxes_available, fgi.quantity_boxes, 0)
+                             * COALESCE(p.pieces_per_box, 1))
+                            + COALESCE(fgi.pieces_available, fgi.quantity_pieces, 0)
+                       ELSE GREATEST(0, COALESCE(fgi.quantity_available, fgi.remaining_quantity, 0))
+                   END
+               ), 0) AS available
+        FROM finished_goods_inventory fgi
+        JOIN products p ON p.id = fgi.product_id
+        WHERE fgi.product_id IN ({$placeholders})
+          AND fgi.status = 'available'
+          AND (fgi.expiry_date IS NULL OR fgi.expiry_date >= CURDATE())
+        GROUP BY fgi.product_id
+    ");
+    $stockStmt->execute($productIds);
+    $available = [];
+    foreach ($stockStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $available[(int)$row['product_id']] = (int)$row['available'];
+    }
+
+    $shortages = [];
+    foreach ($items as $item) {
+        $productId = (int)$item['product_id'];
+        $requested = (int)$item['requested'];
+        $ready = (int)($available[$productId] ?? 0);
+        if ($ready < $requested) {
+            $shortages[] = [
+                'product_id' => $productId,
+                'product_name' => $item['product_name'],
+                'requested' => $requested,
+                'available' => $ready,
+                'remaining' => $requested - $ready,
+            ];
+        }
+    }
+    return ['ready' => !$shortages, 'shortages' => $shortages];
 }
 
 /**
@@ -249,6 +311,12 @@ function handleGet($db, $action, $validStatuses) {
                 if ($sum > 0) {
                     $o['total_amount'] = $sum;
                 }
+                if (($o['status'] ?? '') === 'approved') {
+                    $readiness = getOrderStockReadiness($db, (int)$o['id']);
+                    $o['stock_ready'] = $readiness['ready'] ? 1 : 0;
+                    $o['stock_shortage_count'] = count($readiness['shortages']);
+                    $o['stock_shortages'] = $readiness['shortages'];
+                }
                 // Never leave blank submitter on list (Sales Custodian default for GM queue)
                 $by = trim((string)($o['created_by_name'] ?? $o['submitted_by_name'] ?? ''));
                 if ($by === '') {
@@ -286,7 +354,32 @@ function handleGet($db, $action, $validStatuses) {
             if (!$order) {
                 Response::notFound('Order not found');
             }
-            
+
+            $order['source_import'] = null;
+            if (!empty($order['source_import_id'])) {
+                $sourceStmt = $db->prepare("
+                    SELECT id, sender_email, subject, received_at,
+                           attachment_original_name, customer_po_number
+                    FROM customer_order_imports
+                    WHERE id = ?
+                ");
+                $sourceStmt->execute([(int) $order['source_import_id']]);
+                $order['source_import'] = $sourceStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+            }
+
+            $stockStateStmt = $db->prepare("
+                SELECT dsa.state,
+                       SUM(dsa.quantity_allocated) AS quantity_allocated,
+                       SUM(dsa.quantity_delivered) AS quantity_delivered,
+                       SUM(dsa.quantity_returned) AS quantity_returned
+                FROM delivery_stock_allocations dsa
+                JOIN delivery_receipts dr ON dr.id = dsa.delivery_receipt_id
+                WHERE dr.order_id = ?
+                GROUP BY dsa.state
+            ");
+            $stockStateStmt->execute([$id]);
+            $order['delivery_stock_states'] = $stockStateStmt->fetchAll(PDO::FETCH_ASSOC);
+
             // Order items + delivery/returns fulfillment (do not trust quantity_ordered alone)
             $itemsStmt = $db->prepare("
                 SELECT
@@ -523,339 +616,220 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
     
     switch ($action) {
         case 'create':
-            // Validation
-            $errors = [];
-            
-            if (empty($data['customer_id'])) {
-                $errors['customer_id'] = 'Customer ID is required';
+            Response::error('Large customer orders must enter through the Customer PO Inbox. Use Direct Order only for wholesalers and small business customers.', 409);
+            break;
+
+        case 'create_direct':
+            $customerId = (int) ($data['customer_id'] ?? 0);
+            $items = is_array($data['items'] ?? null) ? $data['items'] : [];
+            if ($customerId <= 0) {
+                Response::validationError(['customer_id' => 'Choose a wholesaler or small business customer.']);
+            }
+            if (empty($items)) {
+                Response::validationError(['items' => 'Add at least one product.']);
             }
 
-            // Dual-action create: draft vs submit-for-approval in one step
-            // action_type: draft | pending_approval | submit
-            // status (optional): draft | pending
-            $actionType = strtolower(trim((string) ($data['action_type'] ?? '')));
-            $requestedStatus = strtolower(trim((string) ($data['status'] ?? '')));
-            $initialStatus = 'draft';
-            if (
-                in_array($actionType, ['pending_approval', 'submit', 'pending'], true)
-                || $requestedStatus === 'pending'
-                || $requestedStatus === 'pending_approval'
-            ) {
-                $initialStatus = 'pending'; // GM approval queue (existing enum)
-            } elseif ($actionType === 'draft' || $requestedStatus === 'draft' || $actionType === '') {
-                $initialStatus = 'draft';
-            }
-            if (!in_array($initialStatus, $validStatuses, true)) {
-                $initialStatus = 'draft';
-            }
-
-            // Submitting for approval requires at least one line item
-            if ($initialStatus === 'pending') {
-                $hasItems = !empty($data['items']) && is_array($data['items']) && count(array_filter($data['items'], function ($it) {
-                    return !empty($it['product_id']) && (
-                        (int) ($it['quantity'] ?? 0) > 0
-                        || (int) ($it['quantity_boxes'] ?? 0) > 0
-                        || (int) ($it['quantity_pieces'] ?? 0) > 0
-                    );
-                })) > 0;
-                if (!$hasItems) {
-                    $errors['items'] = 'Add at least one item before submitting for approval';
-                }
-            }
-            
-            if (!empty($errors)) {
-                Response::validationError($errors);
-            }
-            
-            // Verify customer exists
-            $customerStmt = $db->prepare("SELECT * FROM customers WHERE id = ? AND status = 'active'");
-            $customerStmt->execute([$data['customer_id']]);
-            $customer = $customerStmt->fetch();
-            
+            $customerStmt = $db->prepare("
+                SELECT c.*,
+                       (SELECT COALESCE(SUM(dr.total_amount - dr.amount_paid), 0)
+                        FROM delivery_receipts dr
+                        WHERE dr.customer_id = c.id
+                          AND dr.payment_status != 'paid'
+                          AND dr.status NOT IN ('cancelled', 'draft')) AS outstanding_balance
+                FROM customers c
+                WHERE c.id = ? AND c.status = 'active'
+            ");
+            $customerStmt->execute([$customerId]);
+            $customer = $customerStmt->fetch(PDO::FETCH_ASSOC);
             if (!$customer) {
-                Response::error('Customer not found or inactive', 400);
+                Response::error('Customer not found or inactive.', 400);
             }
-            
-            // ── Inventory availability validation ──────────────────────
-            if (!empty($data['items']) && is_array($data['items'])) {
-                $stockErrors = validateItemsStock($db, $data['items']);
-                if (!empty($stockErrors)) {
-                    Response::error('Insufficient stock for one or more items', 422, ['stock_errors' => $stockErrors]);
+
+            $directTypes = ['distributor', 'restaurant'];
+            if (!in_array($customer['customer_type'], $directTypes, true)) {
+                Response::error(
+                    'This customer must use the emailed PO flow. Direct Order is only for wholesalers and small business customers.',
+                    409
+                );
+            }
+
+            $deliveryDate = trim((string) ($data['delivery_date'] ?? ''));
+            if ($deliveryDate === '') {
+                Response::validationError(['delivery_date' => 'Choose the requested delivery date.']);
+            }
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $deliveryDate) || $deliveryDate < date('Y-m-d')) {
+                Response::validationError(['delivery_date' => 'Delivery date cannot be earlier than today.']);
+            }
+
+            $stockErrors = validateItemsStock($db, $items);
+            if (!empty($stockErrors)) {
+                Response::error('Not enough released stock for one or more products.', 422, ['stock_errors' => $stockErrors]);
+            }
+
+            $productStmt = $db->prepare("
+                SELECT id, product_name, variant, unit_size, unit_measure, selling_price
+                FROM products
+                WHERE id = ? AND is_active = 1
+            ");
+            $prepared = [];
+            $subtotal = 0.0;
+            $totalQuantity = 0;
+            foreach ($items as $item) {
+                $productId = (int) ($item['product_id'] ?? 0);
+                if ($productId <= 0) {
+                    continue;
                 }
+
+                $pack = hf_get_product_pack_config($db, $productId);
+                $unitsPerBox = max(1, (int) $pack['units_per_pack']);
+                $boxes = max(0, (int) ($item['quantity_boxes'] ?? 0));
+                $pieces = max(0, (int) ($item['quantity_pieces'] ?? 0));
+                $quantity = hf_packs_to_base($boxes, $pieces, $unitsPerBox);
+                if ($quantity <= 0) {
+                    continue;
+                }
+
+                $productStmt->execute([$productId]);
+                $product = $productStmt->fetch(PDO::FETCH_ASSOC);
+                if (!$product) {
+                    Response::error("Product #{$productId} is unavailable.", 400);
+                }
+
+                $unitPrice = round((float) $product['selling_price'], 2);
+                $lineTotal = round($quantity * $unitPrice, 2);
+                $prepared[] = [
+                    'product' => $product,
+                    'quantity' => $quantity,
+                    'boxes' => $boxes,
+                    'pieces' => $pieces,
+                    'unit_type' => $boxes > 0 && $pieces > 0 ? 'mixed' : ($boxes > 0 ? 'box' : 'piece'),
+                    'unit_price' => $unitPrice,
+                    'line_total' => $lineTotal,
+                ];
+                $subtotal += $lineTotal;
+                $totalQuantity += $quantity;
             }
 
-            // Generate order number
-            $orderNumber = generateOrderNumber($db);
+            if (empty($prepared)) {
+                Response::validationError(['items' => 'Add a quantity for at least one product.']);
+            }
 
-            // Determine payment type (can be overridden per order)
-            $paymentType = $data['payment_type']
-                ?? $data['payment_mode']
-                ?? $customer['default_payment_type']
-                ?? 'cash';
+            $paymentType = strtolower(trim((string) ($data['payment_type'] ?? $customer['default_payment_type'] ?? 'cash')));
+            if (!in_array($paymentType, ['cash', 'credit'], true)) {
+                Response::validationError(['payment_type' => 'Payment must be Cash or Credit.']);
+            }
+            $creditLimit = max(0, (float) ($customer['credit_limit'] ?? 0));
+            $currentBalance = max(0, (float) ($customer['outstanding_balance'] ?? 0));
+            $needsCreditOverride = $paymentType === 'credit'
+                && ($currentBalance + $subtotal) > $creditLimit;
+
+            $termsDays = $paymentType === 'credit' ? max(0, (int) ($customer['payment_terms_days'] ?? 0)) : 0;
+            $dueDate = $paymentType === 'credit'
+                ? date('Y-m-d', strtotime('+' . $termsDays . ' days'))
+                : null;
+            $orderNumber = generateOrderNumber($db);
+            $notes = trim((string) ($data['notes'] ?? ''));
+            $controlNotes = ['[DIRECT ORDER] GM approval required before Warehouse FG fulfillment.'];
+            if ($needsCreditOverride) {
+                $controlNotes[] = sprintf(
+                    '[GM-CREDIT-OVERRIDE] Projected balance PHP %.2f exceeds the PHP %.2f credit limit.',
+                    $currentBalance + $subtotal,
+                    $creditLimit
+                );
+            }
+            $notes = implode("\n", array_filter(array_merge([$notes], $controlNotes)));
 
             $db->beginTransaction();
-            
             try {
-                // Create order (status set immediately — no forced draft hop)
-                $stmt = $db->prepare("
-                    INSERT INTO sales_orders 
-                    (order_number, customer_id, customer_po_number, delivery_date, 
-                     payment_type, delivery_address, notes, sub_account_id,
-                     subtotal, discount_amount, discount_percent, tax_amount, total_amount,
-                     status, created_by)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, ?, ?)
+                $orderStmt = $db->prepare("
+                    INSERT INTO sales_orders (
+                        order_number, customer_id, customer_name, customer_type,
+                        source_type, payment_type, payment_terms_days,
+                        contact_person, contact_number, delivery_address, delivery_date,
+                        total_items, total_quantity, subtotal, total_amount,
+                        balance_due, due_date, status, created_by, notes
+                    ) VALUES (?, ?, ?, ?, 'direct_sales', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
                 ");
-                
-                $stmt->execute([
+                $orderStmt->execute([
                     $orderNumber,
-                    $data['customer_id'],
-                    $data['customer_po_number'] ?? null,
-                    $data['delivery_date'] ?? null,
+                    $customerId,
+                    $customer['name'],
+                    $customer['customer_type'],
                     $paymentType,
-                    $data['delivery_address'] ?? $customer['address'],
-                    $data['notes'] ?? $data['special_instructions'] ?? null,
-                    $data['sub_account_id'] ?? null,
-                    $initialStatus,
-                    $currentUser['user_id']
+                    $termsDays,
+                    $customer['contact_person'] ?? null,
+                    $customer['contact_number'] ?? null,
+                    trim((string) ($data['delivery_address'] ?? $customer['address'] ?? '')) ?: null,
+                    $deliveryDate ?: null,
+                    count($prepared),
+                    $totalQuantity,
+                    $subtotal,
+                    $subtotal,
+                    $subtotal,
+                    $dueDate,
+                    $currentUser['user_id'],
+                    $notes,
                 ]);
-                
-                $orderId = $db->lastInsertId();
-                
-                // Add items if provided
-                if (!empty($data['items']) && is_array($data['items'])) {
-                    $subtotal = 0;
-                    
-                    $itemStmt = $db->prepare("
-                        INSERT INTO sales_order_items 
-                        (order_id, product_id, product_name, size_value, size_unit, 
-                         quantity_ordered, quantity_boxes, quantity_pieces, 
-                         unit_type, unit_price, line_total)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ");
-                    
-                    foreach ($data['items'] as $item) {
-                        if (empty($item['product_id'])) {
-                            continue;
-                        }
-                        
-                        // Product master UOM — single source for pack conversion
-                        $packCfg = hf_get_product_pack_config($db, (int)$item['product_id']);
-                        $prodStmt = $db->prepare("
-                            SELECT product_name, unit_size, unit_measure, selling_price,
-                                   COALESCE(pieces_per_box, 1) AS pieces_per_box,
-                                   COALESCE(base_unit, 'piece') AS base_unit,
-                                   COALESCE(box_unit, 'box') AS box_unit
-                            FROM products WHERE id = ?
-                        ");
-                        $prodStmt->execute([$item['product_id']]);
-                        $product = $prodStmt->fetch();
-                        
-                        if (!$product) {
-                            continue; // Skip invalid product
-                        }
-                        
-                        // Authoritative order qty = BASE units (bottles/pieces).
-                        // "2 boxes" → 2 * units_per_pack from product master (never hardcoded).
-                        $boxes = (int)($item['quantity_boxes'] ?? $item['quantity_packs'] ?? 0);
-                        $pieces = (int)($item['quantity_pieces'] ?? $item['quantity_loose'] ?? 0);
-                        $ppb = max(1, (int)$packCfg['units_per_pack']);
-                        $fromPack = hf_packs_to_base($boxes, $pieces, $ppb);
-                        $quantity = (int)($item['quantity'] ?? $item['quantity_ordered'] ?? 0);
-                        if ($quantity <= 0 && $fromPack > 0) {
-                            $quantity = $fromPack;
-                        } elseif ($quantity > 0 && $fromPack > 0 && $quantity !== $fromPack) {
-                            // Trust pack breakdown when client sent inconsistent total
-                            $quantity = $fromPack;
-                        }
-                        
-                        if ($quantity <= 0) {
-                            continue;
-                        }
-                        
-                        // Determine unit type
-                        $unitType = $item['unit_type'] ?? 'piece';
-                        if ($boxes > 0 && $pieces > 0) {
-                            $unitType = 'mixed';
-                        } elseif ($boxes > 0) {
-                            $unitType = 'box';
-                        }
-                        
-                        // Get product price if not provided
-                        $unitPrice = $item['unit_price'] ?? $product['selling_price'] ?? 0;
-                        
-                        $lineTotal = ($quantity * $unitPrice);
-                        $subtotal += $lineTotal;
-                        
-                        $itemStmt->execute([
-                            $orderId,
-                            $item['product_id'],
-                            $product['product_name'],
-                            $product['unit_size'] ?? 0,
-                            $product['unit_measure'] ?? 'ml',
-                            $quantity,
-                            $boxes,
-                            $pieces,
-                            $unitType,
-                            $unitPrice,
-                            $lineTotal
-                        ]);
-                    }
-                    
-                    // Update order totals
-                    $discountPercent = $data['discount_percent'] ?? 0;
-                    $orderDiscount = $data['discount_amount'] ?? ($subtotal * ($discountPercent / 100));
-                    $taxAmount = $data['tax_amount'] ?? 0;
-                    $totalAmount = $subtotal - $orderDiscount + $taxAmount;
-                    
-                    $updateStmt = $db->prepare("
-                        UPDATE sales_orders SET
-                            subtotal = ?,
-                            discount_amount = ?,
-                            discount_percent = ?,
-                            tax_amount = ?,
-                            total_amount = ?
-                        WHERE id = ?
-                    ");
-                    $updateStmt->execute([$subtotal, $orderDiscount, $discountPercent, $taxAmount, $totalAmount, $orderId]);
+                $orderId = (int) $db->lastInsertId();
+
+                $itemStmt = $db->prepare("
+                    INSERT INTO sales_order_items (
+                        order_id, product_id, product_name, variant, size_value, size_unit,
+                        quantity_ordered, quantity_boxes, quantity_pieces,
+                        unit_type, unit_price, line_total
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                foreach ($prepared as $line) {
+                    $product = $line['product'];
+                    $itemStmt->execute([
+                        $orderId,
+                        $product['id'],
+                        $product['product_name'],
+                        $product['variant'] ?? null,
+                        (float) ($product['unit_size'] ?? 0),
+                        $product['unit_measure'] ?: 'unit',
+                        $line['quantity'],
+                        $line['boxes'],
+                        $line['pieces'],
+                        $line['unit_type'],
+                        $line['unit_price'],
+                        $line['line_total'],
+                    ]);
                 }
-                
-                // Record status history
-                $historyNote = $initialStatus === 'pending'
-                    ? 'Order created and submitted for approval'
-                    : 'Order created as draft';
+
                 $historyStmt = $db->prepare("
                     INSERT INTO sales_order_status_history (order_id, status, notes, changed_by)
-                    VALUES (?, ?, ?, ?)
+                    VALUES (?, 'pending', 'Direct Order submitted for GM approval.', ?)
                 ");
-                $historyStmt->execute([$orderId, $initialStatus, $historyNote, $currentUser['user_id']]);
-                
-                $db->commit();
-                
-                logAudit($currentUser['user_id'], 'CREATE', 'sales_orders', $orderId, null, array_merge($data, [
-                    'initial_status' => $initialStatus,
-                    'action_type' => $actionType ?: ($initialStatus === 'pending' ? 'pending_approval' : 'draft'),
-                ]));
-                
-                // Get created order
-                $getStmt = $db->prepare("
-                    SELECT o.*, c.name as customer_name 
-                    FROM sales_orders o 
-                    LEFT JOIN customers c ON o.customer_id = c.id 
-                    WHERE o.id = ?
-                ");
-                $getStmt->execute([$orderId]);
-                $order = $getStmt->fetch();
-                
-                $msg = $initialStatus === 'pending'
-                    ? 'Order created and submitted for approval'
-                    : 'Order saved as draft';
-                Response::created($order, $msg);
-                
-            } catch (Exception $e) {
-                $db->rollBack();
-                throw $e;
-            }
-            break;
-            
-        case 'add_item':
-            $orderId = $data['order_id'] ?? getParam('id');
-            
-            if (!$orderId) {
-                Response::error('Order ID required', 400);
-            }
-            
-            // Verify order exists and is editable
-            $orderStmt = $db->prepare("SELECT * FROM sales_orders WHERE id = ?");
-            $orderStmt->execute([$orderId]);
-            $order = $orderStmt->fetch();
-            
-            if (!$order) {
-                Response::notFound('Order not found');
-            }
-            
-            if (!in_array($order['status'], ['draft', 'pending'])) {
-                Response::error('Cannot add items to order in ' . $order['status'] . ' status', 400);
-            }
-            
-            // Validation
-            if (empty($data['product_id']) || empty($data['quantity'])) {
-                Response::validationError(['product_id' => 'Product and quantity are required']);
-            }
-            
-            // Get product price
-            $unitPrice = $data['unit_price'] ?? 0;
-            if (!$unitPrice) {
-                $prodStmt = $db->prepare("SELECT selling_price FROM products WHERE id = ?");
-                $prodStmt->execute([$data['product_id']]);
-                $product = $prodStmt->fetch();
-                $unitPrice = $product ? $product['selling_price'] : 0;
-            }
-            
-            $discountAmount = $data['discount_amount'] ?? 0;
-            $lineTotal = ($data['quantity'] * $unitPrice) - $discountAmount;
-            
-            $db->beginTransaction();
-            
-            try {
-                // Add item
-                $stmt = $db->prepare("
-                    INSERT INTO sales_order_items 
-                    (order_id, product_id, quantity, unit_price, discount_amount, line_total)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ");
-                $stmt->execute([
-                    $orderId,
-                    $data['product_id'],
-                    $data['quantity'],
-                    $unitPrice,
-                    $discountAmount,
-                    $lineTotal
+                $historyStmt->execute([$orderId, $currentUser['user_id']]);
+
+                logAudit($currentUser['user_id'], 'CREATE_DIRECT_ORDER', 'sales_orders', $orderId, null, [
+                    'order_number' => $orderNumber,
+                    'customer_id' => $customerId,
+                    'total_amount' => $subtotal,
+                    'needs_credit_override' => $needsCreditOverride,
                 ]);
-                
-                $itemId = $db->lastInsertId();
-                
-                // Recalculate order totals
-                $totalsStmt = $db->prepare("
-                    SELECT COALESCE(SUM(line_total), 0) as subtotal FROM sales_order_items WHERE order_id = ?
-                ");
-                $totalsStmt->execute([$orderId]);
-                $subtotal = $totalsStmt->fetch()['subtotal'];
-                
-                $orderDiscount = $order['discount_percent'] > 0 
-                    ? $subtotal * ($order['discount_percent'] / 100) 
-                    : $order['discount_amount'];
-                $totalAmount = $subtotal - $orderDiscount + $order['tax_amount'];
-                
-                $updateStmt = $db->prepare("
-                    UPDATE sales_orders SET
-                        subtotal = ?,
-                        discount_amount = ?,
-                        total_amount = ?,
-                        updated_at = NOW()
-                    WHERE id = ?
-                ");
-                $updateStmt->execute([$subtotal, $orderDiscount, $totalAmount, $orderId]);
-                
                 $db->commit();
-                
-                // Get created item
-                $getStmt = $db->prepare("
-                    SELECT oi.*, p.product_name, p.product_code
-                    FROM sales_order_items oi
-                    LEFT JOIN products p ON oi.product_id = p.id
-                    WHERE oi.id = ?
-                ");
-                $getStmt->execute([$itemId]);
-                $item = $getStmt->fetch();
-                
-                Response::created($item, 'Item added successfully');
-                
-            } catch (Exception $e) {
-                $db->rollBack();
-                throw $e;
+
+                Response::created([
+                    'id' => $orderId,
+                    'order_number' => $orderNumber,
+                    'status' => 'pending',
+                    'total_amount' => round($subtotal, 2),
+                    'needs_credit_override' => $needsCreditOverride,
+                ], 'Direct order sent for GM approval.');
+            } catch (Throwable $error) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                throw $error;
             }
             break;
-            
+
+        case 'add_item':
+            Response::error('Add all products while creating the Direct Order.', 409);
+            break;
+
         default:
             Response::error('Invalid action', 400);
     }
@@ -883,6 +857,10 @@ function handlePut($db, $action, $currentUser, $validStatuses) {
     
     switch ($action) {
         case 'update':
+            if (($current['source_type'] ?? 'manual') === 'customer_po_email') {
+                Response::error('An emailed customer PO is read-only. Ask the customer to send a revised PO.', 409);
+            }
+
             // Only allow updates on draft or pending orders
             if (!in_array($current['status'], ['draft', 'pending'])) {
                 Response::error('Cannot update order in ' . $current['status'] . ' status', 400);
@@ -935,6 +913,10 @@ function handlePut($db, $action, $currentUser, $validStatuses) {
             break;
             
         case 'approve':
+            if (($currentUser['role'] ?? '') !== 'general_manager') {
+                Response::error('Only the General Manager can approve a Sales Order.', 403);
+            }
+
             if ($current['status'] !== 'pending') {
                 Response::error('Only pending orders can be approved', 400);
             }

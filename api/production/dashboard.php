@@ -9,6 +9,7 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/sales_production_demand.php';
 
 // Require Production role
 $currentUser = Auth::requireRole(['production_staff', 'general_manager', 'qc_officer']);
@@ -226,6 +227,7 @@ try {
     
     // Production's available milk = issued - used
     $productionAvailableMilk = max(0, ($prodMilkStats['total_issued'] ?? 0) - ($usedStats['total_used'] ?? 0));
+    $customerProductionDemand = hfApprovedSalesProductionDemand($db);
     
     Response::success([
         'today' => [
@@ -249,7 +251,9 @@ try {
         'delivery_based_milk' => (float) ($milkStats['total_liters'] ?? 0),
         // Total usable stored raw milk.
         'stored_milk' => (float) ($storedStats['total_liters'] ?? 0),
-        'recent_runs' => $recentRunsList
+        'recent_runs' => $recentRunsList,
+        'customer_production_demand' => $customerProductionDemand,
+        'customer_production_demand_count' => count($customerProductionDemand)
     ], 'Dashboard data retrieved successfully');
     
 } catch (Exception $e) {

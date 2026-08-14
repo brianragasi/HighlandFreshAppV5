@@ -62,18 +62,6 @@ const PurchasingService = {
         return await api.get(`/purchasing/suppliers.php?action=search&q=${encodeURIComponent(query)}`);
     },
 
-    async createSupplier(data) {
-        return await api.post('/purchasing/suppliers.php?action=create', data);
-    },
-
-    async updateSupplier(id, data) {
-        return await api.put(`/purchasing/suppliers.php?action=update&id=${id}`, data);
-    },
-
-    async toggleSupplierStatus(id) {
-        return await api.put(`/purchasing/suppliers.php?action=toggle_status&id=${id}`, {});
-    },
-
     // ========================================
     // PURCHASE ORDERS
     // ========================================
@@ -104,6 +92,7 @@ const PurchasingService = {
      *   {
      *     purchase_request_id: <int>,
      *     payment_terms, order_date, expected_delivery, delivery_details, notes,
+     *     submit_for_approval?,
      *     items: [
      *       { purchase_request_item_id, supplier_id, unit_price, quantity?, is_vat_item?, notes? }, ...
      *     ]
@@ -116,6 +105,10 @@ const PurchasingService = {
 
     async submitPO(id) {
         return await api.put(`/purchasing/purchase_orders.php?action=submit&id=${id}`, {});
+    },
+
+    async submitPOGroup(id) {
+        return await api.put(`/purchasing/purchase_orders.php?action=submit_pr_group&id=${id}`, {});
     },
 
     async approvePO(id, stepUpToken, approvalRemarks = '') {
@@ -269,6 +262,13 @@ const PurchasingService = {
     async overrideCanvassQuote(quoteId, reason) {
         return await api.put('/purchasing/canvassing.php?action=override_quote', {
             quote_id: quoteId,
+            reason
+        });
+    },
+
+    async confirmLimitedSupplierMarket(canvassId, reason) {
+        return await api.put('/purchasing/canvassing.php?action=confirm_limited_market', {
+            canvass_id: canvassId,
             reason
         });
     },

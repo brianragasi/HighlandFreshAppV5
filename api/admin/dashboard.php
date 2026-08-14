@@ -66,6 +66,14 @@ try {
                             SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active
                          FROM ingredients");
     $stats['ingredients'] = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    // Archived suppliers remain in history but cannot be used for new canvassing.
+    $stmt = $pdo->query("SELECT
+                            COUNT(*) as total,
+                            SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active,
+                            SUM(CASE WHEN is_active = 0 THEN 1 ELSE 0 END) as archived
+                         FROM suppliers");
+    $stats['suppliers'] = $stmt->fetch(PDO::FETCH_ASSOC);
     
     // Storage tanks
     $stmt = $pdo->query("SELECT 
@@ -209,14 +217,33 @@ function fetchGmPendingActions(PDO $pdo): array {
     // Pending disposals awaiting signature
     try {
         $stmt = $pdo->query("
-            SELECT id, disposal_code, product_name, total_value, disposal_reason, initiated_at, status
-            FROM disposals
-            WHERE status = 'pending'
-            ORDER BY initiated_at ASC
+            SELECT d.id, d.disposal_code, d.product_name, d.total_value, d.disposal_reason,
+                   d.initiated_at, d.status, d.notes,
+                   COALESCE(
+                       NULLIF(d.total_value, 0),
+                       d.quantity * COALESCE(
+                           NULLIF(d.unit_cost, 0),
+                           NULLIF(p.cost_price, 0),
+                           NULLIF(p.unit_price, 0),
+                           NULLIF(p.selling_price, 0)
+                       ),
+                       0
+                   ) AS display_total_value,
+                   CASE
+                       WHEN d.notes LIKE '%catalog price%' THEN 1
+                       WHEN COALESCE(NULLIF(d.unit_cost, 0), NULLIF(p.cost_price, 0), 0) > 0 THEN 0
+                       WHEN COALESCE(p.unit_price, p.selling_price, 0) > 0 THEN 1
+                       ELSE 0
+                   END AS value_is_estimate
+            FROM disposals d
+            LEFT JOIN products p ON p.id = d.product_id
+            WHERE d.status = 'pending'
+            ORDER BY d.initiated_at ASC
             LIMIT 5
         ");
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $code = $row['disposal_code'] ?: ('#' . $row['id']);
+            $lossValue = (float)($row['display_total_value'] ?? 0);
             $actions[] = [
                 'id' => 'disp-' . $row['id'],
                 'source_id' => (int)$row['id'],
@@ -225,7 +252,10 @@ function fetchGmPendingActions(PDO $pdo): array {
                 'priority' => 'high',
                 'title' => 'Disposal Request ' . $code . ' — Pending Signature',
                 'detail' => trim(($row['product_name'] ?? 'Inventory') . ' · ' . ($row['disposal_reason'] ?? 'Awaiting GM approval')),
-                'meta' => $row['total_value'] !== null ? '₱' . number_format((float)$row['total_value'], 2) : null,
+                'amount' => $lossValue,
+                'meta' => $lossValue > 0
+                    ? (($row['value_is_estimate'] ?? false) ? 'Est. ' : '') . '₱' . number_format($lossValue, 2)
+                    : 'Cost not recorded',
                 'href' => 'gm_approvals.html',
                 'requested_at' => $row['initiated_at'],
             ];
@@ -393,7 +423,6 @@ function formatRoleLabel(?string $role): string {
         'cashier' => 'Cashier',
         'finance_officer' => 'Finance Officer',
         'production_staff' => 'Production',
-        'bookkeeper' => 'Bookkeeper',
         'admin' => 'Administrator',
     ];
     if (!$role) return 'User';

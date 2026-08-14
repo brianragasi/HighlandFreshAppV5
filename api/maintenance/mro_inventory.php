@@ -1,8 +1,8 @@
 <?php
 /**
- * Highland Fresh System - MRO Inventory API (Read-only for Maintenance)
+ * Highland Fresh System - MRO Inventory API
  * 
- * Allows Maintenance Head to view MRO inventory levels
+ * Allows authorized supply-chain users to view MRO inventory levels
  * 
  * GET    - List MRO items / Get single item / Categories
  * 
@@ -12,8 +12,8 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 
-// Require Maintenance Head, Warehouse, or GM role
-$currentUser = Auth::requireRole(['maintenance_head', 'warehouse_raw', 'general_manager', 'purchaser']);
+// Warehouse Raw owns MRO stock; the GM and Purchaser have read access.
+$currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'purchaser']);
 
 try {
     $db = Database::getInstance()->getConnection();

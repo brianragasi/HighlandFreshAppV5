@@ -4,6 +4,7 @@
  */
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
+require_once __DIR__ . '/ingredient_stock_helpers.php';
 
 $currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'purchaser']);
 $action = getParam('action', 'list');
@@ -95,6 +96,41 @@ function wasteTableExists($db, $tableName) {
     return (bool)$stmt->fetchColumn();
 }
 
+function wasteProjectRoot() {
+    return dirname(dirname(dirname(__DIR__)));
+}
+
+function wasteEvidenceAbsolutePath($relativePath) {
+    $rel = ltrim((string)$relativePath, '/');
+    if (strpos($rel, 'uploads/waste/') !== 0) {
+        return null;
+    }
+    return wasteProjectRoot() . '/' . $rel;
+}
+
+function attachEvidenceAvailability(array $records) {
+    foreach ($records as &$record) {
+        $path = $record['evidence_photo_path'] ?? null;
+        $abs = $path ? wasteEvidenceAbsolutePath($path) : null;
+        $record['evidence_available'] = $abs && is_file($abs) ? 1 : 0;
+    }
+    unset($record);
+    return $records;
+}
+
+function getWasteUsableMROStock($db, $mroItemId) {
+    $stmt = $db->prepare("
+        SELECT COALESCE(SUM(remaining_quantity), 0) AS available_quantity
+        FROM mro_inventory
+        WHERE mro_item_id = ?
+          AND status IN ('available', 'partially_used')
+          AND remaining_quantity > 0
+          AND (expiry_date IS NULL OR expiry_date >= CURDATE())
+    ");
+    $stmt->execute([$mroItemId]);
+    return (float)($stmt->fetch()['available_quantity'] ?? 0);
+}
+
 function handleWasteGet($db, $action, $currentUser) {
     switch ($action) {
         case 'available_items':
@@ -119,16 +155,28 @@ function handleWasteGet($db, $action, $currentUser) {
 function getWasteAvailableItems($db) {
     $ingredients = $db->query("
         SELECT 'ingredient' AS item_type, id AS item_id, ingredient_code AS item_code,
-               ingredient_name AS item_name, unit_of_measure AS unit, current_stock
+               ingredient_name AS item_name, unit_of_measure AS unit, current_stock,
+               (SELECT COALESCE(SUM(ib.remaining_quantity), 0)
+                FROM ingredient_batches ib
+                WHERE ib.ingredient_id = ingredients.id
+                  AND ib.remaining_quantity > 0
+                  AND ib.status IN ('available','partially_used','quarantine')) AS disposal_stock
         FROM ingredients
-        WHERE is_active = 1 AND current_stock > 0
+        WHERE is_active = 1
+        HAVING current_stock > 0 OR disposal_stock > 0
     ")->fetchAll();
 
     $mro = $db->query("
         SELECT 'mro' AS item_type, id AS item_id, item_code, item_name,
-               unit_of_measure AS unit, current_stock
+               unit_of_measure AS unit, current_stock,
+               (SELECT COALESCE(SUM(mi.remaining_quantity), 0)
+                FROM mro_inventory mi
+                WHERE mi.mro_item_id = mro_items.id
+                  AND mi.remaining_quantity > 0
+                  AND mi.status IN ('available','partially_used','quarantine')) AS disposal_stock
         FROM mro_items
-        WHERE is_active = 1 AND current_stock > 0
+        WHERE is_active = 1
+        HAVING current_stock > 0 OR disposal_stock > 0
     ")->fetchAll();
 
     Response::success(['items' => array_merge($ingredients, $mro)], 'Available raw materials retrieved');
@@ -145,6 +193,8 @@ function getWasteBatches($db) {
         $stmt = $db->prepare("
             SELECT ib.id AS batch_id, ib.batch_code, ib.remaining_quantity, ib.unit_cost,
                    ib.expiry_date, ib.received_date, ib.rr_id, ib.po_id, ib.supplier_id,
+                   ib.status, DATEDIFF(ib.expiry_date, CURDATE()) AS days_until_expiry,
+                   CASE WHEN ib.expiry_date IS NOT NULL AND ib.expiry_date < CURDATE() THEN 1 ELSE 0 END AS is_expired,
                    i.unit_of_measure AS unit
             FROM ingredient_batches ib
             JOIN ingredients i ON i.id = ib.ingredient_id
@@ -156,6 +206,8 @@ function getWasteBatches($db) {
         $stmt = $db->prepare("
             SELECT mi.id AS batch_id, mi.batch_code, mi.remaining_quantity, mi.unit_cost,
                    mi.expiry_date, mi.received_date, mi.rr_id, mi.po_id, mi.supplier_id,
+                   mi.status, DATEDIFF(mi.expiry_date, CURDATE()) AS days_until_expiry,
+                   CASE WHEN mi.expiry_date IS NOT NULL AND mi.expiry_date < CURDATE() THEN 1 ELSE 0 END AS is_expired,
                    m.unit_of_measure AS unit
             FROM mro_inventory mi
             JOIN mro_items m ON m.id = mi.mro_item_id
@@ -185,7 +237,7 @@ function getWasteRecords($db) {
         LIMIT 100
     ");
 
-    Response::success(['waste_records' => $stmt->fetchAll()], 'Waste records retrieved');
+    Response::success(['waste_records' => attachEvidenceAvailability($stmt->fetchAll())], 'Waste records retrieved');
 }
 
 function getWasteReports($db) {
@@ -206,8 +258,8 @@ function getWasteReports($db) {
         ORDER BY expiry_date ASC
     ")->fetchAll();
 
-    $spoiled = $db->query("SELECT id, waste_code, item_type, item_name, batch_code, quantity, unit, reason_category, reason, evidence_photo_path, waste_date, status, recorded_by, recorded_at FROM raw_material_waste WHERE reason_category = 'spoiled' ORDER BY waste_date DESC LIMIT 100")->fetchAll();
-    $wasted = $db->query("SELECT id, waste_code, item_type, item_name, batch_code, quantity, unit, reason_category, reason, evidence_photo_path, waste_date, status, recorded_by, recorded_at FROM raw_material_waste ORDER BY waste_date DESC, id DESC LIMIT 100")->fetchAll();
+    $spoiled = attachEvidenceAvailability($db->query("SELECT id, waste_code, item_type, item_name, batch_code, quantity, unit, reason_category, reason, evidence_photo_path, waste_date, status, recorded_by, recorded_at FROM raw_material_waste WHERE reason_category = 'spoiled' ORDER BY waste_date DESC LIMIT 100")->fetchAll());
+    $wasted = attachEvidenceAvailability($db->query("SELECT id, waste_code, item_type, item_name, batch_code, quantity, unit, reason_category, reason, evidence_photo_path, waste_date, status, recorded_by, recorded_at FROM raw_material_waste ORDER BY waste_date DESC, id DESC LIMIT 100")->fetchAll());
     $rejected = [];
     if (wasteTableExists($db, 'supplier_rejections')) {
         $hasReceivingReports = wasteTableExists($db, 'receiving_reports');
@@ -277,7 +329,7 @@ function createWasteRecord($db, $currentUser) {
         if ($evidencePath === false) {
             Response::error('Invalid photo upload. Use JPEG, PNG, WebP, or HEIC up to 5 MB.', 400);
         }
-        $savedFileAbs = dirname(dirname(__DIR__)) . '/' . $evidencePath;
+        $savedFileAbs = wasteEvidenceAbsolutePath($evidencePath);
     }
 
     $db->beginTransaction();
@@ -301,16 +353,24 @@ function createWasteRecord($db, $currentUser) {
             if ($batchId > 0) {
                 $db->prepare("UPDATE ingredient_batches SET remaining_quantity = ?, status = ?, updated_at = NOW() WHERE id = ?")
                     ->execute([$newRemaining, $newStatus, $batchId]);
+                $usableStock = getUsableIngredientBatchStock($db, $itemId);
+                $db->prepare("UPDATE ingredients SET current_stock = ?, updated_at = NOW() WHERE id = ?")
+                    ->execute([$usableStock, $itemId]);
+            } else {
+                $db->prepare("UPDATE ingredients SET current_stock = GREATEST(current_stock - ?, 0), updated_at = NOW() WHERE id = ?")
+                    ->execute([$quantity, $itemId]);
             }
-            $db->prepare("UPDATE ingredients SET current_stock = GREATEST(current_stock - ?, 0), updated_at = NOW() WHERE id = ?")
-                ->execute([$quantity, $itemId]);
         } else {
             if ($batchId > 0) {
                 $db->prepare("UPDATE mro_inventory SET remaining_quantity = ?, status = ?, updated_at = NOW() WHERE id = ?")
                     ->execute([$newRemaining, $newStatus, $batchId]);
+                $usableStock = getWasteUsableMROStock($db, $itemId);
+                $db->prepare("UPDATE mro_items SET current_stock = ?, updated_at = NOW() WHERE id = ?")
+                    ->execute([$usableStock, $itemId]);
+            } else {
+                $db->prepare("UPDATE mro_items SET current_stock = GREATEST(current_stock - ?, 0), updated_at = NOW() WHERE id = ?")
+                    ->execute([$quantity, $itemId]);
             }
-            $db->prepare("UPDATE mro_items SET current_stock = GREATEST(current_stock - ?, 0), updated_at = NOW() WHERE id = ?")
-                ->execute([$quantity, $itemId]);
         }
 
         $db->prepare("
@@ -332,7 +392,7 @@ function createWasteRecord($db, $currentUser) {
         if ($evidencePath !== null) {
             $finalName = 'wst_' . $wasteId . '_' . substr(bin2hex(random_bytes(3)), 0, 6) . '.jpg';
             $finalRel = dirname($evidencePath) . '/' . $finalName;
-            $finalAbs = dirname(dirname(__DIR__)) . '/' . $finalRel;
+            $finalAbs = wasteEvidenceAbsolutePath($finalRel);
             if (!@rename($savedFileAbs, $finalAbs)) {
                 throw new Exception('Failed to finalize evidence file');
             }
@@ -421,7 +481,7 @@ function saveWasteEvidenceFile($file, $reasonCategory) {
         return false;
     }
 
-    $projectRoot = dirname(dirname(__DIR__));
+    $projectRoot = wasteProjectRoot();
     $year = date('Y');
     $month = date('m');
     $targetDir = $projectRoot . '/uploads/waste/' . $year . '/' . $month;
@@ -502,10 +562,9 @@ function streamEvidencePhoto($db, $currentUser) {
         Response::notFound('No evidence photo for this record');
     }
 
-    $projectRoot = dirname(dirname(__DIR__));
     $rel = ltrim($row['evidence_photo_path'], '/');
-    $abs = $projectRoot . '/' . $rel;
-    if (strpos($rel, 'uploads/waste/') !== 0 || !file_exists($abs)) {
+    $abs = wasteEvidenceAbsolutePath($rel);
+    if (!$abs || !file_exists($abs)) {
         Response::notFound('Evidence file missing on disk');
     }
 

@@ -210,9 +210,9 @@
                     <span class="text-base font-bold leading-none stat-value" id="sidebarStatReq">0</span>
                     <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Req</span>
                 </a>
-                <a href="${resolveHref('reorder_alerts.html')}" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Low Stock Items">
+                <a href="${resolveHref('reorder_alerts.html')}" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Ingredient and MRO stock alerts">
                     <span class="text-base font-bold leading-none stat-value" id="sidebarStatLow">0</span>
-                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Low</span>
+                    <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Alerts</span>
                 </a>
                 <a href="${resolveHref('receive_deliveries.html')}" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Pending Deliveries">
                     <span class="text-base font-bold leading-none stat-value" id="sidebarStatDeliv">0</span>

@@ -646,12 +646,12 @@
             </div>
             <div class="space-y-4">
                 <div class="form-control">
-                    <label class="label"><span class="label-text">Witness Name</span></label>
-                    <input type="text" id="witnessName" class="input input-bordered w-full" placeholder="Name of witness (optional)">
+                    <label class="label"><span class="label-text">Witness Name <span class="text-error">*</span></span></label>
+                    <input type="text" id="witnessName" class="input input-bordered w-full" placeholder="Name of the person who witnessed the disposal" required>
                 </div>
                 <div class="form-control">
-                    <label class="label"><span class="label-text">Disposal Location</span></label>
-                    <input type="text" id="disposalLocation" class="input input-bordered w-full" placeholder="Where was it disposed? (e.g., Waste Area B)">
+                    <label class="label"><span class="label-text">Disposal Location <span class="text-error">*</span></span></label>
+                    <input type="text" id="disposalLocation" class="input input-bordered w-full" placeholder="Where was it disposed? (e.g., Waste Area B)" required>
                 </div>
                 <div class="form-control">
                     <label class="label"><span class="label-text">Execution Notes</span></label>
@@ -719,7 +719,8 @@
     <!-- Scripts -->
     <script src="../../../js/vendor/axios.min.js"></script>
     <script src="../../../js/config/api.js"></script>
-    <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_fg,general_manager"></script>
     <script src="../../../js/warehouse/fg.service.js"></script>
 
     <script>
@@ -1293,6 +1294,11 @@
             const witnessName = document.getElementById('witnessName').value.trim();
             const disposalLocation = document.getElementById('disposalLocation').value.trim();
             const notes = document.getElementById('executeNotes').value.trim();
+
+            if (!witnessName || !disposalLocation) {
+                showToast('Enter the witness name and disposal location before completing this record.', 'warning');
+                return;
+            }
 
             try {
                 const response = await api.put(`/qc/disposals.php?id=${currentDisposalId}&action=complete`, {

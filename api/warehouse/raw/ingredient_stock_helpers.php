@@ -116,27 +116,6 @@ function reconcileIngredientSummaryToBatches($db, $ingredientData, $currentUser,
     ];
 }
 
-function ensureIngredientBatchesForIssue($db, $ingredientData, $neededQuantity, $currentUser) {
-    $ingredientId = (int) $ingredientData['id'];
-    $batchStock = getUsableIngredientBatchStock($db, $ingredientId);
-    $summaryStock = (float) ($ingredientData['current_stock'] ?? 0);
-
-    if ($batchStock + 0.0005 >= (float) $neededQuantity) {
-        return null;
-    }
-
-    if ($summaryStock + 0.0005 >= (float) $neededQuantity && $summaryStock > $batchStock + 0.0005) {
-        return reconcileIngredientSummaryToBatches(
-            $db,
-            $ingredientData,
-            $currentUser,
-            'Auto-created from existing summary stock before ingredient issue'
-        );
-    }
-
-    return null;
-}
-
 function reduceIngredientBatchesToQuantity($db, $ingredientData, $targetQuantity, $currentUser, $reason) {
     $targetQuantity = max(0, (float) $targetQuantity);
     $ingredientId = (int) $ingredientData['id'];

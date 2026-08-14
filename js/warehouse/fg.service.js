@@ -194,6 +194,12 @@ const WarehouseFGService = {
         return await api.get(`${this.baseUrl}/inventory.php`, { params: { action: 'list', ...params } });
     },
 
+    async getDeliveryStockPosition() {
+        return await api.get(`${this.baseUrl}/inventory.php`, {
+            params: { action: 'delivery_state_summary' }
+        });
+    },
+
     /**
      * Get single inventory item details
      * @param {number} id - Inventory ID
@@ -357,19 +363,6 @@ const WarehouseFGService = {
             action: 'adjust',
             id: inventoryId,
             new_quantity: newQuantity,
-            reason
-        });
-    },
-
-    /**
-     * Dispose expired/damaged inventory
-     * @param {number} inventoryId - Inventory item ID
-     * @param {string} reason - Disposal reason
-     */
-    async disposeInventory(inventoryId, reason) {
-        return await api.put(`${this.baseUrl}/inventory.php`, {
-            action: 'dispose',
-            id: inventoryId,
             reason
         });
     },

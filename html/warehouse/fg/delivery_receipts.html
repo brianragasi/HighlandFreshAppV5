@@ -454,13 +454,14 @@
                                     <th>Customer</th>
                                     <th>Delivery Date</th>
                                     <th>Items</th>
+                                    <th>Stock</th>
                                     <th>Total</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="approvedOrdersTable">
                                 <tr>
-                                    <td colspan="6" class="text-center py-4 text-base-content/60">Loading...</td>
+                                    <td colspan="7" class="text-center py-4 text-base-content/60">Loading...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -1042,7 +1043,8 @@
     <script src="../../../js/vendor/axios.min.js"></script>
     <script src="../../../js/vendor/html5-qrcode.min.js"></script>
     <script src="../../../js/config/api.js"></script>
-    <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_fg,general_manager"></script>
     <script src="../../../js/utils/units.js?v=20260712"></script>
     <script src="../../../js/warehouse/fg.service.js"></script>
 
@@ -1911,7 +1913,7 @@
             } catch (error) {
                 console.error('Failed to load approved orders:', error);
                 document.getElementById('approvedOrdersTable').innerHTML = `
-                    <tr><td colspan="6" class="text-center py-4 text-error">Failed to load orders</td></tr>`;
+                    <tr><td colspan="7" class="text-center py-4 text-error">Failed to load orders</td></tr>`;
             }
         }
 
@@ -1920,15 +1922,19 @@
             document.getElementById('approvedOrdersCount').textContent = orders.length;
 
             if (!orders || orders.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-base-content/60">
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-base-content/60">
                     <i class="fas fa-check-circle text-success mr-2"></i>No pending orders - all caught up!</td></tr>`;
                 return;
             }
 
             tbody.innerHTML = orders.map(o => {
                 const hasItems = (o.item_count || 0) > 0;
+                const stockReady = Number(o.stock_ready || 0) === 1;
+                const shortageNames = (o.stock_shortages || [])
+                    .map(item => `${item.product_name}: ${item.remaining} more needed`)
+                    .join('; ');
                 return `
-                <tr class="hover ${!hasItems ? 'bg-warning/10' : ''}">
+                <tr class="hover ${(!hasItems || !stockReady) ? 'bg-warning/10' : ''}">
                     <td class="font-mono font-medium text-sm">${o.order_number || 'ORD-' + o.id}</td>
                     <td>
                         <div class="font-medium">${o.customer_name || 'Unknown'}</div>
@@ -1946,19 +1952,24 @@
                             </span>
                         `}
                     </td>
+                    <td>
+                        ${stockReady
+                            ? '<span class="badge badge-success badge-sm"><i class="fas fa-check mr-1"></i>Ready to pick</span>'
+                            : `<span class="badge badge-warning badge-sm" title="${escapeHtml(shortageNames)}"><i class="fas fa-clock mr-1"></i>Waiting for stock</span>`}
+                    </td>
                     <td class="text-right font-mono">₱${Number(o.total_amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
                     <td>
                         <div class="flex gap-1">
                             <button class="btn btn-xs btn-ghost" onclick="viewOrderItems(${o.id}, '${o.order_number || ''}')" title="View Items">
                                 <i class="fas fa-eye"></i>
                             </button>
-                            ${hasItems ? `
+                            ${hasItems && stockReady ? `
                                 <button class="btn btn-sm btn-primary" onclick="createDRFromOrder(${o.id}, '${o.order_number || ''}')">
                                     <i class="fas fa-clipboard-check"></i> Start Picking
                                 </button>
                             ` : `
-                                <button class="btn btn-sm btn-disabled" disabled title="Order has no items - contact Sales to add products">
-                                    <i class="fas fa-ban"></i> No Items
+                                <button class="btn btn-sm btn-disabled" disabled title="${hasItems ? escapeHtml(shortageNames) : 'Order has no items'}">
+                                    <i class="fas ${hasItems ? 'fa-clock' : 'fa-ban'}"></i> ${hasItems ? 'Waiting' : 'No Items'}
                                 </button>
                             `}
                         </div>
@@ -2101,6 +2112,16 @@
                 'delivered': 'badge-success',
                 'cancelled': 'badge-error'
             };
+            const statusLabels = {
+                draft: 'Draft',
+                pending: 'Pending',
+                picking: 'Picking',
+                preparing: 'Preparing',
+                ready: 'Reserved',
+                dispatched: 'In Transit',
+                delivered: 'Delivered',
+                cancelled: 'Cancelled'
+            };
 
             tbody.innerHTML = drs.map(dr => {
                 const isPrinted = !!dr.printed_at;
@@ -2160,7 +2181,7 @@
                     <td>${dr.item_count || 0} items</td>
                     <td>${new Date(dr.created_at).toLocaleDateString()}</td>
                     <td>
-                        <span class="badge ${statusColors[dr.status] || 'badge-ghost'} badge-sm">${dr.status}</span>
+                        <span class="badge ${statusColors[dr.status] || 'badge-ghost'} badge-sm">${statusLabels[dr.status] || dr.status}</span>
                         ${dr.status === 'ready' && !isPrinted ? '<span class="badge badge-error badge-xs ml-1">Print needed</span>' : ''}
                         ${dr.status === 'ready' && isPrinted ? '<span class="badge badge-success badge-xs ml-1">Printed</span>' : ''}
                     </td>
@@ -3176,6 +3197,15 @@
                         || parseFloat(item.quantity_ordered)
                         || parseFloat(item.quantity)
                         || 0;
+                    const orderedBoxes = parseInt(item.ordered_boxes, 10) || 0;
+                    const orderedPieces = parseInt(item.ordered_pieces, 10) || 0;
+                    const baseUnit = item.base_unit || 'piece';
+                    let quantityLabel = `${qty} ${baseUnit}${qty === 1 ? '' : 's'}`;
+                    if (orderedBoxes > 0 && orderedPieces > 0) {
+                        quantityLabel = `${orderedBoxes} ${item.box_unit || 'box'} + ${orderedPieces} ${baseUnit} (${qty} ${baseUnit}${qty === 1 ? '' : 's'})`;
+                    } else if (orderedBoxes > 0) {
+                        quantityLabel = `${orderedBoxes} ${item.box_unit || 'box'} (${qty} ${baseUnit}${qty === 1 ? '' : 's'})`;
+                    }
                     const price = parseFloat(item.unit_price) || 0;
                     const lineTotal = parseFloat(item.total_price) || (qty * price);
                     totalAmount += lineTotal;
@@ -3186,7 +3216,7 @@
                             <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${idx + 1}</td>
                             <td style="padding: 8px; border: 1px solid #ddd;">${item.product_name || 'Unknown'}</td>
                             <td style="padding: 8px; border: 1px solid #ddd; font-family: monospace; font-size: 11px;">${batchCode}</td>
-                            <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${qty}</td>
+                            <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${quantityLabel}</td>
                             <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₱${price.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₱${lineTotal.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         </tr>
@@ -3296,7 +3326,6 @@
                     <body>
                         <div class="header">
                             <h1>HIGHLAND FRESH DAIRY CORPORATION</h1>
-                            <p>TESTING LANG  AMBOT NAUNSA NANI</p>
                             <p>Tel: (053) 832-1234 | Email: info@highlandfresh.com</p>
                         </div>
                         

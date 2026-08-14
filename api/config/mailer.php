@@ -24,10 +24,11 @@ class Mailer {
      * @param string $subject   Email subject
      * @param string $htmlBody  HTML body
      * @param string $textBody  Plain-text fallback (optional)
-     * @return bool             True on success
-     * @throws Exception        On failure
+     * @param array  $attachments Each item: filename, content, content_type
+     * @return bool              True on success
+     * @throws Exception         On failure
      */
-    public static function send($to, $subject, $htmlBody, $textBody = '') {
+    public static function send($to, $subject, $htmlBody, $textBody = '', $attachments = []) {
         $host = SMTP_HOST;
         $port = SMTP_PORT;
         $username = SMTP_USERNAME;
@@ -37,6 +38,15 @@ class Mailer {
 
         if (empty($password)) {
             throw new Exception('SMTP password (Gmail App Password) is not configured. Set SMTP_PASSWORD environment variable.');
+        }
+        if (!filter_var($to, FILTER_VALIDATE_EMAIL) || preg_match('/[\r\n]/', $to)) {
+            throw new Exception('Recipient email address is invalid.');
+        }
+        if (preg_match('/[\r\n]/', $subject)) {
+            throw new Exception('Email subject is invalid.');
+        }
+        if (!is_array($attachments)) {
+            throw new Exception('Email attachments must be an array.');
         }
 
         // Connect with a short timeout so UI callers (forgot-password) cannot hang
@@ -97,7 +107,8 @@ class Mailer {
         self::sendCommand($socket, "DATA", 354);
 
         // Build message
-        $boundary = 'boundary_' . md5(uniqid(mt_rand(), true));
+        $alternativeBoundary = 'alt_' . bin2hex(random_bytes(12));
+        $mixedBoundary = 'mixed_' . bin2hex(random_bytes(12));
         $date = date('r');
         $messageId = '<' . md5(uniqid(mt_rand(), true)) . '@' . parse_url(APP_URL, PHP_URL_HOST) . '>';
 
@@ -108,29 +119,57 @@ class Mailer {
         $headers[] = "Subject: {$subject}";
         $headers[] = "Message-ID: {$messageId}";
         $headers[] = "MIME-Version: 1.0";
-        $headers[] = "Content-Type: multipart/alternative; boundary=\"{$boundary}\"";
+        $headers[] = empty($attachments)
+            ? "Content-Type: multipart/alternative; boundary=\"{$alternativeBoundary}\""
+            : "Content-Type: multipart/mixed; boundary=\"{$mixedBoundary}\"";
 
         $body = implode("\r\n", $headers) . "\r\n\r\n";
+        if (!empty($attachments)) {
+            $body .= "--{$mixedBoundary}\r\n";
+            $body .= "Content-Type: multipart/alternative; boundary=\"{$alternativeBoundary}\"\r\n\r\n";
+        }
 
         // Plain text part
         if (empty($textBody)) {
             $textBody = strip_tags(str_replace(['<br>', '<br/>', '<br />', '</p>'], "\n", $htmlBody));
         }
-        $body .= "--{$boundary}\r\n";
+        $body .= "--{$alternativeBoundary}\r\n";
         $body .= "Content-Type: text/plain; charset=UTF-8\r\n";
         $body .= "Content-Transfer-Encoding: quoted-printable\r\n\r\n";
         $body .= quoted_printable_encode($textBody) . "\r\n\r\n";
 
         // HTML part
-        $body .= "--{$boundary}\r\n";
+        $body .= "--{$alternativeBoundary}\r\n";
         $body .= "Content-Type: text/html; charset=UTF-8\r\n";
         $body .= "Content-Transfer-Encoding: quoted-printable\r\n\r\n";
         $body .= quoted_printable_encode($htmlBody) . "\r\n\r\n";
+        $body .= "--{$alternativeBoundary}--\r\n";
 
-        $body .= "--{$boundary}--\r\n";
+        if (!empty($attachments)) {
+            foreach ($attachments as $attachment) {
+                $filename = basename((string) ($attachment['filename'] ?? 'attachment.bin'));
+                $filename = preg_replace('/[^A-Za-z0-9._-]/', '_', $filename);
+                $content = $attachment['content'] ?? null;
+                $contentType = trim((string) ($attachment['content_type'] ?? 'application/octet-stream'));
+
+                if (!is_string($content) || $content === '') {
+                    throw new Exception("Attachment {$filename} has no content.");
+                }
+                if (!preg_match('#^[A-Za-z0-9.+-]+/[A-Za-z0-9.+-]+$#', $contentType)) {
+                    $contentType = 'application/octet-stream';
+                }
+
+                $body .= "--{$mixedBoundary}\r\n";
+                $body .= "Content-Type: {$contentType}; name=\"{$filename}\"\r\n";
+                $body .= "Content-Transfer-Encoding: base64\r\n";
+                $body .= "Content-Disposition: attachment; filename=\"{$filename}\"\r\n\r\n";
+                $body .= chunk_split(base64_encode($content), 76, "\r\n") . "\r\n";
+            }
+            $body .= "--{$mixedBoundary}--\r\n";
+        }
 
         // Escape dots at start of lines (SMTP transparency)
-        $body = str_replace("\r\n.\r\n", "\r\n..\r\n", $body);
+        $body = preg_replace('/(^|\r\n)\./', '$1..', $body);
 
         // Send message data
         fwrite($socket, $body . "\r\n.\r\n");

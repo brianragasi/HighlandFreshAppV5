@@ -364,8 +364,9 @@
                 <!-- Sticky footer -->
                 <div class="px-5 py-3 border-t border-base-300 bg-base-100 flex items-center justify-end gap-2 shrink-0">
                     <button type="button" class="btn btn-ghost" onclick="document.getElementById('newRequisitionModal').close()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">
-                        Submit for GM Approval
+                    <button type="submit" id="submitRequisitionBtn" class="btn btn-primary gap-2">
+                        <i class="fas fa-paper-plane"></i>
+                        <span>Submit for GM Approval</span>
                     </button>
                 </div>
             </form>
@@ -510,7 +511,8 @@
     <!-- Scripts -->
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
-    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="production_staff,general_manager"></script>
     <script>window.PRODUCTION_ACTIVE_PAGE = "requisitions";</script>
     <script src="../../js/production/sidebar.js"></script>
     <script src="../../js/production/production.service.js"></script>
@@ -522,6 +524,7 @@
         let runAutoFillToken = 0;
         let planAutoFillToken = 0;
         let recipes = [];
+        let requisitionSubmitInProgress = false;
         
         // Sidebar toggle
         function toggleSidebar() {
@@ -1761,6 +1764,27 @@
 
         function applyRequisitionUrlDefaults(urlParams) {
             const item = (urlParams.get('item') || '').toLowerCase();
+            const source = urlParams.get('source') || '';
+            if (source === 'sales_order') {
+                const recipeId = urlParams.get('recipe_id') || '';
+                const recipe = document.getElementById('plannedRecipeSelect');
+                const priority = document.getElementById('priority');
+                const neededBy = document.getElementById('neededBy');
+                const purpose = document.getElementById('purpose');
+                const orderNumber = urlParams.get('order_number') || 'Sales Order';
+                const product = urlParams.get('product') || urlParams.get('product_code') || 'finished product';
+                const shortage = urlParams.get('shortage') || '';
+                const unit = urlParams.get('unit') || 'pieces';
+
+                if (recipe && recipeId && recipe.querySelector(`option[value="${CSS.escape(recipeId)}"]`)) {
+                    recipe.value = recipeId;
+                    updateRecipeSkuHint();
+                }
+                if (priority) priority.value = 'high';
+                if (neededBy && urlParams.get('needed_by')) neededBy.value = `${urlParams.get('needed_by')}T17:00`;
+                if (purpose) purpose.value = `Customer demand ${orderNumber}: ${shortage} ${unit} of ${product}`;
+                return;
+            }
             if (!item) return;
 
             const firstRow = document.querySelector('#itemsContainer .item-row');
@@ -1963,6 +1987,17 @@
         // (which is the authoritative shortage list — fresher than the cached
         // client preview). On confirm we re-submit with the override flag.
         async function submitRequisition(data) {
+            if (requisitionSubmitInProgress) {
+                return;
+            }
+
+            requisitionSubmitInProgress = true;
+            const submitButton = document.getElementById('submitRequisitionBtn');
+            if (submitButton) {
+                submitButton.disabled = true;
+                submitButton.innerHTML = '<span class="loading loading-spinner loading-sm"></span><span>Submitting...</span>';
+            }
+
             try {
                 // The api.js response interceptor unwraps the body on success
                 // (returns response.data) and on 422 it rejects with
@@ -2000,6 +2035,12 @@
                 }
                 console.error('Error creating requisition:', error);
                 showToast(error?.message || 'Failed to create requisition', 'error');
+            } finally {
+                requisitionSubmitInProgress = false;
+                if (submitButton) {
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = '<i class="fas fa-paper-plane"></i><span>Submit for GM Approval</span>';
+                }
             }
         }
 

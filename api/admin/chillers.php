@@ -7,8 +7,8 @@
 
 require_once __DIR__ . '/../bootstrap.php';
 
-// Require authentication
-Auth::requireAuth();
+// Require GM/Admin role
+Auth::requireRole(['general_manager', 'admin']);
 
 // Get database connection
 $conn = Database::getInstance()->getConnection();
@@ -333,34 +333,41 @@ function updateChiller($conn, $id) {
 }
 
 /**
- * Delete (deactivate) chiller
+ * Archive chiller by taking it offline.
+ * Chiller rows are kept so finished goods inventory history remains traceable.
  */
 function deleteChiller($conn, $id) {
     // Check if chiller exists
-    $checkStmt = $conn->prepare("SELECT id FROM chiller_locations WHERE id = ?");
+    $checkStmt = $conn->prepare("SELECT id, is_active FROM chiller_locations WHERE id = ?");
     $checkStmt->execute([$id]);
+    $chiller = $checkStmt->fetch(PDO::FETCH_ASSOC);
     
-    if (!$checkStmt->fetch()) {
+    if (!$chiller) {
         sendError('Chiller not found', 404);
         return;
     }
-    
-    // Check for related inventory
-    $relatedStmt = $conn->prepare("SELECT COUNT(*) as count FROM finished_goods_inventory WHERE chiller_id = ?");
-    $relatedStmt->execute([$id]);
-    $related = $relatedStmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($related['count'] > 0) {
-        // Soft delete - deactivate
-        $stmt = $conn->prepare("UPDATE chiller_locations SET is_active = 0, status = 'offline' WHERE id = ?");
-        $stmt->execute([$id]);
-        sendSuccess(['message' => 'Chiller deactivated (has inventory stored)']);
-    } else {
-        // Hard delete if no related records
-        $stmt = $conn->prepare("DELETE FROM chiller_locations WHERE id = ?");
-        $stmt->execute([$id]);
-        sendSuccess(['message' => 'Chiller deleted successfully']);
+
+    if ((int) $chiller['is_active'] === 0) {
+        sendSuccess([
+            'message' => 'Chiller is already archived',
+            'chiller_id' => (int) $id,
+            'is_active' => 0,
+            'status' => 'offline',
+            'archived' => true
+        ], 'Chiller is already archived');
+        return;
     }
+
+    $stmt = $conn->prepare("UPDATE chiller_locations SET is_active = 0, status = 'offline' WHERE id = ?");
+    $stmt->execute([$id]);
+
+    sendSuccess([
+        'message' => 'Chiller archived successfully',
+        'chiller_id' => (int) $id,
+        'is_active' => 0,
+        'status' => 'offline',
+        'archived' => true
+    ], 'Chiller archived successfully');
 }
 
 /**

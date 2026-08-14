@@ -1,0 +1,630 @@
+<html lang="en" data-theme="emerald">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer PO Inbox - Highland Fresh</title>
+    <link rel="stylesheet" href="../../css/tailwind.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body { font-family: Inter, sans-serif; letter-spacing: 0; }
+        .sidebar-transition { transition: transform .25s ease; }
+        .source-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        #reviewModal .modal-box { width: min(96vw, 1800px); max-width: min(96vw, 1800px); height: 92vh; display: flex; flex-direction: column; }
+        #reviewContent { flex: 1; min-height: 0; overflow: hidden; }
+        .po-review-layout { height: 100%; display: grid; grid-template-columns: minmax(380px, .9fr) minmax(620px, 1.1fr); gap: 1rem; }
+        .po-source-panel, .po-entry-panel { min-height: 0; }
+        .po-source-panel { display: flex; flex-direction: column; overflow: hidden; }
+        .po-entry-panel { overflow-y: auto; padding-right: .25rem; }
+        .po-preview-body { flex: 1; min-height: 360px; overflow: auto; background: #f7f8f8; }
+        .po-preview-body iframe { width: 100%; height: 100%; border: 0; background: white; }
+        .po-preview-body img { display: block; max-width: 100%; margin: 0 auto; }
+        .po-meta-grid { gap: 1px; }
+        .po-email-message { max-height: 8rem; }
+        .po-sheet-table { border-collapse: collapse; min-width: 100%; font-size: .75rem; background: white; }
+        .po-sheet-table th, .po-sheet-table td { border: 1px solid #d8dcda; padding: .4rem .5rem; white-space: nowrap; text-align: left; }
+        .po-sheet-table th { position: sticky; top: 0; z-index: 1; background: #eef1ef; }
+        .po-sheet-table .row-number { position: sticky; left: 0; background: #eef1ef; color: #66706a; text-align: right; }
+        .inbox-page { width: 100%; max-width: 1540px; margin-inline: auto; }
+        .inbox-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .queue-metric { min-height: 88px; padding: 1rem 1.25rem; display: flex; align-items: center; gap: .9rem; }
+        .queue-metric + .queue-metric { border-left: 1px solid hsl(var(--bc) / .12); }
+        .queue-metric-icon { width: 2.5rem; height: 2.5rem; border-radius: .5rem; display: grid; place-items: center; flex: none; }
+        .inbox-list-header,
+        .inbox-row { display: grid; grid-template-columns: minmax(190px, 1.3fr) minmax(170px, 1fr) minmax(145px, .75fr) minmax(220px, 1.25fr) 160px; gap: 1rem; }
+        .inbox-list-header { padding: .75rem 1rem; border-bottom: 1px solid hsl(var(--bc) / .12); background: hsl(var(--b2)); color: hsl(var(--bc) / .55); font-size: .72rem; font-weight: 700; text-transform: uppercase; }
+        .inbox-row { padding: 1rem; align-items: center; border-bottom: 1px solid hsl(var(--bc) / .12); }
+        .inbox-row:last-child { border-bottom: 0; }
+        .inbox-row:hover { background: hsl(var(--b2) / .65); }
+        .inbox-cell { min-width: 0; }
+        .inbox-label { display: none; color: hsl(var(--bc) / .45); font-size: .68rem; font-weight: 700; text-transform: uppercase; margin-bottom: .25rem; }
+        .inbox-primary { color: hsl(var(--bc)); font-size: .9rem; font-weight: 650; line-height: 1.35; }
+        .inbox-secondary { color: hsl(var(--bc) / .55); font-size: .76rem; line-height: 1.4; margin-top: .2rem; overflow-wrap: anywhere; }
+        .inbox-subject { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .inbox-source { display: flex; align-items: center; gap: .35rem; max-width: 100%; margin-top: .45rem; font-size: .78rem; text-align: left; }
+        .inbox-source span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .inbox-status-message { color: hsl(var(--er)); font-size: .75rem; line-height: 1.4; margin-top: .4rem; overflow-wrap: anywhere; }
+        .inbox-actions { display: flex; align-items: center; justify-content: flex-end; gap: .25rem; }
+        .inbox-empty { padding: 4rem 1rem; text-align: center; color: hsl(var(--bc) / .5); }
+        .inbox-view-tab { border-radius: 0; }
+        .inbox-view-tab:first-child { border-radius: .45rem 0 0 .45rem; }
+        .inbox-view-tab:last-child { border-radius: 0 .45rem .45rem 0; }
+        .inbox-view-tab.is-active { background: hsl(var(--p)); color: hsl(var(--pc)); border-color: hsl(var(--p)); }
+        .inbox-list-context { padding: .8rem 1rem; border-bottom: 1px solid hsl(var(--bc) / .1); background: hsl(var(--b2) / .55); }
+        @media (max-width: 1180px) {
+            .inbox-list-header { display: none; }
+            .inbox-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem 1.5rem; align-items: start; }
+            .inbox-label { display: block; }
+            .inbox-progress { grid-column: 1 / -1; }
+            .inbox-actions { grid-column: 1 / -1; justify-content: flex-start; }
+        }
+        @media (max-width: 768px) { .source-grid { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 720px) {
+            .inbox-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .queue-metric { min-height: 78px; padding: .85rem; }
+            .queue-metric:nth-child(3) { border-left: 0; border-top: 1px solid hsl(var(--bc) / .12); }
+            .queue-metric:nth-child(4) { border-top: 1px solid hsl(var(--bc) / .12); }
+            .inbox-row { grid-template-columns: 1fr; }
+            .inbox-progress, .inbox-actions { grid-column: auto; }
+            .inbox-actions { flex-wrap: wrap; }
+            .inbox-actions .inbox-label { width: 100%; }
+            .inbox-actions .btn:not(.btn-square) { flex: 1; }
+        }
+        @media (max-width: 520px) { .source-grid { grid-template-columns: 1fr; } }
+        @media (max-width: 1200px) {
+            #reviewContent { overflow-y: auto; }
+            .po-review-layout { height: auto; grid-template-columns: 1fr; }
+            .po-preview-body { height: 52vh; flex: none; }
+            .po-entry-panel { overflow: visible; }
+        }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
+        <div class="p-5 border-b border-base-300">
+            <div class="flex items-center gap-3">
+                <img src="../../highland_fresh_logo.png" alt="Highland Fresh" class="w-10 h-10 object-contain">
+                <div><p class="font-bold">Highland Fresh</p><p class="text-xs text-base-content/55">Sales & Receivables</p></div>
+            </div>
+        </div>
+        <nav class="flex-1 p-4 space-y-5 overflow-y-auto">
+            <div><p class="text-xs font-semibold text-base-content/40 uppercase mb-2 px-3">Main Menu</p><ul class="menu menu-sm p-0 gap-1"><li><a href="dashboard.html"><i class="fas fa-table-columns w-5"></i>Dashboard</a></li></ul></div>
+            <div><p class="text-xs font-semibold text-base-content/40 uppercase mb-2 px-3">Customers</p><ul class="menu menu-sm p-0 gap-1"><li><a href="customers.html"><i class="fas fa-users w-5"></i>Customer List</a></li><li><a href="wholesalers.html"><i class="fas fa-truck w-5"></i>Wholesalers</a></li></ul></div>
+            <div><p class="text-xs font-semibold text-base-content/40 uppercase mb-2 px-3">Orders</p><ul class="menu menu-sm p-0 gap-1"><li><a href="orders.html?action=direct"><i class="fas fa-user-tag w-5"></i>Direct Order</a></li><li><a href="order_inbox.html" class="bg-primary text-primary-content"><i class="fas fa-inbox w-5"></i>Customer PO Inbox</a></li><li><a href="orders.html?status=pending"><i class="fas fa-clock w-5"></i>Pending Orders</a></li><li><a href="orders.html"><i class="fas fa-history w-5"></i>Order History</a></li></ul></div>
+            <div><p class="text-xs font-semibold text-base-content/40 uppercase mb-2 px-3">Receivables</p><ul class="menu menu-sm p-0 gap-1"><li><a href="aging.html"><i class="fas fa-chart-pie w-5"></i>Aging Report</a></li><li><a href="collections.html"><i class="fas fa-money-check-alt w-5"></i>Collections Due</a></li></ul></div>
+        </nav>
+        <div class="p-4 border-t border-base-300 flex items-center gap-3"><div class="w-10 h-10 bg-primary text-primary-content rounded-lg flex items-center justify-center font-bold" id="userInitials">SC</div><div class="min-w-0 flex-1"><p class="font-semibold text-sm truncate" id="sidebarUserName">Sales Custodian</p><p class="text-xs text-base-content/55">Institutional orders</p></div><button class="btn btn-ghost btn-sm btn-square" title="Log out" onclick="AuthService.logout()"><i class="fas fa-right-from-bracket"></i></button></div>
+    </aside>
+
+    <div class="lg:ml-72 min-h-screen flex flex-col">
+        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
+            <button class="btn btn-ghost btn-square lg:hidden" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+            <div class="flex-1 min-w-0 flex flex-col justify-center"><h1 class="font-bold text-lg">Customer PO Inbox</h1><p class="text-xs text-base-content/55 hidden sm:block">Receive customer purchase orders by email, enter their details, and review them before creating an order.</p></div>
+            <button class="hidden" id="syncButton" type="button" aria-hidden="true" tabindex="-1"></button>
+        </header>
+
+        <main class="inbox-page flex-1 p-4 lg:p-6">
+            <section class="bg-base-100 border border-base-300 rounded-lg mb-5"><div class="p-4 flex flex-col lg:flex-row lg:items-center gap-4"><div class="w-10 h-10 rounded-lg bg-success/15 text-success flex items-center justify-center"><i class="fas fa-envelope-open-text"></i></div><div class="flex-1"><p class="font-semibold">Emailed Customer Purchase Orders</p><p class="text-sm text-base-content/60" id="mailboxMessage">Checking the Highland Fresh order mailbox...</p></div><button class="btn btn-outline btn-sm" onclick="syncMailbox()"><i class="fas fa-rotate"></i>Check Email</button></div></section>
+            <section class="inbox-summary bg-base-100 border border-base-300 rounded-lg mb-5 overflow-hidden"><div class="queue-metric"><span class="queue-metric-icon bg-info/15 text-info"><i class="fas fa-keyboard"></i></span><div><p class="text-xs text-base-content/55">For encoding</p><p class="text-2xl font-bold text-info" id="encodingCount">0</p></div></div><div class="queue-metric"><span class="queue-metric-icon bg-warning/15 text-warning"><i class="fas fa-phone-volume"></i></span><div><p class="text-xs text-base-content/55">Needs confirmation</p><p class="text-2xl font-bold text-warning" id="confirmationCount">0</p></div></div><div class="queue-metric"><span class="queue-metric-icon bg-success/15 text-success"><i class="fas fa-file-circle-check"></i></span><div><p class="text-xs text-base-content/55">Ready to create</p><p class="text-2xl font-bold text-success" id="readyCount">0</p></div></div><div class="queue-metric"><span class="queue-metric-icon bg-error/15 text-error"><i class="fas fa-ban"></i></span><div><p class="text-xs text-base-content/55">Rejected emails</p><p class="text-2xl font-bold text-error" id="rejectedCount">0</p></div></div></section>
+            <section class="bg-base-100 border border-base-300 rounded-lg overflow-hidden">
+                <div class="p-4 border-b border-base-300 flex flex-col xl:flex-row xl:items-center gap-3">
+                    <div class="join" role="tablist" aria-label="Inbox view">
+                        <button class="btn btn-sm btn-outline join-item inbox-view-tab is-active" data-inbox-view="action" onclick="setInboxView('action')"><i class="fas fa-list-check"></i>Needs action <span class="badge badge-sm ml-1" id="actionTabCount">0</span></button>
+                        <button class="btn btn-sm btn-outline join-item inbox-view-tab" data-inbox-view="recent" onclick="setInboxView('recent')"><i class="fas fa-clock-rotate-left"></i>Recent history</button>
+                        <button class="btn btn-sm btn-outline join-item inbox-view-tab" data-inbox-view="all" onclick="setInboxView('all')">All</button>
+                    </div>
+                    <label class="input input-bordered input-sm flex items-center gap-2 flex-1"><i class="fas fa-search text-base-content/40"></i><input id="searchInput" class="grow" placeholder="Search PO number, customer, or sender" oninput="scheduleLoad()"></label>
+                    <select id="statusFilter" class="select select-bordered select-sm xl:w-56" onchange="handleStatusFilter()"><option value="">All statuses</option><option value="received">New email</option><option value="for_encoding">For encoding</option><option value="draft_order">Draft order</option><option value="needs_customer_confirmation">Needs customer confirmation</option><option value="customer_confirmed">Customer confirmed</option><option value="ready_to_create">Ready to create</option><option value="order_created">Order created</option><option value="rejected">Rejected</option></select>
+                </div>
+                <div class="inbox-list-context"><div class="flex flex-wrap items-center justify-between gap-2"><div><p class="font-semibold text-sm" id="inboxViewTitle">Orders needing attention</p><p class="text-xs text-base-content/55" id="inboxViewDescription">Newest first. Complete these before checking finished records.</p></div><span class="text-xs text-base-content/55" id="visibleCount">0 records</span></div></div>
+                <div class="inbox-list-header"><span>Order</span><span>Customer</span><span>Received</span><span>Progress</span><span class="text-right">Action</span></div><div id="inboxList"><div class="inbox-empty"><span class="loading loading-spinner loading-md"></span></div></div>
+            </section>
+        </main>
+    </div>
+
+    <dialog id="reviewModal" class="modal"><div class="modal-box p-0 overflow-hidden"><div class="p-4 border-b border-base-300 flex items-start gap-3"><div class="w-10 h-10 rounded-lg bg-info/15 text-info flex items-center justify-center"><i class="fas fa-file-pen"></i></div><div class="flex-1"><h2 class="font-bold text-lg">Customer PO Review</h2><p class="text-sm text-base-content/55">Read the original PO and enter the order beside it.</p></div><button class="btn btn-ghost btn-sm btn-square" onclick="closeReviewModal()" title="Close"><i class="fas fa-times"></i></button></div><div id="reviewContent" class="p-4"></div><div class="p-3 border-t border-base-300"><div id="reviewSaveError" class="alert alert-error py-3 mb-3 hidden" role="alert"><i class="fas fa-circle-exclamation"></i><div><p class="font-semibold">Order details were not saved</p><p id="reviewSaveErrorText" class="text-sm"></p></div></div><div class="flex flex-col xl:flex-row xl:items-center gap-3"><label id="warningApprovalWrap" class="label cursor-pointer justify-start gap-2 flex-1 hidden"><input id="warningApproval" type="checkbox" class="checkbox checkbox-warning checkbox-sm"><span class="label-text text-sm">I reviewed the price or stock warning.</span></label><div class="flex flex-wrap justify-end gap-2 ml-auto"><button class="btn btn-ghost btn-sm" onclick="closeReviewModal()">Close</button><button class="btn btn-outline btn-sm" id="viewAttachmentButton" onclick="viewAttachment()"><i class="fas fa-up-right-from-square"></i>Open Full Screen</button><button class="btn btn-error btn-outline btn-sm" id="rejectEmailButton" onclick="openRejectModal()"><i class="fas fa-ban"></i>Reject Email</button><button class="btn btn-warning btn-outline btn-sm" id="correctEncodingButton" onclick="openEncodingCorrectionModal()"><i class="fas fa-pen-to-square"></i>Correct Encoding</button><button class="btn btn-warning btn-sm" id="recordCallButton" onclick="openCallModal()"><i class="fas fa-phone-volume"></i>Record Customer Call</button><button class="btn btn-info btn-sm" id="saveDetailsButton" onclick="saveOrderDetails()"><i class="fas fa-save"></i>Save Order Details</button><button class="btn btn-primary btn-sm" id="createOrderButton" onclick="confirmImport()"><i class="fas fa-file-circle-check"></i>Create Sales Order</button></div></div></div></div></dialog>
+
+    <dialog id="callModal" class="modal"><div class="modal-box max-w-2xl p-0 overflow-hidden"><div class="p-5 border-b border-base-300 flex items-start gap-3"><div class="w-10 h-10 rounded-lg bg-warning/15 text-warning flex items-center justify-center"><i class="fas fa-phone-volume"></i></div><div class="flex-1"><h2 class="font-bold text-lg">Record Customer Call</h2><p class="text-sm text-base-content/55">Record the customer's agreement before saving the changed order.</p></div><button class="btn btn-ghost btn-sm btn-square" onclick="callModal.close()"><i class="fas fa-times"></i></button></div><form id="callForm" class="p-5 space-y-4" onsubmit="saveCustomerCall(event)"><div class="alert alert-info py-3 text-sm"><i class="fas fa-circle-info"></i><span>Save the current order details first. This call record approves the next saved change; the original emailed PDF is never edited.</span></div><div class="grid gap-4 sm:grid-cols-2"><label class="form-control sm:col-span-2"><span class="label-text font-medium">What was agreed?</span><textarea id="callChangeSummary" class="textarea textarea-bordered" maxlength="5000" rows="2" placeholder="Customer agreed to receive 6 boxes instead of 10." required></textarea></label><label class="form-control sm:col-span-2"><span class="label-text font-medium">Reason</span><input id="callReason" class="input input-bordered" maxlength="500" placeholder="Only 6 boxes are available today" required></label><label class="form-control"><span class="label-text font-medium">Customer representative</span><input id="callContact" class="input input-bordered" maxlength="150" placeholder="Name of person contacted" required></label><label class="form-control"><span class="label-text font-medium">Confirmation method</span><input class="input input-bordered" value="Phone call" readonly></label><label class="form-control"><span class="label-text font-medium">Date and time</span><input id="callDate" class="input input-bordered" type="datetime-local" required></label><label class="form-control sm:col-span-2"><span class="label-text font-medium">Optional notes</span><textarea id="callNote" class="textarea textarea-bordered" maxlength="5000" rows="2" placeholder="Additional details about the call"></textarea></label></div><div class="flex justify-end gap-2 pt-2"><button class="btn btn-ghost" type="button" onclick="callModal.close()">Cancel</button><button id="saveCallButton" class="btn btn-warning" type="submit"><i class="fas fa-phone-volume"></i>Save Phone Confirmation</button></div></form></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
+
+    <dialog id="encodingCorrectionModal" class="modal"><div class="modal-box max-w-lg"><h2 class="font-bold text-lg">Correct Encoding</h2><p class="text-sm text-base-content/60 mt-1">Use this only when Sales typed something differently from the unchanged customer attachment.</p><form class="mt-5 space-y-4" onsubmit="correctEncoding(event)"><div class="alert alert-warning py-3 text-sm"><i class="fas fa-triangle-exclamation"></i><span>If the customer actually changed the order, cancel and use <strong>Record Customer Call</strong>.</span></div><label class="form-control"><span class="label-text font-medium">What was typed incorrectly?</span><textarea id="encodingCorrectionReason" class="textarea textarea-bordered" minlength="10" maxlength="1000" rows="3" placeholder="I typed 999999999 blocks, but the attached PO shows 2 blocks." required></textarea></label><label class="label cursor-pointer justify-start gap-3"><input id="encodingCorrectionConfirmed" class="checkbox checkbox-warning" type="checkbox" required><span class="label-text">I checked the original attachment and the current entries now match it.</span></label><div class="flex justify-end gap-2"><button class="btn btn-ghost" type="button" onclick="encodingCorrectionModal.close()">Cancel</button><button id="saveEncodingCorrectionButton" class="btn btn-warning" type="submit"><i class="fas fa-pen-to-square"></i>Save Encoding Correction</button></div></form></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
+
+    <dialog id="rejectModal" class="modal"><div class="modal-box max-w-lg"><h2 class="font-bold text-lg">Reject Customer PO Email</h2><p class="text-sm text-base-content/60 mt-1">The original email and attachment will stay saved for reference.</p><form class="mt-5 space-y-4" onsubmit="rejectEmail(event)"><label class="form-control"><span class="label-text font-medium">Reason</span><textarea id="rejectReason" class="textarea textarea-bordered" maxlength="2000" rows="3" placeholder="Duplicate, unreadable, wrong recipient, or another reason" required></textarea></label><div class="flex justify-end gap-2"><button class="btn btn-ghost" type="button" onclick="rejectModal.close()">Cancel</button><button class="btn btn-error" type="submit"><i class="fas fa-ban"></i>Reject Email</button></div></form></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
+
+    <div id="toastContainer" class="toast toast-end toast-top z-[100]"></div>
+    <script src="../../js/vendor/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="sales_custodian,general_manager"></script>
+    <script src="../../js/sales/sales.service.js"></script>
+    <script>
+        let inboxRows = [];
+        let activeImport = null;
+        let manualRows = [];
+        let orderProducts = [];
+        let customers = [];
+        let loadTimer = null;
+        let configuredMailbox = 'the company order mailbox';
+        let attachmentPreviewUrl = null;
+        let currentInboxView = 'action';
+
+        const $ = id => document.getElementById(id);
+        const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
+        const dateTime = value => value ? new Date(String(value).replace(' ', 'T')).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
+        function receivedLabel(value) {
+            if (!value) return '-';
+            const date = new Date(String(value).replace(' ', 'T'));
+            const today = new Date();
+            const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            const itemDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+            const days = Math.round((start - itemDay) / 86400000);
+            const time = date.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' });
+            if (days === 0) return `Today, ${time}`;
+            if (days === 1) return `Yesterday, ${time}`;
+            return date.toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+        }
+        const localDateTime = (date = new Date()) => { const pad = value => String(value).padStart(2, '0'); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`; };
+        const money = value => value === '' || value === null || value === undefined ? '-' : new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value || 0));
+
+        function toggleSidebar() { $('sidebar').classList.toggle('-translate-x-full'); $('sidebarBackdrop').classList.toggle('hidden'); }
+        function toast(message, type = 'info') { const node = document.createElement('div'); node.className = `alert alert-${type} shadow-lg max-w-md`; node.innerHTML = `<span>${esc(message)}</span>`; $('toastContainer').appendChild(node); setTimeout(() => node.remove(), 4500); }
+        function showReviewSaveError(message = '') {
+            const panel = $('reviewSaveError');
+            const text = $('reviewSaveErrorText');
+            if (!panel || !text) return;
+            text.textContent = message;
+            panel.classList.toggle('hidden', !message);
+        }
+        function scheduleLoad() { clearTimeout(loadTimer); loadTimer = setTimeout(loadInbox, 300); }
+        function setInboxView(view) {
+            currentInboxView = ['action', 'recent', 'all'].includes(view) ? view : 'action';
+            $('statusFilter').value = '';
+            document.querySelectorAll('[data-inbox-view]').forEach(button => button.classList.toggle('is-active', button.dataset.inboxView === currentInboxView));
+            loadInbox();
+        }
+        function handleStatusFilter() {
+            if ($('statusFilter').value) {
+                currentInboxView = 'all';
+                document.querySelectorAll('[data-inbox-view]').forEach(button => button.classList.toggle('is-active', button.dataset.inboxView === 'all'));
+            }
+            loadInbox();
+        }
+        function hasAttachment(row) {
+            return Boolean(row?.attachment_path)
+                && row.attachment_original_name !== 'No supported attachment'
+                && row.attachment_original_name !== 'Order written in email';
+        }
+        function sourceCell(row) {
+            if (hasAttachment(row)) {
+                const name = row.attachment_original_name || 'View attachment';
+                return `<button class="inbox-source link link-primary" onclick="viewAttachmentFor(${Number(row.id)})" title="${esc(name)}"><i class="fas fa-paperclip"></i><span>${esc(name)}</span></button>`;
+            }
+            return `<button class="inbox-source link link-info" onclick="openReview(${Number(row.id)})"><i class="fas fa-envelope-open-text"></i><span>Order written in email</span></button>`;
+        }
+        function statusBadge(status) {
+            const map = { received: ['info', 'New email'], for_encoding: ['info', 'For encoding'], draft_order: ['warning', 'Draft order'], needs_customer_confirmation: ['warning', 'Needs customer confirmation'], customer_confirmed: ['success', 'Customer confirmed'], ready_to_create: ['success', 'Ready to create'], order_created: ['primary', 'Order created'], converted: ['primary', 'Order created'], cancelled: ['error', 'Order cancelled'], needs_review: ['warning', 'Needs review'], ready: ['success', 'Ready to create'], rejected: ['error', 'Rejected'], duplicate: ['neutral', 'Duplicate'] };
+            const item = map[status] || ['ghost', status || 'Unknown'];
+            return `<span class="badge badge-${item[0]} badge-sm whitespace-nowrap">${esc(item[1])}</span>`;
+        }
+
+        function nextStepText(status) {
+            const steps = {
+                received: 'Check the sender before entering the order.',
+                for_encoding: 'Enter the order shown in the customer request.',
+                draft_order: 'Continue checking the saved order details.',
+                needs_customer_confirmation: 'Call the customer and record the agreement.',
+                customer_confirmed: 'Customer change has been recorded.',
+                ready_to_create: 'Reviewed and ready to become a Sales Order.',
+                ready: 'Reviewed and ready to become a Sales Order.',
+                order_created: 'Sales Order already created.',
+                converted: 'Sales Order already created.',
+                cancelled: 'The linked Sales Order was cancelled.',
+                rejected: 'Kept for reference; no order will be created.',
+                duplicate: 'Already received earlier; no second order is needed.'
+            };
+            return steps[status] || 'Open this email to review its details.';
+        }
+
+        async function loadConfig() {
+            try {
+                const response = await SalesService.getOrderInboxConfig();
+                const config = response.data || {};
+                if (config.mailbox_enabled) {
+                    configuredMailbox = config.mailbox_address || configuredMailbox;
+                    $('mailboxMessage').classList.remove('text-error');
+                    $('mailboxMessage').textContent = `Watching ${configuredMailbox}. Emails are saved here for manual order entry.`;
+                    $('syncButton').disabled = false;
+                    return true;
+                }
+                $('mailboxMessage').textContent = 'The Highland Fresh order mailbox is not connected yet.';
+                $('syncButton').disabled = true;
+            } catch (error) { $('mailboxMessage').textContent = 'The order mailbox connection could not be checked.'; }
+            return false;
+        }
+
+        async function loadInbox() {
+            $('inboxList').innerHTML = '<div class="inbox-empty"><span class="loading loading-spinner loading-md"></span></div>';
+            try {
+                const response = await SalesService.getOrderInbox({ view: currentInboxView, status: $('statusFilter').value, search: $('searchInput').value.trim() });
+                inboxRows = response.data || [];
+                updateViewContext();
+                await loadSummary();
+                if (!inboxRows.length) { $('inboxList').innerHTML = `<div class="inbox-empty"><i class="fas fa-inbox text-3xl mb-3 block"></i><p class="font-medium">${currentInboxView === 'action' ? 'No orders need attention' : 'No customer PO emails found'}</p><p class="text-sm mt-1">${currentInboxView === 'action' ? 'You are caught up. Open Recent history to review finished records.' : 'Try another search or status.'}</p></div>`; return; }
+                $('inboxList').innerHTML = inboxRows.map(row => {
+                    const created = ['order_created', 'converted'].includes(row.status);
+                    const rejected = row.status === 'rejected';
+                    const visibleStatus = created && row.sales_order_status === 'cancelled' ? 'cancelled' : row.status;
+                    const primaryLabel = created ? 'View Order' : (rejected ? 'View Email' : (row.status === 'received' ? 'Review Sender' : (row.status === 'for_encoding' ? 'Enter Order' : 'Continue Order')));
+                    const sourceAction = hasAttachment(row)
+                        ? `<li><button onclick="viewAttachmentFor(${Number(row.id)})"><i class="fas fa-paperclip"></i>Open attached PO</button></li>`
+                        : `<li><button onclick="openReview(${Number(row.id)})"><i class="fas fa-envelope-open-text"></i>Read original email</button></li>`;
+                    const moreActions = !created && !rejected ? `<div class="dropdown dropdown-end"><button class="btn btn-ghost btn-xs btn-square" tabindex="0" title="More actions"><i class="fas fa-ellipsis-vertical"></i></button><ul class="dropdown-content menu bg-base-100 border border-base-300 rounded-lg shadow-lg z-20 w-52 p-2" tabindex="0">${sourceAction}${row.status === 'needs_customer_confirmation' ? `<li><button onclick="openCallFromInbox(${Number(row.id)})"><i class="fas fa-phone-volume"></i>Record customer call</button></li>` : ''}<li><button class="text-error" onclick="openRejectFromInbox(${Number(row.id)})"><i class="fas fa-ban"></i>Reject email</button></li></ul></div>` : '';
+                    const received = row.received_at || row.created_at;
+                    return `<article class="inbox-row"><div class="inbox-cell"><span class="inbox-label">Order</span><p class="inbox-primary font-mono">${esc(row.customer_po_number || 'PO number not entered')}</p><p class="inbox-secondary inbox-subject" title="${esc(row.subject || 'No subject')}">${esc(row.subject || 'No subject')}</p>${sourceCell(row)}</div><div class="inbox-cell"><span class="inbox-label">Customer</span>${row.customer_name ? `<p class="inbox-primary">${esc(row.customer_name)}</p><p class="inbox-secondary">${esc(row.customer_code || '')}</p>` : '<p class="inbox-primary text-warning">Customer not matched</p>'}<p class="inbox-secondary">${esc(row.sender_email)}</p></div><div class="inbox-cell"><span class="inbox-label">Received</span><p class="inbox-primary font-normal">${esc(receivedLabel(received))}</p></div><div class="inbox-cell inbox-progress"><span class="inbox-label">Progress</span>${statusBadge(visibleStatus)}${row.error_message ? `<p class="inbox-status-message">${esc(row.error_message)}</p>` : `<p class="inbox-secondary">${esc(nextStepText(visibleStatus))}</p>`}</div><div class="inbox-cell inbox-actions"><span class="inbox-label">Action</span><button class="btn btn-info btn-sm whitespace-nowrap" onclick="openReview(${Number(row.id)})"><i class="fas fa-file-pen"></i>${primaryLabel}</button>${moreActions}</div></article>`;
+                }).join('');
+            } catch (error) { $('inboxList').innerHTML = `<div class="inbox-empty text-error"><i class="fas fa-circle-exclamation text-2xl mb-3 block"></i>${esc(error.message || 'Could not load the customer PO inbox.')}</div>`; }
+        }
+
+        async function loadSummary() {
+            try {
+                const response = await SalesService.getOrderInboxSummary();
+                const summary = response.data || {};
+                $('encodingCount').textContent = Number(summary.for_encoding || 0);
+                $('confirmationCount').textContent = Number(summary.needs_confirmation || 0);
+                $('readyCount').textContent = Number(summary.ready_to_create || 0);
+                $('rejectedCount').textContent = Number(summary.rejected || 0);
+                $('actionTabCount').textContent = Number(summary.needs_action || 0);
+            } catch (error) {
+                console.warn('Could not refresh inbox totals.', error);
+            }
+        }
+
+        function updateViewContext() {
+            const contexts = {
+                action: ['Orders needing attention', 'Newest first. Complete these before checking finished records.'],
+                recent: ['Recent history', 'Created, cancelled, duplicate, and rejected emails, newest first.'],
+                all: ['All customer PO emails', 'Every saved email, newest first.']
+            };
+            const context = contexts[currentInboxView] || contexts.action;
+            $('inboxViewTitle').textContent = $('statusFilter').value ? $('statusFilter').selectedOptions[0].textContent : context[0];
+            $('inboxViewDescription').textContent = context[1];
+            $('visibleCount').textContent = `${inboxRows.length} ${inboxRows.length === 1 ? 'record' : 'records'}`;
+        }
+
+        async function syncMailbox(silent = false) {
+            $('syncButton').disabled = true; $('syncButton').classList.add('loading');
+            try {
+                const response = await SalesService.syncOrderMailbox();
+                const result = response.data || {};
+                $('mailboxMessage').textContent = `Watching ${configuredMailbox}. Emails are saved here for manual order entry.`;
+                if (!silent || result.imported || result.rejected) toast(`Email checked: ${result.imported || 0} new, ${result.duplicates || 0} already received, ${result.rejected || 0} rejected.`, 'success');
+                await loadInbox();
+            } catch (error) {
+                const raw = error.message || 'Could not check the customer order mailbox.';
+                const message = /not enabled for POP access/i.test(raw) ? `Gmail mailbox access is off for ${configuredMailbox}. Enable POP in Gmail Settings, then click Check Email.` : raw;
+                $('mailboxMessage').textContent = message; $('mailboxMessage').classList.add('text-error'); toast(message, 'error');
+            } finally { $('syncButton').disabled = false; $('syncButton').classList.remove('loading'); }
+        }
+
+        function responseRows(payload) {
+            if (Array.isArray(payload)) return payload;
+            if (payload && Array.isArray(payload.data)) return payload.data;
+            if (payload && payload.data && payload.data !== payload) return responseRows(payload.data);
+            if (payload && Array.isArray(payload.products)) return payload.products;
+            if (payload && Array.isArray(payload.items)) return payload.items;
+            if (payload && Array.isArray(payload.rows)) return payload.rows;
+            return [];
+        }
+        function firstValue(...values) {
+            const value = values.find(item => {
+                const text = item === null || item === undefined ? '' : String(item).trim();
+                return text !== '' && text.toLowerCase() !== 'undefined' && text.toLowerCase() !== 'null';
+            });
+            return value === undefined ? '' : value;
+        }
+        function normalizeProducts(payload) {
+            return responseRows(payload).map(product => ({
+                ...product,
+                product_code: String(firstValue(product.product_code, product.code, product.sku, product.productCode)).trim(),
+                product_name: String(firstValue(product.product_name, product.name, product.description, product.productName)).trim(),
+                variant: String(firstValue(product.variant, product.variant_name, product.flavor)).trim(),
+                unit_size: firstValue(product.unit_size, product.size, product.unitSize),
+                unit_measure: String(firstValue(product.unit_measure, product.measure, product.unitMeasure)).trim(),
+                base_unit: String(firstValue(product.base_unit, product.baseUnit, product.unit)).trim(),
+                box_unit: String(firstValue(product.box_unit, product.boxUnit, 'box')).trim(),
+                pieces_per_box: firstValue(product.pieces_per_box, product.piecesPerBox, 1),
+                available_qty: firstValue(product.available_qty, product.availableQty, product.available, product.on_hand_qty, product.onHandQty, 0),
+                quantity_unit: String(firstValue(product.quantity_unit, product.quantityUnit, product.base_unit, product.baseUnit, 'unit')).trim(),
+            })).filter(product => product.product_code && product.product_name);
+        }
+        function productByCode(code) { return orderProducts.find(product => String(product.product_code).toUpperCase() === String(code || '').toUpperCase()); }
+        function productAvailable(product) {
+            const quantity = Number(product.available_qty || 0);
+            return Number.isFinite(quantity) ? quantity : 0;
+        }
+        function productLabel(product) {
+            const variant = String(product.variant || '').trim();
+            const size = !/\d/.test(variant)
+                ? [product.unit_size, product.unit_measure].filter(value => value !== '' && value !== null && value !== undefined).join(' ')
+                : '';
+            const available = productAvailable(product);
+            const quantityText = Number.isInteger(available) ? String(available) : available.toFixed(2);
+            const stockText = available > 0 ? ` [${quantityText} ${product.quantity_unit || product.base_unit} available]` : ' [No usable stock]';
+            return `${product.product_code} - ${product.product_name}${variant ? ` (${variant})` : ''}${size ? ` ${size}` : ''}${stockText}`;
+        }
+        function productOptions(selected) {
+            const selectedCode = String(selected || '').trim();
+            const known = productByCode(selectedCode);
+            const legacyOption = selectedCode && !known
+                ? `<option value="${esc(selectedCode)}" selected>Original code: ${esc(selectedCode)} (choose replacement)</option>`
+                : '';
+            const sorted = [...orderProducts].sort((left, right) => productAvailable(right) - productAvailable(left) || productLabel(left).localeCompare(productLabel(right)));
+            const option = product => `<option value="${esc(product.product_code)}" ${String(product.product_code).toUpperCase() === selectedCode.toUpperCase() ? 'selected' : ''}>${esc(productLabel(product))}</option>`;
+            const available = sorted.filter(product => productAvailable(product) > 0).map(option).join('');
+            const unavailable = sorted.filter(product => productAvailable(product) <= 0).map(option).join('');
+            const groups = `${available ? `<optgroup label="Available now">${available}</optgroup>` : ''}${unavailable ? `<optgroup label="Not currently available">${unavailable}</optgroup>` : ''}`;
+            return `<option value="">${orderProducts.length ? 'Choose product...' : 'No active products found'}</option>${legacyOption}${groups}`;
+        }
+        function unitOptions(code, selected) {
+            const product = productByCode(code);
+            const units = product ? [...new Set([product.base_unit, product.box_unit].filter(Boolean).map(value => String(value).toLowerCase()))] : [];
+            const selectedUnit = String(selected || '').trim().toLowerCase();
+            if (selectedUnit && !units.includes(selectedUnit)) units.unshift(selectedUnit);
+            return '<option value="">Choose unit...</option>' + units.map(unit => `<option value="${esc(unit)}" ${unit === selectedUnit ? 'selected' : ''}>${esc(unit.charAt(0).toUpperCase() + unit.slice(1))}${product && ![product.base_unit, product.box_unit].map(value => String(value).toLowerCase()).includes(unit) ? ' (from email)' : ''}</option>`).join('');
+        }
+        function lineRemarks(line) { try { return JSON.parse(line.raw_data || '{}').remarks || ''; } catch (error) { return ''; } }
+        function lineRawData(line) { try { const raw = JSON.parse(line.raw_data || '{}'); return raw && typeof raw === 'object' ? raw : {}; } catch (error) { return {}; } }
+        function isRemovedTypingLine(line) { return Number(line?.quantity_entered || 0) === 0 && String(line?.issue_text || '') === 'Removed from the saved order during manual entry.'; }
+        function makeManualRows() {
+            return (activeImport.lines || []).filter(line => !isRemovedTypingLine(line)).map(line => {
+                const raw = lineRawData(line);
+                const enteredCode = firstValue(line.customer_product_code, line.product_code, raw.product_code, raw.sku, raw.productCode);
+                const description = String(firstValue(line.description, line.product_name, raw.description, raw.product_name)).trim().toLowerCase();
+                const matched = productByCode(enteredCode) || (description ? orderProducts.find(product => String(product.product_name).trim().toLowerCase() === description) : null);
+                return {
+                    line_id: Number(line.id),
+                    row_number: Number(line.row_number || raw.row_number || 1),
+                    product_code: matched ? matched.product_code : enteredCode,
+                    quantity: line.quantity_entered ?? raw.quantity ?? '',
+                    unit: line.unit_entered || line.unit || raw.unit || '',
+                    unit_price: line.po_unit_price ?? raw.unit_price ?? raw.price ?? '',
+                    remarks: lineRemarks(line),
+                    line
+                };
+            });
+        }
+        function originalText(line) { if (!line || line.original_quantity_entered === null || line.original_quantity_entered === undefined) return 'First entry'; return `${line.original_quantity_entered} ${line.original_unit_entered || ''} ${line.original_customer_product_code || ''}`.trim(); }
+        function issueText(line) { if (!line || !line.line_status) return '<span class="text-base-content/45">Not checked yet</span>'; if (line.line_status === 'matched') return activeImport?.source_verified_at ? '<span class="badge badge-success badge-sm">Checked</span>' : '<span class="badge badge-warning badge-sm">Not verified</span><p class="text-xs text-warning mt-1">This older entry was not recorded as compared with the original PO.</p>'; if (line.line_status === 'warning') return `<span class="badge badge-warning badge-sm">Review</span><p class="text-xs text-warning mt-1">${esc(line.issue_text || 'Review this line')}</p>`; return `<span class="badge badge-error badge-sm">Blocked</span><p class="text-xs text-error mt-1">${esc(line.issue_text || 'Fix this line')}</p>`; }
+
+        function renderManualRows(readOnly) {
+            if (!manualRows.length) manualRows.push({ line_id: 0, row_number: 1, product_code: '', quantity: '', unit: '', unit_price: '', remarks: '', line: null });
+            $('manualLinesBody').innerHTML = manualRows.map((row, index) => {
+                const line = row.line || {};
+                const original = originalText(line);
+                return `<tr data-manual-row="${index}" class="align-top"><td class="text-center text-xs text-base-content/50">${Number(row.row_number || index + 1)}</td><td><select class="select select-bordered select-sm w-72" data-field="product_code" onchange="changeProduct(${index}, this.value)" ${readOnly ? 'disabled' : ''}>${productOptions(row.product_code)}</select></td><td><input class="input input-bordered input-sm w-24" data-field="quantity" type="number" min="1" step="1" value="${esc(row.quantity)}" ${readOnly ? 'disabled' : ''}></td><td><select class="select select-bordered select-sm w-28" data-field="unit" ${readOnly ? 'disabled' : ''}>${unitOptions(row.product_code, row.unit)}</select></td><td><input class="input input-bordered input-sm w-28" data-field="unit_price" type="number" min="0" step="0.01" placeholder="Optional" value="${esc(row.unit_price)}" ${readOnly ? 'disabled' : ''}></td><td><input class="input input-bordered input-sm w-44" data-field="remarks" maxlength="500" placeholder="Optional" value="${esc(row.remarks)}" ${readOnly ? 'disabled' : ''}></td><td class="min-w-48">${issueText(line)}</td><td class="text-xs text-base-content/55 min-w-32">${esc(original)}${!readOnly ? `<button class="btn btn-ghost btn-xs text-error ml-1" onclick="removeManualLine(${index})" title="Remove line"><i class="fas fa-trash"></i></button>` : ''}</td></tr>`;
+            }).join('');
+        }
+        function syncManualRows() { document.querySelectorAll('[data-manual-row]').forEach(row => { const index = Number(row.dataset.manualRow); manualRows[index].product_code = row.querySelector('[data-field="product_code"]').value; manualRows[index].quantity = row.querySelector('[data-field="quantity"]').value; manualRows[index].unit = row.querySelector('[data-field="unit"]').value; manualRows[index].unit_price = row.querySelector('[data-field="unit_price"]').value; manualRows[index].remarks = row.querySelector('[data-field="remarks"]').value; }); }
+        function changeProduct(index, code) { syncManualRows(); manualRows[index].product_code = code; const product = productByCode(code); manualRows[index].unit = product ? String(product.base_unit || product.box_unit || '').toLowerCase() : ''; manualRows[index].unit_price = ''; renderManualRows(isReadOnly()); }
+        function addManualLine() { syncManualRows(); manualRows.push({ line_id: 0, row_number: manualRows.length + 1, product_code: '', quantity: '', unit: '', unit_price: '', remarks: '', line: null }); renderManualRows(false); }
+        function removeManualLine(index) { syncManualRows(); manualRows.splice(index, 1); renderManualRows(false); }
+        function validateManualRows() {
+            const seen = new Set();
+            const activeRows = manualRows.filter(row => String(row.product_code || '').trim() || String(row.quantity || '').trim() || String(row.unit || '').trim());
+            if (!activeRows.length) return 'Enter at least one product line.';
+            for (const row of activeRows) {
+                const code = String(row.product_code || '').trim();
+                const unit = String(row.unit || '').trim().toLowerCase();
+                const quantity = Number(row.quantity);
+                if (!code) return 'Choose a product for every order line.';
+                if (!Number.isInteger(quantity) || quantity <= 0) return 'Quantity must be a positive whole number.';
+                if (!unit) return 'Choose an order unit for every order line.';
+                if (row.unit_price !== '' && (!Number.isFinite(Number(row.unit_price)) || Number(row.unit_price) < 0)) return 'Customer price cannot be negative.';
+                const key = `${code.toUpperCase()}:${unit}`;
+                if (seen.has(key)) return `${productByCode(code)?.product_name || code} is entered more than once with the same order unit. Combine it into one line.`;
+                seen.add(key);
+            }
+            return '';
+        }
+        function isReadOnly() { return !activeImport || Boolean(activeImport.sales_order_id) || ['order_created', 'converted', 'rejected', 'duplicate', 'archived'].includes(activeImport.status); }
+        function updateAttachmentDisplay() {
+            const iconClass = /\.pdf$/i.test(activeImport?.attachment_original_name || '') ? 'fa-file-pdf' : 'fa-paperclip';
+            document.querySelectorAll('.attachment-open-icon').forEach(icon => {
+                icon.classList.remove('fa-file-pdf', 'fa-paperclip', 'fa-file-image', 'fa-file-excel');
+                icon.classList.add(iconClass);
+            });
+        }
+
+        function clearAttachmentPreview() {
+            if (attachmentPreviewUrl) URL.revokeObjectURL(attachmentPreviewUrl);
+            attachmentPreviewUrl = null;
+        }
+        function closeReviewModal() { clearAttachmentPreview(); $('reviewModal').close(); }
+        function applyHeaderSuggestions(suggestions = {}, source = 'email') {
+            const poInput = $('entryPoNumber');
+            const dateInput = $('entryDeliveryDate');
+            if (poInput && !poInput.value && suggestions.po_number) {
+                poInput.value = String(suggestions.po_number);
+                $('poSuggestionHint').textContent = suggestions.source === 'internal_email_reference'
+                    ? 'No official PO number was written, so the system prepared this email reference.'
+                    : `Suggested from the ${source}. Check it against the original request.`;
+                $('poSuggestionHint').classList.remove('hidden');
+            }
+            if (dateInput && !dateInput.value && suggestions.delivery_date) {
+                dateInput.value = String(suggestions.delivery_date);
+                $('deliverySuggestionHint').textContent = `Suggested from the ${source}. Check it against the original PO.`;
+                $('deliverySuggestionHint').classList.remove('hidden');
+            }
+        }
+        function renderSpreadsheetPreview(preview) {
+            const rows = Array.isArray(preview.rows) ? preview.rows : [];
+            if (!rows.length) return '<div class="h-full flex items-center justify-center p-8 text-center text-base-content/55">This spreadsheet has no readable cells.</div>';
+            const width = Math.max(1, ...rows.map(row => Array.isArray(row.cells) ? row.cells.length : 0));
+            const letters = Array.from({ length: width }, (_, index) => {
+                let number = index + 1, label = '';
+                while (number > 0) { number--; label = String.fromCharCode(65 + (number % 26)) + label; number = Math.floor(number / 26); }
+                return label;
+            });
+            const body = rows.map(row => `<tr><th class="row-number">${Number(row.row_number || 0)}</th>${Array.from({ length: width }, (_, index) => `<td>${esc(row.cells?.[index] || '')}</td>`).join('')}</tr>`).join('');
+            return `<table class="po-sheet-table"><thead><tr><th class="row-number">#</th>${letters.map(letter => `<th>${letter}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`;
+        }
+        async function loadAttachmentPreview(sourceAvailable) {
+            const target = $('attachmentPreviewBody');
+            if (!target) return;
+            clearAttachmentPreview();
+            if (!sourceAvailable) {
+                target.innerHTML = `<div class="h-full overflow-y-auto p-5"><div class="flex items-center gap-2 text-info mb-3"><i class="fas fa-envelope-open-text"></i><strong>Order written in the email</strong></div><pre class="po-email-message whitespace-pre-wrap break-words text-sm font-sans">${esc(activeImport.email_body || 'No readable order message was saved.')}</pre></div>`;
+                return;
+            }
+            target.innerHTML = '<div class="h-full flex items-center justify-center"><span class="loading loading-spinner loading-lg"></span></div>';
+            const filename = String(activeImport.attachment_original_name || '');
+            const extension = filename.split('.').pop().toLowerCase();
+            try {
+                if (extension === 'pdf' || ['jpg', 'jpeg', 'png'].includes(extension)) {
+                    const blob = await fetchAttachment(activeImport.id, true);
+                    attachmentPreviewUrl = URL.createObjectURL(blob);
+                    target.innerHTML = extension === 'pdf'
+                        ? `<iframe src="${attachmentPreviewUrl}" title="Original customer purchase order"></iframe>`
+                        : `<div class="p-3"><img src="${attachmentPreviewUrl}" alt="Original customer purchase order"></div>`;
+                    return;
+                }
+                if (extension === 'xlsx' || extension === 'csv') {
+                    const response = await SalesService.getOrderAttachmentPreview(activeImport.id);
+                    const preview = response.data || {};
+                    target.innerHTML = renderSpreadsheetPreview(preview);
+                    applyHeaderSuggestions({ po_number: preview.suggested_po_number, delivery_date: preview.suggested_delivery_date }, 'spreadsheet');
+                    return;
+                }
+                target.innerHTML = '<div class="h-full flex flex-col items-center justify-center p-8 text-center"><i class="fas fa-file-lines text-3xl text-base-content/35 mb-3"></i><p class="font-medium">Preview is not available for this file.</p><p class="text-sm text-base-content/55 mt-1">Open it full screen, or ask the customer to send a PDF.</p></div>';
+            } catch (error) {
+                target.innerHTML = `<div class="h-full flex flex-col items-center justify-center p-8 text-center text-error"><i class="fas fa-circle-exclamation text-3xl mb-3"></i><p>${esc(error.message || 'The attachment preview could not be loaded.')}</p><button class="btn btn-outline btn-sm mt-4" onclick="viewAttachment()"><i class="fas fa-up-right-from-square"></i>Open Full Screen</button></div>`;
+            }
+        }
+
+        async function openReview(id) {
+            clearAttachmentPreview(); showReviewSaveError(); activeImport = null; $('reviewContent').innerHTML = '<div class="flex justify-center py-12"><span class="loading loading-spinner loading-lg"></span></div>'; $('reviewModal').showModal();
+            try {
+                const responses = await Promise.all([SalesService.getOrderImport(id), SalesService.getApprovedCustomerOrderProducts(), SalesService.getCustomers({ status: 'active', limit: 200 })]);
+                activeImport = responses[0].data || {};
+                orderProducts = normalizeProducts(responses[1]);
+                customers = responseRows(responses[2]);
+                if (!orderProducts.length) console.warn('Customer PO product list was empty or used an unexpected response shape.', responses[1]);
+                manualRows = makeManualRows(); renderReview();
+            } catch (error) { $('reviewContent').innerHTML = `<div class="alert alert-error">${esc(error.message || 'Could not open the customer PO.')}</div>`; }
+        }
+
+        function renderReview() {
+            const readOnly = isReadOnly();
+            const saved = Boolean(activeImport.entry_saved_at);
+            const blocked = (activeImport.lines || []).filter(line => Number(line.quantity_base || 0) > 0 && line.line_status === 'blocked').length;
+            const warnings = (activeImport.lines || []).filter(line => Number(line.quantity_base || 0) > 0 && line.line_status === 'warning').length;
+            const sourceAvailable = hasAttachment(activeImport);
+            const sourceTitle = sourceAvailable ? 'Attached purchase order' : 'Order written in email';
+            const sourceName = sourceAvailable
+                ? (activeImport.attachment_original_name || 'Customer attachment')
+                : 'Original email message';
+            const emailMessageDetails = sourceAvailable
+                ? `<details class="border-t border-base-300 p-3 flex-none"><summary class="cursor-pointer font-medium text-sm">Original email message</summary><pre class="po-email-message whitespace-pre-wrap break-words text-sm font-sans overflow-y-auto mt-2">${esc(activeImport.email_body || 'No message text was saved. Sender, subject, date, and attachment are still available.')}</pre></details>`
+                : '';
+            const removedTypingLines = (activeImport.lines || []).filter(isRemovedTypingLine);
+            const removedHistory = removedTypingLines.map(line => `<div class="flex items-center justify-between gap-3 py-2 border-t border-base-300 first:border-t-0"><span>${esc(line.original_customer_product_code || line.customer_product_code || 'Item')}</span><span class="text-sm text-base-content/60">Previously typed: ${esc(originalText(line))}</span></div>`).join('');
+            const customerOptions = activeImport.customer_id
+                ? `<option value="${Number(activeImport.customer_id)}" selected>${esc(activeImport.customer_name)}${activeImport.customer_code ? ` - ${esc(activeImport.customer_code)}` : ''}</option>`
+                : '<option value="" selected>Unregistered sender</option>';
+            const callHistory = (activeImport.call_confirmations || []).map(call => `<div class="border-t border-base-300 pt-3 mt-3"><p class="font-medium">${esc(call.change_summary)}</p><p class="text-xs text-base-content/60">Phone call with ${esc(call.contact_name)} on ${esc(dateTime(call.confirmed_at))}. ${esc(call.reason)}</p>${call.note ? `<p class="text-sm mt-1">${esc(call.note)}</p>` : ''}</div>`).join('');
+            const trustedLines = activeImport.trusted_reference?.lines || [];
+            const trustedSummary = trustedLines.map(line => `${esc(line.description || line.product_code)}: ${Number(line.quantity)} ${esc(line.unit)}`).join(' &bull; ');
+            const orderCancelled = Boolean(activeImport.sales_order_id) && activeImport.sales_order_status === 'cancelled';
+            const visibleStatus = orderCancelled ? 'cancelled' : activeImport.status;
+            $('reviewContent').innerHTML = `<div class="po-review-layout"><section class="po-source-panel border border-base-300 rounded-lg bg-base-100"><div class="p-3 border-b border-base-300 flex items-start gap-3"><div class="min-w-0 flex-1"><p class="font-semibold">${sourceTitle}</p><p class="text-xs text-base-content/55 break-all mt-1">${esc(sourceName)}</p></div>${sourceAvailable ? '<button class="btn btn-outline btn-xs" onclick="viewAttachment()"><i class="fas fa-up-right-from-square attachment-open-icon"></i>Open</button>' : ''}</div><div class="po-meta-grid grid grid-cols-2 bg-base-300 border-b border-base-300"><div class="bg-base-100 p-3"><p class="text-xs text-base-content/45 uppercase">Sender</p><p class="text-sm font-medium break-all">${esc(activeImport.sender_email)}</p></div><div class="bg-base-100 p-3"><p class="text-xs text-base-content/45 uppercase">Received</p><p class="text-sm font-medium">${esc(dateTime(activeImport.received_at || activeImport.created_at))}</p></div><div class="bg-base-100 p-3 col-span-2"><p class="text-xs text-base-content/45 uppercase">Subject</p><p class="text-sm font-medium break-words">${esc(activeImport.subject || 'No subject')}</p></div></div><div id="attachmentPreviewBody" class="po-preview-body"><div class="h-full flex items-center justify-center"><span class="loading loading-spinner loading-lg"></span></div></div>${emailMessageDetails}</section><section class="po-entry-panel"><div class="alert alert-info py-3 mb-4"><i class="fas fa-lock"></i><span class="text-sm">The original customer request stays unchanged. Enter the Highland Fresh order here.</span><span class="ml-auto">${statusBadge(visibleStatus)}</span></div>${activeImport.error_message ? `<div class="alert alert-error py-3 mb-4"><i class="fas fa-circle-exclamation"></i><span class="text-sm">${esc(activeImport.error_message)}</span></div>` : ''}<div class="grid gap-3 md:grid-cols-3 mb-4"><label class="form-control"><span class="label-text font-medium">Customer matched from sender</span><select id="entryCustomer" class="select select-bordered bg-base-200" disabled>${customerOptions}</select><span class="text-xs text-base-content/55 mt-1">Controlled by the registered customer email.</span></label><label class="form-control"><span class="label-text font-medium">Customer PO number</span><input id="entryPoNumber" class="input input-bordered" value="${esc(activeImport.customer_po_number || '')}" placeholder="Suggested when clearly shown" maxlength="80" ${readOnly ? 'disabled' : ''}><span id="poSuggestionHint" class="text-xs text-info mt-1 hidden"></span></label><label class="form-control"><span class="label-text font-medium">Requested delivery date</span><input id="entryDeliveryDate" class="input input-bordered" type="date" value="${esc(activeImport.effective_delivery_date || '')}" ${readOnly ? 'disabled' : ''}><span id="deliverySuggestionHint" class="text-xs text-info mt-1 hidden"></span></label></div><div class="flex items-center justify-between gap-3 mb-2"><div><h3 class="font-semibold">Order details</h3><p class="text-sm text-base-content/55">Enter the items shown in the original customer request. Leave price blank when it is not included.</p></div>${!readOnly ? '<button class="btn btn-outline btn-sm shrink-0" onclick="addManualLine()"><i class="fas fa-plus"></i>Add item</button>' : ''}</div><div class="overflow-x-auto border border-base-300 rounded-lg"><table class="table table-sm"><thead><tr><th>#</th><th>Product</th><th>Quantity</th><th>Order unit</th><th>Customer price</th><th>Remarks</th><th>Check</th><th>Original entered request</th></tr></thead><tbody id="manualLinesBody"></tbody></table></div>${removedHistory ? `<details class="mt-3 border border-base-300 rounded-lg p-3"><summary class="cursor-pointer font-medium text-sm">Previous typing removed from this draft (${removedTypingLines.length})</summary><div class="mt-2">${removedHistory}</div></details>` : ''}${callHistory ? `<div class="alert alert-warning mt-4 items-start"><i class="fas fa-phone-volume mt-1"></i><div><strong>Customer call record</strong>${callHistory}</div></div>` : ''}${activeImport.sales_order_id ? `<div class="alert alert-success mt-4"><i class="fas fa-check-circle"></i><span>Sales Order created: <a class="link font-semibold" href="orders.html?id=${Number(activeImport.sales_order_id)}">${esc(activeImport.order_number || activeImport.sales_order_id)}</a></span></div>` : ''}</section></div>`;
+            const orderHeader = $('manualLinesBody').closest('.overflow-x-auto').previousElementSibling;
+            const verificationPanel = document.createElement('div');
+            verificationPanel.className = 'mb-4 space-y-3';
+            verificationPanel.innerHTML = `${trustedLines.length ? `<div class="alert alert-success py-3 items-start"><i class="fas fa-shield-check mt-1"></i><div><p class="font-semibold text-sm">Original request check available</p><p class="text-xs mt-1">${trustedSummary}</p><p class="text-xs mt-1">A different product, quantity, unit, PO number, or delivery date will be blocked on the first save.</p></div></div>` : `<div class="alert alert-warning py-3 items-start"><i class="fas fa-eye mt-1"></i><div><p class="font-semibold text-sm">Employee comparison required</p><p class="text-xs mt-1">Compare every field with the original customer request shown on the left.</p></div></div>`}${!readOnly ? `<label class="border border-base-300 rounded-lg p-3 flex items-start gap-3 cursor-pointer bg-base-100"><input id="sourceVerified" class="checkbox checkbox-primary mt-1" type="checkbox" onchange="updateSourceVerification()"><span><strong class="text-sm">I compared this entry with the original customer request.</strong><span class="block text-xs text-base-content/55 mt-1">Product, quantity, order unit, PO number, and delivery date are correct.</span></span></label>` : (activeImport.source_verified_at ? `<div class="text-xs text-success"><i class="fas fa-check-circle mr-1"></i>Compared with the original customer request on ${esc(dateTime(activeImport.source_verified_at))}</div>` : `<div class="alert alert-warning py-3 text-sm"><i class="fas fa-triangle-exclamation"></i><span>This older order was not recorded as checked against the original customer request.</span></div>`)}`;
+            orderHeader.before(verificationPanel);
+            if (orderCancelled) {
+                const orderLink = $('reviewContent').querySelector(`a[href="orders.html?id=${Number(activeImport.sales_order_id)}"]`);
+                const orderNotice = orderLink?.closest('.alert');
+                if (orderNotice) {
+                    orderNotice.classList.remove('alert-success');
+                    orderNotice.classList.add('alert-error');
+                    const icon = orderNotice.querySelector('i');
+                    icon?.classList.remove('fa-check-circle');
+                    icon?.classList.add('fa-ban');
+                    orderNotice.querySelector('span').firstChild.textContent = 'Sales Order cancelled: ';
+                }
+            }
+            renderManualRows(readOnly);
+            applyHeaderSuggestions(activeImport.header_suggestions || {}, 'email');
+            loadAttachmentPreview(sourceAvailable);
+            $('warningApprovalWrap').classList.toggle('hidden', warnings === 0);
+            if (warnings > 0 && !readOnly) {
+                const warningLabel = $('warningApprovalWrap')?.querySelector('.label-text');
+                if (warningLabel) warningLabel.textContent = 'I reviewed the warning and the customer decision. Production receives any shortage after GM approval.';
+            }
+            $('warningApproval').checked = false;
+            $('viewAttachmentButton').disabled = !sourceAvailable;
+            updateAttachmentDisplay();
+            $('rejectEmailButton').classList.toggle('hidden', readOnly);
+            $('recordCallButton').classList.toggle('hidden', readOnly || !saved || activeImport.status !== 'needs_customer_confirmation');
+            $('correctEncodingButton').classList.toggle('hidden', readOnly || activeImport.status !== 'needs_customer_confirmation' || !activeImport.has_encoding_changes || (activeImport.call_confirmations || []).length > 0);
+            $('saveDetailsButton').classList.toggle('hidden', readOnly);
+            $('createOrderButton').classList.toggle('hidden', readOnly);
+            $('saveDetailsButton').disabled = !readOnly;
+            $('createOrderButton').disabled = !saved || !activeImport.source_verified_at || blocked > 0 || activeImport.status === 'needs_customer_confirmation';
+        }
+
+        function updateSourceVerification() {
+            if (!$('saveDetailsButton') || isReadOnly()) return;
+            $('saveDetailsButton').disabled = !$('sourceVerified')?.checked;
+        }
+
+        async function saveOrderDetails() {
+            if (!activeImport || isReadOnly()) return;
+            showReviewSaveError();
+            syncManualRows();
+            const validationError = validateManualRows();
+            if (validationError) { showReviewSaveError(validationError); return; }
+            if (!$('sourceVerified')?.checked) { showReviewSaveError('Compare the entry with the original customer request first.'); return; }
+            const data = { customer_id: Number($('entryCustomer').value), customer_po_number: $('entryPoNumber').value.trim(), delivery_date: $('entryDeliveryDate').value, source_verified: true, lines: manualRows };
+            $('saveDetailsButton').disabled = true; $('saveDetailsButton').classList.add('loading');
+            try { await SalesService.saveCustomerOrderDetails(activeImport.id, data); toast('Order details saved and checked.', 'success'); await openReview(activeImport.id); } catch (error) { const message = error.message || 'Could not save the order details.'; showReviewSaveError(message); toast(message, 'error'); } finally { const button = $('saveDetailsButton'); if (button) { button.disabled = false; button.classList.remove('loading'); } }
+        }
+
+        function openCallModal() { if (!activeImport || !activeImport.entry_saved_at) { toast('Save the entered order details first.', 'warning'); return; } $('callChangeSummary').value = ''; $('callReason').value = ''; $('callContact').value = ''; $('callDate').value = localDateTime(); $('callNote').value = ''; $('callModal').showModal(); }
+        function openCallFromInbox(id) { openReview(id).then(() => setTimeout(openCallModal, 250)); }
+        async function saveCustomerCall(event) { event.preventDefault(); if (!activeImport) return; const button = $('saveCallButton'); button.disabled = true; button.classList.add('loading'); try { await SalesService.recordCustomerOrderCall(activeImport.id, { change_summary: $('callChangeSummary').value.trim(), reason: $('callReason').value.trim(), contact_name: $('callContact').value.trim(), confirmed_at: $('callDate').value, note: $('callNote').value.trim() }); $('callModal').close(); toast('Phone confirmation saved.', 'success'); await openReview(activeImport.id); } catch (error) { toast(error.message || 'Could not save the phone confirmation.', 'error'); } finally { button.disabled = false; button.classList.remove('loading'); } }
+        function openEncodingCorrectionModal() { if (!activeImport || activeImport.status !== 'needs_customer_confirmation') return; $('encodingCorrectionReason').value = ''; $('encodingCorrectionConfirmed').checked = false; $('encodingCorrectionModal').showModal(); }
+        async function correctEncoding(event) { event.preventDefault(); if (!activeImport || !$('encodingCorrectionConfirmed').checked) return; const button = $('saveEncodingCorrectionButton'); button.disabled = true; button.classList.add('loading'); try { await SalesService.correctCustomerOrderEncoding(activeImport.id, $('encodingCorrectionReason').value.trim()); $('encodingCorrectionModal').close(); toast('Encoding corrected. The original attachment remains unchanged.', 'success'); await openReview(activeImport.id); } catch (error) { toast(error.message || 'Could not correct the encoding.', 'error'); } finally { button.disabled = false; button.classList.remove('loading'); } }
+        function openRejectModal() { if (activeImport) { $('rejectReason').value = ''; $('rejectModal').showModal(); } }
+        function openRejectFromInbox(id) { openReview(id).then(() => setTimeout(openRejectModal, 250)); }
+        async function rejectEmail(event) { event.preventDefault(); if (!activeImport) return; try { await SalesService.rejectCustomerOrderEmail(activeImport.id, $('rejectReason').value.trim()); $('rejectModal').close(); $('reviewModal').close(); toast('Customer PO email rejected and kept for reference.', 'success'); await loadInbox(); } catch (error) { toast(error.message || 'Could not reject the email.', 'error'); } }
+
+        async function confirmImport() {
+            if (!activeImport) return;
+            const blocked = (activeImport.lines || []).filter(line => Number(line.quantity_base || 0) > 0 && line.line_status === 'blocked').length;
+            const warnings = (activeImport.lines || []).filter(line => Number(line.quantity_base || 0) > 0 && line.line_status === 'warning').length;
+            if (!activeImport.entry_saved_at) { toast('Save the entered order details first.', 'warning'); return; }
+            if (!activeImport.source_verified_at) { toast('Compare the entered order with the original customer PO first.', 'warning'); return; }
+            if (blocked > 0) { toast('Fix the blocked product lines first.', 'warning'); return; }
+            if (activeImport.status === 'needs_customer_confirmation') { toast('Record the customer phone call before creating the Sales Order.', 'warning'); return; }
+            if (warnings > 0 && !$('warningApproval').checked) { toast('Review and accept the price or stock warning first.', 'warning'); return; }
+            const button = $('createOrderButton'); button.disabled = true; button.classList.add('loading');
+            try { const response = await SalesService.confirmOrderImport(activeImport.id, $('warningApproval').checked); toast(`${response.data.order_number} created.`, 'success'); $('reviewModal').close(); await loadInbox(); window.location.href = `orders.html?id=${Number(response.data.order_id)}`; } catch (error) { toast(error.message || 'Could not create the Sales Order.', 'error'); } finally { button.disabled = false; button.classList.remove('loading'); }
+        }
+
+        async function fetchAttachment(id, view = false) { const token = localStorage.getItem('highland_token'); const response = await fetch(`${API_BASE_URL}/sales/order_inbox.php?action=download&id=${Number(id)}${view ? '&view=1' : ''}`, { headers: { 'Authorization': `Bearer ${token}`, 'X-Auth-Token': token } }); if (!response.ok) throw new Error('The original attachment could not be opened.'); return response.blob(); }
+        async function viewAttachment() { if (!activeImport) return; const tab = window.open('', '_blank'); try { const blob = await fetchAttachment(activeImport.id, true); const url = URL.createObjectURL(blob); if (tab) tab.location.href = url; setTimeout(() => URL.revokeObjectURL(url), 60000); } catch (error) { if (tab) tab.close(); toast(error.message, 'error'); } }
+        async function viewAttachmentFor(id) { const tab = window.open('', '_blank'); try { const blob = await fetchAttachment(id, true); const url = URL.createObjectURL(blob); if (tab) tab.location.href = url; setTimeout(() => URL.revokeObjectURL(url), 60000); } catch (error) { if (tab) tab.close(); toast(error.message, 'error'); } }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const user = AuthService.getCurrentUser();
+            if (user) { $('sidebarUserName').textContent = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Sales Custodian'; $('userInitials').textContent = `${user.first_name?.[0] || 'S'}${user.last_name?.[0] || 'C'}`.toUpperCase(); }
+            const mailboxEnabled = await loadConfig(); await loadInbox(); if (mailboxEnabled) await syncMailbox(true);
+            const openId = Number(new URLSearchParams(window.location.search).get('open') || 0); if (openId > 0) openReview(openId);
+        });
+    </script>
+</body>
+</html>

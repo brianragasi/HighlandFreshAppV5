@@ -134,8 +134,11 @@
             <div>
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Orders</h2>
                 <ul class="menu menu-sm p-0 gap-1">
-                    <li><a href="orders.html?action=new" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
-                        <i class="fas fa-plus-circle w-5 text-center text-base-content/60"></i><span>New Order</span>
+                    <li><a href="orders.html?action=direct" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-user-tag w-5 text-center text-base-content/60"></i><span>Direct Order</span>
+                    </a></li>
+                    <li><a href="order_inbox.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <i class="fas fa-inbox w-5 text-center text-base-content/60"></i><span>Customer PO Inbox</span>
                     </a></li>
                     <li><a href="orders.html?status=pending" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                         <i class="fas fa-clock w-5 text-center text-base-content/60"></i><span>Pending Orders</span>
@@ -216,7 +219,7 @@
             <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
                 <div>
                     <h1 class="text-2xl font-bold text-base-content">Aging Report</h1>
-                    <p class="text-sm text-base-content/60">Collections worklist · click a bucket amount to open documents</p>
+                    <p class="text-sm text-base-content/60">See who owes money, what is already late, and which delivery receipts need follow-up.</p>
                 </div>
                 <div class="text-sm text-base-content/60">
                     As of: <span class="font-semibold" id="reportDate"></span>
@@ -226,17 +229,17 @@
             <!-- Portfolio health KPIs -->
             <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
                 <div class="kpi-card">
-                    <div class="kpi-label">Total AR</div>
+                    <div class="kpi-label">Total outstanding</div>
                     <div class="kpi-value text-primary" id="totalReceivables">₱0</div>
                     <div class="kpi-sub" id="kpiCustomerCount">0 customers</div>
                 </div>
                 <div class="kpi-card is-clickable" data-filter="pastdue" onclick="setAgingFilterFromKpi('pastdue')" title="Filter past due">
-                    <div class="kpi-label">Past due</div>
+                    <div class="kpi-label">Total late</div>
                     <div class="kpi-value text-warning" id="kpiPastDue">₱0</div>
-                    <div class="kpi-sub" id="kpiPctOverdue">0% of AR · 0 accts</div>
+                    <div class="kpi-sub" id="kpiPctOverdue">0% of balance · 0 customers</div>
                 </div>
                 <div class="kpi-card is-clickable" data-filter="over90" onclick="setAgingFilterFromKpi('over90')">
-                    <div class="kpi-label">Over 90 days</div>
+                    <div class="kpi-label">Over 90 days late</div>
                     <div class="kpi-value text-error" id="over90">₱0</div>
                     <div class="kpi-sub" id="kpiOver90Count">0 customers</div>
                 </div>
@@ -245,38 +248,18 @@
                     <div class="kpi-value text-error" id="kpiOverLimit">0</div>
                     <div class="kpi-sub">customers over limit</div>
                 </div>
-                <div class="kpi-card">
-                    <div class="kpi-label">Est. DSO</div>
-                    <div class="kpi-value" id="kpiDso">—</div>
-                    <div class="kpi-sub">bucket-weighted days</div>
+                <div class="kpi-card is-clickable" data-filter="1-30" onclick="setAgingFilterFromKpi('1-30')">
+                    <div class="kpi-label">1–30 days late</div>
+                    <div class="kpi-value text-warning" id="days1to30">₱0</div>
+                    <div class="kpi-sub">recently overdue</div>
                 </div>
                 <div class="kpi-card is-clickable" data-filter="current" onclick="setAgingFilterFromKpi('current')">
-                    <div class="kpi-label">Current (0–30)</div>
+                    <div class="kpi-label">Not yet due</div>
                     <div class="kpi-value text-success" id="current">₱0</div>
-                    <div class="kpi-sub" id="kpiCurrentShare">0% of AR</div>
+                    <div class="kpi-sub" id="kpiCurrentShare">0% of balance</div>
                 </div>
             </div>
 
-            <!-- Secondary bucket strip (compact) -->
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
-                <button type="button" class="kpi-card is-clickable text-left" onclick="setAgingFilterFromKpi('current')">
-                    <div class="kpi-label">0–30</div>
-                    <div class="text-sm font-bold tabular-nums text-success" id="kpiStripCurrent">₱0</div>
-                </button>
-                <button type="button" class="kpi-card is-clickable text-left" onclick="setAgingFilterFromKpi('31-60')">
-                    <div class="kpi-label">31–60</div>
-                    <div class="text-sm font-bold tabular-nums text-warning" id="days31to60">₱0</div>
-                </button>
-                <button type="button" class="kpi-card is-clickable text-left" onclick="setAgingFilterFromKpi('61-90')">
-                    <div class="kpi-label">61–90</div>
-                    <div class="text-sm font-bold tabular-nums text-orange-500" id="days61to90">₱0</div>
-                </button>
-                <button type="button" class="kpi-card is-clickable text-left" onclick="setAgingFilterFromKpi('over90')">
-                    <div class="kpi-label">&gt;90</div>
-                    <div class="text-sm font-bold tabular-nums text-error" id="kpiStripOver90">₱0</div>
-                </button>
-            </div>
-            
             <!-- Chart Section -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
                 <div class="card bg-base-100 shadow-sm">
@@ -322,11 +305,12 @@
                             <label class="label py-0.5"><span class="label-text text-xs">Focus</span></label>
                             <select id="agingFilter" class="select select-bordered select-sm" onchange="filterAging()">
                                 <option value="">All balances</option>
-                                <option value="current">Current (0–30)</option>
-                                <option value="31-60">31–60 days</option>
-                                <option value="61-90">61–90 days</option>
-                                <option value="over90">Over 90 days</option>
-                                <option value="pastdue">Any past due</option>
+                                <option value="current">Not yet due</option>
+                                <option value="1-30">1–30 days late</option>
+                                <option value="31-60">31–60 days late</option>
+                                <option value="61-90">61–90 days late</option>
+                                <option value="over90">Over 90 days late</option>
+                                <option value="pastdue">Any late balance</option>
                                 <option value="overlimit">Over credit limit</option>
                             </select>
                         </div>
@@ -343,14 +327,14 @@
                             <thead>
                                 <tr class="bg-base-200">
                                     <th>Customer</th>
-                                    <th>Type</th>
-                                    <th class="text-right">Current</th>
-                                    <th class="text-right">31–60</th>
-                                    <th class="text-right">61–90</th>
-                                    <th class="text-right">&gt;90</th>
-                                    <th class="text-right">Total</th>
-                                    <th class="text-right">Credit</th>
-                                    <th></th>
+                                    <th class="text-right">Not yet due</th>
+                                    <th class="text-right">1–30 late</th>
+                                    <th class="text-right">31–60 late</th>
+                                    <th class="text-right">61–90 late</th>
+                                    <th class="text-right">Over 90 late</th>
+                                    <th class="text-right">Total owed</th>
+                                    <th class="text-right">Credit limit</th>
+                                    <th class="text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="agingTable">
@@ -362,8 +346,9 @@
                             </tbody>
                             <tfoot class="bg-base-200 font-semibold">
                                 <tr>
-                                    <td colspan="2" class="text-right text-xs">TOTALS</td>
+                                    <td class="text-right text-xs">TOTALS</td>
                                     <td class="text-right money-cell" id="footCurrent">—</td>
+                                    <td class="text-right money-cell" id="foot130">—</td>
                                     <td class="text-right money-cell" id="foot3160">—</td>
                                     <td class="text-right money-cell" id="foot6190">—</td>
                                     <td class="text-right money-cell" id="footOver90">—</td>
@@ -395,9 +380,9 @@
                 </button>
             </div>
             <div class="px-5 py-3 bg-base-200/40 flex flex-wrap gap-3 text-sm border-b border-base-200">
-                <div><span class="text-base-content/50 text-xs uppercase font-semibold">Bucket</span>
+                <div><span class="text-base-content/50 text-xs uppercase font-semibold">Payment timing</span>
                     <div class="font-semibold" id="openItemsBucket">All</div></div>
-                <div><span class="text-base-content/50 text-xs uppercase font-semibold">Documents</span>
+                <div><span class="text-base-content/50 text-xs uppercase font-semibold">Delivery receipts</span>
                     <div class="font-semibold tabular-nums" id="openItemsCount">0</div></div>
                 <div><span class="text-base-content/50 text-xs uppercase font-semibold">Open total</span>
                     <div class="font-bold text-primary tabular-nums" id="openItemsTotal">₱0</div></div>
@@ -409,7 +394,7 @@
                 <button type="button" class="btn btn-ghost btn-sm border border-base-300" onclick="openItemsModal.close()">Close</button>
                 <div class="flex gap-2">
                     <a id="openItemsCollectionsLink" href="collections.html" class="btn btn-sm bg-primary border-primary text-primary-content">
-                        <i class="fas fa-money-check-alt"></i> Collections
+                        <i class="fas fa-money-check-alt"></i> View Collections Due
                     </a>
                 </div>
             </div>
@@ -421,7 +406,8 @@
     
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
-    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="sales_custodian,general_manager"></script>
     <script src="../../js/sales/sales.service.js?v=20260720-inv1"></script>
     
     <script>
@@ -442,12 +428,13 @@
         };
 
         const BUCKET_LABELS = {
-            '': 'All open items',
-            current: 'Current (0–30 days)',
-            '31-60': '31–60 days',
-            '61-90': '61–90 days',
-            over90: 'Over 90 days',
-            pastdue: 'Past due',
+            '': 'All unpaid balances',
+            current: 'Not yet due',
+            '1-30': '1–30 days late',
+            '31-60': '31–60 days late',
+            '61-90': '61–90 days late',
+            over90: 'Over 90 days late',
+            pastdue: 'Any late balance',
             overlimit: 'Over credit limit'
         };
         
@@ -531,26 +518,21 @@
 
         function updateKpis(summary) {
             const total = summary.total || 0;
-            const pastDue = summary.past_due || ((summary.days_31_60 || 0) + (summary.days_61_90 || 0) + (summary.over_90 || 0));
+            const pastDue = summary.past_due || ((summary.days_1_30 || 0) + (summary.days_31_60 || 0) + (summary.days_61_90 || 0) + (summary.over_90 || 0));
             document.getElementById('totalReceivables').textContent = formatCurrency(total);
             document.getElementById('kpiCustomerCount').textContent =
                 `${summary.customers_with_balance || agingData.length} customers with balance`;
             document.getElementById('kpiPastDue').textContent = formatCurrency(pastDue);
             document.getElementById('kpiPctOverdue').textContent =
-                `${summary.pct_overdue ?? 0}% of AR · ${summary.customers_past_due || 0} accts`;
+                `${summary.pct_overdue ?? 0}% of balance · ${summary.customers_past_due || 0} customers`;
             document.getElementById('over90').textContent = formatCurrency(summary.over_90 || 0);
             document.getElementById('kpiOver90Count').textContent =
                 `${summary.customers_over_90 || 0} customers`;
-            document.getElementById('kpiStripOver90').textContent = formatCurrency(summary.over_90 || 0);
             document.getElementById('kpiOverLimit').textContent = String(summary.customers_over_limit || 0);
-            document.getElementById('kpiDso').textContent =
-                summary.dso != null ? String(summary.dso) : '—';
+            document.getElementById('days1to30').textContent = formatCurrency(summary.days_1_30 || 0);
             document.getElementById('current').textContent = formatCurrency(summary.current || 0);
-            document.getElementById('kpiStripCurrent').textContent = formatCurrency(summary.current || 0);
             document.getElementById('kpiCurrentShare').textContent =
-                total > 0 ? `${Math.round(((summary.current || 0) / total) * 1000) / 10}% of AR` : '0% of AR';
-            document.getElementById('days31to60').textContent = formatCurrency(summary.days_31_60 || 0);
-            document.getElementById('days61to90').textContent = formatCurrency(summary.days_61_90 || 0);
+                total > 0 ? `${Math.round(((summary.current || 0) / total) * 1000) / 10}% of balance` : '0% of balance';
         }
 
         function setAgingFilterFromKpi(value) {
@@ -580,12 +562,13 @@
             }
             
             tbody.innerHTML = data.map(c => {
-                // Strict row arithmetic: Total = Current + 31-60 + 61-90 + >90
+                // Total owed is the sum of every payment-timing group.
                 const current = Number(c.current) || 0;
+                const d130 = Number(c.days_1_30) || 0;
                 const d3160 = Number(c.days_31_60) || 0;
                 const d6190 = Number(c.days_61_90) || 0;
                 const over90 = Number(c.over_90) || 0;
-                const total = Math.round((current + d3160 + d6190 + over90) * 100) / 100;
+                const total = Math.round((current + d130 + d3160 + d6190 + over90) * 100) / 100;
                 const limit = Number(c.credit_limit) || 0;
                 const isOverLimit = limit > 0 && total > limit;
                 const overBy = isOverLimit ? Math.round((total - limit) * 100) / 100 : 0;
@@ -599,10 +582,13 @@
                         <div class="font-medium leading-tight">${escapeHtml(name)}
                             ${isOverLimit ? '<span class="badge-over-limit ml-1">Over limit</span>' : ''}
                         </div>
-                        <div class="text-xs text-base-content/50 font-mono">${escapeHtml(code)}</div>
+                        <div class="flex items-center gap-2 mt-1">
+                            <span class="text-xs text-base-content/50 font-mono">${escapeHtml(code)}</span>
+                            <span class="badge badge-outline badge-xs">${escapeHtml(TYPE_LABELS[c.customer_type] || c.customer_type || 'Customer')}</span>
+                        </div>
                     </td>
-                    <td><span class="badge badge-outline badge-sm">${escapeHtml(TYPE_LABELS[c.customer_type] || c.customer_type || '—')}</span></td>
                     <td class="text-right">${moneyCell(current, { colorClass: 'text-success', link: true, customerId: c.id, bucket: 'current' })}</td>
+                    <td class="text-right">${moneyCell(d130, { colorClass: 'text-warning', link: true, customerId: c.id, bucket: '1-30' })}</td>
                     <td class="text-right">${moneyCell(d3160, { colorClass: 'text-warning', link: true, customerId: c.id, bucket: '31-60' })}</td>
                     <td class="text-right">${moneyCell(d6190, { colorClass: 'text-orange-500', link: true, customerId: c.id, bucket: '61-90' })}</td>
                     <td class="text-right">${moneyCell(over90, { colorClass: 'text-error font-bold', link: true, customerId: c.id, bucket: 'over90' })}</td>
@@ -616,13 +602,13 @@
                             : '<span class="money-cell is-zero">—</span>'}
                     </td>
                     <td>
-                        <div class="flex gap-0.5 justify-end">
-                            <button type="button" class="btn btn-ghost btn-xs" title="Open items"
+                        <div class="flex gap-1 justify-end whitespace-nowrap">
+                            <button type="button" class="btn btn-ghost btn-xs border border-base-300" title="View unpaid delivery receipts"
                                 onclick="openCustomerItems(${c.id}, '')">
-                                <i class="fas fa-list"></i>
+                                <i class="fas fa-list"></i> Details
                             </button>
-                            <a href="collections.html?customer_id=${c.id}" class="btn btn-ghost btn-xs" title="Collections">
-                                <i class="fas fa-file-invoice-dollar"></i>
+                            <a href="collections.html?customer_id=${c.id}" class="btn btn-ghost btn-xs border border-base-300" title="Open Collections Due">
+                                <i class="fas fa-file-invoice-dollar"></i> Follow up
                             </a>
                         </div>
                     </td>
@@ -631,10 +617,11 @@
             
             const totals = data.reduce((acc, c) => ({
                 current: acc.current + (c.current || 0),
+                days_1_30: acc.days_1_30 + (c.days_1_30 || 0),
                 days_31_60: acc.days_31_60 + (c.days_31_60 || 0),
                 days_61_90: acc.days_61_90 + (c.days_61_90 || 0),
                 over_90: acc.over_90 + (c.over_90 || 0)
-            }), { current: 0, days_31_60: 0, days_61_90: 0, over_90: 0 });
+            }), { current: 0, days_1_30: 0, days_31_60: 0, days_61_90: 0, over_90: 0 });
             
             updateFooterTotals(totals);
         }
@@ -647,10 +634,11 @@
                 el.classList.toggle('is-zero', !(Number(n) > 0));
             };
             setFoot('footCurrent', totals.current);
+            setFoot('foot130', totals.days_1_30);
             setFoot('foot3160', totals.days_31_60);
             setFoot('foot6190', totals.days_61_90);
             setFoot('footOver90', totals.over_90);
-            const total = (totals.current || 0) + (totals.days_31_60 || 0) + (totals.days_61_90 || 0) + (totals.over_90 || 0);
+            const total = (totals.current || 0) + (totals.days_1_30 || 0) + (totals.days_31_60 || 0) + (totals.days_61_90 || 0) + (totals.over_90 || 0);
             document.getElementById('footTotal').textContent = formatCurrency(total);
         }
         
@@ -667,10 +655,11 @@
                 
                 let matchAging = true;
                 if (aging === 'current') matchAging = (c.current || 0) > 0;
+                else if (aging === '1-30') matchAging = (c.days_1_30 || 0) > 0;
                 else if (aging === '31-60') matchAging = (c.days_31_60 || 0) > 0;
                 else if (aging === '61-90') matchAging = (c.days_61_90 || 0) > 0;
                 else if (aging === 'over90') matchAging = (c.over_90 || 0) > 0;
-                else if (aging === 'pastdue') matchAging = (c.past_due || 0) > 0 || (c.days_31_60 || 0) + (c.days_61_90 || 0) + (c.over_90 || 0) > 0;
+                else if (aging === 'pastdue') matchAging = (c.past_due || 0) > 0 || (c.days_1_30 || 0) + (c.days_31_60 || 0) + (c.days_61_90 || 0) + (c.over_90 || 0) > 0;
                 else if (aging === 'overlimit') matchAging = !!c.over_limit || ((c.credit_limit || 0) > 0 && (c.total || 0) > c.credit_limit);
                 
                 return matchSearch && matchType && matchAging;
@@ -688,70 +677,44 @@
             renderAgingTable(filtered);
         }
 
-        /**
-         * Local happy-path fallback if API fails: one invoice row per non-zero aging bucket.
-         * Amounts always sum to the background table totals.
-         */
-        function buildBucketInvoicesFromCustomer(cust, bucketFilter = '') {
-            if (!cust) return [];
-            const rows = [
-                { age_bucket: 'current', bucket_label: 'Current', amount: Number(cust.current) || 0, inv: 'INV-20260710-01', date: '2026-07-10', days: 5 },
-                { age_bucket: '31-60', bucket_label: '31-60 Days', amount: Number(cust.days_31_60) || 0, inv: 'INV-20260605-14', date: '2026-06-05', days: 40 },
-                { age_bucket: '61-90', bucket_label: '61-90 Days', amount: Number(cust.days_61_90) || 0, inv: 'INV-20260420-05', date: '2026-04-20', days: 86 },
-                { age_bucket: 'over90', bucket_label: '>90 Days', amount: Number(cust.over_90) || 0, inv: 'INV-20260315-08', date: '2026-03-15', days: 122 }
-            ];
-            return rows
-                .filter(r => r.amount > 0)
-                .filter(r => !bucketFilter || r.age_bucket === bucketFilter)
-                .map((r, i) => ({
-                    id: i + 1,
-                    invoice_number: r.inv,
-                    document_number: r.inv,
-                    dr_number: r.inv,
-                    document_date: r.date,
-                    days_outstanding: r.days,
-                    age_bucket: r.age_bucket,
-                    bucket_label: r.bucket_label,
-                    balance_due: Math.round(r.amount * 100) / 100,
-                    payment_status: 'unpaid',
-                    status: 'open'
-                }));
-        }
-
         function renderOpenItemsTable(items) {
             return `
                 <table class="open-items-table">
                     <thead>
                         <tr>
-                            <th>Invoice #</th>
-                            <th>Date</th>
-                            <th>Bucket</th>
-                            <th class="text-right">Amount</th>
-                            <th>Status</th>
+                            <th>Delivery Receipt</th>
+                            <th>Delivered</th>
+                            <th>Payment due</th>
+                            <th>Timing</th>
+                            <th class="text-right">Balance</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${items.map(it => {
                             const b = it.age_bucket || '';
                             const rowCls = b === 'over90' ? 'is-over90' : (b === '61-90' ? 'is-6190' : '');
-                            const bucketLabel = it.bucket_label || (
-                                b === 'current' ? 'Current' :
-                                b === 'over90' ? '>90 Days' :
-                                b === '31-60' ? '31-60 Days' :
-                                b === '61-90' ? '61-90 Days' : b
-                            );
-                            const invNo = it.invoice_number || it.document_number || it.dr_number || '—';
+                            const daysLate = Number(it.days_late) || 0;
+                            const bucketLabel = it.bucket_label || BUCKET_LABELS[b] || b;
+                            const drNumber = it.dr_number || '—';
                             const dateStr = it.document_date
                                 ? new Date(String(it.document_date).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-US', {
                                     year: 'numeric', month: 'short', day: 'numeric'
                                 })
                                 : '—';
+                            const dueStr = it.due_date
+                                ? new Date(String(it.due_date).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-US', {
+                                    year: 'numeric', month: 'short', day: 'numeric'
+                                })
+                                : '—';
+                            const timing = daysLate > 0
+                                ? `${daysLate} day${daysLate === 1 ? '' : 's'} late`
+                                : (daysLate === 0 ? 'Due today' : `Due in ${Math.abs(daysLate)} day${Math.abs(daysLate) === 1 ? '' : 's'}`);
                             return `<tr class="${rowCls}">
-                                <td class="font-mono font-semibold">${escapeHtml(invNo)}</td>
+                                <td class="font-mono font-semibold">${escapeHtml(drNumber)}</td>
                                 <td class="tabular-nums whitespace-nowrap">${escapeHtml(dateStr)}</td>
-                                <td><span class="badge badge-outline badge-sm">${escapeHtml(bucketLabel)}</span></td>
+                                <td class="tabular-nums whitespace-nowrap">${escapeHtml(dueStr)}</td>
+                                <td><span class="badge badge-outline badge-sm" title="${escapeHtml(bucketLabel)}">${escapeHtml(timing)}</span></td>
                                 <td class="text-right font-mono font-semibold">${formatCurrency(it.balance_due)}</td>
-                                <td><span class="badge badge-ghost badge-sm">Open</span></td>
                             </tr>`;
                         }).join('')}
                     </tbody>
@@ -764,12 +727,12 @@
             const code = cust?.customer_code || `CUS${String(customerId).padStart(5, '0')}`;
             document.getElementById('openItemsTitle').textContent = cust?.customer_name || cust?.name || 'Open items';
             document.getElementById('openItemsSubtitle').textContent =
-                [code, cust?.phone, cust?.contact_person].filter(Boolean).join(' · ') || 'Open invoices by aging bucket';
-            document.getElementById('openItemsBucket').textContent = BUCKET_LABELS[bucket] || 'All open items';
+                [code, cust?.phone, cust?.contact_person].filter(Boolean).join(' · ') || 'Unpaid delivery receipts';
+            document.getElementById('openItemsBucket').textContent = BUCKET_LABELS[bucket] || 'All unpaid balances';
             document.getElementById('openItemsCount').textContent = '…';
             document.getElementById('openItemsTotal').textContent = '…';
             document.getElementById('openItemsBody').innerHTML =
-                '<p class="text-center py-8 text-base-content/50 text-sm"><span class="loading loading-spinner loading-sm"></span> Loading open invoices…</p>';
+                '<p class="text-center py-8 text-base-content/50 text-sm"><span class="loading loading-spinner loading-sm"></span> Loading delivery receipts…</p>';
             document.getElementById('openItemsCollectionsLink').href = `collections.html?customer_id=${customerId}`;
             modal.showModal();
 
@@ -785,14 +748,12 @@
                     totalOpen = items.reduce((s, it) => s + (Number(it.balance_due) || 0), 0);
                 }
             } catch (err) {
-                console.warn('open_items API failed, using bucket totals from aging row', err);
-                items = [];
-            }
-
-            // Happy path: never leave the modal empty when the row has balance
-            if (!items.length && cust) {
-                items = buildBucketInvoicesFromCustomer(cust, bucket);
-                totalOpen = items.reduce((s, it) => s + (Number(it.balance_due) || 0), 0);
+                console.error('Failed to load open delivery receipts', err);
+                document.getElementById('openItemsCount').textContent = '0';
+                document.getElementById('openItemsTotal').textContent = formatCurrency(0);
+                document.getElementById('openItemsBody').innerHTML =
+                    '<div class="text-center py-10"><p class="text-error text-sm font-semibold">Could not load the delivery receipts.</p><p class="text-xs text-base-content/50 mt-1">Close this window and try again.</p></div>';
+                return;
             }
 
             document.getElementById('openItemsCount').textContent = String(items.length);
@@ -800,7 +761,7 @@
 
             if (!items.length) {
                 document.getElementById('openItemsBody').innerHTML =
-                    '<p class="text-center py-10 text-base-content/50 text-sm">No open invoices in this view</p>';
+                    '<p class="text-center py-10 text-base-content/50 text-sm">No unpaid delivery receipts in this view</p>';
                 return;
             }
 
@@ -814,15 +775,16 @@
             agingChart = new Chart(agingCtx, {
                 type: 'doughnut',
                 data: {
-                    labels: ['Current (0–30)', '31–60', '61–90', 'Over 90'],
+                    labels: ['Not yet due', '1–30 late', '31–60 late', '61–90 late', 'Over 90 late'],
                     datasets: [{
                         data: [
                             summary.current || 0,
+                            summary.days_1_30 || 0,
                             summary.days_31_60 || 0,
                             summary.days_61_90 || 0,
                             summary.over_90 || 0
                         ],
-                        backgroundColor: ['#22c55e', '#eab308', '#f97316', '#ef4444'],
+                        backgroundColor: ['#22c55e', '#eab308', '#f59e0b', '#f97316', '#ef4444'],
                         borderWidth: 0
                     }]
                 },
@@ -832,7 +794,7 @@
                     onClick: (_evt, elements) => {
                         if (!elements.length) return;
                         const idx = elements[0].index;
-                        const map = ['current', '31-60', '61-90', 'over90'];
+                        const map = ['current', '1-30', '31-60', '61-90', 'over90'];
                         setAgingFilterFromKpi(map[idx]);
                     },
                     plugins: {
@@ -848,7 +810,7 @@
                 .map(c => ({
                     id: c.id,
                     name: c.customer_name || c.name || '—',
-                    total: c.total || ((c.current || 0) + (c.days_31_60 || 0) + (c.days_61_90 || 0) + (c.over_90 || 0))
+                    total: c.total || ((c.current || 0) + (c.days_1_30 || 0) + (c.days_31_60 || 0) + (c.days_61_90 || 0) + (c.over_90 || 0))
                 }))
                 .sort((a, b) => b.total - a.total)
                 .slice(0, 10);

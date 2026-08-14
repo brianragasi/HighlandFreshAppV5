@@ -772,7 +772,8 @@
     <div id="toastContainer" class="toast toast-end"></div>
 
     <script src="../../js/config/api.js"></script>
-    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="general_manager,admin"></script>
     <script src="../../js/admin/admin.service.js"></script>
 
     <script>
@@ -904,8 +905,9 @@
                 let groups = null;
                 let lastError = null;
                 try {
-                    const baseRes = await fetch(`${ApiConfig.baseUrl}/admin/products.php?action=base_products`, {
-                        headers: ApiConfig.getHeaders()
+                    const baseRes = await fetch(`${ApiConfig.baseUrl}/admin/products.php?action=base_products&_=${Date.now()}`, {
+                        headers: ApiConfig.getHeaders(),
+                        cache: 'no-store'
                     });
                     const text = await baseRes.text();
                     let baseJson = null;
@@ -1210,7 +1212,7 @@
                                             <th>Size / code</th>
                                             <th>Variant</th>
                                             <th>Price</th>
-                                            <th>Stock</th>
+                                            <th title="Usable units physically held by Warehouse FG">FG on hand</th>
                                             <th>Status</th>
                                             <th></th>
                                         </tr>
@@ -1888,6 +1890,64 @@
             return ids;
         }
 
+        function normalizeSkuSize(unitSize, unitMeasure) {
+            const size = parseFloat(unitSize);
+            if (!Number.isFinite(size) || size <= 0) return null;
+
+            const measure = String(unitMeasure || '').trim().toLowerCase();
+            const volume = { ml: 1, l: 1000, ltr: 1000, litre: 1000, liter: 1000, litres: 1000, liters: 1000 };
+            const weight = { g: 1, gm: 1, gram: 1, grams: 1, kg: 1000, kgs: 1000, kilogram: 1000, kilograms: 1000 };
+
+            if (volume[measure]) return { family: 'volume', value: Math.round(size * volume[measure] * 10000) / 10000 };
+            if (weight[measure]) return { family: 'weight', value: Math.round(size * weight[measure] * 10000) / 10000 };
+            return null;
+        }
+
+        function skuDuplicateKey(sku) {
+            const normalized = normalizeSkuSize(sku.unit_size, sku.unit_measure);
+            if (!normalized) return null;
+            const variant = String(sku.variant || '').trim().toLowerCase();
+            return `${variant}::${normalized.family}:${normalized.value.toFixed(4)}`;
+        }
+
+        function skuDuplicateLabel(sku) {
+            const size = Number(parseFloat(sku.unit_size).toFixed(2));
+            const variant = String(sku.variant || '').trim();
+            return `${size} ${sku.unit_measure || ''}${variant ? ` (${variant})` : ''}`;
+        }
+
+        function validateNoDuplicateSkuSizes(skuRows, group = null) {
+            const seen = new Map();
+
+            for (const row of skuRows) {
+                const key = skuDuplicateKey(row);
+                if (!key) continue;
+                if (seen.has(key)) {
+                    showToast(`Duplicate packaging size in this form: ${skuDuplicateLabel(row)}. Keep only one.`, 'error');
+                    return false;
+                }
+                seen.set(key, row);
+            }
+
+            const existingSkus = Array.isArray(group?.skus) ? group.skus : [];
+            for (const row of skuRows) {
+                const key = skuDuplicateKey(row);
+                if (!key) continue;
+                const duplicate = existingSkus.find(sku => {
+                    const existingId = Number(sku.id || sku.product_id || 0);
+                    if (row.product_id && existingId === Number(row.product_id)) return false;
+                    if (Number(sku.is_active) !== 1) return false;
+                    return skuDuplicateKey(sku) === key;
+                });
+                if (duplicate) {
+                    showToast(`${skuDuplicateLabel(row)} already exists for this product as SKU ${duplicate.product_code || duplicate.id}.`, 'error');
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         /* ─────────── Save Base Product + SKUs ─────────── */
         async function saveBaseProduct(event) {
             event.preventDefault();
@@ -1929,6 +1989,10 @@
                             showToast('Price and Size must be greater than zero.', 'error');
                             return;
                         }
+                    }
+
+                    if (!validateNoDuplicateSkuSizes(skuRows, group)) {
+                        return;
                     }
 
                     if (skuRows.length === 0) {
@@ -2027,6 +2091,9 @@
 
                     const existing = findGroup(baseName, category, document.getElementById('baseOriginalKey').value);
                     const baseProductId = baseProductIdField || existing?.base_product_id || null;
+                    if (!validateNoDuplicateSkuSizes(skuRows, existing)) {
+                        return;
+                    }
 
                     const createPromises = skuRows.map(row => AdminService.createProduct({
                         product_name: baseName,
@@ -2060,7 +2127,7 @@
                 loadData();
             } catch (err) {
                 console.error(err);
-                showToast('Failed to save product', 'error');
+                showToast(err?.message || 'Failed to save product', 'error');
             } finally {
                 saveBtn.classList.remove('loading');
                 saveBtn.disabled = false;

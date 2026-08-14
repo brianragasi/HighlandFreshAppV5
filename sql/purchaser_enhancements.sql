@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS canvass_quotes (
     quoted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (canvass_id) REFERENCES price_canvass(id) ON DELETE CASCADE,
     FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+    UNIQUE KEY uk_canvass_supplier (canvass_id, supplier_id),
     INDEX idx_canvass (canvass_id),
     INDEX idx_supplier (supplier_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

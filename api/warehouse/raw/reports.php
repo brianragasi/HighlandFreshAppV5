@@ -51,6 +51,8 @@ function handleInventoryReport($db) {
     $hasMro = auditTableExists($db, 'mro_items');
     $hasIngCats = auditTableExists($db, 'ingredient_categories');
     $hasMroCats = auditTableExists($db, 'mro_categories');
+    $hasIngredientBatches = auditTableExists($db, 'ingredient_batches');
+    $hasMroInventory = auditTableExists($db, 'mro_inventory');
 
     $rows = [];
 
@@ -68,6 +70,14 @@ function handleInventoryReport($db) {
                     i.reorder_point,
                     i.maximum_stock,
                     i.unit_cost,
+                    " . ($hasIngredientBatches
+                        ? "COALESCE((SELECT SUM(ib.remaining_quantity)
+                           FROM ingredient_batches ib
+                           WHERE ib.ingredient_id = i.id
+                             AND ib.status IN ('available', 'partially_used')
+                             AND ib.remaining_quantity > 0
+                             AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())), 0)"
+                        : "i.current_stock") . " AS usable_stock,
                     " . ($hasMro ? "0" : "0") . " AS is_critical,
                     (SELECT MAX(it.created_at) FROM inventory_transactions it
                      WHERE it.item_type = 'ingredient' AND it.item_id = i.id) AS last_movement
@@ -91,6 +101,13 @@ function handleInventoryReport($db) {
                     m.reorder_point,
                     m.maximum_stock,
                     m.unit_cost,
+                    " . ($hasMroInventory
+                        ? "COALESCE((SELECT SUM(mi.remaining_quantity)
+                           FROM mro_inventory mi
+                           WHERE mi.mro_item_id = m.id
+                             AND mi.status IN ('available', 'partially_used')
+                             AND mi.remaining_quantity > 0), 0)"
+                        : "m.current_stock") . " AS usable_stock,
                     m.is_critical,
                     (SELECT MAX(it.created_at) FROM inventory_transactions it
                      WHERE it.item_type = 'mro' AND it.item_id = m.id) AS last_movement
@@ -105,14 +122,23 @@ function handleInventoryReport($db) {
         $row['current_stock'] = (float) ($row['current_stock'] ?? 0);
         $row['minimum_stock'] = (float) ($row['minimum_stock'] ?? 0);
         $row['reorder_point'] = (float) ($row['reorder_point'] ?? 0);
-        $row['maximum_stock'] = (float) ($row['maximum_stock'] ?? 0);
+        $row['maximum_stock'] = isset($row['maximum_stock']) && (float) $row['maximum_stock'] > 0
+            ? (float) $row['maximum_stock']
+            : null;
         $row['unit_cost']     = (float) ($row['unit_cost'] ?? 0);
+        $row['usable_stock']  = (float) ($row['usable_stock'] ?? $row['current_stock']);
         $row['is_critical']   = (int) ($row['is_critical'] ?? 0);
-        $row['value']         = round($row['current_stock'] * $row['unit_cost'], 2);
+        $row['stock_variance'] = round($row['current_stock'] - $row['usable_stock'], 3);
+        $row['needs_stock_check'] = abs($row['stock_variance']) > 0.0005;
+        $row['low_stock_at'] = $row['reorder_point'] > 0
+            ? $row['reorder_point']
+            : round($row['minimum_stock'] * 1.5, 3);
+        $row['value'] = round($row['usable_stock'] * $row['unit_cost'], 2);
+        $row['on_file_value'] = round($row['current_stock'] * $row['unit_cost'], 2);
         // reports/inventory.html renders short 'out'|'low'|'ok' tokens, so
         // map the canonical StockRule status strings to those short forms.
         $canonical = StockRule::status(
-            $row['current_stock'],
+            $row['usable_stock'],
             $row['reorder_point'],
             $row['minimum_stock']
         );
@@ -161,6 +187,8 @@ function handleInventoryReport($db) {
         'out_count'     => count(array_filter($filtered, fn($r) => $r['status'] === 'out')),
         'low_count'     => count(array_filter($filtered, fn($r) => $r['status'] === 'low')),
         'ok_count'      => count(array_filter($filtered, fn($r) => $r['status'] === 'ok')),
+        'stock_check_count' => count(array_filter($filtered, fn($r) => $r['needs_stock_check'])),
+        'on_file_value' => round(array_sum(array_column($filtered, 'on_file_value')), 2),
     ];
 
     Response::success([

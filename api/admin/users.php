@@ -105,6 +105,50 @@ function deriveLoginIdentifier($email, $employeeId, $username) {
 }
 
 /**
+ * Create the next employee ID when admin leaves it blank.
+ */
+function generateEmployeeIdForRole($role) {
+    global $pdo;
+
+    $prefixes = [
+        'general_manager' => 'GM',
+        'qc_officer' => 'QC',
+        'production_staff' => 'PROD',
+        'warehouse_raw' => 'WR',
+        'warehouse_fg' => 'WFG',
+        'sales_custodian' => 'SALES',
+        'cashier' => 'CASH',
+        'purchaser' => 'PUR',
+        'finance_officer' => 'FIN',
+    ];
+    $roleCode = $prefixes[$role] ?? strtoupper(substr(preg_replace('/[^A-Za-z]/', '', (string) $role), 0, 4));
+    if ($roleCode === '') {
+        $roleCode = 'GEN';
+    }
+
+    $prefix = 'EMP-' . $roleCode . '-';
+    $stmt = $pdo->prepare("SELECT employee_id FROM users WHERE employee_id LIKE ?");
+    $stmt->execute([$prefix . '%']);
+
+    $max = 0;
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $existing = (string) ($row['employee_id'] ?? '');
+        if (preg_match('/^' . preg_quote($prefix, '/') . '(\d+)$/', $existing, $matches)) {
+            $max = max($max, (int) $matches[1]);
+        }
+    }
+
+    do {
+        $max++;
+        $candidate = $prefix . str_pad((string) $max, 3, '0', STR_PAD_LEFT);
+        $check = $pdo->prepare("SELECT id FROM users WHERE employee_id = ? LIMIT 1");
+        $check->execute([$candidate]);
+    } while ($check->fetch());
+
+    return $candidate;
+}
+
+/**
  * Get all users with optional filtering
  */
 function getUsers() {
@@ -183,8 +227,6 @@ function allowedUserRoles() {
         'cashier',
         'purchaser',
         'finance_officer',
-        'bookkeeper',
-        'maintenance_head',
     ];
 }
 
@@ -270,6 +312,8 @@ function normalizeUserPayload(array $data, $isCreate = false) {
             if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $errors['email'] = 'A valid email is required for the invite path';
             }
+        } elseif ($onboardingMethod === 'temp_credentials' && $email !== '') {
+            $errors['email'] = 'Temporary credentials are for users without email. Leave email blank or choose Send Email Invite.';
         }
         // Ignore any client-supplied password on create
     } elseif (!empty($data['password']) && strlen((string) $data['password']) < 6) {
@@ -373,8 +417,6 @@ function formatRoleDisplayName($role) {
         'cashier' => 'Cashier',
         'purchaser' => 'Purchaser',
         'finance_officer' => 'Finance Officer',
-        'bookkeeper' => 'Bookkeeper',
-        'maintenance_head' => 'Maintenance Head',
     ];
     return $roles[$role] ?? $role;
 }
@@ -434,6 +476,10 @@ function createUser() {
 
     $data = normalizeUserPayload($raw, true);
     $onboardingMethod = $data['onboarding_method'];
+
+    if (empty($data['employee_id'])) {
+        $data['employee_id'] = generateEmployeeIdForRole($data['role']);
+    }
 
     // Uniqueness checks
     $stmt = $pdo->prepare("SELECT id FROM users WHERE username = ?");
@@ -553,6 +599,7 @@ function createUser() {
         $responseData = [
             'id' => $userId,
             'username' => $data['username'],
+            'employee_id' => $data['employee_id'],
             'onboarding_method' => $onboardingMethod,
             'must_change_password' => $mustChangePassword,
             'requires_password_reset' => $mustChangePassword, // product alias

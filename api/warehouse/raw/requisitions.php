@@ -22,7 +22,7 @@ require_once __DIR__ . '/ingredient_stock_helpers.php';
 require_once __DIR__ . '/mro_stock_helpers.php';
 
 // Require Warehouse Raw role
-$currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'production_staff', 'maintenance_head']);
+$currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'production_staff']);
 
 function ensureWarehouseRequisitionQuantityPrecision($db) {
     $precisionStmt = $db->prepare("
@@ -762,7 +762,6 @@ function issueIngredient($db, $ingredientId, $quantity, $requisitionId, $current
         throw new Exception("Ingredient not found (ID: {$ingredientId})");
     }
     
-    ensureIngredientBatchesForIssue($db, $ingredientData, $quantity, $currentUser);
     $batchList = getUsableIngredientBatches($db, $ingredientId, true);
     
     $totalAvailable = array_sum(array_column($batchList, 'remaining_quantity'));

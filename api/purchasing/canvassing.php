@@ -11,6 +11,7 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/supplier_ingredient_catalog.php';
 
 // Require Purchaser or GM role
 $currentUser = Auth::requireRole(['purchaser', 'general_manager']);
@@ -20,6 +21,7 @@ $action = getParam('action', 'list');
 try {
     $db = Database::getInstance()->getConnection();
     ensureCanvassingTables($db);
+    ensureSupplierIngredientCatalog($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -78,7 +80,7 @@ function handleGet($db, $action) {
                     i.ingredient_name,
                     m.item_name as mro_item_name,
                     u.full_name as created_by_name,
-                    (SELECT COUNT(*) FROM canvass_quotes WHERE canvass_id = c.id) as quote_count,
+                    (SELECT COUNT(DISTINCT supplier_id) FROM canvass_quotes WHERE canvass_id = c.id) as quote_count,
                     (SELECT MIN(unit_price) FROM canvass_quotes WHERE canvass_id = c.id) as lowest_price,
                     (SELECT MAX(unit_price) FROM canvass_quotes WHERE canvass_id = c.id) as highest_price
                 FROM price_canvass c
@@ -255,7 +257,7 @@ function handlePost($db, $action, $currentUser) {
             }
             
             // Check canvass exists and is open
-            $check = $db->prepare("SELECT id, status FROM price_canvass WHERE id = ?");
+            $check = $db->prepare("SELECT id, status, ingredient_id, mro_item_id FROM price_canvass WHERE id = ?");
             $check->execute([$data['canvass_id']]);
             $canvass = $check->fetch();
             
@@ -265,10 +267,37 @@ function handlePost($db, $action, $currentUser) {
             if (!in_array($canvass['status'], ['open', 'completed'], true)) {
                 Response::error('Canvass is no longer open for quotes', 400);
             }
+
+            $supplierId = (int) $data['supplier_id'];
+            $supplierCheck = $db->prepare("SELECT id FROM suppliers WHERE id = ? AND is_active = 1");
+            $supplierCheck->execute([$supplierId]);
+            if (!$supplierCheck->fetch()) {
+                Response::error('Choose an accredited supplier', 400);
+            }
+
+            if (!empty($canvass['ingredient_id'])) {
+                $catalogCheck = $db->prepare("
+                    SELECT id
+                    FROM supplier_ingredients
+                    WHERE supplier_id = ?
+                      AND ingredient_id = ?
+                      AND is_active = 1
+                    LIMIT 1
+                ");
+                $catalogCheck->execute([$supplierId, $canvass['ingredient_id']]);
+                if (!$catalogCheck->fetch()) {
+                    Response::error('This supplier is not accredited to supply this ingredient', 400);
+                }
+            }
+
+            $unitPrice = (float) $data['unit_price'];
+            if ($unitPrice <= 0) {
+                Response::error('Unit price must be greater than zero', 400);
+            }
             
             // Check if supplier already quoted
             $dupCheck = $db->prepare("SELECT id FROM canvass_quotes WHERE canvass_id = ? AND supplier_id = ?");
-            $dupCheck->execute([$data['canvass_id'], $data['supplier_id']]);
+            $dupCheck->execute([$data['canvass_id'], $supplierId]);
             if ($dupCheck->fetch()) {
                 Response::error('This supplier has already submitted a quote', 400);
             }
@@ -281,8 +310,8 @@ function handlePost($db, $action, $currentUser) {
             
             $stmt->execute([
                 $data['canvass_id'],
-                $data['supplier_id'],
-                $data['unit_price'],
+                $supplierId,
+                $unitPrice,
                 $data['delivery_days'] ?? 7,
                 $data['payment_terms'] ?? 'cash',
                 $data['validity_date'] ?? null,
@@ -371,6 +400,7 @@ function ensureCanvassingTables(PDO $db): void {
             `is_selected` TINYINT(1) NOT NULL DEFAULT 0,
             `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_canvass_supplier` (`canvass_id`, `supplier_id`),
             KEY `idx_quote_canvass` (`canvass_id`),
             KEY `idx_quote_supplier` (`supplier_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
@@ -391,6 +421,35 @@ function ensureCanvassingTables(PDO $db): void {
     if (!auditColumnExists($db, 'price_canvass', 'selection_reason')) {
         $db->exec("ALTER TABLE `price_canvass` ADD COLUMN `selection_reason` TEXT DEFAULT NULL AFTER `selection_method`");
     }
+
+    if (!canvassIndexExists($db, 'canvass_quotes', 'uk_canvass_supplier')) {
+        $duplicate = $db->query("
+            SELECT 1
+            FROM canvass_quotes
+            GROUP BY canvass_id, supplier_id
+            HAVING COUNT(*) > 1
+            LIMIT 1
+        ")->fetchColumn();
+
+        if (!$duplicate) {
+            $db->exec("ALTER TABLE `canvass_quotes` ADD UNIQUE KEY `uk_canvass_supplier` (`canvass_id`, `supplier_id`)");
+        } else {
+            error_log('Cannot add unique canvass supplier rule until duplicate quote records are resolved.');
+        }
+    }
+}
+
+function canvassIndexExists(PDO $db, string $tableName, string $indexName): bool {
+    $stmt = $db->prepare("
+        SELECT 1
+        FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = ?
+          AND INDEX_NAME = ?
+        LIMIT 1
+    ");
+    $stmt->execute([$tableName, $indexName]);
+    return (bool) $stmt->fetchColumn();
 }
 
 function nextCanvassCode(PDO $db): string {
@@ -436,6 +495,10 @@ function getSubmittedPRSForCanvassing(PDO $db, int $prId): array {
     $items = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
 
     foreach ($items as &$item) {
+        $item['eligible_suppliers'] = !empty($item['ingredient_id'])
+            ? supplierCatalogGetIngredientSuppliers($db, (int) $item['ingredient_id'])
+            : [];
+
         $canvassStmt = $db->prepare("
             SELECT *
             FROM price_canvass
@@ -494,7 +557,7 @@ function autoSelectCheapestQuoteIfReady(PDO $db, int $canvassId): ?array {
     $stmt->execute([$canvassId]);
     $quotes = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    if (count($quotes) < 3) {
+    if (count(array_unique(array_column($quotes, 'supplier_id'))) < 3) {
         return null;
     }
 
@@ -517,6 +580,66 @@ function autoSelectCheapestQuoteIfReady(PDO $db, int $canvassId): ?array {
     }
 
     return selectCanvassQuote($db, $canvassId, (int) $best['quote_id'], 'auto_cheapest', 'System recommendation: lowest unit price; ties use faster delivery, then earliest quote.');
+}
+
+function getCanvassEligibleSupplierCount(PDO $db, array $canvass): int {
+    if (!empty($canvass['ingredient_id'])) {
+        $stmt = $db->prepare("
+            SELECT COUNT(DISTINCT si.supplier_id)
+            FROM supplier_ingredients si
+            JOIN suppliers s ON s.id = si.supplier_id AND s.is_active = 1
+            WHERE si.ingredient_id = ? AND si.is_active = 1
+        ");
+        $stmt->execute([(int) $canvass['ingredient_id']]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    return (int) $db->query("SELECT COUNT(*) FROM suppliers WHERE is_active = 1")->fetchColumn();
+}
+
+function selectLimitedMarketQuote(PDO $db, int $canvassId, string $reason): array {
+    $canvassStmt = $db->prepare("
+        SELECT id, status, ingredient_id, mro_item_id
+        FROM price_canvass
+        WHERE id = ?
+    ");
+    $canvassStmt->execute([$canvassId]);
+    $canvass = $canvassStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$canvass || !in_array($canvass['status'], ['open', 'completed'], true)) {
+        Response::error('Canvass is no longer available', 400);
+    }
+
+    $eligibleCount = getCanvassEligibleSupplierCount($db, $canvass);
+    if ($eligibleCount < 1) {
+        Response::error('No accredited supplier is registered for this item', 400);
+    }
+    if ($eligibleCount >= 3) {
+        Response::error('Three or more suppliers are available. Complete the normal three-quote canvass.', 400);
+    }
+
+    $quoteStmt = $db->prepare("
+        SELECT q.id, q.supplier_id
+        FROM canvass_quotes q
+        WHERE q.canvass_id = ?
+        ORDER BY q.unit_price ASC, q.delivery_days ASC, q.id ASC
+    ");
+    $quoteStmt->execute([$canvassId]);
+    $quotes = $quoteStmt->fetchAll(PDO::FETCH_ASSOC);
+    if (count(array_unique(array_column($quotes, 'supplier_id'))) < $eligibleCount) {
+        Response::error('Record a quote from every available supplier before using the limited-supplier option', 400);
+    }
+
+    $reason = trim($reason);
+    if (mb_strlen($reason) < 10) {
+        Response::error('Explain why fewer than three suppliers are available', 400);
+    }
+
+    $evidence = sprintf(
+        'Limited supplier market: %d accredited supplier(s) available and all were canvassed. Purchaser reason: %s',
+        $eligibleCount,
+        $reason
+    );
+    return selectCanvassQuote($db, $canvassId, (int) $quotes[0]['id'], 'limited_market', $evidence);
 }
 
 function selectCanvassQuote(PDO $db, int $canvassId, int $quoteId, string $method, ?string $reason = null): array {
@@ -618,7 +741,7 @@ function handlePut($db, $action, $currentUser) {
             }
 
             // Enforce Rule of 3: canvass must have at least 3 supplier quotes before selection
-            $quoteCountStmt = $db->prepare("SELECT COUNT(*) as quote_count FROM canvass_quotes WHERE canvass_id = ?");
+            $quoteCountStmt = $db->prepare("SELECT COUNT(DISTINCT supplier_id) as quote_count FROM canvass_quotes WHERE canvass_id = ?");
             $quoteCountStmt->execute([$quote['canvass_id']]);
             $quoteCount = (int) $quoteCountStmt->fetch()['quote_count'];
 
@@ -660,7 +783,7 @@ function handlePut($db, $action, $currentUser) {
                 Response::error('Canvass is no longer available for supplier choice', 400);
             }
 
-            $quoteCountStmt = $db->prepare("SELECT COUNT(*) as quote_count FROM canvass_quotes WHERE canvass_id = ?");
+            $quoteCountStmt = $db->prepare("SELECT COUNT(DISTINCT supplier_id) as quote_count FROM canvass_quotes WHERE canvass_id = ?");
             $quoteCountStmt->execute([$quote['canvass_id']]);
             if ((int) $quoteCountStmt->fetch()['quote_count'] < 3) {
                 Response::error('At least 3 supplier quotes are required before choosing a supplier', 400);
@@ -674,6 +797,23 @@ function handlePut($db, $action, $currentUser) {
                 'unit_price' => $selected['unit_price'],
                 'reason' => $reason
             ], 'Supplier choice saved');
+            break;
+
+        case 'confirm_limited_market':
+            $canvassId = (int) ($data['canvass_id'] ?? 0);
+            $reason = trim((string) ($data['reason'] ?? ''));
+            if ($canvassId <= 0) {
+                Response::error('Canvass ID required', 400);
+            }
+
+            $selected = selectLimitedMarketQuote($db, $canvassId, $reason);
+            Response::success([
+                'canvass_id' => $canvassId,
+                'selected_quote_id' => (int) $selected['quote_id'],
+                'selected_supplier_id' => (int) $selected['supplier_id'],
+                'unit_price' => (float) $selected['unit_price'],
+                'requires_gm_review' => true
+            ], 'Limited-supplier reason saved. The GM will review it with the Purchase Order.');
             break;
             
         case 'cancel':

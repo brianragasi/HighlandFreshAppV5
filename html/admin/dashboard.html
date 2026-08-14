@@ -104,6 +104,39 @@
             letter-spacing: 0.04em;
         }
 
+        .approval-items-card table th,
+        .approval-items-card table td {
+            padding: 0.65rem 1rem;
+            vertical-align: top;
+        }
+
+        .approval-detail-note {
+            padding: 1rem;
+        }
+
+        .approval-detail-note__box {
+            border: 1px solid oklch(var(--b3));
+            border-radius: 0.75rem;
+            background: oklch(var(--b2) / 0.55);
+            padding: 0.85rem;
+        }
+
+        .approval-detail-note__label {
+            display: block;
+            margin-bottom: 0.35rem;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: oklch(var(--bc) / 0.5);
+        }
+
+        .approval-detail-note__text {
+            color: oklch(var(--bc) / 0.82);
+            line-height: 1.55;
+            overflow-wrap: anywhere;
+        }
+
         .approval-review-body > .grid > div {
             border: 1px solid oklch(var(--b3));
             border-radius: 0.75rem;
@@ -530,7 +563,7 @@
                         <i class="fas fa-truck text-primary text-sm w-4"></i>
                         <div class="min-w-0">
                             <div class="text-xs font-semibold truncate">Suppliers</div>
-                            <div class="text-[0.65rem] text-base-content/50" id="badgeSuppliers">—</div>
+                            <div class="text-[0.65rem] text-base-content/50" id="badgeSuppliers">0 accredited</div>
                         </div>
                     </a>
                 </div>
@@ -654,7 +687,7 @@
                         <span class="font-medium text-sm" id="modalCustomer">—</span>
                     </div>
                     <div>
-                        <span class="text-xs text-base-content/50 block">Amount</span>
+                        <span class="text-xs text-base-content/50 block" id="modalAmountLabel">Amount</span>
                         <span class="font-bold text-sm" id="modalAmount">—</span>
                     </div>
                 </div>
@@ -738,7 +771,8 @@
 
     <!-- Scripts -->
     <script src="../../js/config/api.js"></script>
-    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="general_manager,admin"></script>
     <script src="../../js/admin/admin.service.js"></script>
 
     <script>
@@ -801,6 +835,7 @@
                 }
                 if (stats.recipes) setText('badgeRecipes', `${stats.recipes.total || 0} recipes`);
                 if (stats.ingredients) setText('badgeIngredients', `${stats.ingredients.total || 0} items`);
+                if (stats.suppliers) setText('badgeSuppliers', `${stats.suppliers.active ?? 0} accredited`);
                 if (stats.tanks) setText('badgeTanks', `${stats.tanks.total || 0} tanks`);
                 if (stats.chillers) setText('badgeChillers', `${stats.chillers.total || 0} chillers`);
                 if (stats.qc_standards) setText('badgeQCStandards', `${stats.qc_standards.total || 0} standards`);
@@ -1092,13 +1127,31 @@
             const customer = detail.customer_name || detail.supplier_name || detail.product_name || detail.department || detail.requested_by_name || '—';
             document.getElementById('modalCustomer').textContent = customer;
 
-            const amount = detail.total_amount || detail.total_value || detail.estimated_total;
-            document.getElementById('modalAmount').textContent = amount ? `₱${parseFloat(amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—';
+            const amount = detail.total_amount ?? detail.total_value ?? detail.estimated_total;
+            const amountNumber = parseFloat(amount || 0);
+            document.getElementById('modalAmountLabel').textContent = type === 'disposal' ? 'Estimated inventory loss' : 'Amount';
+            document.getElementById('modalAmount').textContent = amountNumber > 0
+                ? `${detail.value_is_estimate == 1 ? 'Est. ' : ''}₱${amountNumber.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                : (type === 'disposal' ? 'Cost not recorded' : '—');
 
             // Line items
             const detailSection = document.getElementById('modalDetailSection');
             const detailBody = document.getElementById('modalDetailBody');
-            if (detail.items && detail.items.length) {
+            if (type === 'disposal') {
+                detailSection.classList.remove('hidden');
+                const quantity = parseFloat(detail.quantity || 0);
+                const unitCost = parseFloat(detail.unit_cost || 0);
+                const costLabel = detail.value_is_estimate == 1 ? 'Estimated value per item' : 'Cost per item';
+                detailBody.innerHTML = `
+                    <div class="p-4 space-y-3">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div><span class="text-xs text-base-content/50 block">Quantity</span><strong>${quantity.toLocaleString()} ${escapeHtml(detail.unit || '')}</strong></div>
+                            <div><span class="text-xs text-base-content/50 block">${costLabel}</span><strong>${unitCost > 0 ? formatCurrency(unitCost) : 'Not recorded'}</strong></div>
+                            <div><span class="text-xs text-base-content/50 block">Estimated loss</span><strong class="text-error">${amountNumber > 0 ? formatCurrency(amountNumber) : 'Not available'}</strong></div>
+                        </div>
+                        <div><span class="text-xs text-base-content/50 block">Reason</span><p>${escapeHtml(detail.disposal_reason || 'No reason recorded')}</p></div>
+                    </div>`;
+            } else if (detail.items && detail.items.length) {
                 detailSection.classList.remove('hidden');
                 detailBody.innerHTML = `
                     <table class="table table-sm w-full">
@@ -1107,14 +1160,22 @@
                             ${detail.items.map(i => `
                                 <tr>
                                     <td class="truncate max-w-[160px]">${escapeHtml(i.item_description || i.product_name || i.item_name || '—')}</td>
-                                    <td class="text-right">${i.quantity || i.requested_quantity || ''} ${i.unit || i.unit_of_measure || ''}</td>
+                                    <td class="text-right">${escapeHtml(i.quantity_display || `${i.quantity || i.quantity_ordered || i.requested_quantity || ''} ${i.unit || i.base_unit || i.unit_of_measure || ''}`)}</td>
                                     <td class="text-right">${i.total_amount || i.line_total ? '₱' + parseFloat(i.total_amount || i.line_total).toLocaleString() : ''}</td>
                                 </tr>`).join('')}
                         </tbody>
                     </table>`;
             } else if (detail.disposal_reason || detail.notes || detail.purpose) {
                 detailSection.classList.remove('hidden');
-                detailBody.innerHTML = `<p class="text-xs">${escapeHtml(detail.disposal_reason || detail.notes || detail.purpose)}</p>`;
+                const detailText = detail.disposal_reason || detail.notes || detail.purpose;
+                const detailLabel = detail.disposal_reason ? 'Reason' : 'Notes';
+                detailBody.innerHTML = `
+                    <div class="approval-detail-note">
+                        <div class="approval-detail-note__box">
+                            <span class="approval-detail-note__label">${detailLabel}</span>
+                            <p class="approval-detail-note__text">${escapeHtml(detailText)}</p>
+                        </div>
+                    </div>`;
             } else {
                 detailSection.classList.add('hidden');
             }
@@ -1255,6 +1316,13 @@
                             <p class="text-sm">${escapeHtml(po.notes)}</p>
                         </div>
                     ` : ''}
+                    ${po.internal_review_notes ? `
+                        <div class="bg-warning/10 border border-warning/30 rounded-xl p-3">
+                            <p class="text-xs font-semibold text-warning mb-1"><i class="fas fa-triangle-exclamation mr-1"></i>Limited Supplier Review</p>
+                            <p class="text-sm whitespace-pre-line">${escapeHtml(po.internal_review_notes)}</p>
+                            <p class="text-xs text-base-content/60 mt-2">Confirm that every available accredited supplier was canvassed before approving.</p>
+                        </div>
+                    ` : ''}
                 </div>
             `;
         }
@@ -1275,25 +1343,40 @@
 
         async function processPODecision(id, decision) {
             const isApprove = decision === 'approve';
-            if (isApprove) {
-                const confirmed = await AuthService.confirmAction({
-                    title: 'Approve Purchase Order',
-                    message: 'Approve this purchase order and allow Purchasing to proceed?',
-                    confirmText: 'Approve PO',
-                    icon: 'fa-file-invoice-dollar',
-                    tone: 'success'
-                });
-                if (!confirmed) return;
+            let po = currentApprovalPO?.id == id ? currentApprovalPO : null;
+            if (isApprove && !po) {
+                try {
+                    const response = await api.get(`/purchasing/purchase_orders.php?action=detail&id=${id}`);
+                    po = response?.data || null;
+                } catch (_) {}
             }
 
+            const approvalSummary = po
+                ? `${po.po_number || `PO #${id}`} | ${po.supplier_name || 'Supplier'} | ${formatCurrency(po.total_amount)}`
+                : `Purchase Order #${id}`;
+            const deliveryText = po?.expected_delivery ? formatDate(po.expected_delivery) : 'Not specified';
+            const supplierDestination = po?.supplier_email || po?.supplier_name || 'the supplier';
+
             const remarks = await AuthService.promptText({
-                title: isApprove ? 'Approval Remarks' : 'Reject Purchase Order',
-                message: isApprove ? 'Add remarks for Purchasing before this PO moves forward.' : 'Add the reason so Purchasing can correct the PO.',
-                label: isApprove ? 'Approval remarks' : 'Rejection reason',
-                placeholder: isApprove ? 'Example: Approved as requested' : 'Enter reason',
-                confirmText: isApprove ? 'Continue' : 'Reject PO',
-                icon: isApprove ? 'fa-comment-dots' : 'fa-times-circle',
+                title: isApprove ? 'Approve Purchase Order' : 'Reject Purchase Order',
+                message: isApprove
+                    ? 'Review the final PO details. Your password will be requested next to apply your digital approval.'
+                    : 'Add the reason so Purchasing can correct the PO.',
+                highlight: isApprove ? approvalSummary : '',
+                highlightLabel: 'Purchase order for approval',
+                callout: isApprove
+                    ? `Expected delivery: ${deliveryText}. After approval, Purchasing can email the final electronic PO to ${supplierDestination}.`
+                    : '',
+                calloutTone: 'info',
+                label: isApprove ? 'Decision note (optional)' : 'Rejection reason',
+                placeholder: isApprove ? 'Example: Approved as reviewed' : 'Enter reason',
+                confirmText: isApprove ? 'Approve and Sign' : 'Reject PO',
+                confirmIcon: isApprove ? 'fa-signature' : 'fa-times',
+                icon: isApprove ? 'fa-file-signature' : 'fa-times-circle',
                 tone: isApprove ? 'success' : 'error',
+                multiline: true,
+                rows: 3,
+                size: 'lg',
                 required: !isApprove
             });
             if (remarks === null) return;

@@ -7,7 +7,7 @@
 
 require_once __DIR__ . '/../bootstrap.php';
 
-Auth::requireAuth();
+Auth::requireRole(['general_manager', 'admin']);
 
 $conn = Database::getInstance()->getConnection();
 

@@ -9,8 +9,9 @@ The Warehouse FG custodian is the recipient of the production floor’s hard wor
 
 ### 2. Fulfillment of Institutional Orders
 While the Sales Custodian handles the "paperwork" of the order, the Warehouse FG custodian handles the **physical fulfillment**.
-*   **PO Visibility:** They monitor the system for Purchase Orders (POs) entered by the Sales Custodian for supermarkets (SM, Gaisano, etc.) or Feeding Programs (DepEd).
+*   **PO Visibility:** They monitor the system for confirmed customer Purchase Orders (POs) reviewed by the Sales Custodian for supermarkets (SM, Gaisano, etc.) or Feeding Programs (DepEd).
 *   **Picking & Packing:** They pull the correct products from the chiller based on the order requirements.
+*   **Full-Pick Lock:** The system must not generate a Delivery Receipt when the picked count is short. For example, an order for 1 box of Butter (20 blocks) requires all 20 blocks to be picked before the DR is created.
 
 ### 3. Barcode-Based Dispatch & FIFO
 Ma’am placed a heavy emphasis on using technology to prevent spoilage and ensure accuracy during the release process.
@@ -30,6 +31,7 @@ The custodian ensures that the inventory doesn't get "muddled" by similar produc
 ### 6. Loading & Logistics Coordination
 The Warehouse FG custodian coordinates with the drivers to get the product out the door.
 *   **Dispatch Verification:** They verify that what is loaded onto the truck matches the **Charge Sales Invoice (CSI)** or **Delivery Receipt (DR)**.
+*   **Dispatch Lock:** Before dispatch, the system checks again that ordered, picked, and reserved base-unit counts are equal for every product line.
 *   **Inventory Depletion:** Their "Release" action in the system is what officially "lesses" (deducts) the stock from the Finished Goods inventory, keeping the books accurate.
 
 ### 6A. Multi-Unit Inventory Management (Box vs. Piece)

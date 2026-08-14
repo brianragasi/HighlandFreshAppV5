@@ -11,6 +11,7 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/purchase_order_pdf.php';
 
 // Require Purchaser or GM role
 $currentUser = Auth::requireRole(['purchaser', 'general_manager', 'warehouse_raw']);
@@ -114,6 +115,10 @@ function handleGet($db, $action) {
                     pr.pr_number,
                     pr.purpose as pr_purpose,
                     (SELECT COUNT(*) FROM purchase_order_items WHERE po_id = po.id) as item_count,
+                    (SELECT COUNT(*)
+                     FROM purchase_orders grouped_po
+                     WHERE grouped_po.purchase_request_id = po.purchase_request_id
+                       AND grouped_po.status = 'draft') as draft_group_count,
                     (SELECT SUM(quantity_received) FROM purchase_order_items WHERE po_id = po.id) as total_received
                 FROM purchase_orders po
                 JOIN suppliers s ON po.supplier_id = s.id
@@ -295,6 +300,10 @@ function ensurePRConversionSupport($db) {
         $db->exec("ALTER TABLE `purchase_orders` ADD COLUMN `approval_remarks` TEXT DEFAULT NULL AFTER `approved_at`");
     }
 
+    if (!auditColumnExists($db, 'purchase_orders', 'internal_review_notes')) {
+        $db->exec("ALTER TABLE `purchase_orders` ADD COLUMN `internal_review_notes` TEXT DEFAULT NULL AFTER `notes`");
+    }
+
     if (!auditColumnExists($db, 'purchase_orders', 'rejection_reason')) {
         $db->exec("ALTER TABLE `purchase_orders` ADD COLUMN `rejection_reason` TEXT DEFAULT NULL AFTER `approval_remarks`");
     }
@@ -315,6 +324,8 @@ function ensurePRConversionSupport($db) {
     if (!auditColumnExists($db, 'purchase_orders', 'sent_to_supplier_by')) {
         $db->exec("ALTER TABLE `purchase_orders` ADD COLUMN `sent_to_supplier_by` INT(11) DEFAULT NULL AFTER `sent_to_supplier_at`");
     }
+
+    ensurePurchaseOrderEmailSupport($db);
 
     if (!auditColumnExists($db, 'purchase_order_items', 'purchase_request_item_id')) {
         $db->exec("ALTER TABLE `purchase_order_items` ADD COLUMN `purchase_request_item_id` INT(11) DEFAULT NULL AFTER `po_id`");
@@ -585,6 +596,143 @@ function createProcurementNotification($db, $targetRole, $type, $title, $message
         VALUES (?, ?, ?, ?, ?, ?)
     ");
     $stmt->execute([$targetRole, $type, $title, $message, $referenceType, $referenceId]);
+}
+
+function ensurePurchaseOrderEmailSupport($db) {
+    if (!auditColumnExists($db, 'purchase_orders', 'supplier_email_sent_to')) {
+        $db->exec("ALTER TABLE `purchase_orders` ADD COLUMN `supplier_email_sent_to` VARCHAR(255) DEFAULT NULL AFTER `sent_to_supplier_by`");
+    }
+    if (!auditColumnExists($db, 'purchase_orders', 'last_send_attempt_at')) {
+        $db->exec("ALTER TABLE `purchase_orders` ADD COLUMN `last_send_attempt_at` DATETIME DEFAULT NULL AFTER `supplier_email_sent_to`");
+    }
+    if (!auditColumnExists($db, 'purchase_orders', 'last_send_error')) {
+        $db->exec("ALTER TABLE `purchase_orders` ADD COLUMN `last_send_error` TEXT DEFAULT NULL AFTER `last_send_attempt_at`");
+    }
+    if (!auditColumnExists($db, 'purchase_orders', 'email_send_in_progress')) {
+        $db->exec("ALTER TABLE `purchase_orders` ADD COLUMN `email_send_in_progress` TINYINT(1) NOT NULL DEFAULT 0 AFTER `last_send_error`");
+    }
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS `purchase_order_email_attempts` (
+            `id` INT(11) NOT NULL AUTO_INCREMENT,
+            `po_id` INT(11) NOT NULL,
+            `recipient_email` VARCHAR(255) NOT NULL,
+            `status` VARCHAR(20) NOT NULL DEFAULT 'sending',
+            `error_message` TEXT DEFAULT NULL,
+            `sent_by` INT(11) DEFAULT NULL,
+            `attempted_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `sent_at` DATETIME DEFAULT NULL,
+            PRIMARY KEY (`id`),
+            KEY `idx_po_email_attempt_po` (`po_id`),
+            KEY `idx_po_email_attempt_status` (`status`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+}
+
+function loadPurchaseOrderForEmail($db, $poId) {
+    $stmt = $db->prepare("
+        SELECT
+            po.*,
+            s.supplier_name,
+            s.supplier_code,
+            s.contact_person AS supplier_contact,
+            s.phone AS supplier_phone,
+            s.email AS supplier_email,
+            s.address AS supplier_address,
+            s.payment_terms AS supplier_terms,
+            u.full_name AS created_by_name,
+            ua.full_name AS approved_by_name,
+            pr.pr_number,
+            pr.purpose AS pr_purpose,
+            ur.full_name AS requested_by_name
+        FROM purchase_orders po
+        JOIN suppliers s ON po.supplier_id = s.id
+        LEFT JOIN users u ON po.created_by = u.id
+        LEFT JOIN users ua ON po.approved_by = ua.id
+        LEFT JOIN purchase_requests pr ON po.purchase_request_id = pr.id
+        LEFT JOIN users ur ON pr.requested_by = ur.id
+        WHERE po.id = ?
+        LIMIT 1
+    ");
+    $stmt->execute([$poId]);
+    $po = $stmt->fetch();
+
+    if (!$po) {
+        return null;
+    }
+
+    $itemsStmt = $db->prepare("
+        SELECT
+            poi.*,
+            i.ingredient_name,
+            m.item_name AS mro_item_name
+        FROM purchase_order_items poi
+        LEFT JOIN ingredients i ON poi.ingredient_id = i.id
+        LEFT JOIN mro_items m ON poi.mro_item_id = m.id
+        WHERE poi.po_id = ?
+        ORDER BY poi.id ASC
+    ");
+    $itemsStmt->execute([$poId]);
+    $po['items'] = $itemsStmt->fetchAll();
+
+    return $po;
+}
+
+function buildPurchaseOrderEmailBody(array $po) {
+    $poNumber = htmlspecialchars((string) ($po['po_number'] ?? ''), ENT_QUOTES, 'UTF-8');
+    $supplierName = htmlspecialchars((string) ($po['supplier_name'] ?? 'Supplier'), ENT_QUOTES, 'UTF-8');
+    $expectedDelivery = htmlspecialchars((string) ($po['expected_delivery'] ?? 'To be confirmed'), ENT_QUOTES, 'UTF-8');
+    $approverName = htmlspecialchars((string) ($po['approved_by_name'] ?? 'General Manager'), ENT_QUOTES, 'UTF-8');
+    $total = number_format((float) ($po['total_amount'] ?? 0), 2);
+
+    return <<<HTML
+<div style="border-left:5px solid #0a6239;padding:2px 0 2px 16px;margin:0 0 20px;">
+    <p style="margin:0;color:#0a6239;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">Approved Electronic Purchase Order</p>
+    <p style="margin:4px 0 0;color:#17211b;font-size:22px;font-weight:700;">{$poNumber}</p>
+</div>
+<p style="margin:0 0 14px;color:#33443a;font-size:15px;line-height:1.65;">Dear {$supplierName},</p>
+<p style="margin:0 0 16px;color:#33443a;font-size:15px;line-height:1.65;">
+    Highland Fresh Dairy has approved the purchase order below. The digitally approved electronic PO is attached as a PDF and is the official document for fulfillment.
+</p>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:20px 0;border-collapse:separate;border-spacing:0;border:1px solid #dce6df;border-radius:8px;overflow:hidden;">
+    <tr>
+        <td style="padding:11px 13px;background:#f2f7f4;color:#66736c;font-size:12px;border-bottom:1px solid #dce6df;">PO Number</td>
+        <td style="padding:11px 13px;color:#17211b;font-weight:700;border-bottom:1px solid #dce6df;">{$poNumber}</td>
+    </tr>
+    <tr>
+        <td style="padding:11px 13px;background:#f2f7f4;color:#66736c;font-size:12px;border-bottom:1px solid #dce6df;">Expected Delivery</td>
+        <td style="padding:11px 13px;color:#17211b;font-weight:600;border-bottom:1px solid #dce6df;">{$expectedDelivery}</td>
+    </tr>
+    <tr>
+        <td style="padding:11px 13px;background:#f2f7f4;color:#66736c;font-size:12px;border-bottom:1px solid #dce6df;">Approved By</td>
+        <td style="padding:11px 13px;color:#17211b;font-weight:600;border-bottom:1px solid #dce6df;">{$approverName}</td>
+    </tr>
+    <tr>
+        <td style="padding:11px 13px;background:#f2f7f4;color:#66736c;font-size:12px;">Order Total</td>
+        <td style="padding:11px 13px;color:#0a6239;font-size:17px;font-weight:700;">PHP {$total}</td>
+    </tr>
+</table>
+<p style="margin:0;padding:13px 15px;background:#f2f7f4;border:1px solid #dce6df;border-radius:8px;color:#33443a;font-size:14px;line-height:1.6;">
+    Please confirm receipt with the Highland Fresh Purchaser and quote <strong>{$poNumber}</strong> on your delivery receipt and invoice.
+</p>
+HTML;
+}
+
+function recordPurchaseOrderEmailFailure($db, $poId, $attemptId, $errorMessage) {
+    $safeError = substr((string) $errorMessage, 0, 2000);
+    $db->prepare("
+        UPDATE purchase_order_email_attempts
+        SET status = 'failed', error_message = ?
+        WHERE id = ?
+    ")->execute([$safeError, $attemptId]);
+    $db->prepare("
+        UPDATE purchase_orders
+        SET last_send_attempt_at = NOW(),
+            last_send_error = ?,
+            email_send_in_progress = 0,
+            updated_at = NOW()
+        WHERE id = ?
+    ")->execute([$safeError, $poId]);
 }
 
 function getLatestReceivingReportForPO(PDO $db, int $poId) {
@@ -1052,7 +1200,7 @@ function handlePost($db, $action, $currentUser) {
             $prData = getSubmittedPurchaseRequestSlipForPO($db, $purchaseRequestId);
             $prItems = getPurchaseRequestItemsForPO($db, $purchaseRequestId);
             $poItems = buildPOItemsFromSubmittedPRS($prItems, $data['items'] ?? []);
-            validateAssignmentsAgainstSelectedCanvassQuotes($db, array_map(function ($item) use ($data) {
+            $limitedMarketNotes = validateAssignmentsAgainstSelectedCanvassQuotes($db, array_map(function ($item) use ($data) {
                 return [
                     'pr_item_id' => (int) $item['purchase_request_item_id'],
                     'supplier_id' => (int) $data['supplier_id'],
@@ -1060,6 +1208,7 @@ function handlePost($db, $action, $currentUser) {
                     'item_description' => $item['item_description'] ?? 'PRS item'
                 ];
             }, $poItems));
+            $data['internal_review_notes'] = buildLimitedMarketReviewNotes($limitedMarketNotes);
 
             // Check if this PR already has an active PO
             $existingPO = $db->prepare("SELECT id, po_number FROM purchase_orders WHERE purchase_request_id = ? AND status NOT IN ('cancelled', 'rejected')");
@@ -1109,8 +1258,8 @@ function handlePost($db, $action, $currentUser) {
                     INSERT INTO purchase_orders
                     (po_number, supplier_id, order_date, expected_delivery, delivery_details, status,
                      subtotal, vat_amount, total_amount, payment_status, payment_terms, due_date,
-                     notes, requisition_id, purchase_request_id, created_by)
-                    VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, 'unpaid', ?, ?, ?, ?, ?, ?)
+                     notes, internal_review_notes, requisition_id, purchase_request_id, created_by)
+                    VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, 'unpaid', ?, ?, ?, ?, ?, ?, ?)
                 ");
 
                 $stmt->execute([
@@ -1125,6 +1274,7 @@ function handlePost($db, $action, $currentUser) {
                     $paymentTerms,
                     $dueDate,
                     $data['notes'] ?? null,
+                    $data['internal_review_notes'] ?? null,
                     $data['requisition_id'] ?? null,
                     $purchaseRequestId,
                     $currentUser['user_id']
@@ -1219,8 +1369,9 @@ function handlePost($db, $action, $currentUser) {
                     Response::error("Supplier $sid is invalid or inactive", 400);
                 }
             }
-            validateAssignmentsAgainstSelectedCanvassQuotes($db, $assignments);
+            $limitedMarketNotes = validateAssignmentsAgainstSelectedCanvassQuotes($db, $assignments);
             $groups = groupAssignmentsBySupplier($assignments);
+            $submitForApproval = filter_var($data['submit_for_approval'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
             $paymentTerms = $data['payment_terms'] ?? 'cash';
             $orderDate    = $data['order_date'] ?? date('Y-m-d');
@@ -1236,6 +1387,15 @@ function handlePost($db, $action, $currentUser) {
                 foreach ($groups as $supplierId => $groupAssignments) {
                     $supplierId = (int) $supplierId;
                     $poNumber   = generateNextPONumberForSplit($db);
+                    $groupReviewNotes = [];
+                    foreach ($groupAssignments as $assignment) {
+                        $prItemId = (int) $assignment['pr_item_id'];
+                        if (isset($limitedMarketNotes[$prItemId])) {
+                            $groupReviewNotes[$prItemId] = $limitedMarketNotes[$prItemId];
+                        }
+                    }
+                    $poData = $data;
+                    $poData['internal_review_notes'] = buildLimitedMarketReviewNotes($groupReviewNotes);
 
                     $subtotal = 0; $vatAmount = 0;
                     foreach ($groupAssignments as $a) {
@@ -1246,7 +1406,7 @@ function handlePost($db, $action, $currentUser) {
                     $totalAmount = $subtotal;
 
                     $poId = insertPOHeaderFromSplit(
-                        $db, $poNumber, $supplierId, (int) $prData['id'], $data,
+                        $db, $poNumber, $supplierId, (int) $prData['id'], $poData,
                         $paymentTerms, $orderDate, $dueDate,
                         $subtotal, $vatAmount, $totalAmount, $currentUser
                     );
@@ -1296,9 +1456,18 @@ function handlePost($db, $action, $currentUser) {
                         'subtotal'      => $subtotal,
                         'vat_amount'    => $vatAmount,
                         'total_amount'  => $totalAmount,
+                        'status'        => 'draft',
                         'item_count'    => count($groupAssignments),
                         'items'         => $lineSummaries,
                     ];
+                }
+
+                if ($submitForApproval) {
+                    submitPurchaseOrdersForGM($db, $createdPOs, $currentUser);
+                    foreach ($createdPOs as &$createdPO) {
+                        $createdPO['status'] = 'pending';
+                    }
+                    unset($createdPO);
                 }
 
                 recomputeAndStampPRConversionState($db, (int) $prData['id'], $currentUser);
@@ -1309,13 +1478,18 @@ function handlePost($db, $action, $currentUser) {
                 $finalPrStatusStmt->execute([(int) $prData['id']]);
                 $finalPrStatus = $finalPrStatusStmt->fetchColumn();
 
+                $responseMessage = count($createdPOs) . ' purchase order(s) generated from PRS ' . $prData['pr_number'];
+                if ($submitForApproval) {
+                    $responseMessage .= ' and sent to the General Manager for approval';
+                }
+
                 Response::success([
                     'pr_id'           => (int) $prData['id'],
                     'pr_number'       => $prData['pr_number'],
                     'pr_status'       => $finalPrStatus,
                     'po_count'        => count($createdPOs),
                     'purchase_orders' => $createdPOs,
-                ], count($createdPOs) . ' purchase order(s) generated from PRS ' . $prData['pr_number'], 201);
+                ], $responseMessage, 201);
 
             } catch (Exception $e) {
                 $db->rollBack();
@@ -1346,6 +1520,47 @@ function handlePut($db, $action, $currentUser) {
     }
 
     switch ($action) {
+        case 'submit_pr_group':
+            requireActionRole($currentUser, ['purchaser'], 'Only the Purchaser can submit purchase orders for approval');
+
+            if (empty($current['purchase_request_id'])) {
+                Response::error('This PO is not part of a Warehouse PRS group. Submit it individually.', 400);
+            }
+
+            $groupStmt = $db->prepare("
+                SELECT id, po_number, total_amount, status
+                FROM purchase_orders
+                WHERE purchase_request_id = ? AND status = 'draft'
+                ORDER BY id ASC
+            ");
+            $groupStmt->execute([(int) $current['purchase_request_id']]);
+            $draftOrders = $groupStmt->fetchAll();
+            if (!$draftOrders) {
+                Response::error('No draft POs from this PRS are waiting for submission', 400);
+            }
+
+            $db->beginTransaction();
+            try {
+                $submitted = submitPurchaseOrdersForGM($db, $draftOrders, $currentUser);
+                $db->commit();
+            } catch (Throwable $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                throw $e;
+            }
+
+            Response::success([
+                'purchase_request_id' => (int) $current['purchase_request_id'],
+                'submitted_count' => $submitted,
+                'purchase_orders' => array_map(static fn($po) => [
+                    'po_id' => (int) $po['id'],
+                    'po_number' => $po['po_number'],
+                    'status' => 'pending',
+                ], $draftOrders),
+            ], $submitted . ' purchase order(s) sent to the General Manager for approval');
+            break;
+
         case 'submit':
             requireActionRole($currentUser, ['purchaser'], 'Only the Purchaser can submit purchase orders for approval');
 
@@ -1355,29 +1570,7 @@ function handlePut($db, $action, $currentUser) {
                 Response::error('Only draft POs can be submitted for approval', 400);
             }
 
-            $stmt = $db->prepare("
-                UPDATE purchase_orders
-                SET status = 'pending',
-                    updated_at = NOW()
-                WHERE id = ?
-            ");
-            $stmt->execute([$id]);
-
-            logAudit($currentUser['user_id'], 'SUBMIT', 'purchase_orders', $id,
-                ['status' => 'draft'],
-                ['status' => 'pending', 'submitted_by' => $currentUser['user_id']]
-            );
-
-            // Notify the GM that a PO is waiting for their signature
-            createProcurementNotification(
-                $db,
-                'general_manager',
-                'po_pending_approval',
-                'PO awaiting your approval',
-                'PO ' . $current['po_number'] . ' (' . number_format($current['total_amount'] ?? 0, 2) . ') has been submitted by Purchasing and needs your approval.',
-                'purchase_order',
-                $id
-            );
+            submitPurchaseOrdersForGM($db, [$current], $currentUser);
 
             Response::success(null, 'Purchase order submitted for GM approval');
             break;
@@ -1413,6 +1606,10 @@ function handlePut($db, $action, $currentUser) {
                     approval_remarks = ?,
                     sent_to_supplier_at = NULL,
                     sent_to_supplier_by = NULL,
+                    supplier_email_sent_to = NULL,
+                    last_send_attempt_at = NULL,
+                    last_send_error = NULL,
+                    email_send_in_progress = 0,
                     updated_at = NOW()
                 WHERE id = ?
             ");
@@ -1526,21 +1723,131 @@ function handlePut($db, $action, $currentUser) {
                 Response::error('Final PO has already been sent to the supplier', 400);
             }
 
+            $emailPO = loadPurchaseOrderForEmail($db, (int) $id);
+            $recipientEmail = hfNormalizeContactEmail($emailPO['supplier_email'] ?? null);
+            if ($recipientEmail === null) {
+                Response::validationError([
+                    'supplier_email' => 'Add the supplier email address before sending this PO.'
+                ]);
+            }
+            if (!hfIsValidContactEmail($recipientEmail)) {
+                Response::validationError([
+                    'supplier_email' => 'The supplier email address is incomplete or invalid. Correct it before sending.'
+                ]);
+            }
+
+            $lockStmt = $db->prepare("
+                UPDATE purchase_orders
+                SET email_send_in_progress = 1,
+                    last_send_attempt_at = NOW(),
+                    last_send_error = NULL,
+                    updated_at = NOW()
+                WHERE id = ?
+                  AND status = 'approved'
+                  AND sent_to_supplier_at IS NULL
+                  AND (
+                      email_send_in_progress = 0
+                      OR last_send_attempt_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+                  )
+            ");
+            $lockStmt->execute([$id]);
+            if ($lockStmt->rowCount() !== 1) {
+                Response::error('This PO email is already being sent. Wait a moment before trying again.', 409);
+            }
+
+            $attemptStmt = $db->prepare("
+                INSERT INTO purchase_order_email_attempts
+                    (po_id, recipient_email, status, sent_by, attempted_at)
+                VALUES (?, ?, 'sending', ?, NOW())
+            ");
+            $attemptStmt->execute([$id, $recipientEmail, $currentUser['user_id']]);
+            $attemptId = (int) $db->lastInsertId();
+
+            try {
+                $pdfContent = hfBuildPurchaseOrderPdf($emailPO, $emailPO['items'] ?? []);
+                $poNumber = preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($emailPO['po_number'] ?? $id));
+                $subject = 'Approved Purchase Order ' . ($emailPO['po_number'] ?? $id) . ' - Highland Fresh Dairy';
+                $bodyHtml = Mailer::buildTemplate(
+                    'Approved Purchase Order ' . (string) ($emailPO['po_number'] ?? ''),
+                    buildPurchaseOrderEmailBody($emailPO),
+                    'This approved purchase order was sent automatically by Highland Fresh Dairy.'
+                );
+
+                Mailer::send(
+                    $recipientEmail,
+                    $subject,
+                    $bodyHtml,
+                    '',
+                    [[
+                        'filename' => 'PO-' . $poNumber . '.pdf',
+                        'content_type' => 'application/pdf',
+                        'content' => $pdfContent,
+                    ]]
+                );
+            } catch (Throwable $emailError) {
+                error_log('PO email failed for PO ' . $id . ': ' . $emailError->getMessage());
+                $isNotConfigured = stripos($emailError->getMessage(), 'not configured') !== false;
+                $storedError = $isNotConfigured
+                    ? 'Email service is not configured.'
+                    : 'Supplier email delivery failed.';
+                recordPurchaseOrderEmailFailure($db, (int) $id, $attemptId, $storedError);
+                logAudit($currentUser['user_id'], 'PO_EMAIL_FAILED', 'purchase_orders', $id,
+                    ['status' => $current['status']],
+                    ['recipient_email' => $recipientEmail, 'attempt_id' => $attemptId]
+                );
+
+                $friendlyMessage = $isNotConfigured
+                    ? 'The email account is not configured yet. The PO remains approved and can be retried after email setup.'
+                    : 'The supplier email could not be sent. The PO remains approved; check the address or connection and try again.';
+                Response::error($friendlyMessage, 502, [
+                    'can_retry' => true,
+                    'supplier_email' => $recipientEmail,
+                ]);
+            }
+
+            $sentAt = date('Y-m-d H:i:s');
+            $db->prepare("
+                UPDATE purchase_order_email_attempts
+                SET status = 'sent', sent_at = ?, error_message = NULL
+                WHERE id = ?
+            ")->execute([$sentAt, $attemptId]);
+
             $stmt = $db->prepare("
                 UPDATE purchase_orders
                 SET status = 'ordered',
-                    sent_to_supplier_at = NOW(),
+                    sent_to_supplier_at = ?,
                     sent_to_supplier_by = ?,
+                    supplier_email_sent_to = ?,
+                    last_send_attempt_at = ?,
+                    last_send_error = NULL,
+                    email_send_in_progress = 0,
                     updated_at = NOW()
                 WHERE id = ?
+                  AND status = 'approved'
+                  AND sent_to_supplier_at IS NULL
             ");
-            $stmt->execute([$currentUser['user_id'], $id]);
+            $stmt->execute([$sentAt, $currentUser['user_id'], $recipientEmail, $sentAt, $id]);
+
+            if ($stmt->rowCount() !== 1) {
+                Response::error('The email was sent, but the PO status could not be updated. Contact the administrator before retrying.', 409);
+            }
 
             logAudit($currentUser['user_id'], 'UPDATE', 'purchase_orders', $id,
                 ['status' => $current['status'], 'sent_to_supplier_at' => $current['sent_to_supplier_at'] ?? null],
-                ['status' => 'ordered', 'sent_to_supplier_at' => date('Y-m-d H:i:s'), 'sent_to_supplier_by' => $currentUser['user_id']]);
+                [
+                    'status' => 'ordered',
+                    'sent_to_supplier_at' => $sentAt,
+                    'sent_to_supplier_by' => $currentUser['user_id'],
+                    'supplier_email_sent_to' => $recipientEmail,
+                    'email_attempt_id' => $attemptId,
+                ]);
 
-            Response::success(null, 'Final PO sent to supplier');
+            Response::success([
+                'id' => (int) $id,
+                'status' => 'ordered',
+                'supplier_email_sent_to' => $recipientEmail,
+                'sent_to_supplier_at' => $sentAt,
+            ], 'Final PO emailed to ' . $recipientEmail);
             break;
 
         case 'mark_received':
@@ -1571,7 +1878,7 @@ function handlePut($db, $action, $currentUser) {
             break;
 
         case 'update_payment':
-            requireActionRole($currentUser, ['finance_officer', 'bookkeeper'], 'Only Finance or Bookkeeper can update payment status');
+            requireActionRole($currentUser, ['finance_officer'], 'Only the Finance Officer can update payment status');
 
             $newPaymentStatus = $data['payment_status'] ?? null;
             if (!in_array($newPaymentStatus, ['unpaid', 'partial', 'paid'])) {
@@ -2753,11 +3060,12 @@ function loadAndValidateSubmittedPRSForSplit($db, $purchaseRequestId, $data) {
     return ['pr' => $prData, 'prItems' => $prItems, 'assignments' => $assignments];
 }
 
-function validateAssignmentsAgainstSelectedCanvassQuotes(PDO $db, array $assignments): void {
+function validateAssignmentsAgainstSelectedCanvassQuotes(PDO $db, array $assignments): array {
     if (!tableExists($db, 'price_canvass') || !tableExists($db, 'canvass_quotes')) {
-        Response::error('Complete canvassing before creating a PO. The system will auto-pick the cheapest quote after 3 quotes.', 400);
+        Response::error('Complete supplier canvassing before creating a PO.', 400);
     }
 
+    $reviewNotes = [];
     foreach ($assignments as $assignment) {
         $prItemId = (int) ($assignment['pr_item_id'] ?? 0);
         $supplierId = (int) ($assignment['supplier_id'] ?? 0);
@@ -2772,6 +3080,9 @@ function validateAssignmentsAgainstSelectedCanvassQuotes(PDO $db, array $assignm
             SELECT
                 pc.id as canvass_id,
                 pc.status,
+                pc.ingredient_id,
+                pc.selection_method,
+                pc.selection_reason,
                 q.id as quote_id,
                 q.supplier_id,
                 q.unit_price,
@@ -2789,17 +3100,61 @@ function validateAssignmentsAgainstSelectedCanvassQuotes(PDO $db, array $assignm
         $selected = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$selected) {
-            Response::error('Add 3 supplier quotes for ' . $itemName . '. The system will auto-pick the cheapest quote before creating a PO.', 400);
+            Response::error('Finish the supplier review for ' . $itemName . ' before creating a PO.', 400);
         }
 
         if ((int) $selected['supplier_id'] !== $supplierId) {
-            Response::error($itemName . ' must use the auto-selected cheapest supplier: ' . $selected['supplier_name'], 400);
+            Response::error($itemName . ' must use the reviewed supplier: ' . $selected['supplier_name'], 400);
         }
 
         if (abs((float) $selected['unit_price'] - $unitPrice) > 0.0001) {
-            Response::error($itemName . ' must use the auto-selected cheapest price: ' . number_format((float) $selected['unit_price'], 2), 400);
+            Response::error($itemName . ' must use the reviewed quote price: ' . number_format((float) $selected['unit_price'], 2), 400);
+        }
+
+        if (($selected['selection_method'] ?? '') === 'limited_market') {
+            $reason = trim((string) ($selected['selection_reason'] ?? ''));
+            if ($reason === '') {
+                Response::error('A limited-supplier explanation is required for ' . $itemName, 400);
+            }
+
+            if (!empty($selected['ingredient_id'])) {
+                $eligibleStmt = $db->prepare("
+                    SELECT COUNT(DISTINCT si.supplier_id)
+                    FROM supplier_ingredients si
+                    JOIN suppliers s ON s.id = si.supplier_id AND s.is_active = 1
+                    WHERE si.ingredient_id = ? AND si.is_active = 1
+                ");
+                $eligibleStmt->execute([(int) $selected['ingredient_id']]);
+                $eligibleCount = (int) $eligibleStmt->fetchColumn();
+                if ($eligibleCount >= 3) {
+                    Response::error('Three suppliers are now available for ' . $itemName . '. Complete the normal three-quote canvass.', 400);
+                }
+
+                $quotedStmt = $db->prepare('SELECT COUNT(DISTINCT supplier_id) FROM canvass_quotes WHERE canvass_id = ?');
+                $quotedStmt->execute([(int) $selected['canvass_id']]);
+                if ((int) $quotedStmt->fetchColumn() < $eligibleCount) {
+                    Response::error('Quote every available supplier for ' . $itemName . ' before creating the PO.', 400);
+                }
+            }
+            $reviewNotes[$prItemId] = $itemName . ' - ' . $reason;
+        } else {
+            $countStmt = $db->prepare('SELECT COUNT(DISTINCT supplier_id) FROM canvass_quotes WHERE canvass_id = ?');
+            $countStmt->execute([(int) $selected['canvass_id']]);
+            if ((int) $countStmt->fetchColumn() < 3) {
+                Response::error('Three quotes are required for ' . $itemName . ' unless a limited-supplier reason is recorded.', 400);
+            }
         }
     }
+
+    return $reviewNotes;
+}
+
+function buildLimitedMarketReviewNotes(array $reviewNotes): ?string {
+    if (!$reviewNotes) {
+        return null;
+    }
+
+    return "LIMITED SUPPLIER MARKET\n" . implode("\n", array_values($reviewNotes));
 }
 
 function groupAssignmentsBySupplier($assignments) {
@@ -2812,6 +3167,63 @@ function groupAssignmentsBySupplier($assignments) {
         $groups[$sid][] = $a;
     }
     return $groups;
+}
+
+function submitPurchaseOrdersForGM(PDO $db, array $orders, array $currentUser): int {
+    $submitted = 0;
+    $check = $db->prepare("
+        SELECT po_number, total_amount, status
+        FROM purchase_orders
+        WHERE id = ?
+        FOR UPDATE
+    ");
+    $itemCount = $db->prepare("SELECT COUNT(*) FROM purchase_order_items WHERE po_id = ?");
+    $update = $db->prepare("
+        UPDATE purchase_orders
+        SET status = 'pending',
+            updated_at = NOW()
+        WHERE id = ? AND status = 'draft'
+    ");
+
+    foreach ($orders as $order) {
+        $poId = (int) ($order['id'] ?? $order['po_id'] ?? 0);
+        if ($poId <= 0) {
+            throw new RuntimeException('A valid draft PO is required for GM submission');
+        }
+
+        $check->execute([$poId]);
+        $currentPO = $check->fetch();
+        if (!$currentPO || $currentPO['status'] !== 'draft') {
+            throw new RuntimeException('Only valid draft POs can be submitted for GM approval');
+        }
+        $itemCount->execute([$poId]);
+        if ((int) $itemCount->fetchColumn() < 1 || (float) $currentPO['total_amount'] <= 0) {
+            throw new RuntimeException('PO ' . $currentPO['po_number'] . ' has no valid order items and cannot be sent to GM');
+        }
+
+        $update->execute([$poId]);
+        if ($update->rowCount() !== 1) {
+            throw new RuntimeException('A purchase order changed before it could be submitted. Refresh and try again.');
+        }
+
+        logAudit($currentUser['user_id'], 'SUBMIT', 'purchase_orders', $poId,
+            ['status' => 'draft'],
+            ['status' => 'pending', 'submitted_by' => $currentUser['user_id']]
+        );
+
+        createProcurementNotification(
+            $db,
+            'general_manager',
+            'po_pending_approval',
+            'PO awaiting your approval',
+            'PO ' . $currentPO['po_number'] . ' (' . number_format((float) $currentPO['total_amount'], 2) . ') has been submitted by Purchasing and needs your approval.',
+            'purchase_order',
+            $poId
+        );
+        $submitted++;
+    }
+
+    return $submitted;
 }
 
 function loadActiveSuppliersForSplit($db, array $supplierIds) {
@@ -2840,8 +3252,8 @@ function insertPOHeaderFromSplit($db, $poNumber, $supplierId, $prId, $data, $pay
         INSERT INTO purchase_orders
         (po_number, supplier_id, order_date, expected_delivery, delivery_details, status,
          subtotal, vat_amount, total_amount, payment_status, payment_terms, due_date,
-         notes, purchase_request_id, created_by)
-        VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, 'unpaid', ?, ?, ?, ?, ?)
+         notes, internal_review_notes, purchase_request_id, created_by)
+        VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, 'unpaid', ?, ?, ?, ?, ?, ?)
     ");
     $stmt->execute([
         $poNumber,
@@ -2855,6 +3267,7 @@ function insertPOHeaderFromSplit($db, $poNumber, $supplierId, $prId, $data, $pay
         $paymentTerms,
         $dueDate,
         $data['notes'] ?? null,
+        $data['internal_review_notes'] ?? null,
         $prId,
         $currentUser['user_id'],
     ]);

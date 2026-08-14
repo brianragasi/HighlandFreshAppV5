@@ -25,7 +25,7 @@ const AuthService = {
      * Login user
      */
     async login(identifier, password) {
-        const response = await api.post('/auth/login.php', { identifier, password });
+        const response = await api.post('/auth/login.php', { identifier, password }, { timeout: 10000 });
 
         if (response.success) {
             // Store token and user data
@@ -148,6 +148,10 @@ const AuthService = {
         return await this.openActionDialog({
             title: options.title || 'Required Information',
             message: options.message || '',
+            highlight: options.highlight || '',
+            highlightLabel: options.highlightLabel || '',
+            callout: options.callout || '',
+            calloutTone: options.calloutTone || 'warning',
             label: options.label || 'Value',
             placeholder: options.placeholder || '',
             confirmText: options.confirmText || 'Submit',
@@ -157,6 +161,10 @@ const AuthService = {
             tone: options.tone || 'primary',
             mode: 'prompt',
             type: options.type || 'text',
+            multiline: options.multiline === true,
+            rows: options.rows || 3,
+            size: options.size || 'md',
+            minLength: Math.max(0, parseInt(options.minLength || 0, 10)),
             required: options.required !== false
         });
     },
@@ -208,6 +216,7 @@ const AuthService = {
     openActionDialog(options) {
         return new Promise((resolve) => {
             const dialog = this.ensureActionDialog();
+            const dialogBox = dialog.querySelector('.aad-box');
             const title = dialog.querySelector('[data-dialog-title]');
             const message = dialog.querySelector('[data-dialog-message]');
             const icon = dialog.querySelector('[data-dialog-icon]');
@@ -221,13 +230,22 @@ const AuthService = {
             const inputWrap = dialog.querySelector('[data-dialog-input-wrap]');
             const inputLabel = dialog.querySelector('[data-dialog-label]');
             const input = dialog.querySelector('[data-dialog-input]');
+            const textarea = dialog.querySelector('[data-dialog-textarea]');
             const error = dialog.querySelector('[data-dialog-error]');
             const confirmBtn = dialog.querySelector('[data-dialog-confirm]');
             const cancelBtn = dialog.querySelector('[data-dialog-cancel]');
             const backdropBtn = dialog.querySelector('[data-dialog-backdrop]');
             const form = dialog.querySelector('form');
+            // Validation is handled below so inactive hidden controls can never
+            // prevent the dialog's submit handler from running.
+            form.noValidate = true;
             const tone = options.tone || 'primary';
             const toneCls = this.dialogToneClasses(tone);
+
+            if (dialogBox) {
+                dialogBox.classList.toggle('max-w-lg', options.size === 'lg');
+                dialogBox.classList.toggle('max-w-md', options.size !== 'lg');
+            }
 
             title.textContent = options.title;
             message.textContent = options.message || '';
@@ -294,13 +312,23 @@ const AuthService = {
 
             const isPrompt = options.mode === 'prompt';
             const isMessage = options.mode === 'message';
+            const useTextarea = isPrompt && options.multiline === true && (options.type || 'text') !== 'password';
+            const activeInput = useTextarea ? textarea : input;
             inputWrap.classList.toggle('hidden', !isPrompt);
             cancelBtn.classList.toggle('hidden', isMessage);
             input.value = '';
+            textarea.value = '';
+            input.classList.toggle('hidden', useTextarea);
+            textarea.classList.toggle('hidden', !useTextarea);
             input.type = options.type || 'text';
             input.placeholder = options.placeholder || '';
-            input.required = !!options.required;
+            input.required = !!options.required && !useTextarea;
+            input.disabled = !isPrompt || useTextarea;
             input.autocomplete = input.type === 'password' ? 'current-password' : 'off';
+            textarea.placeholder = options.placeholder || '';
+            textarea.required = !!options.required && useTextarea;
+            textarea.disabled = !isPrompt || !useTextarea;
+            textarea.rows = Math.max(2, Math.min(6, parseInt(options.rows || 3, 10)));
             inputLabel.textContent = options.label || 'Value';
             dialog.dataset.mode = options.mode;
 
@@ -321,11 +349,18 @@ const AuthService = {
             const onSubmit = (event) => {
                 event.preventDefault();
                 if (isPrompt) {
-                    const value = input.value;
+                    const value = activeInput.value;
                     if (options.required && !value.trim()) {
                         error.textContent = `${options.label || 'Value'} is required.`;
                         error.classList.remove('hidden');
-                        input.focus();
+                        activeInput.focus();
+                        return;
+                    }
+                    const minLength = Math.max(0, parseInt(options.minLength || 0, 10));
+                    if (minLength > 0 && value.trim().length < minLength) {
+                        error.textContent = `${options.label || 'Value'} must be at least ${minLength} characters.`;
+                        error.classList.remove('hidden');
+                        activeInput.focus();
                         return;
                     }
                     cleanup();
@@ -345,7 +380,7 @@ const AuthService = {
             dialog.addEventListener('cancel', onCancel);
             dialog.showModal();
             if (isPrompt) {
-                setTimeout(() => input.focus(), 50);
+                setTimeout(() => activeInput.focus(), 50);
             } else {
                 setTimeout(() => confirmBtn.focus(), 50);
             }
@@ -355,7 +390,7 @@ const AuthService = {
     ensureActionDialog() {
         let dialog = document.getElementById('appActionDialog');
         // Rebuild if an older shell is still in the page (missing enterprise layout hooks)
-        if (dialog && dialog.dataset.dialogVersion !== '3') {
+        if (dialog && dialog.dataset.dialogVersion !== '5') {
             dialog.remove();
             dialog = null;
         }
@@ -366,10 +401,10 @@ const AuthService = {
         dialog = document.createElement('dialog');
         dialog.id = 'appActionDialog';
         dialog.className = 'modal';
-        dialog.dataset.dialogVersion = '3';
+        dialog.dataset.dialogVersion = '5';
         dialog.innerHTML = `
             <div class="modal-box aad-box max-w-md p-0 overflow-hidden shadow-2xl border border-base-300/60">
-                <form class="aad-form">
+                <form class="aad-form" novalidate>
                     <div class="aad-header px-6 pt-6 pb-4">
                         <div class="flex items-start gap-4">
                             <div data-dialog-icon-shell class="aad-icon-shell w-14 h-14 rounded-full flex items-center justify-center shrink-0 ring-4 bg-primary/12 text-primary ring-primary/15">
@@ -398,6 +433,7 @@ const AuthService = {
                     <div data-dialog-input-wrap class="form-control px-6 mb-1 hidden">
                         <label class="label py-1"><span data-dialog-label class="label-text font-medium">Value</span></label>
                         <input data-dialog-input class="input input-bordered w-full" autocomplete="off">
+                        <textarea data-dialog-textarea class="textarea textarea-bordered w-full hidden leading-relaxed" autocomplete="off"></textarea>
                     </div>
                     <p data-dialog-error class="hidden text-sm text-error px-6 mb-2"></p>
 
@@ -535,11 +571,42 @@ const AuthService = {
         
         if (!this.hasRole(roles)) {
             showNotification('Access Denied', 'You do not have permission to access this page.', 'error');
-            window.location.href = APP_BASE + '/html/dashboard.html';
+            this.redirectToAccessDenied(roles);
             return false;
         }
         
         return true;
+    },
+
+    /**
+     * Get the normal dashboard for the current role.
+     */
+    getDashboardForRole(role) {
+        const roleDashboards = {
+            admin: 'admin/dashboard.html',
+            general_manager: 'admin/dashboard.html',
+            qc_officer: 'qc/dashboard.html',
+            production_staff: 'production/dashboard.html',
+            warehouse_raw: 'warehouse/raw/dashboard.html',
+            warehouse_fg: 'warehouse/fg/dashboard.html',
+            sales_custodian: 'sales/dashboard.html',
+            cashier: 'pos/dashboard.html',
+            purchaser: 'purchasing/dashboard.html',
+            finance_officer: 'finance/dashboard.html'
+        };
+
+        return roleDashboards[role] || 'login.html';
+    },
+
+    redirectToRoleDashboard(role) {
+        window.location.href = APP_BASE + '/html/' + this.getDashboardForRole(role);
+    },
+
+    redirectToAccessDenied(requiredRoles = []) {
+        const roles = Array.isArray(requiredRoles) ? requiredRoles : [requiredRoles];
+        const from = encodeURIComponent(window.location.pathname + window.location.search);
+        const required = encodeURIComponent(roles.filter(Boolean).join(','));
+        window.location.href = APP_BASE + `/html/access-denied.html?from=${from}&required=${required}`;
     },
     
     /**
@@ -555,9 +622,7 @@ const AuthService = {
             'sales_custodian': 'Sales Custodian',
             'cashier': 'Cashier',
             'purchaser': 'Purchaser',
-            'finance_officer': 'Finance Officer',
-            'bookkeeper': 'Bookkeeper',
-            'maintenance_head': 'Maintenance Head'
+            'finance_officer': 'Finance Officer'
         };
         return roleNames[role] || role;
     },

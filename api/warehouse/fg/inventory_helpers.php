@@ -345,6 +345,139 @@ if (!function_exists('fgInventoryEffectiveBaseUnits')) {
     }
 
     /**
+     * Keep a per-delivery record of stock that has left saleable inventory.
+     */
+    function fgDeliveryRecordAllocation(
+        PDO $db,
+        $drId,
+        $drItemId,
+        array $deduction,
+        ?int $batchId = null
+    ) {
+        $stmt = $db->prepare("
+            INSERT INTO delivery_stock_allocations (
+                delivery_receipt_id, delivery_receipt_item_id, inventory_id,
+                product_id, batch_id, quantity_allocated, state, reserved_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 'reserved', NOW())
+            ON DUPLICATE KEY UPDATE
+                quantity_allocated = quantity_allocated + VALUES(quantity_allocated),
+                state = 'reserved',
+                reserved_at = NOW(),
+                updated_at = NOW()
+        ");
+        $stmt->execute([
+            (int) $drId,
+            (int) $drItemId,
+            (int) $deduction['inventory_id'],
+            (int) $deduction['product_id'],
+            $batchId ?: null,
+            (int) $deduction['deducted'],
+        ]);
+    }
+
+    function fgDeliveryMarkInTransit(PDO $db, $drId) {
+        $stmt = $db->prepare("
+            UPDATE delivery_stock_allocations
+            SET state = 'in_transit', dispatched_at = NOW(), updated_at = NOW()
+            WHERE delivery_receipt_id = ?
+              AND state = 'reserved'
+        ");
+        $stmt->execute([(int) $drId]);
+        return $stmt->rowCount();
+    }
+
+    /**
+     * Split accepted and returned quantities across the exact FIFO lots used.
+     */
+    function fgDeliveryCompleteAllocations(PDO $db, $drId) {
+        $items = $db->prepare("
+            SELECT id, COALESCE(quantity_delivered, 0) AS quantity_delivered
+            FROM delivery_receipt_items
+            WHERE delivery_receipt_id = ?
+            ORDER BY id
+        ");
+        $items->execute([(int) $drId]);
+
+        $allocStmt = $db->prepare("
+            SELECT *
+            FROM delivery_stock_allocations
+            WHERE delivery_receipt_item_id = ?
+              AND state <> 'cancelled'
+            ORDER BY id
+            FOR UPDATE
+        ");
+        $update = $db->prepare("
+            UPDATE delivery_stock_allocations
+            SET quantity_delivered = ?,
+                quantity_returned = ?,
+                state = ?,
+                delivered_at = NOW(),
+                returned_at = CASE WHEN ? > 0 THEN NOW() ELSE returned_at END,
+                updated_at = NOW()
+            WHERE id = ?
+        ");
+
+        $summary = ['delivered' => 0, 'returned' => 0];
+        foreach ($items->fetchAll(PDO::FETCH_ASSOC) as $item) {
+            $remainingAccepted = max(0, (int) $item['quantity_delivered']);
+            $allocStmt->execute([(int) $item['id']]);
+            foreach ($allocStmt->fetchAll(PDO::FETCH_ASSOC) as $allocation) {
+                $allocated = (int) $allocation['quantity_allocated'];
+                $accepted = min($remainingAccepted, $allocated);
+                $returned = $allocated - $accepted;
+                $remainingAccepted -= $accepted;
+                $state = $returned <= 0
+                    ? 'delivered'
+                    : ($accepted <= 0 ? 'returned' : 'partially_returned');
+                $update->execute([
+                    $accepted,
+                    $returned,
+                    $state,
+                    $returned,
+                    (int) $allocation['id'],
+                ]);
+                $summary['delivered'] += $accepted;
+                $summary['returned'] += $returned;
+            }
+        }
+        return $summary;
+    }
+
+    /**
+     * A ready delivery can be cancelled before dispatch. Put its reserved stock
+     * back into the same inventory lots.
+     */
+    function fgDeliveryCancelReservations(PDO $db, $drId) {
+        $stmt = $db->prepare("
+            SELECT *
+            FROM delivery_stock_allocations
+            WHERE delivery_receipt_id = ?
+              AND state = 'reserved'
+            ORDER BY id
+            FOR UPDATE
+        ");
+        $stmt->execute([(int) $drId]);
+        $restocked = 0;
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $allocation) {
+            $qty = (int) $allocation['quantity_allocated'];
+            if ($qty > 0) {
+                fgInventoryRestockBaseUnits(
+                    $db,
+                    (int) $allocation['inventory_id'],
+                    $qty
+                );
+                $restocked += $qty;
+            }
+            $db->prepare("
+                UPDATE delivery_stock_allocations
+                SET state = 'cancelled', updated_at = NOW()
+                WHERE id = ?
+            ")->execute([(int) $allocation['id']]);
+        }
+        return $restocked;
+    }
+
+    /**
      * Resolve best FG inventory row for a product/batch (for restock).
      *
      * @return int|null inventory id

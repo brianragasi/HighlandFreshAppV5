@@ -25,7 +25,7 @@
     <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
         <div class="p-4 border-b border-base-300">
             <div class="flex items-center gap-3">
-                <img src="../../images/logo.jpg" alt="Highland Fresh Logo" class="w-10 h-10 rounded-xl object-cover">
+                <img src="../images/logo.jpg" alt="Highland Fresh Logo" class="w-10 h-10 rounded-xl object-cover">
                 <div class="flex-1 min-w-0">
                     <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
                     <p class="text-xs text-base-content/60 truncate">Purchasing Department</p>
@@ -102,7 +102,7 @@
             <section id="emptyState" class="bg-base-100 border border-base-300 rounded-lg p-10 text-center">
                 <i class="fas fa-inbox text-4xl text-base-content/20 mb-3"></i>
                 <p class="font-semibold">Choose a submitted PRS</p>
-                <p class="text-sm text-base-content/60 mt-1">Record 3 supplier quotes per item. The system automatically picks the cheapest valid quote.</p>
+                <p class="text-sm text-base-content/60 mt-1">Collect 3 quotes when possible. If fewer accredited suppliers exist, quote all of them and record the reason for GM review.</p>
             </section>
 
             <section id="workbench" class="hidden space-y-6">
@@ -119,8 +119,8 @@
                         <div class="flex flex-wrap gap-2">
                             <button class="btn btn-outline btn-sm gap-2" onclick="refreshWorkbench()"><i class="fas fa-rotate"></i>Refresh</button>
                             <button id="createPOBtn" class="btn btn-primary btn-sm gap-2" onclick="createPOFromQuotes()" disabled>
-                                <i class="fas fa-file-invoice-dollar"></i>
-                                Create PO
+                                <i class="fas fa-paper-plane"></i>
+                                Create &amp; Send to GM
                             </button>
                         </div>
                     </div>
@@ -168,7 +168,8 @@
 
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
-    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="purchaser,general_manager"></script>
     <script src="../../js/purchasing/purchasing.service.js"></script>
 
     <script>
@@ -306,12 +307,19 @@
             const quotes = canvass.quotes || [];
             const selected = quotes.find(q => Number(q.is_selected) === 1);
             const isManualChoice = canvass.selection_method === 'manual_override';
+            const isLimitedMarket = canvass.selection_method === 'limited_market';
             const itemName = item.ingredient_name || item.mro_item_name || item.item_description || 'Requested item';
             const usedSupplierIds = new Set(quotes.map(q => String(q.supplier_id)));
-            const supplierOptions = suppliers
+            const eligibleSuppliers = item.ingredient_id
+                ? (item.eligible_suppliers || [])
+                : suppliers;
+            const supplierOptions = eligibleSuppliers
                 .filter(s => !usedSupplierIds.has(String(s.id)))
                 .map(s => `<option value="${s.id}">${escapeHtml(s.supplier_name)} (${escapeHtml(s.supplier_code || '')})</option>`)
                 .join('');
+            const limitedMarket = Boolean(item.ingredient_id) && eligibleSuppliers.length > 0 && eligibleSuppliers.length < 3;
+            const requiredQuoteCount = limitedMarket ? eligibleSuppliers.length : 3;
+            const allAvailableQuoted = limitedMarket && quotes.length >= requiredQuoteCount;
             const canAddQuote = canvass.status !== 'cancelled' && supplierOptions !== '';
 
             return `
@@ -320,7 +328,7 @@
                         <div>
                             <div class="flex items-center gap-2 mb-1">
                                 <span class="badge badge-ghost">Line ${index + 1}</span>
-                                <span class="badge ${selected ? 'badge-success' : quotes.length >= 3 ? 'badge-warning' : 'badge-ghost'}">${selected ? (isManualChoice ? 'Purchaser choice' : 'Recommended cheapest') : `${quotes.length}/3 quotes`}</span>
+                                <span class="badge ${selected ? 'badge-success' : quotes.length >= requiredQuoteCount ? 'badge-warning' : 'badge-ghost'}">${selected ? (canvass.selection_method === 'limited_market' ? 'Limited market reviewed' : isManualChoice ? 'Purchaser choice' : 'Recommended cheapest') : `${quotes.length}/${requiredQuoteCount} quotes`}</span>
                             </div>
                             <h3 class="font-bold text-lg">${escapeHtml(itemName)}</h3>
                             <p class="text-sm text-base-content/60">${formatQty(item.quantity)} ${escapeHtml(item.unit || 'units')} requested</p>
@@ -352,13 +360,22 @@
                     </div>
 
                     ${selected ? `
-                        <div class="alert ${isManualChoice ? 'alert-info' : 'alert-success'} py-2 mb-4">
-                            <i class="fas ${isManualChoice ? 'fa-user-check' : 'fa-check-circle'}"></i>
+                        <div class="alert ${isLimitedMarket ? 'alert-warning' : isManualChoice ? 'alert-info' : 'alert-success'} py-2 mb-4">
+                            <i class="fas ${isLimitedMarket ? 'fa-file-signature' : isManualChoice ? 'fa-user-check' : 'fa-check-circle'}"></i>
                             <span>
-                                ${isManualChoice
+                                ${isLimitedMarket
+                                    ? `Limited market accepted for GM review. ${escapeHtml(canvass.selection_reason || '')}`
+                                    : isManualChoice
                                     ? `Purchaser chose ${escapeHtml(selected.supplier_name)} at ${formatCurrency(selected.unit_price)} per ${escapeHtml(item.unit || 'unit')}. Reason: ${escapeHtml(canvass.selection_reason || 'No reason recorded')}.`
                                     : `System recommended cheapest quote: ${escapeHtml(selected.supplier_name)} at ${formatCurrency(selected.unit_price)} per ${escapeHtml(item.unit || 'unit')}.`}
                             </span>
+                        </div>
+                    ` : ''}
+
+                    ${limitedMarket ? `
+                        <div class="alert alert-warning py-3 mb-4">
+                            <i class="fas fa-triangle-exclamation"></i>
+                            <span>Only ${eligibleSuppliers.length} accredited supplier${eligibleSuppliers.length === 1 ? '' : 's'} ${eligibleSuppliers.length === 1 ? 'provides' : 'provide'} this item. Quote ${eligibleSuppliers.length === 1 ? 'that supplier' : 'both suppliers'}, then record why the market is limited. The GM will review this with the PO.</span>
                         </div>
                     ` : ''}
 
@@ -394,7 +411,21 @@
                                 <i class="fas fa-plus"></i>Add Quote
                             </button>
                         </div>
-                    ` : ''}
+                    ` : (!selected && allAvailableQuoted ? `
+                        <button class="btn btn-warning btn-sm gap-2" onclick="confirmLimitedMarket(${canvass.id}, ${eligibleSuppliers.length})">
+                            <i class="fas fa-file-signature"></i>Continue with ${eligibleSuppliers.length} supplier${eligibleSuppliers.length === 1 ? '' : 's'}
+                        </button>
+                    ` : (!selected && eligibleSuppliers.length === 0 && item.ingredient_id ? `
+                        <div class="alert alert-error py-3">
+                            <i class="fas fa-link-slash"></i>
+                            <span>No accredited supplier provides this ingredient. Ask the GM to link at least one supplier.</span>
+                        </div>
+                    ` : (quotes.length < requiredQuoteCount && canvass.status !== 'cancelled' ? `
+                        <div class="alert py-3">
+                            <i class="fas fa-info-circle"></i>
+                            <span>All registered suppliers for this item already have a quote.</span>
+                        </div>
+                    ` : '')))}
                 </article>
             `;
         }
@@ -402,6 +433,7 @@
         function renderQuoteRow(quote, quoteCount, selected, canvass) {
             const isSelected = Number(quote.is_selected) === 1;
             const isManualChoice = canvass.selection_method === 'manual_override';
+            const isLimitedMarket = canvass.selection_method === 'limited_market';
             const canOverride = quoteCount >= 3 && !isSelected;
             return `
                 <tr class="${isSelected ? 'bg-success/5' : ''}">
@@ -412,7 +444,7 @@
                     <td class="text-right font-semibold">${formatCurrency(quote.unit_price)}</td>
                     <td>${parseInt(quote.delivery_days || 0, 10)} day(s)</td>
                     <td>${formatTerms(quote.payment_terms)}</td>
-                    <td>${isSelected ? `<span class="badge ${isManualChoice ? 'badge-info' : 'badge-success'} badge-sm">${isManualChoice ? 'Chosen by Purchaser' : 'Recommended cheapest'}</span>` : '<span class="badge badge-ghost badge-sm">Quoted</span>'}</td>
+                    <td>${isSelected ? `<span class="badge ${isLimitedMarket ? 'badge-warning' : isManualChoice ? 'badge-info' : 'badge-success'} badge-sm">${isLimitedMarket ? 'Limited market choice' : isManualChoice ? 'Chosen by Purchaser' : 'Recommended cheapest'}</span>` : '<span class="badge badge-ghost badge-sm">Quoted</span>'}</td>
                     <td class="text-right">
                         ${canOverride ? `<button class="btn btn-outline btn-xs gap-1" onclick="overrideQuote(${quote.id})"><i class="fas fa-user-check"></i>Use this supplier</button>` : ''}
                         ${!selected && quoteCount < 3 ? '<span class="text-xs text-base-content/50">Need 3 quotes</span>' : ''}
@@ -479,6 +511,29 @@
             }
         }
 
+        async function confirmLimitedMarket(canvassId, supplierCount) {
+            const reason = await AuthService.promptText({
+                title: 'Limited Supplier Market',
+                message: `Only ${supplierCount} accredited supplier${supplierCount === 1 ? ' is' : 's are'} available. Explain why no additional supplier can be canvassed. This goes to the GM with the PO.`,
+                label: 'Purchaser explanation',
+                placeholder: 'Example: Only accredited local supplier for this specialized ingredient',
+                confirmText: 'Save and Continue',
+                icon: 'fa-file-signature',
+                tone: 'warning',
+                minLength: 10,
+                required: true
+            });
+            if (reason === null) return;
+
+            try {
+                await PurchasingService.confirmLimitedSupplierMarket(canvassId, reason);
+                await refreshWorkbench();
+                showToast('Limited-supplier reason saved for GM review', 'success');
+            } catch (error) {
+                showToast(error?.message || 'Could not save the limited-supplier reason', 'error');
+            }
+        }
+
         function getSelectedLines() {
             return (currentPRS?.items || []).map(item => {
                 const selected = (item.canvass?.quotes || []).find(q => Number(q.is_selected) === 1);
@@ -492,7 +547,7 @@
             const total = lines.length;
             const complete = total > 0 && ready === total;
 
-            document.getElementById('progressText').textContent = `${ready} of ${total} line item(s) have an auto-selected cheapest quote.`;
+            document.getElementById('progressText').textContent = `${ready} of ${total} line item(s) are ready for PO creation and GM review.`;
             document.getElementById('createPOBtn').disabled = !complete;
             document.getElementById('progressBand').className = complete
                 ? 'alert bg-success/10 border border-success/30'
@@ -506,15 +561,17 @@
                 return;
             }
             if (lines.some(line => !line.selected)) {
-                showToast('Add 3 supplier quotes for every PRS item. The system will pick the cheapest quote automatically.', 'error');
+                showToast('Finish the supplier review for every PRS item before creating the PO.', 'error');
                 return;
             }
 
+            const supplierCount = new Set(lines.map(line => String(line.selected.supplier_id))).size;
+            const poLabel = supplierCount === 1 ? 'purchase order' : 'separate purchase orders';
             const confirmed = await AuthService.confirmAction({
-                title: 'Create Purchase Order',
-                message: 'Create draft PO records from the auto-selected cheapest quotes?',
-                confirmText: 'Create PO',
-                icon: 'fa-file-invoice-dollar',
+                title: 'Create and Send to GM',
+                message: `This will create ${supplierCount} ${poLabel}, one for each selected supplier, and send ${supplierCount === 1 ? 'it' : 'all of them'} to the General Manager for approval.`,
+                confirmText: 'Create & Send',
+                icon: 'fa-paper-plane',
                 tone: 'primary'
             });
             if (!confirmed) return;
@@ -525,6 +582,7 @@
                 expected_delivery: document.getElementById('expectedDelivery').value || null,
                 payment_terms: document.getElementById('paymentTerms').value,
                 notes: document.getElementById('poNotes').value.trim() || `Created after canvassing ${currentPRS.pr_number}`,
+                submit_for_approval: true,
                 items: lines.map(line => ({
                     purchase_request_item_id: parseInt(line.item.id, 10),
                     supplier_id: parseInt(line.selected.supplier_id, 10),
@@ -536,7 +594,8 @@
             try {
                 const response = await PurchasingService.createPurchaseOrdersFromPR(payload);
                 const created = response?.data?.purchase_orders || [];
-                showToast(`${created.length || 1} draft PO record(s) created`, 'success');
+                const count = created.length || 1;
+                showToast(`${count} ${count === 1 ? 'PO was' : 'POs were'} created and sent to GM`, 'success');
                 setTimeout(() => {
                     window.location.href = 'purchase_orders.html';
                 }, 900);

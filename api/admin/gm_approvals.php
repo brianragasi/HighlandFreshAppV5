@@ -46,7 +46,8 @@ function handleGet($db, $action, $currentUser) {
             $items = buildGmUnifiedQueue($db);
             $stats = buildGmApprovalStats($db);
             // Ensure stats reflect actual items (including server-side fallbacks)
-            $stats['credit_overrides'] = count(array_filter($items, fn($i) => ($i['category'] ?? '') === 'credit'));
+            $stats['sales_orders'] = count(array_filter($items, fn($i) => ($i['category'] ?? '') === 'credit'));
+            $stats['credit_overrides'] = count(array_filter($items, fn($i) => ($i['type'] ?? '') === 'credit_override'));
             $stats['disposals'] = count(array_filter($items, fn($i) => ($i['category'] ?? '') === 'disposal'));
             $stats['procurement'] = count(array_filter($items, fn($i) => ($i['category'] ?? '') === 'procurement'));
             $stats['production_materials'] = count(array_filter($items, fn($i) => ($i['category'] ?? '') === 'production'));
@@ -232,7 +233,7 @@ function handleGet($db, $action, $currentUser) {
 
 /**
  * Aggregate stats aligned with Admin Dashboard Action Center.
- * Categories: all, credit_overrides, disposals, procurement.
+ * Categories: all, sales orders, disposals, procurement, production materials.
  */
 function buildGmApprovalStats(PDO $db): array {
     $stats = [];
@@ -271,29 +272,34 @@ function buildGmApprovalStats(PDO $db): array {
         $stats['disposals'] = 0;
     }
 
-    // Credit overrides = pending sales orders explicitly flagged for GM credit authorization
+    // Every pending Sales Order needs GM authorization. Credit overrides are the
+    // higher-risk subset whose projected balance exceeds the customer's limit.
     try {
+        $stmt = $db->query("SELECT COUNT(*) as count FROM sales_orders WHERE status = 'pending'");
+        $stats['sales_orders'] = (int) $stmt->fetch()['count'];
         $stmt = $db->query("
             SELECT COUNT(*) as count
-            FROM sales_orders
-            WHERE status = 'pending'
+            FROM sales_orders o
+            LEFT JOIN customers c ON c.id = o.customer_id
+            WHERE o.status = 'pending'
+              AND LOWER(COALESCE(o.payment_type, '')) = 'credit'
               AND (
-                notes LIKE '%CREDIT%OVERRIDE%'
-                OR notes LIKE '%credit override%'
-                OR notes LIKE '%GM-CREDIT%'
-              )
+                  COALESCE((
+                      SELECT SUM(dr.total_amount - dr.amount_paid)
+                      FROM delivery_receipts dr
+                      WHERE dr.customer_id = o.customer_id
+                        AND dr.payment_status != 'paid'
+                        AND dr.status NOT IN ('cancelled', 'draft')
+                  ), 0) + COALESCE(o.total_amount, 0)
+              ) > COALESCE(c.credit_limit, 0)
         ");
         $stats['credit_overrides'] = (int) $stmt->fetch()['count'];
-        // Fallback: any pending sales order still counts as credit override work for GM
-        if ($stats['credit_overrides'] === 0) {
-            $stmt = $db->query("SELECT COUNT(*) as count FROM sales_orders WHERE status = 'pending'");
-            $stats['credit_overrides'] = (int) $stmt->fetch()['count'];
-        }
     } catch (Exception $e) {
+        $stats['sales_orders'] = 0;
         $stats['credit_overrides'] = 0;
     }
 
-    $stats['all_queues'] = (int)$stats['credit_overrides']
+    $stats['all_queues'] = (int)$stats['sales_orders']
         + (int)$stats['disposals']
         + (int)$stats['procurement']
         + (int)$stats['production_materials'];
@@ -366,7 +372,15 @@ function fetchApprovalDetail(PDO $db) {
         case 'sales_order':
             $stmt = $db->prepare("
                 SELECT o.*, COALESCE(c.name, o.customer_name) as customer_name,
-                       c.credit_limit, c.current_balance as credit_balance, c.customer_type
+                       c.credit_limit,
+                       COALESCE((
+                           SELECT SUM(dr.total_amount - dr.amount_paid)
+                           FROM delivery_receipts dr
+                           WHERE dr.customer_id = o.customer_id
+                             AND dr.payment_status != 'paid'
+                             AND dr.status NOT IN ('cancelled', 'draft')
+                       ), 0) AS credit_balance,
+                       c.customer_type
                 FROM sales_orders o
                 LEFT JOIN customers c ON c.id = o.customer_id
                 WHERE o.id = ?
@@ -374,21 +388,93 @@ function fetchApprovalDetail(PDO $db) {
             $stmt->execute([$sourceId]);
             $detail = $stmt->fetch(PDO::FETCH_ASSOC);
             if ($detail) {
-                $itemStmt = $db->prepare("SELECT * FROM sales_order_items WHERE order_id = ?");
+                $itemStmt = $db->prepare("
+                    SELECT soi.*,
+                           p.base_unit,
+                           p.box_unit,
+                           COALESCE(p.pieces_per_box, 1) AS pieces_per_box,
+                           CASE
+                               WHEN COALESCE(soi.quantity_boxes, 0) > 0 AND COALESCE(soi.quantity_pieces, 0) > 0
+                                   THEN CONCAT(soi.quantity_boxes, ' ', COALESCE(p.box_unit, 'box'), ' + ',
+                                               soi.quantity_pieces, ' ', COALESCE(p.base_unit, 'piece'),
+                                               IF(soi.quantity_pieces = 1, '', 's'),
+                                               ' (', soi.quantity_ordered, ' ', COALESCE(p.base_unit, 'piece'),
+                                               IF(soi.quantity_ordered = 1, '', 's'), ')')
+                               WHEN COALESCE(soi.quantity_boxes, 0) > 0
+                                   THEN CONCAT(soi.quantity_boxes, ' ', COALESCE(p.box_unit, 'box'),
+                                               IF(soi.quantity_boxes = 1, '', 's'),
+                                               ' (', soi.quantity_ordered, ' ', COALESCE(p.base_unit, 'piece'),
+                                               IF(soi.quantity_ordered = 1, '', 's'), ')')
+                               ELSE CONCAT(soi.quantity_ordered, ' ', COALESCE(p.base_unit, soi.unit_type, 'piece'),
+                                           IF(soi.quantity_ordered = 1, '', 's'))
+                           END AS quantity_display
+                    FROM sales_order_items soi
+                    LEFT JOIN products p ON p.id = soi.product_id
+                    WHERE soi.order_id = ?
+                ");
                 $itemStmt->execute([$sourceId]);
                 $detail['items'] = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
+                foreach ($detail['items'] as &$item) {
+                    $boxes = (int)($item['quantity_boxes'] ?? 0);
+                    $pieces = (int)($item['quantity_pieces'] ?? 0);
+                    $total = (int)($item['quantity_ordered'] ?? 0);
+                    $baseUnit = (string)($item['base_unit'] ?? $item['unit_type'] ?? 'piece');
+                    $boxUnit = (string)($item['box_unit'] ?? 'box');
+                    $baseLabel = approvalUnitLabel($baseUnit, $total);
+                    $parts = [];
+
+                    if ($boxes > 0) {
+                        $parts[] = $boxes . ' ' . approvalUnitLabel($boxUnit, $boxes);
+                    }
+                    if ($pieces > 0) {
+                        $parts[] = $pieces . ' ' . approvalUnitLabel($baseUnit, $pieces);
+                    }
+
+                    $item['quantity_display'] = $parts
+                        ? implode(' + ', $parts) . " ({$total} {$baseLabel})"
+                        : "{$total} {$baseLabel}";
+                }
+                unset($item);
             }
             break;
 
         case 'disposal':
             $stmt = $db->prepare("
-                SELECT d.*, u.full_name as initiated_by_name
+                SELECT d.*, u.full_name as initiated_by_name,
+                       COALESCE(
+                           NULLIF(d.unit_cost, 0),
+                           NULLIF(p.cost_price, 0),
+                           NULLIF(p.unit_price, 0),
+                           NULLIF(p.selling_price, 0),
+                           0
+                       ) AS display_unit_cost,
+                       COALESCE(
+                           NULLIF(d.total_value, 0),
+                           d.quantity * COALESCE(
+                               NULLIF(d.unit_cost, 0),
+                               NULLIF(p.cost_price, 0),
+                               NULLIF(p.unit_price, 0),
+                               NULLIF(p.selling_price, 0)
+                           ),
+                           0
+                       ) AS display_total_value,
+                       CASE
+                           WHEN d.notes LIKE '%catalog price%' THEN 1
+                           WHEN COALESCE(NULLIF(d.unit_cost, 0), NULLIF(p.cost_price, 0), 0) > 0 THEN 0
+                           WHEN COALESCE(p.unit_price, p.selling_price, 0) > 0 THEN 1
+                           ELSE 0
+                       END AS value_is_estimate
                 FROM disposals d
                 LEFT JOIN users u ON u.id = d.initiated_by
+                LEFT JOIN products p ON p.id = d.product_id
                 WHERE d.id = ?
             ");
             $stmt->execute([$sourceId]);
             $detail = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($detail) {
+                $detail['unit_cost'] = $detail['display_unit_cost'];
+                $detail['total_value'] = $detail['display_total_value'];
+            }
             break;
 
         case 'purchase_order':
@@ -435,6 +521,16 @@ function fetchApprovalDetail(PDO $db) {
     Response::success($detail);
 }
 
+function approvalUnitLabel(string $unit, int $quantity): string {
+    if ($quantity === 1 || substr(strtolower($unit), -1) === 's') {
+        return $unit;
+    }
+    if (strtolower($unit) === 'box') {
+        return 'boxes';
+    }
+    return $unit . 's';
+}
+
 function processApprovalDecision(PDO $db, string $decision, $currentUser) {
     $input = json_decode(file_get_contents('php://input'), true);
     $type = $input['type'] ?? '';
@@ -455,6 +551,15 @@ function processApprovalDecision(PDO $db, string $decision, $currentUser) {
             case 'credit':
             case 'credit_override':
             case 'sales_order':
+                $orderCheck = $db->prepare("
+                    SELECT COUNT(*)
+                    FROM sales_order_items
+                    WHERE order_id = ? AND quantity_ordered > 0
+                ");
+                $orderCheck->execute([$sourceId]);
+                if ((int)$orderCheck->fetchColumn() === 0) {
+                    throw new Exception('A Sales Order with no items cannot be approved.');
+                }
                 $stmt = $db->prepare("
                     UPDATE sales_orders
                     SET status = ?, approved_by = ?, approved_at = ?,
@@ -465,6 +570,16 @@ function processApprovalDecision(PDO $db, string $decision, $currentUser) {
                 if ($stmt->rowCount() === 0) {
                     throw new Exception('Order not found or already processed');
                 }
+                $historyStmt = $db->prepare("
+                    INSERT INTO sales_order_status_history (order_id, status, notes, changed_by)
+                    VALUES (?, ?, ?, ?)
+                ");
+                $historyStmt->execute([
+                    $sourceId,
+                    $newStatus,
+                    $remarks !== '' ? $remarks : 'GM ' . $decision,
+                    $gmId,
+                ]);
                 break;
 
             case 'disposal':
@@ -570,7 +685,15 @@ function buildGmUnifiedQueue(PDO $db): array {
         $stmt = $db->query("
             SELECT o.id, o.order_number, o.total_amount, o.created_at, o.notes, o.payment_type,
                    COALESCE(c.name, o.customer_name) as customer_name,
-                   COALESCE(c.customer_type, o.customer_type) as customer_type
+                   COALESCE(c.customer_type, o.customer_type) as customer_type,
+                   COALESCE(c.credit_limit, 0) AS credit_limit,
+                   COALESCE((
+                       SELECT SUM(dr.total_amount - dr.amount_paid)
+                       FROM delivery_receipts dr
+                       WHERE dr.customer_id = o.customer_id
+                         AND dr.payment_status != 'paid'
+                         AND dr.status NOT IN ('cancelled', 'draft')
+                   ), 0) AS current_balance
             FROM sales_orders o
             LEFT JOIN customers c ON c.id = o.customer_id
             WHERE o.status = 'pending'
@@ -578,15 +701,21 @@ function buildGmUnifiedQueue(PDO $db): array {
         ");
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $on = $row['order_number'] ?: ('SO-' . $row['id']);
+            $needsCreditOverride = strtolower((string)$row['payment_type']) === 'credit'
+                && ((float)$row['current_balance'] + (float)$row['total_amount']) > (float)$row['credit_limit'];
             $items[] = [
                 'id' => 'so-' . $row['id'],
                 'source_id' => (int)$row['id'],
                 'category' => 'credit',
-                'type' => 'credit_override',
-                'priority' => 'critical',
+                'type' => $needsCreditOverride ? 'credit_override' : 'sales_order',
+                'priority' => $needsCreditOverride ? 'critical' : 'high',
                 'reference' => $on,
-                'title' => 'Order #' . $on . ' — Requires Credit Override',
-                'detail' => ($row['customer_name'] ?: 'Customer') . ' · Credit authorization required before fulfillment',
+                'title' => $needsCreditOverride
+                    ? 'Order #' . $on . ' — Requires Credit Override'
+                    : 'Order #' . $on . ' — Pending GM Approval',
+                'detail' => ($row['customer_name'] ?: 'Customer') . ($needsCreditOverride
+                    ? ' · Credit limit override required before fulfillment'
+                    : ' · Sales order waiting for GM approval'),
                 'amount' => (float)$row['total_amount'],
                 'meta' => '₱' . number_format((float)$row['total_amount'], 2),
                 'customer_name' => $row['customer_name'],
@@ -601,14 +730,32 @@ function buildGmUnifiedQueue(PDO $db): array {
     // Disposals
     try {
         $stmt = $db->query("
-            SELECT id, disposal_code, product_name, total_value, disposal_reason,
-                   quantity, unit, initiated_at, status
-            FROM disposals
-            WHERE status = 'pending'
-            ORDER BY initiated_at ASC
+            SELECT d.id, d.disposal_code, d.product_name, d.total_value, d.disposal_reason,
+                   d.quantity, d.unit, d.initiated_at, d.status, d.notes,
+                   COALESCE(
+                       NULLIF(d.total_value, 0),
+                       d.quantity * COALESCE(
+                           NULLIF(d.unit_cost, 0),
+                           NULLIF(p.cost_price, 0),
+                           NULLIF(p.unit_price, 0),
+                           NULLIF(p.selling_price, 0)
+                       ),
+                       0
+                   ) AS display_total_value,
+                   CASE
+                       WHEN d.notes LIKE '%catalog price%' THEN 1
+                       WHEN COALESCE(NULLIF(d.unit_cost, 0), NULLIF(p.cost_price, 0), 0) > 0 THEN 0
+                       WHEN COALESCE(p.unit_price, p.selling_price, 0) > 0 THEN 1
+                       ELSE 0
+                   END AS value_is_estimate
+            FROM disposals d
+            LEFT JOIN products p ON p.id = d.product_id
+            WHERE d.status = 'pending'
+            ORDER BY d.initiated_at ASC
         ");
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $code = $row['disposal_code'] ?: ('DISP-' . $row['id']);
+            $lossValue = (float)($row['display_total_value'] ?? 0);
             // Extract trailing number for display like #442
             $short = $code;
             if (preg_match('/(\d{3,})$/', $code, $m)) {
@@ -623,8 +770,10 @@ function buildGmUnifiedQueue(PDO $db): array {
                 'reference' => $code,
                 'title' => 'Disposal Request ' . $short . ' — Pending Signature',
                 'detail' => trim(($row['product_name'] ?? 'Inventory') . ' · ' . ($row['disposal_reason'] ?? 'Awaiting GM approval')),
-                'amount' => (float)($row['total_value'] ?? 0),
-                'meta' => $row['total_value'] !== null ? '₱' . number_format((float)$row['total_value'], 2) : null,
+                'amount' => $lossValue,
+                'meta' => $lossValue > 0
+                    ? (($row['value_is_estimate'] ?? false) ? 'Est. ' : '') . '₱' . number_format($lossValue, 2)
+                    : 'Cost not recorded',
                 'quantity' => $row['quantity'],
                 'unit' => $row['unit'],
                 'product_name' => $row['product_name'],

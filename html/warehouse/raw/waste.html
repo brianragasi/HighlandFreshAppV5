@@ -133,6 +133,7 @@
                     <span class="label-text mb-1 font-semibold text-[#17211b]">Reason</span>
                     <select id="wasteReasonCategory"
                         class="select select-bordered rounded-lg border-[#dfe7e2] bg-white text-sm focus:border-[#1f7a4d]">
+                        <option value="">Select reason...</option>
                         <option value="spoiled">Spoiled</option>
                         <option value="expired">Expired</option>
                         <option value="damaged">Damaged after receiving</option>
@@ -217,7 +218,8 @@
 
     <script src="../../../js/vendor/axios.min.js"></script>
     <script src="../../../js/config/api.js"></script>
-    <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_raw,general_manager"></script>
     <script src="../../../js/warehouse/raw.service.js"></script>
     <script src="../../../js/warehouse/sidebar.stats.js"></script>
     <script>window.WAREHOUSE_RAW_ACTIVE_PAGE = "waste";</script>
@@ -228,6 +230,7 @@
         let reports = { wasted: [], expired: [], rejected: [], spoiled: [] };
         let activeTab = 'waste';
         let evidenceFile = null;
+        let lastSelectedWasteBatch = '';
 
         const EVIDENCE_REQUIRED_REASONS = new Set(['damaged', 'contaminated', 'spoiled', 'handling_loss']);
         const DEFAULT_REASON_DETAILS = {
@@ -265,8 +268,19 @@
             wasteItems = response?.data?.items || [];
             const select = document.getElementById('wasteItem');
             select.innerHTML = '<option value="">Select item...</option>' + wasteItems.map(item =>
-                `<option value="${item.item_type}:${item.item_id}">${item.item_code} - ${item.item_name} (${parseFloat(item.current_stock).toLocaleString()} ${item.unit})</option>`
+                `<option value="${item.item_type}:${item.item_id}">${formatWasteItemLabel(item)}</option>`
             ).join('');
+        }
+
+        function formatWasteItemLabel(item) {
+            const usable = parseFloat(item.current_stock || 0);
+            const disposable = parseFloat(item.disposal_stock || usable || 0);
+            const unit = item.unit || '';
+            const prefix = `${item.item_code} - ${item.item_name}`;
+            if (Math.abs(disposable - usable) > 0.0005) {
+                return `${prefix} (${usable.toLocaleString()} ${unit} usable; ${disposable.toLocaleString()} ${unit} physical)`;
+            }
+            return `${prefix} (${usable.toLocaleString()} ${unit})`;
         }
 
         async function loadReports() {
@@ -289,6 +303,10 @@
             const value = document.getElementById('wasteItem').value;
             const batchSelect = document.getElementById('wasteBatch');
             const help = document.getElementById('batchHelpText');
+            const quantityInput = document.getElementById('wasteQuantity');
+            lastSelectedWasteBatch = '';
+            quantityInput.value = '';
+            quantityInput.max = '';
             batchSelect.innerHTML = '<option value="">Select batch...</option>';
             if (help) help.textContent = '';
             if (!value) return;
@@ -297,15 +315,84 @@
             const response = await WarehouseRawService.getWasteBatches(itemType, itemId);
             const batches = response?.data?.batches || [];
             if (batches.length === 0) {
-                batchSelect.innerHTML = '<option value="item_level">No batch record - deduct from item stock</option>';
-                if (help) help.textContent = 'This item has stock but no active batch record, so waste will be recorded at item level.';
                 const item = wasteItems.find(row => row.item_type === itemType && String(row.item_id) === String(itemId));
-                document.getElementById('wasteQuantity').max = item?.current_stock || '';
+                const maxStock = item?.current_stock || '';
+                batchSelect.innerHTML = `<option value="item_level" data-max="${maxStock}">No batch record - deduct from item stock</option>`;
+                if (help) help.textContent = 'This item has stock but no active batch record, so waste will be recorded at item level.';
+                quantityInput.max = maxStock;
                 return;
             }
             batchSelect.innerHTML += batches.map(batch =>
-                `<option value="${batch.batch_id}" data-max="${batch.remaining_quantity}">${batch.batch_code} - ${parseFloat(batch.remaining_quantity).toLocaleString()} ${batch.unit}${batch.expiry_date ? ` - Exp ${formatDate(batch.expiry_date)}` : ''}</option>`
+                `<option value="${batch.batch_id}"
+                    data-max="${batch.remaining_quantity}"
+                    data-expired="${Number(batch.is_expired || 0)}"
+                    data-status="${batch.status || ''}"
+                    data-expiry-date="${batch.expiry_date || ''}"
+                    data-unit="${batch.unit || ''}">${formatWasteBatchLabel(batch)}</option>`
             ).join('');
+            if (help) {
+                help.textContent = 'Waste can include expired physical batches. Usable stock excludes expired batches.';
+            }
+        }
+
+        function isDefaultReasonDetail(value) {
+            const text = (value || '').trim();
+            return Object.values(DEFAULT_REASON_DETAILS).some(defaultText => defaultText === text);
+        }
+
+        function setWasteReason(category, detail) {
+            document.getElementById('wasteReasonCategory').value = category;
+            document.getElementById('wasteReason').value = detail || DEFAULT_REASON_DETAILS[category] || '';
+            updateEvidenceRequiredState();
+        }
+
+        function applySelectedBatchDefaults({ forceReason = false } = {}) {
+            const batchSelect = document.getElementById('wasteBatch');
+            const selected = batchSelect.selectedOptions[0];
+            const quantityInput = document.getElementById('wasteQuantity');
+            const help = document.getElementById('batchHelpText');
+
+            if (!selected || !selected.value) {
+                quantityInput.max = '';
+                lastSelectedWasteBatch = '';
+                return;
+            }
+
+            const selectedValue = selected.value;
+            const maxQty = selected.dataset.max || '';
+            const batchChanged = selectedValue !== lastSelectedWasteBatch;
+            quantityInput.max = maxQty;
+            if (maxQty && (batchChanged || !quantityInput.value || parseFloat(quantityInput.value) <= 0)) {
+                quantityInput.value = maxQty;
+            }
+
+            const reasonSelect = document.getElementById('wasteReasonCategory');
+            const reasonInput = document.getElementById('wasteReason');
+            const reasonCanBeReplaced = !reasonInput.value.trim()
+                || isDefaultReasonDetail(reasonInput.value)
+                || reasonSelect.value === 'spoiled';
+
+            if (selected.dataset.expired === '1' && (forceReason || reasonCanBeReplaced)) {
+                setWasteReason('expired', DEFAULT_REASON_DETAILS.expired);
+                if (help) {
+                    help.textContent = 'Expired batch selected. Quantity was filled with the full remaining batch; edit it only for partial disposal.';
+                }
+            } else if (help && selectedValue === 'item_level') {
+                help.textContent = 'No batch record was found. Quantity is limited to the item stock on file.';
+            }
+
+            lastSelectedWasteBatch = selectedValue;
+        }
+
+        function formatWasteBatchLabel(batch) {
+            const qty = parseFloat(batch.remaining_quantity || 0).toLocaleString();
+            const unit = batch.unit || '';
+            const expiry = batch.expiry_date ? ` - Exp ${formatDate(batch.expiry_date)}` : '';
+            const expired = Number(batch.is_expired || 0) === 1 ? ' [Expired]' : '';
+            const status = batch.status && !['available', 'partially_used'].includes(batch.status)
+                ? ` [${batch.status}]`
+                : '';
+            return `${batch.batch_code} - ${qty} ${unit}${expiry}${expired}${status}`;
         }
 
         async function applyWastePrefillFromQuery() {
@@ -332,6 +419,7 @@
                 if (maxQty) {
                     document.getElementById('wasteQuantity').value = maxQty;
                 }
+                applySelectedBatchDefaults({ forceReason: true });
             }
 
             const reasonCategory = params.get('reason_category');
@@ -350,6 +438,7 @@
             document.getElementById('wasteForm').reset();
             document.getElementById('wasteDate').value = new Date().toISOString().slice(0, 10);
             document.getElementById('wasteBatch').innerHTML = '<option value="">Select item first...</option>';
+            lastSelectedWasteBatch = '';
             clearEvidencePhoto();
             updateEvidenceRequiredState();
             document.getElementById('wasteModal').showModal();
@@ -402,8 +491,7 @@
         }
 
         document.getElementById('wasteBatch').addEventListener('change', () => {
-            const selected = document.getElementById('wasteBatch').selectedOptions[0];
-            document.getElementById('wasteQuantity').max = selected?.dataset?.max || '';
+            applySelectedBatchDefaults();
         });
 
         document.getElementById('wasteForm').addEventListener('submit', async (event) => {
@@ -419,8 +507,8 @@
             const btn = document.getElementById('saveWasteBtn');
             btn.disabled = true;
 
-            if (!itemType || !itemId || !batchValue || !quantity || parseFloat(quantity) <= 0 || !reason) {
-                showToast('Choose an item, batch, quantity, and reason before saving waste', 'error');
+            if (!itemType || !itemId || !batchValue || !quantity || parseFloat(quantity) <= 0 || !reasonCategory || !reason) {
+                showToast('Choose an item, batch, quantity, reason, and details before saving waste', 'error');
                 btn.disabled = false;
                 return;
             }
@@ -482,7 +570,7 @@
 
             head.innerHTML = '<tr><th>Code</th><th>Item</th><th>Batch</th><th>Qty</th><th>Reason</th><th>Date</th><th>Status</th><th>Evidence</th></tr>';
             body.innerHTML = rows.length ? rows.map(r => {
-                const hasEvidence = !!r.evidence_photo_path;
+                const hasEvidence = !!r.evidence_photo_path && Number(r.evidence_available || 0) === 1;
                 return `<tr>
                     <td class="font-mono text-xs">${r.waste_code}</td>
                     <td>${r.item_name}</td>

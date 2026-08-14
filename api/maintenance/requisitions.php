@@ -2,7 +2,7 @@
 /**
  * Highland Fresh System - Maintenance Requisitions API
  * 
- * Handles MRO part requests from Maintenance to Warehouse
+ * Handles MRO part requests from Warehouse Raw
  * Requires GM approval before warehouse fulfills
  * 
  * GET    - List requisitions / Get single requisition
@@ -15,8 +15,8 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 
-// Require Maintenance Head, Warehouse, or GM role
-$currentUser = Auth::requireRole(['maintenance_head', 'warehouse_raw', 'general_manager']);
+// Warehouse Raw submits requests; the GM reviews them.
+$currentUser = Auth::requireRole(['warehouse_raw', 'general_manager']);
 
 try {
     $db = Database::getInstance()->getConnection();
@@ -135,9 +135,9 @@ try {
             break;
             
         case 'POST':
-            // Create new requisition - Maintenance Head only
-            if ($currentUser['role'] !== 'maintenance_head') {
-                Response::forbidden('Only Maintenance Head can create requisitions');
+            // Warehouse Raw owns MRO stock requests.
+            if ($currentUser['role'] !== 'warehouse_raw') {
+                Response::forbidden('Only Warehouse Raw can create MRO requisitions');
             }
             
             $repairId = getParam('repair_id');

@@ -176,21 +176,21 @@ function updateGradingStandard($id) {
 function deleteGradingStandard($id) {
     global $pdo;
     
-    // Check if used in any milk deliveries
-    $usageStmt = $pdo->prepare("SELECT COUNT(*) as count FROM daily_raw_milk_inventory WHERE milk_grade_id = ?");
-    $usageStmt->execute([$id]);
-    $usage = $usageStmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($usage['count'] > 0) {
-        // Soft delete
-        $stmt = $pdo->prepare("UPDATE milk_grading_standards SET status = 'inactive', updated_at = NOW() WHERE id = ?");
-        $stmt->execute([$id]);
-        Response::success(['message' => 'Grading standard deactivated (has usage history)']);
-    } else {
-        $stmt = $pdo->prepare("DELETE FROM milk_grading_standards WHERE id = ?");
-        $stmt->execute([$id]);
-        Response::success(['message' => 'Grading standard deleted']);
+    $checkStmt = $pdo->prepare("SELECT id, status FROM milk_grading_standards WHERE id = ?");
+    $checkStmt->execute([$id]);
+    $standard = $checkStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$standard) {
+        Response::error('Grading standard not found', 404);
     }
+
+    if ($standard['status'] === 'inactive') {
+        Response::success(['message' => 'Grading standard is already archived']);
+    }
+
+    $stmt = $pdo->prepare("UPDATE milk_grading_standards SET status = 'inactive', updated_at = NOW() WHERE id = ?");
+    $stmt->execute([$id]);
+    Response::success(['message' => 'Grading standard archived']);
 }
 
 // ==================== TEST PARAMETERS ====================
@@ -329,10 +329,22 @@ function updateParameter($id) {
 function deleteParameter($id) {
     global $pdo;
     
-    $stmt = $pdo->prepare("DELETE FROM qc_test_parameters WHERE id = ?");
+    $checkStmt = $pdo->prepare("SELECT id, status FROM qc_test_parameters WHERE id = ?");
+    $checkStmt->execute([$id]);
+    $parameter = $checkStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$parameter) {
+        Response::error('Parameter not found', 404);
+    }
+
+    if ($parameter['status'] === 'inactive') {
+        Response::success(['message' => 'Parameter is already archived']);
+    }
+
+    $stmt = $pdo->prepare("UPDATE qc_test_parameters SET status = 'inactive', updated_at = NOW() WHERE id = ?");
     $stmt->execute([$id]);
     
-    Response::success(['message' => 'Parameter deleted']);
+    Response::success(['message' => 'Parameter archived']);
 }
 
 // ==================== CCP STANDARDS ====================
@@ -476,19 +488,19 @@ function updateCcpStandard($id) {
 function deleteCcpStandard($id) {
     global $pdo;
     
-    // Check if used in CCP logs
-    $usageStmt = $pdo->prepare("SELECT COUNT(*) as count FROM ccp_logs WHERE ccp_id = ?");
-    $usageStmt->execute([$id]);
-    $usage = $usageStmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($usage['count'] > 0) {
-        // Soft delete
-        $stmt = $pdo->prepare("UPDATE ccp_standards SET status = 'inactive', updated_at = NOW() WHERE id = ?");
-        $stmt->execute([$id]);
-        Response::success(['message' => 'CCP standard deactivated (has log history)']);
-    } else {
-        $stmt = $pdo->prepare("DELETE FROM ccp_standards WHERE id = ?");
-        $stmt->execute([$id]);
-        Response::success(['message' => 'CCP standard deleted']);
+    $checkStmt = $pdo->prepare("SELECT id, status FROM ccp_standards WHERE id = ?");
+    $checkStmt->execute([$id]);
+    $standard = $checkStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$standard) {
+        Response::error('CCP standard not found', 404);
     }
+
+    if ($standard['status'] === 'inactive') {
+        Response::success(['message' => 'CCP standard is already archived']);
+    }
+
+    $stmt = $pdo->prepare("UPDATE ccp_standards SET status = 'inactive', updated_at = NOW() WHERE id = ?");
+    $stmt->execute([$id]);
+    Response::success(['message' => 'CCP standard archived']);
 }

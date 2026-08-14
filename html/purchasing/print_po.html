@@ -250,12 +250,12 @@
                     <img src="../../highland_fresh_logo.png" alt="Highland Fresh Logo" class="brand-logo">
                     <div>
                         <h1>Highland Fresh Dairy</h1>
-                        <p>Purchase Order Document</p>
+                        <p id="brandDocumentLabel">Electronic Purchase Order Preview</p>
                         <p>Purchasing Department</p>
                     </div>
                 </div>
                 <div class="doc-title">
-                    <h2>Purchase Order</h2>
+                    <h2>Electronic Purchase Order</h2>
                     <div class="meta">
                         <div>PO #: <span id="poNumber">-</span></div>
                         <div>Date: <span id="poDate">-</span></div>
@@ -289,6 +289,7 @@
                         <p>Requested By: <strong id="requestedBy">-</strong></p>
                         <p>Prepared By: <strong id="preparedBy">-</strong></p>
                         <p>Approved By: <strong id="approvedBy">-</strong></p>
+                        <p>Approved On: <span id="approvedAt">-</span></p>
                     </div>
                     <div class="card">
                         <h3>Reference</h3>
@@ -328,6 +329,7 @@
                     </div>
 
                     <div class="note" id="notesBlock"></div>
+                    <div class="note" id="approvalRemarksBlock"></div>
                 </div>
 
                 <div class="signatures">
@@ -350,7 +352,8 @@
 
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
-    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="purchaser,general_manager"></script>
     <script src="../../js/purchasing/purchasing.service.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
@@ -415,6 +418,7 @@
                 document.getElementById('requestedBy').textContent = requestedByName || '-';
                 document.getElementById('preparedBy').textContent = preparedByName || '-';
                 document.getElementById('approvedBy').textContent = approvedByName || '-';
+                document.getElementById('approvedAt').textContent = formatDate(po.approved_at) || '-';
                 document.getElementById('requestedBySignature').textContent = requestedByName ? `${requestedByName} / Requested By` : 'Requested By';
                 document.getElementById('preparedBySignature').textContent = preparedByName ? `${preparedByName} / Prepared By` : 'Prepared By';
                 document.getElementById('approvedBySignature').textContent = approvedByName ? `${approvedByName} / Approved By` : 'Approved By';
@@ -422,6 +426,9 @@
 
                 const printableStatuses = ['approved', 'ordered', 'partial_received', 'received', 'closed'];
                 const canPrint = printableStatuses.includes(po.status);
+                document.getElementById('brandDocumentLabel').textContent = canPrint
+                    ? 'Approved Electronic Purchase Order'
+                    : 'Electronic Purchase Order Preview';
                 if (!canPrint) {
                     document.querySelector('.actions .btn-primary')?.setAttribute('disabled', 'disabled');
                 }
@@ -453,10 +460,15 @@
 
                 const notes = (po.notes || '').trim();
                 if (!canPrint) {
-                    const warning = 'Preview only: PO is pending finalization and cannot be printed yet.';
+                    const warning = 'Preview only: PO is awaiting GM approval and cannot be printed yet.';
                     document.getElementById('notesBlock').textContent = notes ? `${warning} Notes: ${notes}` : warning;
                 } else if (notes) {
                     document.getElementById('notesBlock').textContent = `Notes: ${notes}`;
+                }
+
+                const approvalRemarks = (po.approval_remarks || '').trim();
+                if (approvalRemarks && canPrint) {
+                    document.getElementById('approvalRemarksBlock').textContent = `GM Decision Note: ${approvalRemarks}`;
                 }
             } catch (error) {
                 document.getElementById('itemsBody').innerHTML = '<tr><td colspan="9" class="right">Failed to load PO</td></tr>';
@@ -475,7 +487,7 @@
         function formatPOStatus(status) {
             const labels = {
                 draft: 'Draft',
-                pending: 'Pending Finalization',
+                pending: 'Awaiting GM Approval',
                 approved: 'Approved',
                 rejected: 'Rejected',
                 partial_received: 'Partially Received',

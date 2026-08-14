@@ -383,7 +383,8 @@
     <script src="../../../js/vendor/axios.min.js"></script>
     <script src="../../../js/vendor/html5-qrcode.min.js"></script>
     <script src="../../../js/config/api.js"></script>
-    <script src="../../../js/config/auth.js"></script>
+    <script src="../../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_fg,general_manager"></script>
     <script src="../../../js/utils/units.js?v=20260712"></script>
     <script src="../../../js/warehouse/fg.service.js"></script>
     
@@ -404,6 +405,16 @@
         /** Ordered/required qty for a DR line item (supports quantity or quantity_ordered). */
         function getRequiredQtyForItem(item) {
             return parseInt(item.quantity_ordered ?? item.quantity, 10) || 0;
+        }
+
+        function getPickProgress() {
+            const lines = currentDR?.items || [];
+            const required = lines.reduce((sum, line) => sum + getRequiredQtyForItem(line), 0);
+            const picked = lines.reduce((sum, line) => sum + getScannedQtyForProduct(line.product_id), 0);
+            const exact = lines.length > 0 && lines.every(line =>
+                getScannedQtyForProduct(line.product_id) === getRequiredQtyForItem(line)
+            );
+            return { required, picked, remaining: Math.max(0, required - picked), exact };
         }
 
         /** Remaining units still allowed for a product (never negative). */
@@ -699,15 +710,22 @@
         }
         
         function updateButtonState() {
+            const button = document.getElementById('btnConfirmRelease');
             const btnText = document.getElementById('btnConfirmText');
-            const btnIcon = document.getElementById('btnConfirmRelease').querySelector('i');
+            const btnIcon = button.querySelector('i');
             
             if (currentDR && currentDR.status === 'picking') {
-                btnText.textContent = 'Generate DR';
+                const progress = getPickProgress();
+                btnText.textContent = progress.exact ? 'Generate DR' : `Pick ${progress.remaining} more`;
                 btnIcon.className = 'fas fa-file-invoice';
+                button.disabled = !progress.exact;
+                button.title = progress.exact
+                    ? 'Generate the Delivery Receipt'
+                    : 'Pick every ordered unit before generating the Delivery Receipt';
             } else {
                 btnText.textContent = 'Confirm Release';
                 btnIcon.className = 'fas fa-truck';
+                button.disabled = scannedItems.length === 0;
             }
         }
         
@@ -1164,10 +1182,9 @@
             `;
             
             document.getElementById('scannedCount').textContent = `${scannedItems.length} items (${grandTotalPieces} pcs)`;
-            document.getElementById('btnConfirmRelease').disabled = false;
-            
             // Update DR summary to show progress
             updateDRSummaryProgress();
+            updateButtonState();
         }
         
         function removeScannedItem(index) {
@@ -1255,6 +1272,13 @@
                     if (scanned > required) {
                         blockOverScan(
                             `Cannot exceed ordered quantity for ${line.product_name} (${scanned}/${required}). Remove excess scans first.`
+                        );
+                        return;
+                    }
+                    if (scanned < required) {
+                        showToast(
+                            `Picking is incomplete for ${line.product_name}: picked ${scanned} of ${required}.`,
+                            'warning'
                         );
                         return;
                     }

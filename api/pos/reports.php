@@ -173,8 +173,8 @@ function handleGet($db, $action, $currentUser) {
                     COUNT(*) as count,
                     COALESCE(SUM(amount_collected), 0) as amount
                 FROM payment_collections 
-                WHERE DATE(collected_at) = ?
-                AND status = 'confirmed'
+                WHERE DATE(COALESCE(cleared_at, collected_at)) = ?
+                AND status IN ('confirmed', 'cleared')
                 GROUP BY payment_method
             ");
             $collStmt->execute([$date]);
@@ -279,9 +279,9 @@ function handleGet($db, $action, $currentUser) {
             $collectionsCashStmt = $db->prepare("
                 SELECT COALESCE(SUM(amount_collected), 0) as total
                 FROM payment_collections 
-                WHERE DATE(collected_at) = ?
+                WHERE DATE(COALESCE(cleared_at, collected_at)) = ?
                 AND payment_method = 'cash'
-                AND status = 'confirmed'
+                AND status IN ('confirmed', 'cleared')
             ");
             $collectionsCashStmt->execute([$date]);
             $collectionsCash = floatval($collectionsCashStmt->fetchColumn());
@@ -325,9 +325,9 @@ function handleGet($db, $action, $currentUser) {
                     payment_method,
                     COALESCE(SUM(amount_collected), 0) as total
                 FROM payment_collections 
-                WHERE DATE(collected_at) = ?
+                WHERE DATE(COALESCE(cleared_at, collected_at)) = ?
                 AND payment_method != 'cash'
-                AND status = 'confirmed'
+                AND status IN ('confirmed', 'cleared')
                 GROUP BY payment_method
             ");
             $nonCashCollStmt->execute([$date]);
@@ -377,9 +377,9 @@ function handleGet($db, $action, $currentUser) {
                     u.last_name as collected_by_last_name
                 FROM payment_collections pc
                 LEFT JOIN users u ON pc.collected_by = u.id
-                WHERE DATE(pc.collected_at) BETWEEN ? AND ?
-                AND pc.status = 'confirmed'
-                ORDER BY pc.collected_at ASC
+                WHERE DATE(COALESCE(pc.cleared_at, pc.collected_at)) BETWEEN ? AND ?
+                AND pc.status IN ('confirmed', 'cleared')
+                ORDER BY COALESCE(pc.cleared_at, pc.collected_at) ASC
             ");
             $stmt->execute([$fromDate, $toDate]);
             $collections = $stmt->fetchAll();
@@ -406,13 +406,13 @@ function handleGet($db, $action, $currentUser) {
             // Daily breakdown
             $dailyStmt = $db->prepare("
                 SELECT 
-                    DATE(collected_at) as collection_date,
+                    DATE(COALESCE(cleared_at, collected_at)) as collection_date,
                     COUNT(*) as count,
                     SUM(amount_collected) as amount
                 FROM payment_collections 
-                WHERE DATE(collected_at) BETWEEN ? AND ?
-                AND status = 'confirmed'
-                GROUP BY DATE(collected_at)
+                WHERE DATE(COALESCE(cleared_at, collected_at)) BETWEEN ? AND ?
+                AND status IN ('confirmed', 'cleared')
+                GROUP BY DATE(COALESCE(cleared_at, collected_at))
                 ORDER BY collection_date ASC
             ");
             $dailyStmt->execute([$fromDate, $toDate]);
@@ -425,8 +425,8 @@ function handleGet($db, $action, $currentUser) {
                     COUNT(*) as payment_count,
                     SUM(amount_collected) as total_collected
                 FROM payment_collections 
-                WHERE DATE(collected_at) BETWEEN ? AND ?
-                AND status = 'confirmed'
+                WHERE DATE(COALESCE(cleared_at, collected_at)) BETWEEN ? AND ?
+                AND status IN ('confirmed', 'cleared')
                 GROUP BY customer_name
                 ORDER BY total_collected DESC
                 LIMIT 10
@@ -538,8 +538,8 @@ function handleGet($db, $action, $currentUser) {
                     MAX(or_number) as last_or,
                     COUNT(*) as collection_count
                 FROM payment_collections 
-                WHERE DATE(collected_at) = ?
-                AND status = 'confirmed'
+                WHERE DATE(COALESCE(cleared_at, collected_at)) = ?
+                AND status IN ('confirmed', 'cleared')
             ");
             $orRangeStmt->execute([$date]);
             $orRange = $orRangeStmt->fetch();
@@ -646,8 +646,8 @@ function handleGet($db, $action, $currentUser) {
                     COALESCE(SUM(amount_collected), 0) as total_collected
                 FROM payment_collections 
                 WHERE collected_by = ?
-                AND DATE(collected_at) BETWEEN ? AND ?
-                AND status = 'confirmed'
+                AND DATE(COALESCE(cleared_at, collected_at)) BETWEEN ? AND ?
+                AND status IN ('confirmed', 'cleared')
             ");
             $collStmt->execute([$cashierId, $fromDate, $toDate]);
             $collStats = $collStmt->fetch();
@@ -743,8 +743,8 @@ function getDaySummary($db, $date) {
             COALESCE(SUM(CASE WHEN payment_method = 'check' THEN amount_collected ELSE 0 END), 0) as check_amt,
             COALESCE(SUM(CASE WHEN payment_method = 'bank_transfer' THEN amount_collected ELSE 0 END), 0) as bank_transfer
         FROM payment_collections 
-        WHERE DATE(collected_at) = ?
-        AND status = 'confirmed'
+        WHERE DATE(COALESCE(cleared_at, collected_at)) = ?
+        AND status IN ('confirmed', 'cleared')
     ");
     $collStmt->execute([$date]);
     $collections = $collStmt->fetch();

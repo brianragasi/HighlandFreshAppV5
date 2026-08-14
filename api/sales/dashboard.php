@@ -174,22 +174,30 @@ function getSummary($db) {
 }
 
 function getAgingSummary($db) {
+    $invoiceDateExpr = "DATE(COALESCE(dr.delivered_at, dr.created_at))";
+    $termsExpr = "COALESCE(NULLIF(c.payment_terms_days, 0), 30)";
+    $dueDateExpr = "DATE_ADD({$invoiceDateExpr}, INTERVAL {$termsExpr} DAY)";
+    $daysLateExpr = "DATEDIFF(CURDATE(), {$dueDateExpr})";
+    $balanceExpr = "(dr.total_amount - COALESCE(dr.amount_paid, 0))";
+
     $stmt = $db->prepare("
         SELECT 
-            COALESCE(SUM(CASE WHEN delivered_at IS NULL OR DATEDIFF(CURDATE(), delivered_at) <= 0 THEN (total_amount - amount_paid) ELSE 0 END), 0) as current_amount,
-            COUNT(CASE WHEN delivered_at IS NULL OR DATEDIFF(CURDATE(), delivered_at) <= 0 THEN 1 END) as current_count,
-            COALESCE(SUM(CASE WHEN DATEDIFF(CURDATE(), delivered_at) BETWEEN 1 AND 30 THEN (total_amount - amount_paid) ELSE 0 END), 0) as days_1_30_amount,
-            COUNT(CASE WHEN DATEDIFF(CURDATE(), delivered_at) BETWEEN 1 AND 30 AND (total_amount - amount_paid) > 0 THEN 1 END) as days_1_30_count,
-            COALESCE(SUM(CASE WHEN DATEDIFF(CURDATE(), delivered_at) BETWEEN 31 AND 60 THEN (total_amount - amount_paid) ELSE 0 END), 0) as days_31_60_amount,
-            COUNT(CASE WHEN DATEDIFF(CURDATE(), delivered_at) BETWEEN 31 AND 60 AND (total_amount - amount_paid) > 0 THEN 1 END) as days_31_60_count,
-            COALESCE(SUM(CASE WHEN DATEDIFF(CURDATE(), delivered_at) BETWEEN 61 AND 90 THEN (total_amount - amount_paid) ELSE 0 END), 0) as days_61_90_amount,
-            COUNT(CASE WHEN DATEDIFF(CURDATE(), delivered_at) BETWEEN 61 AND 90 AND (total_amount - amount_paid) > 0 THEN 1 END) as days_61_90_count,
-            COALESCE(SUM(CASE WHEN DATEDIFF(CURDATE(), delivered_at) > 90 THEN (total_amount - amount_paid) ELSE 0 END), 0) as days_91_plus_amount,
-            COUNT(CASE WHEN DATEDIFF(CURDATE(), delivered_at) > 90 AND (total_amount - amount_paid) > 0 THEN 1 END) as days_91_plus_count,
-            COALESCE(SUM(total_amount - amount_paid), 0) as total_outstanding
-        FROM delivery_receipts 
-        WHERE status NOT IN ('cancelled', 'draft') 
-        AND payment_status != 'paid'
+            COALESCE(SUM(CASE WHEN {$daysLateExpr} <= 0 THEN {$balanceExpr} ELSE 0 END), 0) as current_amount,
+            COUNT(CASE WHEN {$daysLateExpr} <= 0 AND {$balanceExpr} > 0 THEN 1 END) as current_count,
+            COALESCE(SUM(CASE WHEN {$daysLateExpr} BETWEEN 1 AND 30 THEN {$balanceExpr} ELSE 0 END), 0) as days_1_30_amount,
+            COUNT(CASE WHEN {$daysLateExpr} BETWEEN 1 AND 30 AND {$balanceExpr} > 0 THEN 1 END) as days_1_30_count,
+            COALESCE(SUM(CASE WHEN {$daysLateExpr} BETWEEN 31 AND 60 THEN {$balanceExpr} ELSE 0 END), 0) as days_31_60_amount,
+            COUNT(CASE WHEN {$daysLateExpr} BETWEEN 31 AND 60 AND {$balanceExpr} > 0 THEN 1 END) as days_31_60_count,
+            COALESCE(SUM(CASE WHEN {$daysLateExpr} BETWEEN 61 AND 90 THEN {$balanceExpr} ELSE 0 END), 0) as days_61_90_amount,
+            COUNT(CASE WHEN {$daysLateExpr} BETWEEN 61 AND 90 AND {$balanceExpr} > 0 THEN 1 END) as days_61_90_count,
+            COALESCE(SUM(CASE WHEN {$daysLateExpr} > 90 THEN {$balanceExpr} ELSE 0 END), 0) as days_91_plus_amount,
+            COUNT(CASE WHEN {$daysLateExpr} > 90 AND {$balanceExpr} > 0 THEN 1 END) as days_91_plus_count,
+            COALESCE(SUM({$balanceExpr}), 0) as total_outstanding
+        FROM delivery_receipts dr
+        LEFT JOIN customers c ON c.id = dr.customer_id
+        WHERE dr.status NOT IN ('cancelled', 'draft')
+        AND dr.payment_status != 'paid'
+        AND {$balanceExpr} > 0
     ");
     $stmt->execute();
     $aging = $stmt->fetch();
@@ -371,7 +379,7 @@ function getDailyCollection($db) {
     $stmt = $db->prepare("
         SELECT 
             pc.id, 
-            pc.collected_at as payment_date, 
+            COALESCE(pc.cleared_at, pc.collected_at) as payment_date,
             pc.amount_collected as amount, 
             pc.payment_method, 
             pc.or_number as reference_number,
@@ -382,9 +390,9 @@ function getDailyCollection($db) {
         FROM payment_collections pc 
         LEFT JOIN delivery_receipts dr ON pc.dr_id = dr.id 
         LEFT JOIN users u ON pc.collected_by = u.id
-        WHERE pc.status = 'confirmed' 
-        AND DATE(pc.collected_at) = ? 
-        ORDER BY pc.collected_at DESC
+        WHERE pc.status IN ('confirmed', 'cleared')
+        AND DATE(COALESCE(pc.cleared_at, pc.collected_at)) = ?
+        ORDER BY COALESCE(pc.cleared_at, pc.collected_at) DESC
     ");
     $stmt->execute([$date]);
     $payments = $stmt->fetchAll();
@@ -467,8 +475,8 @@ function getCollectionsDue($db) {
     $collectedMTDStmt = $db->prepare("
         SELECT COALESCE(SUM(amount_collected), 0) as amount
         FROM payment_collections
-        WHERE status = 'confirmed'
-          AND collected_at >= ?
+        WHERE status IN ('confirmed', 'cleared')
+          AND COALESCE(cleared_at, collected_at) >= ?
     ");
     $collectedMTDStmt->execute([$monthStart]);
     $collectedMTD = $collectedMTDStmt->fetch()['amount'];

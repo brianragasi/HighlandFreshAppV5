@@ -53,7 +53,7 @@
         class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
         <div class="p-4 border-b border-base-300">
             <div class="flex items-center gap-3">
-                <img src="../../images/logo.jpg" alt="Highland Fresh Logo" class="w-10 h-10 rounded-xl object-cover">
+                <img src="../images/logo.jpg" alt="Highland Fresh Logo" class="w-10 h-10 rounded-xl object-cover">
                 <div class="flex-1 min-w-0">
                     <h1 class="font-bold text-base-content truncate">Highland Fresh</h1>
                     <p class="text-xs text-base-content/60 truncate">Purchasing Department</p>
@@ -170,7 +170,7 @@
                                 onchange="loadPurchaseOrders()">
                                 <option value="">All Status</option>
                                 <option value="draft">Draft</option>
-                                <option value="pending">Pending Finalization</option>
+                                <option value="pending">Awaiting GM Approval</option>
                                 <option value="approved">Approved</option>
                                 <option value="rejected">Rejected</option>
                                 <option value="partial_received">Partially Received</option>
@@ -464,7 +464,8 @@
     </dialog>
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
-    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="purchaser,general_manager"></script>
     <script src="../../js/purchasing/purchasing.service.js"></script>
 
     <script>
@@ -579,9 +580,17 @@
                     return;
                 }
 
+                const renderedDraftGroups = new Set();
                 tbody.innerHTML = orders.map(po => {
                     const sBadge = PurchasingService.getStatusBadgeClass(po.status);
                     const pBadge = PurchasingService.getPaymentBadgeClass(po.payment_status);
+                    const draftGroupKey = po.status === 'draft' && po.purchase_request_id
+                        ? String(po.purchase_request_id)
+                        : null;
+                    const showGroupSubmit = currentUserRole === 'purchaser'
+                        && draftGroupKey
+                        && !renderedDraftGroups.has(draftGroupKey);
+                    if (showGroupSubmit) renderedDraftGroups.add(draftGroupKey);
 
                     return `
                         <tr class="hover cursor-pointer" onclick="viewPODetail(${po.id})">
@@ -597,15 +606,19 @@
                             <td><span class="badge badge-sm ${sBadge}">${formatPOStatus(po.status)}</span></td>
                             <td><span class="badge badge-sm ${pBadge} badge-outline">${PurchasingService.formatStatus(po.payment_status)}</span></td>
                             <td>
-                                <div class="dropdown dropdown-end" onclick="event.stopPropagation()">
-                                    <label tabindex="0" class="btn btn-ghost btn-xs btn-square"><i class="fas fa-ellipsis-v"></i></label>
-                                    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2 z-10">
-                                        <li><a onclick="viewPODetail(${po.id})"><i class="fas fa-eye w-4"></i> View Details</a></li>
-                                        ${po.status === 'draft' && currentUserRole === 'purchaser' ? `<li><a onclick="submitPO(${po.id})"><i class="fas fa-paper-plane w-4"></i> Submit for GM Approval</a></li>` : ''}
-                                        ${po.status === 'approved' && currentUserRole === 'purchaser' && !po.sent_to_supplier_at ? `<li><a onclick="markOrdered(${po.id})"><i class="fas fa-paper-plane w-4"></i> Send Final PO</a></li>` : ''}
-                                        ${po.status === 'received' && currentUserRole === 'purchaser' ? `<li><a onclick="viewPODetail(${po.id})"><i class="fas fa-clipboard-check w-4"></i> Verify RR</a></li>` : ''}
-                                        ${!['received', 'closed', 'rejected', 'cancelled'].includes(po.status) ? `<li><a onclick="cancelPO(${po.id})" class="text-error"><i class="fas fa-ban w-4"></i> Cancel</a></li>` : ''}
-                                    </ul>
+                                <div class="flex items-center justify-end gap-1" onclick="event.stopPropagation()">
+                                    ${showGroupSubmit ? `<button class="btn btn-info btn-xs gap-1 whitespace-nowrap" title="Send every draft PO from ${escapeHtml(po.pr_number || 'this PRS')} to GM" onclick="submitPOGroup(${po.id}, '${escapeHtml(po.pr_number || 'this PRS')}')"><i class="fas fa-paper-plane"></i> Send ${Number(po.draft_group_count || 1)} to GM</button>` : ''}
+                                    <div class="dropdown dropdown-end">
+                                        <label tabindex="0" class="btn btn-ghost btn-xs btn-square" title="More actions"><i class="fas fa-ellipsis-v"></i></label>
+                                        <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2 z-10">
+                                            <li><a onclick="viewPODetail(${po.id})"><i class="fas fa-eye w-4"></i> View Details</a></li>
+                                            ${po.status === 'draft' && currentUserRole === 'purchaser' && po.purchase_request_id ? `<li><a onclick="submitPOGroup(${po.id}, '${escapeHtml(po.pr_number || 'this PRS')}')"><i class="fas fa-paper-plane w-4"></i> Submit PRS POs to GM</a></li>` : ''}
+                                            ${po.status === 'draft' && currentUserRole === 'purchaser' && !po.purchase_request_id ? `<li><a onclick="submitPO(${po.id})"><i class="fas fa-paper-plane w-4"></i> Submit for GM Approval</a></li>` : ''}
+                                            ${po.status === 'approved' && currentUserRole === 'purchaser' && !po.sent_to_supplier_at ? `<li><a onclick="markOrdered(${po.id})"><i class="fas fa-envelope w-4"></i> Email Final PO</a></li>` : ''}
+                                            ${po.status === 'received' && currentUserRole === 'purchaser' ? `<li><a onclick="viewPODetail(${po.id})"><i class="fas fa-clipboard-check w-4"></i> Verify RR</a></li>` : ''}
+                                            ${!['received', 'closed', 'rejected', 'cancelled'].includes(po.status) ? `<li><a onclick="cancelPO(${po.id})" class="text-error"><i class="fas fa-ban w-4"></i> Cancel</a></li>` : ''}
+                                        </ul>
+                                    </div>
                                 </div>
                             </td>
                         </tr>
@@ -1289,11 +1302,13 @@
                 const rrNeedsVerification = latestRR && ['pending_verification', 'discrepancy'].includes(latestRR.status);
 
                 let actionsHTML = '';
-                if (po.status === 'draft' && currentUserRole === 'purchaser') {
+                if (po.status === 'draft' && currentUserRole === 'purchaser' && po.purchase_request_id) {
+                    actionsHTML += `<button class="btn btn-info btn-sm" onclick="submitPOGroup(${po.id}, '${escapeHtml(po.pr_number || 'this PRS')}')"><i class="fas fa-paper-plane"></i> Submit All POs from this PRS</button>`;
+                } else if (po.status === 'draft' && currentUserRole === 'purchaser') {
                     actionsHTML += `<button class="btn btn-info btn-sm" onclick="submitPO(${po.id})"><i class="fas fa-paper-plane"></i> Submit for GM Approval</button>`;
                 }
                 if (po.status === 'approved' && currentUserRole === 'purchaser' && !po.sent_to_supplier_at) {
-                    actionsHTML += `<button class="btn btn-primary btn-sm" onclick="markOrdered(${po.id})"><i class="fas fa-paper-plane"></i> Send Final PO</button>`;
+                    actionsHTML += `<button class="btn btn-primary btn-sm" onclick="markOrdered(${po.id})"><i class="fas fa-envelope"></i> Email Final PO</button>`;
                 }
                 if (po.status === 'received' && currentUserRole === 'purchaser' && rrNeedsVerification) {
                     actionsHTML += `<button class="btn btn-success btn-sm" onclick="openRRVerification(${po.id}, ${latestRR.id})"><i class="fas fa-clipboard-check"></i> Verify RR</button>`;
@@ -1396,6 +1411,8 @@
                                     ${po.supplier_contact ? `<div><span class="text-base-content/50">Contact:</span> ${po.supplier_contact}</div>` : ''}
                                     ${po.supplier_phone ? `<div><span class="text-base-content/50">Phone:</span> ${po.supplier_phone}</div>` : ''}
                                     ${po.supplier_email ? `<div><span class="text-base-content/50">Email:</span> ${po.supplier_email}</div>` : ''}
+                                    ${po.sent_to_supplier_at ? `<div class="md:col-span-2 text-success"><i class="fas fa-circle-check mr-1"></i>Emailed to ${escapeHtml(po.supplier_email_sent_to || po.supplier_email || '-')} on ${formatDate(po.sent_to_supplier_at, 'full')}</div>` : ''}
+                                    ${po.last_send_error ? `<div class="md:col-span-2 text-error"><i class="fas fa-triangle-exclamation mr-1"></i>Last email failed. Check the address or email connection, then retry.</div>` : ''}
                                     ${po.supplier_terms ? `<div><span class="text-base-content/50">Terms:</span> ${po.supplier_terms}</div>` : ''}
                                     ${po.supplier_address ? `<div class="md:col-span-2"><span class="text-base-content/50">Address:</span> ${po.supplier_address}</div>` : ''}
                                 </div>
@@ -1671,9 +1688,30 @@
             if (!confirmed) return;
             try {
                 await PurchasingService.submitPO(id);
-                showToast('PO submitted — awaiting GM approval', 'success');
+                showToast('PO submitted - awaiting GM approval', 'success');
                 viewPODetail(id);
             } catch (e) { showToast(e?.message || 'Failed to submit', 'error'); }
+        }
+
+        async function submitPOGroup(id, prNumber) {
+            const confirmed = await AuthService.confirmAction({
+                title: 'Send PRS Purchase Orders to GM',
+                message: `Send every draft PO created from ${prNumber} to the General Manager in one action? Each supplier PO will remain separate for review and approval.`,
+                confirmText: 'Send All to GM',
+                icon: 'fa-paper-plane',
+                tone: 'primary'
+            });
+            if (!confirmed) return;
+
+            try {
+                const response = await PurchasingService.submitPOGroup(id);
+                const count = Number(response?.data?.submitted_count || 0);
+                showToast(`${count} ${count === 1 ? 'PO was' : 'POs were'} sent to GM`, 'success');
+                cancelCreate();
+                await loadPurchaseOrders();
+            } catch (e) {
+                showToast(e?.message || 'Could not submit the PRS purchase orders', 'error');
+            }
         }
 
         async function approvePO(id) {
@@ -1727,19 +1765,19 @@
         async function markOrdered(id) {
             if (markOrderedInFlight.has(id)) return;
             const confirmed = await AuthService.confirmAction({
-                title: 'Send Final PO',
-                message: 'Confirm that this approved PO has been sent to the supplier.',
-                confirmText: 'Send Final PO',
+                title: 'Email Final PO',
+                message: 'The system will create the approved PO PDF and email it to the supplier address on file. The PO becomes Ordered only when sending succeeds.',
+                confirmText: 'Email Final PO',
                 icon: 'fa-paper-plane',
                 tone: 'primary'
             });
             if (!confirmed) return;
             markOrderedInFlight.add(id);
             try {
-                await PurchasingService.markPOOrdered(id);
-                showToast('Final PO sent to supplier', 'success');
+                const response = await PurchasingService.markPOOrdered(id);
+                showToast(response?.message || 'Final PO emailed to supplier', 'success');
                 viewPODetail(id);
-            } catch (e) { showToast(e?.message || 'Failed to update', 'error'); }
+            } catch (e) { showToast(Object.values(e?.errors || {})[0] || e?.message || 'The PO email could not be sent', 'error'); }
             finally { markOrderedInFlight.delete(id); }
         }
 
@@ -1794,7 +1832,7 @@
         function formatPOStatus(status) {
             const labels = {
                 draft: 'Draft',
-                pending: 'Pending Finalization',
+                pending: 'Awaiting GM Approval',
                 approved: 'Approved',
                 rejected: 'Rejected',
                 partial_received: 'Partially Received',

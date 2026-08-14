@@ -165,6 +165,17 @@
                 </div>
             </div>
 
+            <section id="customerDemandSection" class="hidden border border-warning/40 bg-base-100 overflow-hidden rounded-lg">
+                <div class="flex items-center justify-between gap-3 px-3 py-2.5 border-b border-base-300 bg-warning/10">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <i class="fas fa-boxes-stacked text-warning"></i>
+                        <h2 class="text-xs font-bold uppercase tracking-wider text-base-content/65">Customer orders needing production</h2>
+                    </div>
+                    <span id="customerDemandCount" class="badge badge-warning badge-sm">0</span>
+                </div>
+                <div id="customerDemandList" class="divide-y divide-base-300"></div>
+            </section>
+
             <!-- YOUR WORK QUEUE (primary) -->
             <section class="rounded-xl border border-base-300 bg-base-100 overflow-hidden">
                 <div class="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-base-300 bg-base-200/50">
@@ -234,7 +245,8 @@
     <!-- Scripts -->
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
-    <script src="../../js/config/auth.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="production_staff,general_manager"></script>
     <script>window.PRODUCTION_ACTIVE_PAGE = "dashboard";</script>
     <script src="../../js/production/sidebar.js"></script>
     <script src="../../js/production/run-flow.js"></script>
@@ -316,6 +328,7 @@
                 setBadge('ccpAlertsBadge', ccp);
 
                 renderBlockers(availableMilk, warehouseMilk, ccp);
+                renderCustomerProductionDemand(data.customer_production_demand || []);
                 renderPendingRequisitions(data.pending_requisitions_list || []);
                 renderRecentRuns(data.recent_runs || []);
                 updateStartRunGate(availableMilk, warehouseMilk);
@@ -323,6 +336,54 @@
                 console.error('Dashboard error:', error);
                 showToast('Failed to load floor status', 'error');
             }
+        }
+
+        function renderCustomerProductionDemand(demands) {
+            const section = document.getElementById('customerDemandSection');
+            const container = document.getElementById('customerDemandList');
+            const count = document.getElementById('customerDemandCount');
+            const list = Array.isArray(demands) ? demands : [];
+            count.textContent = String(list.length);
+            section.classList.toggle('hidden', list.length === 0);
+            if (!list.length) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = list.map(demand => {
+                const shortage = Number(demand.shortage_quantity || 0);
+                const unit = escapeHtml(demand.base_unit || 'piece');
+                const due = demand.delivery_date ? new Date(`${demand.delivery_date}T00:00:00`).toLocaleDateString() : 'No date';
+                const late = Number.isFinite(Number(demand.days_until_due)) && Number(demand.days_until_due) < 0;
+                const planParams = new URLSearchParams({
+                    action: 'new',
+                    source: 'sales_order',
+                    sales_order_id: String(demand.order_id || ''),
+                    order_number: demand.order_number || '',
+                    customer: demand.customer_name || '',
+                    product: demand.product_name || '',
+                    product_code: demand.product_code || '',
+                    shortage: String(shortage),
+                    unit: demand.base_unit || 'piece',
+                    needed_by: demand.delivery_date || ''
+                });
+                if (demand.recipe_id) planParams.set('recipe_id', String(demand.recipe_id));
+                const action = demand.recipe_id
+                    ? `<a href="requisitions.html?${planParams.toString()}" class="btn btn-warning btn-sm shrink-0"><i class="fas fa-clipboard-list"></i> Plan production</a>`
+                    : '<span class="badge badge-error badge-outline whitespace-nowrap">Recipe needed</span>';
+                return `<div class="p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div class="min-w-0 flex-1">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <strong>${escapeHtml(demand.product_name || '')}</strong>
+                            <span class="font-mono text-xs text-base-content/50">${escapeHtml(demand.product_code || '')}</span>
+                            ${late ? '<span class="badge badge-error badge-xs">Overdue</span>' : ''}
+                        </div>
+                        <p class="text-sm mt-1"><strong>${shortage.toLocaleString()} ${unit}${shortage === 1 ? '' : 's'}</strong> still needed for ${escapeHtml(demand.order_number || '')}</p>
+                        <p class="text-xs text-base-content/55 mt-0.5">${escapeHtml(demand.customer_name || 'Customer')} &middot; requested delivery ${escapeHtml(due)}</p>
+                    </div>
+                    ${action}
+                </div>`;
+            }).join('');
         }
 
         function renderBlockers(availableMilk, warehouseMilk, ccp) {

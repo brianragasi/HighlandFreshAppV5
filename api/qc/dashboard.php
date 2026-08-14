@@ -137,6 +137,16 @@ try {
     ");
     $recentTests->execute();
     $recentTestsList = $recentTests->fetchAll();
+
+    $notificationStmt = $db->prepare("
+        SELECT id, notification_type, title, message, reference_type, reference_id, created_at
+        FROM procurement_notifications
+        WHERE target_role = 'qc_officer' AND is_read = 0
+        ORDER BY created_at DESC
+        LIMIT 10
+    ");
+    $notificationStmt->execute();
+    $notifications = $notificationStmt->fetchAll(PDO::FETCH_ASSOC);
     
     Response::success([
         'today' => [
@@ -155,7 +165,8 @@ try {
             'quantity' => (int) ($expiryStats['total_quantity'] ?? 0)
         ],
         'top_farmers' => $farmerRankings,
-        'recent_tests' => $recentTestsList
+        'recent_tests' => $recentTestsList,
+        'notifications' => $notifications
     ], 'Dashboard data retrieved successfully');
     
 } catch (Exception $e) {

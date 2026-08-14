@@ -69,14 +69,22 @@ function handleGet($db, $currentUser) {
             $categoryId = getParam('category_id');
             $lowStockOnly = getParam('low_stock') === '1';
             $search = getParam('search');
+            $usableStockSql = "COALESCE((
+                SELECT SUM(ib.remaining_quantity)
+                FROM ingredient_batches ib
+                WHERE ib.ingredient_id = i.id
+                  AND ib.status IN ('available', 'partially_used')
+                  AND ib.remaining_quantity > 0
+                  AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())
+            ), 0)";
             
             $sql = "
                 SELECT 
                     i.*,
                     ic.category_name,
                     CASE
-                        WHEN i.current_stock <= 0 THEN 'out_of_stock'
-                        WHEN i.current_stock <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . " THEN 'low_stock'
+                        WHEN {$usableStockSql} <= 0 THEN 'out_of_stock'
+                        WHEN {$usableStockSql} <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . " THEN 'low_stock'
                         ELSE 'ok'
                     END as stock_status,
                     (SELECT COUNT(*) FROM ingredient_batches ib
@@ -94,7 +102,7 @@ function handleGet($db, $currentUser) {
                      AND ib.status IN ('available', 'partially_used')
                      AND ib.remaining_quantity > 0
                      AND ib.expiry_date IS NOT NULL
-                     AND ib.expiry_date >= CURDATE()) as earliest_expiry
+                     AND ib.expiry_date >= CURDATE()) as nearest_expiry
                 FROM ingredients i
                 LEFT JOIN ingredient_categories ic ON i.category_id = ic.id
                 WHERE i.is_active = 1
@@ -107,7 +115,7 @@ function handleGet($db, $currentUser) {
             }
             
             if ($lowStockOnly) {
-                $sql .= " AND i.current_stock <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock');
+                $sql .= " AND {$usableStockSql} <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock');
             }
             
             if ($search) {
@@ -121,6 +129,16 @@ function handleGet($db, $currentUser) {
             $stmt = $db->prepare($sql);
             $stmt->execute($params);
             $ingredients = $stmt->fetchAll();
+
+            foreach ($ingredients as &$ingredient) {
+                $onFileStock = (float) ($ingredient['current_stock'] ?? 0);
+                $usableStock = (float) ($ingredient['batch_stock'] ?? 0);
+                $ingredient['current_stock_on_file'] = $onFileStock;
+                $ingredient['current_stock'] = $usableStock;
+                $ingredient['stock_variance'] = round($onFileStock - $usableStock, 3);
+                $ingredient['needs_stock_check'] = abs($ingredient['stock_variance']) > 0.0005;
+            }
+            unset($ingredient);
             
             Response::success(['ingredients' => $ingredients], 'Ingredients retrieved successfully');
             break;
@@ -282,14 +300,16 @@ function handleGet($db, $currentUser) {
                         (SELECT COALESCE(SUM(remaining_quantity), 0) 
                          FROM ingredient_batches ib 
                          WHERE ib.ingredient_id = i.id 
-                         AND ib.status IN ('available', 'partially_used')) as available_quantity
+                         AND ib.status IN ('available', 'partially_used')
+                         AND ib.remaining_quantity > 0
+                         AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())) as available_quantity
                     FROM ingredients i
                     WHERE i.id = ?
                 ");
                 $stmt->execute([$item['ingredient_id']]);
                 $ing = $stmt->fetch();
                 
-                $available = $ing ? max((float)$ing['available_quantity'], (float)$ing['current_stock']) : 0;
+                $available = $ing ? (float)$ing['available_quantity'] : 0;
                 $needed = (float)$item['quantity'];
                 $sufficient = $available >= $needed;
                 
@@ -314,6 +334,14 @@ function handleGet($db, $currentUser) {
         case 'reorder_alerts':
             // Get all items below reorder threshold (for Reorder Alert Report)
             $includeOk = getParam('include_ok') === '1';
+            $usableStockSql = "COALESCE((
+                SELECT SUM(ib.remaining_quantity)
+                FROM ingredient_batches ib
+                WHERE ib.ingredient_id = i.id
+                  AND ib.status IN ('available', 'partially_used')
+                  AND ib.remaining_quantity > 0
+                  AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())
+            ), 0)";
             
             $sql = "
                 SELECT 
@@ -323,31 +351,32 @@ function handleGet($db, $currentUser) {
                     i.ingredient_name AS item_name,
                     ic.category_name,
                     i.unit_of_measure,
-                    i.current_stock,
+                    i.current_stock AS current_stock_on_file,
+                    {$usableStockSql} AS current_stock,
                     i.minimum_stock,
                     COALESCE(i.reorder_point, i.minimum_stock * 1.5) AS reorder_point,
                     i.maximum_stock,
                     COALESCE(i.lead_time_days, 7) AS lead_time_days,
                     i.unit_cost,
-                    " . StockRule::statusCaseSql('i.current_stock', 'i.reorder_point', 'i.minimum_stock') . " AS stock_status,
+                    " . StockRule::statusCaseSql($usableStockSql, 'i.reorder_point', 'i.minimum_stock') . " AS stock_status,
                     CASE
-                        WHEN i.current_stock <= 0 THEN 0
-                        ELSE ROUND((i.current_stock / NULLIF(i.minimum_stock, 0)) * 100, 1)
+                        WHEN {$usableStockSql} <= 0 THEN 0
+                        ELSE ROUND(({$usableStockSql} / NULLIF(i.minimum_stock, 0)) * 100, 1)
                     END AS stock_percentage,
-                    " . StockRule::reorderQtySql('i.current_stock', 'i.reorder_point', 'i.maximum_stock') . " AS qty_to_reorder
+                    " . StockRule::reorderQtySql($usableStockSql, 'i.reorder_point', 'i.maximum_stock') . " AS qty_to_reorder
                 FROM ingredients i
                 LEFT JOIN ingredient_categories ic ON i.category_id = ic.id
                 WHERE i.is_active = 1
             ";
             
             if (!$includeOk) {
-                $sql .= " AND i.current_stock <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock');
+                $sql .= " AND {$usableStockSql} <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock');
             }
 
             $sql .= " ORDER BY
                 CASE
-                    WHEN i.current_stock <= 0 THEN 1
-                    WHEN i.current_stock <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . " THEN 2
+                    WHEN {$usableStockSql} <= 0 THEN 1
+                    WHEN {$usableStockSql} <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . " THEN 2
                     ELSE 3
                 END,
                 i.ingredient_name ASC
@@ -512,7 +541,6 @@ function handlePut($db, $currentUser) {
                     throw new Exception('Ingredient not found');
                 }
                 
-                ensureIngredientBatchesForIssue($db, $ingredientData, $quantity, $currentUser);
                 $batchList = getUsableIngredientBatches($db, $ingredientId, true);
                 
                 $totalAvailable = array_sum(array_column($batchList, 'remaining_quantity'));

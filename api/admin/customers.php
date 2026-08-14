@@ -6,8 +6,8 @@
 
 require_once __DIR__ . '/../bootstrap.php';
 
-// Require authentication
-Auth::requireAuth();
+// Require GM/Admin role
+Auth::requireRole(['general_manager', 'admin']);
 
 // Get database connection
 $conn = Database::getInstance()->getConnection();
@@ -251,6 +251,11 @@ function getCustomer($conn, $id) {
  */
 function createCustomer($conn) {
     $data = json_decode(file_get_contents('php://input'), true);
+    $contactCheck = hfValidateContactPayload($data, ['contact_number'], 'email');
+    if (!empty($contactCheck['errors'])) {
+        sendValidationError($contactCheck['errors']);
+    }
+    $data = $contactCheck['data'];
     
     // Validate required fields
     $required = ['name', 'customer_type'];
@@ -326,9 +331,23 @@ function createCustomer($conn) {
  */
 function updateCustomer($conn, $id) {
     $data = json_decode(file_get_contents('php://input'), true);
+    $contactCheck = hfValidateContactPayload($data, ['contact_number'], 'email');
+    if (!empty($contactCheck['errors'])) {
+        sendValidationError($contactCheck['errors']);
+    }
+
+    if (!empty($data['email'])) {
+        $emailStmt = $conn->prepare("SELECT id FROM customers WHERE status = 'active' AND LOWER(TRIM(email)) = LOWER(TRIM(?)) LIMIT 1");
+        $emailStmt->execute([$data['email']]);
+        if ($emailStmt->fetch()) {
+            sendError('This email is already assigned to another active customer', 409);
+            return;
+        }
+    }
+    $data = $contactCheck['data'];
     
     // Check if customer exists
-    $checkStmt = $conn->prepare("SELECT id, customer_code FROM customers WHERE id = ?");
+    $checkStmt = $conn->prepare("SELECT id, customer_code, email, status FROM customers WHERE id = ?");
     $checkStmt->execute([$id]);
     $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
     
@@ -380,34 +399,52 @@ function updateCustomer($conn, $id) {
 }
 
 /**
- * Delete (deactivate) customer
+ * Archive customer by marking the account inactive.
+ * Customer rows are kept so orders, invoices, deliveries, and collection
+ * history still point to the original customer.
  */
 function deleteCustomer($conn, $id) {
     // Check if customer exists
-    $checkStmt = $conn->prepare("SELECT id FROM customers WHERE id = ?");
+    $checkStmt = $conn->prepare("SELECT id, status FROM customers WHERE id = ?");
     $checkStmt->execute([$id]);
+    $customer = $checkStmt->fetch(PDO::FETCH_ASSOC);
     
-    if (!$checkStmt->fetch()) {
+    if (!$customer) {
         sendError('Customer not found', 404);
         return;
     }
-    
-    // Check for related orders
-    $relatedStmt = $conn->prepare("SELECT COUNT(*) as count FROM sales_orders WHERE customer_id = ?");
-    $relatedStmt->execute([$id]);
-    $related = $relatedStmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($related['count'] > 0) {
-        // Soft delete - set status to inactive
-        $stmt = $conn->prepare("UPDATE customers SET status = 'inactive' WHERE id = ?");
-        $stmt->execute([$id]);
-        sendSuccess(['message' => 'Customer deactivated (has related orders)']);
-    } else {
-        // Hard delete if no related records
-        $stmt = $conn->prepare("DELETE FROM customers WHERE id = ?");
-        $stmt->execute([$id]);
-        sendSuccess(['message' => 'Customer deleted successfully']);
+
+
+    $effectiveEmail = array_key_exists('email', $data) ? trim((string)$data['email']) : trim((string)($existing['email'] ?? ''));
+    $effectiveStatus = array_key_exists('status', $data) ? (string)$data['status'] : (string)$existing['status'];
+    if ($effectiveStatus === 'active' && $effectiveEmail !== '') {
+        $emailStmt = $conn->prepare("SELECT id FROM customers WHERE status = 'active' AND LOWER(TRIM(email)) = LOWER(TRIM(?)) AND id <> ? LIMIT 1");
+        $emailStmt->execute([$effectiveEmail, $id]);
+        if ($emailStmt->fetch()) {
+            sendError('This email is already assigned to another active customer', 409);
+            return;
+        }
     }
+
+    if ($customer['status'] === 'inactive') {
+        sendSuccess([
+            'message' => 'Customer is already archived',
+            'customer_id' => (int) $id,
+            'status' => 'inactive',
+            'archived' => true
+        ], 'Customer is already archived');
+        return;
+    }
+
+    $stmt = $conn->prepare("UPDATE customers SET status = 'inactive' WHERE id = ?");
+    $stmt->execute([$id]);
+
+    sendSuccess([
+        'message' => 'Customer archived successfully',
+        'customer_id' => (int) $id,
+        'status' => 'inactive',
+        'archived' => true
+    ], 'Customer archived successfully');
 }
 
 /**
