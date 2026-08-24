@@ -537,7 +537,8 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div class="form-control">
                         <label class="label"><span class="label-text">Contact Number</span></label>
-                        <input type="text" id="drContact" class="input input-bordered" placeholder="Contact number">
+                        <input type="tel" id="drContact" class="input input-bordered" inputmode="numeric"
+                            maxlength="11" data-philippine-phone placeholder="09171234567">
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Sub-location</span></label>
@@ -990,13 +991,17 @@
                     <div class="flex gap-2 items-center">
                         <div class="form-control flex-1">
                             <label class="label py-0"><span class="label-text text-xs" id="pickQtyBoxesLabel">Packs</span></label>
-                            <input type="number" id="pickQtyBoxes" class="input input-bordered w-full" min="0" value="0"
+                            <input type="number" id="pickQtyBoxes" class="input input-bordered w-full" min="0" step="1"
+                                inputmode="numeric" value="0"
+                                onkeydown="if(['e','E','+','-','.'].includes(event.key)) event.preventDefault()"
                                 onchange="pickCalcTotal()" oninput="pickCalcTotal()">
                         </div>
                         <span class="self-end pb-3 text-lg font-bold">+</span>
                         <div class="form-control flex-1">
                             <label class="label py-0"><span class="label-text text-xs" id="pickQtyPiecesLabel">Loose</span></label>
-                            <input type="number" id="pickQtyPieces" class="input input-bordered w-full" min="0" value="0"
+                            <input type="number" id="pickQtyPieces" class="input input-bordered w-full" min="0" step="1"
+                                inputmode="numeric" value="0"
+                                onkeydown="if(['e','E','+','-','.'].includes(event.key)) event.preventDefault()"
                                 onchange="pickPiecesAutoPack(e)" oninput="pickPiecesAutoPack(e)">
                         </div>
                     </div>
@@ -1108,13 +1113,13 @@
                 let summaryHtml = `
                     <div class="space-y-2">
                         <div class="text-sm space-y-1">
-                            <div><i class="fas fa-user w-5 text-base-content/60"></i> ${pickModalDR.customer_name || 'N/A'}</div>
-                            <div><i class="fas fa-tag w-5 text-base-content/60"></i> ${pickModalDR.customer_type || 'N/A'}</div>
-                            <div><i class="fas fa-map-marker-alt w-5 text-base-content/60"></i> ${pickModalDR.delivery_address || 'N/A'}</div>
+                            <div><i class="fas fa-user w-5 text-base-content/60"></i> ${escapeHtml(pickModalDR.customer_name || 'N/A')}</div>
+                            <div><i class="fas fa-tag w-5 text-base-content/60"></i> ${escapeHtml(pickModalDR.customer_type || 'N/A')}</div>
+                            <div><i class="fas fa-map-marker-alt w-5 text-base-content/60"></i> ${escapeHtml(pickModalDR.delivery_address || 'N/A')}</div>
                         </div>
                         <div class="alert alert-info text-xs py-2">
                             <i class="fas fa-info-circle"></i>
-                            <span>Scan items below. Click "Generate DR" when done.</span>
+                            <span>Scan a batch, enter the boxes or loose pieces, then click "Generate DR" when complete.</span>
                         </div>
                 `;
 
@@ -1184,7 +1189,7 @@
                             <div class="flex items-center gap-3">
                                 <i class="fas fa-ban text-error text-2xl"></i>
                                 <div>
-                                    <div class="font-bold">${pickCurrentScan.product_name}</div>
+                                    <div class="font-bold">${escapeHtml(pickCurrentScan.product_name)}</div>
                                     <div class="text-sm text-error">Expired on ${expDate.toLocaleDateString()} — cannot dispatch.</div>
                                 </div>
                             </div>`;
@@ -1210,45 +1215,16 @@
                         }
                     }
 
-                    // Determine if this is a box barcode or piece barcode
-                    const scannedBarcode = barcode;
-                    const isBoxBarcode = scannedBarcode && pickCurrentScan.batch_code
-                        && scannedBarcode !== pickCurrentScan.batch_code
-                        && pickCurrentScan.boxes_available > 0;
-
                     const labels = PackUnits.unitLabels(pickCurrentScan);
-                    const piecesPerBox = labels.piecesPerPack || 1;
-                    const releaseBoxes = isBoxBarcode ? 1 : 0;
-                    const releasePieces = isBoxBarcode ? 0 : 1;
-                    const totalRelease = (releaseBoxes * piecesPerBox) + releasePieces;
-
-                    // Add directly to scanned items
-                    const existingIndex = pickScannedItems.findIndex(i => i.id === pickCurrentScan.id);
-                    if (existingIndex >= 0) {
-                        pickScannedItems[existingIndex].releaseBoxes += releaseBoxes;
-                        pickScannedItems[existingIndex].releasePieces += releasePieces;
-                        pickScannedItems[existingIndex].releaseTotal += totalRelease;
-                    } else {
-                        pickScannedItems.push({
-                            ...pickCurrentScan,
-                            releaseBoxes,
-                            releasePieces,
-                            releaseTotal: totalRelease,
-                            piecesPerBox
-                        });
-                    }
-
-                    // Brief flash confirming the add
-                    const addLabel = isBoxBarcode ? '1 box' : '1 piece';
-                    contentDiv.className = 'rounded-lg p-3 border-2 border-success bg-success/5';
+                    contentDiv.className = 'rounded-lg p-3 border-2 border-info bg-info/5';
                     contentDiv.innerHTML = `
                         <div class="flex items-center gap-3">
-                            <i class="fas fa-check-circle text-success text-xl"></i>
+                            <i class="fas fa-barcode text-info text-xl"></i>
                             <div class="flex-1 min-w-0">
-                                <div class="font-semibold truncate">${pickCurrentScan.product_name}</div>
-                                <div class="text-xs text-base-content/60">+${addLabel} added — ${pickCurrentScan.batch_code}</div>
+                                <div class="font-semibold truncate">${escapeHtml(pickCurrentScan.product_name)}</div>
+                                <div class="text-xs text-base-content/60">Batch ${escapeHtml(pickCurrentScan.batch_code)} identified. Enter the quantity to add.</div>
                             </div>
-                            <span class="badge badge-success badge-sm">${totalRelease} ${labels.base}</span>
+                            <span class="badge badge-info badge-sm">0 ${escapeHtml(labels.base)} added</span>
                         </div>`;
                     resultDiv.classList.remove('hidden');
 
@@ -1260,9 +1236,10 @@
                         document.getElementById('pickFifoWarning').classList.add('hidden');
                     }
 
-                    pickRenderItems();
                     document.getElementById('pickBarcodeInput').value = '';
-                    document.getElementById('pickBarcodeInput').focus();
+                    pickEditIndex = -1;
+                    pickAddToRelease();
+                    return;
                 } else {
                     contentDiv.className = 'rounded-lg p-4 bg-error/10 border-2 border-error';
                     contentDiv.innerHTML = `
@@ -1311,28 +1288,56 @@
             const availableDisplay = PackUnits.formatQuantity(pickCurrentScan, { preferSplit: true });
             const packLine = PackUnits.formatPackLine(pickCurrentScan);
             const orderRemaining = pickGetRemainingQty(pickCurrentScan.product_id);
+            const alreadySelectedFromBatch = pickScannedItems
+                .filter(item => Number(item.id) === Number(pickCurrentScan.id))
+                .reduce((sum, item) => sum + (Number(item.releaseTotal) || 0), 0);
+            const batchRemaining = Math.max(0, totalAvailable - alreadySelectedFromBatch);
+
+            if (batchRemaining <= 0) {
+                pickBlockOverScan('All available stock from this batch is already selected.');
+                return;
+            }
+
+            const maxAllowed = Number.isFinite(orderRemaining)
+                ? Math.min(batchRemaining, orderRemaining)
+                : batchRemaining;
+            const piecesPerBox = Math.max(1, Number(labels.piecesPerPack) || 1);
 
             document.getElementById('pickQtyInventoryId').value = pickCurrentScan.id;
             document.getElementById('pickQtyProduct').textContent = pickCurrentScan.product_name;
             document.getElementById('pickQtyBatch').textContent = pickCurrentScan.batch_code;
-            document.getElementById('pickQtyAvailable').textContent = availableDisplay;
+            document.getElementById('pickQtyAvailable').textContent = alreadySelectedFromBatch > 0
+                ? `${availableDisplay} (${alreadySelectedFromBatch.toLocaleString()} already selected)`
+                : availableDisplay;
             document.getElementById('pickQtyPackConfig').textContent = packLine;
             document.getElementById('pickQtyBoxesLabel').textContent = labels.pack;
             document.getElementById('pickQtyPiecesLabel').textContent = labels.base;
             document.getElementById('pickQtyBoxes').value = 0;
-            document.getElementById('pickQtyBoxes').max = Math.max(0, availableBoxes);
+            document.getElementById('pickQtyBoxes').max = Math.max(
+                0,
+                Math.min(availableBoxes, Math.floor(maxAllowed / piecesPerBox))
+            );
             document.getElementById('pickQtyPieces').value = 0;
+            document.getElementById('pickQtyPieces').max = Math.max(0, maxAllowed);
             document.getElementById('pickQtyTotalPieces').textContent = '0';
             document.getElementById('pickQtyValidation').textContent = '';
 
-            pickCurrentScan._piecesPerBox = labels.piecesPerPack;
-            pickCurrentScan._totalAvailable = totalAvailable;
+            pickCurrentScan._piecesPerBox = piecesPerBox;
+            pickCurrentScan._totalAvailable = batchRemaining;
             pickCurrentScan._orderRemaining = orderRemaining;
-            pickCurrentScan._maxAllowed = Number.isFinite(orderRemaining) ? Math.min(totalAvailable, orderRemaining) : totalAvailable;
+            pickCurrentScan._maxAllowed = maxAllowed;
             pickCurrentScan._baseLabel = labels.base;
 
             pickCalcTotal();
             document.getElementById('pickQuantityModal').showModal();
+
+            const preferredInput = availableBoxes > 0
+                ? document.getElementById('pickQtyBoxes')
+                : document.getElementById('pickQtyPieces');
+            setTimeout(() => {
+                preferredInput?.focus();
+                preferredInput?.select();
+            }, 0);
         }
 
         function pickCalcTotal() {
@@ -1413,7 +1418,9 @@
                     pickScannedItems[pickEditIndex].releaseTotal = totalRelease;
                 } else {
                     // New scan — add or merge
-                    const existingIndex = pickScannedItems.findIndex(i => i.id === pickCurrentScan.id);
+                    const existingIndex = pickScannedItems.findIndex(
+                        item => Number(item.id) === Number(pickCurrentScan.id)
+                    );
                     if (existingIndex >= 0) {
                         pickScannedItems[existingIndex].releaseBoxes += releaseBoxes;
                         pickScannedItems[existingIndex].releasePieces += releasePieces;
@@ -1453,10 +1460,10 @@
                 return `
                 <tr>
                     <td>
-                        <div class="font-medium">${item.product_name}</div>
-                        <div class="text-xs text-base-content/60">${item.variant || ''}</div>
+                        <div class="font-medium">${escapeHtml(item.product_name)}</div>
+                        <div class="text-xs text-base-content/60">${escapeHtml(item.variant || '')}</div>
                     </td>
-                    <td><code class="text-xs">${item.batch_code}</code></td>
+                    <td><code class="text-xs">${escapeHtml(item.batch_code)}</code></td>
                     <td>${item.expiry_date ? new Date(item.expiry_date).toLocaleDateString() : 'N/A'}</td>
                     <td class="text-right font-bold text-primary">${item.releaseTotal}</td>
                     <td>
@@ -1708,7 +1715,7 @@
             }
 
             return `<div class="flex justify-between items-center gap-2 ${rowClass}">
-                <span class="min-w-0 truncate">${icon}${item.product_name}</span>
+                <span class="min-w-0 truncate">${icon}${escapeHtml(item.product_name)}</span>
                 <span class="${countClass} shrink-0">${scannedQty}/${requiredQty}</span>
             </div>`;
         }
@@ -1829,7 +1836,7 @@
         function showToast(message, type = 'info') {
             const toast = document.createElement('div');
             toast.className = `alert alert-${type} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            HighlandSecurity.renderToastContent(toast, message);
             document.getElementById('toastContainer').appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
         }
@@ -1886,11 +1893,11 @@
 
                     document.getElementById('drReturnsTable').innerHTML = returns.map(ret => `
                         <tr>
-                            <td>${ret.product_name || 'Unknown'}</td>
+                            <td>${escapeHtml(ret.product_name || 'Unknown')}</td>
                             <td>${formatBatchBadge(ret.batch_code)}</td>
                             <td class="text-right font-semibold text-warning">${ret.quantity_returned}</td>
                             <td><span class="badge badge-sm badge-outline">${reasonLabels[ret.return_reason] || ret.return_reason}</span></td>
-                            <td><span class="badge badge-sm ${ret.condition === 'resellable' ? 'badge-success' : ret.condition === 'qc_hold' ? 'badge-warning' : 'badge-error'}">${conditionLabels[ret.condition] || ret.condition}</span></td>
+                            <td><span class="badge badge-sm ${ret.condition === 'resellable' ? 'badge-success' : ret.condition === 'qc_hold' ? 'badge-warning' : 'badge-error'}">${escapeHtml(conditionLabels[ret.condition] || ret.condition)}</span></td>
                             <td><span class="badge badge-sm badge-ghost">${dispositionLabels[ret.disposition] || ret.disposition}</span></td>
                         </tr>
                     `).join('');
@@ -1937,8 +1944,8 @@
                 <tr class="hover ${(!hasItems || !stockReady) ? 'bg-warning/10' : ''}">
                     <td class="font-mono font-medium text-sm">${o.order_number || 'ORD-' + o.id}</td>
                     <td>
-                        <div class="font-medium">${o.customer_name || 'Unknown'}</div>
-                        <div class="text-xs text-base-content/60">${o.customer_type || ''}</div>
+                        <div class="font-medium">${escapeHtml(o.customer_name || 'Unknown')}</div>
+                        <div class="text-xs text-base-content/60">${escapeHtml(o.customer_type || '')}</div>
                     </td>
                     <td class="text-sm">${o.delivery_date ? new Date(o.delivery_date).toLocaleDateString() : '-'}</td>
                     <td class="text-center">
@@ -2003,8 +2010,8 @@
                 tbody.innerHTML = order.items.map(item => `
                     <tr>
                         <td>
-                            <div class="font-medium">${item.product_name || 'Unknown Product'}</div>
-                            <div class="text-xs text-base-content/60">${item.product_code || ''}</div>
+                            <div class="font-medium">${escapeHtml(item.product_name || 'Unknown Product')}</div>
+                            <div class="text-xs text-base-content/60">${escapeHtml(item.product_code || '')}</div>
                         </td>
                         <td class="text-center">${item.quantity || item.quantity_ordered || 0}</td>
                         <td class="text-right">₱${Number(item.unit_price || 0).toFixed(2)}</td>
@@ -2172,16 +2179,16 @@
 
                 return `
                 <tr>
-                    <td><code class="font-mono font-semibold">${dr.dr_number}</code></td>
+                    <td><code class="font-mono font-semibold">${escapeHtml(dr.dr_number)}</code></td>
                     <td>
-                        <div class="font-medium">${dr.customer_name}</div>
-                        <div class="text-xs text-base-content/60">${dr.sub_location || ''}</div>
+                        <div class="font-medium">${escapeHtml(dr.customer_name)}</div>
+                        <div class="text-xs text-base-content/60">${escapeHtml(dr.sub_location || '')}</div>
                     </td>
-                    <td><span class="badge badge-outline badge-sm">${dr.customer_type || 'N/A'}</span></td>
+                    <td><span class="badge badge-outline badge-sm">${escapeHtml(dr.customer_type || 'N/A')}</span></td>
                     <td>${dr.item_count || 0} items</td>
                     <td>${new Date(dr.created_at).toLocaleDateString()}</td>
                     <td>
-                        <span class="badge ${statusColors[dr.status] || 'badge-ghost'} badge-sm">${statusLabels[dr.status] || dr.status}</span>
+                        <span class="badge ${statusColors[dr.status] || 'badge-ghost'} badge-sm">${escapeHtml(statusLabels[dr.status] || dr.status)}</span>
                         ${dr.status === 'ready' && !isPrinted ? '<span class="badge badge-error badge-xs ml-1">Print needed</span>' : ''}
                         ${dr.status === 'ready' && isPrinted ? '<span class="badge badge-success badge-xs ml-1">Printed</span>' : ''}
                     </td>
@@ -2826,8 +2833,8 @@
                     </div>
 
                     <input type="hidden" id="return_dr_item_id_${index}" value="${item.id}">
-                    <input type="hidden" id="return_product_id_${index}" value="${item.product_id}">
-                    <input type="hidden" id="return_batch_id_${index}" value="${item.batch_id || ''}">
+                    <input type="hidden" id="return_product_id_${index}" value="${Number(item.product_id) || 0}">
+                    <input type="hidden" id="return_batch_id_${index}" value="${Number(item.batch_id) || ''}">
                 </div>
             `;
             }).join('');
@@ -3149,6 +3156,32 @@
          * window.print() has no reliable success callback — we open the preview,
          * then ask the operator to confirm print success before unlocking Dispatch.
          */
+        function waitForDRPrintDialog(printWindow, drId) {
+            return new Promise((resolve) => {
+                let settled = false;
+                const finish = () => {
+                    if (settled) return;
+                    settled = true;
+                    window.removeEventListener('message', onMessage);
+                    window.clearInterval(closePoll);
+                    window.clearTimeout(timeout);
+                    resolve();
+                };
+                const onMessage = (event) => {
+                    if (event.origin !== window.location.origin) return;
+                    if (event.source !== printWindow) return;
+                    if (event.data?.type !== 'highland-dr-print-dialog-closed') return;
+                    if (Number(event.data?.drId) !== Number(drId)) return;
+                    finish();
+                };
+                const closePoll = window.setInterval(() => {
+                    if (printWindow.closed) finish();
+                }, 500);
+                const timeout = window.setTimeout(finish, 300000);
+                window.addEventListener('message', onMessage);
+            });
+        }
+
         async function printDR(drId) {
             try {
                 // Fetch DR details for printing
@@ -3170,248 +3203,14 @@
                     return false;
                 }
 
-                // Create print window
-                const printWindow = window.open('', '_blank', 'width=800,height=600');
+                const printUrl = `print_delivery_receipt.html?dr_id=${encodeURIComponent(drId)}&auto_print=1`;
+                const printWindow = window.open(printUrl, '_blank', 'width=1000,height=760');
                 if (!printWindow) {
                     showToast('Pop-up blocked. Allow pop-ups to print the Delivery Receipt.', 'error');
                     return false;
                 }
 
-                // Build items table HTML
-                const items = dr.items || [];
-                let itemsHtml = '';
-                let totalAmount = 0;
-
-                // Format DR date directly from MySQL datetime to avoid timezone conversion
-                let formattedDate = new Date().toLocaleDateString();
-                if (dr.created_at) {
-                    const dateParts = dr.created_at.split(' ')[0].split('-');
-                    if (dateParts.length === 3) {
-                        formattedDate = `${parseInt(dateParts[1])}/${parseInt(dateParts[2])}/${dateParts[0]}`;
-                    }
-                }
-
-                items.forEach((item, idx) => {
-                    const qty = parseFloat(item.quantity_packed)
-                        || parseFloat(item.quantity_picked)
-                        || parseFloat(item.quantity_ordered)
-                        || parseFloat(item.quantity)
-                        || 0;
-                    const orderedBoxes = parseInt(item.ordered_boxes, 10) || 0;
-                    const orderedPieces = parseInt(item.ordered_pieces, 10) || 0;
-                    const baseUnit = item.base_unit || 'piece';
-                    let quantityLabel = `${qty} ${baseUnit}${qty === 1 ? '' : 's'}`;
-                    if (orderedBoxes > 0 && orderedPieces > 0) {
-                        quantityLabel = `${orderedBoxes} ${item.box_unit || 'box'} + ${orderedPieces} ${baseUnit} (${qty} ${baseUnit}${qty === 1 ? '' : 's'})`;
-                    } else if (orderedBoxes > 0) {
-                        quantityLabel = `${orderedBoxes} ${item.box_unit || 'box'} (${qty} ${baseUnit}${qty === 1 ? '' : 's'})`;
-                    }
-                    const price = parseFloat(item.unit_price) || 0;
-                    const lineTotal = parseFloat(item.total_price) || (qty * price);
-                    totalAmount += lineTotal;
-                    const batchCode = (item.batch_code || '').toString().trim() || '—';
-
-                    itemsHtml += `
-                        <tr>
-                            <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${idx + 1}</td>
-                            <td style="padding: 8px; border: 1px solid #ddd;">${item.product_name || 'Unknown'}</td>
-                            <td style="padding: 8px; border: 1px solid #ddd; font-family: monospace; font-size: 11px;">${batchCode}</td>
-                            <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${quantityLabel}</td>
-                            <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₱${price.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                            <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₱${lineTotal.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        </tr>
-                    `;
-                });
-
-                printWindow.document.write(`
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <title>Delivery Receipt - ${dr.dr_number}</title>
-                        <style>
-                            body { 
-                                font-family: Arial, sans-serif; 
-                                padding: 20px; 
-                                max-width: 800px; 
-                                margin: 0 auto;
-                            }
-                            .header { 
-                                text-align: center; 
-                                margin-bottom: 30px;
-                                border-bottom: 2px solid #333;
-                                padding-bottom: 20px;
-                            }
-                            .header h1 { 
-                                margin: 0; 
-                                color: #2a5934;
-                                font-size: 24px;
-                            }
-                            .header p { 
-                                margin: 5px 0; 
-                                color: #666;
-                            }
-                            .dr-title {
-                                font-size: 20px;
-                                font-weight: bold;
-                                text-align: center;
-                                margin: 20px 0;
-                                color: #333;
-                            }
-                            .info-grid { 
-                                display: grid; 
-                                grid-template-columns: 1fr 1fr; 
-                                gap: 20px;
-                                margin-bottom: 20px;
-                            }
-                            .info-box {
-                                background: #f9f9f9;
-                                padding: 15px;
-                                border-radius: 5px;
-                            }
-                            .info-box h3 {
-                                margin: 0 0 10px 0;
-                                font-size: 14px;
-                                color: #666;
-                                text-transform: uppercase;
-                            }
-                            .info-box p {
-                                margin: 5px 0;
-                                font-size: 14px;
-                            }
-                            table { 
-                                width: 100%; 
-                                border-collapse: collapse; 
-                                margin: 20px 0;
-                            }
-                            th { 
-                                background: #2a5934; 
-                                color: white; 
-                                padding: 10px 8px;
-                                text-align: left;
-                                font-size: 12px;
-                            }
-                            th:nth-child(4), th:nth-child(5), th:nth-child(6) {
-                                text-align: right;
-                            }
-                            .total-row {
-                                font-weight: bold;
-                                background: #f0f0f0;
-                            }
-                            .signatures {
-                                margin-top: 50px;
-                                display: grid;
-                                grid-template-columns: 1fr 1fr 1fr;
-                                gap: 30px;
-                            }
-                            .signature-box {
-                                text-align: center;
-                            }
-                            .signature-line {
-                                border-top: 1px solid #333;
-                                margin-top: 50px;
-                                padding-top: 10px;
-                            }
-                            .footer {
-                                margin-top: 30px;
-                                text-align: center;
-                                font-size: 11px;
-                                color: #666;
-                            }
-                            @media print {
-                                body { margin: 0; padding: 15px; }
-                                .no-print { display: none; }
-                            }
-                        </style>
-                    </head>
-                    <body>
-                        <div class="header">
-                            <h1>HIGHLAND FRESH DAIRY CORPORATION</h1>
-                            <p>Tel: (053) 832-1234 | Email: info@highlandfresh.com</p>
-                        </div>
-                        
-                        <div class="dr-title">DELIVERY RECEIPT</div>
-                        
-                        <div class="info-grid">
-                            <div class="info-box">
-                                <h3>DR Information</h3>
-                                <p><strong>DR Number:</strong> ${dr.dr_number}</p>
-                                <p><strong>Date:</strong> ${formattedDate}</p>
-                                <p><strong>Status:</strong> ${dr.status.toUpperCase()}</p>
-                                ${dr.order_number ? `<p><strong>Order Ref:</strong> ${dr.order_number}</p>` : ''}
-                            </div>
-                            <div class="info-box">
-                                <h3>Customer Details</h3>
-                                <p><strong>${dr.customer_name || 'N/A'}</strong></p>
-                                <p>${dr.delivery_address || 'N/A'}</p>
-                                <p>Contact: ${dr.contact_number || 'N/A'}</p>
-                            </div>
-                        </div>
-                        
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th style="width: 40px; text-align: center;">#</th>
-                                    <th>Product Description</th>
-                                    <th>Batch Code</th>
-                                    <th style="text-align: center;">Qty</th>
-                                    <th style="text-align: right;">Unit Price</th>
-                                    <th style="text-align: right;">Amount</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${itemsHtml}
-                                <tr class="total-row">
-                                    <td colspan="5" style="padding: 10px 8px; border: 1px solid #ddd; text-align: right;">TOTAL AMOUNT:</td>
-                                    <td style="padding: 10px 8px; border: 1px solid #ddd; text-align: right;">₱${totalAmount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        
-                        <div class="signatures">
-                            <div class="signature-box">
-                                <div class="signature-line">
-                                    <strong>Prepared By</strong><br>
-                                    <small>Date: __________</small>
-                                </div>
-                            </div>
-                            <div class="signature-box">
-                                <div class="signature-line">
-                                    <strong>Delivered By</strong><br>
-                                    <small>Date: __________</small>
-                                </div>
-                            </div>
-                            <div class="signature-box">
-                                <div class="signature-line">
-                                    <strong>Received By</strong><br>
-                                    <small>Date: __________</small>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="footer">
-                            <p>This document serves as official delivery receipt. Please check items upon receipt.</p>
-                            <p>Printed on: ${new Date().toLocaleString()}</p>
-                        </div>
-                        
-                        <div class="no-print" style="text-align: center; margin-top: 30px;">
-                            <button onclick="window.print()" style="padding: 10px 30px; font-size: 16px; cursor: pointer; background: #2a5934; color: white; border: none; border-radius: 5px;">
-                                Print DR
-                            </button>
-                            <p style="margin-top: 12px; color: #666; font-size: 12px;">After printing, return to the app and confirm the print succeeded to unlock Dispatch.</p>
-                        </div>
-                    </body>
-                    </html>
-                `);
-
-                printWindow.document.close();
-
-                // Auto-open browser print dialog once content is ready
-                try {
-                    printWindow.focus();
-                    setTimeout(() => {
-                        try { printWindow.print(); } catch (e) { /* user can click Print DR */ }
-                    }, 300);
-                } catch (e) { /* ignore */ }
+                await waitForDRPrintDialog(printWindow, drId);
 
                 // window.print() has no reliable success callback — confirm with operator
                 const confirmedPrint = await AuthService.confirmAction({

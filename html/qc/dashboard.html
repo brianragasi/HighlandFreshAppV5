@@ -611,7 +611,9 @@
             const alertClass = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type];
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            const text = document.createElement('span');
+            text.textContent = String(message ?? '');
+            toast.appendChild(text);
             container.appendChild(toast);
             setTimeout(() => { toast.remove(); }, 3000);
         }
@@ -775,13 +777,13 @@
 
             tbody.innerHTML = tests.map(test => `
                 <tr>
-                    <td><code class="text-xs bg-base-200 px-2 py-1 rounded">${test.test_code}</code></td>
+                    <td><code class="text-xs bg-base-200 px-2 py-1 rounded">${escapeHtml(test.test_code || '-')}</code></td>
                     <td>
-                        <div class="font-medium text-sm">${test.farmer_code}</div>
-                        <div class="text-xs text-base-content/60">${test.farmer_name}</div>
+                        <div class="font-medium text-sm">${escapeHtml(test.farmer_code || 'N/A')}</div>
+                        <div class="text-xs text-base-content/60">${escapeHtml(test.farmer_name || 'Unknown')}</div>
                     </td>
                     <td class="text-right font-semibold">${parseFloat(test.fat_percentage).toFixed(2)}%</td>
-                    <td><span class="badge ${getGradeBadgeClass(test.grade)} font-bold">${test.grade || 'N/A'}</span></td>
+                    <td><span class="badge ${getGradeBadgeClass(test.grade)} font-bold">${escapeHtml(test.grade || 'N/A')}</span></td>
                     <td class="text-right font-semibold">${formatCurrency(test.total_amount)}</td>
                     <td class="text-xs text-base-content/60">${formatTime(test.test_datetime?.split(' ')[1])}</td>
                 </tr>
@@ -815,8 +817,8 @@
                         </span>
                     </td>
                     <td>
-                        <div class="font-medium text-sm">${farmer.farmer_code}</div>
-                        <div class="text-xs text-base-content/60">${farmer.farmer_name}</div>
+                        <div class="font-medium text-sm">${escapeHtml(farmer.farmer_code || 'N/A')}</div>
+                        <div class="text-xs text-base-content/60">${escapeHtml(farmer.farmer_name || 'Unknown')}</div>
                     </td>
                     <td class="text-right">${farmer.deliveries}</td>
                     <td class="text-right font-semibold">${parseFloat(farmer.total_liters).toLocaleString()} L</td>

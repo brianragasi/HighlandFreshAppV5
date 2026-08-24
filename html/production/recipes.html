@@ -340,9 +340,9 @@
                                 <i class="fas ${icons[recipe.product_type] || 'fa-box'}"></i>
                             </div>
                             <div class="flex-1 min-w-0">
-                                <h4 class="font-semibold text-base-content truncate">${recipe.product_name}</h4>
-                                <p class="text-sm text-base-content/60 font-mono">${recipe.recipe_code}</p>
-                                ${recipe.variant ? `<span class="badge badge-primary badge-sm mt-1">${recipe.variant}</span>` : ''}
+                                <h4 class="font-semibold text-base-content truncate">${escapeHtml(recipe.product_name)}</h4>
+                                <p class="text-sm text-base-content/60 font-mono">${escapeHtml(recipe.recipe_code)}</p>
+                                ${recipe.variant ? `<span class="badge badge-primary badge-sm mt-1">${escapeHtml(recipe.variant)}</span>` : ''}
                             </div>
                         </div>
                         <div class="divider my-2"></div>
@@ -353,7 +353,7 @@
                             </div>
                             <div>
                                 <div class="font-semibold text-primary">${recipe.expected_yield}</div>
-                                <div class="text-xs text-base-content/50">${recipe.yield_unit}</div>
+                                <div class="text-xs text-base-content/50">Standard ${escapeHtml(recipe.yield_unit)} (reference)</div>
                             </div>
                             <div>
                                 <div class="font-semibold text-primary">${recipe.ingredient_count || 0}</div>
@@ -389,10 +389,10 @@
                         <div class="overflow-x-auto">
                             <table class="table table-sm">
                                 <tbody>
-                                    <tr><td class="text-base-content/60">Recipe Code</td><td class="font-mono">${recipe.recipe_code}</td></tr>
-                                    <tr><td class="text-base-content/60">Product Type</td><td class="capitalize">${recipe.product_type.replace('_', ' ')}</td></tr>
-                                    <tr><td class="text-base-content/60">Variant</td><td>${recipe.variant || '-'}</td></tr>
-                                    <tr><td class="text-base-content/60">Expected Yield</td><td class="font-semibold">${recipe.expected_yield} ${recipe.yield_unit}</td></tr>
+                                    <tr><td class="text-base-content/60">Recipe Code</td><td class="font-mono">${escapeHtml(recipe.recipe_code)}</td></tr>
+                                    <tr><td class="text-base-content/60">Product Type</td><td class="capitalize">${escapeHtml(String(recipe.product_type || '').replace('_', ' '))}</td></tr>
+                                    <tr><td class="text-base-content/60">Variant</td><td>${escapeHtml(recipe.variant || '-')}</td></tr>
+                                    <tr><td class="text-base-content/60">Standard Yield (reference)</td><td class="font-semibold">${Number(recipe.expected_yield) || 0} ${escapeHtml(recipe.yield_unit)}</td></tr>
                                     <tr><td class="text-base-content/60">Shelf Life</td><td>${recipe.shelf_life_days} days</td></tr>
                                 </tbody>
                             </table>
@@ -429,10 +429,10 @@
                         <tbody>
                             ${recipe.ingredients.map(ing => `
                                 <tr>
-                                    <td>${ing.ingredient_name}</td>
+                                    <td>${escapeHtml(ing.ingredient_name)}</td>
                                     <td class="text-right font-semibold">${ing.quantity}</td>
-                                    <td>${ing.unit}</td>
-                                    <td class="text-base-content/60">${ing.notes || '-'}</td>
+                                    <td>${escapeHtml(ing.unit)}</td>
+                                    <td class="text-base-content/60">${escapeHtml(ing.notes || '-')}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -448,7 +448,7 @@
                 ${recipe.special_instructions ? `
                 <div class="mt-4">
                     <h4 class="font-semibold text-base-content mb-2">Special Instructions</h4>
-                    <p class="text-base-content/70">${recipe.special_instructions}</p>
+                    <p class="text-base-content/70">${escapeHtml(recipe.special_instructions)}</p>
                 </div>
                 ` : ''}
             `;
@@ -461,10 +461,7 @@
             
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `
-                <i class="fas ${icon}"></i>
-                <span>${message}</span>
-            `;
+            HighlandSecurity.renderToastContent(toast, message, `fas ${icon}`);
             container.appendChild(toast);
             
             setTimeout(() => {

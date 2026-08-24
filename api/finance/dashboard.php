@@ -139,6 +139,7 @@ function getDashboardStats($db) {
         FROM farmer_payments
         WHERE YEAR(payment_date) = YEAR(CURDATE())
         AND MONTH(payment_date) = MONTH(CURDATE())
+        AND status = 'released'
     ");
     $stats['monthly_disbursements'] += (float) $stmt->fetch()['total'];
     
@@ -192,7 +193,9 @@ function getDashboardStats($db) {
           AND NOT EXISTS (
               SELECT 1
               FROM farmer_payment_receipts fpr
+              JOIN farmer_payments fp_reserved ON fp_reserved.id = fpr.farmer_payment_id
               WHERE fpr.receiving_id = mr.id
+                AND fp_reserved.status IN ('pending_review', 'released')
           )
     ");
     $farmerPayments = $stmt->fetch();
@@ -328,6 +331,7 @@ function getRecentDisbursements($db) {
                 'farmer_payment' as transaction_type
             FROM farmer_payments fp
             JOIN farmers f ON fp.farmer_id = f.id
+            WHERE fp.status = 'released'
         ) recent
         ORDER BY payment_date DESC, id DESC
         LIMIT ?

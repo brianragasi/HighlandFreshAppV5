@@ -255,15 +255,20 @@
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Owner Name *</span></label>
-                        <input type="text" id="ownerName" class="input input-bordered" required placeholder="Full name">
+                        <input type="text" id="ownerName" class="input input-bordered" maxlength="160" data-person-name required placeholder="Full name">
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Phone Number *</span></label>
-                        <input type="tel" id="wholesalerPhone" class="input input-bordered" required placeholder="09XX XXX XXXX">
+                        <input type="tel" id="wholesalerPhone" class="input input-bordered" inputmode="numeric" maxlength="11" required placeholder="09171234567">
                     </div>
                     <div class="form-control md:col-span-2">
-                        <label class="label"><span class="label-text">Address</span></label>
-                        <textarea id="wholesalerAddress" class="textarea textarea-bordered" rows="2" placeholder="Business address"></textarea>
+                        <label class="label"><span class="label-text">Email *</span></label>
+                        <input type="email" id="wholesalerEmail" class="input input-bordered" maxlength="254" required placeholder="orders@example.com">
+                        <label class="label"><span class="label-text-alt">Used to match emailed purchase orders to this wholesaler.</span></label>
+                    </div>
+                    <div class="form-control md:col-span-2">
+                        <label class="label"><span class="label-text">Address *</span></label>
+                        <textarea id="wholesalerAddress" class="textarea textarea-bordered" rows="2" required placeholder="Business address"></textarea>
                     </div>
                     <div class="form-control md:col-span-2">
                         <label class="label"><span class="label-text">Territory / Coverage Area</span></label>
@@ -280,11 +285,15 @@
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Payment Terms</span></label>
-                        <select id="paymentTerms" class="select select-bordered">
+                        <select id="paymentTerms" class="select select-bordered" onchange="handleWholesalerTermsChange()">
                             <option value="cod">Cash on Delivery</option>
                             <option value="7">Net 7 days</option>
                             <option value="14">Net 14 days</option>
+                            <option value="15">Net 15 days</option>
                             <option value="30">Net 30 days</option>
+                            <option value="45">Net 45 days</option>
+                            <option value="60">Net 60 days</option>
+                            <option value="90">Net 90 days</option>
                         </select>
                     </div>
                     <div class="form-control">
@@ -325,7 +334,7 @@
         function showToast(message, type = 'info') {
             const toast = document.createElement('div');
             toast.className = `alert alert-${type} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            HighlandSecurity.renderToastContent(toast, message);
             document.getElementById('toastContainer').appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
         }
@@ -381,14 +390,14 @@
             
             tbody.innerHTML = list.map(w => `
                 <tr class="hover">
-                    <td class="font-mono text-sm">${w.customer_code || '-'}</td>
+                    <td class="font-mono text-sm">${escapeHtml(w.customer_code || '-')}</td>
                     <td>
-                        <div class="font-medium">${w.customer_name || w.name || 'Unknown'}</div>
-                        <div class="text-xs text-base-content/60">${w.contact_person || ''}</div>
+                        <div class="font-medium">${escapeHtml(w.customer_name || w.name || 'Unknown')}</div>
+                        <div class="text-xs text-base-content/60">${escapeHtml(w.contact_person || '')}</div>
                     </td>
-                    <td class="text-sm">${w.phone || '-'}</td>
-                    <td class="text-sm max-w-40 truncate">${w.territory || w.address || '-'}</td>
-                    <td><span class="badge badge-outline badge-sm">Net ${w.payment_terms_days || 7}d</span></td>
+                    <td class="text-sm">${escapeHtml(w.phone || '-')}</td>
+                    <td class="text-sm max-w-40 truncate">${escapeHtml(w.territory || w.address || '-')}</td>
+                    <td><span class="badge badge-outline badge-sm">${w.default_payment_type === 'cash' ? 'COD' : `Net ${w.payment_terms_days}d`}</span></td>
                     <td class="text-right font-mono">${formatCurrency(w.credit_limit)}</td>
                     <td class="text-right font-mono ${(w.outstanding_balance || 0) > 0 ? 'text-error' : ''}">${formatCurrency(w.outstanding_balance)}</td>
                     <td><span class="badge ${w.status === 'active' ? 'badge-success' : 'badge-ghost'} badge-sm">${w.status}</span></td>
@@ -434,6 +443,8 @@
             document.getElementById('modalTitle').innerHTML = '<i class="fas fa-truck text-primary mr-2"></i>Add Wholesaler';
             document.getElementById('wholesalerForm').reset();
             document.getElementById('wholesalerId').value = '';
+            document.getElementById('paymentTerms').value = 'cod';
+            handleWholesalerTermsChange();
             document.getElementById('wholesalerModal').showModal();
         }
         
@@ -446,28 +457,43 @@
             document.getElementById('wholesalerName').value = w.customer_name || w.name || '';
             document.getElementById('ownerName').value = w.contact_person || '';
             document.getElementById('wholesalerPhone').value = w.phone || '';
+            document.getElementById('wholesalerEmail').value = w.email || '';
             document.getElementById('wholesalerAddress').value = w.address || '';
             document.getElementById('territory').value = w.territory || '';
-            document.getElementById('creditLimit').value = w.credit_limit || 50000;
-            document.getElementById('paymentTerms').value = w.payment_terms_days || '7';
+            document.getElementById('creditLimit').value = w.credit_limit || 0;
+            document.getElementById('paymentTerms').value = w.default_payment_type === 'cash' ? 'cod' : String(w.payment_terms_days || 30);
             document.getElementById('wholesalerStatus').value = w.status || 'active';
+            handleWholesalerTermsChange();
             document.getElementById('wholesalerModal').showModal();
         }
         
+        function handleWholesalerTermsChange() {
+            const cash = document.getElementById('paymentTerms').value === 'cod';
+            const limit = document.getElementById('creditLimit');
+            limit.disabled = cash;
+            limit.required = !cash;
+            limit.min = cash ? '0' : '0.01';
+            if (cash) limit.value = '0';
+            else if (Number(limit.value) <= 0) limit.value = '50000';
+        }
+
         document.getElementById('wholesalerForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const id = document.getElementById('wholesalerId').value;
+            const selectedTerms = document.getElementById('paymentTerms').value;
+            const isCash = selectedTerms === 'cod';
             const data = {
                 name: document.getElementById('wholesalerName').value,
                 customer_type: 'distributor',
                 contact_person: document.getElementById('ownerName').value,
                 phone: document.getElementById('wholesalerPhone').value,
+                email: document.getElementById('wholesalerEmail').value,
                 address: document.getElementById('wholesalerAddress').value,
                 territory: document.getElementById('territory').value,
-                credit_limit: parseFloat(document.getElementById('creditLimit').value) || 50000,
-                payment_terms_days: parseInt(document.getElementById('paymentTerms').value) || 7,
-                default_payment_type: 'credit',
+                credit_limit: isCash ? 0 : (parseFloat(document.getElementById('creditLimit').value) || 0),
+                payment_terms_days: isCash ? 0 : parseInt(selectedTerms, 10),
+                default_payment_type: isCash ? 'cash' : 'credit',
                 status: document.getElementById('wholesalerStatus').value
             };
             

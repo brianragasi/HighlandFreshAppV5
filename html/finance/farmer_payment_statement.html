@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farmer Payment Statement</title>
+    <style>
+        *{box-sizing:border-box} body{font-family:Arial,sans-serif;color:#17231d;margin:0;background:#eef2ef}
+        .sheet{width:min(960px,calc(100% - 32px));margin:24px auto;background:#fff;padding:42px;box-shadow:0 4px 20px #0002}
+        h1,h2,p{margin:0}.brand{text-align:center;color:#185c38}.sub{text-align:center;color:#52645a;margin-top:6px}
+        .rule{border-top:2px solid #185c38;margin:22px 0}.title{text-align:center;margin-bottom:22px}
+        .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}.card{border:1px solid #d8e1db;padding:14px;border-radius:8px}
+        .label{font-size:12px;color:#66766d;text-transform:uppercase}.value{font-weight:700;margin-top:4px}.status{text-transform:capitalize}
+        table{width:100%;border-collapse:collapse;font-size:12px}th{background:#205f3b;color:white;text-align:left;padding:9px}td{border:1px solid #d6ddd8;padding:8px}
+        .right{text-align:right}.total{font-size:18px;font-weight:700}.foot{margin-top:28px;font-size:11px;color:#66766d;text-align:center}
+        .actions{text-align:center;margin:20px}.actions button{background:#205f3b;color:#fff;border:0;border-radius:6px;padding:10px 18px;cursor:pointer}
+        .error{padding:30px;text-align:center;color:#b42318}.reason{margin-top:14px;padding:12px;background:#fff0f0;color:#8d1b12;border-radius:6px}
+        @media(max-width:650px){.sheet{width:100%;margin:0;padding:20px}.grid{grid-template-columns:1fr}}
+        @media print{body{background:white}.sheet{width:100%;margin:0;box-shadow:none;padding:18mm}.actions{display:none}}
+    </style>
+</head>
+<body>
+    <div class="actions"><button onclick="window.print()">Print Payment Statement</button></div>
+    <main class="sheet" id="statement"><p style="text-align:center">Loading payment statement…</p></main>
+    <script src="../../js/vendor/axios.min.js"></script>
+    <script src="../../js/config/api.js"></script>
+    <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="finance_officer,general_manager"></script>
+    <script src="../../js/finance/finance.service.js"></script>
+    <script>
+        const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const money = value => '₱' + Number(value || 0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+        const date = value => value ? new Date(value + 'T00:00:00').toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'}) : '-';
+        const methodName = value => ({bank_transfer:'Bank Transfer',e_wallet:'E-Wallet',check:'Check',cash:'Cash'}[value] || value || '-');
+        async function loadStatement(){
+            const id = Number(new URLSearchParams(location.search).get('id') || 0);
+            if(!id){document.getElementById('statement').innerHTML='<div class="error">Payment not found.</div>';return;}
+            try{
+                const response = await FinanceService.getFarmerPaymentStatement(id);
+                const p=response.data.payment, rows=response.data.deliveries||[];
+                document.title=`Farmer Payment - ${p.payment_code}`;
+                document.getElementById('statement').innerHTML=`
+                    <h1 class="brand">HIGHLAND FRESH DAIRY CORPORATION</h1><p class="sub">Farmer Payment Statement</p><div class="rule"></div>
+                    <h2 class="title">${esc(p.payment_code)}</h2>
+                    <div class="grid"><div class="card"><div class="label">Farmer</div><div class="value">${esc(p.farmer_name)} · ${esc(p.farmer_code)}</div><div class="label" style="margin-top:12px">Covered Period</div><div class="value">${esc(date(p.covered_from))} – ${esc(date(p.covered_to))}</div></div>
+                    <div class="card"><div class="label">Payment</div><div class="value">${esc(methodName(p.payment_method))} · ${esc(p.reference_number||'-')}</div><div class="label" style="margin-top:12px">Destination</div><div class="value">${esc(p.payee_name||'-')} · ${esc(p.destination_provider||'-')} ${esc(p.destination_account||p.destination_mobile||'')}</div><div class="label" style="margin-top:12px">Status</div><div class="value status">${esc(String(p.status||'released').replace(/_/g,' '))}</div></div></div>
+                    <table><thead><tr><th>Date</th><th>Delivery</th><th class="right">Liters</th><th class="right">Fat</th><th class="right">Acidity</th><th>Sediment</th><th class="right">Price/L</th><th class="right">Amount</th></tr></thead><tbody>
+                    ${rows.map(r=>`<tr><td>${esc(date(r.receiving_date))}</td><td>${esc(r.receiving_code)}<br><small>${esc(r.rmr_number||'')}</small></td><td class="right">${Number(r.accepted_liters||0).toLocaleString('en-PH')}</td><td class="right">${Number(r.fat_percentage||0).toFixed(2)}%</td><td class="right">${Number(r.titratable_acidity||0).toFixed(2)}%</td><td>${esc(r.sediment_grade||'-')}</td><td class="right">${money(r.final_price_per_liter)}</td><td class="right">${money(r.amount_paid)}</td></tr>`).join('')}
+                    </tbody><tfoot><tr><td colspan="2"><b>${Number(p.delivery_count||0)} deliveries</b></td><td class="right"><b>${Number(p.total_liters||0).toLocaleString('en-PH')} L</b></td><td colspan="4" class="right total">Total Paid</td><td class="right total">${money(p.amount_paid)}</td></tr></tfoot></table>
+                    ${p.status_reason?`<div class="reason"><b>Status note:</b> ${esc(p.status_reason)}</div>`:''}
+                    <div class="grid" style="margin-top:28px"><div><div class="label">Recorded by</div><div class="value">${esc(p.created_by_name||'-')}</div></div><div><div class="label">Second review</div><div class="value">${esc(p.reviewed_by_name||'Not required / pending')}</div></div></div>
+                    <p class="foot">Payment date: ${esc(date(p.payment_date))} · Generated ${esc(new Date().toLocaleString('en-PH'))}<br>This statement records the payout and the accepted deliveries covered by it.</p>`;
+            }catch(error){document.getElementById('statement').innerHTML=`<div class="error">${esc(error.message||'Unable to load payment statement.')}</div>`;}
+        }
+        document.addEventListener('DOMContentLoaded',loadStatement);
+    </script>
+</body>
+</html>

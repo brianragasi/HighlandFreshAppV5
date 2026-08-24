@@ -155,6 +155,41 @@ try {
             if (!in_array($priority, ['low', 'normal', 'high', 'urgent'])) {
                 $errors['priority'] = 'Invalid priority level';
             }
+
+            if (is_array($items)) {
+                $seenMroItems = [];
+                foreach ($items as $index => $item) {
+                    $lineNo = $index + 1;
+                    $mroItemId = (int) ($item['mro_item_id'] ?? 0);
+                    try {
+                        $quantity = hfParseBusinessDecimal(
+                            $item['quantity'] ?? null,
+                            "Line {$lineNo} MRO quantity",
+                            0.01,
+                            1000000.00,
+                            2
+                        );
+                    } catch (InvalidArgumentException $error) {
+                        $quantity = false;
+                        $errors["items.$index.quantity"] = $error->getMessage();
+                    }
+
+                    if ($mroItemId <= 0) {
+                        $errors["items.$index.mro_item_id"] = "Line {$lineNo}: select an MRO item";
+                        continue;
+                    }
+                    if (isset($seenMroItems[$mroItemId])) {
+                        $firstLine = $seenMroItems[$mroItemId];
+                        $errors["items.$index.mro_item_id"] = "Line {$lineNo}: this MRO item is already on line {$firstLine}. Keep one row and update its quantity.";
+                        continue;
+                    }
+                    $seenMroItems[$mroItemId] = $lineNo;
+
+                    if ($quantity === false && !isset($errors["items.$index.quantity"])) {
+                        $errors["items.$index.quantity"] = "Line {$lineNo}: quantity must be greater than zero";
+                    }
+                }
+            }
             
             if (!empty($errors)) {
                 Response::validationError($errors);

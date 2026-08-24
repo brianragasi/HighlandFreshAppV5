@@ -424,13 +424,13 @@
                             <label class="label">
                                 <span class="label-text">First Name <span class="text-error">*</span></span>
                             </label>
-                            <input type="text" class="input input-bordered w-full" id="farmerFirstName" required>
+                            <input type="text" class="input input-bordered w-full" id="farmerFirstName" maxlength="100" data-person-name required>
                         </div>
                         <div class="form-control">
                             <label class="label">
                                 <span class="label-text">Last Name <span class="text-error">*</span></span>
                             </label>
-                            <input type="text" class="input input-bordered w-full" id="farmerLastName" required>
+                            <input type="text" class="input input-bordered w-full" id="farmerLastName" maxlength="100" data-person-name required>
                         </div>
                     </div>
 
@@ -439,7 +439,7 @@
                             <span class="label-text">Contact Number</span>
                         </label>
                         <input type="tel" class="input input-bordered w-full" id="farmerContact"
-                            placeholder="e.g., 09171234567">
+                            inputmode="numeric" maxlength="11" placeholder="e.g., 09171234567">
                     </div>
 
                     <div class="form-control">
@@ -475,7 +475,9 @@
                                 <span class="label-text">Account Number</span>
                             </label>
                             <input type="text" class="input input-bordered w-full" id="farmerBankAccount"
-                                placeholder="Account number">
+                                inputmode="numeric" maxlength="20" pattern="[0-9]{6,20}" data-bank-account
+                                placeholder="6 to 20 digits" title="Enter 6 to 20 digits">
+                            <label class="label py-1"><span class="label-text-alt text-base-content/60">Digits only; 6–20 digits.</span></label>
                         </div>
                     </div>
                 </div>
@@ -595,7 +597,9 @@
             const alertClass = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type];
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            const text = document.createElement('span');
+            text.textContent = String(message ?? '');
+            toast.appendChild(text);
             container.appendChild(toast);
             setTimeout(() => { toast.remove(); }, 3000);
         }
@@ -609,6 +613,12 @@
         function formatCurrency(amount) {
             if (amount === null || amount === undefined) return '-';
             return '₱' + parseFloat(amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, character => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+            }[character]));
         }
 
         // Reset filters
@@ -681,11 +691,11 @@
                     if (response.data.length > 0) {
                         table.innerHTML = response.data.map(f => `
                             <tr>
-                                <td><code class="text-xs bg-base-200 px-2 py-1 rounded">${f.farmer_code}</code></td>
+                                <td><code class="text-xs bg-base-200 px-2 py-1 rounded">${escapeHtml(f.farmer_code || '-')}</code></td>
                                 <td>
-                                    <div class="font-medium text-sm">${f.first_name} ${f.last_name}</div>
+                                    <div class="font-medium text-sm">${escapeHtml([f.first_name, f.last_name].filter(Boolean).join(' ') || '-')}</div>
                                 </td>
-                                <td class="text-sm">${f.contact_number || '<span class="text-base-content/40">-</span>'}</td>
+                                <td class="text-sm">${f.contact_number ? escapeHtml(f.contact_number) : '<span class="text-base-content/40">-</span>'}</td>
                                 <td>
                                     <span class="badge ${f.membership_type === 'member' ? 'badge-success' : 'badge-ghost'} badge-sm">
                                         ${f.membership_type === 'member' ? 'Member' : 'Non-Member'}

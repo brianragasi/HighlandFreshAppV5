@@ -525,8 +525,15 @@
         }
 
         function addRequisitionItem() {
-            reqItemCount++;
             const container = document.getElementById('reqItemsContainer');
+            const selectedIds = new Set(Array.from(container.querySelectorAll('.req-item-select'))
+                .map(select => select.value)
+                .filter(Boolean));
+            if (mroItems.length > 0 && selectedIds.size >= mroItems.length) {
+                showToast('Every available MRO item is already on the request. Update an existing row instead.', 'info');
+                return;
+            }
+            reqItemCount++;
 
             const itemRow = document.createElement('div');
             itemRow.className = 'flex gap-2 items-start p-3 bg-base-200 rounded-xl';
@@ -534,14 +541,14 @@
             itemRow.innerHTML = `
                 <div class="flex-1">
                     <label class="label label-text text-xs">MRO Item *</label>
-                    <select class="select select-bordered select-sm w-full req-item-select" required>
+                    <select class="select select-bordered select-sm w-full req-item-select" required onchange="onMaintenanceItemSelected(this)">
                         <option value="">Select item...</option>
                         ${mroItems.map(i => `<option value="${i.id}">${i.item_name} (Stock: ${i.current_stock})</option>`).join('')}
                     </select>
                 </div>
                 <div class="w-24">
                     <label class="label label-text text-xs">Qty *</label>
-                    <input type="number" class="input input-bordered input-sm w-full req-item-qty" min="1" step="1" value="1" required>
+                    <input type="number" class="input input-bordered input-sm w-full req-item-qty" min="1" max="1000000" step="1" inputmode="numeric" title="Maximum 1,000,000 per line" value="1" required>
                 </div>
                 <div class="w-24">
                     <label class="label label-text text-xs">Unit</label>
@@ -557,10 +564,48 @@
             `;
 
             container.appendChild(itemRow);
+            refreshMaintenanceItemChoices();
+        }
+
+        function onMaintenanceItemSelected(select) {
+            const selectedId = select.value;
+            const selectedLabel = select.options[select.selectedIndex]?.textContent?.replace(/\s*\(Stock:.*$/, '')?.trim() || 'This MRO item';
+            if (selectedId) {
+                const selects = Array.from(document.querySelectorAll('#reqItemsContainer .req-item-select'));
+                const existing = selects.find(candidate => candidate !== select && candidate.value === selectedId);
+                if (existing) {
+                    const existingRow = existing.closest('[id^="reqItem"]');
+                    const rows = Array.from(document.querySelectorAll('#reqItemsContainer > div'));
+                    const existingLine = rows.indexOf(existingRow) + 1;
+                    select.value = select.dataset.lastValue || '';
+                    showToast(`${selectedLabel} is already on line ${existingLine}. Update its quantity there.`, 'warning');
+                    existingRow?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    existingRow?.classList.add('ring', 'ring-warning', 'ring-2');
+                    setTimeout(() => existingRow?.classList.remove('ring', 'ring-warning', 'ring-2'), 1600);
+                    existing?.focus();
+                } else {
+                    select.dataset.lastValue = selectedId;
+                }
+            } else {
+                select.dataset.lastValue = '';
+            }
+            refreshMaintenanceItemChoices();
+        }
+
+        function refreshMaintenanceItemChoices() {
+            const selects = Array.from(document.querySelectorAll('#reqItemsContainer .req-item-select'));
+            const selectedIds = new Set(selects.map(select => select.value).filter(Boolean));
+            selects.forEach(select => {
+                Array.from(select.options).forEach(option => {
+                    if (!option.value) return;
+                    option.disabled = option.value !== select.value && selectedIds.has(option.value);
+                });
+            });
         }
 
         function removeRequisitionItem(id) {
             document.getElementById(id).remove();
+            refreshMaintenanceItemChoices();
         }
 
         async function handleNewRequisition(e) {
@@ -569,14 +614,25 @@
             // Collect items
             const itemRows = document.querySelectorAll('#reqItemsContainer > div');
             const items = [];
+            const selectedItems = new Map();
+            let duplicateFound = false;
 
-            itemRows.forEach(row => {
+            itemRows.forEach((row, index) => {
                 const mroItemId = row.querySelector('.req-item-select').value;
                 const quantity = row.querySelector('.req-item-qty').value;
                 const unit = row.querySelector('.req-item-unit').value;
                 const notes = row.querySelector('.req-item-notes').value;
 
                 if (mroItemId && quantity) {
+                    if (selectedItems.has(mroItemId)) {
+                        const firstLine = selectedItems.get(mroItemId);
+                        showToast(`This MRO item is already on line ${firstLine}. Keep one row and update its quantity.`, 'error');
+                        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        row.querySelector('.req-item-select')?.focus();
+                        duplicateFound = true;
+                        return;
+                    }
+                    selectedItems.set(mroItemId, index + 1);
                     items.push({
                         mro_item_id: mroItemId,
                         quantity: parseFloat(quantity),
@@ -586,8 +642,15 @@
                 }
             });
 
+            if (duplicateFound) return;
+
             if (items.length === 0) {
                 showToast('Please add at least one item', 'error');
+                return;
+            }
+            const excessiveLine = items.find(item => !Number.isFinite(item.quantity) || item.quantity < 1 || item.quantity > 1000000);
+            if (excessiveLine) {
+                showToast('Each MRO quantity must be a whole number from 1 to 1,000,000', 'error');
                 return;
             }
 

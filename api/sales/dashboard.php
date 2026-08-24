@@ -10,6 +10,7 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/customer_accounts.php';
 
 // Require Sales Custodian or GM role
 $currentUser = Auth::requireRole(['sales_custodian', 'general_manager']);
@@ -18,6 +19,7 @@ $action = getParam('action', 'summary');
 
 try {
     $db = Database::getInstance()->getConnection();
+    hfEnsureCustomerAccountSchema($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -117,17 +119,25 @@ function getSummary($db) {
     $overdueStmt->execute();
     $overdueData = $overdueStmt->fetch();
     
-    // DR counts by status
+    // The order pipeline must come from sales orders. Delivery receipt IDs and
+    // statuses belong to fulfillment and are not interchangeable with orders.
     $orderStatsStmt = $db->prepare("
-        SELECT status, COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total 
-        FROM delivery_receipts 
+        SELECT
+            CASE
+                WHEN status IN ('picking', 'preparing', 'ready', 'partially_fulfilled') THEN 'preparing'
+                WHEN status IN ('accepted', 'partially_accepted', 'fulfilled') THEN 'delivered'
+                ELSE status
+            END as pipeline_status,
+            COUNT(*) as count,
+            COALESCE(SUM(total_amount), 0) as total
+        FROM sales_orders
         WHERE DATE(created_at) BETWEEN ? AND ? 
-        GROUP BY status
+        GROUP BY pipeline_status
     ");
     $orderStatsStmt->execute([$startDate, $today]);
     $orderStats = [];
     while ($row = $orderStatsStmt->fetch()) {
-        $orderStats[$row['status']] = [
+        $orderStats[$row['pipeline_status']] = [
             'count' => (int)$row['count'],
             'total' => (float)$row['total']
         ];
@@ -175,8 +185,7 @@ function getSummary($db) {
 
 function getAgingSummary($db) {
     $invoiceDateExpr = "DATE(COALESCE(dr.delivered_at, dr.created_at))";
-    $termsExpr = "COALESCE(NULLIF(c.payment_terms_days, 0), 30)";
-    $dueDateExpr = "DATE_ADD({$invoiceDateExpr}, INTERVAL {$termsExpr} DAY)";
+    $dueDateExpr = "COALESCE(dr.due_date, {$invoiceDateExpr})";
     $daysLateExpr = "DATEDIFF(CURDATE(), {$dueDateExpr})";
     $balanceExpr = "(dr.total_amount - COALESCE(dr.amount_paid, 0))";
 
@@ -317,36 +326,45 @@ function getTopCustomers($db) {
 }
 
 function getRecentOrders($db) {
-    $limit = (int)getParam('limit', 20);
+    $limit = max(1, min(100, (int)getParam('limit', 20)));
     $status = getParam('status');
     
     $sql = "
         SELECT 
-            dr.id, 
-            dr.dr_number as order_number, 
-            dr.customer_id, 
-            dr.customer_name, 
-            dr.total_amount, 
-            dr.amount_paid,
-            (dr.total_amount - dr.amount_paid) as balance_due, 
-            dr.status, 
-            dr.payment_status, 
-            dr.created_at, 
-            dr.delivered_at,
+            so.id,
+            so.order_number,
+            so.customer_id,
+            COALESCE(c.name, so.customer_name) as customer_name,
+            COALESCE(
+                (SELECT NULLIF(SUM(soi.line_total), 0)
+                 FROM sales_order_items soi
+                 WHERE soi.order_id = so.id),
+                so.total_amount,
+                0
+            ) as total_amount,
+            so.status,
+            so.delivery_date,
+            so.created_at,
             c.customer_type, 
-            c.customer_code 
-        FROM delivery_receipts dr 
-        LEFT JOIN customers c ON dr.customer_id = c.id 
-        WHERE dr.status != 'draft'
+            c.customer_code,
+            (SELECT dr.dr_number
+             FROM delivery_receipts dr
+             WHERE dr.order_id = so.id
+               AND dr.status != 'cancelled'
+             ORDER BY dr.id DESC
+             LIMIT 1) as latest_dr_number
+        FROM sales_orders so
+        LEFT JOIN customers c ON so.customer_id = c.id
+        WHERE 1 = 1
     ";
     $params = [];
     
     if ($status) {
-        $sql .= " AND dr.status = ?";
+        $sql .= " AND so.status = ?";
         $params[] = $status;
     }
     
-    $sql .= " ORDER BY dr.created_at DESC LIMIT ?";
+    $sql .= " ORDER BY so.created_at DESC LIMIT ?";
     $params[] = $limit;
     
     $stmt = $db->prepare($sql);
@@ -356,7 +374,7 @@ function getRecentOrders($db) {
     // Status summary
     $summaryStmt = $db->prepare("
         SELECT status, COUNT(*) as count 
-        FROM delivery_receipts 
+        FROM sales_orders
         WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) 
         AND status != 'draft' 
         GROUP BY status
@@ -426,11 +444,10 @@ function getCollectionsDue($db) {
     $nextWeek = date('Y-m-d', strtotime('+7 days'));
     $monthStart = date('Y-m-01');
 
-    // Net terms: due_date = invoice_date + payment_terms_days (default 30).
-    // invoice_date = delivery date (document date), never due_date itself.
+    // Use the due date agreed and saved on the Delivery Receipt.
     $invoiceDateExpr = "DATE(COALESCE(dr.delivered_at, dr.created_at))";
-    $termsExpr = "COALESCE(NULLIF(c.payment_terms_days, 0), 30)";
-    $dueDateExpr = "DATE_ADD({$invoiceDateExpr}, INTERVAL {$termsExpr} DAY)";
+    $dueDateExpr = "COALESCE(dr.due_date, {$invoiceDateExpr})";
+    $termsExpr = "COALESCE(dr.payment_terms_days, 0)";
     $balanceExpr = "(dr.total_amount - COALESCE(dr.amount_paid, 0))";
     $openWhere = "
         dr.payment_status != 'paid'
@@ -481,7 +498,7 @@ function getCollectionsDue($db) {
     $collectedMTDStmt->execute([$monthStart]);
     $collectedMTD = $collectedMTDStmt->fetch()['amount'];
 
-    // Open invoices with Net 30 due dates and customer identity
+    // Open invoices with their saved payment agreement and customer identity
     $invoicesStmt = $db->prepare("
         SELECT
             dr.id,

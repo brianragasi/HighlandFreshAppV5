@@ -297,7 +297,17 @@ function handlePost($db, $action, $currentUser) {
     switch ($action) {
         case 'start':
             // Start a new shift
-            $openingCash = floatval($data['opening_cash'] ?? 0);
+            try {
+                $openingCash = hfParseBusinessDecimal(
+                    $data['opening_cash'] ?? 0,
+                    'Opening cash',
+                    0.00,
+                    9999999999.99,
+                    2
+                );
+            } catch (InvalidArgumentException $error) {
+                Response::validationError(['opening_cash' => $error->getMessage()]);
+            }
             $notes = $data['notes'] ?? null;
             
             // Check if there's already an active shift
@@ -347,7 +357,13 @@ function handlePost($db, $action, $currentUser) {
             
         case 'end':
             // End current shift
-            $actualCash = isset($data['actual_cash']) ? floatval($data['actual_cash']) : null;
+            try {
+                $actualCash = isset($data['actual_cash'])
+                    ? hfParseBusinessDecimal($data['actual_cash'], 'Actual cash', 0.00, 9999999999.99, 2)
+                    : null;
+            } catch (InvalidArgumentException $error) {
+                Response::validationError(['actual_cash' => $error->getMessage()]);
+            }
             $notes = $data['notes'] ?? null;
             
             $db->beginTransaction();
@@ -457,7 +473,17 @@ function handlePost($db, $action, $currentUser) {
         case 'cash_adjustment':
             // Record cash in/out adjustment
             $type = $data['type'] ?? null; // 'in' or 'out'
-            $amount = floatval($data['amount'] ?? 0);
+            try {
+                $amount = hfParseBusinessDecimal(
+                    $data['amount'] ?? 0,
+                    'Adjustment amount',
+                    0.01,
+                    9999999999.99,
+                    2
+                );
+            } catch (InvalidArgumentException $error) {
+                Response::validationError(['amount' => $error->getMessage()]);
+            }
             $reason = $data['reason'] ?? null;
             $reference = $data['reference_number'] ?? null;
             

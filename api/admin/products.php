@@ -5,6 +5,7 @@
  */
 
 require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../helpers/sku_packaging_bom.php';
 
 // Require GM/Admin role
 Auth::requireRole(['general_manager', 'admin']);
@@ -20,7 +21,9 @@ $action = isset($_GET['action']) ? $_GET['action'] : null;
 try {
     switch ($method) {
         case 'GET':
-            if ($id) {
+            if ($action === 'packaging_bom' && $id) {
+                getProductPackagingBom($conn, $id);
+            } elseif ($id) {
                 getProduct($conn, $id);
             } elseif ($action === 'statistics') {
                 getProductStatistics($conn);
@@ -44,7 +47,9 @@ try {
             }
             break;
         case 'PUT':
-            if ($action === 'update_base' && $id) {
+            if ($action === 'packaging_bom' && $id) {
+                saveProductPackagingBom($conn, $id);
+            } elseif ($action === 'update_base' && $id) {
                 updateBaseProduct($conn, $id);
             } elseif ($id) {
                 updateProduct($conn, $id);
@@ -62,8 +67,37 @@ try {
         default:
             sendError('Method not allowed', 405);
     }
-} catch (Exception $e) {
+} catch (Throwable $e) {
+    if (isDuplicateProductException($e)) {
+        sendError(
+            'A product with the same code or packaging size already exists. Open the existing SKU instead of creating another one.',
+            409
+        );
+    }
     sendError($e->getMessage(), 500);
+}
+
+function isDuplicateProductException(Throwable $e) {
+    $message = $e->getMessage();
+    $driverCode = $e instanceof PDOException && isset($e->errorInfo[1])
+        ? (int) $e->errorInfo[1]
+        : 0;
+
+    return $driverCode === 1062
+        || stripos($message, 'duplicate entry') !== false;
+}
+
+function isLegacyProductSchemaException(Throwable $e) {
+    $message = $e->getMessage();
+    $driverCode = $e instanceof PDOException && isset($e->errorInfo[1])
+        ? (int) $e->errorInfo[1]
+        : 0;
+    $sqlState = (string) $e->getCode();
+
+    return in_array($driverCode, [1054, 1146], true)
+        || in_array($sqlState, ['42S02', '42S22'], true)
+        || stripos($message, 'base_products') !== false
+        || stripos($message, 'base_product_id') !== false;
 }
 
 /**
@@ -93,7 +127,7 @@ function getBaseProducts($conn) {
             FROM base_products bp
             LEFT JOIN milk_types mt ON mt.id = bp.milk_type_id
             WHERE bp.is_active = 1
-            ORDER BY bp.name ASC
+            ORDER BY bp.id DESC
         ");
         $bases = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -164,6 +198,19 @@ function getBaseProducts($conn) {
                 error_log('getBaseProducts SKU fetch id=' . $bp['id'] . ': ' . $e->getMessage());
                 $bp['skus'] = [];
             }
+            try {
+                $bomMap = getSkuPackagingBomMap($conn, array_column($bp['skus'], 'id'));
+            } catch (Throwable $e) {
+                error_log('getBaseProducts packaging BOM fetch id=' . $bp['id'] . ': ' . $e->getMessage());
+                $bomMap = [];
+            }
+            foreach ($bp['skus'] as &$sku) {
+                $skuId = (int) $sku['id'];
+                $sku['packaging_bom'] = $bomMap[$skuId] ?? [];
+                $sku['packaging_bom_count'] = count($sku['packaging_bom']);
+                $sku['packaging_bom_ready'] = $sku['packaging_bom_count'] > 0;
+            }
+            unset($sku);
             $bp['recipes'] = [];
             if ($recipeStmt) {
                 try {
@@ -314,7 +361,7 @@ function getProducts($conn) {
                 LEFT JOIN milk_types mt ON p.milk_type_id = mt.id
                 LEFT JOIN base_products bp ON bp.id = p.base_product_id
                 $whereClause
-                ORDER BY COALESCE(bp.name, p.product_name) ASC, p.unit_size ASC
+                ORDER BY COALESCE(bp.id, p.id) DESC, p.unit_size ASC
                 LIMIT ? OFFSET ?";
     } else {
         $sql = "SELECT 
@@ -348,7 +395,7 @@ function getProducts($conn) {
                 FROM products p
                 LEFT JOIN milk_types mt ON p.milk_type_id = mt.id
                 $whereClause
-                ORDER BY p.product_name ASC
+                ORDER BY p.id DESC
                 LIMIT ? OFFSET ?";
     }
     
@@ -459,15 +506,117 @@ function getProduct($conn, $id) {
     WHERE product_id = ? AND status = 'available'");
     $summaryStmt->execute([$id]);
     $product['inventory_summary'] = $summaryStmt->fetch(PDO::FETCH_ASSOC);
+    $product['packaging_bom'] = getSkuPackagingBom($conn, $id);
+    $product['packaging_bom_count'] = count($product['packaging_bom']);
+    $product['packaging_bom_ready'] = $product['packaging_bom_count'] > 0;
     
     sendSuccess(['product' => $product]);
 }
 
 /**
+ * Get one sellable SKU's packaging BOM and eligible packaging materials.
+ */
+function getProductPackagingBom(PDO $conn, $id) {
+    $stmt = $conn->prepare("
+        SELECT p.id, p.product_code, p.product_name, p.variant,
+               p.unit_size, p.unit_measure, p.base_product_id, p.is_active,
+               bp.name AS base_product_name
+        FROM products p
+        LEFT JOIN base_products bp ON bp.id = p.base_product_id
+        WHERE p.id = ?
+    ");
+    $stmt->execute([(int) $id]);
+    $sku = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$sku) {
+        sendError('SKU not found', 404);
+        return;
+    }
+    if (empty($sku['base_product_id'])) {
+        sendValidationError(['product_id' => 'Packaging BOMs can only be configured on a sellable SKU under a base product']);
+        return;
+    }
+
+    $items = getSkuPackagingBom($conn, $id);
+    sendSuccess([
+        'sku' => $sku,
+        'items' => $items,
+        'available_materials' => getAvailablePackagingMaterials($conn),
+        'ready' => count($items) > 0,
+    ]);
+}
+
+/** Save one sellable SKU's packaging BOM. */
+function saveProductPackagingBom(PDO $conn, $id) {
+    $data = getRequestBody();
+    $items = isset($data['items']) && is_array($data['items']) ? $data['items'] : [];
+
+    $stmt = $conn->prepare('SELECT id, base_product_id, is_active FROM products WHERE id = ?');
+    $stmt->execute([(int) $id]);
+    $sku = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$sku) {
+        sendError('SKU not found', 404);
+        return;
+    }
+    if (empty($sku['base_product_id'])) {
+        sendValidationError(['product_id' => 'Select a sellable packaging SKU, not a bulk/base product']);
+        return;
+    }
+
+    $result = replaceSkuPackagingBom($conn, $id, $items);
+    if (!$result['success']) {
+        sendValidationError($result['errors']);
+        return;
+    }
+
+    sendSuccess([
+        'product_id' => (int) $id,
+        'items' => $result['items'],
+        'ready' => count($result['items']) > 0,
+    ], count($result['items']) > 0
+        ? 'Packaging BOM saved'
+        : 'Packaging BOM cleared; this SKU cannot be used to complete packaging');
+}
+
+/**
  * Create new product
  */
+function validateProductNumericPayload(array &$data): void {
+    $errors = [];
+    foreach ([
+        'unit_size' => ['Package size', 1.00, 99999999.99],
+        'selling_price' => ['Selling price', 0.01, 9999999999.99],
+        'unit_price' => ['Unit price', 0.01, 9999999999.99],
+    ] as $field => [$label, $minimum, $maximum]) {
+        if (!array_key_exists($field, $data) || $data[$field] === '' || $data[$field] === null) {
+            continue;
+        }
+        try {
+            $data[$field] = hfParseBusinessDecimal($data[$field], $label, $minimum, $maximum, 2);
+        } catch (InvalidArgumentException $error) {
+            $errors[$field] = $error->getMessage();
+        }
+    }
+    foreach ([
+        'pieces_per_box' => ['Pieces per box', 1, 1000000],
+        'shelf_life_days' => ['Shelf life', 1, 3650],
+    ] as $field => [$label, $minimum, $maximum]) {
+        if (!array_key_exists($field, $data) || $data[$field] === '' || $data[$field] === null) {
+            continue;
+        }
+        try {
+            $data[$field] = hfParseBusinessInteger($data[$field], $label, $minimum, $maximum);
+        } catch (InvalidArgumentException $error) {
+            $errors[$field] = $error->getMessage();
+        }
+    }
+    if ($errors) {
+        sendValidationError($errors);
+    }
+}
+
 function createProduct($conn) {
     $data = json_decode(file_get_contents('php://input'), true);
+    validateProductNumericPayload($data);
     
     // Validate required fields
     $required = ['product_name', 'category'];
@@ -485,17 +634,6 @@ function createProduct($conn) {
         return;
     }
 
-    // Size / price guardrails (SKU math integrity)
-    if (isset($data['unit_size']) && (float) $data['unit_size'] < 1) {
-        sendError('Price and Size must be greater than zero. (Size min: 1)', 400);
-        return;
-    }
-    $price = $data['selling_price'] ?? $data['unit_price'] ?? null;
-    if ($price !== null && $price !== '' && (float) $price < 0.01) {
-        sendError('Price and Size must be greater than zero. (Price min: 0.01)', 400);
-        return;
-    }
-    
     // Generate product code if not provided
     if (empty($data['product_code'])) {
         $categoryPrefixes = [
@@ -536,6 +674,12 @@ function createProduct($conn) {
         $baseProductId = null;
     }
 
+    // A base product is one manufacturable formula/flavor. Its child SKUs vary
+    // only by packaging, so a SKU-level flavor must never create a second formula.
+    if ($baseProductId) {
+        $data['variant'] = null;
+    }
+
     if (!empty($data['unit_size']) && !empty($data['unit_measure'])) {
         $canonicalSize = normalizeToBaseUnit((float) $data['unit_size'], $data['unit_measure']);
         if ($canonicalSize !== null) {
@@ -545,11 +689,12 @@ function createProduct($conn) {
                 $canonicalSize,
                 $baseProductId,
                 $data['product_name'] ?? null,
-                $data['variant'] ?? null
+                $data['variant'] ?? null,
+                $data['base_unit'] ?? 'piece'
             );
             if ($existingDup) {
                 sendError(
-                    "A packaging size of equivalent volume ({$existingDup['unit_size']} {$existingDup['unit_measure']}) already exists for this product: \"{$existingDup['product_name']}\" (SKU: {$existingDup['product_code']})",
+                    "A SKU with the same packaging type and equivalent size ({$existingDup['unit_size']} {$existingDup['unit_measure']}) already exists for this formula: \"{$existingDup['product_name']}\" (SKU: {$existingDup['product_code']})",
                     409
                 );
                 return;
@@ -591,6 +736,10 @@ function createProduct($conn) {
             }
         }
 
+        if ($baseProductId) {
+            $data['variant'] = null;
+        }
+
         $sql = "INSERT INTO products (
                     base_product_id, product_code, product_name, category, variant, milk_type_id,
                     description, unit_size, unit_measure, shelf_life_days,
@@ -619,6 +768,10 @@ function createProduct($conn) {
             $data['is_active'] ?? 1
         ]);
     } catch (Throwable $e) {
+        if (!isLegacyProductSchemaException($e)) {
+            throw $e;
+        }
+
         $sql = "INSERT INTO products (
                     product_code, product_name, category, variant, milk_type_id,
                     description, unit_size, unit_measure, shelf_life_days,
@@ -770,10 +923,11 @@ function updateBaseProduct($conn, $id) {
  */
 function updateProduct($conn, $id) {
     $data = json_decode(file_get_contents('php://input'), true);
+    validateProductNumericPayload($data);
     
     // Check if product exists
     $checkStmt = $conn->prepare("
-        SELECT id, product_code, product_name, category, variant, unit_size, unit_measure, base_product_id
+        SELECT id, product_code, product_name, category, variant, unit_size, unit_measure, base_unit, base_product_id
         FROM products
         WHERE id = ?
     ");
@@ -785,20 +939,12 @@ function updateProduct($conn, $id) {
         return;
     }
 
-    // Size / price guardrails when those fields are being updated
-    if (array_key_exists('unit_size', $data) && (float) $data['unit_size'] < 1) {
-        sendError('Price and Size must be greater than zero. (Size min: 1)', 400);
-        return;
+    // Keep legacy variant text intact for audit/migration, but do not allow it
+    // to be edited on a base-linked SKU. Flavor belongs to base_products.
+    if (!empty($existing['base_product_id'])) {
+        unset($data['variant']);
     }
-    if (array_key_exists('selling_price', $data) && (float) $data['selling_price'] < 0.01) {
-        sendError('Price and Size must be greater than zero. (Price min: 0.01)', 400);
-        return;
-    }
-    if (array_key_exists('unit_price', $data) && (float) $data['unit_price'] < 0.01) {
-        sendError('Price and Size must be greater than zero. (Price min: 0.01)', 400);
-        return;
-    }
-    
+
     // Build dynamic update
     $updates = [];
     $params = [];
@@ -837,6 +983,7 @@ function updateProduct($conn, $id) {
     $nextCategory = array_key_exists('category', $data) ? $data['category'] : $existing['category'];
     $nextProductName = array_key_exists('product_name', $data) ? $data['product_name'] : $existing['product_name'];
     $nextVariant = array_key_exists('variant', $data) ? $data['variant'] : $existing['variant'];
+    $nextBaseUnit = array_key_exists('base_unit', $data) ? $data['base_unit'] : ($existing['base_unit'] ?? 'piece');
     $nextBaseProductId = !empty($existing['base_product_id']) ? (int) $existing['base_product_id'] : null;
 
     if ($nextUnitSize > 0 && !empty($nextUnitMeasure)) {
@@ -849,11 +996,12 @@ function updateProduct($conn, $id) {
                 $nextBaseProductId,
                 $nextProductName,
                 $nextVariant,
+                $nextBaseUnit,
                 (int) $id
             );
             if ($existingDup) {
                 sendError(
-                    "A packaging size of equivalent volume ({$existingDup['unit_size']} {$existingDup['unit_measure']}) already exists for this product: \"{$existingDup['product_name']}\" (SKU: {$existingDup['product_code']})",
+                    "A SKU with the same packaging type and equivalent size ({$existingDup['unit_size']} {$existingDup['unit_measure']}) already exists for this formula: \"{$existingDup['product_name']}\" (SKU: {$existingDup['product_code']})",
                     409
                 );
                 return;
@@ -1102,8 +1250,9 @@ function normalizeToBaseUnit(float $size, string $measure): ?float {
 }
 
 /**
- * Find an active SKU with the same base product, variant, and normalized
- * volume/weight (within 0.01 tolerance).
+ * Find an active SKU with the same formula/base, packaging type, and normalized
+ * volume/weight (within 0.01 tolerance). Variant is considered only for legacy
+ * products that are not linked to a base product.
  */
 function findEquivalentSku(
     PDO $conn,
@@ -1112,10 +1261,11 @@ function findEquivalentSku(
     ?int $baseProductId = null,
     ?string $productName = null,
     ?string $variant = null,
+    ?string $baseUnit = null,
     ?int $excludeId = null
 ): ?array {
     $sql = "
-        SELECT id, product_code, product_name, variant, unit_size, unit_measure, base_product_id
+        SELECT id, product_code, product_name, variant, unit_size, unit_measure, base_unit, base_product_id
           FROM products
          WHERE is_active = 1
            AND category = :category
@@ -1144,8 +1294,25 @@ function findEquivalentSku(
         $existing = normalizeToBaseUnit((float) $row['unit_size'], $row['unit_measure']);
         if ($existing === null) continue;
 
+        $sameSize = abs($existing - $canonicalValue) < 0.01;
+        if (!$sameSize) {
+            continue;
+        }
+
+        // Under the current model, base_product_id identifies the formula/flavor
+        // and base_unit identifies the packaging type. Legacy variant text does
+        // not create a second formula or bypass a true packaging duplicate.
+        if ($baseProductId) {
+            $existingBaseUnit = strtolower(trim((string) ($row['base_unit'] ?? 'piece')));
+            $targetBaseUnit = strtolower(trim((string) ($baseUnit ?? 'piece')));
+            if ($existingBaseUnit === $targetBaseUnit) {
+                return $row;
+            }
+            continue;
+        }
+
         $existingVariant = strtolower(trim((string) ($row['variant'] ?? '')));
-        if ($existingVariant === $targetVariant && abs($existing - $canonicalValue) < 0.01) {
+        if ($existingVariant === $targetVariant) {
             return $row;
         }
     }

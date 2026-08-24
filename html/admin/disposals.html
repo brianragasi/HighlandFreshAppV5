@@ -2,6 +2,7 @@
 <html lang="en" data-theme="emerald">
 
 <head>
+    <style id="roleGuardPending">html { visibility: hidden; }</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -648,6 +649,7 @@
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/ui/notification-layer.js?v=20260816-1"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="general_manager,admin"></script>
 
     <script>
@@ -849,11 +851,15 @@
 
         function showToast(msg, type = 'info') {
             const container = document.getElementById('toastContainer');
+            window.HighlandNotificationLayer?.sync();
             const cls = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type] || 'alert-info';
             const t = document.createElement('div');
             t.className = `alert ${cls} shadow-lg`;
-            t.innerHTML = `<span>${msg}</span>`;
+            const text = document.createElement('span');
+            text.textContent = String(msg ?? '');
+            t.appendChild(text);
             container.appendChild(t);
+            window.HighlandNotificationLayer?.sync();
             setTimeout(() => t.remove(), 3000);
         }
 
@@ -1109,7 +1115,9 @@
                 }
                 const res = await api.put('/qc/disposals.php', data);
                 if (res.success) {
-                    showToast(`Disposal ${action === 'approve' ? 'approved' : 'rejected'} successfully`, 'success');
+                    showToast(action === 'approve'
+                        ? 'Disposal approved. QC and the warehouse can now carry it out and record the result.'
+                        : 'Disposal rejected. The requesting team can review the reason.', 'success');
                     document.getElementById('approvalModal').close();
                     loadStats();
                     loadDisposals();

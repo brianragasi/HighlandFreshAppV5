@@ -261,7 +261,7 @@
                 <div class="flex items-start justify-between gap-3">
                     <div>
                         <h3 class="text-lg font-semibold tracking-tight">Request materials</h3>
-                        <p class="text-sm text-base-content/55 mt-0.5">For GM approval - amounts follow your batch size</p>
+                        <p class="text-sm text-base-content/55 mt-0.5">For GM approval — materials follow the finished liters you plan</p>
                     </div>
                     <form method="dialog">
                         <button type="submit" class="btn btn-ghost btn-sm btn-circle" aria-label="Close">
@@ -283,7 +283,7 @@
                                     <label class="label py-1">
                                         <span class="label-text text-sm">Base product / recipe <span class="text-error">*</span></span>
                                     </label>
-                                    <select id="plannedRecipeSelect" class="select select-bordered w-full" onchange="handlePlanSelectionChange()">
+                                    <select id="plannedRecipeSelect" class="select select-bordered w-full" onchange="handlePlanSelectionChange('recipe')">
                                         <option value="">Select bulk recipe (liquid)…</option>
                                     </select>
                                     <label class="label py-1">
@@ -295,14 +295,14 @@
                                 </div>
                                 <div class="form-control sm:col-span-2 sm:max-w-xs">
                                     <label class="label py-1">
-                                        <span class="label-text text-sm">Batch volume (bulk) <span class="text-error">*</span></span>
+                                        <span class="label-text text-sm">Planned finished amount (L) <span class="text-error">*</span></span>
                                     </label>
                                     <div class="join w-full">
-                                        <input type="number" id="plannedQuantity" class="input input-bordered join-item flex-1" min="0.01" step="0.01" placeholder="e.g. 100" onchange="handlePlanSelectionChange()" oninput="scheduleMaterialSummary()">
+                                        <input type="number" id="plannedQuantity" class="input input-bordered join-item flex-1" min="0.01" max="1000000" step="0.01" inputmode="decimal" title="Enter 0.01 to 1,000,000 liters" placeholder="e.g. 95" onchange="handlePlanSelectionChange('quantity')" oninput="scheduleMaterialSummary()">
                                         <span class="btn join-item no-animation btn-ghost border border-base-300" id="plannedYieldUnit">liters</span>
                                     </div>
                                     <label class="label py-1">
-                                        <span class="label-text-alt text-base-content/50">Plan by liters of bulk product, not by bottle count.</span>
+                                        <span id="plannedQuantityHint" class="label-text-alt text-base-content/50">Select a recipe, then enter the finished liters you plan to produce.</span>
                                     </label>
                                 </div>
                             </div>
@@ -685,17 +685,18 @@
                         html += `<optgroup label="${escapeHtml(baseName)}">`;
                         list.forEach(r => {
                             const bulk = r.bulk_yield_liters
-                                ? ` · ref ${Number(r.bulk_yield_liters)} L`
+                                ? ` · Standard yield: ${Number(r.bulk_yield_liters)} L`
                                 : '';
                             const label = r.label
                                 || `${r.recipe_code} — ${r.base_product_name || r.product_name}${bulk}`;
                             const skuCount = Array.isArray(r.packaging_skus) ? r.packaging_skus.length : 0;
+                            const readiness = skuCount > 0 ? '' : ' · bulk-only';
                             html += `<option value="${r.id}"
                                 data-bulk-yield="${escapeHtml(r.bulk_yield_liters || '')}"
                                 data-plan-unit="liters"
                                 data-base-name="${escapeHtml(r.base_product_name || r.product_name || '')}"
                                 data-sku-count="${skuCount}">
-                                ${escapeHtml(label)}
+                                ${escapeHtml(label + readiness)}
                             </option>`;
                         });
                         html += '</optgroup>';
@@ -722,7 +723,7 @@
             }
             const skus = recipe.packaging_skus || [];
             if (skus.length === 0) {
-                hint.textContent = 'No packaging sizes linked yet — add SKUs under this base product in Admin → Products.';
+                hint.textContent = 'Bulk cooking is allowed. Packaging and finished-goods receiving require an active size under Admin → Products.';
                 hint.classList.remove('hidden');
                 return;
             }
@@ -768,8 +769,8 @@
                 // item row can show "Available: 25 kg" or "Short by 15 kg" without
                 // an extra API call. The server check at submit is still the
                 // authoritative source for the actual shortage.
-                const currentStock = ing.current_stock != null ? ing.current_stock : '';
-                const stockStatus = ing.stock_status || '';
+                const currentStock = ing.current_stock != null ? Number(ing.current_stock) || 0 : '';
+                const stockStatus = escapeHtml(ing.stock_status || '');
                 return `<option value="${ing.id}" data-type="ingredient" data-name="${name}" data-unit="${unit}" data-pack-size="${packSize}" data-pack-unit="${packUnit}" data-pack-label="${packLbl}" data-current-stock="${currentStock}" data-stock-status="${stockStatus}">${label}</option>`;
             });
 
@@ -783,6 +784,7 @@
                 select.innerHTML = ingredientOptionsHtml || '<option value="">Loading items...</option>';
                 if (current) select.value = current;
             });
+            refreshProductionItemChoices();
         }
 
         async function loadIngredientCatalog() {
@@ -802,6 +804,7 @@
         function handleItemChange(selectEl) {
             const row = selectEl.closest('.item-row');
             if (!row) return;
+            if (!acceptProductionItemSelection(selectEl)) return;
 
             const unitSelect = row.querySelector('.item-unit');
             const option = selectEl.options[selectEl.selectedIndex];
@@ -837,6 +840,46 @@
             }
             // Re-render the pack preview now that the selected option may have changed.
             refreshItemPackPreview(row);
+        }
+
+        function acceptProductionItemSelection(select) {
+            const selectedValue = select?.value || '';
+            const selectedLabel = select?.options?.[select.selectedIndex]?.dataset?.name
+                || select?.options?.[select.selectedIndex]?.textContent?.trim()
+                || 'This material';
+            if (selectedValue) {
+                const selects = Array.from(document.querySelectorAll('#itemsContainer .item-name'));
+                const existing = selects.find(candidate => candidate !== select && candidate.value === selectedValue);
+                if (existing) {
+                    const existingRow = existing.closest('.item-row');
+                    const rows = Array.from(document.querySelectorAll('#itemsContainer .item-row'));
+                    const existingLine = rows.indexOf(existingRow) + 1;
+                    select.value = select.dataset.lastValue || '';
+                    showToast(`${selectedLabel} is already on line ${existingLine}. Update its quantity there.`, 'warning');
+                    existingRow?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    existingRow?.classList.add('ring', 'ring-warning', 'ring-2');
+                    setTimeout(() => existingRow?.classList.remove('ring', 'ring-warning', 'ring-2'), 1600);
+                    existing?.focus();
+                    refreshProductionItemChoices();
+                    return false;
+                }
+                select.dataset.lastValue = selectedValue;
+            } else {
+                select.dataset.lastValue = '';
+            }
+            refreshProductionItemChoices();
+            return true;
+        }
+
+        function refreshProductionItemChoices() {
+            const selects = Array.from(document.querySelectorAll('#itemsContainer .item-name'));
+            const selectedValues = new Set(selects.map(select => select.value).filter(Boolean));
+            selects.forEach(select => {
+                Array.from(select.options).forEach(option => {
+                    if (!option.value) return;
+                    option.disabled = option.value !== select.value && selectedValues.has(option.value);
+                });
+            });
         }
 
         function ensureUnitOption(unitSelect, unit) {
@@ -1153,7 +1196,7 @@
                         <div class="flex items-center gap-1.5 shrink-0">
                             <input type="number"
                                    class="input input-bordered input-sm w-24 text-right item-qty font-mono ${initialLocked ? 'bg-base-200' : ''}"
-                                   placeholder="0" required min="0.001" step="0.001"
+                                   placeholder="0" required min="0.001" max="1000000" step="0.001" inputmode="decimal"
                                    ${initialLocked ? 'readonly' : ''}
                                    data-locked="${initialLocked ? '1' : '0'}"
                                    title="${lockTitle}"
@@ -1422,11 +1465,13 @@
 
             if (!items.length) {
                 container.appendChild(createItemRow());
+                refreshProductionItemChoices();
                 scheduleMaterialSummary();
                 return;
             }
 
             items.forEach(item => container.appendChild(createItemRow(item)));
+            refreshProductionItemChoices();
             scheduleMaterialSummary();
         }
 
@@ -1490,7 +1535,7 @@
             }
         }
 
-        async function handlePlanSelectionChange() {
+        async function handlePlanSelectionChange(changeSource = 'quantity') {
             const runId = document.getElementById('runSelect').value;
             if (runId) return;
 
@@ -1503,10 +1548,21 @@
             document.getElementById('plannedYieldUnit').textContent = 'liters';
             if (typeof updateRecipeSkuHint === 'function') updateRecipeSkuHint();
 
-            // Prefill batch volume with recipe reference bulk yield once
             const qtyInput = document.getElementById('plannedQuantity');
-            if (recipe && recipe.bulk_yield_liters && (!qtyInput.value || Number(qtyInput.value) <= 0)) {
-                qtyInput.value = Number(recipe.bulk_yield_liters);
+            const qtyHint = document.getElementById('plannedQuantityHint');
+            if (changeSource === 'recipe') {
+                // A recipe's standard yield is a scale denominator, not an employee
+                // decision. Clear any previous plan so switching recipes cannot carry
+                // a stale or silently copied quantity into the requisition.
+                qtyInput.value = '';
+                renderItemRows();
+                const purpose = document.getElementById('purpose');
+                if (purpose && purpose.value.trim().startsWith('Bulk batch:')) purpose.value = '';
+            }
+            if (qtyHint) {
+                qtyHint.textContent = recipe?.bulk_yield_liters
+                    ? `Standard recipe produces ${Number(recipe.bulk_yield_liters)} L. Enter how many finished liters you plan to produce.`
+                    : 'Enter how many finished liters you plan to produce.';
             }
 
             const qty = parseFloat(document.getElementById('plannedQuantity').value) || 0;
@@ -1537,7 +1593,7 @@
                         const baseName = plan.product_name || recipe?.base_product_name || recipe?.product_name || 'product';
                         purpose.value = `Bulk batch: ${baseName} — ${qty} liters`;
                     }
-                    showToast('Materials scaled for bulk batch volume', 'success');
+                    showToast(`Materials adjusted for ${formatPackNumber(qty)} L of planned finished product`, 'success');
                 } else {
                     renderItemRows();
                     showToast(response.message || 'Failed to calculate planned materials', 'error');
@@ -1671,7 +1727,7 @@
                 return `
                 <tr class="hover">
                     <td>
-                        <span class="font-mono text-primary font-semibold">${req.requisition_code}</span>
+                        <span class="font-mono text-primary font-semibold">${escapeHtml(req.requisition_code)}</span>
                     </td>
                     <td>${traceabilityLabel}</td>
                     <td>
@@ -1696,7 +1752,7 @@
                             ${hasLinkedRun ? `<span class="text-xs text-primary font-semibold"><i class="fas fa-industry mr-1"></i>Production started${req.run_code ? ` · <a href="batches.html?id=${req.production_run_id}" class="link link-primary font-mono">${escapeHtml(req.run_code)}</a>` : ''}</span>` : ''}
                         </div>
                     </td>
-                    <td class="text-sm">${req.requested_by_first ? req.requested_by_first + ' ' + req.requested_by_last : '-'}</td>
+                    <td class="text-sm">${escapeHtml(req.requested_by_first ? req.requested_by_first + ' ' + req.requested_by_last : '-')}</td>
                     <td class="text-base-content/60 text-sm">${formatDate(req.created_at)}</td>
                     <td class="text-center">
                         <div class="join">
@@ -1757,7 +1813,9 @@
             document.getElementById('plannedProductionFields').classList.remove('hidden');
             document.getElementById('plannedRecipeSelect').disabled = false;
             document.getElementById('plannedQuantity').disabled = false;
-            document.getElementById('plannedYieldUnit').textContent = 'units';
+            document.getElementById('plannedYieldUnit').textContent = 'liters';
+            const qtyHint = document.getElementById('plannedQuantityHint');
+            if (qtyHint) qtyHint.textContent = 'Enter the liters the employee actually plans to cook; the recipe standard is reference only.';
             renderItemRows();
             document.getElementById('newRequisitionModal').showModal();
         }
@@ -1818,7 +1876,16 @@
         
         function addItem() {
             const container = document.getElementById('itemsContainer');
+            const probe = document.createElement('select');
+            probe.innerHTML = ingredientOptionsHtml;
+            const availableValues = new Set(Array.from(probe.options).map(option => option.value).filter(Boolean));
+            const selectedValues = new Set(Array.from(container.querySelectorAll('.item-name')).map(select => select.value).filter(Boolean));
+            if (availableValues.size > 0 && selectedValues.size >= availableValues.size) {
+                showToast('Every available material is already on this request. Update an existing row instead.', 'info');
+                return;
+            }
             container.appendChild(createItemRow());
+            refreshProductionItemChoices();
             scheduleMaterialSummary();
         }
         
@@ -1826,6 +1893,7 @@
             const rows = document.querySelectorAll('.item-row');
             if (rows.length > 1) {
                 btn.closest('.item-row').remove();
+                refreshProductionItemChoices();
                 scheduleMaterialSummary();
             } else {
                 showToast('At least one material line is required', 'warning');
@@ -1928,6 +1996,35 @@
             }, overrides, overrides.items ? { items: overrides.items } : {});
         }
 
+        function productionRequestItemKey(item) {
+            const type = String(item?.item_type || 'ingredient').toLowerCase();
+            if (type === 'raw_milk') return 'raw_milk';
+            const id = Number(item?.item_id || 0);
+            return id > 0
+                ? `${type}:${id}`
+                : `${type}:name:${String(item?.item_name || '').trim().toLowerCase()}`;
+        }
+
+        function validateProductionRequestItemUniqueness(items, focusRows = false) {
+            const seen = new Map();
+            const rows = Array.from(document.querySelectorAll('#itemsContainer .item-row'));
+            for (let index = 0; index < (items || []).length; index++) {
+                const item = items[index];
+                const key = productionRequestItemKey(item);
+                if (seen.has(key)) {
+                    const firstLine = seen.get(key);
+                    showToast(`${item.item_name || 'This material'} is already on line ${firstLine}. Keep one row and update its quantity.`, 'error');
+                    if (focusRows && rows[index]) {
+                        rows[index].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        rows[index].querySelector('.item-name')?.focus();
+                    }
+                    return false;
+                }
+                seen.set(key, index + 1);
+            }
+            return true;
+        }
+
         async function createRequisition(event) {
             event.preventDefault();
 
@@ -1973,9 +2070,20 @@
                 showToast('At least one material line is required', 'error');
                 return;
             }
+            if (!validateProductionRequestItemUniqueness(data.items, true)) return;
 
             if (!data.production_run_id && (!data.planned_recipe_id || !data.planned_quantity || parseFloat(data.planned_quantity) <= 0)) {
-                showToast('Choose the product/recipe and how many finished units you will make', 'error');
+                showToast('Choose the recipe and enter the planned finished amount in liters', 'error');
+                return;
+            }
+            if (!data.production_run_id && parseFloat(data.planned_quantity) > 1000000) {
+                showToast('Planned finished amount cannot exceed 1,000,000 liters', 'error');
+                document.getElementById('plannedQuantity')?.focus();
+                return;
+            }
+            const excessiveLine = (data.items || []).find(item => Number(item.quantity) > 1000000 || Number(item.quantity_in_packs || 0) > 1000000);
+            if (excessiveLine) {
+                showToast(`${excessiveLine.item_name || 'Material'} cannot exceed 1,000,000 on one request line`, 'error');
                 return;
             }
 
@@ -1987,6 +2095,7 @@
         // (which is the authoritative shortage list — fresher than the cached
         // client preview). On confirm we re-submit with the override flag.
         async function submitRequisition(data) {
+            if (!validateProductionRequestItemUniqueness(data?.items || [])) return;
             if (requisitionSubmitInProgress) {
                 return;
             }
@@ -2400,10 +2509,10 @@
                         <div class="overflow-x-auto">
                             <table class="table table-sm">
                                 <tbody>
-                                    <tr><td class="text-base-content/60 w-32">Code</td><td class="font-mono font-semibold">${req.requisition_code}</td></tr>
-                                    <tr><td class="text-base-content/60">Status</td><td><span class="badge ${statusBadges[req.status] || 'badge-ghost'}">${req.status}</span></td></tr>
-                                    <tr><td class="text-base-content/60">Priority</td><td>${req.priority}</td></tr>
-                                    <tr><td class="text-base-content/60">Purpose</td><td>${req.purpose || '-'}</td></tr>
+                                    <tr><td class="text-base-content/60 w-32">Code</td><td class="font-mono font-semibold">${escapeHtml(req.requisition_code)}</td></tr>
+                                    <tr><td class="text-base-content/60">Status</td><td><span class="badge ${statusBadges[req.status] || 'badge-ghost'}">${escapeHtml(req.status)}</span></td></tr>
+                                    <tr><td class="text-base-content/60">Priority</td><td>${escapeHtml(req.priority)}</td></tr>
+                                    <tr><td class="text-base-content/60">Purpose</td><td>${escapeHtml(req.purpose || '-')}</td></tr>
                                     ${planRow}
                                     <tr><td class="text-base-content/60">Needed By</td><td>${req.needed_by_date ? formatDate(req.needed_by_date) : '-'}</td></tr>
                                 </tbody>
@@ -2415,9 +2524,9 @@
                         <div class="overflow-x-auto">
                             <table class="table table-sm">
                                 <tbody>
-                                    <tr><td class="text-base-content/60 w-32">Requested By</td><td>${req.requested_by_first ? req.requested_by_first + ' ' + req.requested_by_last : '-'}</td></tr>
+                                    <tr><td class="text-base-content/60 w-32">Requested By</td><td>${escapeHtml(req.requested_by_first ? req.requested_by_first + ' ' + req.requested_by_last : '-')}</td></tr>
                                     <tr><td class="text-base-content/60">Created</td><td>${formatDate(req.created_at)}</td></tr>
-                                    ${req.fulfilled_by_first ? `<tr><td class="text-base-content/60">Fulfilled By</td><td>${req.fulfilled_by_first} ${req.fulfilled_by_last}</td></tr>` : ''}
+                                    ${req.fulfilled_by_first ? `<tr><td class="text-base-content/60">Fulfilled By</td><td>${escapeHtml(req.fulfilled_by_first)} ${escapeHtml(req.fulfilled_by_last)}</td></tr>` : ''}
                                 </tbody>
                             </table>
                         </div>
@@ -2492,7 +2601,7 @@
                 <div class="alert alert-error mt-4">
                     <i class="fas fa-exclamation-circle"></i>
                     <div>
-                        <strong>Rejection Reason:</strong> ${req.rejection_reason}
+                        <strong>Rejection Reason:</strong> ${escapeHtml(req.rejection_reason)}
                     </div>
                 </div>
                 ` : ''}
@@ -2620,10 +2729,7 @@
             
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `
-                <i class="fas ${iconClass}"></i>
-                <span>${message}</span>
-            `;
+            HighlandSecurity.renderToastContent(toast, message, `fas ${iconClass}`);
             container.appendChild(toast);
             
             setTimeout(() => {

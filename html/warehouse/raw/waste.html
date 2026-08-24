@@ -323,12 +323,12 @@
                 return;
             }
             batchSelect.innerHTML += batches.map(batch =>
-                `<option value="${batch.batch_id}"
-                    data-max="${batch.remaining_quantity}"
+                `<option value="${Number(batch.batch_id) || 0}"
+                    data-max="${Number(batch.remaining_quantity) || 0}"
                     data-expired="${Number(batch.is_expired || 0)}"
-                    data-status="${batch.status || ''}"
-                    data-expiry-date="${batch.expiry_date || ''}"
-                    data-unit="${batch.unit || ''}">${formatWasteBatchLabel(batch)}</option>`
+                    data-status="${escapeHtml(batch.status || '')}"
+                    data-expiry-date="${escapeHtml(batch.expiry_date || '')}"
+                    data-unit="${escapeHtml(batch.unit || '')}">${escapeHtml(formatWasteBatchLabel(batch))}</option>`
             ).join('');
             if (help) {
                 help.textContent = 'Waste can include expired physical batches. Usable stock excludes expired batches.';
@@ -564,7 +564,7 @@
 
             if (activeTab === 'expired') {
                 head.innerHTML = '<tr><th>Type</th><th>Item</th><th>Batch</th><th>Qty</th><th>Expiry</th></tr>';
-                body.innerHTML = rows.length ? rows.map(r => `<tr><td>${r.item_type}</td><td>${r.item_name}</td><td class="font-mono text-xs">${r.batch_code}</td><td>${fmt(r.quantity)} ${r.unit}</td><td>${formatDate(r.expiry_date)}</td></tr>`).join('') : emptyRow(5);
+                body.innerHTML = rows.length ? rows.map(r => `<tr><td>${escapeHtml(r.item_type)}</td><td>${escapeHtml(r.item_name)}</td><td class="font-mono text-xs">${escapeHtml(r.batch_code)}</td><td>${fmt(r.quantity)} ${escapeHtml(r.unit)}</td><td>${formatDate(r.expiry_date)}</td></tr>`).join('') : emptyRow(5);
                 return;
             }
 
@@ -572,13 +572,13 @@
             body.innerHTML = rows.length ? rows.map(r => {
                 const hasEvidence = !!r.evidence_photo_path && Number(r.evidence_available || 0) === 1;
                 return `<tr>
-                    <td class="font-mono text-xs">${r.waste_code}</td>
-                    <td>${r.item_name}</td>
-                    <td class="font-mono text-xs">${r.batch_code || '-'}</td>
-                    <td>${fmt(r.quantity)} ${r.unit}</td>
-                    <td>${r.reason_category}: ${r.reason}</td>
+                    <td class="font-mono text-xs">${escapeHtml(r.waste_code)}</td>
+                    <td>${escapeHtml(r.item_name)}</td>
+                    <td class="font-mono text-xs">${escapeHtml(r.batch_code || '-')}</td>
+                    <td>${fmt(r.quantity)} ${escapeHtml(r.unit)}</td>
+                    <td>${escapeHtml(r.reason_category)}: ${escapeHtml(r.reason)}</td>
                     <td>${formatDate(r.waste_date)}</td>
-                    <td><span class="badge badge-success badge-sm">${r.status}</span></td>
+                    <td><span class="badge badge-success badge-sm">${escapeHtml(r.status)}</span></td>
                     <td>${hasEvidence
                         ? `<button type="button" class="btn btn-ghost btn-xs gap-1" onclick="openEvidenceLightbox(${r.id})"><i class="fas fa-image text-[#1f7a4d]"></i> View</button>`
                         : '<span class="text-xs text-[#65736b]">—</span>'}</td>
@@ -616,7 +616,7 @@
         function showToast(message, type = 'info') {
             const toast = document.createElement('div');
             toast.className = `alert ${type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info'} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            HighlandSecurity.renderToastContent(toast, message);
             document.getElementById('toastContainer').appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
         }

@@ -9,6 +9,8 @@
 if (defined('YIELD_HELPERS_LOADED')) return;
 define('YIELD_HELPERS_LOADED', true);
 
+require_once __DIR__ . '/../../helpers/sku_packaging_bom.php';
+
 /**
  * Convert a product unit_size + unit_measure to milliliters (liquid).
  * Solids (g/kg) map 1:1 as "ml-equivalent" for packing math only when no better unit exists.
@@ -193,6 +195,19 @@ function resolvePackagingSkusForRun(PDO $db, $runId) {
         $s['priority_order'] = $order++;
     }
     unset($s);
+
+    // Attach the material definition used by the packaging allocation preview.
+    // Completion recalculates this server-side from the same SKU master data.
+    if (!empty($skus)) {
+        $bomMap = getSkuPackagingBomMap($db, array_column($skus, 'product_id'));
+        foreach ($skus as &$s) {
+            $productId = (int) ($s['product_id'] ?? 0);
+            $s['packaging_bom'] = $bomMap[$productId] ?? [];
+            $s['packaging_bom_count'] = count($s['packaging_bom']);
+            $s['packaging_bom_ready'] = $s['packaging_bom_count'] > 0;
+        }
+        unset($s);
+    }
 
     if (empty($skus)) {
         return [

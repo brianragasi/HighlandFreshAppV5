@@ -300,6 +300,21 @@
                 </div>
             </div>
 
+            <div class="card bg-base-100 border border-base-300 mt-6">
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="card-title text-lg"><i class="fas fa-receipt text-primary mr-2"></i>Recent Payouts</h3>
+                        <button class="btn btn-ghost btn-sm" type="button" onclick="loadPayoutHistory()"><i class="fas fa-rotate"></i> Refresh</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead><tr><th>Payout</th><th>Farmer</th><th>Date</th><th>Method</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
+                            <tbody id="payoutHistoryBody"><tr><td colspan="7" class="text-center py-6"><span class="loading loading-spinner loading-sm"></span></td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
             <!-- Pricing Reference -->
             <div class="card bg-base-100 border border-base-300 mt-6">
                 <div class="card-body">
@@ -400,7 +415,7 @@
 
     <!-- Farmer Payout Modal -->
     <dialog id="payoutModal" class="modal">
-        <div class="modal-box max-w-2xl">
+        <div class="modal-box max-w-5xl max-h-[92vh] overflow-y-auto">
             <h3 class="font-bold text-lg mb-4">
                 <i class="fas fa-money-bill-transfer text-primary mr-2"></i>
                 Disburse Farmer Funds
@@ -415,9 +430,22 @@
                         <div class="text-sm text-base-content/60" id="payoutFarmerCode">-</div>
                     </div>
                     <div class="bg-base-200 rounded-xl p-4">
-                        <div class="text-sm text-base-content/60 mb-1">Payee Account</div>
+                        <div class="text-sm text-base-content/60 mb-1" id="payoutDestinationTitle">Payment Destination</div>
+                        <div class="font-semibold" id="payoutPayeeName">-</div>
                         <div class="font-semibold" id="payoutBankName">-</div>
                         <div class="text-sm text-base-content/60" id="payoutBankAccount">-</div>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <button type="button" class="btn btn-outline btn-sm" onclick="toggleDeliveryBreakdown()">
+                        <i class="fas fa-list-check"></i> View Delivery &amp; QC Breakdown
+                    </button>
+                    <div id="deliveryBreakdown" class="hidden mt-3 border border-base-300 rounded-xl overflow-x-auto">
+                        <table class="table table-xs">
+                            <thead><tr><th>Date</th><th>Delivery</th><th>Liters</th><th>Fat</th><th>Acidity</th><th>Sediment</th><th>Price/L</th><th>Amount</th></tr></thead>
+                            <tbody id="deliveryBreakdownBody"></tbody>
+                        </table>
                     </div>
                 </div>
 
@@ -460,7 +488,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                     <div class="form-control">
                         <label class="label"><span class="label-text">Payment Method</span></label>
-                        <select id="payoutMethod" class="select select-bordered w-full">
+                        <select id="payoutMethod" class="select select-bordered w-full" onchange="updatePaymentMethodUI()">
                             <option value="bank_transfer">Bank Transfer</option>
                             <option value="e_wallet">E-Wallet</option>
                             <option value="check">Check</option>
@@ -468,25 +496,39 @@
                         </select>
                     </div>
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Reference Number</span></label>
+                        <label class="label"><span class="label-text" id="payoutReferenceLabel">Transfer Reference Number</span></label>
                         <input type="text" id="payoutReference" class="input input-bordered w-full"
-                            placeholder="Transfer / check / wallet reference">
+                            maxlength="100" required placeholder="Enter the payment reference">
                     </div>
+                </div>
+
+                <div id="paymentDestinationNotice" class="alert mb-3 text-sm"></div>
+
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text" id="proofLabel">Payment Proof</span></label>
+                    <input type="file" id="payoutProof" class="file-input file-input-bordered w-full"
+                        accept="application/pdf,image/jpeg,image/png" required>
+                    <label class="label py-1"><span class="label-text-alt">PDF, JPG, or PNG; maximum 5 MB.</span></label>
+                </div>
+
+                <div id="largePayoutNotice" class="alert alert-warning mb-3 text-sm hidden">
+                    <i class="fas fa-user-shield"></i>
+                    <span>This payout is ₱50,000 or more. A different General Manager must review it before it becomes final.</span>
                 </div>
 
                 <div class="bg-base-200 rounded-xl p-3 mb-3 text-xs">
                     <div class="font-semibold mb-2">Verification Checklist</div>
                     <label class="label cursor-pointer justify-start gap-3">
                         <input type="checkbox" id="verifyDeliveries" class="checkbox checkbox-sm checkbox-primary">
-                        <span class="label-text">Accepted deliveries and QC amounts are verified.</span>
+                        <span class="label-text">I reviewed the delivery and QC breakdown shown above.</span>
                     </label>
                     <label class="label cursor-pointer justify-start gap-3">
                         <input type="checkbox" id="verifyBankInfo" class="checkbox checkbox-sm checkbox-primary">
-                        <span class="label-text">Farmer payee details are verified.</span>
+                        <span class="label-text" id="verifyPayeeText">I matched the farmer's payee details to the selected destination.</span>
                     </label>
                     <label class="label cursor-pointer justify-start gap-3">
                         <input type="checkbox" id="verifyTransfer" class="checkbox checkbox-sm checkbox-primary">
-                        <span class="label-text">Funds have been released through the selected channel.</span>
+                        <span class="label-text" id="verifyReleaseText">I released the funds and attached the payment proof.</span>
                     </label>
                 </div>
 
@@ -525,6 +567,8 @@
         let searchTimeout;
         let currentFarmer = null;
         let currentPayoutPreview = null;
+        let currentPayoutDeliveries = [];
+        let currentUser = null;
         let payoutPreviewTimeout;
 
         function toggleSidebar() {
@@ -552,14 +596,14 @@
                 window.location.href = '../login.html';
                 return;
             }
-            const user = AuthService.getCurrentUser();
-            if (user) {
+            currentUser = AuthService.getCurrentUser();
+            if (currentUser) {
                 document.getElementById('sidebarUserName').textContent =
-                    `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Finance Officer';
+                    `${currentUser.first_name || ''} ${currentUser.last_name || ''}`.trim() || 'Finance Officer';
                 document.getElementById('userInitials').textContent =
-                    (user.first_name?.[0] || '') + (user.last_name?.[0] || '') || 'FO';
+                    (currentUser.first_name?.[0] || '') + (currentUser.last_name?.[0] || '') || 'FO';
             }
-            await loadFarmerPayments();
+            await Promise.all([loadFarmerPayments(), loadPayoutHistory()]);
         });
 
         async function loadFarmerPayments() {
@@ -682,18 +726,23 @@
 
             currentFarmer = farmer;
             currentPayoutPreview = null;
+            currentPayoutDeliveries = [];
 
             document.getElementById('payoutFarmerId').value = farmer.farmer_id;
             document.getElementById('payoutFarmerName').textContent = farmer.farmer_name || '-';
             document.getElementById('payoutFarmerCode').textContent = farmer.farmer_code || '-';
             document.getElementById('payoutBankName').textContent = farmer.bank_name || 'No bank name';
             document.getElementById('payoutBankAccount').textContent = farmer.bank_account_number || 'No account number';
+            document.getElementById('payoutPayeeName').textContent = farmer.payment_payee_name || 'No payment payee name';
             document.getElementById('payoutCoveredFrom').value = farmer.first_delivery || '';
             document.getElementById('payoutCoveredTo').value = farmer.last_delivery || '';
             document.getElementById('payoutDate').value = todayDateString();
-            document.getElementById('payoutMethod').value = 'bank_transfer';
+            configurePaymentMethodChoices(farmer);
             document.getElementById('payoutReference').value = '';
             document.getElementById('payoutNotes').value = '';
+            document.getElementById('payoutProof').value = '';
+            document.getElementById('deliveryBreakdown').classList.add('hidden');
+            document.getElementById('deliveryBreakdownBody').innerHTML = '';
             document.getElementById('verifyDeliveries').checked = false;
             document.getElementById('verifyBankInfo').checked = false;
             document.getElementById('verifyTransfer').checked = false;
@@ -706,7 +755,110 @@
             });
 
             document.getElementById('payoutModal').showModal();
+            updatePaymentMethodUI();
             refreshPayoutPreview();
+        }
+
+        function configurePaymentMethodChoices(farmer) {
+            const select = document.getElementById('payoutMethod');
+            const hasPayee = !!String(farmer.payment_payee_name || '').trim();
+            const bankReady = hasPayee && !!String(farmer.bank_name || '').trim()
+                && /^\d{6,20}$/.test(String(farmer.bank_account_number || '').replace(/\D/g, ''));
+            const walletReady = !!String(farmer.ewallet_provider || '').trim()
+                && !!String(farmer.ewallet_account_name || '').trim()
+                && /^09\d{9}$/.test(String(farmer.ewallet_mobile_number || '').replace(/\D/g, ''));
+            Array.from(select.options).forEach(option => {
+                option.disabled = option.value === 'bank_transfer' ? !bankReady
+                    : option.value === 'e_wallet' ? !walletReady
+                        : !hasPayee;
+            });
+            const firstReady = Array.from(select.options).find(option => !option.disabled);
+            select.value = bankReady ? 'bank_transfer' : (firstReady?.value || 'bank_transfer');
+        }
+
+        function updatePaymentMethodUI() {
+            if (!currentFarmer) return;
+            const method = document.getElementById('payoutMethod').value;
+            const notice = document.getElementById('paymentDestinationNotice');
+            const payee = currentFarmer.payment_payee_name || '';
+            let title = 'Payment Destination';
+            let provider = '-';
+            let account = '-';
+            let message = '';
+            let ready = false;
+            let referenceLabel = 'Payment Reference Number';
+            let proofLabel = 'Payment Proof';
+            let releaseText = 'I released the funds and attached the payment proof.';
+
+            if (method === 'bank_transfer') {
+                title = 'Bank Transfer Destination';
+                provider = currentFarmer.bank_name || 'Missing bank name';
+                account = currentFarmer.bank_account_number || 'Missing account number';
+                ready = !!payee && !!currentFarmer.bank_name && /^\d{6,20}$/.test(String(currentFarmer.bank_account_number || '').replace(/\D/g, ''));
+                message = ready ? 'Bank destination is complete.' : 'Bank Transfer is blocked. Add the payee name, bank name, and a valid account number in the farmer record.';
+                referenceLabel = 'Bank Transfer Reference Number';
+                proofLabel = 'Bank Transfer Receipt';
+            } else if (method === 'e_wallet') {
+                title = 'E-Wallet Destination';
+                provider = currentFarmer.ewallet_provider || 'Missing wallet provider';
+                account = `${currentFarmer.ewallet_account_name || 'Missing registered name'} · ${currentFarmer.ewallet_mobile_number || 'Missing mobile number'}`;
+                ready = !!currentFarmer.ewallet_provider && !!currentFarmer.ewallet_account_name
+                    && /^09\d{9}$/.test(String(currentFarmer.ewallet_mobile_number || '').replace(/\D/g, ''));
+                message = ready ? 'E-wallet destination is complete.' : 'E-Wallet is blocked. Add the provider, registered name, and valid mobile number in the farmer record.';
+                referenceLabel = 'E-Wallet Reference Number';
+                proofLabel = 'E-Wallet Transfer Receipt';
+            } else if (method === 'check') {
+                title = 'Check Payee'; provider = 'Check'; account = payee || 'Missing payment payee name';
+                ready = !!payee; message = ready ? 'Write the check using the payee name shown above.' : 'Check is blocked until a payment payee name is saved.';
+                referenceLabel = 'Check Number'; proofLabel = 'Check Image or Release Proof';
+                releaseText = 'I released the check and attached supporting proof.';
+            } else {
+                title = 'Cash Payee'; provider = 'Cash'; account = payee || 'Missing payment payee name';
+                ready = !!payee; message = ready ? 'A signed cash acknowledgment is required.' : 'Cash is blocked until a payment payee name is saved.';
+                referenceLabel = 'Cash Acknowledgment Number'; proofLabel = 'Signed Cash Acknowledgment';
+                releaseText = 'I released the cash and attached the signed acknowledgment.';
+            }
+
+            document.getElementById('payoutDestinationTitle').textContent = title;
+            document.getElementById('payoutPayeeName').textContent = method === 'e_wallet'
+                ? (currentFarmer.ewallet_account_name || 'No registered name') : (payee || 'No payment payee name');
+            document.getElementById('payoutBankName').textContent = provider;
+            document.getElementById('payoutBankAccount').textContent = account;
+            document.getElementById('payoutReferenceLabel').textContent = referenceLabel;
+            document.getElementById('proofLabel').textContent = proofLabel;
+            document.getElementById('verifyReleaseText').textContent = releaseText;
+            notice.className = `alert mb-3 text-sm ${ready ? 'alert-success' : 'alert-error'}`;
+            notice.textContent = message;
+            notice.dataset.ready = ready ? '1' : '0';
+            updatePayoutSubmitAvailability();
+        }
+
+        function toggleDeliveryBreakdown() {
+            document.getElementById('deliveryBreakdown').classList.toggle('hidden');
+        }
+
+        function renderDeliveryBreakdown() {
+            const body = document.getElementById('deliveryBreakdownBody');
+            if (!currentPayoutDeliveries.length) {
+                body.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-base-content/60">No deliveries in this period.</td></tr>';
+                return;
+            }
+            body.innerHTML = currentPayoutDeliveries.map(row => `<tr>
+                <td>${escapeHtml(formatDateValue(row.receiving_date))}</td>
+                <td><div class="font-medium">${escapeHtml(row.receiving_code || '-')}</div><div class="text-base-content/50">${escapeHtml(row.rmr_number || '')}</div></td>
+                <td>${Number(row.accepted_liters || 0).toLocaleString('en-PH')} L</td>
+                <td>${Number(row.fat_percentage || 0).toFixed(2)}%</td>
+                <td>${Number(row.titratable_acidity || 0).toFixed(2)}%</td>
+                <td>${escapeHtml(row.sediment_grade || '-')}</td>
+                <td>${formatCurrency(row.final_price_per_liter)}</td>
+                <td class="font-semibold">${formatCurrency(row.total_amount)}</td>
+            </tr>`).join('');
+        }
+
+        function updatePayoutSubmitAvailability() {
+            const amount = parseFloat(currentPayoutPreview?.total_amount || 0);
+            const destinationReady = document.getElementById('paymentDestinationNotice')?.dataset.ready === '1';
+            document.getElementById('payoutSubmitBtn').disabled = amount <= 0 || !destinationReady;
         }
 
         function queuePayoutPreview() {
@@ -726,6 +878,8 @@
                 const filters = getPayoutFilters();
                 const response = await FinanceService.getFarmerUnpaidDeliveries(currentFarmer.farmer_id, filters);
                 currentPayoutPreview = response?.data?.summary || null;
+                currentPayoutDeliveries = response?.data?.deliveries || [];
+                renderDeliveryBreakdown();
                 updatePayoutPreview(currentPayoutPreview);
             } catch (error) {
                 hint.textContent = error.message || 'Unable to refresh payout amount';
@@ -756,7 +910,8 @@
             document.getElementById('payoutPreviewHint').textContent = deliveryCount > 0
                 ? `${deliveryCount} unpaid accepted deliver${deliveryCount === 1 ? 'y' : 'ies'} selected.`
                 : 'No unpaid accepted deliveries in the selected range.';
-            document.getElementById('payoutSubmitBtn').disabled = totalAmount <= 0;
+            document.getElementById('largePayoutNotice').classList.toggle('hidden', totalAmount < 50000);
+            updatePayoutSubmitAvailability();
         }
 
         document.getElementById('payoutForm').addEventListener('submit', async function (e) {
@@ -776,6 +931,7 @@
                 const paymentDate = document.getElementById('payoutDate').value;
                 const paymentMethod = document.getElementById('payoutMethod').value;
                 const referenceNumber = document.getElementById('payoutReference').value.trim();
+                const proofFile = document.getElementById('payoutProof').files[0];
                 const verifyDeliveries = document.getElementById('verifyDeliveries').checked;
                 const verifyBankInfo = document.getElementById('verifyBankInfo').checked;
                 const verifyTransfer = document.getElementById('verifyTransfer').checked;
@@ -790,8 +946,18 @@
                     return;
                 }
 
-                if (paymentMethod !== 'cash' && !referenceNumber) {
-                    showToast('Reference number is required for non-cash payouts', 'error');
+                if (!referenceNumber) {
+                    showToast('Enter the payment or acknowledgment reference number', 'error');
+                    return;
+                }
+
+                if (!proofFile || proofFile.size <= 0 || proofFile.size > 5 * 1024 * 1024) {
+                    showToast('Attach a PDF, JPG, or PNG payment proof up to 5 MB', 'error');
+                    return;
+                }
+
+                if (document.getElementById('paymentDestinationNotice').dataset.ready !== '1') {
+                    showToast('Complete the selected payment destination in the farmer record first', 'error');
                     return;
                 }
 
@@ -805,29 +971,112 @@
                     return;
                 }
 
-                await FinanceService.recordFarmerPayment({
+                const payload = new FormData();
+                const fields = {
                     farmer_id: currentFarmer.farmer_id,
-                    ...getPayoutFilters(),
-                    payment_date: paymentDate,
-                    payment_method: paymentMethod,
-                    reference_number: referenceNumber,
-                    notes: document.getElementById('payoutNotes').value,
-                    verify_deliveries: verifyDeliveries,
-                    verify_bank_info: verifyBankInfo,
-                    verify_transfer: verifyTransfer,
-                    step_up_token: stepUpToken
-                });
+                    ...getPayoutFilters(), payment_date: paymentDate, payment_method: paymentMethod,
+                    reference_number: referenceNumber, notes: document.getElementById('payoutNotes').value,
+                    verify_deliveries: verifyDeliveries ? '1' : '0', verify_bank_info: verifyBankInfo ? '1' : '0',
+                    verify_transfer: verifyTransfer ? '1' : '0', step_up_token: stepUpToken
+                };
+                Object.entries(fields).forEach(([key, value]) => payload.append(key, value ?? ''));
+                payload.append('proof_file', proofFile);
+                const response = await FinanceService.recordFarmerPayment(payload);
 
                 document.getElementById('payoutModal').close();
-                showToast('Farmer payout recorded successfully!', 'success');
-                await loadFarmerPayments();
+                showToast(response?.message || 'Farmer payout recorded successfully!', 'success');
+                await Promise.all([loadFarmerPayments(), loadPayoutHistory()]);
             } catch (error) {
                 showToast(error.message || 'Failed to record farmer payout', 'error');
             } finally {
-                btn.disabled = parseFloat(currentPayoutPreview?.total_amount || 0) <= 0;
+                updatePayoutSubmitAvailability();
                 btn.innerHTML = '<i class="fas fa-check mr-1"></i> Record Payout';
             }
         });
+
+        async function loadPayoutHistory() {
+            const body = document.getElementById('payoutHistoryBody');
+            if (!body) return;
+            try {
+                const response = await FinanceService.getFarmerPaymentHistory(0, 30);
+                const rows = response?.data || [];
+                if (!rows.length) {
+                    body.innerHTML = '<tr><td colspan="7" class="text-center py-6 text-base-content/60">No payouts recorded yet.</td></tr>';
+                    return;
+                }
+                body.innerHTML = rows.map(payment => {
+                    const status = payment.status || 'released';
+                    const statusClass = { released: 'badge-success', pending_review: 'badge-warning', failed: 'badge-error', cancelled: 'badge-ghost', reversed: 'badge-error' }[status] || 'badge-ghost';
+                    const method = { bank_transfer: 'Bank Transfer', e_wallet: 'E-Wallet', check: 'Check', cash: 'Cash' }[payment.payment_method] || payment.payment_method;
+                    const currentId = Number(currentUser?.user_id || currentUser?.id || 0);
+                    const canReview = status === 'pending_review' && currentUser?.role === 'general_manager' && Number(payment.created_by) !== currentId;
+                    let actions = `<div class="flex flex-wrap gap-1">
+                        <button class="btn btn-ghost btn-xs" onclick="printPaymentStatement(${Number(payment.id)})"><i class="fas fa-print"></i> Statement</button>`;
+                    if (payment.proof_path) actions += `<button class="btn btn-ghost btn-xs" onclick="viewPaymentProof(${Number(payment.id)})"><i class="fas fa-paperclip"></i> Proof</button>`;
+                    if (canReview) actions += `<button class="btn btn-success btn-xs" onclick="reviewPayout(${Number(payment.id)})"><i class="fas fa-user-check"></i> Review</button>`;
+                    if (status === 'pending_review') actions += `<button class="btn btn-error btn-outline btn-xs" onclick="changePayoutStatus(${Number(payment.id)}, 'cancelled')">Cancel</button>`;
+                    if (status === 'released' && currentUser?.role === 'general_manager') actions += `<button class="btn btn-error btn-outline btn-xs" onclick="changePayoutStatus(${Number(payment.id)}, 'reversed')">Reverse</button>`;
+                    if (['pending_review', 'released'].includes(status) && payment.payment_method !== 'cash') actions += `<button class="btn btn-warning btn-outline btn-xs" onclick="changePayoutStatus(${Number(payment.id)}, 'failed')">Mark Failed</button>`;
+                    actions += '</div>';
+                    return `<tr>
+                        <td><div class="font-mono font-semibold">${escapeHtml(payment.payment_code)}</div><div class="text-xs text-base-content/50">${escapeHtml(payment.reference_number || '-')}</div></td>
+                        <td>${escapeHtml(payment.farmer_name || '-')}</td><td>${escapeHtml(formatDateValue(payment.payment_date))}</td>
+                        <td>${escapeHtml(method)}</td><td class="font-semibold">${formatCurrency(payment.amount_paid)}</td>
+                        <td><span class="badge badge-sm ${statusClass}">${escapeHtml(status.replace(/_/g, ' '))}</span>${payment.status_reason ? `<div class="text-xs text-error mt-1 max-w-48">${escapeHtml(payment.status_reason)}</div>` : ''}</td>
+                        <td>${actions}</td></tr>`;
+                }).join('');
+            } catch (error) {
+                body.innerHTML = `<tr><td colspan="7" class="text-center py-6 text-error">${escapeHtml(error.message || 'Unable to load payout history')}</td></tr>`;
+            }
+        }
+
+        function printPaymentStatement(paymentId) {
+            window.open(`farmer_payment_statement.html?id=${encodeURIComponent(paymentId)}`, '_blank', 'noopener');
+        }
+
+        async function viewPaymentProof(paymentId) {
+            try {
+                const response = await api.get(`/finance/farmer_payments.php?action=proof&id=${encodeURIComponent(paymentId)}`, { responseType: 'blob' });
+                const blob = response instanceof Blob ? response : (response?.data instanceof Blob ? response.data : null);
+                if (!blob) throw new Error('Unable to open payment proof');
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank', 'noopener');
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+            } catch (error) {
+                showToast(error.message || 'Unable to open payment proof', 'error');
+            }
+        }
+
+        async function reviewPayout(paymentId) {
+            const stepUpToken = await AuthService.promptStepUp('payment_release', 'large farmer payout review');
+            if (!stepUpToken) return;
+            try {
+                await FinanceService.reviewFarmerPayment({ payment_id: paymentId, step_up_token: stepUpToken });
+                showToast('Second review completed. The payout is now final.', 'success');
+                await loadPayoutHistory();
+            } catch (error) {
+                showToast(error.message || 'Unable to review payout', 'error');
+            }
+        }
+
+        async function changePayoutStatus(paymentId, status) {
+            const labels = { failed: 'failed', cancelled: 'cancelled', reversed: 'reversed' };
+            const reason = window.prompt(`Explain why this payout is being marked ${labels[status]}. At least 10 characters are required.`);
+            if (reason === null) return;
+            if (reason.trim().length < 10) {
+                showToast('Please enter a clear reason with at least 10 characters', 'error');
+                return;
+            }
+            const stepUpToken = await AuthService.promptStepUp('payment_release', `farmer payout ${status}`);
+            if (!stepUpToken) return;
+            try {
+                await FinanceService.changeFarmerPaymentStatus({ payment_id: paymentId, status, reason: reason.trim(), step_up_token: stepUpToken });
+                showToast(`Payout marked ${labels[status]}. Its deliveries are available for correction.`, 'success');
+                await Promise.all([loadPayoutHistory(), loadFarmerPayments()]);
+            } catch (error) {
+                showToast(error.message || 'Unable to update payout', 'error');
+            }
+        }
 
         // ========================================
         // HELPERS
@@ -867,7 +1116,11 @@
             const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg text-sm`;
-            toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i><span>${message}</span>`;
+            HighlandSecurity.renderToastContent(
+                toast,
+                message,
+                `fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}`
+            );
             container.appendChild(toast);
             setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 3000);
         }

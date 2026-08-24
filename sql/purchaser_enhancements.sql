@@ -7,6 +7,7 @@
 ALTER TABLE purchase_orders 
 ADD COLUMN payment_terms ENUM('cash', 'credit_7', 'credit_15', 'credit_30', 'credit_45', 'credit_60') DEFAULT 'cash' AFTER payment_status,
 ADD COLUMN due_date DATE NULL AFTER payment_terms,
+ADD COLUMN payment_terms_override_reason VARCHAR(500) NULL AFTER due_date,
 ADD COLUMN requisition_id INT NULL AFTER notes,
 ADD INDEX idx_payment_terms (payment_terms),
 ADD INDEX idx_due_date (due_date),

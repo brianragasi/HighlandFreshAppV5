@@ -13,9 +13,28 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/plain_text.php';
 
 // Require QC or Warehouse Raw role
 $currentUser = Auth::requireRole(['qc_officer', 'general_manager', 'warehouse_raw']);
+
+function parseReceivingDecimal($rawValue, string $label, float $minimum, float $maximum, array &$errors) {
+    if (is_array($rawValue) || is_object($rawValue) || is_bool($rawValue) || $rawValue === null) {
+        $errors[] = "{$label} must be a regular number";
+        return null;
+    }
+    $text = trim((string) $rawValue);
+    if ($text === '' || !preg_match('/^-?\d+(?:\.\d+)?$/D', $text)) {
+        $errors[] = "{$label} must be a regular number without exponent notation";
+        return null;
+    }
+    $value = (float) $text;
+    if (!is_finite($value) || $value < $minimum || $value > $maximum) {
+        $errors[] = "{$label} must be between {$minimum} and {$maximum}";
+        return null;
+    }
+    return $value;
+}
 
 try {
     $db = Database::getInstance()->getConnection();
@@ -112,15 +131,20 @@ try {
             $temperatureCelsius = getParam('temperature_celsius');
             $transportContainer = getParam('transport_container');
             $visualInspection = getParam('visual_inspection', 'pending');
-            $visualNotes = trim(getParam('visual_notes', ''));
-            $notes = trim(getParam('notes', ''));
+            $visualNotes = hfPlainText(getParam('visual_notes', ''), 1000, true);
+            $notes = hfPlainText(getParam('notes', ''), 2000, true);
             $aptResult = getParam('apt_result'); // APT result from initial visual inspection
             
             // Validation
             $errors = [];
             if (empty($farmerId)) $errors['farmer_id'] = 'Farmer is required';
-            if (empty($volumeLiters) || $volumeLiters <= 0) {
-                $errors['volume_liters'] = 'Valid volume is required';
+            $volumeErrors = [];
+            $volumeLiters = parseReceivingDecimal($volumeLiters, 'Volume', 0.01, 100000, $volumeErrors);
+            if (!empty($volumeErrors)) $errors['volume_liters'] = $volumeErrors[0];
+            if ($temperatureCelsius !== null && $temperatureCelsius !== '') {
+                $temperatureErrors = [];
+                $temperatureCelsius = parseReceivingDecimal($temperatureCelsius, 'Temperature', -10, 60, $temperatureErrors);
+                if (!empty($temperatureErrors)) $errors['temperature_celsius'] = $temperatureErrors[0];
             }
             if (!empty($visualInspection) && !in_array($visualInspection, ['pass', 'fail', 'pending'])) {
                 $errors['visual_inspection'] = 'Visual inspection must be pass, fail, or pending';

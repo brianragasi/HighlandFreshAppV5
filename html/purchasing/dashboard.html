@@ -246,10 +246,10 @@
                 </h2>
                 <ul class="menu menu-sm p-0 gap-1">
                     <li>
-                        <a href="canvassing.html"
+                        <a href="purchase_orders.html?action=new"
                             class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-scale-balanced w-5 text-center text-base-content/60"></i>
-                            <span class="flex-1">Canvassing</span>
+                            <span class="flex-1">New PO</span>
                         </a>
                     </li>
                     <li>
@@ -257,7 +257,7 @@
                             class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-file-invoice-dollar w-5 text-center text-base-content/60"></i>
                             <span class="flex-1">Purchase Orders</span>
-                            <span class="badge badge-sm badge-warning" id="pendingPOBadge">0</span>
+                            <span class="badge badge-sm border-warning bg-warning/10 text-base-content" id="pendingPOBadge">0</span>
                         </a>
                     </li>
                     <li>
@@ -386,9 +386,9 @@
                         <p class="text-white/80 text-sm lg:text-base">Here's your procurement overview for today.</p>
                     </div>
                     <div class="flex gap-2 flex-wrap">
-                        <a href="canvassing.html"
+                        <a href="purchase_orders.html?action=new"
                             class="btn btn-sm bg-white/20 border-white/30 text-white hover:bg-white/30 backdrop-blur-sm">
-                            <i class="fas fa-scale-balanced"></i> Canvass PRS
+                            <i class="fas fa-scale-balanced"></i> Review PRS
                         </a>
                         <a href="suppliers.html"
                             class="btn btn-sm bg-white/20 border-white/30 text-white hover:bg-white/30 backdrop-blur-sm">
@@ -406,16 +406,16 @@
                     <p class="text-sm text-base-content/70" id="approvedPrAlertText"></p>
                     <div id="approvedPrAlertItems" class="flex flex-wrap gap-2 mt-3"></div>
                 </div>
-                <a href="canvassing.html" class="btn btn-warning btn-sm">
+                <a href="purchase_orders.html?action=new" class="btn btn-warning btn-sm">
                     <i class="fas fa-scale-balanced"></i>
-                    Canvass
+                    Supplier Review
                 </a>
             </div>
 
             <!-- ═══════════════════════════════════
-                 PRIMARY STAT CARDS (4-column grid)
+                 PRIMARY STAT CARDS
             ═══════════════════════════════════ -->
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
 
                 <!-- Active Suppliers -->
                 <a href="suppliers.html" class="bento-card card bg-base-100 border border-base-300 cursor-pointer" id="cardSuppliers">
@@ -458,7 +458,7 @@
                             <div class="stat-icon amber">
                                 <i class="fas fa-clock"></i>
                             </div>
-                            <span class="badge badge-warning badge-sm">Pending</span>
+                            <span class="badge badge-sm border-warning bg-warning/10 text-base-content">Pending</span>
                         </div>
                         <p class="text-2xl lg:text-3xl font-extrabold stat-value text-base-content" id="statPendingPOs">
                             <span class="loading loading-dots loading-sm"></span>
@@ -468,7 +468,7 @@
                 </a>
 
                 <!-- PRS Inbox -->
-                <a href="canvassing.html" class="bento-card card bg-base-100 border border-base-300 cursor-pointer" id="cardRequisitions">
+                <a href="purchase_orders.html?action=new" class="bento-card card bg-base-100 border border-base-300 cursor-pointer" id="cardRequisitions">
                     <div class="card-body p-4 lg:p-5">
                         <div class="flex items-center justify-between mb-3">
                             <div class="stat-icon cyan">
@@ -482,7 +482,57 @@
                         <p class="text-sm text-base-content/60 font-medium">PRS Inbox</p>
                     </div>
                 </a>
+
+                <!-- Critical Stock -->
+                <a href="#criticalStocks" class="bento-card card bg-base-100 border border-error/30 cursor-pointer" id="cardCriticalStock">
+                    <div class="card-body p-4 lg:p-5">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="stat-icon orange">
+                                <i class="fas fa-triangle-exclamation"></i>
+                            </div>
+                            <span class="badge badge-sm border-error bg-error/10 text-base-content">Check now</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-extrabold stat-value text-base-content" id="statCriticalItems">
+                            <span class="loading loading-dots loading-sm"></span>
+                        </p>
+                        <p class="text-sm text-base-content/60 font-medium">Critical Items</p>
+                    </div>
+                </a>
             </div>
+
+            <!-- Critical stock requiring a warehouse PRS -->
+            <section class="card bg-base-100 border border-base-300" id="criticalStocks">
+                <div class="card-body p-4 lg:p-5">
+                    <div class="flex items-center justify-between gap-3 mb-3">
+                        <div>
+                            <h3 class="card-title text-base lg:text-lg font-bold">
+                                <i class="fas fa-triangle-exclamation text-error mr-2"></i>
+                                Critical Stocks
+                            </h3>
+                            <p class="text-xs text-base-content/60 mt-1">Usable stock at or below the minimum safety level.</p>
+                        </div>
+                        <a href="purchase_orders.html?action=new" class="btn btn-outline btn-sm">
+                            <i class="fas fa-file-signature"></i> Open PRS Inbox
+                        </a>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Item</th>
+                                    <th>Type</th>
+                                    <th class="text-right">Usable</th>
+                                    <th class="text-right">Minimum</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="criticalStockTable">
+                                <tr><td colspan="5" class="text-center py-6"><span class="loading loading-spinner loading-sm"></span></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
 
             <!-- ═══════════════════════════════════
                  FINANCIAL OVERVIEW ROW
@@ -537,12 +587,12 @@
                     <div class="card-body p-4 lg:p-5">
                         <h3 class="font-bold text-sm text-base-content/70 uppercase tracking-wide mb-2">Quick Actions</h3>
                         <div class="space-y-1">
-                            <a href="canvassing.html" class="quick-action">
+                            <a href="purchase_orders.html?action=new" class="quick-action">
                                 <div class="qa-icon" style="background: linear-gradient(135deg, #3b82f6, #2563eb);">
                                     <i class="fas fa-plus"></i>
                                 </div>
                                 <div>
-                                    <p class="text-sm font-semibold">Canvass PRS</p>
+                                    <p class="text-sm font-semibold">Review PRS</p>
                                     <p class="text-xs text-base-content/50">Create a new PO</p>
                                 </div>
                             </a>
@@ -565,18 +615,23 @@
             ═══════════════════════════════════ -->
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-                <!-- Recent Purchase Orders (Span 2) -->
+                <!-- Ongoing Purchase Orders (Span 2) -->
                 <div class="lg:col-span-2">
                     <div class="card bg-base-100 border border-base-300">
                         <div class="card-body p-4 lg:p-5">
                             <div class="flex items-center justify-between mb-4">
                                 <h3 class="card-title text-base lg:text-lg font-bold">
                                     <i class="fas fa-file-invoice-dollar text-primary mr-2"></i>
-                                    Recent Purchase Orders
+                                    Ongoing Purchase Orders
                                 </h3>
-                                <a href="purchase_orders.html" class="btn btn-ghost btn-sm text-primary">
-                                    View All <i class="fas fa-arrow-right ml-1 text-xs"></i>
-                                </a>
+                                <div class="flex gap-2">
+                                    <a href="purchase_orders.html?action=new" class="btn btn-primary btn-sm">
+                                        <i class="fas fa-plus"></i> New P.O.
+                                    </a>
+                                    <a href="purchase_orders.html" class="btn btn-ghost btn-sm text-primary" aria-label="View all purchase orders">
+                                        <i class="fas fa-arrow-right"></i>
+                                    </a>
+                                </div>
                             </div>
 
                             <div class="overflow-x-auto -mx-4 lg:-mx-5">
@@ -586,14 +641,16 @@
                                             <th class="font-semibold text-base-content/70 pl-4 lg:pl-5">PO #</th>
                                             <th class="font-semibold text-base-content/70">Supplier</th>
                                             <th class="font-semibold text-base-content/70">Date</th>
-                                            <th class="font-semibold text-base-content/70">Amount</th>
+                                            <th class="font-semibold text-base-content/70 text-center">Items</th>
+                                            <th class="font-semibold text-base-content/70">Total Price</th>
                                             <th class="font-semibold text-base-content/70">Status</th>
-                                            <th class="font-semibold text-base-content/70 pr-4 lg:pr-5">Payment</th>
+                                            <th class="font-semibold text-base-content/70">Payment</th>
+                                            <th class="font-semibold text-base-content/70 pr-4 lg:pr-5">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody id="recentPOTable">
                                         <tr>
-                                            <td colspan="6" class="text-center py-8 text-base-content/60">
+                                            <td colspan="8" class="text-center py-8 text-base-content/60">
                                                 <span class="loading loading-spinner loading-md"></span>
                                                 <p class="mt-2">Loading purchase orders...</p>
                                             </td>
@@ -646,6 +703,7 @@
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/ui/live-refresh.js?v=20260820-1"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="purchaser,general_manager"></script>
     <script src="../../js/purchasing/purchasing.service.js"></script>
 
@@ -716,6 +774,7 @@
             }
 
             await loadDashboardData();
+            HighlandLiveRefresh.start(loadDashboardData);
         });
 
         function getInitials(firstName, lastName) {
@@ -727,6 +786,7 @@
         async function loadDashboardData() {
             const loaders = [
                 loadStats().catch(e => console.error('Stats error:', e)),
+                loadCriticalStocks().catch(e => console.error('Critical stock error:', e)),
                 loadRecentPOs().catch(e => console.error('Recent POs error:', e)),
                 loadPendingRequisitions().catch(e => console.error('Requisitions error:', e)),
                 loadApprovedPurchaseRequestNotifications().catch(e => console.error('PRS inbox notification error:', e)),
@@ -752,7 +812,7 @@
             const items = document.getElementById('approvedPrAlertItems');
 
             notifCount.textContent = totalNotifs;
-            notifCount.className = `indicator-item badge badge-xs ${totalNotifs ? 'badge-warning' : 'badge-primary'}`;
+            notifCount.className = `indicator-item badge badge-xs ${totalNotifs ? 'border-warning bg-warning/10 text-base-content' : 'badge-primary'}`;
 
             // Build notification list: submitted PRS records first, then procurement notices.
             let listHtml = '';
@@ -760,7 +820,7 @@
             if (procNotifs.length) {
                 listHtml += procNotifs.map(n => `
                     <li>
-                            <a href="canvassing.html" class="items-start">
+                            <a href="purchase_orders.html?action=new" class="items-start">
                             <i class="fas fa-file-signature text-warning mt-1"></i>
                             <div>
                                 <p class="font-medium">${escapeHtml(n.title)}</p>
@@ -780,12 +840,12 @@
 
             if (count) {
                 const noun = count === 1 ? 'PRS' : 'PRS records';
-                title.textContent = `${count} submitted ${noun} ready for canvassing`;
-                text.textContent = 'Warehouse Raw submitted these slips. Canvass 3 suppliers, select the supplier/prices, and create the formal PO for GM approval.';
+                title.textContent = `${count} submitted ${noun} have quantities left to order`;
+                text.textContent = 'Choose one Warehouse PRS, then manually build one accredited supplier’s PO from its remaining requested items.';
                 items.innerHTML = prsInbox.slice(0, 4).map(pr => {
-                    const prLink = `canvassing.html?pr_id=${encodeURIComponent(pr.id)}`;
+                    const prLink = `purchase_orders.html?action=new&pr_id=${encodeURIComponent(pr.id)}`;
                     return `
-                        <a href="${prLink}" class="badge badge-warning badge-outline gap-1 h-auto py-2">
+                        <a href="${prLink}" class="badge border-warning bg-warning/10 text-base-content gap-1 h-auto py-2">
                             <i class="fas fa-file-signature"></i>
                             ${escapeHtml(pr.pr_number)} - ${escapeHtml(getPurchaseRequestItemPreview(pr))}
                         </a>
@@ -794,13 +854,13 @@
                 alert.classList.remove('hidden');
 
                 listHtml += prsInbox.map(pr => {
-                    const prLink = `canvassing.html?pr_id=${encodeURIComponent(pr.id)}`;
+                    const prLink = `purchase_orders.html?action=new&pr_id=${encodeURIComponent(pr.id)}`;
                     return `
                         <li>
                             <a href="${prLink}" class="items-start">
                                 <i class="fas fa-file-signature text-warning mt-1"></i>
                                 <div>
-                                    <p class="font-medium">${escapeHtml(pr.pr_number)} is ready for canvassing</p>
+                                    <p class="font-medium">${escapeHtml(pr.pr_number)} has requested quantities left to order</p>
                                     <p class="text-xs text-base-content/60">${escapeHtml(pr.purpose || 'Purchase request')}</p>
                                     <p class="text-xs text-base-content/50">${escapeHtml(getPurchaseRequestItemPreview(pr))}</p>
                                 </div>
@@ -831,6 +891,7 @@
                 animateValue('statPOsMonth', stats.pos_this_month);
                 animateValue('statPendingPOs', stats.pending_pos);
                 animateValue('statRequisitions', stats.prs_inbox);
+                animateValue('statCriticalItems', stats.critical_stock_items);
 
                 document.getElementById('statMonthlySpend').textContent =
                     formatCurrency(stats.monthly_spending);
@@ -848,6 +909,42 @@
             } catch (error) {
                 console.error('Error loading stats:', error);
             }
+        }
+
+        async function loadCriticalStocks() {
+            const tbody = document.getElementById('criticalStockTable');
+            const response = await PurchasingService.getLowStockAlerts();
+            const items = (response?.data || []).filter(item =>
+                Number(item.current_stock || 0) <= Number(item.minimum_stock || 0)
+            );
+
+            if (!items.length) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="text-center py-6 text-success">
+                            <i class="fas fa-circle-check mr-2"></i>No items are below minimum stock.
+                        </td>
+                    </tr>`;
+                return;
+            }
+
+            tbody.innerHTML = items.map(item => {
+                const name = item.ingredient_name || item.item_name || 'Item';
+                const code = item.ingredient_code || item.item_code || '';
+                const unit = item.unit_of_measure || '';
+                const out = Number(item.current_stock || 0) <= 0;
+                return `
+                    <tr class="border-b border-base-200/60">
+                        <td>
+                            <div class="font-semibold">${escapeHtml(name)}</div>
+                            <div class="font-mono text-xs text-base-content/50">${escapeHtml(code)}</div>
+                        </td>
+                        <td><span class="badge badge-ghost badge-sm">${item.item_type === 'mro' ? 'MRO' : 'Ingredient'}</span></td>
+                        <td class="text-right font-bold">${formatNumber(item.current_stock)} ${escapeHtml(unit)}</td>
+                        <td class="text-right">${formatNumber(item.minimum_stock)} ${escapeHtml(unit)}</td>
+                        <td><span class="badge badge-sm ${out ? 'badge-error' : 'border-warning bg-warning/10 text-base-content'}">${out ? 'Out' : 'Critical'}</span></td>
+                    </tr>`;
+            }).join('');
         }
 
         /** Smoothly counts from 0 to `end` over ~600ms */
@@ -961,7 +1058,7 @@
                 if (orders.length === 0) {
                     tbody.innerHTML = `
                         <tr>
-                            <td colspan="6" class="text-center py-8 text-base-content/60">
+                            <td colspan="8" class="text-center py-8 text-base-content/60">
                                 <i class="fas fa-inbox text-4xl mb-2"></i>
                                 <p>No purchase orders found</p>
                             </td>
@@ -977,19 +1074,25 @@
                     return `
                         <tr class="hover border-b border-base-200/50">
                             <td class="pl-4 lg:pl-5">
-                                <span class="font-mono font-bold text-primary text-sm">${po.po_number}</span>
+                                <span class="font-mono font-bold text-primary text-sm">${escapeHtml(po.po_number)}</span>
                             </td>
                             <td>
-                                <div class="font-semibold text-sm">${po.supplier_name}</div>
-                                <div class="text-xs text-base-content/50">${po.item_count || 0} items</div>
+                                <div class="font-semibold text-sm">${escapeHtml(po.supplier_name)}</div>
+                                <div class="font-mono text-xs text-base-content/50">${escapeHtml(po.supplier_code || '')}</div>
                             </td>
                             <td class="text-sm text-base-content/70">${formatDate(po.order_date)}</td>
+                            <td class="text-center"><span class="badge badge-ghost badge-sm">${Number(po.item_count || 0)}</span></td>
                             <td class="font-bold text-sm">${formatCurrency(po.total_amount)}</td>
                             <td>
                                 <span class="badge badge-sm ${statusBadge}">${PurchasingService.formatStatus(po.status)}</span>
                             </td>
-                            <td class="pr-4 lg:pr-5">
+                            <td>
                                 <span class="badge badge-sm ${paymentBadge} badge-outline">${PurchasingService.formatStatus(po.payment_status)}</span>
+                            </td>
+                            <td class="pr-4 lg:pr-5">
+                                <a href="purchase_orders.html?po_id=${encodeURIComponent(po.id)}" class="btn btn-ghost btn-xs" title="Open purchase order" aria-label="Open purchase order ${escapeHtml(po.po_number)}">
+                                    <i class="fas fa-arrow-up-right-from-square"></i>
+                                </a>
                             </td>
                         </tr>
                     `;
@@ -999,7 +1102,7 @@
                 console.error('Error loading recent POs:', error);
                 document.getElementById('recentPOTable').innerHTML = `
                     <tr>
-                        <td colspan="6" class="text-center py-4 text-error">
+                        <td colspan="8" class="text-center py-4 text-error">
                             <i class="fas fa-exclamation-circle mr-2"></i>
                             Failed to load purchase orders
                         </td>
@@ -1045,13 +1148,13 @@
                             <div class="flex items-start justify-between gap-2">
                                 <div class="flex-1 min-w-0">
                                     <div class="flex items-center gap-2 mb-1">
-                                        <span class="font-mono text-sm font-bold text-primary">${req.requisition_code}</span>
-                                        <span class="badge badge-xs ${priorityBadge}">${req.priority}</span>
+                                        <span class="font-mono text-sm font-bold text-primary">${escapeHtml(req.requisition_code)}</span>
+                                        <span class="badge badge-xs ${priorityBadge}">${escapeHtml(req.priority)}</span>
                                     </div>
-                                    <p class="text-sm text-base-content/70 truncate">${req.purpose || 'No description'}</p>
+                                    <p class="text-sm text-base-content/70 truncate">${escapeHtml(req.purpose || 'No description')}</p>
                                     <div class="flex items-center gap-2 mt-1.5">
                                         <span class="text-xs text-base-content/50">
-                                            <i class="fas fa-user mr-1"></i>${req.requested_by_name || 'Unknown'}
+                                            <i class="fas fa-user mr-1"></i>${escapeHtml(req.requested_by_name || 'Unknown')}
                                         </span>
                                         <span class="text-xs text-base-content/30">•</span>
                                         <span class="text-xs text-base-content/50">${timeAgo}</span>
@@ -1062,7 +1165,7 @@
                             ${req.item_names ? `
                                 <div class="mt-2 text-xs text-base-content/50 flex items-start gap-1">
                                     <i class="fas fa-box mt-0.5"></i>
-                                    <span class="truncate">${req.item_names}</span>
+                                    <span class="truncate">${escapeHtml(req.item_names)}</span>
                                 </div>
                             ` : ''}
                         </div>
@@ -1088,6 +1191,12 @@
             return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2
+            });
+        }
+
+        function formatNumber(value) {
+            return Number(value || 0).toLocaleString('en-PH', {
+                maximumFractionDigits: 3
             });
         }
 

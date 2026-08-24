@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="emerald">
 <head>
+    <style id="roleGuardPending">html { visibility: hidden; }</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Storage & Tanks | Highland Fresh Admin</title>
@@ -334,7 +335,7 @@
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Capacity (Liters) <span class="text-error">*</span></span></label>
-                        <input type="number" id="capacity_liters" class="input input-bordered" required min="1" />
+                        <input type="number" id="capacity_liters" class="input input-bordered" required min="1" max="99999999.99" step="0.01" inputmode="decimal" />
                     </div>
                     <div class="form-control md:col-span-2">
                         <label class="label"><span class="label-text">Location</span></label>
@@ -342,7 +343,7 @@
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Current Temperature (°C)</span></label>
-                        <input type="number" id="temperature_celsius" class="input input-bordered" step="0.1" />
+                        <input type="number" id="temperature_celsius" class="input input-bordered" step="0.1" min="-50" max="100" data-allow-negative />
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Last Cleaned</span></label>
@@ -352,15 +353,17 @@
                         <label class="label"><span class="label-text">Status</span></label>
                         <select id="status" class="select select-bordered">
                             <option value="available">Available</option>
-                            <option value="in_use">In Use</option>
+                            <option value="in_use">In Use (automatic)</option>
                             <option value="cleaning">Cleaning</option>
                             <option value="maintenance">Maintenance</option>
                             <option value="offline">Offline</option>
                         </select>
+                        <div class="label"><span class="label-text-alt text-base-content/55">In Use follows inventory assigned by Warehouse.</span></div>
                     </div>
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Current Volume (L)</span></label>
-                        <input type="number" id="current_volume" class="input input-bordered" value="0" min="0" />
+                        <label class="label"><span class="label-text">Inventory Volume (L)</span></label>
+                        <input type="number" id="current_volume" class="input input-bordered bg-base-200" value="0" min="0" max="99999999.99" step="0.01" inputmode="decimal" readonly aria-readonly="true" />
+                        <div class="label"><span class="label-text-alt text-base-content/55">Calculated from raw and pasteurized milk inventory.</span></div>
                     </div>
                     <div class="form-control md:col-span-2">
                         <label class="label"><span class="label-text">Notes</span></label>
@@ -398,6 +401,7 @@
     
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/ui/notification-layer.js?v=20260816-1"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="general_manager,admin"></script>
     <script src="../../js/admin/admin.service.js"></script>
     
@@ -429,7 +433,7 @@
                 'chiller': 'Chiller',
                 'pasteurized': 'Pasteurized'
             };
-            return labels[type] || type;
+            return labels[type] || 'Needs correction';
         }
         
         function getStatusBadge(status) {
@@ -591,7 +595,7 @@
             try {
                 const response = await AdminService.getStorageTank(id);
                 if (response.success) {
-                    const data = response.data;
+                    const data = response.data?.tank || response.data;
                     document.getElementById('modalTitle').textContent = 'Edit Tank';
                     document.getElementById('recordId').value = data.id;
                     document.getElementById('tank_name').value = data.tank_name || '';
@@ -623,7 +627,6 @@
                 tank_type: document.getElementById('tank_type').value,
                 milk_type_id: document.getElementById('milk_type_id').value || null,
                 capacity_liters: document.getElementById('capacity_liters').value,
-                current_volume: document.getElementById('current_volume').value,
                 location: document.getElementById('location').value,
                 temperature_celsius: document.getElementById('temperature_celsius').value || null,
                 last_cleaned_at: document.getElementById('last_cleaned_at').value || null,
@@ -652,7 +655,7 @@
                 }
             } catch (error) {
                 console.error('Error saving:', error);
-                showToast('Failed to save tank', 'error');
+                showToast(error?.message || 'Failed to save tank', 'error');
             } finally {
                 const saveBtn = document.getElementById('saveBtn');
                 saveBtn.classList.remove('loading');
@@ -690,8 +693,11 @@
             const alertClass = { 'success': 'alert-success', 'error': 'alert-error', 'warning': 'alert-warning', 'info': 'alert-info' }[type] || 'alert-info';
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            const text = document.createElement('span');
+            text.textContent = String(message ?? '');
+            toast.appendChild(text);
             container.appendChild(toast);
+            window.HighlandNotificationLayer?.sync();
             setTimeout(() => toast.remove(), 3000);
         }
         

@@ -184,7 +184,7 @@
                                 </div>
                                 <label class="label">
                                     <span class="label-text-alt text-base-content/50">
-                                        <i class="fas fa-mobile-alt"></i> Tap camera icon to scan with phone
+                                        <i class="fas fa-circle-info"></i> Scan a batch, review the needed quantity, then add it
                                     </span>
                                 </label>
                             </div>
@@ -305,7 +305,8 @@
     <!-- Quantity Modal -->
     <dialog id="quantityModal" class="modal">
         <div class="modal-box">
-            <h3 class="font-bold text-lg mb-4">Enter Release Quantity</h3>
+            <h3 class="font-bold text-lg mb-1">Confirm Batch Quantity</h3>
+            <p class="text-sm text-base-content/60 mb-4">Review the quantity needed for the selected picking ticket.</p>
             <form id="quantityForm">
                 <input type="hidden" id="qtyInventoryId">
                 
@@ -394,6 +395,18 @@
         let scannedItems = [];
         let currentScanResult = null;
         let editIndex = -1; // -1 = new scan, >=0 = editing existing row
+
+        function resetStagedRelease() {
+            scannedItems = [];
+            currentScanResult = null;
+            editIndex = -1;
+
+            const quantityModal = document.getElementById('quantityModal');
+            if (quantityModal?.open) quantityModal.close();
+            document.getElementById('scanResult')?.classList.add('hidden');
+            document.getElementById('fifoWarning')?.classList.add('hidden');
+            renderScannedItems();
+        }
         
         // Helper function to get total scanned quantity for a product
         function getScannedQtyForProduct(productId) {
@@ -519,7 +532,7 @@
             }
 
             return `<div class="flex justify-between items-center gap-2 ${rowClass}">
-                <span class="min-w-0 truncate">${icon}${item.product_name}</span>
+                <span class="min-w-0 truncate">${icon}${escapeHtml(item.product_name)}</span>
                 <span class="${countClass} shrink-0">${scannedQty}/${requiredQty}</span>
             </div>`;
         }
@@ -557,9 +570,9 @@
             const toast = document.createElement('div');
             toast.className = `alert alert-${type} shadow-lg max-w-md`;
             if (type === 'error') {
-                toast.innerHTML = `<i class="fas fa-exclamation-triangle"></i><span class="font-semibold">${message}</span>`;
+                HighlandSecurity.renderToastContent(toast, message, 'fas fa-exclamation-triangle', 'font-semibold');
             } else {
-                toast.innerHTML = `<span>${message}</span>`;
+                HighlandSecurity.renderToastContent(toast, message);
             }
             document.getElementById('toastContainer').appendChild(toast);
             setTimeout(() => toast.remove(), type === 'error' ? 5000 : 3000);
@@ -656,6 +669,18 @@
         
         async function loadDRDetails() {
             const drId = document.getElementById('selectDR').value;
+            const previousDrId = currentDR?.id == null ? '' : String(currentDR.id);
+            const ticketChanged = String(drId || '') !== previousDrId;
+
+            if (ticketChanged) {
+                const discardedCount = scannedItems.length;
+                currentDR = null;
+                resetStagedRelease();
+                if (discardedCount > 0) {
+                    showToast('Scanned items were cleared because the picking ticket changed.', 'info');
+                }
+            }
+
             if (!drId) {
                 currentDR = null;
                 document.getElementById('drSummary').innerHTML = '<div class="text-base-content/60 text-center py-4">Select a Picking Ticket to begin</div>';
@@ -664,7 +689,10 @@
             }
             
             try {
+                document.getElementById('drSummary').innerHTML =
+                    '<div class="text-base-content/60 text-center py-4"><span class="loading loading-spinner loading-sm mr-2"></span>Loading picking ticket...</div>';
                 const response = await WarehouseFGService.getDeliveryReceipt(drId);
+                if (String(document.getElementById('selectDR').value) !== String(drId)) return;
                 currentDR = response.data;
                 
                 // Check if this is a picking ticket (status='picking') vs a regular DR
@@ -676,7 +704,7 @@
                 document.getElementById('drSummary').innerHTML = `
                     <div class="space-y-3">
                         <div class="flex justify-between items-center">
-                            <span class="font-bold text-lg">${currentDR.dr_number}</span>
+                            <span class="font-bold text-lg">${escapeHtml(currentDR.dr_number)}</span>
                             ${statusBadge}
                         </div>
                         ${isPicking ? `
@@ -687,9 +715,9 @@
                         ` : ''}
                         <div class="divider my-2"></div>
                         <div class="text-sm space-y-1">
-                            <div><i class="fas fa-user w-5 text-base-content/60"></i> ${currentDR.customer_name}</div>
-                            <div><i class="fas fa-tag w-5 text-base-content/60"></i> ${currentDR.customer_type || 'N/A'}</div>
-                            <div><i class="fas fa-map-marker-alt w-5 text-base-content/60"></i> ${currentDR.delivery_address || 'N/A'}</div>
+                            <div><i class="fas fa-user w-5 text-base-content/60"></i> ${escapeHtml(currentDR.customer_name)}</div>
+                            <div><i class="fas fa-tag w-5 text-base-content/60"></i> ${escapeHtml(currentDR.customer_type || 'N/A')}</div>
+                            <div><i class="fas fa-map-marker-alt w-5 text-base-content/60"></i> ${escapeHtml(currentDR.delivery_address || 'N/A')}</div>
                         </div>
                         ${currentDR.items && currentDR.items.length > 0 ? `
                             <div class="divider my-2"></div>
@@ -705,7 +733,13 @@
                 document.getElementById('barcodeInput').focus();
             } catch (error) {
                 console.error('Failed to load DR:', error);
-                showToast('Failed to load picking ticket details', 'error');
+                if (String(document.getElementById('selectDR').value) === String(drId)) {
+                    currentDR = null;
+                    document.getElementById('drSummary').innerHTML =
+                        '<div class="text-error text-center py-4">Could not load this Picking Ticket. Please select it again.</div>';
+                    updateButtonState();
+                    showToast('Failed to load picking ticket details', 'error');
+                }
             }
         }
         
@@ -725,7 +759,8 @@
             } else {
                 btnText.textContent = 'Confirm Release';
                 btnIcon.className = 'fas fa-truck';
-                button.disabled = scannedItems.length === 0;
+                button.disabled = !currentDR || scannedItems.length === 0;
+                button.title = currentDR ? 'Confirm the staged release' : 'Select a Picking Ticket first';
             }
         }
         
@@ -763,8 +798,8 @@
                         <div class="text-center">
                             <i class="fas fa-file-invoice text-info text-3xl mb-2"></i>
                             <p class="font-semibold">Delivery Receipt Detected</p>
-                            <p class="text-sm text-base-content/60 mb-2">${dr.dr_number}</p>
-                            <p class="text-sm text-base-content/60">Customer: ${dr.customer_name || 'N/A'}</p>
+                            <p class="text-sm text-base-content/60 mb-2">${escapeHtml(dr.dr_number)}</p>
+                            <p class="text-sm text-base-content/60">Customer: ${escapeHtml(dr.customer_name || 'N/A')}</p>
                             <div class="alert alert-info mt-3 text-sm">
                                 <i class="fas fa-info-circle"></i>
                                 <span>Now scan <strong>product barcodes</strong> to add items</span>
@@ -776,8 +811,27 @@
                     document.getElementById('barcodeInput').focus();
                     return;
                 }
-                
+
                 if (currentScanResult && currentScanResult.type === 'inventory_item') {
+                    if (!currentDR?.id) {
+                        playErrorSound();
+                        contentDiv.className = 'rounded-lg p-4 bg-warning/10 border-2 border-warning';
+                        contentDiv.innerHTML = `
+                            <div class="flex items-center gap-3">
+                                <i class="fas fa-ticket text-warning text-2xl"></i>
+                                <div>
+                                    <p class="font-semibold">Select a Picking Ticket first</p>
+                                    <p class="text-sm text-base-content/60">The batch was not added. Choose the customer request, then scan it again.</p>
+                                </div>
+                            </div>`;
+                        resultDiv.classList.remove('hidden');
+                        currentScanResult = null;
+                        document.getElementById('barcodeInput').value = '';
+                        document.getElementById('selectDR').focus();
+                        showToast('Select a Picking Ticket before scanning a product batch.', 'warning');
+                        return;
+                    }
+
                     // Check if batch is expired
                     const today = new Date();
                     today.setHours(0, 0, 0, 0);
@@ -795,8 +849,8 @@
                         contentDiv.innerHTML = `
                             <div class="flex justify-between items-start mb-3">
                                 <div>
-                                    <div class="font-bold text-lg">${currentScanResult.product_name}</div>
-                                    <div class="text-sm text-base-content/60">${currentScanResult.variant || ''} ${currentScanResult.size_value || ''}${currentScanResult.size_unit || ''}</div>
+                                    <div class="font-bold text-lg">${escapeHtml(currentScanResult.product_name)}</div>
+                                    <div class="text-sm text-base-content/60">${escapeHtml(currentScanResult.variant || '')} ${escapeHtml(currentScanResult.size_value || '')}${escapeHtml(currentScanResult.size_unit || '')}</div>
                                 </div>
                                 <span class="badge badge-error"><i class="fas fa-ban mr-1"></i> EXPIRED</span>
                             </div>
@@ -807,8 +861,8 @@
                                 ${integrityHtml}
                             </div>
                             <div class="grid grid-cols-2 gap-2 text-sm mb-4">
-                                <div><span class="text-base-content/60">Batch:</span> <code>${currentScanResult.batch_code}</code></div>
-                                <div><span class="text-base-content/60">Chiller:</span> ${currentScanResult.chiller_name || 'N/A'}</div>
+                                <div><span class="text-base-content/60">Batch:</span> <code>${escapeHtml(currentScanResult.batch_code)}</code></div>
+                                <div><span class="text-base-content/60">Chiller:</span> ${escapeHtml(currentScanResult.chiller_name || 'N/A')}</div>
                                 <div><span class="text-base-content/60">Mfg Date:</span> ${currentScanResult.manufacture_date ? new Date(currentScanResult.manufacture_date).toLocaleDateString() : 'N/A'}</div>
                                 <div><span class="text-base-content/60">Expiry:</span> <span class="font-bold text-error">${expiryDate.toLocaleDateString()}</span></div>
                             </div>
@@ -840,45 +894,17 @@
                             }
                         }
 
-                        // Determine if this is a box barcode or piece barcode
-                        const scannedBarcode = barcode;
-                        const isBoxBarcode = scannedBarcode && currentScanResult.batch_code
-                            && scannedBarcode !== currentScanResult.batch_code
-                            && currentScanResult.boxes_available > 0;
-
                         const labels = PackUnits.unitLabels(currentScanResult);
-                        const piecesPerBox = labels.piecesPerPack || 1;
-                        const releaseBoxes = isBoxBarcode ? 1 : 0;
-                        const releasePieces = isBoxBarcode ? 0 : 1;
-                        const totalRelease = (releaseBoxes * piecesPerBox) + releasePieces;
-
-                        // Auto-add to scanned items
-                        const existingIndex = scannedItems.findIndex(i => i.id === currentScanResult.id);
-                        if (existingIndex >= 0) {
-                            scannedItems[existingIndex].releaseBoxes += releaseBoxes;
-                            scannedItems[existingIndex].releasePieces += releasePieces;
-                            scannedItems[existingIndex].releaseTotal += totalRelease;
-                        } else {
-                            scannedItems.push({
-                                ...currentScanResult,
-                                releaseBoxes,
-                                releasePieces,
-                                releaseTotal: totalRelease,
-                                piecesPerBox
-                            });
-                        }
-
-                        // Show brief flash confirming the add
-                        const addLabel = isBoxBarcode ? '1 box' : '1 piece';
-                        contentDiv.className = 'rounded-lg p-3 border-2 border-success bg-success/5';
+                        const remaining = getRemainingQtyForProduct(currentScanResult.product_id);
+                        contentDiv.className = 'rounded-lg p-3 border-2 border-info bg-info/5';
                         contentDiv.innerHTML = `
                             <div class="flex items-center gap-3">
-                                <i class="fas fa-check-circle text-success text-xl"></i>
+                                <i class="fas fa-barcode text-info text-xl"></i>
                                 <div class="flex-1 min-w-0">
-                                    <div class="font-semibold truncate">${currentScanResult.product_name}</div>
-                                    <div class="text-xs text-base-content/60">+${addLabel} added — ${currentScanResult.batch_code}</div>
+                                    <div class="font-semibold truncate">${escapeHtml(currentScanResult.product_name)}</div>
+                                    <div class="text-xs text-base-content/60">Batch ${escapeHtml(currentScanResult.batch_code)} found — review quantity before adding</div>
                                 </div>
-                                <span class="badge badge-success badge-sm">${totalRelease} ${labels.base}</span>
+                                <span class="badge badge-info badge-sm">${remaining} ${escapeHtml(labels.base)} needed</span>
                             </div>`;
 
                         if (!isFIFOOk) {
@@ -887,9 +913,11 @@
                                 `Batch ${fifoCheck.data?.oldest_batch || 'older'} should be released first (expires ${fifoCheck.data?.oldest_expiry || 'earlier'})`;
                         } else {
                             document.getElementById('fifoWarning').classList.add('hidden');
+                            resultDiv.classList.remove('hidden');
+                            document.getElementById('barcodeInput').value = '';
+                            addToRelease();
+                            return;
                         }
-
-                        renderScannedItems();
                     }
                 } else {
                     contentDiv.className = 'rounded-lg p-4 bg-error/10 border-2 border-error';
@@ -954,9 +982,23 @@
             const availableDisplay = PackUnits.formatQuantity(currentScanResult, { preferSplit: true });
             const packLine = PackUnits.formatPackLine(currentScanResult);
             const orderRemaining = getRemainingQtyForProduct(currentScanResult.product_id);
+            const alreadyStagedFromBatch = scannedItems
+                .filter(item => item.id == currentScanResult.id)
+                .reduce((sum, item) => sum + (parseInt(item.releaseTotal, 10) || 0), 0);
+            const availableToStage = Math.max(0, totalAvailable - alreadyStagedFromBatch);
             const maxAllowed = Number.isFinite(orderRemaining)
-                ? Math.min(totalAvailable, orderRemaining)
-                : totalAvailable;
+                ? Math.min(availableToStage, orderRemaining)
+                : availableToStage;
+
+            if (availableToStage <= 0) {
+                blockOverScan('All available stock from this batch is already staged.');
+                return;
+            }
+
+            const piecesPerBox = Math.max(1, parseInt(labels.piecesPerPack, 10) || 1);
+            const suggestedTotal = Math.max(0, maxAllowed);
+            const suggestedBoxes = piecesPerBox > 1 ? Math.floor(suggestedTotal / piecesPerBox) : 0;
+            const suggestedPieces = piecesPerBox > 1 ? suggestedTotal % piecesPerBox : suggestedTotal;
             
             document.getElementById('qtyInventoryId').value = currentScanResult.id;
             document.getElementById('qtyProduct').textContent = currentScanResult.product_name;
@@ -965,17 +1007,17 @@
             document.getElementById('qtyPiecesPerBoxLabel').textContent = packLine;
             document.getElementById('qtyBoxesLabel').textContent = labels.pack;
             document.getElementById('qtyPiecesLabel').textContent = labels.base;
-            document.getElementById('qtyBoxes').value = 0;
+            document.getElementById('qtyBoxes').value = suggestedBoxes;
             document.getElementById('qtyBoxes').max = Math.max(0, availableBoxes);
-            document.getElementById('qtyPieces').value = 0;
-            document.getElementById('qtyTotalPieces').textContent = '0';
+            document.getElementById('qtyPieces').value = suggestedPieces;
+            document.getElementById('qtyTotalPieces').textContent = String(suggestedTotal);
             document.getElementById('qtyValidation').textContent = '';
             
             // Store available stock + order remaining for validation
             currentScanResult._maxBoxes = availableBoxes;
             currentScanResult._maxPieces = availablePieces;
-            currentScanResult._piecesPerBox = labels.piecesPerPack;
-            currentScanResult._totalAvailable = totalAvailable;
+            currentScanResult._piecesPerBox = piecesPerBox;
+            currentScanResult._totalAvailable = availableToStage;
             currentScanResult._orderRemaining = orderRemaining;
             currentScanResult._maxAllowed = maxAllowed;
             currentScanResult._baseLabel = labels.base;
@@ -1137,8 +1179,8 @@
                     </tr>
                 `;
                 document.getElementById('scannedCount').textContent = '0 items';
-                document.getElementById('btnConfirmRelease').disabled = true;
                 updateDRSummaryProgress();
+                updateButtonState();
                 return;
             }
             
@@ -1150,10 +1192,10 @@
                 return `
                 <tr>
                     <td>
-                        <div class="font-medium">${item.product_name}</div>
-                        <div class="text-xs text-base-content/60">${item.variant || ''}</div>
+                        <div class="font-medium">${escapeHtml(item.product_name)}</div>
+                        <div class="text-xs text-base-content/60">${escapeHtml(item.variant || '')}</div>
                     </td>
-                    <td><code class="text-xs">${item.batch_code}</code></td>
+                    <td><code class="text-xs">${escapeHtml(item.batch_code)}</code></td>
                     <td>${item.expiry_date ? new Date(item.expiry_date).toLocaleDateString() : 'N/A'}</td>
                     <td class="text-right">${item.releaseBoxes > 0 ? item.releaseBoxes : '-'}</td>
                     <td class="text-right">${item.releasePieces > 0 ? item.releasePieces : '-'}</td>

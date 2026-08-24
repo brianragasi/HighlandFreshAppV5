@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/../bootstrap.php';
 require_once __DIR__ . '/../helpers/supplier_ingredient_catalog.php';
+require_once __DIR__ . '/../helpers/plain_text.php';
 
 // Require GM/Admin role
 $currentUser = Auth::requireRole(['general_manager', 'admin']);
@@ -100,7 +101,7 @@ function getSuppliers($conn) {
             LEFT JOIN ingredients i ON i.id = si.ingredient_id
             $whereClause
             GROUP BY s.id
-            ORDER BY s.supplier_name ASC
+            ORDER BY s.id DESC
             LIMIT $limit OFFSET $offset";
     $stmt = $conn->prepare($sql);
     $stmt->execute($params);
@@ -155,28 +156,67 @@ function getSupplierStatistics($conn) {
 }
 
 /**
+ * Supplier accreditation needs enough information for ordering, delivery,
+ * payment coordination, and automatic PO email delivery.
+ */
+function validateSupplierProfile(array $data) {
+    $required = [
+        'supplier_name' => 'Supplier name',
+        'contact_person' => 'Contact person',
+        'phone' => 'Phone number',
+        'email' => 'Email address',
+        'address' => 'Address',
+        'payment_terms' => 'Payment terms',
+    ];
+    $errors = [];
+
+    foreach ($required as $field => $label) {
+        if (trim((string) ($data[$field] ?? '')) === '') {
+            $errors[$field] = $label . ' is required';
+        }
+    }
+    if (!empty($data['contact_person']) && !hfPersonNameHasLetter($data['contact_person'])) {
+        $errors['contact_person'] = 'Contact person must contain at least one letter';
+    }
+
+    $allowedPaymentTerms = ['7 days', '15 days', '30 days', '45 days', '60 days', 'COD'];
+    if (!empty($data['payment_terms']) && !in_array($data['payment_terms'], $allowedPaymentTerms, true)) {
+        $errors['payment_terms'] = 'Select a valid payment term';
+    }
+    if (!array_key_exists('is_active', $data) || !in_array((string) $data['is_active'], ['0', '1'], true)) {
+        $errors['is_active'] = 'Confirm whether this supplier is accredited and active or archived';
+    }
+
+    return $errors;
+}
+
+/**
  * Create new supplier
  */
 function createSupplier($conn, $currentUser) {
     $data = json_decode(file_get_contents('php://input'), true);
-    $isActive = isset($data['is_active']) ? intval($data['is_active']) : 1;
+    $data = hfPlainTextFields(is_array($data) ? $data : [], [
+        'supplier_code' => [40, false],
+        'supplier_name' => [160, false],
+        'contact_person' => [160, false],
+        'address' => [500, true],
+        'payment_terms' => [80, false],
+        'notes' => [1000, true],
+    ]);
+    $isActive = isset($data['is_active']) ? intval($data['is_active']) : 0;
     $ingredientLinks = supplierCatalogNormalizeIngredientLinks($data['ingredients'] ?? []);
     
     // Validation
-    $errors = [];
-    if (empty($data['supplier_name'])) {
-        $errors['supplier_name'] = 'Supplier name is required';
-    }
     $contactCheck = hfValidateContactPayload($data, ['phone'], 'email');
     $data = $contactCheck['data'];
-    $errors = array_merge($errors, $contactCheck['errors']);
+    $errors = array_merge(validateSupplierProfile($data), $contactCheck['errors']);
     
     if (!empty($errors)) {
         sendValidationError($errors);
     }
     // A supplier can be accredited before its first ingredient is registered.
     // Purchasing only sees this supplier after an ingredient link is added.
-    supplierCatalogValidateIngredientLinks($conn, $ingredientLinks, false);
+    supplierCatalogValidateIngredientLinks($conn, $ingredientLinks, false, true);
     
     // Generate supplier code if not provided
     if (empty($data['supplier_code'])) {
@@ -242,12 +282,14 @@ function createSupplier($conn, $currentUser) {
  */
 function updateSupplier($conn, $id, $currentUser) {
     $data = json_decode(file_get_contents('php://input'), true);
+    $data = hfPlainTextFields(is_array($data) ? $data : [], [
+        'supplier_name' => [160, false],
+        'contact_person' => [160, false],
+        'address' => [500, true],
+        'payment_terms' => [80, false],
+        'notes' => [1000, true],
+    ]);
     $hasIngredientLinks = array_key_exists('ingredients', $data);
-    $contactCheck = hfValidateContactPayload($data, ['phone'], 'email');
-    if (!empty($contactCheck['errors'])) {
-        sendValidationError($contactCheck['errors']);
-    }
-    $data = $contactCheck['data'];
     
     // Check if supplier exists
     $stmt = $conn->prepare("SELECT * FROM suppliers WHERE id = ?");
@@ -257,11 +299,23 @@ function updateSupplier($conn, $id, $currentUser) {
         sendError('Supplier not found', 404);
     }
 
+    $effectiveProfile = array_merge($currentSupplier, $data);
+    $contactCheck = hfValidateContactPayload($effectiveProfile, ['phone'], 'email');
+    $errors = array_merge(validateSupplierProfile($contactCheck['data']), $contactCheck['errors']);
+    if (!empty($errors)) {
+        sendValidationError($errors);
+    }
+    foreach (['phone', 'email'] as $contactField) {
+        if (array_key_exists($contactField, $data)) {
+            $data[$contactField] = $contactCheck['data'][$contactField];
+        }
+    }
+
     $ingredientLinks = $hasIngredientLinks
         ? supplierCatalogNormalizeIngredientLinks($data['ingredients'])
         : supplierCatalogNormalizeIngredientLinks(supplierCatalogGetSupplierIngredients($conn, (int) $id));
     $nextIsActive = isset($data['is_active']) ? intval($data['is_active']) : intval($currentSupplier['is_active']);
-    supplierCatalogValidateIngredientLinks($conn, $ingredientLinks, false);
+    supplierCatalogValidateIngredientLinks($conn, $ingredientLinks, false, $hasIngredientLinks);
     supplierCatalogValidateSupplierCoverageAfterChange(
         $conn,
         (int) $id,

@@ -29,6 +29,24 @@ if (!defined('CCP_CONFIGS')) {
     define('CCP_CONFIGS', ccp_get_configs());
 }
 
+function parseCcpReading($rawValue, string $field, string $label, float $minimum, float $maximum, array &$errors) {
+    if (is_array($rawValue) || is_object($rawValue) || is_bool($rawValue) || $rawValue === null) {
+        $errors[$field] = "{$label} is required";
+        return null;
+    }
+    $text = trim((string) $rawValue);
+    if ($text === '' || !preg_match('/^-?\d+(?:\.\d+)?$/D', $text)) {
+        $errors[$field] = "{$label} must be a regular number without exponent notation";
+        return null;
+    }
+    $value = (float) $text;
+    if (!is_finite($value) || $value < $minimum || $value > $maximum) {
+        $errors[$field] = "{$label} must be between {$minimum} and {$maximum}";
+        return null;
+    }
+    return $value;
+}
+
 try {
     $db = Database::getInstance()->getConnection();
     
@@ -149,12 +167,15 @@ try {
                 $errors['check_type'] = 'Valid check type is required';
             }
             
-            // Homogenization requires pressure, others require temperature
+            // Physical plausibility limits reject entry mistakes. Values that
+            // are plausible but outside the CCP target are still stored as
+            // warning/fail readings below.
             if ($checkType === 'homogenization') {
-                if (!is_numeric($pressurePsi)) $errors['pressure_psi'] = 'Pressure reading is required for homogenization';
+                $pressurePsi = parseCcpReading($pressurePsi, 'pressure_psi', 'Pressure', 0, 5000, $errors);
             } else {
-                if (!is_numeric($temperature)) $errors['temperature'] = 'Temperature reading is required';
+                $temperature = parseCcpReading($temperature, 'temperature', 'Temperature', -20, 150, $errors);
             }
+            $holdTimeSecs = parseCcpReading($holdTimeSecs, 'hold_time_secs', 'Hold time', 0, 86400, $errors);
             
             if (!empty($errors)) {
                 Response::validationError($errors);

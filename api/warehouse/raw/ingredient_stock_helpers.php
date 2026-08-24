@@ -44,6 +44,56 @@ function getUsableIngredientBatchStock($db, $ingredientId) {
     return (float) ($stmt->fetch()['available_quantity'] ?? 0);
 }
 
+/**
+ * Canonical correlated SQL expression for usable ingredient batch stock.
+ * Callers provide trusted SQL identifiers, never request values.
+ */
+function usableIngredientBatchStockSql($ingredientIdSql = 'i.id', $batchAlias = 'usable_ib') {
+    return "COALESCE((
+        SELECT SUM({$batchAlias}.remaining_quantity)
+        FROM ingredient_batches {$batchAlias}
+        WHERE {$batchAlias}.ingredient_id = {$ingredientIdSql}
+          AND {$batchAlias}.status IN ('available', 'partially_used')
+          AND {$batchAlias}.remaining_quantity > 0
+          AND ({$batchAlias}.expiry_date IS NULL OR {$batchAlias}.expiry_date >= CURDATE())
+    ), 0)";
+}
+
+/**
+ * Stock that is still physically accounted for in the warehouse.
+ *
+ * Expired and quarantined batches are deliberately included here. They are
+ * not usable, but they still exist on the shelf until Warehouse Raw records
+ * their disposal or return. Comparing the item summary only with usable stock
+ * would incorrectly treat these batches as missing and could recreate expired
+ * material as a fresh adjustment batch.
+ */
+function getAccountedIngredientBatchStock($db, $ingredientId) {
+    $stmt = $db->prepare("
+        SELECT COALESCE(SUM(remaining_quantity), 0) AS accounted_quantity
+        FROM ingredient_batches
+        WHERE ingredient_id = ?
+          AND status IN ('available', 'partially_used', 'quarantine', 'expired')
+          AND remaining_quantity > 0
+    ");
+    $stmt->execute([$ingredientId]);
+    return (float) ($stmt->fetch()['accounted_quantity'] ?? 0);
+}
+
+function getExpiredIngredientBatchStock($db, $ingredientId) {
+    $stmt = $db->prepare("
+        SELECT COALESCE(SUM(remaining_quantity), 0) AS expired_quantity
+        FROM ingredient_batches
+        WHERE ingredient_id = ?
+          AND status IN ('available', 'partially_used', 'quarantine', 'expired')
+          AND remaining_quantity > 0
+          AND expiry_date IS NOT NULL
+          AND expiry_date < CURDATE()
+    ");
+    $stmt->execute([$ingredientId]);
+    return (float) ($stmt->fetch()['expired_quantity'] ?? 0);
+}
+
 function generateIngredientBatchCode($db, $prefix = 'IB-ADJ') {
     for ($attempt = 0; $attempt < 10; $attempt++) {
         $code = $prefix . '-' . date('Ymd') . '-' . str_pad((string) mt_rand(1, 999), 3, '0', STR_PAD_LEFT);
@@ -70,10 +120,10 @@ function getIngredientAdjustmentExpiryDate($ingredientData) {
     return date('Y-m-d', strtotime("+{$shelfLifeDays} days"));
 }
 
-function reconcileIngredientSummaryToBatches($db, $ingredientData, $currentUser, $reason = 'Reconciled summary stock to usable batches') {
+function reconcileIngredientSummaryToBatches($db, $ingredientData, $currentUser, $reason = 'Reconciled summary stock to physically accounted batches') {
     $ingredientId = (int) $ingredientData['id'];
     $summaryStock = (float) ($ingredientData['current_stock'] ?? 0);
-    $batchStock = getUsableIngredientBatchStock($db, $ingredientId);
+    $batchStock = getAccountedIngredientBatchStock($db, $ingredientId);
     $missingQuantity = round($summaryStock - $batchStock, 3);
 
     if ($missingQuantity <= 0.0005) {
@@ -114,6 +164,40 @@ function reconcileIngredientSummaryToBatches($db, $ingredientData, $currentUser,
         'batch_code' => $batchCode,
         'quantity' => $missingQuantity
     ];
+}
+
+/**
+ * Record stock discovered during a physical count for a non-perishable item.
+ *
+ * A physical adjustment must update both the ingredient summary and its FIFO
+ * batch ledger.  The caller supplies the counted target as a temporary summary
+ * value so the reconciliation helper creates one clearly labelled adjustment
+ * batch for only the positive difference.
+ */
+function increaseIngredientBatchesToQuantity($db, $ingredientData, $targetQuantity, $currentUser, $reason) {
+    $targetQuantity = max(0, (float) $targetQuantity);
+    $currentQuantity = (float) ($ingredientData['current_stock'] ?? 0);
+
+    if ($targetQuantity <= $currentQuantity + 0.0005) {
+        return [];
+    }
+
+    if ((int) ($ingredientData['is_perishable'] ?? 1) !== 0) {
+        throw new Exception(
+            'A higher count for a perishable ingredient must be recorded through PO receiving so its lot and expiry date are captured.'
+        );
+    }
+
+    $countedIngredient = $ingredientData;
+    $countedIngredient['current_stock'] = $targetQuantity;
+    $adjustedBatch = reconcileIngredientSummaryToBatches(
+        $db,
+        $countedIngredient,
+        $currentUser,
+        'Physical count increase: ' . $reason
+    );
+
+    return $adjustedBatch ? [$adjustedBatch] : [];
 }
 
 function reduceIngredientBatchesToQuantity($db, $ingredientData, $targetQuantity, $currentUser, $reason) {

@@ -150,12 +150,15 @@ if (!function_exists('hfPdfItemsTable')) {
             $fill = $index % 2 === 0 ? [0.985, 0.988, 0.986] : [1, 1, 1];
             $command .= hfPdfRectCommand($x, $rowY, array_sum($widths), 29, $fill, [0.84, 0.87, 0.85], 0.4);
             $description = $item['ingredient_name'] ?? $item['mro_item_name'] ?? $item['item_description'] ?? 'Item';
+            $supplierOrderQuantity = $item['supplier_order_quantity'] ?? $item['quantity'] ?? 0;
+            $supplierOrderUnit = $item['supplier_order_unit'] ?? $item['unit'] ?? '-';
+            $supplierOrderUnitPrice = $item['supplier_order_unit_price'] ?? $item['unit_price'] ?? 0;
             $values = [
                 (string) ($offset + $index + 1),
                 $description,
-                $item['unit'] ?? '-',
-                number_format((float) ($item['quantity'] ?? 0), 2),
-                hfPdfMoney($item['unit_price'] ?? 0),
+                $supplierOrderUnit,
+                number_format((float) $supplierOrderQuantity, 2),
+                hfPdfMoney($supplierOrderUnitPrice),
                 hfPdfMoney($item['total_amount'] ?? 0),
                 'Approved'
             ];

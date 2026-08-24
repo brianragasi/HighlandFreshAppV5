@@ -2,6 +2,7 @@
 <html lang="en" data-theme="emerald">
 
 <head>
+    <style id="roleGuardPending">html { visibility: hidden; }</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ingredients Management | Highland Fresh Admin</title>
@@ -39,6 +40,33 @@
 
         .sidebar-transition {
             transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Keep row actions reachable even when the wide table scrolls horizontally. */
+        #ingredientsTable th:last-child,
+        #ingredientsTable td:last-child {
+            position: sticky;
+            right: 0;
+            z-index: 2;
+            width: 6.5rem;
+            min-width: 6.5rem;
+            text-align: center;
+            background-color: oklch(var(--b1));
+            box-shadow: -8px 0 10px -10px oklch(var(--bc) / 0.45);
+        }
+
+        #ingredientsTable thead th:last-child {
+            z-index: 3;
+            background-color: oklch(var(--b2));
+        }
+
+        #ingredientsTable.table-zebra tbody tr:nth-child(even) td:last-child {
+            background-color: oklch(var(--b2));
+        }
+
+        #ingredientsTable .ingredient-row-actions {
+            justify-content: center;
+            white-space: nowrap;
         }
     </style>
 </head>
@@ -308,8 +336,8 @@
 
             <!-- Data Table -->
             <div class="bg-base-100 rounded-2xl border border-base-300 overflow-hidden">
-                <div class="overflow-x-auto">
-                    <table class="table table-zebra">
+                <div class="overflow-x-auto scrollbar-thin">
+                    <table id="ingredientsTable" class="table table-zebra">
                         <thead>
                             <tr class="bg-base-200">
                                 <th>Code</th>
@@ -320,7 +348,7 @@
                                 <th>Current Stock</th>
                                 <th>Reorder Point</th>
                                 <th>Accredited Suppliers</th>
-                                <th>Unit Cost</th>
+                                <th>Cost per Stock Unit</th>
                                 <th>Status</th>
                                 <th>Actions</th>
                             </tr>
@@ -370,7 +398,7 @@
                             <input type="text" id="ingredient_name" class="input input-bordered" required placeholder="e.g. Sugar, Rennet, Vanilla Extract">
                         </div>
                     </div>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-3">
                         <div class="form-control">
                             <label class="label"><span class="label-text font-medium">Category</span></label>
                             <select id="category_id" class="select select-bordered" onchange="onIngredientCategoryChange()">
@@ -381,7 +409,19 @@
                             </label>
                         </div>
                         <div class="form-control">
-                            <label class="label"><span class="label-text font-medium">Unit of Measure *</span></label>
+                            <label class="label"><span class="label-text font-medium">Material Form *</span></label>
+                            <select id="physical_state" class="select select-bordered" required onchange="onPhysicalStateChange()">
+                                <option value="">Select material form</option>
+                                <option value="solid">Solid - measured by weight</option>
+                                <option value="liquid">Liquid - measured by volume</option>
+                                <option value="count">Counted item</option>
+                            </select>
+                            <label class="label py-0">
+                                <span class="label-text-alt text-base-content/50">This controls which units are valid</span>
+                            </label>
+                        </div>
+                        <div class="form-control">
+                            <label class="label"><span class="label-text font-medium">Stock Unit *</span></label>
                             <select id="unit_of_measure" class="select select-bordered" required onchange="updateUnitBadges()">
                                 <option value="">-- Select Unit --</option>
                                 <!-- Options populated dynamically from category via JS -->
@@ -400,14 +440,6 @@
                     </div>
                 </fieldset>
 
-                <fieldset class="border border-base-300 rounded-xl p-4">
-                    <legend class="text-sm font-semibold px-2 text-base-content/70">Accredited Suppliers *</legend>
-                    <p class="text-xs text-base-content/50 mb-3">Choose every approved supplier that can provide this ingredient. Three quotes are preferred, but Purchasing can record a limited-supplier reason when fewer are genuinely available.</p>
-                    <div id="ingredientSupplierCatalog" class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-56 overflow-y-auto">
-                        <p class="text-sm text-base-content/60 p-2">Loading suppliers...</p>
-                    </div>
-                </fieldset>
-
                 <!-- Section: Stock Levels -->
                 <fieldset class="border border-base-300 rounded-xl p-4">
                     <legend class="text-sm font-semibold px-2 text-base-content/70">Stock Levels</legend>
@@ -416,7 +448,7 @@
                         <div class="form-control">
                             <label class="label py-1"><span class="label-text font-medium">Minimum Stock</span></label>
                             <div class="join">
-                                <input type="number" id="minimum_stock" class="input input-bordered join-item w-full" step="1" min="0" value="0">
+                                <input type="number" id="minimum_stock" class="input input-bordered join-item w-full" step="0.001" min="0" value="0">
                                 <span class="btn btn-ghost join-item no-animation text-xs ingredient-unit-badge">units</span>
                             </div>
                             <label class="label py-0.5"><span class="label-text-alt text-error/80 text-xs">Critical low — immediate alert</span></label>
@@ -424,7 +456,7 @@
                         <div class="form-control">
                             <label class="label py-1"><span class="label-text font-medium">Reorder Point</span></label>
                             <div class="join">
-                                <input type="number" id="reorder_point" class="input input-bordered join-item w-full" step="1" min="0" value="0">
+                                <input type="number" id="reorder_point" class="input input-bordered join-item w-full" step="0.001" min="0" value="0">
                                 <span class="btn btn-ghost join-item no-animation text-xs ingredient-unit-badge">units</span>
                             </div>
                             <label class="label py-0.5"><span class="label-text-alt text-warning/80 text-xs">Time to create a purchase request</span></label>
@@ -432,7 +464,7 @@
                         <div class="form-control">
                             <label class="label py-1"><span class="label-text font-medium">Par Level (Max)</span></label>
                             <div class="join">
-                                <input type="number" id="maximum_stock" class="input input-bordered join-item w-full" step="1" min="0" value="0">
+                                <input type="number" id="maximum_stock" class="input input-bordered join-item w-full" step="0.001" min="0" value="0">
                                 <span class="btn btn-ghost join-item no-animation text-xs ingredient-unit-badge">units</span>
                             </div>
                             <label class="label py-0.5"><span class="label-text-alt text-base-content/50 text-xs">Target quantity after restocking</span></label>
@@ -448,51 +480,10 @@
                     </div>
                 </fieldset>
 
-                <!-- Section: Supplier Pack Size -->
-                <fieldset class="border border-info/30 rounded-xl p-4 bg-info/5">
-                    <legend class="text-sm font-semibold px-2 text-info">Supplier Pack Size <span class="text-xs font-normal text-base-content/50">(optional)</span></legend>
-                    <p class="text-xs text-base-content/55 mb-3">How does this arrive from the supplier? Controls pack rounding when production requests materials (e.g. "need 0.11 L" becomes "1 bottle").</p>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <div class="form-control">
-                            <label class="label py-1"><span class="label-text text-xs font-medium">Size per Pack</span></label>
-                            <input type="number" id="pack_size_value" class="input input-bordered input-sm" step="0.001" min="0" placeholder="e.g. 25">
-                            <label class="label py-0.5"><span class="label-text-alt text-xs text-base-content/50">How much is in 1 pack?</span></label>
-                        </div>
-                        <div class="form-control">
-                            <label class="label py-1"><span class="label-text text-xs font-medium">Pack Unit</span></label>
-                            <select id="pack_size_unit" class="select select-bordered select-sm">
-                                <option value="">— Same as Unit of Measure —</option>
-                                <option value="kg">Kilograms (kg)</option>
-                                <option value="g">Grams (g)</option>
-                                <option value="L">Liters (L)</option>
-                                <option value="ml">Milliliters (ml)</option>
-                                <option value="liter">Liter</option>
-                                <option value="pcs">Pieces (pcs)</option>
-                                <option value="pack">Pack</option>
-                                <option value="bottle">Bottle</option>
-                                <option value="packet">Packet</option>
-                            </select>
-                        </div>
-                        <div class="form-control">
-                            <label class="label py-1"><span class="label-text text-xs font-medium">Display Label</span></label>
-                            <input type="text" id="pack_label" class="input input-bordered input-sm" placeholder="e.g. 25 kg sack, 1 L bottle">
-                            <label class="label py-0.5"><span class="label-text-alt text-xs text-base-content/50">Shown to warehouse staff</span></label>
-                        </div>
-                    </div>
-                </fieldset>
-
                 <!-- Section: Cost & Shelf Life -->
                 <fieldset class="border border-base-300 rounded-xl p-4">
                     <legend class="text-sm font-semibold px-2 text-base-content/70">Cost & Shelf Life</legend>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div class="form-control">
-                            <label class="label py-1"><span class="label-text font-medium">Unit Cost</span></label>
-                            <div class="join">
-                                <span class="btn btn-ghost join-item no-animation text-xs">₱</span>
-                                <input type="number" id="unit_cost" class="input input-bordered join-item w-full" step="0.01" placeholder="0.00">
-                            </div>
-                            <label class="label py-0.5"><span class="label-text-alt text-xs text-base-content/50">Price per 1 unit of measure</span></label>
-                        </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="form-control">
                             <label class="label py-1"><span class="label-text font-medium">Shelf Life</span></label>
                             <div class="join">
@@ -549,6 +540,7 @@
 
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/ui/notification-layer.js?v=20260816-1"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="general_manager,admin"></script>
     <script src="../../js/admin/admin.service.js"></script>
 
@@ -556,7 +548,6 @@
         let currentPage = 1;
         let searchTimeout = null;
         let categories = [];
-        let availableSuppliers = [];
 
         function escapeHtml(value) {
             const div = document.createElement('div');
@@ -576,7 +567,9 @@
             const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            const messageElement = document.createElement('span');
+            messageElement.textContent = String(message ?? '');
+            toast.appendChild(messageElement);
             container.appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
         }
@@ -602,8 +595,9 @@
                     const formSelect = document.getElementById('category_id');
 
                     categories.forEach(c => {
-                        filterSelect.innerHTML += `<option value="${c.id}">${c.category_name}</option>`;
-                        formSelect.innerHTML += `<option value="${c.id}" data-category-name="${escapeAttr(c.category_name)}">${c.category_name}</option>`;
+                        const categoryId = Number(c.id) || 0;
+                        filterSelect.innerHTML += `<option value="${categoryId}">${escapeHtml(c.category_name)}</option>`;
+                        formSelect.innerHTML += `<option value="${categoryId}" data-category-name="${escapeAttr(c.category_name)}">${escapeHtml(c.category_name)}</option>`;
                     });
                 }
             } catch (error) {
@@ -611,45 +605,10 @@
             }
         }
 
-        async function loadSupplierOptions() {
-            try {
-                const response = await AdminService.getSuppliers({ is_active: 1, limit: 100 });
-                availableSuppliers = response?.data?.suppliers || [];
-                renderSupplierCatalog([]);
-            } catch (error) {
-                availableSuppliers = [];
-                document.getElementById('ingredientSupplierCatalog').innerHTML = '<p class="text-sm text-error p-2">Suppliers could not be loaded.</p>';
-            }
-        }
-
-        function renderSupplierCatalog(selectedSuppliers = []) {
-            const selectedIds = new Set((selectedSuppliers || []).map(s => String(s.supplier_id ?? s.id)));
-            const container = document.getElementById('ingredientSupplierCatalog');
-            if (!availableSuppliers.length) {
-                container.innerHTML = '<p class="text-sm text-base-content/60 p-2">No accredited suppliers are available.</p>';
-                return;
-            }
-
-            container.innerHTML = availableSuppliers.map(supplier => `
-                <label class="border border-base-300 rounded-md p-3 flex items-start gap-3 cursor-pointer hover:bg-base-200/60">
-                    <input type="checkbox" class="checkbox checkbox-primary checkbox-sm mt-1 ingredient-supplier-link" value="${supplier.id}" ${selectedIds.has(String(supplier.id)) ? 'checked' : ''}>
-                    <span class="min-w-0">
-                        <span class="font-semibold block truncate">${escapeHtml(supplier.supplier_name)}</span>
-                        <span class="text-xs text-base-content/50">${escapeHtml(supplier.supplier_code || '')}</span>
-                    </span>
-                </label>
-            `).join('');
-        }
-
-        function getSelectedSupplierIds() {
-            return [...document.querySelectorAll('.ingredient-supplier-link:checked')].map(input => Number(input.value));
-        }
-
         /** Allowed UOM options by logical group (value, label). */
         const UNIT_OPTIONS = {
             packaging: [
                 { value: 'pcs', label: 'Pieces (pc)' },
-                { value: 'piece', label: 'Piece' },
                 { value: 'pack', label: 'Packs' },
                 { value: 'packet', label: 'Packet' },
                 { value: 'roll', label: 'Rolls' },
@@ -658,24 +617,21 @@
             mass_volume: [
                 { value: 'kg', label: 'Kilograms (kg)' },
                 { value: 'g', label: 'Grams (g)' },
-                { value: 'L', label: 'Liters (L)' },
-                { value: 'liter', label: 'Liter' },
-                { value: 'ml', label: 'Milliliters (ml)' },
+                { value: 'liter', label: 'Liters (L)' },
+                { value: 'ml', label: 'Milliliters (mL)' },
             ],
             culture: [
                 { value: 'kg', label: 'Kilograms (kg)' },
                 { value: 'g', label: 'Grams (g)' },
-                { value: 'L', label: 'Liters (L)' },
-                { value: 'liter', label: 'Liter' },
-                { value: 'ml', label: 'Milliliters (ml)' },
+                { value: 'liter', label: 'Liters (L)' },
+                { value: 'ml', label: 'Milliliters (mL)' },
                 { value: 'packet', label: 'Packet' },
             ],
             all: [
                 { value: 'kg', label: 'Kilograms (kg)' },
                 { value: 'g', label: 'Grams (g)' },
-                { value: 'L', label: 'Liters (L)' },
-                { value: 'liter', label: 'Liter' },
-                { value: 'ml', label: 'Milliliters (ml)' },
+                { value: 'liter', label: 'Liters (L)' },
+                { value: 'ml', label: 'Milliliters (mL)' },
                 { value: 'pcs', label: 'Pieces (pc)' },
                 { value: 'pack', label: 'Packs' },
                 { value: 'packet', label: 'Packet' },
@@ -683,6 +639,47 @@
                 { value: 'bottle', label: 'Bottle' },
             ],
         };
+
+        const PHYSICAL_STATE_UNITS = {
+            solid: ['kg', 'g'],
+            liquid: ['liter', 'ml'],
+            count: ['pcs', 'pack', 'packet', 'roll', 'bottle'],
+        };
+
+        const CONTAINER_OPTIONS_BY_STATE = {
+            solid: [
+                { value: 'bag', label: 'Bag' },
+                { value: 'sack', label: 'Sack' },
+                { value: 'sachet', label: 'Sachet' },
+                { value: 'packet', label: 'Packet' },
+                { value: 'drum', label: 'Dry-goods Drum' },
+                { value: 'pail', label: 'Dry-goods Pail' },
+            ],
+            liquid: [
+                { value: 'bottle', label: 'Bottle' },
+                { value: 'jug', label: 'Jug' },
+                { value: 'drum', label: 'Liquid Drum' },
+                { value: 'pail', label: 'Liquid Pail' },
+                { value: 'tank', label: 'Tank' },
+            ],
+            count: [
+                { value: 'pack', label: 'Pack' },
+                { value: 'packet', label: 'Packet' },
+                { value: 'bundle', label: 'Bundle' },
+                { value: 'roll', label: 'Roll' },
+            ],
+        };
+
+        function inferPhysicalStateFromUnit(unit) {
+            const key = String(unit || '').toLowerCase().trim();
+            if (['kg', 'kilogram', 'kilograms', 'g', 'gram', 'grams'].includes(key)) return 'solid';
+            if (['l', 'lt', 'liter', 'liters', 'litre', 'litres', 'ml', 'milliliter', 'milliliters'].includes(key)) return 'liquid';
+            return 'count';
+        }
+
+        function getSelectedPhysicalState() {
+            return document.getElementById('physical_state')?.value || '';
+        }
 
         function escapeAttr(s) {
             return String(s ?? '')
@@ -723,7 +720,12 @@
 
             const categoryName = getSelectedCategoryName();
             const group = getUnitGroupForCategoryName(categoryName);
-            const options = UNIT_OPTIONS[group] || UNIT_OPTIONS.all;
+            const categoryOptions = UNIT_OPTIONS[group] || UNIT_OPTIONS.all;
+            const physicalState = getSelectedPhysicalState();
+            const physicalUnits = PHYSICAL_STATE_UNITS[physicalState] || [];
+            const options = physicalState
+                ? categoryOptions.filter(option => physicalUnits.includes(option.value))
+                : [];
 
             const previous = preferredUnit != null ? preferredUnit : unitSelect.value;
             unitSelect.innerHTML = '<option value="">-- Select Unit --</option>';
@@ -736,7 +738,17 @@
 
             const allowed = new Set(options.map(o => o.value));
             // Normalize aliases for matching preferred (e.g. liter vs L)
-            const aliasMap = { liters: 'L', l: 'L', lt: 'L', pieces: 'pcs', pc: 'pcs', rolls: 'roll' };
+            const aliasMap = {
+                l: 'liter',
+                lt: 'liter',
+                litre: 'liter',
+                litres: 'liter',
+                liters: 'liter',
+                piece: 'pcs',
+                pieces: 'pcs',
+                pc: 'pcs',
+                rolls: 'roll'
+            };
             let pick = previous;
             if (pick && aliasMap[String(pick).toLowerCase()]) {
                 pick = aliasMap[String(pick).toLowerCase()];
@@ -752,12 +764,21 @@
             const hint = document.getElementById('unitCategoryHint');
             const hintText = document.getElementById('unitCategoryHintText');
             if (hint && hintText) {
-                if (group === 'packaging') {
+                if (!physicalState) {
                     hint.classList.remove('hidden');
-                    hintText.textContent = 'Packaging materials use count units (pieces, rolls, packs) — not liters.';
-                } else if (categoryName) {
+                    hintText.textContent = 'Choose the material form before choosing a unit.';
+                } else if (group === 'packaging') {
                     hint.classList.remove('hidden');
-                    hintText.textContent = 'Mass/volume units for process ingredients (kg, g, L, ml).';
+                    hintText.textContent = 'Packaging materials are counted as pieces, rolls, packs, packets, or bottles.';
+                } else if (physicalState === 'solid') {
+                    hint.classList.remove('hidden');
+                    hintText.textContent = 'Solid ingredients use kilograms or grams.';
+                } else if (physicalState === 'liquid') {
+                    hint.classList.remove('hidden');
+                    hintText.textContent = 'Liquid ingredients use liters or milliliters. Grams are not allowed without an approved density rule.';
+                } else if (physicalState === 'count') {
+                    hint.classList.remove('hidden');
+                    hintText.textContent = 'Counted items use pieces, packs, packets, rolls, or bottles.';
                 } else {
                     hint.classList.add('hidden');
                 }
@@ -768,7 +789,45 @@
 
         /** Category dropdown onchange — filter UOM and force a fresh unit choice. */
         function onIngredientCategoryChange() {
+            const physicalState = document.getElementById('physical_state');
+            const isPackaging = getUnitGroupForCategoryName(getSelectedCategoryName()) === 'packaging';
+            if (physicalState) {
+                if (isPackaging) {
+                    physicalState.value = 'count';
+                    physicalState.disabled = true;
+                } else {
+                    physicalState.disabled = false;
+                    if (physicalState.value === 'count') physicalState.value = '';
+                }
+            }
             populateUnitOfMeasureOptions(null, true);
+        }
+
+        function onPhysicalStateChange() {
+            populateUnitOfMeasureOptions(null, true);
+        }
+
+        function populateContainerTypeOptions(preferredType = null, forceReset = false) {
+            const select = document.getElementById('container_type');
+            if (!select) return true;
+
+            const physicalState = getSelectedPhysicalState();
+            const options = CONTAINER_OPTIONS_BY_STATE[physicalState] || [];
+            const previous = preferredType != null ? String(preferredType).toLowerCase().trim() : select.value;
+
+            select.innerHTML = `<option value="">${physicalState ? 'Choose container...' : 'Choose material form first'}</option>`;
+            options.forEach(option => {
+                const element = document.createElement('option');
+                element.value = option.value;
+                element.textContent = option.label;
+                select.appendChild(element);
+            });
+
+            const allowed = new Set(options.map(option => option.value));
+            const canRestore = !forceReset && previous && allowed.has(previous);
+            select.value = canRestore ? previous : '';
+            updatePackagePreview();
+            return !previous || allowed.has(previous);
         }
 
         function updateUnitBadges() {
@@ -776,6 +835,186 @@
             document.querySelectorAll('.ingredient-unit-badge').forEach(el => {
                 el.textContent = unit || 'units';
             });
+        }
+
+        function packageTypeFromLabel(label) {
+            const text = String(label || '').toLowerCase();
+            const containers = [...new Set(Object.values(CONTAINER_OPTIONS_BY_STATE).flat().map(option => option.value))];
+            return containers.find(container => new RegExp(`\\b${container}s?\\b`).test(text)) || '';
+        }
+
+        function populateContainerSizeUnits(stockUnit) {
+            const select = document.getElementById('container_size_unit');
+            if (!select) return;
+            const previous = select.value;
+            const compatible = {
+                kg: [{ value: 'kg', label: 'Kilograms (kg)' }, { value: 'g', label: 'Grams (g)' }],
+                g: [{ value: 'g', label: 'Grams (g)' }, { value: 'kg', label: 'Kilograms (kg)' }],
+                liter: [{ value: 'liter', label: 'Liters (L)' }, { value: 'ml', label: 'Milliliters (mL)' }],
+                ml: [{ value: 'ml', label: 'Milliliters (mL)' }, { value: 'liter', label: 'Liters (L)' }]
+            };
+            const options = compatible[stockUnit] || (stockUnit ? [{ value: stockUnit, label: stockUnit }] : []);
+            select.innerHTML = options.length
+                ? options.map(option => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('')
+                : '<option value="">Choose stock unit first</option>';
+            select.value = options.some(option => option.value === previous) ? previous : (options[0]?.value || '');
+        }
+
+        function convertContainerAmount(amount, fromUnit, toUnit) {
+            if (fromUnit === toUnit) return amount;
+            const factors = {
+                'kg:g': 1000,
+                'g:kg': 0.001,
+                'liter:ml': 1000,
+                'ml:liter': 0.001
+            };
+            return factors[`${fromUnit}:${toUnit}`] ? amount * factors[`${fromUnit}:${toUnit}`] : NaN;
+        }
+
+        function compactNumber(value) {
+            return Number(value).toLocaleString('en-PH', { maximumFractionDigits: 3 });
+        }
+
+        function pluralizePackage(container, count = 2) {
+            if (Number(count) === 1) return container;
+            if (container === 'box') return 'boxes';
+            if (container === 'case') return 'cases';
+            return `${container}s`;
+        }
+
+        function getPurchaseFormat() {
+            return document.getElementById('packaged_purchase_toggle').checked ? 'packaged' : 'direct_unit';
+        }
+
+        function setPurchaseFormat(format) {
+            document.getElementById('packaged_purchase_toggle').checked = format === 'packaged';
+        }
+
+        function applyPurchaseFormatState() {
+            const format = getPurchaseFormat();
+            const packaged = format === 'packaged';
+            const notice = document.getElementById('packageStructureNotice');
+            const state = document.getElementById('purchaseFormatState');
+            const help = document.getElementById('purchaseFormatHelp');
+
+            document.querySelectorAll('.package-structure-control input, .package-structure-control select')
+                .forEach(control => {
+                    control.disabled = !packaged;
+                });
+
+            document.querySelectorAll('.package-structure-control').forEach(control => {
+                control.classList.toggle('hidden', !packaged);
+            });
+
+            ['container_type', 'container_size_value', 'container_size_unit'].forEach(id => {
+                document.getElementById(id).required = packaged;
+            });
+
+            if (format === 'direct_unit') {
+                document.getElementById('purchase_price_basis').value = 'stock_unit';
+                state.textContent = 'Direct / bulk';
+                state.className = 'badge badge-outline whitespace-nowrap';
+                help.textContent = 'Off: bought directly per stock unit.';
+                notice.className = 'alert alert-success py-2 mb-3';
+                notice.innerHTML = '<i class="fas fa-weight-scale"></i><span class="text-xs">Direct or bulk purchase: the supplier price is entered per stock unit. No bottle, bag, box, or case is required.</span>';
+            } else if (packaged) {
+                state.textContent = 'Container / package';
+                state.className = 'badge badge-info whitespace-nowrap';
+                help.textContent = 'On: container details are required; an outer box or case remains optional.';
+                notice.className = 'alert alert-info py-2 mb-3';
+                notice.innerHTML = '<i class="fas fa-box"></i><span class="text-xs">Packaged purchase: the inner container and its amount are required. An outer box, case, or crate is optional.</span>';
+            }
+        }
+
+        function handlePurchaseFormatChange() {
+            applyPurchaseFormatState();
+            updatePackagePreview();
+        }
+
+        function updatePackagePreview() {
+            const preview = document.getElementById('packageConversionPreview');
+            const purchaseFormat = getPurchaseFormat();
+            const packaged = purchaseFormat === 'packaged';
+            const baseUnit = document.getElementById('unit_of_measure').value;
+            const container = packaged ? document.getElementById('container_type').value : '';
+            const containerSize = packaged ? Number(document.getElementById('container_size_value').value || 0) : 0;
+            const containerSizeUnit = packaged ? document.getElementById('container_size_unit').value : '';
+            const outerPackage = packaged ? document.getElementById('purchase_package_type').value : '';
+            const containersPerPackage = packaged ? Number(document.getElementById('containers_per_purchase_package').value || 0) : 0;
+            const priceBasis = packaged ? document.getElementById('purchase_price_basis').value : 'stock_unit';
+            const purchasePriceRaw = document.getElementById('purchase_price').value.trim();
+            const hasPurchasePrice = purchasePriceRaw !== '' && Number.isFinite(Number(purchasePriceRaw));
+            const purchasePrice = hasPurchasePrice ? Number(purchasePriceRaw) : 0;
+            const wholePacks = packaged && document.getElementById('enforce_whole_packs').checked;
+            const basisSelect = document.getElementById('purchase_price_basis');
+            const containerOption = basisSelect.querySelector('option[value="container"]');
+            const packageOption = basisSelect.querySelector('option[value="purchase_package"]');
+
+            containerOption.textContent = container ? `One ${container}` : 'One inner container';
+            packageOption.textContent = outerPackage ? `One ${outerPackage}` : 'One outer package';
+            containerOption.disabled = !container;
+            packageOption.disabled = !outerPackage;
+            if ((priceBasis === 'container' && !container) || (priceBasis === 'purchase_package' && !outerPackage)) {
+                basisSelect.value = 'stock_unit';
+                return updatePackagePreview();
+            }
+
+            const basisLabel = basisSelect.value === 'container' && container
+                ? container
+                : (basisSelect.value === 'purchase_package' && outerPackage ? outerPackage : (baseUnit || 'stock unit'));
+            document.getElementById('purchasePriceLabel').textContent = `Supplier Price per ${basisLabel}`;
+            document.getElementById('containersPerPackageLabel').textContent = container
+                ? `${pluralizePackage(container)} in One Package`
+                : 'Containers in One Package';
+
+            if (!baseUnit) {
+                preview.innerHTML = '<p class="text-sm font-semibold">Choose the material form and stock unit first.</p><p class="text-xs text-base-content/60 mt-1">The system will show what one supplier package contains and what it costs.</p>';
+                return;
+            }
+
+            if (!packaged) {
+                preview.innerHTML = `<p class="text-sm font-semibold">Direct or bulk purchase</p><p class="text-xs text-base-content/60 mt-1">Stock, purchasing, recipes, and cost all use <strong>${escapeHtml(baseUnit)}</strong>. Supplier price is ${hasPurchasePrice ? `<strong>${formatCurrency(purchasePrice)} per ${escapeHtml(baseUnit)}</strong>` : 'not entered yet'}.</p>`;
+                return;
+            }
+
+            if (!(containerSize > 0) || !container || !containerSizeUnit) {
+                preview.innerHTML = '<p class="text-sm font-semibold text-warning">Complete the inner container</p><p class="text-xs text-base-content/60 mt-1">Choose the container, its amount, and a compatible unit.</p>';
+                return;
+            }
+
+            if ((outerPackage && !(containersPerPackage > 0)) || (!outerPackage && containersPerPackage > 0)) {
+                preview.innerHTML = '<p class="text-sm font-semibold text-warning">Complete both outer package fields</p><p class="text-xs text-base-content/60 mt-1">Choose the box/case/crate and enter how many containers it holds, or leave both blank.</p>';
+                return;
+            }
+
+            const stockUnitsPerContainer = convertContainerAmount(containerSize, containerSizeUnit, baseUnit);
+            if (!Number.isFinite(stockUnitsPerContainer)) {
+                preview.innerHTML = '<p class="text-sm font-semibold text-error">Container unit does not match the stock unit</p>';
+                return;
+            }
+
+            const totalStockUnits = stockUnitsPerContainer * (outerPackage ? containersPerPackage : 1);
+            let stockUnitCost = null;
+            if (hasPurchasePrice) {
+                if (basisSelect.value === 'stock_unit') stockUnitCost = purchasePrice;
+                if (basisSelect.value === 'container') stockUnitCost = purchasePrice / stockUnitsPerContainer;
+                if (basisSelect.value === 'purchase_package') stockUnitCost = purchasePrice / totalStockUnits;
+            }
+            const containerCost = stockUnitCost === null ? null : stockUnitCost * stockUnitsPerContainer;
+            const packageCost = stockUnitCost === null ? null : stockUnitCost * totalStockUnits;
+            const conversionLine = outerPackage
+                ? `1 ${escapeHtml(outerPackage)} = ${compactNumber(containersPerPackage)} ${escapeHtml(pluralizePackage(container, containersPerPackage))} = ${compactNumber(totalStockUnits)} ${escapeHtml(baseUnit)}`
+                : `1 ${escapeHtml(container)} = ${compactNumber(containerSize)} ${escapeHtml(containerSizeUnit)} = ${compactNumber(stockUnitsPerContainer)} ${escapeHtml(baseUnit)}`;
+            const priceLine = stockUnitCost === null
+                ? 'Enter the supplier price to see comparable costs.'
+                : `${formatCurrency(stockUnitCost)} per ${escapeHtml(baseUnit)} | ${formatCurrency(containerCost)} per ${escapeHtml(container)}${outerPackage ? ` | ${formatCurrency(packageCost)} per ${escapeHtml(outerPackage)}` : ''}`;
+
+            preview.innerHTML = `
+                <div class="flex flex-col gap-1">
+                    <p class="text-sm font-semibold">${conversionLine}</p>
+                    <p class="text-xs text-base-content/65">${priceLine}</p>
+                    <p class="text-xs ${wholePacks ? 'text-warning' : 'text-success'}">${wholePacks ? `Whole-package rule: requests round up to a complete ${escapeHtml(outerPackage || container)}.` : `Open-package rule: Warehouse Raw may issue the exact ${escapeHtml(baseUnit)} needed and keep the remainder.`}</p>
+                </div>`;
         }
 
         async function loadData() {
@@ -837,10 +1076,10 @@
                 const isLowStock = currentStock <= reorderPoint;  // at or below buy trigger
                 return `
                 <tr>
-                    <td><span class="font-mono text-sm">${i.ingredient_code}</span></td>
-                    <td><span class="font-semibold">${i.ingredient_name}</span></td>
-                    <td>${i.category_name || '-'}</td>
-                    <td><span class="badge badge-ghost badge-sm">${i.unit_of_measure}</span></td>
+                    <td><span class="font-mono text-sm">${escapeHtml(i.ingredient_code)}</span></td>
+                    <td><span class="font-semibold">${escapeHtml(i.ingredient_name)}</span></td>
+                    <td>${escapeHtml(i.category_name || '-')}</td>
+                    <td><span class="badge badge-ghost badge-sm">${escapeHtml(i.unit_of_measure)}</span></td>
                     <td>
                         <span class="badge ${i.is_perishable == 1 ? 'badge-warning' : 'badge-ghost'} badge-sm">
                             ${i.is_perishable == 1 ? 'Perishable' : 'Non-perishable'}
@@ -856,20 +1095,20 @@
                     <td class="text-base-content/70">${reorderPoint.toLocaleString()}</td>
                     <td>
                         <span class="badge badge-outline badge-sm">${Number(i.supplier_count || 0)} supplier(s)</span>
-                        <div class="text-xs text-base-content/50 mt-1 max-w-52 truncate" title="${escapeHtml(i.supplier_names || '')}">${escapeHtml(i.supplier_names || 'None linked')}</div>
+                        <div class="text-xs text-base-content/50 mt-1 max-w-52 truncate" title="${escapeAttr(i.supplier_names || '')}">${escapeHtml(i.supplier_names || 'None linked')}</div>
                     </td>
-                    <td>${i.unit_cost ? formatCurrency(i.unit_cost) : '-'}</td>
+                    <td>${i.unit_cost ? `${formatCurrency(i.unit_cost)} <span class="text-xs text-base-content/50">/ ${escapeHtml(i.unit_of_measure || 'unit')}</span>` : '-'}</td>
                     <td>
                         <span class="badge ${i.is_active == 1 ? 'badge-success' : 'badge-warning'} badge-sm">
                             ${i.is_active == 1 ? 'Active' : 'Inactive'}
                         </span>
                     </td>
                     <td>
-                        <div class="flex gap-1">
-                            <button class="btn btn-ghost btn-xs" onclick="editRecord(${i.id})" title="Edit">
+                        <div class="ingredient-row-actions flex gap-1">
+                            <button type="button" class="btn btn-ghost btn-sm btn-square" onclick="editRecord(${i.id})" title="Edit ingredient" aria-label="Edit ingredient">
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <button class="btn btn-ghost btn-xs text-warning" onclick="deleteRecord(${i.id})" title="Archive">
+                            <button type="button" class="btn btn-ghost btn-sm btn-square text-warning" onclick="deleteRecord(${i.id})" title="Archive ingredient" aria-label="Archive ingredient">
                                 <i class="fas fa-box-archive"></i>
                             </button>
                         </div>
@@ -902,10 +1141,10 @@
             document.getElementById('modalTitle').textContent = id ? 'Edit Ingredient' : 'Add Ingredient';
             document.getElementById('dataForm').reset();
             document.getElementById('recordId').value = '';
+            document.getElementById('physical_state').disabled = false;
             // Reset UOM to placeholder until category is chosen
             populateUnitOfMeasureOptions(null, true);
             updateUnitBadges();
-            renderSupplierCatalog([]);
             document.getElementById('formModal').showModal();
         }
 
@@ -922,6 +1161,12 @@
                     document.getElementById('ingredient_code').value = i.ingredient_code;
                     document.getElementById('ingredient_name').value = i.ingredient_name;
                     document.getElementById('category_id').value = i.category_id || '';
+                    document.getElementById('physical_state').disabled = false;
+                    document.getElementById('physical_state').value = i.physical_state || inferPhysicalStateFromUnit(i.unit_of_measure);
+                    if (getUnitGroupForCategoryName(getSelectedCategoryName()) === 'packaging') {
+                        document.getElementById('physical_state').value = 'count';
+                        document.getElementById('physical_state').disabled = true;
+                    }
                     // Filter UOM list for category, keep current unit if still valid
                     populateUnitOfMeasureOptions(i.unit_of_measure || null, false);
                     // If current unit invalid for category, leave blank to force re-pick
@@ -933,16 +1178,11 @@
                             'warning'
                         );
                     }
-                    // Supplier pack size fields (optional — leave blank for ingredients without one).
-                    document.getElementById('pack_size_value').value = i.pack_size_value != null ? i.pack_size_value : '';
-                    document.getElementById('pack_size_unit').value = i.pack_size_unit || '';
-                    document.getElementById('pack_label').value = i.pack_label || '';
-                    // Display whole numbers — DB stores DECIMAL(10,2) but we track in whole units
-                    document.getElementById('minimum_stock').value = parseInt(i.minimum_stock, 10) || 0;
-                    document.getElementById('reorder_point').value = parseInt(i.reorder_point, 10) || 0;
-                    document.getElementById('maximum_stock').value = parseInt(i.maximum_stock, 10) || 0;
+                    updateUnitBadges();
+                    document.getElementById('minimum_stock').value = parseFloat(i.minimum_stock) || 0;
+                    document.getElementById('reorder_point').value = parseFloat(i.reorder_point) || 0;
+                    document.getElementById('maximum_stock').value = parseFloat(i.maximum_stock) || 0;
                     document.getElementById('lead_time_days').value = i.lead_time_days || 7;
-                    document.getElementById('unit_cost').value = i.unit_cost ? parseFloat(i.unit_cost).toFixed(2) : '';
                     document.getElementById('shelf_life_days').value = i.shelf_life_days || '';
                     document.getElementById('is_perishable').value = String(i.is_perishable ?? 1);
                     const storageSelect = document.getElementById('storage_location');
@@ -956,9 +1196,6 @@
                     storageSelect.value = storageVal;
                     document.getElementById('storage_requirements').value = i.storage_requirements || '';
                     document.getElementById('is_active').value = i.is_active;
-                    renderSupplierCatalog(i.suppliers || []);
-                    updateUnitBadges();
-
                     document.getElementById('modalTitle').textContent = 'Edit Ingredient';
                     document.getElementById('formModal').showModal();
                 }
@@ -998,14 +1235,15 @@
             const recordId = document.getElementById('recordId').value;
             const categoryId = document.getElementById('category_id').value || null;
             const unitOfMeasure = document.getElementById('unit_of_measure').value;
-            const supplierIds = getSelectedSupplierIds();
+            const physicalState = getSelectedPhysicalState();
 
-            if (document.getElementById('is_active').value === '1' && supplierIds.length < 1) {
-                showToast('Choose at least one accredited supplier for this ingredient', 'error');
+            if (!physicalState) {
+                showToast('Please choose whether the ingredient is solid, liquid, or counted', 'error');
+                document.getElementById('physical_state').focus();
                 return;
             }
 
-            // Guard: unit must be allowed for selected category
+            // Guard: unit must be allowed for both category and material form.
             if (!unitOfMeasure) {
                 showToast('Please select a unit of measure', 'error');
                 document.getElementById('unit_of_measure').focus();
@@ -1013,7 +1251,9 @@
             }
             const catName = getSelectedCategoryName();
             const group = getUnitGroupForCategoryName(catName);
-            const allowed = new Set((UNIT_OPTIONS[group] || UNIT_OPTIONS.all).map(o => o.value));
+            const categoryAllowed = new Set((UNIT_OPTIONS[group] || UNIT_OPTIONS.all).map(o => o.value));
+            const formAllowed = new Set(PHYSICAL_STATE_UNITS[physicalState] || []);
+            const allowed = new Set([...categoryAllowed].filter(unit => formAllowed.has(unit)));
             if (!allowed.has(unitOfMeasure)) {
                 showToast(
                     `Unit "${unitOfMeasure}" is not allowed for category "${catName || 'selected'}". Choose a valid unit.`,
@@ -1026,21 +1266,17 @@
             const formData = {
                 ingredient_name: document.getElementById('ingredient_name').value,
                 category_id: categoryId,
+                physical_state: physicalState,
                 unit_of_measure: unitOfMeasure,
-                pack_size_value: document.getElementById('pack_size_value').value || null,
-                pack_size_unit: document.getElementById('pack_size_unit').value || null,
-                pack_label: document.getElementById('pack_label').value || null,
                 minimum_stock: document.getElementById('minimum_stock').value,
                 reorder_point: document.getElementById('reorder_point').value,
                 maximum_stock: document.getElementById('maximum_stock').value,
                 lead_time_days: document.getElementById('lead_time_days').value,
-                unit_cost: document.getElementById('unit_cost').value || null,
                 shelf_life_days: document.getElementById('shelf_life_days').value || null,
                 is_perishable: document.getElementById('is_perishable').value,
                 storage_location: document.getElementById('storage_location').value,
                 storage_requirements: document.getElementById('storage_requirements').value,
-                is_active: document.getElementById('is_active').value,
-                supplier_ids: supplierIds
+                is_active: document.getElementById('is_active').value
             };
 
             try {
@@ -1058,13 +1294,14 @@
                 if (response.success) {
                     showToast(recordId ? 'Ingredient updated successfully' : 'Ingredient created successfully', 'success');
                     closeModal();
+                    if (!recordId) currentPage = 1;
                     loadData();
                 } else {
                     showToast(response.message || 'Failed to save', 'error');
                 }
             } catch (error) {
                 console.error('Error saving:', error);
-                showToast('Error saving ingredient', 'error');
+                showToast(error.message || 'Error saving ingredient', 'error');
             } finally {
                 const saveBtn = document.getElementById('saveBtn');
                 saveBtn.classList.remove('loading');
@@ -1083,7 +1320,7 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
-            await Promise.all([loadCategories(), loadSupplierOptions()]);
+            await loadCategories();
             loadData();
         });
     </script>

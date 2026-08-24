@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MRO Supplies - Warehouse Raw | Highland Fresh</title>
+    <title>Operational Supplies (MRO) - Warehouse Raw | Highland Fresh</title>
 
     <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
     <link rel="stylesheet" href="../../../css/tailwind.css">
@@ -593,7 +593,7 @@
                         class="fas fa-bars text-lg"></i></button>
             </div>
             <div class="flex-1">
-                <h1 class="text-lg lg:text-xl font-bold">MRO Supplies</h1>
+                <h1 class="text-lg lg:text-xl font-bold">Operational Supplies (MRO)</h1>
             </div>
         </header>
 
@@ -603,8 +603,8 @@
             <!-- Info Banner -->
             <div class="alert alert-info mb-6">
                 <i class="fas fa-info-circle"></i>
-                <span><strong>MRO</strong> = Maintenance, Repair & Operations supplies. These items support production
-                    but are not direct ingredients.</span>
+                <span><strong>MRO</strong> means Maintenance, Repair & Operations supplies. Warehouse Raw controls this
+                    stock because it supports production but is not used as a direct ingredient.</span>
             </div>
 
             <!-- Stats Cards -->
@@ -762,7 +762,7 @@
                 </div>
                 <div class="flex-1 min-w-0">
                     <h3 class="pro-modal-title">Issue MRO Item</h3>
-                    <p class="pro-modal-subtitle">Release stock for maintenance, repair, or operations</p>
+                    <p class="pro-modal-subtitle">Release operational stock for approved work</p>
                 </div>
                 <button class="pro-close" onclick="document.getElementById('issueModal').close()" aria-label="Close">
                     <i class="fas fa-times"></i>
@@ -815,7 +815,7 @@
                     <div class="pro-field">
                         <label class="pro-label">Reason</label>
                         <select class="pro-select" id="issueReason">
-                            <option value="Issued for maintenance">Issued for maintenance</option>
+                            <option value="Issued for operations">Issued for operations</option>
                             <option value="Equipment repair">Equipment repair</option>
                             <option value="Production support">Production support</option>
                             <option value="Cleaning/sanitation">Cleaning/sanitation</option>
@@ -1250,6 +1250,8 @@
                 const safeCode = escapeHtml(item.item_code || item.code || '');
                 const safeUnit = escapeHtml(item.unit_of_measure || 'units');
                 const safeCategory = escapeHtml(item.category_name || '');
+                const encodedName = encodeURIComponent(item.item_name || item.name || '');
+                const encodedUnit = encodeURIComponent(item.unit_of_measure || 'units');
 
                 return `
                     <tr class="hover:bg-base-200/50 cursor-pointer" onclick="openDetailModal(${item.id})">
@@ -1287,7 +1289,7 @@
                                 </summary>
                                 <ul class="dropdown-content menu menu-sm bg-base-100 rounded-box border border-base-300 z-10 w-44 shadow-lg p-1">
                                     <li><a onclick="openDetailModal(${item.id})"><i class="fas fa-eye w-4"></i> View Details</a></li>
-                                    <li><a onclick="openIssueModal(${item.id}, '${escapeHtml(item.item_name || item.name || '')}', ${stock}, '${safeUnit}')" ${stock <= 0 ? 'class="pointer-events-none opacity-40"' : ''}><i class="fas fa-arrow-up w-4"></i> Issue Stock</a></li>
+                                    <li><a onclick="openIssueModal(${item.id}, decodeURIComponent('${encodedName}'), ${stock}, decodeURIComponent('${encodedUnit}'))" ${stock <= 0 ? 'class="pointer-events-none opacity-40"' : ''}><i class="fas fa-arrow-up w-4"></i> Issue Stock</a></li>
                                 </ul>
                             </details>
                         </td>
@@ -1330,6 +1332,12 @@
             const maxRaw = parseFloat(item.maximum_stock);
             const max = (Number.isFinite(maxRaw) && maxRaw > 0) ? maxRaw : (reorder * 2);
             const unit = item.unit_of_measure || '';
+            const safeName = escapeHtml(item.item_name || item.name || 'Unknown Item');
+            const safeCode = escapeHtml(item.item_code || item.code || '-');
+            const safeCategory = escapeHtml(item.category_name || 'Uncategorized');
+            const safeUnit = escapeHtml(unit);
+            const safeStorageLocation = escapeHtml(item.storage_location || '');
+            const safeDescription = escapeHtml(item.description || '');
             const inventory = item.inventory || [];
             const batchStockRaw = parseFloat(item.batch_stock);
             const batchStock = Number.isFinite(batchStockRaw)
@@ -1369,14 +1377,14 @@
                         <i class="fas ${heroIcon}"></i>
                     </div>
                     <div class="flex-1 min-w-0">
-                        <h3 class="item-hero-name">${item.item_name || item.name || 'Unknown Item'}</h3>
-                        <div class="item-hero-code">${item.item_code || item.code || '-'} · ${item.category_name || 'Uncategorized'}</div>
+                        <h3 class="item-hero-name">${safeName}</h3>
+                        <div class="item-hero-code">${safeCode} · ${safeCategory}</div>
                         <div class="item-hero-badges">${criticalBadge}${stockBadge}</div>
                         <div class="stock-bar-wrap">
                             <div class="stock-bar-fill ${stockColor}" style="width: ${stockPct}%"></div>
                         </div>
                         <div class="flex justify-between text-xs text-base-content/55 mt-1">
-                            <span>${stock.toLocaleString()} ${unit} on hand</span>
+                            <span>${stock.toLocaleString()} ${safeUnit} on hand</span>
                             <span>${stockPct.toFixed(0)}% of par</span>
                         </div>
                     </div>
@@ -1391,14 +1399,14 @@
                 inventoryHtml = inventory.map(inv => `
                     <div class="inventory-row">
                         <div class="min-w-0 flex-1">
-                            <p class="inventory-code">${inv.batch_code || inv.reference_number || 'No reference'}</p>
+                            <p class="inventory-code">${escapeHtml(inv.batch_code || inv.reference_number || 'No reference')}</p>
                             <p class="inventory-meta">
-                                Received ${formatDate(inv.received_date)}
-                                ${inv.supplier_name ? `· ${inv.supplier_name}` : ''}
+                                Received ${escapeHtml(formatDate(inv.received_date))}
+                                ${inv.supplier_name ? `· ${escapeHtml(inv.supplier_name)}` : ''}
                             </p>
                         </div>
                         <div class="flex-shrink-0 text-right">
-                            <p class="inventory-qty">${(parseFloat(inv.remaining_quantity || 0) || 0).toLocaleString()} <span class="text-xs font-normal text-base-content/60">${unit}</span></p>
+                            <p class="inventory-qty">${(parseFloat(inv.remaining_quantity || 0) || 0).toLocaleString()} <span class="text-xs font-normal text-base-content/60">${safeUnit}</span></p>
                             ${inv.unit_cost ? `<p class="inventory-cost">@ ${formatCurrency(inv.unit_cost)}</p>` : ''}
                         </div>
                     </div>
@@ -1409,7 +1417,7 @@
                 <div class="alert alert-warning mb-4 py-2">
                     <i class="fas fa-triangle-exclamation"></i>
                     <span>
-                        Stock records do not match: the item file says ${stock.toLocaleString()} ${unit}, but FIFO batches add up to ${batchStock.toLocaleString()} ${unit}.
+                        Stock records do not match: the item file says ${stock.toLocaleString()} ${safeUnit}, but FIFO batches add up to ${batchStock.toLocaleString()} ${safeUnit}.
                         Check the physical count or add the missing batch record before issuing this stock.
                     </span>
                 </div>
@@ -1423,22 +1431,22 @@
                     <div class="detail-stat">
                         <p class="detail-stat-label">Stock on File</p>
                         <p class="detail-stat-value detail-stat-value--xl">${stock.toLocaleString()}</p>
-                        <p class="text-xs text-base-content/55 mt-0.5">${unit}</p>
+                        <p class="text-xs text-base-content/55 mt-0.5">${safeUnit}</p>
                     </div>
                     <div class="detail-stat">
                         <p class="detail-stat-label">FIFO Stock</p>
                         <p class="detail-stat-value">${batchStock.toLocaleString()}</p>
-                        <p class="text-xs text-base-content/55 mt-0.5">${unit}</p>
+                        <p class="text-xs text-base-content/55 mt-0.5">${safeUnit}</p>
                     </div>
                     <div class="detail-stat">
                         <p class="detail-stat-label">Reorder At</p>
                         <p class="detail-stat-value">${reorder.toLocaleString()}</p>
-                        <p class="text-xs text-base-content/55 mt-0.5">${unit}</p>
+                        <p class="text-xs text-base-content/55 mt-0.5">${safeUnit}</p>
                     </div>
                     <div class="detail-stat">
                         <p class="detail-stat-label">Max / Par</p>
                         <p class="detail-stat-value">${max.toLocaleString()}</p>
-                        <p class="text-xs text-base-content/55 mt-0.5">${unit}</p>
+                        <p class="text-xs text-base-content/55 mt-0.5">${safeUnit}</p>
                     </div>
                 </div>
 
@@ -1448,19 +1456,19 @@
                         ${item.storage_location ? `
                             <div class="detail-stat">
                                 <p class="detail-stat-label">Storage Location</p>
-                                <p class="detail-stat-value" style="font-size: 1rem;">${item.storage_location}</p>
+                                <p class="detail-stat-value" style="font-size: 1rem;">${safeStorageLocation}</p>
                             </div>
                         ` : ''}
                         ${item.unit_of_measure ? `
                             <div class="detail-stat">
                                 <p class="detail-stat-label">Unit of Measure</p>
-                                <p class="detail-stat-value" style="font-size: 1rem;">${item.unit_of_measure}</p>
+                                <p class="detail-stat-value" style="font-size: 1rem;">${safeUnit}</p>
                             </div>
                         ` : ''}
                         ${item.description ? `
                             <div class="detail-stat" style="grid-column: 1 / -1;">
                                 <p class="detail-stat-label">Description</p>
-                                <p style="font-size: 0.9375rem; margin: 0.25rem 0 0 0; line-height: 1.5;">${item.description}</p>
+                                <p style="font-size: 0.9375rem; margin: 0.25rem 0 0 0; line-height: 1.5;">${safeDescription}</p>
                             </div>
                         ` : ''}
                     </div>
@@ -1473,7 +1481,8 @@
                 <div class="scrollbar-thin">${inventoryHtml}</div>
             `;
 
-            const escapedName = (item.item_name || item.name || '').replace(/'/g, "\\'");
+            const encodedName = encodeURIComponent(item.item_name || item.name || '');
+            const encodedUnit = encodeURIComponent(unit);
             const canRepairStock = variance > 0.0005 && ['warehouse_raw', 'general_manager'].includes(AuthService.getCurrentUser()?.role || '');
 
             document.getElementById('detailModalFooter').innerHTML = `
@@ -1485,10 +1494,10 @@
                     <i class="fas fa-screwdriver-wrench"></i> Fix FIFO Batch
                 </button>
                 ` : ''}
-                <button class="btn-pro btn-pro--info" onclick="openAdjustModal(${item.id}, '${escapedName}', ${stock}, '${unit}')">
+                <button class="btn-pro btn-pro--info" onclick="openAdjustModal(${item.id}, decodeURIComponent('${encodedName}'), ${stock}, decodeURIComponent('${encodedUnit}'))">
                     <i class="fas fa-pen-to-square"></i> Adjust
                 </button>
-                <button class="btn-pro btn-pro--warning" onclick="openIssueModal(${item.id}, '${escapedName}', ${stock}, '${unit}')" ${stock <= 0 ? 'disabled' : ''}>
+                <button class="btn-pro btn-pro--warning" onclick="openIssueModal(${item.id}, decodeURIComponent('${encodedName}'), ${stock}, decodeURIComponent('${encodedUnit}'))" ${stock <= 0 ? 'disabled' : ''}>
                     <i class="fas fa-arrow-up"></i> Issue Stock
                 </button>
             `;
@@ -1692,7 +1701,9 @@
 
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            const text = document.createElement('span');
+            text.textContent = String(message ?? '');
+            toast.appendChild(text);
             container.appendChild(toast);
 
             setTimeout(() => {

@@ -42,6 +42,7 @@ ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/plain_text.php';
 
 // Require QC or Production role
 $currentUser = Auth::requireRole(['qc_officer', 'general_manager', 'production_staff']);
@@ -329,7 +330,7 @@ try {
             // Initiate yogurt transformation - The "Yogurt Rule"
             $inventoryId = getParam('inventory_id');
             $quantity = getParam('quantity');
-            $notes = trim(getParam('notes', ''));
+            $notes = hfPlainText(getParam('notes', ''), 2000, true);
             $createProductionRun = getParam('create_production_run', false);
             $sourceType = getParam('source_type', 'finished_goods');
             $isRawMilk = in_array($sourceType, ['raw_milk', 'raw_milk_inventory', 'milk_receiving'], true);

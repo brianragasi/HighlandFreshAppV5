@@ -12,6 +12,8 @@
  */
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/procurement_notifications.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/qc_count_discrepancy.php';
 require_once __DIR__ . '/inventory_helpers.php';
 
 // Require Warehouse FG role
@@ -21,6 +23,7 @@ $action = getParam('action', 'list');
 
 try {
     $db = Database::getInstance()->getConnection();
+    ensureQcCountDiscrepancyTables($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -1047,20 +1050,10 @@ function handleGet($db, $action) {
                 break;
             }
 
-            // Attach packaging lines (per SKU/size) to each batch for display
-            $lineStmt = $db->prepare("
-                SELECT pri.product_name, pri.product_variant, pri.size_ml, pri.unit_measure, pri.quantity
-                FROM packaging_run_items pri
-                JOIN packaging_runs pr ON pri.packaging_run_id = pr.id
-                WHERE pr.batch_id = ? OR pr.production_run_id = ?
-                ORDER BY pri.size_ml DESC, pri.id ASC
-            ");
-
             foreach ($pendingItems as &$pending) {
                 $batchId = (int) $pending['id'];
                 $runId = (int) ($pending['run_id'] ?? 0);
-                $lineStmt->execute([$batchId, $runId]);
-                $lines = $lineStmt->fetchAll(PDO::FETCH_ASSOC);
+                $lines = qcGetEffectiveReleasedPackagingLines($db, $batchId, $runId);
 
                 // Total pieces: prefer sum of packaging lines, fall back to batch yield
                 $totalPieces = 0;
@@ -1306,12 +1299,15 @@ function handlePost($db, $action, $currentUser) {
                 $item['location_name'],
                 $item['expiry_date']
             );
-            $insert = $db->prepare("
-                INSERT INTO procurement_notifications
-                    (target_role, notification_type, title, message, reference_type, reference_id)
-                VALUES ('qc_officer', 'fg_disposal_review', ?, ?, 'finished_goods_inventory', ?)
-            ");
-            $insert->execute([$title, $message, $inventoryId]);
+            writeProcurementNotification(
+                $db,
+                'qc_officer',
+                'fg_disposal_review',
+                $title,
+                $message,
+                'finished_goods_inventory',
+                $inventoryId
+            );
 
             logAudit($currentUser['user_id'], 'REPORT_FOR_DISPOSAL', 'finished_goods_inventory', $inventoryId, null, [
                 'batch_code' => $item['batch_code'],
@@ -1691,17 +1687,17 @@ function handlePost($db, $action, $currentUser) {
                 Response::error('This batch has already been received into FG inventory', 400);
             }
 
-            // Get packaging lines for this batch (what production actually packed)
-            $pkgStmt = $db->prepare("
-                SELECT pri.id AS item_id, pri.product_id, pri.product_name, pri.product_variant,
-                       pri.size_ml, pri.unit_measure, pri.quantity
-                FROM packaging_run_items pri
-                JOIN packaging_runs pr ON pri.packaging_run_id = pr.id
-                WHERE pr.batch_id = ? OR pr.production_run_id = ?
-                ORDER BY pri.id
-            ");
-            $pkgStmt->execute([$batchId, (int) ($batch['run_id'] ?? 0)]);
-            $packagingLines = $pkgStmt->fetchAll(PDO::FETCH_ASSOC);
+            // Receive only the quantity QC actually released. Production's
+            // original packaging count remains immutable in its own record.
+            $packagingLines = qcGetEffectiveReleasedPackagingLines(
+                $db,
+                $batchId,
+                (int) ($batch['run_id'] ?? 0)
+            );
+            foreach ($packagingLines as &$packagingLine) {
+                $packagingLine['item_id'] = $packagingLine['packaging_run_item_id'] ?? null;
+            }
+            unset($packagingLine);
 
             // Fallback: if no packaging records (legacy batch), create a single row from batch totals
             if (empty($packagingLines)) {
@@ -1997,11 +1993,32 @@ function handlePut($db, $action, $currentUser) {
                 Response::error('Inventory ID required', 400);
             }
             
-            $releasedBoxes = intval($data['boxes'] ?? $data['release_boxes'] ?? 0);
-            $releasedPieces = intval($data['pieces'] ?? $data['release_pieces'] ?? 0);
+            try {
+                $releasedBoxes = hfParseBusinessInteger(
+                    $data['boxes'] ?? $data['release_boxes'] ?? 0,
+                    'Boxes to release',
+                    0,
+                    100000000
+                );
+                $releasedPieces = hfParseBusinessInteger(
+                    $data['pieces'] ?? $data['release_pieces'] ?? 0,
+                    'Loose pieces to release',
+                    0,
+                    100000000
+                );
+            } catch (InvalidArgumentException $error) {
+                Response::error($error->getMessage(), 400);
+            }
             
             if ($releasedBoxes <= 0 && $releasedPieces <= 0) {
                 Response::error('Specify boxes and/or pieces to release', 400);
+            }
+            $releasePiecesPerBox = max(1, (int) ($current['pieces_per_box'] ?? 1));
+            if ($releasedPieces >= $releasePiecesPerBox) {
+                Response::error(
+                    'Loose pieces must be below ' . $releasePiecesPerBox . '; move complete groups into the boxes field.',
+                    400
+                );
             }
             
             $db->beginTransaction();
@@ -2107,18 +2124,39 @@ function handlePut($db, $action, $currentUser) {
             
         case 'adjust':
             // Stock adjustment with multi-unit support
-            $newBoxes = isset($data['boxes']) ? intval($data['boxes']) : ($current['boxes_available'] ?? 0);
-            $newPieces = isset($data['pieces']) ? intval($data['pieces']) : ($current['pieces_available'] ?? 0);
-            
+            $piecesPerBox = max(1, (int) ($current['pieces_per_box'] ?? 1));
+            try {
+                $newBoxes = array_key_exists('boxes', $data)
+                    ? hfParseBusinessInteger($data['boxes'], 'Adjusted boxes', 0, 100000000)
+                    : (int) ($current['boxes_available'] ?? 0);
+                $newPieces = array_key_exists('pieces', $data)
+                    ? hfParseBusinessInteger($data['pieces'], 'Adjusted loose pieces', 0, $piecesPerBox - 1)
+                    : (int) ($current['pieces_available'] ?? 0);
+            } catch (InvalidArgumentException $error) {
+                Response::error($error->getMessage(), 400);
+            }
+
             // Also support new_quantity for backwards compatibility
             if (isset($data['new_quantity']) && !isset($data['boxes']) && !isset($data['pieces'])) {
-                $converted = piecesToBoxes($data['new_quantity'], $current['pieces_per_box'] ?? 1);
+                try {
+                    $newQuantity = hfParseBusinessInteger(
+                        $data['new_quantity'],
+                        'Adjusted stock quantity',
+                        0,
+                        100000000
+                    );
+                } catch (InvalidArgumentException $error) {
+                    Response::error($error->getMessage(), 400);
+                }
+                $converted = piecesToBoxes($newQuantity, $piecesPerBox);
                 $newBoxes = $converted['boxes'];
                 $newPieces = $converted['pieces'];
             }
             
-            $piecesPerBox = $current['pieces_per_box'] ?? 1;
             $newTotalPieces = boxesToPieces($newBoxes, $newPieces, $piecesPerBox);
+            if ($newTotalPieces < 0 || $newTotalPieces > 100000000) {
+                Response::error('Adjusted stock must be between 0 and 100,000,000 base units', 400);
+            }
             $oldTotalPieces = boxesToPieces(
                 $current['boxes_available'] ?? 0, 
                 $current['pieces_available'] ?? 0, 
@@ -2129,6 +2167,28 @@ function handlePut($db, $action, $currentUser) {
             $db->beginTransaction();
             
             try {
+                if (!empty($current['chiller_id'])) {
+                    $capacityStmt = $db->prepare("
+                        SELECT capacity, current_count
+                        FROM chiller_locations
+                        WHERE id = ?
+                        FOR UPDATE
+                    ");
+                    $capacityStmt->execute([$current['chiller_id']]);
+                    $chiller = $capacityStmt->fetch();
+                    if (!$chiller) {
+                        throw new Exception('Assigned chiller was not found');
+                    }
+                    $projectedCount = (int) $chiller['current_count'] + $difference;
+                    if ($projectedCount < 0 || $projectedCount > (int) $chiller['capacity']) {
+                        throw new Exception(
+                            'This adjustment would place the chiller outside its capacity. ' .
+                            'Projected: ' . number_format($projectedCount) .
+                            ', capacity: ' . number_format((int) $chiller['capacity']) . '.'
+                        );
+                    }
+                }
+
                 $stmt = $db->prepare("
                     UPDATE finished_goods_inventory 
                     SET quantity_available = ?,

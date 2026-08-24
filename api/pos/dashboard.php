@@ -12,6 +12,7 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/customer_accounts.php';
 
 // Require Cashier or GM role
 $currentUser = Auth::requireRole(['cashier', 'general_manager']);
@@ -20,6 +21,7 @@ $action = getParam('action', 'summary');
 
 try {
     $db = Database::getInstance()->getConnection();
+    hfEnsureCustomerAccountSchema($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -414,8 +416,9 @@ function handleGet($db, $action, $currentUser) {
                     (dr.total_amount - dr.amount_paid) as amount_due,
                     dr.payment_status,
                     dr.delivered_at,
-                    DATEDIFF(CURDATE(), dr.delivered_at) as days_since_delivery,
-                    COALESCE(c.payment_terms_days, 30) as payment_terms,
+                    DATEDIFF(CURDATE(), COALESCE(dr.due_date, DATE(dr.created_at))) as days_since_delivery,
+                    dr.payment_terms_days as payment_terms,
+                    dr.due_date,
                     c.contact_person,
                     c.contact_number,
                     c.customer_type
@@ -427,7 +430,7 @@ function handleGet($db, $action, $currentUser) {
             $params = [];
             
             if ($daysOverdue > 0) {
-                $sql .= " AND DATEDIFF(CURDATE(), dr.delivered_at) >= ?";
+                $sql .= " AND DATEDIFF(CURDATE(), COALESCE(dr.due_date, DATE(dr.created_at))) >= ?";
                 $params[] = $daysOverdue;
             }
             
@@ -440,10 +443,9 @@ function handleGet($db, $action, $currentUser) {
             
             // Add overdue status
             foreach ($pending as &$p) {
-                $paymentTerms = intval($p['payment_terms'] ?? 30);
-                $daysSince = intval($p['days_since_delivery']);
-                $p['is_overdue'] = $daysSince > $paymentTerms;
-                $p['days_overdue'] = max(0, $daysSince - $paymentTerms);
+                $daysLate = intval($p['days_since_delivery']);
+                $p['is_overdue'] = $daysLate > 0;
+                $p['days_overdue'] = max(0, $daysLate);
             }
             
             $totalPending = array_sum(array_column($pending, 'amount_due'));

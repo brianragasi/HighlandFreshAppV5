@@ -6,6 +6,7 @@
  */
 
 require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../helpers/plain_text.php';
 
 // SECURITY: Require GM or Admin role for user management
 $currentUser = Auth::requireRole(['general_manager', 'admin']);
@@ -234,8 +235,8 @@ function allowedUserRoles() {
  * Normalize + validate payload shared by create/update
  */
 function normalizeUserPayload(array $data, $isCreate = false) {
-    $first = trim((string) ($data['first_name'] ?? ''));
-    $last = trim((string) ($data['last_name'] ?? ''));
+    $first = hfPlainText($data['first_name'] ?? '', 1000, false);
+    $last = hfPlainText($data['last_name'] ?? '', 1000, false);
     $username = trim((string) ($data['username'] ?? ''));
     $email = trim((string) ($data['email'] ?? ''));
     $employeeId = trim((string) ($data['employee_id'] ?? ''));
@@ -249,6 +250,8 @@ function normalizeUserPayload(array $data, $isCreate = false) {
     if ($isCreate || array_key_exists('first_name', $data)) {
         if ($first === '') {
             $errors['first_name'] = 'First name is required';
+        } elseif (!hfPersonNameHasLetter($first)) {
+            $errors['first_name'] = 'First name must contain at least one letter';
         } elseif (mb_strlen($first) > 100) {
             $errors['first_name'] = 'First name must be at most 100 characters';
         }
@@ -256,6 +259,8 @@ function normalizeUserPayload(array $data, $isCreate = false) {
     if ($isCreate || array_key_exists('last_name', $data)) {
         if ($last === '') {
             $errors['last_name'] = 'Last name is required';
+        } elseif (!hfPersonNameHasLetter($last)) {
+            $errors['last_name'] = 'Last name must contain at least one letter';
         } elseif (mb_strlen($last) > 100) {
             $errors['last_name'] = 'Last name must be at most 100 characters';
         }

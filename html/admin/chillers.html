@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="emerald">
 <head>
+    <style id="roleGuardPending">html { visibility: hidden; }</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chillers | Highland Fresh Admin</title>
@@ -310,11 +311,11 @@
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Capacity (Units) <span class="text-error">*</span></span></label>
-                        <input type="number" id="capacity" class="input input-bordered" required min="1" placeholder="Maximum units capacity" />
+                        <input type="number" id="capacity" class="input input-bordered" required min="1" max="100000000" step="1" inputmode="numeric" placeholder="Maximum units capacity" />
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Current Count</span></label>
-                        <input type="number" id="current_count" class="input input-bordered" min="0" value="0" />
+                        <input type="number" id="current_count" class="input input-bordered" min="0" max="100000000" step="1" inputmode="numeric" value="0" />
                     </div>
                     <div class="form-control md:col-span-2">
                         <label class="label"><span class="label-text">Location</span></label>
@@ -322,7 +323,7 @@
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Current Temperature (°C)</span></label>
-                        <input type="number" id="temperature_celsius" class="input input-bordered" step="0.1" placeholder="Current reading" />
+                        <input type="number" id="temperature_celsius" class="input input-bordered" step="0.1" min="-50" max="50" data-allow-negative placeholder="Current reading" />
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Status</span></label>
@@ -335,11 +336,11 @@
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Min Temperature (°C)</span></label>
-                        <input type="number" id="min_temperature" class="input input-bordered" value="2" step="0.1" />
+                        <input type="number" id="min_temperature" class="input input-bordered" value="2" step="0.1" min="-50" max="50" data-allow-negative />
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Max Temperature (°C)</span></label>
-                        <input type="number" id="max_temperature" class="input input-bordered" value="8" step="0.1" />
+                        <input type="number" id="max_temperature" class="input input-bordered" value="8" step="0.1" min="-50" max="50" data-allow-negative />
                     </div>
                     <div class="form-control md:col-span-2">
                         <label class="label"><span class="label-text">Notes</span></label>
@@ -377,6 +378,7 @@
     
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/ui/notification-layer.js?v=20260816-1"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="general_manager,admin"></script>
     <script src="../../js/admin/admin.service.js"></script>
     
@@ -654,8 +656,11 @@
             const alertClass = { 'success': 'alert-success', 'error': 'alert-error', 'warning': 'alert-warning', 'info': 'alert-info' }[type] || 'alert-info';
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            const text = document.createElement('span');
+            text.textContent = String(message ?? '');
+            toast.appendChild(text);
             container.appendChild(toast);
+            window.HighlandNotificationLayer?.sync();
             setTimeout(() => toast.remove(), 3000);
         }
         

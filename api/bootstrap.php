@@ -11,9 +11,9 @@
 // Define application constant
 define('HIGHLAND_FRESH', true);
 
-// Error reporting (enable for debugging)
+// Record server errors without exposing file paths, SQL, or stack details to users.
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 
 // Set headers for JSON API
@@ -37,6 +37,17 @@ require_once __DIR__ . '/config/mailer.php';
 require_once __DIR__ . '/config/stock.php';
 require_once __DIR__ . '/config/rate_limiter.php';
 require_once __DIR__ . '/helpers/contact_validation.php';
+require_once __DIR__ . '/helpers/numeric_validation.php';
+
+set_exception_handler(function (Throwable $error) {
+    error_log(sprintf(
+        '[HighlandFresh uncaught] %s in %s:%d',
+        $error->getMessage(),
+        $error->getFile(),
+        $error->getLine()
+    ));
+    Response::error('An unexpected server error occurred.', 500);
+});
 
 // Get request method (with method override support for nginx)
 $requestMethod = $_SERVER['REQUEST_METHOD'];

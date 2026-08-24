@@ -576,7 +576,9 @@
             const cls = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type];
             const t = document.createElement('div');
             t.className = `alert ${cls} shadow-lg`;
-            t.innerHTML = `<span>${msg}</span>`;
+            const text = document.createElement('span');
+            text.textContent = String(msg ?? '');
+            t.appendChild(text);
             container.appendChild(t);
             setTimeout(() => t.remove(), 3000);
         }
@@ -677,13 +679,13 @@
                     }
                     table.innerHTML = items.map(d => `
                         <tr>
-                            <td><span class="font-mono text-xs">${d.disposal_code}</span></td>
+                            <td><span class="font-mono text-xs">${escapeHtml(d.disposal_code || '-')}</span></td>
                             <td>${formatDateLocal(d.created_at)}</td>
-                            <td><span class="badge badge-sm">${categoryLabels[d.disposal_category] || d.disposal_category}</span></td>
-                            <td><div class="font-medium text-sm">${d.product_name || '-'}</div><div class="text-xs text-base-content/60">${d.source_reference || ''}</div></td>
-                            <td class="text-right">${parseFloat(d.quantity).toLocaleString()} ${d.unit}</td>
+                            <td><span class="badge badge-sm">${escapeHtml(categoryLabels[d.disposal_category] || d.disposal_category || '-')}</span></td>
+                            <td><div class="font-medium text-sm">${escapeHtml(d.product_name || '-')}</div><div class="text-xs text-base-content/60">${escapeHtml(d.source_reference || '')}</div></td>
+                            <td class="text-right">${parseFloat(d.quantity).toLocaleString()} ${escapeHtml(d.unit || '')}</td>
                             <td class="text-right font-semibold text-error">${formatCurrencyLocal(d.total_value)}</td>
-                            <td>${statusBadges[d.status] || d.status}</td>
+                            <td>${statusBadges[d.status] || escapeHtml(d.status || '-')}</td>
                             <td class="text-center">${getActionButtons(d)}</td>
                         </tr>
                     `).join('');
@@ -693,7 +695,7 @@
 
         function getActionButtons(d) {
             let btns = `<button class="btn btn-ghost btn-xs" onclick="viewDisposal(${d.id})"><i class="fas fa-eye"></i></button>`;
-            if (d.status === 'pending' && (userRole === 'general_manager' || userRole === 'admin')) {
+            if (d.status === 'pending' && userRole === 'general_manager') {
                 btns += `<button class="btn btn-success btn-xs" onclick="openApprovalModal(${d.id})"><i class="fas fa-check"></i></button>`;
             }
             if (d.status === 'approved') {
@@ -1002,7 +1004,7 @@
                 // Footer: review actions only while Pending
                 const actions = document.getElementById('disposalDetailActions');
                 const closeBtn = document.getElementById('btnDisposalDetailClose');
-                const canReview = ['general_manager', 'admin'].includes(userRole);
+                const canReview = userRole === 'general_manager';
                 const isPending = d.status === 'pending';
                 const isTerminal = ['completed', 'rejected', 'cancelled'].includes(d.status);
 
@@ -1127,11 +1129,16 @@
                         return;
                     }
 
-                    sourceSelect.innerHTML = '<option value="">Select an item to dispose...</option>';
-                    availableSources.forEach(s => {
+                    sourceSelect.replaceChildren(new Option('Select an item to dispose...', ''));
+                    availableSources.forEach((s, index) => {
                         const expiryInfo = s.expiry_date ? ` (Exp: ${formatDateLocal(s.expiry_date)})` : '';
                         const statusInfo = s.status === 'Expired' ? ' ⚠️ EXPIRED' : (s.status === 'Expiring Soon' ? ' ⚠️ EXPIRING SOON' : '');
-                        sourceSelect.innerHTML += `<option value="${s.source_id}" data-index="${availableSources.indexOf(s)}">${s.display_name} - ${parseFloat(s.available_quantity).toLocaleString()} ${s.unit} available${expiryInfo}${statusInfo}</option>`;
+                        const option = new Option(
+                            `${s.display_name || 'Item'} - ${Number(s.available_quantity || 0).toLocaleString()} ${s.unit || ''} available${expiryInfo}${statusInfo}`,
+                            String(Number(s.source_id) || '')
+                        );
+                        option.dataset.index = String(index);
+                        sourceSelect.add(option);
                     });
 
                     hintLabel.innerHTML = `<span class="label-text-alt text-success">${availableSources.length} items available</span>`;

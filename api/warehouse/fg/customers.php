@@ -12,6 +12,7 @@
  */
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/plain_text.php';
 
 // Require Warehouse FG role
 $currentUser = Auth::requireRole(['warehouse_fg', 'general_manager', 'sales_custodian']);
@@ -133,6 +134,10 @@ function handleGet($db, $action) {
 
 function handlePost($db, $action, $currentUser) {
     $data = getRequestBody();
+    $data = hfPlainTextFields($data, [
+        'name' => [160, false], 'contact_person' => [160, false],
+        'address' => [500, true],
+    ]);
     
     if ($action === 'create') {
         $contactCheck = hfValidateContactPayload($data, ['phone', 'contact_number'], 'email');
@@ -140,6 +145,9 @@ function handlePost($db, $action, $currentUser) {
             Response::validationError($contactCheck['errors']);
         }
         $data = $contactCheck['data'];
+        if (!hfPersonNameHasLetter($data['contact_person'] ?? '', true)) {
+            Response::validationError(['contact_person' => 'Contact person must contain at least one letter when provided']);
+        }
 
         $required = ['name', 'customer_type'];
         foreach ($required as $field) {
@@ -183,11 +191,18 @@ function handlePost($db, $action, $currentUser) {
 
 function handlePut($db, $action, $currentUser) {
     $data = getRequestBody();
+    $data = hfPlainTextFields($data, [
+        'name' => [160, false], 'contact_person' => [160, false],
+        'address' => [500, true],
+    ]);
     $contactCheck = hfValidateContactPayload($data, ['phone', 'contact_number'], 'email');
     if (!empty($contactCheck['errors'])) {
         Response::validationError($contactCheck['errors']);
     }
     $data = $contactCheck['data'];
+    if (array_key_exists('contact_person', $data) && !hfPersonNameHasLetter($data['contact_person'], true)) {
+        Response::validationError(['contact_person' => 'Contact person must contain at least one letter when provided']);
+    }
     $id = getParam('id') ?? ($data['id'] ?? null);
     
     if (!$id) {

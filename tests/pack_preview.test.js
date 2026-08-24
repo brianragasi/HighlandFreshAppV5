@@ -40,15 +40,9 @@ function test(name, fn) { tests.push({ name, fn }); }
 
 // ----------------------------------------------------------------------
 // Headline case from the professor's complaint:
-// "0.11 L of cultures" should round up to 2 packets when pack = 100 mL.
-// Note: backend stores recipe quantity in L (e.g. 0.011 L per 100 L of milk)
-// and the pack size in mL (e.g. 100 mL packet) — so the units differ in
-// the seed data. The real backend JOIN keeps the ingredient's base unit
-// (L) for the quantity and uses the pack_size_unit (mL) for the pack.
-// Our conversion test below assumes the cataloguer is responsible for
-// keeping the pack_size_unit in the SAME family as unit_of_measure.
-// That is documented in the SQL migration comment and is the
-// intentional v1 design (see plan Q1/Q2).
+// "0.11 L of cultures" should round up to 2 packets when one packet
+// contains 0.1 liter. Both values are stored in the ingredient's stock
+// unit. "100 mL packet" is only the employee-friendly display label.
 // ----------------------------------------------------------------------
 
 test('professor scenario: 0.11 L cultures -> 2 packs (pack = 0.1 L)', () => {
@@ -56,19 +50,14 @@ test('professor scenario: 0.11 L cultures -> 2 packs (pack = 0.1 L)', () => {
   assert.strictEqual(suggestPacks(0.11, 0.1), 2);
 });
 
-test('professor scenario: 0.11 L cultures -> "2 packs from 0.11 L · 1 pack = 0.1 L"', () => {
-  const line = previewLine(0.11, 'L', 0.1, 'L', null, null);
-  assert.strictEqual(line, '2 packs from 0.11 L · 1 pack = 0.1 L');
+test('professor scenario: 0.11 liter cultures -> clear same-unit preview', () => {
+  const line = previewLine(0.11, 'liter', 0.1, 'liter', null, null);
+  assert.strictEqual(line, '2 packs from 0.11 liter · 1 pack = 0.1 liter');
 });
 
 test('professor scenario: with custom label "100 mL packet"', () => {
-  // The user would normally set pack_size_unit=ml, pack_label="100 mL packet"
-  // and unit_of_measure=L. In v1 we keep both in the same family; the
-  // cataloguer would set pack_size_value=0.1, pack_size_unit=L OR
-  // 100, pack_size_unit=ml depending on the unit_of_measure. Both are
-  // valid; the math is the same.
-  const line = previewLine(0.11, 'L', 0.1, 'L', '100 mL packet', null);
-  assert.strictEqual(line, '2 packs from 0.11 L · 100 mL packet');
+  const line = previewLine(0.11, 'liter', 0.1, 'liter', '100 mL packet', null);
+  assert.strictEqual(line, '2 packs from 0.11 liter · 100 mL packet');
 });
 
 // ----------------------------------------------------------------------

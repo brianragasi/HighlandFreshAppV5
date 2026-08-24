@@ -173,9 +173,11 @@ function handleCustomerOrderInboxGet(PDO $db, string $action): void
     if ($action === 'summary') {
         $summary = $db->query("
             SELECT
-                SUM(status IN ('received', 'for_encoding')) AS for_encoding,
+                SUM(status IN ('received', 'for_encoding')
+                    OR (status IN ('customer_confirmed', 'ready_to_create', 'ready') AND source_verified_at IS NULL)) AS for_encoding,
                 SUM(status = 'needs_customer_confirmation') AS needs_confirmation,
-                SUM(status IN ('customer_confirmed', 'ready_to_create', 'ready')) AS ready_to_create,
+                SUM(status IN ('customer_confirmed', 'ready_to_create', 'ready')
+                    AND source_verified_at IS NOT NULL) AS ready_to_create,
                 SUM(status = 'rejected') AS rejected,
                 SUM(status IN ('received', 'for_encoding', 'draft_order', 'needs_customer_confirmation',
                     'customer_confirmed', 'ready_to_create', 'needs_review', 'ready')) AS needs_action
@@ -198,6 +200,18 @@ function handleCustomerOrderInboxGet(PDO $db, string $action): void
                    c.name AS customer_name,
                    c.customer_code,
                    c.customer_type,
+                   c.contact_person AS customer_contact_person,
+                   c.contact_number AS customer_contact_number,
+                   c.address AS customer_address,
+                   c.default_payment_type,
+                   c.payment_terms_days,
+                   c.credit_limit,
+                   c.current_balance,
+                   (SELECT COALESCE(SUM(dr.total_amount - dr.amount_paid), 0)
+                    FROM delivery_receipts dr
+                    WHERE dr.customer_id = c.id
+                      AND dr.payment_status != 'paid'
+                      AND dr.status NOT IN ('cancelled', 'draft')) AS outstanding_balance,
                    so.order_number,
                    so.status AS sales_order_status
             FROM customer_order_imports coi
@@ -264,8 +278,8 @@ function handleCustomerOrderInboxGet(PDO $db, string $action): void
                coi.attachment_original_name, coi.attachment_path, coi.status,
                coi.issue_count, coi.warning_count, coi.error_message,
                coi.sales_order_id, coi.imported_by, coi.reviewed_by, coi.reviewed_at,
-               coi.created_at, coi.updated_at, coi.entered_delivery_date,
-               coi.entry_saved_by, coi.entry_saved_at,
+                coi.created_at, coi.updated_at, coi.entered_delivery_date,
+                coi.entry_saved_by, coi.entry_saved_at, coi.source_verified_at,
                c.name AS customer_name,
                c.customer_code,
                so.order_number,
@@ -317,7 +331,8 @@ function handleCustomerOrderInboxPost(PDO $db, string $action, array $currentUse
     if ($action === 'confirm') {
         $id = (int) getParam('id', 0);
         $acceptWarnings = filter_var(getParam('accept_warnings', false), FILTER_VALIDATE_BOOLEAN);
-        $order = hfConvertCustomerOrderImport($db, $id, $userId, $acceptWarnings);
+        $creditOverrideReason = trim((string) getParam('credit_override_reason', ''));
+        $order = hfConvertCustomerOrderImport($db, $id, $userId, $acceptWarnings, $creditOverrideReason);
         Response::success($order, 'Sales Order created from the reviewed customer PO.', 201);
     }
 

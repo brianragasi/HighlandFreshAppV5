@@ -559,10 +559,26 @@ function handlePost($db, $action, $currentUser) {
                 }
             }
             
-            $amountPaid = floatval($data['amount_paid'] ?? 0);
+            try {
+                $amountPaid = hfParseBusinessDecimal(
+                    $data['amount_paid'] ?? 0,
+                    'Amount paid',
+                    0.00,
+                    9999999999.99,
+                    2
+                );
+                $discountPercent = hfParseBusinessDecimal(
+                    $data['discount_percent'] ?? 0,
+                    'Discount percent',
+                    0.00,
+                    100.00,
+                    2
+                );
+            } catch (InvalidArgumentException $error) {
+                Response::validationError(['payment' => $error->getMessage()]);
+            }
             $customerName = $data['customer_name'] ?? 'Walk-in Customer';
             $customerId = $data['customer_id'] ?? null;
-            $discountPercent = floatval($data['discount_percent'] ?? 0);
             $notes = $data['notes'] ?? null;
             
             try {
@@ -573,12 +589,16 @@ function handlePost($db, $action, $currentUser) {
                 $itemsData = [];
                 
                 foreach ($data['items'] as $item) {
-                    if (empty($item['product_id']) || empty($item['quantity']) || !isset($item['unit_price'])) {
-                        throw new Exception('Each item must have product_id, quantity, and unit_price');
+                    if (empty($item['product_id']) || empty($item['quantity'])) {
+                        throw new Exception('Each item must have a product and quantity');
                     }
                     
                     // Verify product exists and get details
-                    $prodStmt = $db->prepare("SELECT id, product_code, product_name, variant FROM products WHERE id = ?");
+                    $prodStmt = $db->prepare("
+                        SELECT id, product_code, product_name, variant, selling_price, unit_price
+                        FROM products
+                        WHERE id = ? AND is_active = 1
+                    ");
                     $prodStmt->execute([$item['product_id']]);
                     $product = $prodStmt->fetch();
                     
@@ -586,9 +606,33 @@ function handlePost($db, $action, $currentUser) {
                         throw new Exception("Product not found: {$item['product_id']}");
                     }
                     
-                    $quantity = intval($item['quantity']);
-                    $unitPrice = floatval($item['unit_price']);
+                    try {
+                        $quantity = hfParseBusinessInteger(
+                            $item['quantity'],
+                            "Quantity for {$product['product_name']}",
+                            1,
+                            1000000
+                        );
+                        // The saved product master is authoritative. A browser
+                        // request cannot replace the selling price used by POS.
+                        $savedPrice = $product['selling_price'];
+                        if ($savedPrice === null || $savedPrice === '' || (float) $savedPrice <= 0) {
+                            $savedPrice = $product['unit_price'] ?? null;
+                        }
+                        $unitPrice = hfParseBusinessDecimal(
+                            $savedPrice,
+                            "Selling price for {$product['product_name']}",
+                            0.01,
+                            9999999999.99,
+                            2
+                        );
+                    } catch (InvalidArgumentException $error) {
+                        throw new Exception($error->getMessage());
+                    }
                     $lineTotal = $quantity * $unitPrice;
+                    if (!is_finite($lineTotal) || $lineTotal > 9999999999.99) {
+                        throw new Exception("The total for {$product['product_name']} is outside the supported sales range");
+                    }
                     $subtotal += $lineTotal;
                     
                     $itemsData[] = [
@@ -605,6 +649,10 @@ function handlePost($db, $action, $currentUser) {
                 // Calculate discount and total
                 $discountAmount = $subtotal * ($discountPercent / 100);
                 $totalAmount = $subtotal - $discountAmount;
+                if (!is_finite($subtotal) || $subtotal > 9999999999.99
+                    || !is_finite($totalAmount) || $totalAmount < 0 || $totalAmount > 9999999999.99) {
+                    throw new Exception('Sale total is outside the supported range');
+                }
                 
                 // Validate payment
                 if ($amountPaid < $totalAmount) {

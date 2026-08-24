@@ -353,15 +353,16 @@
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
-    <script src="../../js/security/role-guard.js" data-allowed-roles="purchaser,general_manager"></script>
+    <script src="../../js/security/role-guard.js" data-allowed-roles="purchaser,finance_officer,general_manager"></script>
     <script src="../../js/purchasing/purchasing.service.js"></script>
+    <script src="../../js/finance/finance.service.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             if (!AuthService.isAuthenticated()) {
                 window.location.href = '../login.html';
                 return;
             }
-            setupPrintControls(['purchaser', 'general_manager']);
+            setupPrintControls(['purchaser', 'finance_officer', 'general_manager']);
 
             const params = new URLSearchParams(window.location.search);
             const poId = params.get('po_id');
@@ -371,7 +372,10 @@
             }
 
             try {
-                const response = await PurchasingService.getPurchaseOrderDetail(poId);
+                const signedInUser = AuthService.getCurrentUser();
+                const response = signedInUser?.role === 'finance_officer'
+                    ? await FinanceService.getPayableDetail(poId)
+                    : await PurchasingService.getPurchaseOrderDetail(poId);
                 const po = response?.data;
                 if (!po) {
                     document.getElementById('itemsBody').innerHTML = '<tr><td colspan="9" class="right">PO not found</td></tr>';
@@ -443,7 +447,7 @@
                                 <td>${idx + 1}</td>
                                 <td>${escapeHtml(item.ingredient_name || item.mro_item_name || item.item_description || '-')}</td>
                                 <td>${escapeHtml(item.item_description || '-')}</td>
-                                <td>${item.unit || '-'}</td>
+                                <td>${escapeHtml(item.unit || '-')}</td>
                                 <td class="right">${parseFloat(item.quantity || 0).toFixed(2)}</td>
                                 <td class="right">${parseFloat(item.quantity || 0).toFixed(2)}</td>
                                 <td class="right">${formatCurrency(item.unit_price || 0)}</td>

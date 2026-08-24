@@ -1,317 +1,274 @@
-# Purchaser Module - Testing Guide
+# Purchaser Module Manual Testing Guide
 
-## Prerequisites
+This guide follows the current purchasing rule: routine partner prices are recorded during supplier accreditation. The Purchaser reviews those saved prices instead of typing three new quotes for every request.
 
-1. **Run the SQL migration** to add new tables and columns:
-   ```sql
-   -- Execute: sql/purchaser_enhancements.sql
-   SOURCE c:/xampp/htdocs/HighlandFreshAppV4/sql/purchaser_enhancements.sql;
-   ```
+## People Needed
 
-2. **User accounts required:**
-   - Purchaser role: For creating POs, canvassing
-   - General Manager role: For approvals
+- General Manager
+- Warehouse Raw custodian
+- Purchaser
+- Finance Officer
 
----
+## Test Data Setup
 
-## Complete Workflow Test
+Log in as the General Manager before testing a purchase request.
 
-### Phase 1: Trigger (Low Stock → Automatic Alert)
+1. Open **Suppliers**.
+2. Register or edit an accredited supplier.
+3. Choose every ingredient that the supplier is allowed to provide.
+4. Choose whether this supplier sells each item directly or in a package.
+5. For packaged items, enter the package type, amount inside it, unit, and quoted package price. For direct items, enter the price per Warehouse stock unit.
+6. Confirm the preview shows the fair comparison price per Warehouse stock unit, then save.
+7. Repeat only when another real approved supplier also provides the ingredient.
 
-**Currently in system:** Material requisitions are created manually or from production runs when ingredient stock is low.
+Expected result:
 
-**Test Steps:**
-1. Login as **Production Staff**
-2. Navigate to Production → Material Requisitions
-3. Create a new requisition with:
-   - Select ingredient (e.g., Fresh Milk)
-   - Quantity needed
-   - Priority: High
-   - Purpose: "Running low for production"
-4. Submit requisition → Status becomes "pending"
+- One supplier is allowed.
+- Two suppliers are allowed.
+- Three or more suppliers are allowed.
+- A chosen ingredient cannot be saved without an agreed price.
 
-*The Purchaser will see this in their dashboard.*
+## Complete Purchase Flow
 
----
+### 1. Warehouse Raw Creates the PRS
 
-### Phase 2: Validate (Canvassing - Rule of 3 Quotes)
+1. Log in as **Warehouse Raw**.
+2. Open **Purchase Requests**.
+3. Open **Build PR from low stock**.
+4. Select every item found during the same stock check.
+5. Click **Create one PRS**.
+6. Enter the physical quantity counted for every selected item.
+7. Check the requested quantities and submit the PRS.
 
-**Test Steps:**
-1. Login as **Purchaser**
-2. Navigate to Purchasing → Canvassing (if page exists) or use API directly
+Expected result:
 
-**API Test - Create Canvass:**
-```javascript
-// Browser console (on login page after auth)
-fetch('/api/purchasing/canvassing.php?action=create', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + localStorage.getItem('token')
-    },
-    body: JSON.stringify({
-        item_type: 'ingredient',
-        item_id: 1,            // ID of ingredient
-        quantity: 100,
-        unit: 'liters',
-        remarks: 'Need quotes for fresh milk'
-    })
-}).then(r => r.json()).then(console.log);
-```
+- The PRS appears in the Purchaser inbox.
+- Several items from the same stock check appear in one PRS instead of several one-item slips.
+- The original system balance and the physical count remain visible.
+- A second pending PRS for the same item is blocked.
 
-**API Test - Add Quotes (Rule of 3):**
-```javascript
-// Add 3 quotes from different suppliers
-fetch('/api/purchasing/canvassing.php?action=add_quote', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + localStorage.getItem('token')
-    },
-    body: JSON.stringify({
-        canvass_id: 1,         // From create response
-        supplier_id: 1,
-        unit_price: 55.00,
-        delivery_days: 2,
-        remarks: 'Best price, quick delivery'
-    })
-}).then(r => r.json()).then(console.log);
+### 2. Purchaser Reviews Registered Suppliers
 
-// Repeat for 2 more suppliers with different prices
-```
+1. Log in as **Purchaser**.
+2. Open **Supplier Review**.
+3. Select the related Warehouse PRSs. Use **Select all** when the whole queue belongs to the same review.
+4. Choose **Review selected** once.
+5. Check the source PRS number beside every requested item, then review the one compact table.
 
-**API Test - Select Winner:**
-```javascript
-fetch('/api/purchasing/canvassing.php?action=select_quote', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + localStorage.getItem('token')
-    },
-    body: JSON.stringify({
-        canvass_id: 1,
-        quote_id: 2    // The winning quote ID
-    })
-}).then(r => r.json()).then(console.log);
-```
+Expected result:
 
----
+- Every requested item appears once.
+- The system shows only suppliers accredited for that item.
+- Saved agreed prices appear automatically.
+- The lowest valid price is recommended automatically.
+- The Purchaser does not type routine supplier prices again.
+- The Purchaser does not open each selected PRS separately.
 
-### Phase 3: Draft PO (With Payment Terms)
+### 3. Check the Single-Supplier Case
 
-**Test Steps:**
-1. Login as **Purchaser**
-2. Navigate to Purchasing → Purchase Orders
-3. Click **New Purchase Order**
-4. Fill in:
-   - **Supplier**: Select from dropdown (preferably the canvass winner)
-   - **Order Date**: Today
-   - **Delivery Address**: Warehouse address
-   - **Payment Terms**: Select one:
-     - Cash (COD)
-     - Credit 7 Days
-     - Credit 15 Days
-     - Credit 30 Days
-     - Credit 45 Days
-     - Credit 60 Days
-   - **Linked Requisition** (optional): Select a pending requisition
-5. Add items:
-   - Item Type: Ingredient
-   - Item: Fresh Milk
-   - Quantity: 100
-   - Unit: liters
-   - Unit Price: 55.00 (from canvass)
-6. Click **Create PO**
-7. **Expected**: PO created with status "draft"
+Use an ingredient that has only one accredited supplier with an agreed price.
 
-**Verify in Database:**
-```sql
-SELECT po_number, payment_terms, due_date, requisition_id, status 
-FROM purchase_orders 
-ORDER BY id DESC LIMIT 1;
-```
+Expected result:
 
----
+- The item is marked ready.
+- The page states that one approved partner is available.
+- The Purchaser is not forced to invent two more quotes.
+- The limited market is recorded automatically for GM review.
 
-### Phase 4: Submit for Approval
+### 4. Check the Multiple-Supplier Case
 
-**Test Steps:**
-1. Still as **Purchaser**
-2. In PO list, find the draft PO
-3. Click **Submit** button
-4. **Expected**: Status changes to "pending"
+Use an ingredient supplied by two or more accredited suppliers with saved prices.
 
----
+Expected result:
 
-### Phase 5: GM Approval
+- All saved partner prices can be viewed.
+- The cheapest supplier is recommended.
+- If two suppliers have the same price, the faster delivery is recommended.
 
-**Test Steps:**
-1. Login as **General Manager**
-2. Navigate to Admin → Approvals Dashboard (`/html/admin/gm_approvals.html`)
-3. You should see:
-   - Stats: Pending POs count, Pending Requisitions
-   - List of pending POs with details
-   - Approve/Reject buttons
-4. Click **Approve** on the test PO
-5. **Expected**: PO status becomes "approved"
+To test an exception:
 
-**Alternative - Reject:**
-1. Click **Reject**
-2. Enter reason: "Price too high, renegotiate"
-3. **Expected**: PO status becomes "rejected"
+1. Choose a supplier other than the recommendation.
+2. Enter the business reason, such as faster delivery or better availability.
 
----
+Expected result:
 
-### Phase 6: Mark Ordered / Received (with Price Updates)
+- The new supplier is saved only after a reason is entered.
+- The reason is sent to the GM with the PO.
 
-**Test Steps:**
-1. Login as **Purchaser**
-2. Navigate to Purchase Orders
-3. Find the approved PO
-4. Click **Mark as Ordered** → Status becomes "ordered"
-5. When goods arrive, click **Mark as Received**
-6. **NEW: Receive Modal appears** with:
-   - List of items
-   - Current price (from PO)
-   - Actual price paid (editable)
-7. If prices changed, update the actual amounts
-8. Click **Confirm Receive**
-9. **Expected**:
-   - PO status becomes "received"
-   - If prices differ, new record in `ingredient_price_history`
-   - Ingredient `market_price` and `last_price_update` updated
+### 5. Create and Send the POs
 
-**Verify Price History:**
-```sql
-SELECT iph.*, i.name as ingredient_name, s.name as supplier_name
-FROM ingredient_price_history iph
-JOIN ingredients i ON iph.ingredient_id = i.id
-LEFT JOIN suppliers s ON iph.supplier_id = s.id
-ORDER BY iph.created_at DESC LIMIT 5;
-```
+1. Confirm that every requested item says **Ready**.
+2. Enter the expected delivery date.
+3. Click **Create & Send to GM** once.
 
----
+Expected result:
 
-### Phase 7: Trend Monitoring (Price Alerts)
+- Items for the same supplier are placed on one PO.
+- Items for different suppliers create separate POs.
+- All created POs are sent to the GM in the same action.
+- The Purchaser does not submit each draft PO one by one.
 
-**Test Steps:**
-1. Login as **General Manager**
-2. Navigate to Approvals Dashboard
-3. Scroll to **Recent Price Changes** section
-4. If prices changed significantly (±10%), alerts will appear
+### 6. GM Reviews the POs
 
-**API Test - Get Price Alerts:**
-```javascript
-fetch('/api/admin/gm_approvals.php?action=price_alerts', {
-    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
-}).then(r => r.json()).then(console.log);
-```
+1. Log in as **General Manager**.
+2. Open **Pending Approvals**.
+3. Review each PO, its linked PRS, selected supplier, agreed price, and any exception reason.
+4. Approve or reject the PO.
 
-**API Test - Get Price History for Item:**
-```javascript
-fetch('/api/purchasing/canvassing.php?action=price_history&item_type=ingredient&item_id=1', {
-    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
-}).then(r => r.json()).then(console.log);
-```
+Expected result after approval:
 
----
+- The PO is locked as approved.
+- Finance is notified.
+- The approved PO can be printed or emailed to the supplier.
 
-## Quick Test Checklist
+### 7. Warehouse Raw Receives the Delivery
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Create PO with payment terms "credit_30" | PO has payment_terms and due_date calculated |
-| 2 | Link a requisition to PO | requisition_id populated |
-| 3 | Submit PO for approval | Status = "pending" |
-| 4 | GM approves | Status = "approved" |
-| 5 | Purchaser marks received with new price | Price history logged |
-| 6 | GM views price alerts | Shows significant changes |
+1. Log in as **Warehouse Raw**.
+2. Open **Receive Deliveries**.
+3. Select the approved PO.
+4. Check the physical delivery against the PO.
+5. Record accepted quantities, rejected quantities, invoice details, and batch information.
+6. Generate the Receiving Report.
 
----
+Expected result:
 
-## Troubleshooting
+- Accepted stock is added to inventory.
+- The Receiving Report remains linked to the PO.
+- Missing or damaged quantities are recorded instead of silently accepted.
 
-### Error: Table doesn't exist
-Run the SQL migration:
-```bash
-mysql -u root highland_fresh < sql/purchaser_enhancements.sql
-```
+### 8. Purchaser Verifies the Receiving Report
 
-### Error: Column payment_terms unknown
-Check if ALTER TABLE ran:
-```sql
-DESCRIBE purchase_orders;
--- Should show: payment_terms, due_date, requisition_id columns
-```
+1. Log back in as **Purchaser**.
+2. Open **Purchase Orders**.
+3. Open the received PO.
+4. Click **Verify RR**.
+5. Compare ordered and received quantities, then confirm or report a mismatch.
 
-### GM Approval page shows "Access denied"
-- Ensure logged-in user has `role = 'general_manager'`
-- Check users table:
-```sql
-SELECT id, username, role FROM users WHERE role = 'general_manager';
-```
+Expected result:
 
-### Price history not recording
-- Check that ingredient_price_history table exists
-- Verify the receive_with_prices action is being called (check network tab)
+- A matching RR closes the purchasing transaction.
+- A mismatch remains open for correction.
+- Finance can see the PO, RR, invoice, and payment state.
 
----
+## Important Failure Tests
 
-## Sample Data for Testing
+### Missing Agreed Price
 
-**Create a test supplier:**
-```sql
-INSERT INTO suppliers (name, contact_person, phone, email, status, created_at)
-VALUES ('Test Supplier A', 'Juan Dela Cruz', '09171234567', 'supplier@test.com', 'active', NOW());
-```
+Remove the agreed price from one selected supplier-item agreement, then open a PRS for that ingredient.
 
-**Create test ingredient:**
-```sql
-INSERT INTO ingredients (code, name, unit, current_stock, reorder_level, market_price, status)
-VALUES ('ING-TEST', 'Test Ingredient', 'kg', 50, 100, 45.00, 'active');
-```
+Expected result: PO creation is blocked and the page tells the user that the GM must complete the supplier agreement.
 
-**Quick PO via API:**
-```javascript
-const createPO = async () => {
-    const resp = await fetch('/api/purchasing/purchase_orders.php?action=create', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + localStorage.getItem('token')
-        },
-        body: JSON.stringify({
-            supplier_id: 1,
-            order_date: new Date().toISOString().split('T')[0],
-            delivery_address: 'Highland Fresh Warehouse',
-            payment_terms: 'credit_30',
-            items: [{
-                item_type: 'ingredient',
-                item_id: 1,
-                item_code: 'ING-001',
-                item_description: 'Fresh Milk',
-                quantity: 100,
-                unit: 'liters',
-                unit_price: 55.00,
-                total_amount: 5500.00
-            }]
-        })
-    });
-    console.log(await resp.json());
-};
-createPO();
-```
+### Supplier Not Accredited for the Item
 
----
+Try to submit a supplier that is not linked to the requested ingredient.
 
-## Files Modified/Created
+Expected result: the system rejects the choice.
 
-| File | Type | Description |
-|------|------|-------------|
-| `sql/purchaser_enhancements.sql` | New | Migration script |
-| `api/purchasing/purchase_orders.php` | Modified | Payment terms, receive_with_prices |
-| `api/purchasing/canvassing.php` | New | Canvass/quote management |
-| `api/admin/gm_approvals.php` | New | GM approval dashboard API |
-| `js/purchasing/purchasing.service.js` | Modified | New service methods |
-| `html/purchasing/purchase_orders.html` | Modified | Payment terms UI, receive modal |
-| `html/admin/gm_approvals.html` | New | GM approval dashboard page |
+### Changed Price in the Browser
+
+Try to change the PO price using browser tools before submission.
+
+Expected result: the server rejects the changed price because it does not match the reviewed supplier agreement.
+
+### Missing Exception Reason
+
+Choose a non-recommended supplier and leave the reason empty.
+
+Expected result: the supplier change is not saved.
+
+## Plain-English Panel Explanation
+
+The General Manager controls which suppliers are accredited, which ingredients they provide, and their agreed prices. Warehouse Raw puts items found during one stock check into one Purchase Request Slip. If several slips are waiting, Purchasing reviews all of them together while every item keeps its original PRS number. The system compares the registered partner prices and recommends the best valid supplier. One or two suppliers are acceptable when that is the real market. One action creates the required Purchase Orders and sends them to the General Manager for approval.
+
+## Complete Multi-Item PO Demonstration
+
+Use this walkthrough when you need to show the whole process from low stock to completed receiving.
+
+### Prepared Demo Data
+
+The following items are intentionally below their minimum stock:
+
+| Item | Current | Minimum | Status |
+|---|---:|---:|---|
+| Chocolate Powder X | 42 kg | 50 kg | Critical |
+| Chocolate Syrup | 16 liters | 30 liters | Critical |
+| Food-Grade Alcohol | 12 liters | 25 liters | Critical |
+
+Ian Gao Trading and Elixir Industries are both approved to supply all three items. Their saved prices are different so the supplier decision is easy to explain.
+
+### 1. Purchaser Creates One PO With Several Items
+
+1. Log in as **Purchaser**.
+2. Open **Dashboard** and point out the three items in **Critical Stocks**.
+3. Open **Purchase Orders**.
+4. Click **New PO**.
+5. Choose **Ian Gao Trading**.
+6. Add Chocolate Powder X, Chocolate Syrup, and Food-Grade Alcohol as three rows in the same PO.
+7. Enter the quantities. The unit, saved price, each row total, and full PO total are shown automatically.
+8. Click **Submit for GM Approval**.
+
+Expected result:
+
+- Only one PO is created.
+- The PO contains all three items.
+- Its status is **Pending GM Approval**.
+- Warehouse cannot receive it yet.
+
+### 2. GM Approves and Sends the PO
+
+1. Log out and log in as **General Manager**.
+2. Open **Pending Approvals**.
+3. Open the new PO and check the supplier, all three items, quantities, prices, and total.
+4. Click **Approve**.
+
+Expected result:
+
+- The PO becomes **Approved / Sent**.
+- The approved PDF is emailed automatically to the supplier's registered email address.
+- The approved quantities and prices are locked.
+
+### 3. Warehouse Records a Partial Delivery
+
+1. Log out and log in as **Warehouse Raw**.
+2. Open **Receive Deliveries**.
+3. Open the approved PO.
+4. For the first delivery, enter less than the ordered quantity for one or more items.
+5. Enter the supplier invoice information and expiry date for perishable batches.
+6. Click **Confirm Receiving**.
+
+Expected result:
+
+- A Receiving Report is created.
+- Only the accepted quantities are added to inventory.
+- The PO becomes **Partially Received**.
+- The remaining quantities stay open for another delivery.
+
+### 4. Warehouse Completes the Delivery
+
+1. Open the same PO again in **Receive Deliveries**.
+2. Enter the remaining quantities and their batch details.
+3. Click **Confirm Receiving**.
+
+Expected result:
+
+- A second Receiving Report is created.
+- Inventory increases by the second accepted delivery only.
+- The PO becomes **Fully Received**.
+
+### 5. Purchaser Performs the Final Check
+
+1. Log back in as **Purchaser**.
+2. Open **Purchase Orders** and open the received PO.
+3. Click **Verify RR**.
+4. Compare the PO with all Receiving Reports, then confirm the match.
+
+Expected result:
+
+- The transaction becomes **Completed**.
+- Both Receiving Reports remain linked to the PO.
+- The final received total equals the ordered total.
+- Finance can see the approved PO, receiving records, invoice, and unpaid balance.
+
+### Verified Example
+
+The complete walkthrough was run with PO **5316**. It contained three items, was approved by the GM, emailed to the supplier, received in two deliveries under **RR-202608-0006** and **RR-202608-0007**, and completed only after the Purchaser verified the final Receiving Report.

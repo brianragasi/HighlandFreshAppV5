@@ -94,6 +94,15 @@ const ProductionService = {
         return await api.put(`${this.baseUrl}/runs.php`, { id, action: 'update_status', status });
     },
 
+    /** Send the planned SKU allocation to Warehouse for physical issue. */
+    async requestPackagingMaterials(id, packagingItems) {
+        return await api.put(`${this.baseUrl}/runs.php`, {
+            id,
+            action: 'request_packaging',
+            packaging_items: packagingItems,
+        });
+    },
+
     /**
      * Complete a production run with packaging output
      * @param {number} id - Run ID

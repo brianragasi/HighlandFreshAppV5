@@ -14,6 +14,7 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/customer_accounts.php';
 
 // Require Sales Custodian or GM role
 $currentUser = Auth::requireRole(['sales_custodian', 'general_manager']);
@@ -25,6 +26,7 @@ $validPaymentStatuses = ['unpaid', 'partial', 'paid'];
 
 try {
     $db = Database::getInstance()->getConnection();
+    hfEnsureCustomerAccountSchema($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -310,7 +312,7 @@ function handleGet($db, $action) {
                     (dr.total_amount - COALESCE(dr.amount_paid, 0)) as balance_due,
                     dr.payment_status,
                     dr.delivered_at as invoice_date,
-                    DATE_ADD(DATE(COALESCE(dr.delivered_at, dr.created_at)), INTERVAL COALESCE(NULLIF(c.payment_terms_days, 0), 30) DAY) as due_date,
+                    COALESCE(dr.due_date, DATE(COALESCE(dr.delivered_at, dr.created_at))) as due_date,
                     COALESCE(c.name, dr.customer_name) as customer_name,
                     c.customer_code,
                     c.customer_type,
@@ -398,10 +400,19 @@ function handlePost($db, $action, $currentUser) {
             // Generate CSI number
             $csiNumber = generateCSINumber($db);
             
-            // Calculate due date based on payment terms
+            // Preserve the agreement already snapshotted on the DR/order.
             $invoiceDate = $data['invoice_date'] ?? date('Y-m-d');
-            $paymentTermsDays = $customer['payment_terms_days'] ?? 30;
-            $dueDate = date('Y-m-d', strtotime($invoiceDate . " + {$paymentTermsDays} days"));
+            if (!empty($dr['due_date'])) {
+                $dueDate = substr((string) $dr['due_date'], 0, 10);
+            } elseif (!empty($order['due_date'])) {
+                $dueDate = substr((string) $order['due_date'], 0, 10);
+            } else {
+                $dueDate = hfCustomerDueDate(
+                    $invoiceDate,
+                    (string) ($customer['default_payment_type'] ?? 'cash'),
+                    (int) ($customer['payment_terms_days'] ?? 0)
+                );
+            }
             
             $db->beginTransaction();
             

@@ -18,6 +18,7 @@
  */
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/storage_tank_inventory.php';
 
 /**
  * Raw milk business rule: 3-hour use window from gate arrival.
@@ -174,18 +175,7 @@ function expireTankMilkBatches($db, $tankId, $currentUser, $reason = '') {
 
     $totalLossValue = round($totalLossValue, 2);
 
-    $db->prepare("
-        UPDATE storage_tanks
-        SET current_volume = GREATEST(current_volume - ?, 0),
-            updated_at = NOW()
-        WHERE id = ?
-    ")->execute([$totalExpired, $tankId]);
-
-    $db->prepare("
-        UPDATE storage_tanks
-        SET status = 'available'
-        WHERE id = ? AND current_volume <= 0
-    ")->execute([$tankId]);
+    reconcileStorageTankInventory($db, (int) $tankId);
 
     logAudit($currentUser['user_id'], 'expire_tank_milk', 'storage_tanks', $tankId, null, [
         'tank_code' => $tankData['tank_code'],
@@ -248,10 +238,14 @@ function handleGet($db, $currentUser) {
 
             // 3-hour gate-arrival window (not calendar-day shelf life)
             $expiresAt = sqlRawMilkExpiresAtExpr('rmi', 'mr');
+            $ledgerVolumeSql = storageTankLedgerVolumeSql('st.id');
+            $displayStatusSql = storageTankDisplayStatusSql('st');
 
             $sql = "
                 SELECT
                     st.*,
+                    {$ledgerVolumeSql} as current_volume,
+                    {$displayStatusSql} as status,
                     mt.type_code as milk_type_code,
                     mt.type_name as milk_type_name,
                     (SELECT COALESCE(SUM(remaining_liters), 0)
@@ -300,7 +294,7 @@ function handleGet($db, $currentUser) {
             $params = [];
 
             if ($status) {
-                $sql .= " AND st.status = ?";
+                $sql .= " AND {$displayStatusSql} = ?";
                 $params[] = $status;
             }
             if ($tankType) {
@@ -327,8 +321,13 @@ function handleGet($db, $currentUser) {
             }
 
             // Get tank details
+            $ledgerVolumeSql = storageTankLedgerVolumeSql('st.id');
+            $displayStatusSql = storageTankDisplayStatusSql('st');
             $tank = $db->prepare("
-                SELECT st.*, mt.type_code as milk_type_code, mt.type_name as milk_type_name
+                SELECT st.*,
+                       {$ledgerVolumeSql} as current_volume,
+                       {$displayStatusSql} as status,
+                       mt.type_code as milk_type_code, mt.type_name as milk_type_name
                 FROM storage_tanks st
                 LEFT JOIN milk_types mt ON st.milk_type_id = mt.id
                 WHERE st.id = ? AND st.is_active = 1
@@ -526,6 +525,7 @@ function handlePost($db, $currentUser) {
             $db->beginTransaction();
 
             try {
+                reconcileStorageTankInventory($db, (int) $tankId);
                 // Verify tank exists and is available
                 $tank = $db->prepare("SELECT * FROM storage_tanks WHERE id = ? AND is_active = 1");
                 $tank->execute([$tankId]);
@@ -605,15 +605,8 @@ function handlePost($db, $currentUser) {
                 ");
                 $stmt->execute([$tankId, $rawMilkInventoryId]);
 
-                // Update tank current volume and status
-                $stmt = $db->prepare("
-                    UPDATE storage_tanks
-                    SET current_volume = current_volume + ?,
-                        status = 'in_use',
-                        updated_at = NOW()
-                    WHERE id = ?
-                ");
-                $stmt->execute([$rawMilkData['remaining_liters'], $tankId]);
+                // Rebuild the tank cache from the authoritative inventory row.
+                reconcileStorageTankInventory($db, (int) $tankId);
 
                 // Create transaction record
                 $txCode = generateCode('TX');
@@ -724,17 +717,12 @@ function handlePut($db, $currentUser) {
                 Response::error('Invalid status', 400);
             }
 
-            // Check if tank has milk before setting to cleaning/maintenance
-            if (in_array($newStatus, ['cleaning', 'maintenance'])) {
-                $check = $db->prepare("
-                    SELECT current_volume FROM storage_tanks WHERE id = ?
-                ");
-                $check->execute([$id]);
-                $tank = $check->fetch();
-
-                if ($tank && $tank['current_volume'] > 0) {
-                    Response::error('Cannot set tank to ' . $newStatus . ' while it contains milk', 400);
-                }
+            $ledgerVolume = storageTankLedgerVolume($db, (int) $id);
+            if ($ledgerVolume > 0.005 && $newStatus !== 'in_use') {
+                Response::error('A tank containing milk must remain in use', 400);
+            }
+            if ($ledgerVolume <= 0.005 && $newStatus === 'in_use') {
+                Response::error('An empty tank cannot be marked in use', 400);
             }
 
             $updateFields = ['status = ?', 'updated_at = NOW()'];
@@ -826,22 +814,9 @@ function handlePut($db, $currentUser) {
                     ");
                     $stmt->execute([$newRemaining, $newStatus, $batch['id']]);
 
-                    // Update tank volume if milk was in a tank
+                    // Rebuild tank occupancy from the inventory ledger.
                     if ($batch['tank_id']) {
-                        $stmt = $db->prepare("
-                            UPDATE storage_tanks
-                            SET current_volume = current_volume - ?, updated_at = NOW()
-                            WHERE id = ?
-                        ");
-                        $stmt->execute([$issueFromBatch, $batch['tank_id']]);
-
-                        // Check if tank is now empty
-                        $checkTank = $db->prepare("SELECT current_volume FROM storage_tanks WHERE id = ?");
-                        $checkTank->execute([$batch['tank_id']]);
-                        $tankVol = $checkTank->fetch();
-                        if ($tankVol && $tankVol['current_volume'] <= 0) {
-                            $db->prepare("UPDATE storage_tanks SET status = 'available', current_volume = 0 WHERE id = ?")->execute([$batch['tank_id']]);
-                        }
+                        reconcileStorageTankInventory($db, (int) $batch['tank_id']);
                     }
 
                     // Create transaction record
@@ -927,6 +902,8 @@ function handlePut($db, $currentUser) {
             $db->beginTransaction();
 
             try {
+                reconcileStorageTankInventory($db, (int) $fromTankId);
+                reconcileStorageTankInventory($db, (int) $toTankId);
                 // Verify tanks
                 $fromTank = $db->prepare("SELECT * FROM storage_tanks WHERE id = ? AND is_active = 1");
                 $fromTank->execute([$fromTankId]);
@@ -1002,24 +979,9 @@ function handlePut($db, $currentUser) {
 
                 $actualTransferred = $liters - $remainingToTransfer;
 
-                // Update tank volumes
-                $stmt = $db->prepare("
-                    UPDATE storage_tanks SET current_volume = current_volume - ?, updated_at = NOW() WHERE id = ?
-                ");
-                $stmt->execute([$actualTransferred, $fromTankId]);
-
-                $stmt = $db->prepare("
-                    UPDATE storage_tanks SET current_volume = current_volume + ?, status = 'in_use', updated_at = NOW() WHERE id = ?
-                ");
-                $stmt->execute([$actualTransferred, $toTankId]);
-
-                // Check if source tank is now empty
-                $checkTank = $db->prepare("SELECT current_volume FROM storage_tanks WHERE id = ?");
-                $checkTank->execute([$fromTankId]);
-                $tankVol = $checkTank->fetch();
-                if ($tankVol && $tankVol['current_volume'] <= 0) {
-                    $db->prepare("UPDATE storage_tanks SET status = 'available', current_volume = 0 WHERE id = ?")->execute([$fromTankId]);
-                }
+                // Rebuild both cached volumes from the batches actually moved.
+                reconcileStorageTankInventory($db, (int) $fromTankId);
+                reconcileStorageTankInventory($db, (int) $toTankId);
 
                 // Create transaction record
                 $txCode = generateCode('TX');

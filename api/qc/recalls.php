@@ -10,9 +10,10 @@
  */
 
 require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../helpers/plain_text.php';
 
 // Allowed roles for this API
-$allowedRoles = ['qc_officer', 'general_manager', 'admin', 'warehouse_fg', 'sales_custodian'];
+$allowedRoles = ['qc_officer', 'general_manager', 'warehouse_fg', 'sales_custodian'];
 
 // Authenticate
 $currentUser = Auth::requireRole($allowedRoles);
@@ -388,6 +389,12 @@ function getActiveRecalls($db) {
  */
 function handlePostRequest($db, $currentUser) {
     $data = getRequestBody();
+    $data = hfPlainTextFields($data, [
+        'batch_code' => [100, false],
+        'recall_class' => [30, false],
+        'reason' => [1000, true],
+        'evidence_notes' => [2000, true],
+    ]);
     
     // Validate required fields - accept either batch_id or batch_code
     if (empty($data['batch_id']) && empty($data['batch_code'])) {
@@ -661,7 +668,7 @@ function handlePutRequest($db, $currentUser) {
  */
 function approveRecall($db, $recall, $currentUser, $data) {
     // Only GM can approve
-    if (!in_array($currentUser['role'], ['general_manager', 'admin'])) {
+    if ($currentUser['role'] !== 'general_manager') {
         Response::error('Only General Manager can approve recalls', 403);
     }
     
@@ -669,6 +676,8 @@ function approveRecall($db, $recall, $currentUser, $data) {
         Response::error('Recall is not pending approval', 400);
     }
     
+    $approvalNotes = hfPlainText($data['approval_notes'] ?? '', 2000, true);
+
     $stmt = $db->prepare("
         UPDATE batch_recalls 
         SET status = 'approved',
@@ -680,7 +689,7 @@ function approveRecall($db, $recall, $currentUser, $data) {
     
     $stmt->execute([
         currentUserId($currentUser),
-        $data['approval_notes'] ?? null,
+        $approvalNotes !== '' ? $approvalNotes : null,
         $recall['id']
     ]);
 
@@ -703,7 +712,7 @@ function approveRecall($db, $recall, $currentUser, $data) {
  */
 function rejectRecall($db, $recall, $currentUser, $data) {
     // Only GM can reject
-    if (!in_array($currentUser['role'], ['general_manager', 'admin'])) {
+    if ($currentUser['role'] !== 'general_manager') {
         Response::error('Only General Manager can reject recalls', 403);
     }
     
@@ -711,7 +720,8 @@ function rejectRecall($db, $recall, $currentUser, $data) {
         Response::error('Recall is not pending approval', 400);
     }
     
-    if (empty($data['rejection_reason'])) {
+    $rejectionReason = hfPlainText($data['rejection_reason'] ?? '', 2000, true);
+    if ($rejectionReason === '') {
         Response::error('Rejection reason required', 400);
     }
     
@@ -726,7 +736,7 @@ function rejectRecall($db, $recall, $currentUser, $data) {
     
     $stmt->execute([
         currentUserId($currentUser),
-        $data['rejection_reason'],
+        $rejectionReason,
         $recall['id']
     ]);
     
@@ -775,6 +785,13 @@ function logReturn($db, $recall, $currentUser, $data) {
             400
         );
     }
+
+    $allowedConditions = ['good', 'damaged', 'opened', 'spoiled', 'unknown'];
+    $conditionStatus = (string)($data['condition_status'] ?? 'unknown');
+    if (!in_array($conditionStatus, $allowedConditions, true)) {
+        $conditionStatus = 'unknown';
+    }
+    $conditionNotes = hfPlainText($data['condition_notes'] ?? '', 2000, true);
     
     $db->beginTransaction();
     
@@ -792,8 +809,8 @@ function logReturn($db, $recall, $currentUser, $data) {
             $data['affected_location_id'],
             $data['return_date'] ?? date('Y-m-d'),
             $unitsReturned,
-            $data['condition_status'] ?? 'unknown',
-            $data['condition_notes'] ?? null,
+            $conditionStatus,
+            $conditionNotes !== '' ? $conditionNotes : null,
             currentUserId($currentUser)
         ]);
 
@@ -865,6 +882,12 @@ function sendNotification($db, $recall, $currentUser, $data) {
         Response::error('Location ID required', 400);
     }
     
+    $allowedMethods = ['phone', 'email', 'letter', 'in_person'];
+    $notificationMethod = (string)($data['notification_method'] ?? 'phone');
+    if (!in_array($notificationMethod, $allowedMethods, true)) {
+        Response::error('Invalid notification method', 400);
+    }
+
     $stmt = $db->prepare("
         UPDATE recall_affected_locations 
         SET notification_sent = TRUE,
@@ -875,7 +898,7 @@ function sendNotification($db, $recall, $currentUser, $data) {
     ");
     
     $stmt->execute([
-        $data['notification_method'] ?? 'phone',
+        $notificationMethod,
         currentUserId($currentUser),
         $data['affected_location_id'],
         $recall['id']
@@ -889,7 +912,7 @@ function sendNotification($db, $recall, $currentUser, $data) {
     $stmt->execute([
         $recall['id'],
         currentUserId($currentUser),
-        json_encode(['location_id' => $data['affected_location_id'], 'method' => $data['notification_method'] ?? 'phone'])
+        json_encode(['location_id' => $data['affected_location_id'], 'method' => $notificationMethod])
     ]);
     
     Response::success(null, 'Notification marked as sent');
@@ -903,6 +926,8 @@ function completeRecall($db, $recall, $currentUser, $data) {
         Response::error('Cannot complete recall with current status', 400);
     }
     
+    $completionNotes = hfPlainText($data['completion_notes'] ?? '', 2000, true);
+
     $stmt = $db->prepare("
         UPDATE batch_recalls 
         SET status = 'completed',
@@ -914,7 +939,7 @@ function completeRecall($db, $recall, $currentUser, $data) {
     
     $stmt->execute([
         currentUserId($currentUser),
-        $data['completion_notes'] ?? null,
+        $completionNotes !== '' ? $completionNotes : null,
         $recall['id']
     ]);
 

@@ -14,6 +14,8 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/warehouse/raw/ingredient_stock_helpers.php';
+require_once dirname(__DIR__) . '/helpers/procurement_notifications.php';
 
 // Allowed roles: warehouse_raw creates PRS, purchaser converts PRS to PO, GM approves POs.
 $currentUser = Auth::requireRole(['warehouse_raw', 'purchaser', 'general_manager', 'production_staff']);
@@ -85,6 +87,15 @@ function ensurePRTables($db) {
             `estimated_total` DECIMAL(12,2) DEFAULT NULL,
             `purpose` VARCHAR(255) DEFAULT NULL,
             `notes` TEXT DEFAULT NULL,
+            `system_stock_before` DECIMAL(12,3) DEFAULT NULL,
+            `audited_stock` DECIMAL(12,3) DEFAULT NULL,
+            `stock_variance` DECIMAL(12,3) DEFAULT NULL,
+            `audit_reason` VARCHAR(255) DEFAULT NULL,
+            `audited_by` INT(11) DEFAULT NULL,
+            `audited_at` DATETIME DEFAULT NULL,
+            `target_stock_at_request` DECIMAL(12,3) DEFAULT NULL,
+            `calculated_quantity` DECIMAL(12,2) DEFAULT NULL,
+            `calculation_basis` VARCHAR(255) DEFAULT NULL,
             `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             KEY `idx_pri_pr_id` (`purchase_request_id`)
@@ -98,6 +109,23 @@ function ensurePRTables($db) {
 
     if (!auditColumnExists($db, 'purchase_request_items', 'purpose')) {
         $db->exec("ALTER TABLE `purchase_request_items` ADD COLUMN `purpose` VARCHAR(255) DEFAULT NULL AFTER `estimated_total`");
+    }
+
+    $auditColumns = [
+        'system_stock_before' => "DECIMAL(12,3) DEFAULT NULL AFTER `notes`",
+        'audited_stock' => "DECIMAL(12,3) DEFAULT NULL AFTER `system_stock_before`",
+        'stock_variance' => "DECIMAL(12,3) DEFAULT NULL AFTER `audited_stock`",
+        'audit_reason' => "VARCHAR(255) DEFAULT NULL AFTER `stock_variance`",
+        'audited_by' => "INT(11) DEFAULT NULL AFTER `audit_reason`",
+        'audited_at' => "DATETIME DEFAULT NULL AFTER `audited_by`",
+        'target_stock_at_request' => "DECIMAL(12,3) DEFAULT NULL AFTER `audited_at`",
+        'calculated_quantity' => "DECIMAL(12,2) DEFAULT NULL AFTER `target_stock_at_request`",
+        'calculation_basis' => "VARCHAR(255) DEFAULT NULL AFTER `calculated_quantity`",
+    ];
+    foreach ($auditColumns as $column => $definition) {
+        if (!auditColumnExists($db, 'purchase_request_items', $column)) {
+            $db->exec("ALTER TABLE `purchase_request_items` ADD COLUMN `{$column}` {$definition}");
+        }
     }
 
     // Add approver_name column if missing (stores GM name at time of approval)
@@ -154,12 +182,7 @@ function ensureProcurementNotificationSupport($db) {
 }
 
 function createProcurementNotification($db, $targetRole, $type, $title, $message, $referenceType = null, $referenceId = null) {
-    $stmt = $db->prepare("
-        INSERT INTO procurement_notifications
-        (target_role, notification_type, title, message, reference_type, reference_id)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ");
-    $stmt->execute([$targetRole, $type, $title, $message, $referenceType, $referenceId]);
+    writeProcurementNotification($db, $targetRole, $type, $title, $message, $referenceType, $referenceId);
 }
 
 /**
@@ -278,10 +301,12 @@ function handleGet($db, $action, $currentUser) {
                     m.item_name as mro_item_name,
                     m.item_code as mro_item_code,
                     m.current_stock as mro_current_stock,
-                    m.minimum_stock as mro_minimum_stock
+                    m.minimum_stock as mro_minimum_stock,
+                    auditor.full_name as audited_by_name
                 FROM purchase_request_items pri
                 LEFT JOIN ingredients i ON pri.ingredient_id = i.id
                 LEFT JOIN mro_items m ON pri.mro_item_id = m.id
+                LEFT JOIN users auditor ON pri.audited_by = auditor.id
                 WHERE pri.purchase_request_id = ?
                 ORDER BY pri.id ASC
             ");
@@ -342,13 +367,19 @@ function handleGet($db, $action, $currentUser) {
                     (SELECT COALESCE(SUM(estimated_total), 0) FROM purchase_request_items WHERE purchase_request_id = pr.id) as estimated_total
                 FROM purchase_requests pr
                 LEFT JOIN users u ON pr.requested_by = u.id
-                WHERE pr.status IN ('pending', 'approved')
-                AND pr.id NOT IN (
-                    SELECT COALESCE(purchase_request_id, 0) 
-                    FROM purchase_orders 
-                    WHERE status NOT IN ('cancelled', 'rejected')
-                    AND purchase_request_id IS NOT NULL
-                )
+                WHERE pr.status IN ('pending', 'approved', 'partially_converted')
+                  AND EXISTS (
+                      SELECT 1
+                      FROM purchase_request_items remaining_pri
+                      WHERE remaining_pri.purchase_request_id = pr.id
+                        AND remaining_pri.quantity > COALESCE((
+                            SELECT SUM(prip.quantity)
+                            FROM purchase_request_item_po prip
+                            JOIN purchase_orders linked_po ON linked_po.id = prip.po_id
+                            WHERE prip.purchase_request_item_id = remaining_pri.id
+                              AND linked_po.status NOT IN ('cancelled', 'rejected')
+                        ), 0) + 0.0001
+                  )
                 ORDER BY 
                     CASE pr.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 ELSE 4 END,
                     pr.created_at ASC
@@ -360,14 +391,48 @@ function handleGet($db, $action, $currentUser) {
                 $itemsStmt = $db->prepare("
                     SELECT pri.*, 
                         i.ingredient_name, i.ingredient_code,
-                        m.item_name as mro_item_name, m.item_code as mro_item_code
+                        m.item_name as mro_item_name, m.item_code as mro_item_code,
+                        COALESCE((
+                            SELECT SUM(prip.quantity)
+                            FROM purchase_request_item_po prip
+                            JOIN purchase_orders linked_po ON linked_po.id = prip.po_id
+                            WHERE prip.purchase_request_item_id = pri.id
+                              AND linked_po.status NOT IN ('cancelled', 'rejected')
+                        ), 0) AS allocated_quantity,
+                        pc.id as reviewed_canvass_id,
+                        pc.canvass_code as reviewed_canvass_code,
+                        pc.selection_method as reviewed_selection_method,
+                        pc.selection_reason as reviewed_selection_reason,
+                        cq.supplier_id as reviewed_supplier_id,
+                        cq.unit_price as reviewed_unit_price,
+                        s.supplier_name as reviewed_supplier_name,
+                        s.supplier_code as reviewed_supplier_code
                     FROM purchase_request_items pri
                     LEFT JOIN ingredients i ON pri.ingredient_id = i.id
                     LEFT JOIN mro_items m ON pri.mro_item_id = m.id
+                    LEFT JOIN price_canvass pc ON pc.id = (
+                        SELECT pc2.id
+                        FROM price_canvass pc2
+                        WHERE pc2.purchase_request_item_id = pri.id
+                          AND pc2.status = 'completed'
+                          AND pc2.selected_quote_id IS NOT NULL
+                        ORDER BY pc2.id DESC
+                        LIMIT 1
+                    )
+                    LEFT JOIN canvass_quotes cq ON cq.id = pc.selected_quote_id
+                    LEFT JOIN suppliers s ON s.id = cq.supplier_id
                     WHERE pri.purchase_request_id = ?
+                    ORDER BY pri.id ASC
                 ");
                 $itemsStmt->execute([$req['id']]);
-                $req['items'] = $itemsStmt->fetchAll();
+                $req['items'] = array_values(array_filter(array_map(function ($item) {
+                    $item['allocated_quantity'] = (float) ($item['allocated_quantity'] ?? 0);
+                    $item['remaining_quantity'] = max(0, (float) $item['quantity'] - $item['allocated_quantity']);
+                    return $item;
+                }, $itemsStmt->fetchAll()), function ($item) {
+                    return (float) $item['remaining_quantity'] > 0.0001;
+                }));
+                $req['remaining_item_count'] = count($req['items']);
             }
 
             Response::success($requests, 'PRS inbox retrieved for PO creation');
@@ -471,11 +536,17 @@ function addPRStatusHistory($db, $prId, $fromStatus, $toStatus, $userId, $notes 
     $stmt->execute([$prId, $fromStatus, $toStatus, $notes, $userId]);
 }
 
-function validatePRCreateData($data) {
+function validatePRCreateData($data, $requirePhysicalAudit = false) {
     if (empty($data['items']) || !is_array($data['items']) || count($data['items']) === 0) {
         Response::error('At least one item is required', 400);
     }
 
+    $documentPurpose = trim((string) ($data['purpose'] ?? ''));
+    if ($documentPurpose === '') {
+        Response::error('Purpose/reason is required', 400);
+    }
+
+    $seenItems = [];
     foreach ($data['items'] as $index => $item) {
         $lineNo = $index + 1;
         if (!is_array($item)) {
@@ -488,22 +559,99 @@ function validatePRCreateData($data) {
             Response::error("Line {$lineNo}: select an approved item", 400);
         }
 
+        $itemKey = $hasIngredient
+            ? 'ingredient:' . (int) $item['ingredient_id']
+            : 'mro:' . (int) $item['mro_item_id'];
+        if (isset($seenItems[$itemKey])) {
+            $firstLine = $seenItems[$itemKey];
+            $itemName = trim((string) ($item['item_description'] ?? 'This item')) ?: 'This item';
+            Response::error("Line {$lineNo}: {$itemName} is already on line {$firstLine}. Keep one row and update its quantity.", 400);
+        }
+        $seenItems[$itemKey] = $lineNo;
+
         if (trim((string)($item['item_description'] ?? '')) === '') {
             Response::error("Line {$lineNo}: item description is required", 400);
         }
 
-        if (!isset($item['quantity']) || !is_numeric($item['quantity']) || (float)$item['quantity'] <= 0) {
-            Response::error("Line {$lineNo}: requested quantity must be greater than zero", 400);
+        try {
+            // One PR line is deliberately capped below the DECIMAL column limit.
+            // Values above this point are planning mistakes and must be split or
+            // reviewed instead of silently creating a multi-million-unit request.
+            $validatedQty = hfParseBusinessDecimal(
+                $item['quantity'] ?? null,
+                "Line {$lineNo} requested quantity",
+                0.01,
+                1000000.00,
+                2
+            );
+        } catch (InvalidArgumentException $error) {
+            Response::error($error->getMessage(), 400);
+        }
+
+        $hasEstimatedPrice = array_key_exists('estimated_unit_price', $item)
+            && $item['estimated_unit_price'] !== ''
+            && $item['estimated_unit_price'] !== null;
+        if ($hasEstimatedPrice) {
+            try {
+                $validatedPrice = hfParseBusinessDecimal(
+                    $item['estimated_unit_price'],
+                    "Line {$lineNo} estimated unit price",
+                    0.00,
+                    999999.99,
+                    2
+                );
+            } catch (InvalidArgumentException $error) {
+                Response::error($error->getMessage(), 400);
+            }
+            $estimatedTotal = $validatedQty * $validatedPrice;
+            if (!is_finite($estimatedTotal) || $estimatedTotal > 9999999999.99) {
+                Response::error("Line {$lineNo}: estimated total must not exceed PHP 9,999,999,999.99", 400);
+            }
         }
 
         if (trim((string)($item['unit'] ?? '')) === '') {
             Response::error("Line {$lineNo}: unit is required", 400);
         }
 
-        if (trim((string)($item['purpose'] ?? $data['purpose'] ?? '')) === '') {
+        $linePurpose = trim((string) ($item['purpose'] ?? $documentPurpose));
+        if ($linePurpose === '') {
             Response::error("Line {$lineNo}: purpose/reason is required", 400);
         }
+        if ($linePurpose !== $documentPurpose) {
+            Response::error("Line {$lineNo}: its reason does not match the request reason. Refresh the form and review the calculated quantity.", 409);
+        }
+
+        $hasAudit = array_key_exists('audited_stock', $item) && $item['audited_stock'] !== '' && $item['audited_stock'] !== null;
+        if ($requirePhysicalAudit && !$hasAudit) {
+            Response::error("Line {$lineNo}: enter the actual quantity counted on the shelf", 400);
+        }
+        if ($hasAudit) {
+            try {
+                hfParseBusinessDecimal(
+                    $item['audited_stock'],
+                    "Line {$lineNo} physical count",
+                    0.00,
+                    9999999.999,
+                    3
+                );
+            } catch (InvalidArgumentException $error) {
+                Response::error($error->getMessage(), 400);
+            }
+        }
     }
+}
+
+function applyDocumentPurposeToItems(&$items, $documentPurpose, $rejectMismatch = true) {
+    $documentPurpose = trim((string) $documentPurpose);
+    foreach ($items as $index => &$item) {
+        $linePurpose = trim((string) ($item['purpose'] ?? ''));
+        if ($rejectMismatch && $linePurpose !== '' && $linePurpose !== $documentPurpose) {
+            $lineNo = $index + 1;
+            throw new InvalidArgumentException("Line {$lineNo}: its reason does not match the request reason. Refresh the form and review the calculated quantity.");
+        }
+        $item['purpose'] = $documentPurpose;
+    }
+    unset($item);
 }
 
 function buildPRFingerprint($items) {
@@ -530,9 +678,181 @@ function getPRFingerprintFromDb($db, $prId) {
 }
 
 function getRequestItemsById($db, $prId) {
-    $stmt = $db->prepare("SELECT ingredient_id, mro_item_id, quantity, unit FROM purchase_request_items WHERE purchase_request_id = ?");
+    $stmt = $db->prepare("
+        SELECT id, ingredient_id, mro_item_id, item_description, quantity, unit,
+               estimated_unit_price, purpose, notes, audited_stock, audit_reason,
+               target_stock_at_request, calculated_quantity, calculation_basis
+        FROM purchase_request_items
+        WHERE purchase_request_id = ?
+        ORDER BY id
+    ");
     $stmt->execute([$prId]);
     return $stmt->fetchAll();
+}
+
+/**
+ * Save the shelf count and lower inventory when physical stock is below the
+ * saved balance. Stock increases must still go through receiving.
+ */
+function applyPRPhysicalAudit($db, &$items, $currentUser) {
+    foreach ($items as $index => &$item) {
+        $lineNo = $index + 1;
+        if (!array_key_exists('audited_stock', $item) || $item['audited_stock'] === '' || $item['audited_stock'] === null) {
+            throw new InvalidArgumentException("Line {$lineNo}: enter the actual quantity counted on the shelf");
+        }
+
+        $auditedStock = (float) $item['audited_stock'];
+        if ($auditedStock < 0) {
+            throw new InvalidArgumentException("Line {$lineNo}: physical count cannot be negative");
+        }
+
+        $isIngredient = !empty($item['ingredient_id']);
+        $table = $isIngredient ? 'ingredients' : 'mro_items';
+        $itemId = $isIngredient ? (int) $item['ingredient_id'] : (int) ($item['mro_item_id'] ?? 0);
+        if (!$itemId) {
+            throw new InvalidArgumentException("Line {$lineNo}: select an approved inventory item");
+        }
+
+        $stockStmt = $db->prepare("SELECT * FROM {$table} WHERE id = ? AND is_active = 1 FOR UPDATE");
+        $stockStmt->execute([$itemId]);
+        $stockItem = $stockStmt->fetch();
+        if (!$stockItem) {
+            throw new InvalidArgumentException("Line {$lineNo}: inventory item is no longer active");
+        }
+
+        $systemStock = (float) $stockItem['current_stock'];
+        $variance = $auditedStock - $systemStock;
+        $reason = trim((string) ($item['audit_reason'] ?? ''));
+        $unit = (string) ($stockItem['unit_of_measure'] ?? $item['unit'] ?? 'units');
+        $countedLabel = rtrim(rtrim(number_format($auditedStock, 3, '.', ','), '0'), '.');
+        $savedLabel = rtrim(rtrim(number_format($systemStock, 3, '.', ','), '0'), '.');
+
+        if ($variance > 0.0005) {
+            throw new InvalidArgumentException("Line {$lineNo}: counted {$countedLabel} {$unit}, but the saved balance is {$savedLabel} {$unit}. Record the missing receipt or use the stock correction screen before submitting this PRS.");
+        }
+        if (abs($variance) > 0.0005 && $reason === '') {
+            throw new InvalidArgumentException("Line {$lineNo}: explain why the shelf count differs from the saved balance of {$savedLabel} {$unit}");
+        }
+
+        $stockBasedPurposes = ['Stock below reorder point', 'Safety stock replenishment', 'Emergency replacement'];
+        $maximumStock = (float) ($stockItem['maximum_stock'] ?? 0);
+        $reorderPoint = (float) ($stockItem['reorder_point'] ?? 0);
+        $minimumStock = (float) ($stockItem['minimum_stock'] ?? 0);
+        $targetStock = $maximumStock > 0 ? $maximumStock : ($reorderPoint > 0 ? $reorderPoint : $minimumStock);
+        if (in_array((string) ($item['purpose'] ?? ''), $stockBasedPurposes, true)) {
+            $adjustedRequest = $targetStock - $auditedStock;
+            if ($adjustedRequest <= 0.0005) {
+                throw new InvalidArgumentException("Line {$lineNo}: the physical count is already at or above the replenishment target. Remove this item from the PRS or correct its stock settings.");
+            }
+            if ($adjustedRequest > 1000000.00) {
+                throw new InvalidArgumentException(
+                    "Line {$lineNo}: the calculated replenishment quantity exceeds 1,000,000. Check the item's maximum-stock setting before submitting this PRS."
+                );
+            }
+            $calculatedQuantity = round($adjustedRequest, 2);
+            $submittedQuantity = round((float) ($item['quantity'] ?? 0), 2);
+            if (abs($submittedQuantity - $calculatedQuantity) > 0.005) {
+                $calculatedLabel = rtrim(rtrim(number_format($calculatedQuantity, 2, '.', ','), '0'), '.');
+                throw new InvalidArgumentException(
+                    "Line {$lineNo}: the entered quantity does not match the stock calculation. Target {$targetStock} minus counted {$countedLabel} equals {$calculatedLabel} {$unit}. Refresh the form and submit the displayed value."
+                );
+            }
+            $item['quantity'] = $calculatedQuantity;
+            $item['target_stock_at_request'] = $targetStock;
+            $item['calculated_quantity'] = $calculatedQuantity;
+            $item['calculation_basis'] = "Target {$targetStock} {$unit} - counted {$auditedStock} {$unit}";
+        } else {
+            $baseline = max($maximumStock, $reorderPoint, $minimumStock, $systemStock, $auditedStock);
+            $manualLimit = min(100000.00, max(1000.00, $baseline * 10));
+            $submittedQuantity = (float) ($item['quantity'] ?? 0);
+            if ($submittedQuantity > $manualLimit + 0.0005) {
+                $limitLabel = rtrim(rtrim(number_format($manualLimit, 2, '.', ','), '0'), '.');
+                throw new InvalidArgumentException(
+                    "Line {$lineNo}: {$submittedQuantity} {$unit} is above the current review limit of {$limitLabel} {$unit}. Update the item's stock plan first if this larger forecast is legitimate."
+                );
+            }
+            $item['target_stock_at_request'] = $targetStock > 0 ? $targetStock : null;
+            $item['calculated_quantity'] = null;
+            $item['calculation_basis'] = "Manual forecast; review limit {$manualLimit} {$unit}";
+        }
+
+        if ($variance < -0.0005) {
+            if ($isIngredient) {
+                reduceIngredientBatchesToQuantity($db, $stockItem, $auditedStock, $currentUser, $reason);
+            }
+
+            $updateStmt = $db->prepare("UPDATE {$table} SET current_stock = ?, updated_at = NOW() WHERE id = ?");
+            $updateStmt->execute([$auditedStock, $itemId]);
+
+            $transactionType = 'physical_adjust';
+            $itemType = $isIngredient ? 'ingredient' : 'mro';
+            $transactionCode = generateCode('TX');
+            $transactionStmt = $db->prepare("
+                INSERT INTO inventory_transactions
+                (transaction_code, transaction_type, item_type, item_id, quantity,
+                 unit_of_measure, quantity_before, quantity_after, reference_type,
+                 performed_by, reason)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'purchase_request_audit', ?, ?)
+            ");
+            $transactionStmt->execute([
+                $transactionCode,
+                $transactionType,
+                $itemType,
+                $itemId,
+                $variance,
+                $stockItem['unit_of_measure'],
+                $systemStock,
+                $auditedStock,
+                $currentUser['user_id'],
+                "PRS physical count: {$reason} (Saved: {$systemStock}, Counted: {$auditedStock})"
+            ]);
+
+            logAudit(
+                $currentUser['user_id'],
+                'prs_physical_count',
+                $table,
+                $itemId,
+                ['current_stock' => $systemStock],
+                ['current_stock' => $auditedStock, 'reason' => $reason]
+            );
+        }
+
+        $item['system_stock_before'] = $systemStock;
+        $item['audited_stock'] = $auditedStock;
+        $item['stock_variance'] = $variance;
+        $item['audit_reason'] = $reason !== '' ? $reason : null;
+        $item['audited_by'] = $currentUser['user_id'];
+        $item['audited_at'] = date('Y-m-d H:i:s');
+
+        if (!empty($item['id'])) {
+            $auditStmt = $db->prepare("
+                UPDATE purchase_request_items
+                SET quantity = ?, estimated_total = CASE
+                        WHEN estimated_unit_price IS NULL THEN NULL
+                        ELSE ROUND(? * estimated_unit_price, 2)
+                    END,
+                    system_stock_before = ?, audited_stock = ?, stock_variance = ?,
+                    audit_reason = ?, audited_by = ?, audited_at = ?,
+                    target_stock_at_request = ?, calculated_quantity = ?, calculation_basis = ?
+                WHERE id = ?
+            ");
+            $auditStmt->execute([
+                $item['quantity'],
+                $item['quantity'],
+                $item['system_stock_before'],
+                $item['audited_stock'],
+                $item['stock_variance'],
+                $item['audit_reason'],
+                $item['audited_by'],
+                $item['audited_at'],
+                $item['target_stock_at_request'],
+                $item['calculated_quantity'],
+                $item['calculation_basis'],
+                $item['id']
+            ]);
+        }
+    }
+    unset($item);
 }
 
 function findDuplicatePendingPR($db, $department, $fingerprint, $excludeId = null) {
@@ -618,12 +938,26 @@ function findPendingPRWithOverlappingItems($db, $department, $items, $excludeId 
 
 function countActivePOsForPR($db, $prId) {
     $stmt = $db->prepare("
-        SELECT COUNT(*)
-        FROM purchase_orders
-        WHERE purchase_request_id = ?
-          AND status NOT IN ('cancelled', 'rejected')
+        SELECT COUNT(DISTINCT po.id)
+        FROM purchase_orders po
+        WHERE po.status NOT IN ('cancelled', 'rejected')
+          AND (
+              po.purchase_request_id = ?
+              OR EXISTS (
+                  SELECT 1
+                  FROM purchase_order_items poi
+                  JOIN purchase_request_items pri ON pri.id = poi.purchase_request_item_id
+                  WHERE poi.po_id = po.id AND pri.purchase_request_id = ?
+              )
+              OR EXISTS (
+                  SELECT 1
+                  FROM purchase_request_item_po prip
+                  JOIN purchase_request_items pri ON pri.id = prip.purchase_request_item_id
+                  WHERE prip.po_id = po.id AND pri.purchase_request_id = ?
+              )
+          )
     ");
-    $stmt->execute([$prId]);
+    $stmt->execute([$prId, $prId, $prId]);
     return (int) $stmt->fetchColumn();
 }
 
@@ -634,8 +968,10 @@ function replacePRItems($db, $prId, $items, $defaultPurpose = null) {
     $itemStmt = $db->prepare("
         INSERT INTO purchase_request_items
         (purchase_request_id, ingredient_id, mro_item_id, item_description, quantity, unit,
-         estimated_unit_price, estimated_total, purpose, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         estimated_unit_price, estimated_total, purpose, notes, system_stock_before,
+         audited_stock, stock_variance, audit_reason, audited_by, audited_at,
+         target_stock_at_request, calculated_quantity, calculation_basis)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
 
     foreach ($items as $item) {
@@ -653,7 +989,16 @@ function replacePRItems($db, $prId, $items, $defaultPurpose = null) {
             $unitPrice > 0 ? $unitPrice : null,
             $lineTotal > 0 ? $lineTotal : null,
             $item['purpose'] ?? $defaultPurpose,
-            $item['notes'] ?? null
+            $item['notes'] ?? null,
+            $item['system_stock_before'] ?? null,
+            $item['audited_stock'] ?? null,
+            $item['stock_variance'] ?? null,
+            $item['audit_reason'] ?? null,
+            $item['audited_by'] ?? null,
+            $item['audited_at'] ?? null,
+            $item['target_stock_at_request'] ?? null,
+            $item['calculated_quantity'] ?? null,
+            $item['calculation_basis'] ?? null
         ]);
     }
 }
@@ -672,10 +1017,6 @@ function handlePost($db, $action, $currentUser) {
 
             rejectSupplierFieldsInPR($data);
 
-            validatePRCreateData($data);
-
-            $fingerprint = buildPRFingerprint($data['items']);
-
             $priority = $data['priority'] ?? 'normal';
             if (!in_array($priority, ['low', 'normal', 'high', 'urgent'])) {
                 Response::error('Invalid priority', 400);
@@ -686,6 +1027,10 @@ function handlePost($db, $action, $currentUser) {
                 Response::error('Invalid Purchase Request status', 400);
             }
 
+            validatePRCreateData($data, $status === 'pending');
+            applyDocumentPurposeToItems($data['items'], $data['purpose'] ?? '', false);
+            $fingerprint = $status === 'draft' ? buildPRFingerprint($data['items']) : null;
+
             // V4.1: Department derived from the creator's role
             $departmentMap = [
                 'warehouse_raw' => 'warehouse_raw',
@@ -694,14 +1039,6 @@ function handlePost($db, $action, $currentUser) {
             $department = $departmentMap[$currentUser['role']] ?? 'warehouse_raw';
 
             if ($status === 'pending') {
-                $duplicate = findDuplicatePendingPR($db, $department, $fingerprint);
-                if ($duplicate) {
-                    Response::error('Duplicate pending Purchase Request already exists (' . $duplicate['pr_number'] . '). Please update that request instead.', 409, [
-                        'duplicate_pr_id' => (int) $duplicate['id'],
-                        'duplicate_pr_number' => $duplicate['pr_number']
-                    ]);
-                }
-
                 $overlap = findPendingPRWithOverlappingItems($db, $department, $data['items']);
                 if ($overlap) {
                     Response::error('Pending Purchase Request already exists for one or more items (' . $overlap['pr_number'] . '). Please update that request instead.', 409, [
@@ -714,6 +1051,19 @@ function handlePost($db, $action, $currentUser) {
             $db->beginTransaction();
 
             try {
+                if ($status === 'pending') {
+                    applyPRPhysicalAudit($db, $data['items'], $currentUser);
+                    $fingerprint = buildPRFingerprint($data['items']);
+                    $duplicate = findDuplicatePendingPR($db, $department, $fingerprint);
+                    if ($duplicate) {
+                        $db->rollBack();
+                        Response::error('Duplicate pending Purchase Request already exists (' . $duplicate['pr_number'] . '). Please update that request instead.', 409, [
+                            'duplicate_pr_id' => (int) $duplicate['id'],
+                            'duplicate_pr_number' => $duplicate['pr_number']
+                        ]);
+                    }
+                }
+
                 // Generate PRS number
                 $today = date('Ymd');
                 $codeStmt = $db->prepare("SELECT COUNT(*) as count FROM purchase_requests WHERE pr_number LIKE ?");
@@ -748,9 +1098,9 @@ function handlePost($db, $action, $currentUser) {
                     createProcurementNotification(
                         $db,
                         'purchaser',
-                        'prs_submitted_for_canvass',
-                        'New PRS for canvassing',
-                        'Warehouse Raw submitted ' . $prNumber . '. Canvass 3 suppliers and create the formal PO.',
+                        'prs_submitted_for_supplier_review',
+                        'New PRS for supplier review',
+                        'Warehouse Raw submitted ' . $prNumber . '. Review the registered supplier prices and prepare the formal PO.',
                         'purchase_request',
                         $prId
                     );
@@ -771,6 +1121,9 @@ function handlePost($db, $action, $currentUser) {
                     'status' => $status
                 ], $status === 'draft' ? 'Purchase Request Slip draft saved' : 'Purchase Request Slip submitted to Purchaser', 201);
 
+            } catch (InvalidArgumentException $e) {
+                $db->rollBack();
+                Response::error($e->getMessage(), 400);
             } catch (Exception $e) {
                 $db->rollBack();
                 throw $e;
@@ -844,6 +1197,7 @@ function handlePut($db, $action, $currentUser) {
 
             rejectSupplierFieldsInPR($data);
             validatePRCreateData($data);
+            applyDocumentPurposeToItems($data['items'], $data['purpose'] ?? '', false);
 
             $fingerprint = buildPRFingerprint($data['items']);
 
@@ -901,24 +1255,28 @@ function handlePut($db, $action, $currentUser) {
                 Response::error('Only draft Purchase Request Slips can be submitted. Current status: ' . $current['status'], 400);
             }
 
-            $fingerprint = $current['request_fingerprint'] ?? null;
-            if (!$fingerprint) {
-                $fingerprint = getPRFingerprintFromDb($db, $id);
-                if ($fingerprint) {
-                    $fpStmt = $db->prepare("UPDATE purchase_requests SET request_fingerprint = ? WHERE id = ?");
-                    $fpStmt->execute([$fingerprint, $id]);
-                }
-            }
-
-            $duplicate = findDuplicatePendingPR($db, $current['department'], $fingerprint, $id);
-            if ($duplicate) {
-                Response::error('Duplicate pending Purchase Request already exists (' . $duplicate['pr_number'] . '). Please update that request instead.', 409, [
-                    'duplicate_pr_id' => (int) $duplicate['id'],
-                    'duplicate_pr_number' => $duplicate['pr_number']
-                ]);
-            }
-
             $pendingItems = getRequestItemsById($db, $id);
+            if (!empty($data['items']) && is_array($data['items'])) {
+                $submittedAudits = [];
+                foreach ($data['items'] as $auditItem) {
+                    if (!empty($auditItem['id'])) {
+                        $submittedAudits[(int) $auditItem['id']] = $auditItem;
+                    }
+                }
+                foreach ($pendingItems as &$pendingItem) {
+                    $itemId = (int) ($pendingItem['id'] ?? 0);
+                    if (isset($submittedAudits[$itemId])) {
+                        $pendingItem['audited_stock'] = $submittedAudits[$itemId]['audited_stock'] ?? null;
+                        $pendingItem['audit_reason'] = $submittedAudits[$itemId]['audit_reason'] ?? null;
+                    }
+                }
+                unset($pendingItem);
+            }
+            applyDocumentPurposeToItems($pendingItems, $current['purpose'] ?? '', false);
+            validatePRCreateData([
+                'items' => $pendingItems,
+                'purpose' => $current['purpose'] ?? null
+            ], true);
             $overlap = findPendingPRWithOverlappingItems($db, $current['department'], $pendingItems, $id);
             if ($overlap) {
                 Response::error('Pending Purchase Request already exists for one or more items (' . $overlap['pr_number'] . '). Please update that request instead.', 409, [
@@ -927,23 +1285,45 @@ function handlePut($db, $action, $currentUser) {
                 ]);
             }
 
-            $stmt = $db->prepare("
-                UPDATE purchase_requests
-                SET status = 'pending',
-                    updated_at = NOW()
-                WHERE id = ?
-            ");
-            $stmt->execute([$id]);
-            addPRStatusHistory($db, $id, 'draft', 'pending', $currentUser['user_id'], 'Submitted to Purchaser inbox');
-            createProcurementNotification(
-                $db,
-                'purchaser',
-                'prs_submitted_for_canvass',
-                'New PRS for canvassing',
-                'Warehouse Raw submitted ' . ($current['pr_number'] ?? ('PRS #' . $id)) . '. Canvass 3 suppliers and create the formal PO.',
-                'purchase_request',
-                $id
-            );
+            $db->beginTransaction();
+            try {
+                applyPRPhysicalAudit($db, $pendingItems, $currentUser);
+                $fingerprint = buildPRFingerprint($pendingItems);
+                $duplicate = findDuplicatePendingPR($db, $current['department'], $fingerprint, $id);
+                if ($duplicate) {
+                    $db->rollBack();
+                    Response::error('Duplicate pending Purchase Request already exists (' . $duplicate['pr_number'] . '). Please update that request instead.', 409, [
+                        'duplicate_pr_id' => (int) $duplicate['id'],
+                        'duplicate_pr_number' => $duplicate['pr_number']
+                    ]);
+                }
+
+                $stmt = $db->prepare("
+                    UPDATE purchase_requests
+                    SET status = 'pending',
+                        request_fingerprint = ?,
+                        updated_at = NOW()
+                    WHERE id = ?
+                ");
+                $stmt->execute([$fingerprint, $id]);
+                addPRStatusHistory($db, $id, 'draft', 'pending', $currentUser['user_id'], 'Physical count completed and submitted to Purchaser inbox');
+                createProcurementNotification(
+                    $db,
+                    'purchaser',
+                    'prs_submitted_for_supplier_review',
+                    'New PRS for supplier review',
+                    'Warehouse Raw submitted ' . ($current['pr_number'] ?? ('PRS #' . $id)) . ' after a physical stock count. Review the registered supplier prices and prepare the formal PO.',
+                    'purchase_request',
+                    $id
+                );
+
+                $db->commit();
+            } catch (Throwable $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                Response::error($e->getMessage(), 400);
+            }
 
             logAudit($currentUser['user_id'], 'SUBMIT', 'purchase_requests', $id,
                 ['status' => 'draft'],

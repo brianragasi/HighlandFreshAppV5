@@ -36,9 +36,10 @@ ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/plain_text.php';
 
 // Require QC, GM/Admin, Finance, or Warehouse role
-$currentUser = Auth::requireRole(['qc_officer', 'general_manager', 'admin', 'finance_officer', 'warehouse_raw', 'warehouse_fg']);
+$currentUser = Auth::requireRole(['qc_officer', 'general_manager', 'finance_officer', 'warehouse_raw', 'warehouse_fg']);
 
 // Disposal categories
 define('DISPOSAL_CATEGORIES', [
@@ -487,9 +488,9 @@ function handlePostRequest($db, $currentUser) {
     $sourceType = getParam('source_type');
     $sourceId = getParam('source_id');
     $quantity = floatval(getParam('quantity'));
-    $unit = getParam('unit', 'pcs');
+    $unit = hfPlainText(getParam('unit', 'pcs'), 30);
     $category = getParam('disposal_category');
-    $reason = trim(getParam('disposal_reason', ''));
+    $reason = hfPlainText(getParam('disposal_reason', ''), 2000, true);
     $method = getParam('disposal_method', 'drain');
     
     $errors = [];
@@ -558,7 +559,7 @@ function handlePostRequest($db, $currentUser) {
     }
     $totalValue = $quantity * $unitCost;
 
-    $notes = trim((string)getParam('notes', ''));
+    $notes = hfPlainText(getParam('notes', ''), 2000, true);
     if (($sourceDetails['cost_basis'] ?? '') === 'catalog_estimate') {
         $valuationNote = 'Estimated using the current catalog price because no production cost was recorded.';
         $notes = trim($notes === '' ? $valuationNote : ($notes . "\n" . $valuationNote));
@@ -662,10 +663,10 @@ function handlePutRequest($db, $currentUser) {
     try {
         switch ($action) {
             case 'approve':
-                requireActionRole($currentUser, ['general_manager', 'admin'], 'Access forbidden');
+                requireActionRole($currentUser, ['general_manager'], 'Access forbidden');
 
                 // Only GM can approve
-                if (!in_array($currentUser['role'], ['general_manager', 'admin'])) {
+                if ($currentUser['role'] !== 'general_manager') {
                     Response::error('Only General Manager can approve disposals', 403);
                 }
 
@@ -676,7 +677,7 @@ function handlePutRequest($db, $currentUser) {
                     Response::error('Only pending disposals can be approved', 400);
                 }
                 
-                $approvalNotes = trim(getParam('approval_notes', ''));
+                $approvalNotes = hfPlainText(getParam('approval_notes', ''), 2000, true);
                 
                 $stmt = $db->prepare("
                     UPDATE disposals SET
@@ -707,10 +708,10 @@ function handlePutRequest($db, $currentUser) {
                 break;
                 
             case 'reject':
-                requireActionRole($currentUser, ['general_manager', 'admin'], 'Access forbidden');
+                requireActionRole($currentUser, ['general_manager'], 'Access forbidden');
 
                 // Only GM can reject
-                if (!in_array($currentUser['role'], ['general_manager', 'admin'])) {
+                if ($currentUser['role'] !== 'general_manager') {
                     Response::error('Only General Manager can reject disposals', 403);
                 }
                 
@@ -718,7 +719,11 @@ function handlePutRequest($db, $currentUser) {
                     Response::error('Only pending disposals can be rejected', 400);
                 }
                 
-                $rejectionReason = trim(getParam('rejection_reason', getParam('approval_notes', '')));
+                $rejectionReason = hfPlainText(
+                    getParam('rejection_reason', getParam('approval_notes', '')),
+                    2000,
+                    true
+                );
                 if (empty($rejectionReason)) {
                     Response::validationError(['rejection_reason' => 'Rejection reason is required']);
                 }
@@ -745,17 +750,17 @@ function handlePutRequest($db, $currentUser) {
             case 'execute':
                 requireActionRole(
                     $currentUser,
-                    ['qc_officer', 'warehouse_raw', 'warehouse_fg', 'general_manager', 'admin'],
-                    'Only QC, Warehouse, or GM/Admin can execute disposals'
+                    ['qc_officer', 'warehouse_raw', 'warehouse_fg', 'general_manager'],
+                    'Only QC, Warehouse, or the General Manager can execute disposals'
                 );
 
                 if ($disposal['status'] !== 'approved') {
                     Response::error('Only approved disposals can be completed', 400);
                 }
                 
-                $witnessName = trim(getParam('witness_name', ''));
-                $disposalLocation = trim(getParam('disposal_location', ''));
-                $executionNotes = trim(getParam('notes', ''));
+                $witnessName = hfPlainText(getParam('witness_name', ''), 150);
+                $disposalLocation = hfPlainText(getParam('disposal_location', ''), 255);
+                $executionNotes = hfPlainText(getParam('notes', ''), 2000, true);
 
                 if ($witnessName === '' || $disposalLocation === '') {
                     Response::validationError([
@@ -824,7 +829,7 @@ function handlePutRequest($db, $currentUser) {
 function handleDeleteRequest($db, $currentUser) {
     requireActionRole(
         $currentUser,
-        ['qc_officer', 'general_manager', 'admin', 'warehouse_fg', 'warehouse_raw'],
+        ['qc_officer', 'general_manager', 'warehouse_fg', 'warehouse_raw'],
         'Only QC, Warehouse, or GM/Admin can cancel disposal requests'
     );
 
@@ -848,7 +853,7 @@ function handleDeleteRequest($db, $currentUser) {
     }
 
     $role = $currentUser['role'] ?? '';
-    $isReviewer = in_array($role, ['qc_officer', 'general_manager', 'admin'], true);
+    $isReviewer = in_array($role, ['qc_officer', 'general_manager'], true);
     $isInitiator = (int)($disposal['initiated_by'] ?? 0) === (int)($currentUser['user_id'] ?? 0);
 
     if (!$isReviewer && !$isInitiator) {

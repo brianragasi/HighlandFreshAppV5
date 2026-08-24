@@ -516,7 +516,7 @@
         function showToast(message, type = 'info') {
             const toast = document.createElement('div');
             toast.className = `alert alert-${type} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            HighlandSecurity.renderToastContent(toast, message);
             document.getElementById('toastContainer').appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
         }
@@ -655,18 +655,18 @@
                 const typeLabel = tx.type === 'sale' ? 'Sale' : 'Collection';
 
                 return `
-                    <tr class="hover cursor-pointer" onclick="viewTransaction('${tx.code}')">
-                        <td class="font-mono text-sm">${tx.code}</td>
+                    <tr class="hover cursor-pointer" onclick="viewTransaction(${escapeHtml(JSON.stringify(String(tx.code || '')))})">
+                        <td class="font-mono text-sm">${escapeHtml(tx.code)}</td>
                         <td><span class="badge ${typeBadge} badge-sm">${typeLabel}</span></td>
-                        <td>${tx.customer}</td>
+                        <td>${escapeHtml(tx.customer)}</td>
                         <td class="font-semibold">${formatCurrency(tx.amount)}</td>
                         <td>
                             <span class="badge badge-ghost badge-sm">
                                 <i class="fas ${getPaymentIcon(tx.payment_method)} mr-1"></i>
-                                ${tx.payment_method}
+                                ${escapeHtml(tx.payment_method)}
                             </span>
                         </td>
-                        <td class="text-base-content/60">${tx.time}</td>
+                        <td class="text-base-content/60">${escapeHtml(tx.time)}</td>
                     </tr>
                 `;
             }).join('');
@@ -683,7 +683,7 @@
         }
 
         function viewTransaction(code) {
-            window.location.href = `history.html?view=${code}`;
+            window.location.href = `history.html?view=${encodeURIComponent(String(code || ''))}`;
         }
     </script>
 </body>

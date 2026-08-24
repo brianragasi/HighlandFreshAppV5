@@ -2,6 +2,7 @@
 <html lang="en" data-theme="emerald">
 
 <head>
+    <style id="roleGuardPending">html { visibility: hidden; }</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -548,7 +549,7 @@
                                     </span>
                                     <label class="inline-flex items-center gap-1.5 text-xs text-base-content/50 cursor-pointer ml-1">
                                         <input type="checkbox" id="is_active" class="toggle toggle-primary toggle-xs" checked onchange="syncStatusBadge()">
-                                        Usable in production
+                                        Active for bulk cooking
                                     </label>
                                 </div>
                                 <div>
@@ -587,7 +588,7 @@
                         </div>
                         <div id="noSkuWarning" class="hidden mt-2 alert alert-warning py-2 px-3 text-sm">
                             <i class="fas fa-exclamation-triangle"></i>
-                            <span class="text-xs">No packaging SKUs linked to this liquid. You can still save the recipe; packaging will need SKUs under Products.</span>
+                            <span class="text-xs">Bulk cooking is allowed without a packaging SKU. Packaging and finished-goods receiving stay blocked until an active size is added under Products.</span>
                         </div>
                     </header>
 
@@ -601,18 +602,18 @@
                             <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-x-3 gap-y-2.5">
                                 <div>
                                     <p class="recipe-field-label">Base milk (L) <span class="req">*</span></p>
-                                    <input type="number" id="base_milk_liters" class="input input-bordered input-sm-erp w-full"
-                                        step="0.01" min="1" required placeholder="100"
-                                        title="Minimum 1 L — milk input for the standard batch"
-                                        oninput="refreshMassBalanceHint()">
+                                     <input type="number" id="base_milk_liters" class="input input-bordered input-sm-erp w-full"
+                                         step="0.01" min="1" max="99999999.99" inputmode="decimal" required placeholder="100"
+                                         title="Minimum 1 L — milk input for the standard batch"
+                                         oninput="refreshMassBalanceHint()" onblur="formatRecipeNumberInput(this, 2); refreshMassBalanceHint()">
                                 </div>
                                 <div class="col-span-2 md:col-span-1">
-                                    <p class="recipe-field-label">Expected yield <span class="req">*</span></p>
+                                    <p class="recipe-field-label">Standard yield (reference) <span class="req">*</span></p>
                                     <div class="flex gap-1.5">
-                                        <input type="number" id="expected_yield" class="input input-bordered input-sm-erp flex-1 min-w-0"
-                                            step="0.01" min="1" required placeholder="95"
-                                            title="Minimum 1 — standard batch output volume/weight"
-                                            oninput="refreshMassBalanceHint()">
+                                         <input type="number" id="expected_yield" class="input input-bordered input-sm-erp flex-1 min-w-0"
+                                             step="1" min="1" max="2147483647" inputmode="numeric" required placeholder="95"
+                                             title="Recipe scaling basis only — Production enters the planned batch separately"
+                                             oninput="refreshMassBalanceHint()" onblur="formatRecipeNumberInput(this, 0); refreshMassBalanceHint()">
                                         <select id="yield_unit" class="select select-bordered input-sm-erp w-[5.5rem] shrink-0" onchange="refreshMassBalanceHint()">
                                             <option value="liters">L</option>
                                             <option value="kg">kg</option>
@@ -622,15 +623,15 @@
                                 </div>
                                 <div>
                                     <p class="recipe-field-label">Pasteurize (°C)</p>
-                                    <input type="number" id="pasteurization_temp" class="input input-bordered input-sm-erp w-full" step="0.1" value="81">
+                                    <input type="number" id="pasteurization_temp" class="input input-bordered input-sm-erp w-full" step="0.1" min="0" max="150" value="81" onblur="formatRecipeNumberInput(this, 2)">
                                 </div>
                                 <div>
                                     <p class="recipe-field-label">Time (min)</p>
-                                    <input type="number" id="pasteurization_time_mins" class="input input-bordered input-sm-erp w-full" value="15">
+                                    <input type="number" id="pasteurization_time_mins" class="input input-bordered input-sm-erp w-full" min="1" max="1440" step="1" inputmode="numeric" value="15" onblur="formatRecipeNumberInput(this, 0)">
                                 </div>
                                 <div>
                                     <p class="recipe-field-label">Cool to (°C)</p>
-                                    <input type="number" id="cooling_temp" class="input input-bordered input-sm-erp w-full" step="0.1" value="4">
+                                    <input type="number" id="cooling_temp" class="input input-bordered input-sm-erp w-full" step="0.1" min="-20" max="50" data-allow-negative value="4" onblur="formatRecipeNumberInput(this, 2)">
                                 </div>
                             </div>
                             <div class="mt-2.5">
@@ -724,6 +725,7 @@
 
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/ui/notification-layer.js?v=20260816-1"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="general_manager,admin"></script>
     <script src="../../js/admin/admin.service.js"></script>
 
@@ -897,8 +899,11 @@
             }
 
             const skus = bp.skus || [];
-            document.getElementById('product_id').value = skus[0]?.id || '';
-            document.getElementById('noSkuWarning')?.classList.toggle('hidden', skus.length > 0);
+            const activeSkus = skus.filter(s => Number(s.is_active) === 1);
+            // Recipes describe bulk liquid. Packaging SKUs are downstream choices,
+            // so never silently bind the recipe to the first bottle size.
+            document.getElementById('product_id').value = '';
+            document.getElementById('noSkuWarning')?.classList.toggle('hidden', activeSkus.length > 0);
 
             renderProductChips(bp);
             renderSkuList(skus);
@@ -948,7 +953,10 @@
             try {
                 const response = await AdminService.getIngredients({ limit: 200, is_active: 1 });
                 if (response.success) {
-                    availableIngredients = response.data.ingredients || [];
+                    availableIngredients = (response.data.ingredients || []).filter(i => {
+                        const category = String(i.category_name || i.category || '').toLowerCase();
+                        return !category.includes('packag') && !category.includes('container');
+                    });
                 }
             } catch (e) {
                 console.error(e);
@@ -976,10 +984,18 @@
                     : '0 components · quantities for standard batch only';
             }
             bomEmptyState(n === 0);
+            refreshBomIngredientChoices();
             if (typeof refreshMassBalanceHint === 'function') refreshMassBalanceHint();
         }
 
         function addIngredientRow(ingredient = null) {
+            const selectedIds = new Set(Array.from(document.querySelectorAll('#bomTableBody .bom-ingredient'))
+                .map(select => select.value)
+                .filter(Boolean));
+            if (!ingredient && availableIngredients.length > 0 && selectedIds.size >= availableIngredients.length) {
+                showToast('Every available component is already in this recipe. Update an existing row instead.', 'info');
+                return;
+            }
             bomEmptyState(false);
             const tbody = document.getElementById('bomTableBody');
             const rowId = 'bom_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
@@ -993,7 +1009,7 @@
             }).join('');
 
             const unit = ingredient ? (ingredient.master_unit || ingredient.unit || 'kg') : '';
-            const qty = ingredient ? ingredient.quantity : '';
+            const qty = ingredient ? formatRecipeNumber(ingredient.quantity, 3) : '';
             const notes = ingredient ? (ingredient.notes || '') : '';
 
             tr.innerHTML = `
@@ -1005,10 +1021,10 @@
                     </select>
                 </td>
                 <td>
-                    <input type="number" step="0.01" min="0.01" class="input input-bordered input-sm w-full bom-qty text-right font-mono"
-                        value="${qty}" required placeholder="0.01"
-                        title="Minimum 0.01 — no zero or negative quantities"
-                        oninput="refreshMassBalanceHint()">
+                    <input type="number" step="0.001" min="0.001" max="9999999.999" inputmode="decimal" class="input input-bordered input-sm w-full bom-qty text-right font-mono"
+                        value="${qty}" required placeholder="0.001"
+                        title="Minimum 0.001 — no zero or negative quantities"
+                        oninput="refreshMassBalanceHint()" onblur="formatRecipeNumberInput(this, 3); refreshMassBalanceHint()">
                 </td>
                 <td>
                     <input type="text" class="input input-bordered input-sm w-full bom-unit" value="${escapeAttr(unit)}" readonly tabindex="-1" title="Locked to ingredient master">
@@ -1031,20 +1047,49 @@
 
         function onBomIngredientChange(select) {
             const tr = select.closest('tr');
+            const selectedId = select.value;
+            const selectedLabel = select.options[select.selectedIndex]?.textContent?.trim() || 'This component';
+            if (selectedId) {
+                const selects = Array.from(document.querySelectorAll('#bomTableBody .bom-ingredient'));
+                const existing = selects.find(candidate => candidate !== select && candidate.value === selectedId);
+                if (existing) {
+                    const existingRow = existing.closest('tr');
+                    const existingLine = Array.from(document.querySelectorAll('#bomTableBody tr.bom-row')).indexOf(existingRow) + 1;
+                    select.value = select.dataset.lastValue || '';
+                    showToast(`${selectedLabel} is already on line ${existingLine}. Update its quantity there.`, 'warning');
+                    existingRow?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    existingRow?.classList.add('ring', 'ring-warning', 'ring-2');
+                    setTimeout(() => existingRow?.classList.remove('ring', 'ring-warning', 'ring-2'), 1600);
+                    existing?.focus();
+                } else {
+                    select.dataset.lastValue = selectedId;
+                }
+            } else {
+                select.dataset.lastValue = '';
+            }
             const opt = select.options[select.selectedIndex];
             const unit = opt?.getAttribute('data-unit') || 'kg';
             tr.querySelector('.bom-unit').value = select.value ? unit : '';
-            // Duplicate component warning
-            const id = select.value;
-            if (id) {
-                let dup = 0;
-                document.querySelectorAll('#bomTableBody .bom-ingredient').forEach(s => {
-                    if (s.value === id) dup++;
+            tr.classList.remove('bom-row-error');
+            refreshBomIngredientChoices();
+        }
+
+        function refreshBomIngredientChoices() {
+            const selects = Array.from(document.querySelectorAll('#bomTableBody .bom-ingredient'));
+            const selectedIds = new Set(selects.map(select => select.value).filter(Boolean));
+            selects.forEach(select => {
+                Array.from(select.options).forEach(option => {
+                    if (!option.value) return;
+                    option.disabled = option.value !== select.value && selectedIds.has(option.value);
                 });
-                tr.classList.toggle('bom-row-error', dup > 1);
-            } else {
-                tr.classList.remove('bom-row-error');
-            }
+            });
+            document.querySelectorAll('button[onclick="addIngredientRow()"], button[onclick="addIngredientRow();"]').forEach(button => {
+                const noChoicesRemain = availableIngredients.length > 0 && selectedIds.size >= availableIngredients.length;
+                button.disabled = noChoicesRemain;
+                button.title = noChoicesRemain
+                    ? 'Every available component is already in this recipe'
+                    : 'Add component';
+            });
         }
 
         function removeBomRow(rowId) {
@@ -1069,6 +1114,7 @@
                 if (select.value && qty.value) {
                     lines.push({
                         ingredient_id: parseInt(select.value, 10),
+                        ingredient_name: select.options[select.selectedIndex]?.textContent?.trim() || 'Solid ingredient',
                         quantity: parseFloat(qty.value),
                         unit,
                         notes: notes.value || ''
@@ -1078,23 +1124,28 @@
             return lines;
         }
 
-        /**
-         * Mass-balance guardrail for Edit Recipe.
-         * Total process input = base milk (L) + BOM quantities (L/kg treated as batch mass/volume).
-         * Block save when input is significantly below expected yield (< 90%).
-         * Catches impossible recipes like 10 L milk for a 95 L expected yield.
-         */
+        /** Keep volume, mass, and counted packaging separate. */
         const MASS_BALANCE_MIN_RATIO = 0.90;
 
-        function sumBomMassVolume(bomLines) {
-            let total = 0;
+        function summarizeBomUnits(bomLines) {
+            const summary = { liquidLiters: 0, solidKg: 0, countedUnits: 0 };
             (bomLines || []).forEach(line => {
                 const q = parseFloat(line.quantity);
                 if (!Number.isFinite(q) || q <= 0) return;
-                // Include all positive BOM qty in batch balance (kg ≈ L water-density approx for dairy mixes)
-                total += q;
+                const unit = String(line.unit || '').trim().toLowerCase();
+                if (['l', 'lt', 'liter', 'liters', 'litre', 'litres'].includes(unit)) {
+                    summary.liquidLiters += q;
+                } else if (['ml', 'milliliter', 'milliliters', 'millilitre', 'millilitres'].includes(unit)) {
+                    summary.liquidLiters += q / 1000;
+                } else if (['kg', 'kilogram', 'kilograms'].includes(unit)) {
+                    summary.solidKg += q;
+                } else if (['g', 'gram', 'grams'].includes(unit)) {
+                    summary.solidKg += q / 1000;
+                } else {
+                    summary.countedUnits += q;
+                }
             });
-            return total;
+            return summary;
         }
 
         function evaluateMassBalance() {
@@ -1102,20 +1153,23 @@
             const yieldVal = parseFloat(document.getElementById('expected_yield')?.value);
             const yieldUnit = document.getElementById('yield_unit')?.value || 'liters';
             const bom = getBomFromForm();
-            const bomTotal = sumBomMassVolume(bom);
+            const components = summarizeBomUnits(bom);
             const milk = Number.isFinite(baseMilk) && baseMilk > 0 ? baseMilk : 0;
-            const processInput = milk + bomTotal;
+            const liquidInput = milk + components.liquidLiters;
             const yieldOk = Number.isFinite(yieldVal) && yieldVal > 0;
-            const ratio = yieldOk && yieldVal > 0 ? processInput / yieldVal : null;
+            const isLiquidYield = ['liters', 'liter', 'litres', 'litre', 'l', 'lt'].includes(String(yieldUnit).toLowerCase());
+            const ratio = isLiquidYield && yieldOk ? liquidInput / yieldVal : null;
 
             const result = {
                 ok: true,
-                processInput,
+                liquidInput,
                 milk,
-                bomTotal,
+                ...components,
                 yieldVal: yieldOk ? yieldVal : 0,
                 yieldUnit,
+                isLiquidYield,
                 ratio,
+                failedRule: null,
                 message: ''
             };
 
@@ -1125,20 +1179,32 @@
                 return result;
             }
 
-            // Primary guard: total input must reach ≥ 90% of expected yield
-            if (processInput + 1e-9 < yieldVal * MASS_BALANCE_MIN_RATIO) {
+            if (isLiquidYield && liquidInput + 1e-9 < yieldVal * MASS_BALANCE_MIN_RATIO) {
                 result.ok = false;
-                result.message = 'Configuration Error: Total ingredient volume does not match the expected yield.';
+                result.failedRule = 'input_below_yield';
+                result.message = 'Configuration Error: Liquid input is below 90% of the expected liquid yield. Solids and packaging are not counted as liters.';
                 return result;
             }
 
-            // Extra dairy guard when yield is liquid: milk alone should not be a tiny fraction of yield
-            // Skipped for non-liquid yield units (units, pieces, kg) where BOM contributes mass.
-            const isLiquidYield = yieldUnit === 'liters' || yieldUnit === 'L' || yieldUnit === 'ml';
-            if (isLiquidYield && milk + 1e-9 < yieldVal * 0.80) {
+            if (isLiquidYield && yieldVal + 1e-9 < liquidInput * 0.80) {
                 result.ok = false;
-                result.message = 'Configuration Error: Base milk volume is far below the expected yield. '
-                    + `Base milk (${milk} L) should be at least 80% of expected yield (${yieldVal} L) for liquid recipes.`;
+                result.failedRule = 'yield_below_input';
+                result.message = 'Configuration Error: Expected liquid yield is below 80% of liquid input. Record an approved process-loss rule before saving a loss this large.';
+                return result;
+            }
+
+            const oversizedSolid = bom.find(line => {
+                const q = Number(line.quantity) || 0;
+                const unit = String(line.unit || '').toLowerCase();
+                const kg = ['kg', 'kilogram', 'kilograms'].includes(unit)
+                    ? q
+                    : ['g', 'gram', 'grams'].includes(unit) ? q / 1000 : null;
+                return kg != null && kg > milk * 0.25 + 1e-9;
+            });
+            if (oversizedSolid) {
+                result.ok = false;
+                result.failedRule = 'solid_dose';
+                result.message = `Configuration Error: ${oversizedSolid.ingredient_name || 'A solid ingredient'} exceeds 25% of the milk batch. Check the amount and unit before saving.`;
                 return result;
             }
 
@@ -1153,10 +1219,17 @@
 
             const r = evaluateMassBalance();
             hint.classList.remove('hidden');
-            const pct = r.ratio != null && Number.isFinite(r.ratio) ? Math.round(r.ratio * 100) : '—';
-            hint.innerHTML = `Mass balance: milk <strong>${r.milk.toFixed(2)}</strong> L + BOM <strong>${r.bomTotal.toFixed(2)}</strong> `
-                + `= <strong>${r.processInput.toFixed(2)}</strong> vs yield <strong>${r.yieldVal.toFixed(2)}</strong> `
-                + `${escapeHtml(r.yieldUnit)} (${pct}% of yield)`;
+            if (r.isLiquidYield) {
+                const pct = r.ratio != null && Number.isFinite(r.ratio) ? Math.round(r.ratio * 100) : '—';
+                hint.innerHTML = `Liquid balance: milk <strong>${formatRecipeNumber(r.milk, 2)}</strong> L + liquid ingredients `
+                    + `<strong>${formatRecipeNumber(r.liquidLiters, 2)}</strong> L = <strong>${formatRecipeNumber(r.liquidInput, 2)}</strong> L `
+                    + `vs yield <strong>${formatRecipeNumber(r.yieldVal, 2)}</strong> L (${pct}%). `
+                    + `Solids: <strong>${formatRecipeNumber(r.solidKg, 3)}</strong> kg; counted items: <strong>${formatRecipeNumber(r.countedUnits, 2)}</strong>.`;
+            } else {
+                hint.innerHTML = `Components stay separate: liquid <strong>${formatRecipeNumber(r.liquidInput, 2)}</strong> L, solids `
+                    + `<strong>${formatRecipeNumber(r.solidKg, 3)}</strong> kg, counted items <strong>${formatRecipeNumber(r.countedUnits, 2)}</strong>. `
+                    + `No cross-unit balance is calculated without an approved density or package conversion.`;
+            }
 
             if (!r.ok && r.yieldVal > 0 && r.milk > 0) {
                 errBox?.classList.remove('hidden');
@@ -1172,9 +1245,13 @@
             const r = evaluateMassBalance();
             refreshMassBalanceHint();
             if (!r.ok) {
-                const detail = `Input ${r.processInput.toFixed(2)} vs yield ${r.yieldVal.toFixed(2)} ${r.yieldUnit} `
-                    + `(milk ${r.milk.toFixed(2)} + BOM ${r.bomTotal.toFixed(2)}). `
-                    + `Minimum ${Math.round(MASS_BALANCE_MIN_RATIO * 100)}% of expected yield required.`;
+                const detail = `Liquid input ${r.liquidInput.toFixed(2)} L vs yield ${r.yieldVal.toFixed(2)} ${r.yieldUnit} `
+                    + `(milk ${r.milk.toFixed(2)} L + liquid ingredients ${r.liquidLiters.toFixed(2)} L). `
+                    + (r.failedRule === 'yield_below_input'
+                        ? 'Expected liquid output must retain at least 80% of liquid input unless an approved loss rule exists.'
+                        : r.failedRule === 'solid_dose'
+                            ? 'A single solid component above 25% of milk volume requires formula review.'
+                        : `Liquid input must reach at least ${Math.round(MASS_BALANCE_MIN_RATIO * 100)}% of expected yield.`);
                 alert(r.message + '\n\n' + detail);
                 showToast(r.message, 'error');
                 return false;
@@ -1195,6 +1272,18 @@
         }
         function escapeAttr(s) {
             return escapeHtml(s).replace(/`/g, '');
+        }
+
+        function formatRecipeNumber(value, maximumDecimals = 3) {
+            if (value == null || String(value).trim() === '') return '';
+            const amount = Number(value);
+            if (!Number.isFinite(amount)) return String(value);
+            return amount.toFixed(maximumDecimals).replace(/0+$/, '').replace(/\.$/, '');
+        }
+
+        function formatRecipeNumberInput(input, maximumDecimals = 3) {
+            if (!input || input.value.trim() === '') return;
+            input.value = formatRecipeNumber(input.value, maximumDecimals);
         }
 
         /* ── List ── */
@@ -1246,16 +1335,22 @@
             }
             tableBody.innerHTML = recipes.map(r => {
                 const cat = r.category || r.product_type;
+                const activeSkuCount = (r.skus || []).filter(s => Number(s.is_active) === 1).length;
+                const productLinkNote = !r.base_product_id
+                    ? '<div class="text-xs text-error">Missing base-product link</div>'
+                    : activeSkuCount === 0
+                        ? '<div class="text-xs text-warning">Bulk-only · packaging setup needed</div>'
+                        : `<div class="text-xs text-base-content/50">${activeSkuCount} active packaging size(s)</div>`;
                 return `<tr class="hover">
                     <td><span class="font-mono text-sm font-semibold">${escapeHtml(r.recipe_code)}</span></td>
                     <td>
                         <div class="font-semibold">${escapeHtml(r.product_name)}</div>
-                        ${!r.product_id ? '<div class="text-xs text-warning">Unlinked product</div>' : ''}
+                        ${productLinkNote}
                     </td>
                     <td><span class="badge badge-outline badge-sm">${escapeHtml(CATEGORY_LABELS[cat] || cat || '—')}</span></td>
                     <td class="text-sm">${escapeHtml(r.milk_type_name || '—')}</td>
-                    <td class="font-mono text-sm">${r.base_milk_liters} L</td>
-                    <td class="font-mono text-sm">${r.expected_yield} ${escapeHtml(r.yield_unit || 'liters')}</td>
+                    <td class="font-mono text-sm">${formatRecipeNumber(r.base_milk_liters, 2)} L</td>
+                    <td class="font-mono text-sm" title="Recipe scaling basis; Production enters planned volume separately">${formatRecipeNumber(r.expected_yield, 2)} ${escapeHtml(r.yield_unit || 'liters')} <span class="text-[10px] text-base-content/40">standard</span></td>
                     <td><span class="badge badge-ghost badge-sm font-mono">${r.ingredient_count ?? (r.ingredients || []).length}</span></td>
                     <td>
                         <span class="badge ${r.is_active == 1 ? 'badge-success' : 'badge-warning'} badge-sm">
@@ -1347,12 +1442,12 @@
                         document.getElementById('recipeDocTitle').textContent = r.product_name;
                     }
 
-                    document.getElementById('base_milk_liters').value = r.base_milk_liters;
-                    document.getElementById('expected_yield').value = r.expected_yield;
+                    document.getElementById('base_milk_liters').value = formatRecipeNumber(r.base_milk_liters, 2);
+                    document.getElementById('expected_yield').value = formatRecipeNumber(r.bulk_yield_liters || r.expected_yield, 2);
                     document.getElementById('yield_unit').value = r.yield_unit || 'liters';
-                    document.getElementById('pasteurization_temp').value = r.pasteurization_temp ?? 81;
-                    document.getElementById('pasteurization_time_mins').value = r.pasteurization_time_mins ?? 15;
-                    document.getElementById('cooling_temp').value = r.cooling_temp ?? 4;
+                    document.getElementById('pasteurization_temp').value = formatRecipeNumber(r.pasteurization_temp ?? 81, 2);
+                    document.getElementById('pasteurization_time_mins').value = formatRecipeNumber(r.pasteurization_time_mins ?? 15, 2);
+                    document.getElementById('cooling_temp').value = formatRecipeNumber(r.cooling_temp ?? 4, 2);
                     document.getElementById('special_instructions').value = r.special_instructions || r.description || '';
                     document.getElementById('description').value = r.description || '';
                     document.getElementById('is_active').checked = r.is_active == 1;
@@ -1460,9 +1555,8 @@
 
             const formData = {
                 base_product_id: parseInt(baseProductId, 10),
-                product_id: document.getElementById('product_id').value
-                    ? parseInt(document.getElementById('product_id').value, 10)
-                    : null,
+                // A recipe belongs to the base liquid, never one bottle size.
+                product_id: null,
                 base_milk_liters: document.getElementById('base_milk_liters').value,
                 expected_yield: document.getElementById('expected_yield').value,
                 yield_unit: document.getElementById('yield_unit').value,
@@ -1489,7 +1583,8 @@
                 }
 
                 if (response.success) {
-                    showToast(recordId ? 'Recipe updated' : 'Recipe created', 'success');
+                    showToast(response.message || (recordId ? 'Recipe updated' : 'Recipe created'), 'success');
+                    if (!recordId) currentPage = 1;
                     closeEditor();
                 } else {
                     const errMsg = response.message

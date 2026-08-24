@@ -9,6 +9,7 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/supplier_ingredient_catalog.php';
 
 // Supplier changes are handled only by the GM/Admin endpoint.
 $currentUser = Auth::requireRole(['purchaser', 'general_manager', 'admin']);
@@ -17,6 +18,7 @@ $action = getParam('action', 'list');
 
 try {
     $db = Database::getInstance()->getConnection();
+    ensureSupplierIngredientCatalog($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -37,14 +39,58 @@ function handleGet($db, $action, $currentUser) {
         case 'list':
             $status = getParam('status');
             $search = getParam('search');
-            
-            $sql = "SELECT * FROM suppliers WHERE 1=1";
+            $orderable = filter_var(getParam('orderable', false), FILTER_VALIDATE_BOOLEAN);
+            $ingredientIds = [];
+            $ingredientIdsParam = trim((string) getParam('ingredient_ids', ''));
+            if ($ingredientIdsParam !== '') {
+                foreach (explode(',', $ingredientIdsParam) as $ingredientId) {
+                    $ingredientId = filter_var(trim($ingredientId), FILTER_VALIDATE_INT, [
+                        'options' => ['min_range' => 1],
+                    ]);
+                    if ($ingredientId !== false) {
+                        $ingredientIds[(int) $ingredientId] = (int) $ingredientId;
+                    }
+                }
+                $ingredientIds = array_slice(array_values($ingredientIds), 0, 200);
+            }
+
             $params = [];
+            $sql = "SELECT suppliers.*";
+            if ($ingredientIds) {
+                $matchingPlaceholders = implode(',', array_fill(0, count($ingredientIds), '?'));
+                $sql .= ", (
+                    SELECT COUNT(DISTINCT matching_offer.ingredient_id)
+                    FROM supplier_ingredients matching_offer
+                    JOIN ingredients matching_ingredient
+                      ON matching_ingredient.id = matching_offer.ingredient_id
+                     AND matching_ingredient.is_active = 1
+                    WHERE matching_offer.supplier_id = suppliers.id
+                      AND matching_offer.is_active = 1
+                      AND matching_offer.ingredient_id IN ($matchingPlaceholders)
+                ) AS matching_ingredient_count";
+                array_push($params, ...$ingredientIds);
+            }
+            $sql .= " FROM suppliers WHERE 1=1";
             
             if ($isPurchaser || $status === 'active') {
                 $sql .= " AND is_active = 1";
             } elseif ($status === 'inactive') {
                 $sql .= " AND is_active = 0";
+            }
+
+            if ($orderable) {
+                $sql .= " AND EXISTS (
+                    SELECT 1
+                    FROM supplier_ingredients si
+                    JOIN ingredients i ON i.id = si.ingredient_id AND i.is_active = 1
+                    WHERE si.supplier_id = suppliers.id
+                      AND si.is_active = 1
+                ";
+                if ($ingredientIds) {
+                    $sql .= " AND si.ingredient_id IN ($matchingPlaceholders)";
+                    array_push($params, ...$ingredientIds);
+                }
+                $sql .= ")";
             }
             
             if ($search) {
@@ -107,6 +153,7 @@ function handleGet($db, $action, $currentUser) {
             ");
             $statsStmt->execute([$id]);
             $supplier['business_stats'] = $statsStmt->fetch();
+            $supplier['ingredients'] = supplierCatalogGetSupplierIngredients($db, (int) $id);
             
             Response::success($supplier, 'Supplier details retrieved');
             break;

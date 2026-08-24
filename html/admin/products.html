@@ -2,6 +2,7 @@
 <html lang="en" data-theme="emerald">
 
 <head>
+    <style id="roleGuardPending">html { visibility: hidden; }</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -469,12 +470,12 @@
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
                 <div>
                     <h1 class="text-lg font-bold text-base-content leading-tight">Products</h1>
-                    <p class="text-xs text-base-content/50">Base liquids (master) · packaging sizes as SKU detail</p>
+                    <p class="text-xs text-base-content/50">One base per formula/flavor · packaging sizes as SKU detail</p>
                 </div>
                 <div class="flex items-center gap-2">
                     <span class="erp-toolbar-count" id="listCountLabel">0 bases / 0 SKUs</span>
                     <button class="btn btn-primary btn-sm" onclick="openAddModal()">
-                        <i class="fas fa-plus"></i><span class="ml-1">New base product</span>
+                        <i class="fas fa-plus"></i><span class="ml-1">New formula / base</span>
                     </button>
                 </div>
             </div>
@@ -502,7 +503,7 @@
                 <div class="flex flex-col md:flex-row gap-2">
                     <label class="input input-bordered input-sm flex items-center gap-2 flex-1 min-h-9">
                         <i class="fas fa-search text-base-content/40 text-xs"></i>
-                        <input type="text" id="searchInput" placeholder="Search base name, code, variant…" class="grow text-sm"
+                        <input type="text" id="searchInput" placeholder="Search formula/base name or SKU code…" class="grow text-sm"
                             oninput="filterData()" />
                     </label>
                     <select id="categoryFilter" class="select select-bordered select-sm w-full md:w-44 min-h-9" onchange="filterData()">
@@ -539,8 +540,8 @@
                 <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
             <h3 class="font-bold text-lg mb-1" id="baseModalTitle">Add Base Product</h3>
-            <p class="text-sm text-base-content/60 mb-5" id="baseModalSubtitle">Define the universal properties of the
-                liquid/product. You will add sizes separately after saving.</p>
+            <p class="text-sm text-base-content/60 mb-5" id="baseModalSubtitle">Define one manufacturable formula or
+                flavor, then add its sellable packaging SKUs.</p>
 
             <form id="baseProductForm" onsubmit="saveBaseProduct(event)">
                 <input type="hidden" id="baseRecordId" value="">
@@ -553,12 +554,15 @@
 
                 <!-- Base product identity & storage (hidden in add_sku mode) -->
                 <div id="base-product-fields" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <!-- Product Name - full width -->
+                    <!-- Formula/base identity - full width -->
                     <div class="form-control md:col-span-2">
-                        <label class="label"><span class="label-text font-medium">Product Name <span
+                        <label class="label"><span class="label-text font-medium">Base Product / Formula Name <span
                                     class="text-error">*</span></span></label>
                         <input type="text" id="base_product_name" class="input input-bordered" required
-                            placeholder="e.g., Highland Chocolate Milk" />
+                            placeholder="e.g., Milkbar-UBE" />
+                        <label class="label pb-0">
+                            <span class="label-text-alt text-base-content/60">Include the flavor when it changes the recipe. Create Milkbar-UBE and Milkbar-Chocolate as separate base products.</span>
+                        </label>
                     </div>
 
                     <!-- Category -->
@@ -592,21 +596,21 @@
                     <!-- Shelf Life -->
                     <div class="form-control">
                         <label class="label"><span class="label-text font-medium">Shelf Life (days)</span></label>
-                        <input type="number" id="base_shelf_life_days" class="input input-bordered" value="7" min="1" />
+                        <input type="number" id="base_shelf_life_days" class="input input-bordered" value="7" min="1" max="3650" step="1" inputmode="numeric" />
                     </div>
 
                     <!-- Storage Temp Min -->
                     <div class="form-control">
                         <label class="label"><span class="label-text font-medium">Storage Temp Min (°C)</span></label>
                         <input type="number" id="base_storage_temp_min" class="input input-bordered" value="2"
-                            step="0.1" />
+                            step="0.1" min="-50" max="100" data-allow-negative />
                     </div>
 
                     <!-- Storage Temp Max -->
                     <div class="form-control">
                         <label class="label"><span class="label-text font-medium">Storage Temp Max (°C)</span></label>
                         <input type="number" id="base_storage_temp_max" class="input input-bordered" value="6"
-                            step="0.1" />
+                            step="0.1" min="-50" max="100" data-allow-negative />
                     </div>
 
                     <!-- Description -->
@@ -637,10 +641,14 @@
                 <!-- ── SKU SECTION ── -->
                 <div id="skuSection" class="scroll-mt-4">
                     <div class="divider my-4 text-sm font-semibold text-base-content/60" id="skuSectionDivider">
-                        <i class="fas fa-tags mr-1"></i> <span id="skuSectionTitle">Sizes / Packaging (SKUs)</span>
+                        <i class="fas fa-tags mr-1"></i> <span id="skuSectionTitle">Sellable Packaging SKUs</span>
                     </div>
-                    <p class="text-xs text-base-content/50 mb-3" id="skuSectionHelp">Add every size you sell this product in.
-                        Each size becomes a separate SKU with its own product code and price.</p>
+                    <div class="alert alert-info py-2 mb-3 text-xs" id="skuFormulaRule">
+                        <i class="fas fa-circle-info"></i>
+                        <span>SKUs inherit this formula/flavor. Add only packaging type, size, and price here. A different flavor must be a new base product with its own recipe.</span>
+                    </div>
+                    <p class="text-xs text-base-content/50 mb-3" id="skuSectionHelp">Add every packaging size you sell.
+                        Each becomes a separate SKU with its own product code, packaging BOM, and price.</p>
 
                     <div id="skuList" class="space-y-3 mb-3">
                         <!-- SKU rows injected here -->
@@ -649,7 +657,7 @@
                     <button type="button" id="addSkuRowBtn" class="btn btn-ghost btn-sm gap-2 border-dashed border-2 w-full"
                         onclick="addSkuRow({ focus: true })">
                         <i class="fas fa-plus text-primary"></i>
-                        <span class="text-primary" id="addSkuRowBtnLabel">Add Size / SKU</span>
+                        <span class="text-primary" id="addSkuRowBtnLabel">Add New SKU</span>
                     </button>
                 </div>
 
@@ -671,22 +679,17 @@
             <form method="dialog">
                 <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
-            <h3 class="font-bold text-lg mb-1">Edit SKU / Size Variant</h3>
-            <p class="text-sm text-base-content/60 mb-4">Update the packaging size and pricing for this variant.</p>
+            <h3 class="font-bold text-lg mb-1">Edit Packaging SKU</h3>
+            <p class="text-sm text-base-content/60 mb-4">Update packaging and pricing. The formula/flavor comes from the base product.</p>
 
             <form id="skuEditForm" onsubmit="saveSkuEdit(event)">
                 <input type="hidden" id="sku_edit_id" value="">
                 <div class="grid grid-cols-2 gap-4">
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Variant / Flavor</span></label>
-                        <input type="text" id="sku_edit_variant" class="input input-bordered"
-                            placeholder="e.g., Chocolate (optional)" />
-                    </div>
-                    <div class="form-control">
                         <label class="label"><span class="label-text">Unit Size <span
                                     class="text-error">*</span></span></label>
                         <input type="number" id="sku_edit_unit_size" class="input input-bordered"
-                            min="1" step="0.01" required placeholder="e.g., 250"
+                            min="1" max="99999999.99" step="0.01" required placeholder="e.g., 250"
                             inputmode="decimal"
                             onkeydown="return blockNegativeNumberKey(event)" />
                         <label class="label py-0 hidden" id="sku_edit_size_error">
@@ -724,12 +727,12 @@
                     <div class="form-control">
                         <label class="label"><span class="label-text">Pcs / Box</span></label>
                         <input type="number" id="sku_edit_pieces_per_box" class="input input-bordered" value="1"
-                            min="1" />
+                            min="1" max="1000000" step="1" inputmode="numeric" />
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Selling Price (₱) <span class="text-error">*</span></span></label>
                         <input type="number" id="sku_edit_selling_price" class="input input-bordered"
-                            min="0.01" step="0.01" required placeholder="0.01"
+                            min="0.01" max="9999999999.99" step="0.01" required placeholder="0.01"
                             inputmode="decimal"
                             onkeydown="return blockNegativeNumberKey(event)" />
                         <label class="label py-0 hidden" id="sku_edit_price_error">
@@ -754,6 +757,54 @@
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
 
+    <!-- ====================== SKU PACKAGING BOM MODAL ====================== -->
+    <dialog id="packagingBomModal" class="modal">
+        <div class="modal-box w-11/12 max-w-4xl">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-1">SKU Packaging BOM</h3>
+            <p id="packagingBomContext" class="text-sm text-base-content/60">—</p>
+
+            <div class="alert alert-info py-2 my-4 text-sm">
+                <i class="fas fa-box-open"></i>
+                <span>For bottles, caps, and labels, enter the quantity used by one finished product. For a roll, enter how many finished products one roll can cover; the system calculates the fraction for you. If one roll covers more than 100, track that material in a smaller unit such as meters.</span>
+            </div>
+
+            <input type="hidden" id="packaging_bom_product_id" value="">
+            <div class="overflow-x-auto border border-base-300 rounded-lg">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Packaging material</th>
+                            <th class="w-72">Material usage</th>
+                            <th class="w-28">Waste %</th>
+                            <th class="w-20">UOM</th>
+                            <th class="w-12"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="packagingBomRows"></tbody>
+                </table>
+            </div>
+            <p id="packagingBomEmpty" class="text-sm text-warning mt-2 hidden">
+                A SKU with no packaging BOM cannot be selected when completing production.
+            </p>
+            <button type="button" id="addPackagingBomRowBtn" class="btn btn-ghost btn-sm mt-3 gap-2 border-dashed border-2"
+                onclick="addPackagingBomRow()">
+                <i class="fas fa-plus text-primary"></i>Add packaging material
+            </button>
+
+            <div class="modal-action">
+                <button type="button" class="btn btn-ghost"
+                    onclick="document.getElementById('packagingBomModal').close()">Cancel</button>
+                <button type="button" id="savePackagingBomBtn" class="btn btn-primary" onclick="savePackagingBom()">
+                    <i class="fas fa-save mr-2"></i>Save Packaging BOM
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
     <!-- Delete Confirmation -->
     <dialog id="deleteModal" class="modal">
         <div class="modal-box">
@@ -773,6 +824,7 @@
 
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/ui/notification-layer.js?v=20260816-1"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="general_manager,admin"></script>
     <script src="../../js/admin/admin.service.js"></script>
 
@@ -783,6 +835,8 @@
         let filteredGroups = [];
         let recordToDelete = null;
         let skuRowCounter = 0;
+        let packagingBomMaterials = [];
+        let packagingBomRowCounter = 0;
 
         /* ─────────── Sidebar / Theme ─────────── */
         function toggleSidebar() {
@@ -801,6 +855,70 @@
         /* ─────────── Helpers ─────────── */
         function formatCurrency(v) {
             return '₱' + parseFloat(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+        }
+
+        function formatProductNumber(value, maximumDecimals = 6) {
+            if (value == null || String(value).trim() === '') return '';
+            const amount = Number(value);
+            if (!Number.isFinite(amount)) return String(value);
+            return amount.toFixed(maximumDecimals).replace(/0+$/, '').replace(/\.$/, '');
+        }
+
+        function formatProductNumberInput(input, maximumDecimals = 6) {
+            if (!input || input.value.trim() === '') return;
+            input.value = formatProductNumber(input.value, maximumDecimals);
+        }
+
+        function isRollPackagingUnit(unit) {
+            return ['roll', 'rolls'].includes(String(unit || '').trim().toLowerCase());
+        }
+
+        function updatePackagingBomRollPreview(row) {
+            if (!row) return;
+            const coverageInput = row.querySelector('[data-pack-bom="coverage"]');
+            const quantityInput = row.querySelector('[data-pack-bom="quantity"]');
+            const preview = row.querySelector('[data-pack-bom="roll-preview"]');
+            if (!coverageInput || !quantityInput || !preview) return;
+
+            const coverage = Number(coverageInput.value);
+            const valid = Number.isInteger(coverage) && coverage >= 1 && coverage <= 100;
+            if (!valid) {
+                quantityInput.value = '';
+                preview.textContent = coverageInput.value
+                    ? 'Enter a whole number from 1 to 100.'
+                    : 'Required for materials counted by roll.';
+                preview.className = 'text-[11px] mt-1 text-error';
+                return;
+            }
+
+            const perFinishedUnit = 1 / coverage;
+            const exampleRequirement = 1000 / coverage;
+            quantityInput.value = formatProductNumber(perFinishedUnit, 6);
+            preview.textContent = `System uses ${formatProductNumber(perFinishedUnit, 6)} roll each · 1,000 finished units need ${formatProductNumber(exampleRequirement, 2)} rolls before waste.`;
+            preview.className = `text-[11px] mt-1 ${coverage <= 10 ? 'text-warning font-semibold' : 'text-base-content/60'}`;
+        }
+
+        function syncPackagingBomUsageControl(row) {
+            if (!row) return;
+            const unit = row.querySelector('[data-pack-bom="unit"]')?.textContent || '';
+            const isRoll = isRollPackagingUnit(unit);
+            const quantityInput = row.querySelector('[data-pack-bom="quantity"]');
+            const directWrap = row.querySelector('[data-pack-bom="direct-usage"]');
+            const rollWrap = row.querySelector('[data-pack-bom="roll-usage"]');
+            const directHelp = row.querySelector('[data-pack-bom="direct-help"]');
+            directWrap?.classList.toggle('hidden', isRoll);
+            rollWrap?.classList.toggle('hidden', !isRoll);
+            if (quantityInput) quantityInput.required = !isRoll;
+            if (directHelp) directHelp.textContent = `${unit || 'unit'} per finished product`;
+
+            if (isRoll) {
+                const coverageInput = row.querySelector('[data-pack-bom="coverage"]');
+                const quantity = Number(quantityInput?.value || 0);
+                if (coverageInput && !coverageInput.value && quantity > 0) {
+                    coverageInput.value = formatProductNumber(1 / quantity, 3);
+                }
+                updatePackagingBomRollPreview(row);
+            }
         }
 
         const CATEGORY_LABELS = {
@@ -842,6 +960,7 @@
                         storage_temp_max: p.storage_temp_max,
                         description: p.description,
                         recipe_count: 0,
+                        latest_id: 0,
                         skus: []
                     });
                 }
@@ -850,6 +969,7 @@
                 if (!g.milk_type_name && p.milk_type_name) g.milk_type_name = p.milk_type_name;
                 if (!g.description && p.description) g.description = p.description;
                 g.recipe_count = (Number(g.recipe_count) || 0) + (Number(p.recipe_count) || 0);
+                g.latest_id = Math.max(Number(g.latest_id) || 0, Number(p.id) || 0);
                 g.skus.push(p);
             });
 
@@ -857,7 +977,11 @@
             return Array.from(map.values()).map(g => {
                 g.skus.sort((a, b) => (parseFloat(a.unit_size) || 0) - (parseFloat(b.unit_size) || 0));
                 return g;
-            }).sort((a, b) => a.name.localeCompare(b.name));
+            }).sort((a, b) => {
+                const aOrder = Number(a.base_product_id) || Number(a.latest_id) || 0;
+                const bOrder = Number(b.base_product_id) || Number(b.latest_id) || 0;
+                return bOrder - aOrder;
+            });
         }
 
         function formatSize(s) {
@@ -1107,7 +1231,6 @@
                     || g.name.toLowerCase().includes(search)
                     || g.skus.some(s =>
                         (s.product_code || '').toLowerCase().includes(search)
-                        || (s.variant || '').toLowerCase().includes(search)
                         || (s.product_name || '').toLowerCase().includes(search)
                     );
                 const matchStatus = status === '' || g.skus.some(s => String(s.is_active) === status);
@@ -1132,7 +1255,7 @@
                         <i class="fas fa-box-open text-3xl text-base-content/15 mb-2"></i>
                         <p class="text-sm text-base-content/50">No products match filters</p>
                         <button class="btn btn-primary btn-xs mt-3" onclick="openAddModal()">
-                            <i class="fas fa-plus mr-1"></i>New base product
+                            <i class="fas fa-plus mr-1"></i>New formula / base
                         </button>
                     </div>`;
                 return;
@@ -1147,6 +1270,15 @@
                 const activeCount = g.skus.filter(s => Number(s.is_active) === 1).length;
                 const skuCount = g.skus.length;
                 const isOpen = expandedGroups.has(groupKey);
+                const activePackagingKeys = new Set();
+                const hasLegacySkuCollision = g.skus.some(sku => {
+                    if (Number(sku.is_active) !== 1) return false;
+                    const key = skuDuplicateKey(sku);
+                    if (!key) return false;
+                    if (activePackagingKeys.has(key)) return true;
+                    activePackagingKeys.add(key);
+                    return false;
+                });
                 // Low stock: only count SKUs with known stock below threshold (not null/missing → not all rows)
                 const LOW_STOCK_THRESHOLD = 50;
                 const lowStock = g.skus.filter(s => {
@@ -1171,8 +1303,13 @@
                             <td>
                                 <div class="font-semibold text-xs">${escapeHtml(sizeText)}</div>
                                 <div class="sku-code">${escapeHtml(s.product_code || '—')}</div>
+                                <div class="text-[10px] mt-1 ${s.packaging_bom_ready ? 'text-success' : 'text-warning'}">
+                                    ${s.packaging_bom_ready
+                                        ? `<i class="fas fa-check-circle"></i> Packaging BOM · ${Number(s.packaging_bom_count || 0)} item(s)`
+                                        : '<i class="fas fa-triangle-exclamation"></i> Packaging BOM needed'}
+                                </div>
                             </td>
-                            <td class="text-base-content/60">${escapeHtml(s.variant || '—')}</td>
+                            <td class="text-base-content/60 capitalize">${escapeHtml(s.base_unit || 'piece')}</td>
                             <td class="sku-price num">${price}</td>
                             <td class="num meta-muted">${escapeHtml(String(stockDisp))}</td>
                             <td>
@@ -1182,6 +1319,9 @@
                             </td>
                             <td class="text-right">
                                 <div class="sku-actions">
+                                    <button type="button" title="Configure Packaging BOM" onclick="event.stopPropagation(); openPackagingBom(${s.id})">
+                                        <i class="fas fa-boxes-stacked"></i>
+                                    </button>
                                     <button type="button" title="Edit SKU" onclick="event.stopPropagation(); editSku(${s.id})">
                                         <i class="fas fa-pen"></i>
                                     </button>
@@ -1202,15 +1342,20 @@
                                 <p class="erp-detail-label mb-0">Packaging SKUs · ${escapeHtml(g.name)}</p>
                                 <button type="button" class="btn btn-ghost btn-xs"
                                     onclick="event.stopPropagation(); openAddSkuModal('${safeName}', '${safeCat}', '${safeKey}')">
-                                    <i class="fas fa-plus mr-1"></i>Add size
+                                    <i class="fas fa-plus mr-1"></i>Add SKU
                                 </button>
                             </div>
+                            ${hasLegacySkuCollision ? `
+                                <div class="alert alert-warning py-2 mt-2 text-xs">
+                                    <i class="fas fa-triangle-exclamation"></i>
+                                    <span>Legacy duplicate packaging configurations found. If these rows represent different flavors, create a separate formula/base for each flavor, then retire the incorrect legacy SKU rows.</span>
+                                </div>` : ''}
                             <div class="overflow-x-auto mt-1">
                                 <table class="erp-sku">
                                     <thead>
                                         <tr>
                                             <th>Size / code</th>
-                                            <th>Variant</th>
+                                            <th>Packaging</th>
                                             <th>Price</th>
                                             <th title="Usable units physically held by Warehouse FG">FG on hand</th>
                                             <th>Status</th>
@@ -1240,6 +1385,9 @@
                             ${escapeHtml(g.name)}
                             ${g.is_orphan || !(Number(g.recipe_count) > 0)
                                 ? '<span class="badge badge-warning badge-xs" title="No active recipe — cannot manufacture">No recipe</span>'
+                                : ''}
+                            ${hasLegacySkuCollision
+                                ? '<span class="badge badge-error badge-xs" title="Duplicate active packaging configurations">Legacy SKU conflict</span>'
                                 : ''}
                         </div>
                         <div class="meta-muted">${g.base_product_id ? `ID ${g.base_product_id}` : (g.category || 'product')}</div>
@@ -1313,6 +1461,9 @@
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
         }
+        function escapeAttr(s) {
+            return escapeHtml(s);
+        }
 
         /**
          * Toggle modal UI between full edit and add-SKU-only.
@@ -1343,12 +1494,12 @@
                 if (nameChip) nameChip.textContent = productName || '—';
                 if (title) title.textContent = 'Add New SKU';
                 if (subtitle) {
-                    subtitle.textContent = 'Create a packaging size for this product. Base liquid settings are not shown here.';
+                    subtitle.textContent = 'Create another sellable packaging SKU for this formula. Base settings are not shown here.';
                 }
-                if (saveLabel) saveLabel.textContent = 'Save New Size';
-                if (skuTitle) skuTitle.textContent = 'New packaging size';
+                if (saveLabel) saveLabel.textContent = 'Save New SKU';
+                if (skuTitle) skuTitle.textContent = 'New packaging SKU';
                 if (skuHelp) {
-                    skuHelp.textContent = 'Enter the size, unit, and selling price for the new SKU. Existing sizes are listed above for reference (read-only context).';
+                    skuHelp.textContent = 'Enter packaging type, size, and selling price. Existing SKUs are listed above for read-only context.';
                 }
                 requiredWhenVisible.forEach(id => {
                     const el = document.getElementById(id);
@@ -1362,13 +1513,13 @@
                 }
                 if (subtitle) {
                     subtitle.textContent = action === 'create'
-                        ? 'Define the universal properties of the liquid/product. Add packaging sizes below.'
-                        : 'Update shared base properties and packaging sizes for this product.';
+                        ? 'Define one manufacturable formula or flavor, then add its sellable packaging SKUs.'
+                        : 'Update the shared formula identity and its packaging SKUs.';
                 }
                 if (saveLabel) saveLabel.textContent = action === 'create' ? 'Save Product' : 'Save Changes';
-                if (skuTitle) skuTitle.textContent = 'Sizes / Packaging (SKUs)';
+                if (skuTitle) skuTitle.textContent = 'Sellable Packaging SKUs';
                 if (skuHelp) {
-                    skuHelp.textContent = 'Add every size you sell this product in. Each size becomes a separate SKU with its own product code and price.';
+                    skuHelp.textContent = 'Add every packaging size you sell. Each SKU has its own product code, packaging BOM, and price.';
                 }
                 requiredWhenVisible.forEach(id => {
                     const el = document.getElementById(id);
@@ -1400,7 +1551,7 @@
          * @param {string} productName
          * @param {string} category
          * @param {string} groupKey
-         * @param {'edit'|'add_sku'} action - pencil vs + Add size
+         * @param {'edit'|'add_sku'} action - pencil vs + Add SKU
          */
         function editBaseProduct(productName, category, groupKey, action = 'edit') {
             const group = findGroup(productName, category, groupKey);
@@ -1473,7 +1624,7 @@
         }
 
         /**
-         * Table "+ Add size" — SKU-only view (base fields hidden).
+         * Table "+ Add SKU" — SKU-only view (base fields hidden).
          */
         function openAddSkuModal(productName, category, groupKey) {
             editBaseProduct(productName, category, groupKey, 'add_sku');
@@ -1664,7 +1815,7 @@
                 ? `<span class="text-[10px] text-base-content/50 font-mono sku-code-label">${escapeHtml(skuData.product_code)}</span>`
                 : (isExisting
                     ? `<span class="text-[10px] text-base-content/40 sku-code-label">SKU #${productId}</span>`
-                    : '<span class="text-[10px] text-primary sku-code-label">New size</span>');
+                    : '<span class="text-[10px] text-primary sku-code-label">New SKU</span>');
 
             div.dataset.existing = isExisting ? '1' : '0';
             div.dataset.softDeleted = '0';
@@ -1681,17 +1832,13 @@
                         <span class="badge badge-error badge-outline badge-xs hidden sku-will-disable-badge">will deactivate</span>
                     </div>
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
-                    <div class="form-control w-full min-w-0">
-                        <label class="label py-0"><span class="label-text text-xs">Variant/Flavor</span></label>
-                        <input type="text" name="sku_variant_${idx}" class="input input-sm input-bordered w-full sku-field" placeholder="e.g., Chocolate" />
-                    </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-end">
                     <div class="form-control w-full min-w-0">
                         <label class="label py-0"><span class="label-text text-xs">Size <span class="text-error">*</span></span></label>
                         <div class="join w-full">
                             <input type="number" name="sku_unit_size_${idx}"
                                 class="input input-sm input-bordered join-item w-full min-w-0 sku-field sku-unit-size"
-                                placeholder="e.g. 250" min="1" step="0.01" required
+                                placeholder="e.g. 250" min="1" max="99999999.99" step="0.01" required
                                 inputmode="decimal"
                                 onkeydown="return blockNegativeNumberKey(event)"
                                 oninput="clearSkuFieldError(this)"
@@ -1708,7 +1855,7 @@
                         </label>
                     </div>
                     <div class="form-control w-full min-w-0">
-                        <label class="label py-0"><span class="label-text text-xs">Base Unit</span></label>
+                        <label class="label py-0"><span class="label-text text-xs">Packaging Type</span></label>
                         <select name="sku_base_unit_${idx}" class="select select-sm select-bordered w-full sku-field">
                             <option value="piece">Piece</option>
                             <option value="bottle">Bottle</option>
@@ -1723,7 +1870,7 @@
                         <div class="flex items-center gap-1 w-full min-w-0">
                             <input type="number" name="sku_selling_price_${idx}"
                                 class="input input-sm input-bordered flex-1 min-w-0 sku-field sku-selling-price"
-                                placeholder="0.01" min="0.01" step="0.01" required
+                                placeholder="0.01" min="0.01" max="9999999999.99" step="0.01" required
                                 inputmode="decimal"
                                 onkeydown="return blockNegativeNumberKey(event)"
                                 oninput="clearSkuFieldError(this)"
@@ -1744,12 +1891,10 @@
 
             // Prefill after mount so selects get correct values
             if (skuData) {
-                const variantInput = div.querySelector(`[name="sku_variant_${idx}"]`);
                 const sizeInput = div.querySelector(`[name="sku_unit_size_${idx}"]`);
                 const measureSel = div.querySelector(`[name="sku_unit_measure_${idx}"]`);
                 const baseUnitSel = div.querySelector(`[name="sku_base_unit_${idx}"]`);
                 const priceInput = div.querySelector(`[name="sku_selling_price_${idx}"]`);
-                if (variantInput) variantInput.value = skuData.variant || '';
                 if (sizeInput) sizeInput.value = skuData.unit_size != null ? skuData.unit_size : '';
                 setSelectValue(measureSel, skuData.unit_measure, 'ml');
                 setSelectValue(baseUnitSel, skuData.base_unit, 'piece');
@@ -1862,11 +2007,9 @@
                 const unitMeasure = row.querySelector(`[name="sku_unit_measure_${idx}"]`)?.value || 'ml';
                 const baseUnit = row.querySelector(`[name="sku_base_unit_${idx}"]`)?.value || 'piece';
                 const sellingPrice = parseFloat(row.querySelector(`[name="sku_selling_price_${idx}"]`)?.value);
-                const variant = row.querySelector(`[name="sku_variant_${idx}"]`)?.value?.trim() || null;
                 if (!Number.isFinite(unitSize) || unitSize <= 0) return;
                 rows.push({
                     product_id: isExisting ? productId : null,
-                    variant,
                     unit_size: unitSize,
                     unit_measure: unitMeasure,
                     base_unit: baseUnit,
@@ -1906,14 +2049,14 @@
         function skuDuplicateKey(sku) {
             const normalized = normalizeSkuSize(sku.unit_size, sku.unit_measure);
             if (!normalized) return null;
-            const variant = String(sku.variant || '').trim().toLowerCase();
-            return `${variant}::${normalized.family}:${normalized.value.toFixed(4)}`;
+            const packagingType = String(sku.base_unit || 'piece').trim().toLowerCase();
+            return `${packagingType}::${normalized.family}:${normalized.value.toFixed(4)}`;
         }
 
         function skuDuplicateLabel(sku) {
             const size = Number(parseFloat(sku.unit_size).toFixed(2));
-            const variant = String(sku.variant || '').trim();
-            return `${size} ${sku.unit_measure || ''}${variant ? ` (${variant})` : ''}`;
+            const packagingType = String(sku.base_unit || 'piece').trim().toLowerCase();
+            return `${packagingType} · ${size} ${sku.unit_measure || ''}`;
         }
 
         function validateNoDuplicateSkuSizes(skuRows, group = null) {
@@ -2054,7 +2197,6 @@
                             storage_temp_max: tempMax,
                             description,
                             is_active: isActive,
-                            variant: row.variant,
                             unit_size: row.unit_size,
                             unit_measure: row.unit_measure,
                             base_unit: row.base_unit,
@@ -2100,7 +2242,6 @@
                         category,
                         milk_type_id: milkTypeId,
                         base_product_id: baseProductId,
-                        variant: row.variant,
                         unit_size: row.unit_size,
                         unit_measure: row.unit_measure,
                         base_unit: row.base_unit,
@@ -2142,7 +2283,6 @@
                     // FIX: API returns { data: { product: {...} } }
                     const data = response.data?.product || response.data;
                     document.getElementById('sku_edit_id').value = data.id;
-                    document.getElementById('sku_edit_variant').value = data.variant || '';
                     document.getElementById('sku_edit_unit_size').value = data.unit_size || '';
                     document.getElementById('sku_edit_unit_measure').value = data.unit_measure || 'ml';
                     document.getElementById('sku_edit_base_unit').value = data.base_unit || 'piece';
@@ -2167,7 +2307,6 @@
             }
 
             const formData = {
-                variant: document.getElementById('sku_edit_variant').value || null,
                 unit_size: parseFloat(document.getElementById('sku_edit_unit_size').value),
                 unit_measure: document.getElementById('sku_edit_unit_measure').value,
                 base_unit: document.getElementById('sku_edit_base_unit').value,
@@ -2188,6 +2327,237 @@
                 }
             } catch (err) {
                 showToast('Failed to update SKU', 'error');
+            }
+        }
+
+        /* ─────────── SKU packaging BOM ─────────── */
+        async function packagingBomRequest(id, options = {}) {
+            const response = await fetch(`${ApiConfig.baseUrl}/admin/products.php?action=packaging_bom&id=${encodeURIComponent(id)}`, {
+                ...options,
+                headers: {
+                    ...ApiConfig.getHeaders(),
+                    ...(options.headers || {})
+                }
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                const error = new Error(payload.message || 'Packaging BOM request failed');
+                error.errors = payload.errors || null;
+                throw error;
+            }
+            return payload;
+        }
+
+        async function openPackagingBom(productId) {
+            try {
+                const response = await packagingBomRequest(productId);
+                const data = response.data || {};
+                const sku = data.sku || {};
+                packagingBomMaterials = data.available_materials || [];
+                packagingBomRowCounter = 0;
+                document.getElementById('packaging_bom_product_id').value = productId;
+                document.getElementById('packagingBomContext').textContent =
+                    `${sku.product_code || 'SKU'} — ${sku.base_product_name || sku.product_name || 'Product'} · ${sku.unit_size || ''} ${sku.unit_measure || ''}`;
+                document.getElementById('packagingBomRows').innerHTML = '';
+
+                (data.items || []).forEach(item => addPackagingBomRow(item));
+                if (!(data.items || []).length) addPackagingBomRow();
+                refreshPackagingBomEmptyState();
+                document.getElementById('packagingBomModal').showModal();
+            } catch (error) {
+                const detail = error.errors ? Object.values(error.errors).join('; ') : error.message;
+                showToast(detail || 'Failed to load packaging BOM', 'error');
+            }
+        }
+
+        function addPackagingBomRow(item = {}) {
+            const tbody = document.getElementById('packagingBomRows');
+            if (!tbody) return;
+            const selectedIds = new Set(Array.from(tbody.querySelectorAll('[data-pack-bom="ingredient"]'))
+                .map(select => select.value)
+                .filter(Boolean));
+            if (!item.ingredient_id && packagingBomMaterials.length > 0 && selectedIds.size >= packagingBomMaterials.length) {
+                showToast('Every available packaging material is already on the list. Update an existing row instead.', 'info');
+                return;
+            }
+            const rowId = ++packagingBomRowCounter;
+            const options = packagingBomMaterials.map(material => {
+                const selected = String(material.id) === String(item.ingredient_id || '') ? 'selected' : '';
+                return `<option value="${material.id}" data-unit="${escapeAttr(material.unit_of_measure || 'piece')}" ${selected}>${escapeHtml(material.ingredient_name)} (${escapeHtml(material.ingredient_code || '—')})</option>`;
+            }).join('');
+            const initialQuantity = formatProductNumber(item.quantity_per_unit, 6);
+            const initialCoverage = Number(item.quantity_per_unit) > 0
+                ? formatProductNumber(1 / Number(item.quantity_per_unit), 3)
+                : '';
+            const tr = document.createElement('tr');
+            tr.id = `packagingBomRow_${rowId}`;
+            tr.innerHTML = `
+                <td>
+                    <select class="select select-bordered select-sm w-full" data-pack-bom="ingredient" onchange="onPackagingBomMaterialChange(this)" required>
+                        <option value="">Select material…</option>${options}
+                    </select>
+                </td>
+                <td class="min-w-[18rem]">
+                    <div data-pack-bom="direct-usage">
+                        <input type="number" class="input input-bordered input-sm w-full text-right" data-pack-bom="quantity"
+                            min="0.000001" max="1000" step="0.000001" value="${escapeAttr(initialQuantity)}" placeholder="e.g. 1"
+                            onblur="formatProductNumberInput(this, 6)" required>
+                        <p class="text-[11px] mt-1 text-base-content/50" data-pack-bom="direct-help">unit per finished product</p>
+                    </div>
+                    <div class="hidden" data-pack-bom="roll-usage">
+                        <div class="flex items-center gap-2 whitespace-nowrap">
+                            <span class="text-xs">1 roll covers</span>
+                            <input type="number" class="input input-bordered input-sm w-24 text-right" data-pack-bom="coverage"
+                                min="1" max="100" step="1" value="${escapeAttr(initialCoverage)}" placeholder="e.g. 100"
+                                oninput="updatePackagingBomRollPreview(this.closest('tr'))"
+                                onblur="updatePackagingBomRollPreview(this.closest('tr'))">
+                            <span class="text-xs">finished units</span>
+                        </div>
+                        <p class="text-[11px] mt-1 text-base-content/60" data-pack-bom="roll-preview"></p>
+                    </div>
+                </td>
+                <td><input type="number" class="input input-bordered input-sm w-full text-right" data-pack-bom="waste" min="0" max="100" step="0.01" value="${escapeAttr(formatProductNumber(item.waste_percent ?? 0, 2))}" onblur="formatProductNumberInput(this, 2)"></td>
+                <td class="font-mono text-xs" data-pack-bom="unit">${escapeHtml(item.unit || '—')}</td>
+                <td><button type="button" class="btn btn-ghost btn-xs text-error" onclick="removePackagingBomRow(${rowId})" title="Remove"><i class="fas fa-times"></i></button></td>`;
+            tbody.appendChild(tr);
+            onPackagingBomMaterialChange(tr.querySelector('[data-pack-bom="ingredient"]'));
+            refreshPackagingBomEmptyState();
+            refreshPackagingBomMaterialChoices();
+        }
+
+        function onPackagingBomMaterialChange(select) {
+            const previousId = select?.dataset?.lastValue || '';
+            const selectedId = select?.value || '';
+            const selectedLabel = select?.options?.[select.selectedIndex]?.textContent?.trim() || 'This material';
+            if (selectedId) {
+                const selects = Array.from(document.querySelectorAll('#packagingBomRows [data-pack-bom="ingredient"]'));
+                const existing = selects.find(candidate => candidate !== select && candidate.value === selectedId);
+                if (existing) {
+                    const existingRow = existing.closest('tr');
+                    const existingLine = Array.from(document.querySelectorAll('#packagingBomRows tr')).indexOf(existingRow) + 1;
+                    select.value = select.dataset.lastValue || '';
+                    showToast(`${selectedLabel} is already on line ${existingLine}. Update its quantity there.`, 'warning');
+                    existingRow?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    existingRow?.classList.add('ring', 'ring-warning', 'ring-2');
+                    setTimeout(() => existingRow?.classList.remove('ring', 'ring-warning', 'ring-2'), 1600);
+                    existing?.focus();
+                }
+            }
+            const effectiveId = select?.value || '';
+            const row = select?.closest('tr');
+            if (previousId && previousId !== effectiveId) {
+                const quantityInput = row?.querySelector('[data-pack-bom="quantity"]');
+                const coverageInput = row?.querySelector('[data-pack-bom="coverage"]');
+                if (quantityInput) quantityInput.value = '';
+                if (coverageInput) coverageInput.value = '';
+            }
+            select.dataset.lastValue = effectiveId;
+            const option = select?.options?.[select.selectedIndex];
+            const unit = option?.dataset?.unit || '—';
+            const unitCell = row?.querySelector('[data-pack-bom="unit"]');
+            if (unitCell) unitCell.textContent = unit;
+            syncPackagingBomUsageControl(row);
+            refreshPackagingBomMaterialChoices();
+        }
+
+        function refreshPackagingBomMaterialChoices() {
+            const selects = Array.from(document.querySelectorAll('#packagingBomRows [data-pack-bom="ingredient"]'));
+            const selectedIds = new Set(selects.map(select => select.value).filter(Boolean));
+            selects.forEach(select => {
+                Array.from(select.options).forEach(option => {
+                    if (!option.value) return;
+                    option.disabled = option.value !== select.value && selectedIds.has(option.value);
+                });
+            });
+            const addButton = document.getElementById('addPackagingBomRowBtn');
+            if (addButton) {
+                const noChoicesRemain = packagingBomMaterials.length > 0 && selectedIds.size >= packagingBomMaterials.length;
+                addButton.disabled = noChoicesRemain;
+                addButton.title = noChoicesRemain
+                    ? 'Every available packaging material is already listed'
+                    : 'Add packaging material';
+            }
+        }
+
+        function removePackagingBomRow(rowId) {
+            document.getElementById(`packagingBomRow_${rowId}`)?.remove();
+            refreshPackagingBomEmptyState();
+            refreshPackagingBomMaterialChoices();
+        }
+
+        function refreshPackagingBomEmptyState() {
+            const count = document.querySelectorAll('#packagingBomRows tr').length;
+            document.getElementById('packagingBomEmpty')?.classList.toggle('hidden', count > 0);
+        }
+
+        async function savePackagingBom() {
+            const productId = document.getElementById('packaging_bom_product_id').value;
+            const items = [];
+            const seenMaterials = new Map();
+            const rows = Array.from(document.querySelectorAll('#packagingBomRows tr'));
+            for (let index = 0; index < rows.length; index++) {
+                const row = rows[index];
+                const ingredientId = Number(row.querySelector('[data-pack-bom="ingredient"]')?.value || 0);
+                const unit = row.querySelector('[data-pack-bom="unit"]')?.textContent || '';
+                const isRoll = isRollPackagingUnit(unit);
+                const coverage = Number(row.querySelector('[data-pack-bom="coverage"]')?.value || 0);
+                const quantity = isRoll
+                    ? (Number.isInteger(coverage) && coverage >= 1 && coverage <= 100 ? 1 / coverage : 0)
+                    : Number(row.querySelector('[data-pack-bom="quantity"]')?.value || 0);
+                const waste = Number(row.querySelector('[data-pack-bom="waste"]')?.value || 0);
+                if (!ingredientId) {
+                    showToast('Select a packaging material for every row.', 'warning');
+                    row.querySelector('[data-pack-bom="ingredient"]')?.focus();
+                    return;
+                }
+                if (isRoll && (!Number.isInteger(coverage) || coverage < 1 || coverage > 100)) {
+                    showToast('For roll materials, enter how many finished products one roll covers (1 to 100).', 'warning');
+                    row.querySelector('[data-pack-bom="coverage"]')?.focus();
+                    return;
+                }
+                if (!Number.isFinite(quantity) || quantity < 0.000001 || quantity > 1000) {
+                    showToast('Enter a material quantity from 0.000001 to 1,000.', 'warning');
+                    row.querySelector('[data-pack-bom="quantity"]')?.focus();
+                    return;
+                }
+                if (!Number.isFinite(waste) || waste < 0 || waste > 100) {
+                    showToast('Waste allowance must be between 0% and 100%.', 'warning');
+                    row.querySelector('[data-pack-bom="waste"]')?.focus();
+                    return;
+                }
+                if (seenMaterials.has(ingredientId)) {
+                    const firstLine = seenMaterials.get(ingredientId);
+                    showToast(`This packaging material is already on line ${firstLine}. Keep one row and update its quantity.`, 'error');
+                    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    row.querySelector('[data-pack-bom="ingredient"]')?.focus();
+                    return;
+                }
+                seenMaterials.set(ingredientId, index + 1);
+                items.push({
+                    ingredient_id: ingredientId,
+                    quantity_per_unit: quantity,
+                    units_per_stock_unit: isRoll ? coverage : null,
+                    waste_percent: waste
+                });
+            }
+
+            const button = document.getElementById('savePackagingBomBtn');
+            button.disabled = true;
+            button.classList.add('loading');
+            try {
+                const response = await packagingBomRequest(productId, {
+                    method: 'PUT',
+                    body: JSON.stringify({ items })
+                });
+                showToast(response.message || 'Packaging BOM saved', items.length ? 'success' : 'warning');
+                document.getElementById('packagingBomModal').close();
+                await loadData();
+            } catch (error) {
+                const detail = error.errors ? Object.values(error.errors).join('; ') : error.message;
+                showToast(detail || 'Failed to save packaging BOM', 'error');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
             }
         }
 
@@ -2221,8 +2591,11 @@
             const alertClass = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type] || 'alert-info';
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            const text = document.createElement('span');
+            text.textContent = String(message ?? '');
+            toast.appendChild(text);
             container.appendChild(toast);
+            window.HighlandNotificationLayer?.sync();
             setTimeout(() => toast.remove(), 3500);
         }
 

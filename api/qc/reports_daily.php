@@ -44,7 +44,7 @@ error_reporting(E_ALL);
 require_once dirname(__DIR__) . '/bootstrap.php';
 
 // QC Officer, General Manager, Admin, and Finance can view
-$currentUser = Auth::requireRole(['qc_officer', 'general_manager', 'admin', 'finance_officer']);
+$currentUser = Auth::requireRole(['qc_officer', 'general_manager', 'finance_officer']);
 
 if ($requestMethod !== 'GET') {
     Response::error('Method not allowed', 405);

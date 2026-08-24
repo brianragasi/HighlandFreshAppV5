@@ -2,6 +2,7 @@
 <html lang="en" data-theme="emerald">
 
 <head>
+    <style id="roleGuardPending">html { visibility: hidden; }</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Batch Recalls - Admin | Highland Fresh</title>
@@ -471,8 +472,13 @@
             <form id="recallForm" onsubmit="submitRecall(event)">
                 <div class="space-y-4">
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Batch ID *</span></label>
-                        <input type="number" id="batchId" class="input input-bordered w-full" required placeholder="Enter batch ID to recall">
+                        <label class="label"><span class="label-text">Batch *</span></label>
+                        <input type="search" id="batchSearch" class="input input-bordered w-full mb-2"
+                            placeholder="Search batch code or product..." oninput="queueRecallBatchSearch(this.value)">
+                        <select id="batchId" class="select select-bordered w-full" required>
+                            <option value="">Loading released batches...</option>
+                        </select>
+                        <label class="label py-1"><span id="batchHelp" class="label-text-alt text-base-content/60">Choose the released batch being recalled.</span></label>
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Recall Classification *</span></label>
@@ -595,6 +601,7 @@
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/ui/notification-layer.js?v=20260816-1"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="general_manager,admin"></script>
     <script src="../../js/qc/recall.service.js"></script>
 
@@ -602,6 +609,8 @@
         let currentRecallId = null;
         let currentRecallData = null;
         let userRole = '';
+        let recallBatchOptions = [];
+        let recallBatchSearchTimer = null;
 
         // Sidebar toggle
         function toggleSidebar() {
@@ -624,12 +633,21 @@
 
         function showToast(msg, type = 'info') {
             const container = document.getElementById('toastContainer');
+            window.HighlandNotificationLayer?.sync();
             const cls = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type] || 'alert-info';
             const t = document.createElement('div');
             t.className = `alert ${cls} shadow-lg`;
-            t.innerHTML = `<span>${msg}</span>`;
+            const messageElement = document.createElement('span');
+            messageElement.textContent = String(msg ?? '');
+            t.appendChild(messageElement);
             container.appendChild(t);
             setTimeout(() => t.remove(), 4000);
+        }
+
+        function escapeHtml(value) {
+            const div = document.createElement('div');
+            div.textContent = value == null ? '' : String(value);
+            return div.innerHTML;
         }
 
         const classLabels = {
@@ -743,12 +761,12 @@
                         const recoveryColor = recoveryRate >= 80 ? 'success' : (recoveryRate >= 50 ? 'warning' : 'error');
                         return `
                         <tr class="hover ${r.recall_class === 'class_i' && !['completed', 'cancelled'].includes(r.status) ? 'bg-error/5' : ''}">
-                            <td><code class="text-xs bg-base-200 px-2 py-1 rounded">${r.recall_code}</code></td>
+                            <td><code class="text-xs bg-base-200 px-2 py-1 rounded">${escapeHtml(r.recall_code)}</code></td>
                             <td>
-                                <div class="font-medium text-sm">${r.product_name}</div>
-                                <div class="text-xs text-base-content/60">${r.batch_code}</div>
+                                <div class="font-medium text-sm">${escapeHtml(r.product_name)}</div>
+                                <div class="text-xs text-base-content/60">${escapeHtml(r.batch_code)}</div>
                             </td>
-                            <td><span class="badge ${cls.badge} gap-1 badge-sm"><i class="fas fa-${cls.icon}"></i>${cls.label}</span></td>
+                            <td><span class="badge ${cls.badge} gap-1 badge-sm"><i class="fas fa-${cls.icon}"></i>${escapeHtml(cls.label)}</span></td>
                             <td class="text-center font-semibold">${r.total_dispatched}</td>
                             <td>
                                 <div class="flex items-center gap-2">
@@ -756,7 +774,7 @@
                                     <span class="text-xs font-medium">${recoveryRate}%</span>
                                 </div>
                             </td>
-                            <td><span class="badge ${sts.badge} badge-sm">${sts.label}</span></td>
+                            <td><span class="badge ${sts.badge} badge-sm">${escapeHtml(sts.label)}</span></td>
                             <td class="text-sm">${RecallService.formatDate(r.initiated_at)}</td>
                             <td class="text-center">
                                 <div class="flex gap-1 justify-center">
@@ -773,17 +791,18 @@
         }
 
         function getActionButtons(r) {
-            let btns = `<button class="btn btn-ghost btn-xs tooltip" data-tip="View" onclick="viewRecall(${r.id})"><i class="fas fa-eye"></i></button>`;
+            const id = Number(r.id) || 0;
+            let btns = `<button class="btn btn-ghost btn-xs tooltip" data-tip="View" onclick="viewRecall(${id})"><i class="fas fa-eye"></i></button>`;
             const isGM = ['general_manager', 'admin'].includes(userRole);
 
             if (r.status === 'pending_approval' && isGM) {
-                btns += `<button class="btn btn-success btn-xs tooltip" data-tip="Approve/Reject" onclick="openApprovalModal(${r.id})"><i class="fas fa-gavel"></i></button>`;
+                btns += `<button class="btn btn-success btn-xs tooltip" data-tip="Approve/Reject" onclick="openApprovalModal(${id})"><i class="fas fa-gavel"></i></button>`;
             }
             if (['approved', 'in_progress'].includes(r.status)) {
-                btns += `<button class="btn btn-info btn-xs tooltip" data-tip="Log Return" onclick="openLogReturnModal(${r.id})"><i class="fas fa-box"></i></button>`;
+                btns += `<button class="btn btn-info btn-xs tooltip" data-tip="Log Return" onclick="openLogReturnModal(${id})"><i class="fas fa-box"></i></button>`;
             }
             if (['initiated', 'pending_approval'].includes(r.status)) {
-                btns += `<button class="btn btn-ghost btn-xs text-error tooltip" data-tip="Cancel" onclick="cancelRecall(${r.id})"><i class="fas fa-ban"></i></button>`;
+                btns += `<button class="btn btn-ghost btn-xs text-error tooltip" data-tip="Cancel" onclick="cancelRecall(${id})"><i class="fas fa-ban"></i></button>`;
             }
             return btns;
         }
@@ -794,9 +813,49 @@
             loadRecalls();
         }
 
+        function formatRecallBatchOption(batch) {
+            const product = batch.product_name || 'Production Batch';
+            const batchCode = batch.batch_code || `Batch #${batch.id}`;
+            const mfg = batch.manufacturing_date ? `Mfg ${RecallService.formatDate(batch.manufacturing_date)}` : 'No mfg date';
+            const dispatched = Number(batch.total_dispatched || 0);
+            const warehouse = Number(batch.total_in_warehouse || 0);
+            return `${product} - ${batchCode} - ${mfg} - ${dispatched} dispatched / ${warehouse} in warehouse`;
+        }
+
+        function queueRecallBatchSearch(search) {
+            clearTimeout(recallBatchSearchTimer);
+            recallBatchSearchTimer = setTimeout(() => loadRecallBatchOptions(search), 250);
+        }
+
+        async function loadRecallBatchOptions(search = '') {
+            const select = document.getElementById('batchId');
+            const help = document.getElementById('batchHelp');
+            select.innerHTML = '<option value="">Loading released batches...</option>';
+            help.textContent = 'Choose the released batch being recalled.';
+
+            try {
+                const res = await RecallService.getEligibleBatches(String(search).trim());
+                recallBatchOptions = res.success ? (res.data || []) : [];
+                if (recallBatchOptions.length === 0) {
+                    select.innerHTML = '<option value="">No released batches available for recall</option>';
+                    help.textContent = 'A batch must be QC-released and cannot already have an active recall.';
+                    return;
+                }
+
+                select.replaceChildren(new Option('Select released batch...', ''));
+                recallBatchOptions.forEach(batch => {
+                    select.add(new Option(formatRecallBatchOption(batch), String(Number(batch.id) || '')));
+                });
+            } catch (e) {
+                select.innerHTML = '<option value="">Unable to load batches</option>';
+                help.textContent = e.message || 'Batch list could not be loaded.';
+            }
+        }
+
         function openNewRecallModal() {
             document.getElementById('recallForm').reset();
             document.getElementById('newRecallModal').showModal();
+            loadRecallBatchOptions();
         }
 
         async function submitRecall(e) {
@@ -829,18 +888,18 @@
 
                     document.getElementById('viewRecallTitle').innerHTML = `
                         <span class="badge ${cls.badge} mr-2"><i class="fas fa-${cls.icon}"></i> ${cls.label}</span>
-                        Recall: ${r.recall_code}`;
+                        Recall: ${escapeHtml(r.recall_code)}`;
 
                     document.getElementById('recallDetails').innerHTML = `
                         <div class="grid grid-cols-2 gap-4">
-                            <div><label class="text-xs text-base-content/60">Product</label><p class="font-semibold">${r.product_name}</p></div>
-                            <div><label class="text-xs text-base-content/60">Batch Code</label><p class="font-mono">${r.batch_code}</p></div>
-                            <div><label class="text-xs text-base-content/60">Status</label><p><span class="badge ${sts.badge}">${sts.label}</span></p></div>
+                            <div><label class="text-xs text-base-content/60">Product</label><p class="font-semibold">${escapeHtml(r.product_name)}</p></div>
+                            <div><label class="text-xs text-base-content/60">Batch Code</label><p class="font-mono">${escapeHtml(r.batch_code)}</p></div>
+                            <div><label class="text-xs text-base-content/60">Status</label><p><span class="badge ${sts.badge}">${escapeHtml(sts.label)}</span></p></div>
                             <div><label class="text-xs text-base-content/60">Initiated</label><p>${RecallService.formatDateTime(r.initiated_at)}</p></div>
                         </div>
                         <div class="divider my-2"></div>
-                        <div><label class="text-xs text-base-content/60">Reason</label><p class="text-sm">${r.reason}</p></div>
-                        ${r.evidence_notes ? `<div><label class="text-xs text-base-content/60">Evidence</label><p class="text-sm">${r.evidence_notes}</p></div>` : ''}
+                        <div><label class="text-xs text-base-content/60">Reason</label><p class="text-sm">${escapeHtml(r.reason)}</p></div>
+                        ${r.evidence_notes ? `<div><label class="text-xs text-base-content/60">Evidence</label><p class="text-sm">${escapeHtml(r.evidence_notes)}</p></div>` : ''}
                         <div class="divider my-2"></div>
                         <div class="stats stats-horizontal w-full">
                             <div class="stat place-items-center py-2"><div class="stat-title text-xs">Produced</div><div class="stat-value text-lg">${r.total_produced}</div></div>
@@ -853,7 +912,7 @@
                         <h4 class="font-semibold text-sm mb-2">Affected Locations (${r.affected_locations.length})</h4>
                         <div class="overflow-x-auto max-h-40">
                             <table class="table table-xs"><thead><tr><th>Location</th><th>Dispatched</th><th>Returned</th><th>Notified</th></tr></thead>
-                            <tbody>${r.affected_locations.map(l => `<tr><td>${l.location_name}</td><td>${l.units_dispatched}</td><td>${l.units_returned}</td><td>${l.notification_sent ? '<i class="fas fa-check text-success"></i>' : '<i class="fas fa-times text-error"></i>'}</td></tr>`).join('')}</tbody></table>
+                            <tbody>${r.affected_locations.map(l => `<tr><td>${escapeHtml(l.location_name)}</td><td>${escapeHtml(l.units_dispatched)}</td><td>${escapeHtml(l.units_returned)}</td><td>${l.notification_sent ? '<i class="fas fa-check text-success"></i>' : '<i class="fas fa-times text-error"></i>'}</td></tr>`).join('')}</tbody></table>
                         </div>` : ''}`;
 
                     let actions = '<button class="btn btn-ghost" onclick="document.getElementById(\'viewRecallModal\').close()">Close</button>';
@@ -876,9 +935,9 @@
                     document.getElementById('approvalDetails').innerHTML = `
                         <div class="alert ${r.recall_class === 'class_i' ? 'alert-error' : 'alert-warning'}">
                             <i class="fas fa-${cls.icon}"></i>
-                            <div><div class="font-bold">${cls.label} - ${cls.desc}</div><div class="text-sm">${r.product_name} (${r.batch_code})</div></div>
+                            <div><div class="font-bold">${escapeHtml(cls.label)} - ${escapeHtml(cls.desc)}</div><div class="text-sm">${escapeHtml(r.product_name)} (${escapeHtml(r.batch_code)})</div></div>
                         </div>
-                        <p><strong>Reason:</strong> ${r.reason}</p>
+                        <p><strong>Reason:</strong> ${escapeHtml(r.reason)}</p>
                         <p><strong>Units Dispatched:</strong> ${r.total_dispatched}</p>`;
                     document.getElementById('approvalNotes').value = '';
                     document.getElementById('approvalModal').showModal();
@@ -897,7 +956,9 @@
                     res = await RecallService.reject(currentRecallId, notes);
                 }
                 if (res.success) {
-                    showToast(`Recall ${action === 'approve' ? 'approved' : 'rejected'}`, 'success');
+                    showToast(action === 'approve'
+                        ? 'Recall approved. QC can now notify affected locations and track returned products.'
+                        : 'Recall rejected. QC can review the reason and correct the request.', 'success');
                     document.getElementById('approvalModal').close();
                     loadStats(); loadRecalls(); loadBadgeCounts();
                 } else { showToast(res.message, 'error'); }
@@ -912,7 +973,7 @@
                     const locations = res.data.affected_locations || [];
                     const select = document.getElementById('returnLocationId');
                     select.innerHTML = locations.map(l =>
-                        `<option value="${l.id}">${l.location_name} (${l.units_dispatched - l.units_returned} remaining)</option>`
+                        `<option value="${Number(l.id) || 0}">${escapeHtml(l.location_name)} (${Number(l.units_dispatched || 0) - Number(l.units_returned || 0)} remaining)</option>`
                     ).join('');
                     document.getElementById('returnForm').reset();
                     document.getElementById('logReturnModal').showModal();

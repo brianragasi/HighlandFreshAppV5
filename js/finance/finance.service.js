@@ -37,7 +37,22 @@ const FinanceService = {
     },
 
     recordFarmerPayment(data) {
-        return api.post('/finance/farmer_payments.php?action=record_payment', data);
+        const config = typeof FormData !== 'undefined' && data instanceof FormData
+            ? { headers: { 'Content-Type': 'multipart/form-data' } }
+            : undefined;
+        return api.post('/finance/farmer_payments.php?action=record_payment', data, config);
+    },
+
+    getFarmerPaymentStatement(paymentId) {
+        return api.get(`/finance/farmer_payments.php?action=statement&id=${encodeURIComponent(paymentId)}`);
+    },
+
+    reviewFarmerPayment(data) {
+        return api.post('/finance/farmer_payments.php?action=review_payment', data);
+    },
+
+    changeFarmerPaymentStatus(data) {
+        return api.post('/finance/farmer_payments.php?action=change_status', data);
     },
 
     getRecentDisbursements(limit = 10) {
@@ -74,7 +89,16 @@ const FinanceService = {
     },
 
     recordPayment(data) {
-        return api.post('/finance/payables.php?action=record_payment', data);
+        const config = typeof FormData !== 'undefined' && data instanceof FormData
+            ? { headers: { 'Content-Type': 'multipart/form-data' } }
+            : undefined;
+        return api.post('/finance/payables.php?action=record_payment', data, config);
+    },
+
+    getSupplierPaymentFile(paymentId, kind) {
+        return api.get(`/finance/payables.php?action=payment_file&id=${encodeURIComponent(paymentId)}&kind=${encodeURIComponent(kind)}`, {
+            responseType: 'blob'
+        });
     },
 
     // ========================================

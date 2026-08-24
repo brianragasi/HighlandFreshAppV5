@@ -49,7 +49,7 @@
             items: [
                 { id: 'milk_storage', label: 'Milk Storage', icon: 'fa-tint', href: 'milk_storage.html', badgeId: 'pendingMilkBadge', badgeClass: 'badge-warning' },
                 { id: 'ingredients', label: 'Ingredients', icon: 'fa-box-open', href: 'ingredients.html' },
-                { id: 'mro', label: 'MRO Supplies', icon: 'fa-tools', href: 'mro.html' },
+                { id: 'mro', label: 'Operational Supplies (MRO)', icon: 'fa-tools', href: 'mro.html' },
             ],
         },
         {

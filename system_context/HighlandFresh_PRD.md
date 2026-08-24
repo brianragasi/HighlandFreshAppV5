@@ -38,7 +38,7 @@ Highland Fresh requires a unified digital ecosystem to manage a highly complex d
 | **Warehouse (Finished Goods)** | Warehouse FG Staff | Chillers, Dispatch, Delivery Receipts, FIFO Enforcement |
 | **Production** | Production Staff | Batch Execution, Recipe Consumption, CCP Logging |
 | **Quality Control** | QC Officer | Milk Grading, Batch Release, Expiry Management |
-| **Purchasing** | Purchaser | Approved Supplier Selection, Canvassing, Price Trends, Purchase Orders |
+| **Purchasing** | Purchaser | Registered Supplier Review, Price Trends, Purchase Orders |
 | **Finance (Disbursements)** | Finance Officer | Fund Disbursements, Payment Processing, Payables Tracking |
 | **General Manager** | GM | Approvals, Dashboards, Master Recipe Ownership |
 
@@ -72,7 +72,7 @@ The current operations at Highland Fresh suffer from:
 | **Warehouse (FG)** | Inventory Custodian | Management of Chillers; Dispatching Finished Goods; DR Generation. |
 | **Sales Custodian** | Account Manager | Supermarket/Institutional POs; Credit Aging Management; Feeding Programs. |
 | **Cashier** | POS / Collection User | Walk-in Sales; Debt Collection via DR Search; 5 PM Reconciliation. |
-| **Purchaser** | Procurement User | Selects from GM-accredited suppliers; Canvassing; Price Trend Monitoring; Purchase Request Slips (PRS). |
+| **Purchaser** | Procurement User | Reviews saved prices from GM-accredited suppliers; selects the recommended partner or records a reason for another choice; prepares Purchase Orders from Purchase Request Slips (PRS). |
 | **Finance Officer** | Disbursement Manager | Fund Disbursements; Payment Processing; Payables Tracking; Farmer Payout Execution. |
 
 ### 2.0.1 Finance Officer Role Clarification
@@ -373,8 +373,9 @@ The system must generate Disposal/Spoilage Reports showing:
 ### 9.1 Purchasing & Price Trends
 *   **Final PO Delivery:** After GM approval, the Purchaser triggers system-generated PDF delivery to the supplier's registered email. A successful send records the recipient and timestamp; a failed send remains retryable.
 *   **Trend Monitoring:** Historical tracking of raw material prices (e.g., Sugar ₱8k $\rightarrow$ ₱9k).
-*   **Supplier-Ingredient Catalog:** The GM/Admin links each accredited supplier to every ingredient they can provide. The relationship is many-to-many: one supplier may provide many ingredients and one ingredient may be provided by many suppliers. Every active ingredient must retain at least three active accredited suppliers so the mandatory three-quote canvass can be completed.
-*   **Canvassing:** Requirement to log at least 3 supplier prices before a PO is issued. For an ingredient line, the Purchaser can quote only suppliers linked to that ingredient. Quote records remain separate because prices can change during every canvass.
+*   **Supplier-Ingredient Catalog:** The GM/Admin links each accredited supplier to every ingredient it can provide and records the agreed unit price. The relationship is many-to-many: one supplier may provide many ingredients and one ingredient may be provided by many suppliers. At least one approved supplier is required for purchasing; a genuine market of one or two suppliers is allowed and is shown to the GM during PO review.
+*   **Registered Supplier Review:** Opening a PRS loads every current approved supplier agreement for each ingredient. The system recommends the lowest valid unit price; tied prices use the faster delivery. The Purchaser may select another approved partner only after recording a business reason. Missing supplier links or agreed prices block PO creation until the GM completes accreditation.
+*   **Grouped PO Creation:** One Purchaser action groups the reviewed PRS lines by selected supplier, creates one PO per supplier, and sends all resulting POs to the GM together. Manual price canvassing is an exception for a new or expired agreement, not a repeated requirement for every routine PRS.
 
 ### 9.2 Maintenance
 *   **Part Tracking:** Warehouse Raw records equipment issues and requests bolts or other spare parts through the GM-approved requisition flow.

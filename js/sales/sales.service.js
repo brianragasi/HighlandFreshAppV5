@@ -586,11 +586,12 @@ const SalesService = {
         });
     },
 
-    async confirmOrderImport(id, acceptWarnings = false) {
+    async confirmOrderImport(id, acceptWarnings = false, creditOverrideReason = '') {
         return await api.post(`${this.baseUrl}/order_inbox.php`, {
             action: 'confirm',
             id,
-            accept_warnings: acceptWarnings
+            accept_warnings: acceptWarnings,
+            credit_override_reason: creditOverrideReason
         });
     },
 

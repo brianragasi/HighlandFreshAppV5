@@ -158,6 +158,15 @@ System shows: 0 Bags + 300 Pieces
 | **Rennet** | ml | Bottles | 1 Bottle = 100 ml |
 | **Salt** | Kilos | Sacks | 1 Sack = 25 Kg |
 
+### Required Conversion Rule:
+- Every ingredient has one **stock unit**. Inventory, recipes, requisitions, and cost use this same unit.
+- A supplier package is a container, not a second unrelated measurement. Its quantity must be entered in the stock unit.
+- Example: if Food Coloring is stocked in liters and one bottle contains 500 mL, enter **0.5 L per bottle**. Do not select kilograms.
+- **Cost per stock unit** means the cost of exactly 1 kg, 1 liter, 1 piece, or other selected stock unit.
+- The system calculates package cost as: **quantity inside one package x cost per stock unit**.
+- Example: 0.5 L per bottle x PHP 280 per liter = PHP 140 per bottle.
+- Turn on **Release only whole packages** only when Warehouse Raw is not allowed to open the package. Otherwise, exact stock-unit quantities may be issued.
+
 ### Inventory Display:
 System always shows both units:
 - **Bottles 200ml:** "15 Crates + 8 Pieces" (368 total)
@@ -239,6 +248,25 @@ The QC lab uses the Milkosonic SL50 analyzer (Serial: 035558) which provides:
 | **Rejection Report** | Any milk rejected |
 | **Temperature Deviation** | Above 4°C recorded |
 | **Shortage Report** | Inventory below threshold |
+
+---
+
+## 11. Physical Count Before Purchase Request
+
+A low-stock alert is only a warning. It must not automatically create a purchase request.
+
+Before Warehouse Raw submits a Purchase Request Slip (PRS):
+
+1. Count the actual quantity on the shelf.
+2. Enter that physical count in the PRS.
+3. Compare it with the saved system balance.
+4. If the shelf count is lower, explain the loss, breakage, spoilage, or unrecorded use.
+5. The system lowers the saved balance to the verified count and recalculates the requested quantity from that count.
+6. The PRS keeps the saved balance, shelf count, difference, explanation, custodian, and date and time.
+
+When several items need replenishment during the same stock check, select all of them and submit one multi-item PRS. Separate slips are still allowed for genuinely separate checks, emergencies, or different purposes, but Warehouse Raw should not create several one-item slips seconds apart for the same stock review.
+
+A shelf count higher than the saved balance cannot be added through a PRS. Warehouse Raw must first record the missing delivery or use the stock-correction screen so stock cannot be created without evidence.
 
 ---
 

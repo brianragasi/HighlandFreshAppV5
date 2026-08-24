@@ -83,23 +83,19 @@ const PurchasingService = {
         return await api.post('/purchasing/purchase_orders.php?action=create', data);
     },
 
-    /**
-     * Phase 1 (multi-supplier): create one or more POs from a submitted PRS.
-     * Items with the same supplier are consolidated into a single PO;
-     * items with different suppliers yield separate POs in one transaction.
-     * Backend route: POST /purchasing/purchase_orders.php?action=create_from_pr
-     * Expected payload:
-     *   {
-     *     purchase_request_id: <int>,
-     *     payment_terms, order_date, expected_delivery, delivery_details, notes,
-     *     submit_for_approval?,
-     *     items: [
-     *       { purchase_request_item_id, supplier_id, unit_price, quantity?, is_vat_item?, notes? }, ...
-     *     ]
-     *   }
-     */
-    async createPurchaseOrdersFromPR(data) {
+    /** Create one supplier-specific PO from manually selected remaining PRS items. */
+    async createPurchaseOrderFromPRS(data) {
         return await api.post('/purchasing/purchase_orders.php?action=create_from_pr', data);
+    },
+
+    /** Create one supplier PO from selected outstanding Warehouse-requested lines. */
+    async createSupplierPurchaseOrder(data) {
+        return await api.post('/purchasing/purchase_orders.php?action=create_supplier_po', data);
+    },
+
+    // Backward-compatible alias for older clients.
+    async createPurchaseOrdersFromPR(data) {
+        return await this.createPurchaseOrderFromPRS(data);
     },
 
 
@@ -142,10 +138,11 @@ const PurchasingService = {
         return await api.get(`/purchasing/purchase_orders.php?action=rr_detail&id=${id}`);
     },
 
-    async verifyReceivingReport(poId, rrId, notes = '') {
+    async verifyReceivingReport(poId, rrId, notes = '', resolution = 'exact_match') {
         return await api.put(`/purchasing/purchase_orders.php?action=verify_rr&id=${poId}`, {
             rr_id: rrId,
-            notes
+            notes,
+            resolution
         });
     },
 
@@ -216,8 +213,8 @@ const PurchasingService = {
         return await api.put(`/purchasing/purchase_requests.php?action=update&id=${id}`, data);
     },
 
-    async submitPR(id) {
-        return await api.put(`/purchasing/purchase_requests.php?action=submit&id=${id}`, {});
+    async submitPR(id, data = {}) {
+        return await api.put(`/purchasing/purchase_requests.php?action=submit&id=${id}`, data);
     },
 
     async reopenPR(id, reason) {
@@ -229,7 +226,7 @@ const PurchasingService = {
     },
 
     // ========================================
-    // CANVASSING (Rule of 3)
+    // REGISTERED SUPPLIER REVIEW
     // ========================================
 
     async getCanvassList(filters = {}) {
@@ -336,7 +333,7 @@ const PurchasingService = {
     getStatusBadgeClass(status) {
         const map = {
             'draft': 'badge-ghost',
-            'pending': 'badge-warning',
+            'pending': 'border-warning bg-warning/10 text-base-content',
             'approved': 'badge-info',
             'rejected': 'badge-error',
             'ordered': 'badge-primary',
@@ -352,7 +349,7 @@ const PurchasingService = {
     getPaymentBadgeClass(status) {
         const map = {
             'unpaid': 'badge-error',
-            'partial': 'badge-warning',
+            'partial': 'border-warning bg-warning/10 text-base-content',
             'paid': 'badge-success',
         };
         return map[status] || 'badge-ghost';
@@ -362,7 +359,7 @@ const PurchasingService = {
         const map = {
             'low': 'badge-ghost',
             'normal': 'badge-info',
-            'high': 'badge-warning',
+            'high': 'border-warning bg-warning/10 text-base-content',
             'urgent': 'badge-error',
         };
         return map[priority] || 'badge-ghost';
@@ -370,7 +367,7 @@ const PurchasingService = {
 
     getStockStatusBadge(status) {
         const map = {
-            'low': { class: 'badge-warning', label: 'Low Stock' },
+            'low': { class: 'border-warning bg-warning/10 text-base-content', label: 'Low Stock' },
             'reorder': { class: 'badge-info', label: 'Reorder' },
             'ok': { class: 'badge-success', label: 'OK' },
         };
@@ -385,8 +382,8 @@ const PurchasingService = {
             'rejected': 'Rejected',
             'partial_received': 'Partially Received',
             'received': 'Fully Received',
-            'closed': 'Closed',
-            'ordered': 'Approved',
+            'closed': 'Completed',
+            'ordered': 'Approved / Sent',
             'cancelled': 'Cancelled'
         };
         if (labels[status]) return labels[status];
@@ -407,6 +404,6 @@ const PurchasingService = {
 
     getPaymentTermsBadgeClass(terms) {
         if (terms === 'cash') return 'badge-success';
-        return 'badge-warning';
+        return 'border-warning bg-warning/10 text-base-content';
     }
 };

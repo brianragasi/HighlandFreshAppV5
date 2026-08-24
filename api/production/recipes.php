@@ -10,6 +10,7 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/recipe_production_readiness.php';
 
 // Require Production or GM role
 $currentUser = Auth::requireRole(['production_staff', 'general_manager', 'qc_officer']);
@@ -170,26 +171,16 @@ try {
 
             foreach ($recipes as &$recipe) {
                 // Canonical bulk scale for requisitions / runs
-                $bulk = isset($recipe['bulk_yield_liters']) && $recipe['bulk_yield_liters'] !== null
-                    ? (float) $recipe['bulk_yield_liters']
-                    : null;
-                if ($bulk === null || $bulk <= 0) {
-                    $yu = strtolower((string) ($recipe['yield_unit'] ?? ''));
-                    if (in_array($yu, ['liter', 'liters', 'l', 'lt'], true)) {
-                        $bulk = (float) ($recipe['expected_yield'] ?? 0);
-                    } else {
-                        $bulk = (float) ($recipe['base_milk_liters'] ?? 0);
-                    }
-                }
-                $recipe['bulk_yield_liters'] = $bulk > 0 ? $bulk : null;
+                $bulk = getStrictRecipeBulkYieldLiters($recipe);
+                $recipe['bulk_yield_liters'] = $bulk;
                 $recipe['plan_unit'] = 'liters'; // requisitions plan by bulk liquid
                 $recipe['display_name'] = $recipe['base_product_name']
                     ?: $recipe['product_name'];
-                // Prefer showing bulk identity in lists (hide bottle-size recipe noise)
+                // This is the recipe scaling basis, not an automatically planned amount.
                 $recipe['label'] = trim(
                     ($recipe['recipe_code'] ?? '') . ' — ' .
                     ($recipe['display_name'] ?? 'Recipe') .
-                    ($recipe['bulk_yield_liters'] ? (' · bulk ' . rtrim(rtrim(number_format((float) $recipe['bulk_yield_liters'], 2, '.', ''), '0'), '.') . ' L') : '')
+                    ($recipe['bulk_yield_liters'] ? (' · Standard yield: ' . rtrim(rtrim(number_format((float) $recipe['bulk_yield_liters'], 2, '.', ''), '0'), '.') . ' L') : '')
                 );
 
                 $recipe['packaging_skus'] = [];
@@ -197,14 +188,25 @@ try {
                     $skuStmt->execute([(int) $recipe['base_product_id']]);
                     $recipe['packaging_skus'] = $skuStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
                 }
+                $recipe['packaging_ready'] = count($recipe['packaging_skus']) > 0;
+                $recipe['production_readiness'] = $recipe['packaging_ready']
+                    ? 'bulk_and_packaging'
+                    : 'bulk_only';
             }
             unset($recipe);
 
-            // Optional: for_requisition=1 returns only active recipes with a bulk scale
+            // New requisitions/runs get exactly one current bulk recipe per base
+            // product. Legacy bottle-count recipes and superseded duplicates stay
+            // readable for history but cannot be selected for a new batch.
             if (getParam('for_requisition') || getParam('for_requisition') === '1' || getParam('for_requisition') === 1) {
-                $recipes = array_values(array_filter($recipes, function ($r) {
-                    return (int) ($r['is_active'] ?? 0) === 1;
-                }));
+                $recipes = filterCurrentBulkProductionRecipes($recipes);
+                usort($recipes, static function ($a, $b) {
+                    return strcasecmp(
+                        (string) ($a['display_name'] ?? $a['product_name'] ?? ''),
+                        (string) ($b['display_name'] ?? $b['product_name'] ?? '')
+                    );
+                });
+                $total = count($recipes);
             }
 
             Response::paginated($recipes, $total, $page, $limit, 'Recipes retrieved successfully');

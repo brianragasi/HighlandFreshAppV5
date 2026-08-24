@@ -5,6 +5,7 @@
  */
 
 require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../helpers/plain_text.php';
 
 // SECURITY: Restrict QC standards management to GM/Admin roles
 $currentUser = Auth::requireRole(['general_manager', 'admin']);
@@ -66,7 +67,7 @@ function handleGrading($method) {
 function getGradingStandards() {
     global $pdo;
     
-    $sql = "SELECT * FROM milk_grading_standards ORDER BY grade_name";
+    $sql = "SELECT * FROM milk_grading_standards ORDER BY id DESC";
     $stmt = $pdo->query($sql);
     $standards = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
@@ -90,7 +91,9 @@ function getGradingStandard($id) {
 function createGradingStandard() {
     global $pdo;
     
-    $data = json_decode(file_get_contents('php://input'), true);
+    $data = hfPlainTextFields(json_decode(file_get_contents('php://input'), true) ?: [], [
+        'grade_name' => [100, false], 'description' => [1000, true], 'status' => [30, false],
+    ]);
     
     if (empty($data['grade_name']) || !isset($data['price_per_liter'])) {
         Response::error('Grade name and price per liter are required', 400);
@@ -132,7 +135,9 @@ function updateGradingStandard($id) {
         Response::error('Grading standard not found', 404);
     }
     
-    $data = json_decode(file_get_contents('php://input'), true);
+    $data = hfPlainTextFields(json_decode(file_get_contents('php://input'), true) ?: [], [
+        'grade_name' => [100, false], 'description' => [1000, true], 'status' => [30, false],
+    ]);
     
     // Check for duplicate name (excluding current)
     if (!empty($data['grade_name'])) {
@@ -237,7 +242,7 @@ function getParameters() {
     
     $whereClause = implode(' AND ', $where);
     
-    $sql = "SELECT * FROM qc_test_parameters WHERE $whereClause ORDER BY category, parameter_name";
+    $sql = "SELECT * FROM qc_test_parameters WHERE $whereClause ORDER BY id DESC";
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $parameters = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -262,7 +267,10 @@ function getParameter($id) {
 function createParameter() {
     global $pdo;
     
-    $data = json_decode(file_get_contents('php://input'), true);
+    $data = hfPlainTextFields(json_decode(file_get_contents('php://input'), true) ?: [], [
+        'parameter_name' => [150, false], 'category' => [50, false], 'unit' => [30, false],
+        'test_method' => [255, false], 'description' => [1000, true],
+    ]);
     
     if (empty($data['parameter_name'])) {
         Response::error('Parameter name is required', 400);
@@ -296,7 +304,10 @@ function updateParameter($id) {
         Response::error('Parameter not found', 404);
     }
     
-    $data = json_decode(file_get_contents('php://input'), true);
+    $data = hfPlainTextFields(json_decode(file_get_contents('php://input'), true) ?: [], [
+        'parameter_name' => [150, false], 'category' => [50, false], 'unit' => [30, false],
+        'test_method' => [255, false], 'description' => [1000, true],
+    ]);
     
     $sql = "UPDATE qc_test_parameters SET 
             parameter_name = COALESCE(?, parameter_name),
@@ -396,7 +407,7 @@ function getCcpStandards() {
     
     $whereClause = implode(' AND ', $where);
     
-    $sql = "SELECT * FROM ccp_standards WHERE $whereClause ORDER BY category, ccp_name";
+    $sql = "SELECT * FROM ccp_standards WHERE $whereClause ORDER BY id DESC";
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $standards = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -421,7 +432,11 @@ function getCcpStandard($id) {
 function createCcpStandard() {
     global $pdo;
     
-    $data = json_decode(file_get_contents('php://input'), true);
+    $data = hfPlainTextFields(json_decode(file_get_contents('php://input'), true) ?: [], [
+        'ccp_name' => [150, false], 'category' => [50, false], 'critical_limit' => [255, false],
+        'target_value' => [255, false], 'monitoring_frequency' => [255, false],
+        'corrective_action' => [1000, true], 'hazard_description' => [1000, true], 'status' => [30, false],
+    ]);
     
     if (empty($data['ccp_name']) || empty($data['critical_limit'])) {
         Response::error('CCP name and critical limit are required', 400);
@@ -455,7 +470,11 @@ function updateCcpStandard($id) {
         Response::error('CCP standard not found', 404);
     }
     
-    $data = json_decode(file_get_contents('php://input'), true);
+    $data = hfPlainTextFields(json_decode(file_get_contents('php://input'), true) ?: [], [
+        'ccp_name' => [150, false], 'category' => [50, false], 'critical_limit' => [255, false],
+        'target_value' => [255, false], 'monitoring_frequency' => [255, false],
+        'corrective_action' => [1000, true], 'hazard_description' => [1000, true], 'status' => [30, false],
+    ]);
     
     $sql = "UPDATE ccp_standards SET 
             ccp_name = COALESCE(?, ccp_name),

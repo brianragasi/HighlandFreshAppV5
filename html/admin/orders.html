@@ -2,6 +2,7 @@
 <html lang="en" data-theme="emerald">
 
 <head>
+    <style id="roleGuardPending">html { visibility: hidden; }</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Orders for Approval | General Manager | Highland Fresh</title>
@@ -423,6 +424,7 @@
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/ui/notification-layer.js?v=20260816-1"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="general_manager"></script>
 
     <script>
@@ -446,13 +448,26 @@
             return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
         }
 
+        function escapeHtml(value) {
+            const div = document.createElement('div');
+            div.textContent = value == null ? '' : String(value);
+            return div.innerHTML;
+        }
+
+        function escapeAttr(value) {
+            return escapeHtml(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
         function showToast(message, type = 'info') {
             const container = document.getElementById('toastContainer');
+            window.HighlandNotificationLayer?.sync();
             const alertClass = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type] || 'alert-info';
             
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            const messageElement = document.createElement('span');
+            messageElement.textContent = String(message ?? '');
+            toast.appendChild(messageElement);
             container.appendChild(toast);
             
             setTimeout(() => toast.remove(), 3000);
@@ -544,40 +559,41 @@
             };
             
             tbody.innerHTML = orders.map(order => {
+                const id = Number(order.id) || 0;
                 const typeLabel = formatCustomerType(order.customer_type);
                 const submitter = formatSubmitter(order);
                 const statusText = order.status === 'pending' ? 'Pending Approval' : (order.status || '—');
                 return `
                 <tr class="hover">
                     <td>
-                        <a href="#" onclick="viewOrder(${order.id}); return false;" class="link link-primary font-medium font-mono text-sm">
-                            ${order.order_number || 'SO-' + order.id}
+                        <a href="#" onclick="viewOrder(${id}); return false;" class="link link-primary font-medium font-mono text-sm">
+                            ${escapeHtml(order.order_number || 'SO-' + id)}
                         </a>
                     </td>
                     <td>
-                        <div class="font-medium">${order.customer_name || '—'}</div>
-                        ${typeLabel ? `<span class="badge badge-outline badge-xs mt-0.5">${typeLabel}</span>` : ''}
+                        <div class="font-medium">${escapeHtml(order.customer_name || '—')}</div>
+                        ${typeLabel ? `<span class="badge badge-outline badge-xs mt-0.5">${escapeHtml(typeLabel)}</span>` : ''}
                     </td>
                     <td class="text-center tabular-nums">${Number(order.item_count || 0).toLocaleString()}</td>
                     <td class="text-right font-semibold tabular-nums">${formatCurrency(order.total_amount)}</td>
                     <td class="tabular-nums text-sm">${formatDate(order.delivery_date)}</td>
                     <td>
-                        <span class="badge ${statusBadges[order.status] || 'badge-ghost'} badge-sm">${statusText}</span>
+                        <span class="badge ${statusBadges[order.status] || 'badge-ghost'} badge-sm">${escapeHtml(statusText)}</span>
                     </td>
                     <td>
-                        <div class="text-sm font-medium">${submitter}</div>
+                        <div class="text-sm font-medium">${escapeHtml(submitter)}</div>
                         <div class="text-xs text-base-content/55">${formatDate(order.created_at)}</div>
                     </td>
                     <td>
                         <div class="flex gap-1">
-                            <button class="btn btn-ghost btn-xs" onclick="viewOrder(${order.id})" title="View Details">
+                            <button class="btn btn-ghost btn-xs" onclick="viewOrder(${id})" title="View Details">
                                 <i class="fas fa-eye"></i>
                             </button>
                             ${order.status === 'pending' ? `
-                                <button class="btn btn-success btn-xs" onclick="approveOrder(${order.id})" title="Approve">
+                                <button class="btn btn-success btn-xs" onclick="approveOrder(${id})" title="Approve">
                                     <i class="fas fa-check"></i>
                                 </button>
-                                <button class="btn btn-error btn-xs" onclick="openRejectModal(${order.id})" title="Reject">
+                                <button class="btn btn-error btn-xs" onclick="openRejectModal(${id})" title="Reject">
                                     <i class="fas fa-times"></i>
                                 </button>
                             ` : ''}
@@ -659,8 +675,8 @@
                         return `
                         <tr>
                             <td>
-                                <div class="font-medium">${item.product_name || 'Unknown'}</div>
-                                <div class="text-xs text-base-content/55 font-mono">${item.product_code || ''}</div>
+                                <div class="font-medium">${escapeHtml(item.product_name || 'Unknown')}</div>
+                                <div class="text-xs text-base-content/55 font-mono">${escapeHtml(item.product_code || '')}</div>
                             </td>
                             <td class="text-center font-semibold tabular-nums">${ordered.toLocaleString()}</td>
                             <td class="text-center tabular-nums ${stockOk ? 'text-success font-medium' : 'text-error font-semibold'}">
@@ -680,7 +696,7 @@
                     return `
                         <tr>
                             <td>
-                                <div class="font-medium">${item.product_name || 'Unknown'}</div>
+                                <div class="font-medium">${escapeHtml(item.product_name || 'Unknown')}</div>
                             </td>
                             <td class="text-center font-medium">${ordered}</td>
                             <td class="text-center">${returned > 0 ? '−' + returned : '—'}</td>
@@ -712,18 +728,18 @@
                         <div class="min-w-0">
                             <h3 class="font-bold text-xl leading-tight flex items-center gap-2 flex-wrap">
                                 <i class="fas fa-shopping-cart text-primary"></i>
-                                <span class="font-mono">${order.order_number || 'Order #' + order.id}</span>
+                                <span class="font-mono">${escapeHtml(order.order_number || 'Order #' + (Number(order.id) || 0))}</span>
                             </h3>
                             <p class="text-xs text-base-content/50 mt-1">Sales order review · GM authorization</p>
                         </div>
-                        <span class="badge ${statusBadges[order.status] || 'badge-ghost'} badge-lg shrink-0" title="${order.status}">${statusLabel}</span>
+                        <span class="badge ${statusBadges[order.status] || 'badge-ghost'} badge-lg shrink-0" title="${escapeAttr(order.status)}">${escapeHtml(statusLabel)}</span>
                     </div>
                     
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                         <div class="rounded-xl border border-base-300 bg-base-100 p-3">
                             <p class="text-[0.65rem] uppercase tracking-wide text-base-content/50 font-semibold">Customer</p>
-                            <p class="font-semibold mt-0.5">${order.customer_name || '—'}</p>
-                            ${typeLabel ? `<span class="badge badge-outline badge-xs mt-1">${typeLabel}</span>` : ''}
+                            <p class="font-semibold mt-0.5">${escapeHtml(order.customer_name || '—')}</p>
+                            ${typeLabel ? `<span class="badge badge-outline badge-xs mt-1">${escapeHtml(typeLabel)}</span>` : ''}
                         </div>
                         <div class="rounded-xl border border-base-300 bg-base-100 p-3">
                             <p class="text-[0.65rem] uppercase tracking-wide text-base-content/50 font-semibold">Order Date</p>
@@ -735,14 +751,14 @@
                         </div>
                         <div class="rounded-xl border border-base-300 bg-base-100 p-3">
                             <p class="text-[0.65rem] uppercase tracking-wide text-base-content/50 font-semibold">Payment Mode</p>
-                            <p class="font-semibold mt-0.5">${payDisplay}</p>
+                            <p class="font-semibold mt-0.5">${escapeHtml(payDisplay)}</p>
                         </div>
                     </div>
                     
                     ${order.customer_po_number ? `
                         <div class="alert alert-info mb-4 py-2">
                             <i class="fas fa-file-alt"></i>
-                            <span>Customer PO: <strong>${order.customer_po_number}</strong></span>
+                            <span>Customer PO: <strong>${escapeHtml(order.customer_po_number)}</strong></span>
                         </div>
                     ` : ''}
                     
@@ -771,23 +787,23 @@
                     ${order.notes ? `
                         <div class="rounded-xl border border-base-300 bg-base-100 p-3 mb-4">
                             <p class="text-[0.65rem] uppercase tracking-wide text-base-content/50 font-semibold mb-1">Notes</p>
-                            <p class="text-sm">${order.notes}</p>
+                            <p class="text-sm">${escapeHtml(order.notes)}</p>
                         </div>
                     ` : ''}
                     
                     <div class="divider text-xs text-base-content/40">Order Timeline</div>
                     
                     <div class="text-sm space-y-2 mb-4">
-                        <p><i class="fas fa-plus-circle text-success mr-2"></i>Created by <strong>${createdBy}</strong> on ${formatDate(order.created_at)}</p>
-                        ${order.approved_at ? `<p><i class="fas fa-check-circle text-info mr-2"></i>Approved by ${order.approved_by_name || 'General Manager'} on ${formatDate(order.approved_at)}</p>` : ''}
+                        <p><i class="fas fa-plus-circle text-success mr-2"></i>Created by <strong>${escapeHtml(createdBy)}</strong> on ${formatDate(order.created_at)}</p>
+                        ${order.approved_at ? `<p><i class="fas fa-check-circle text-info mr-2"></i>Approved by ${escapeHtml(order.approved_by_name || 'General Manager')} on ${formatDate(order.approved_at)}</p>` : ''}
                     </div>
                     
                     ${isPending ? `
                         <div class="modal-action">
-                            <button class="btn btn-error" onclick="openRejectModal(${order.id}); document.getElementById('orderDetailModal').close();">
+                            <button class="btn btn-error" onclick="openRejectModal(${Number(order.id) || 0}); document.getElementById('orderDetailModal').close();">
                                 <i class="fas fa-times mr-2"></i> Reject Order
                             </button>
-                            <button class="btn btn-success" onclick="approveOrder(${order.id}); document.getElementById('orderDetailModal').close();">
+                            <button class="btn btn-success" onclick="approveOrder(${Number(order.id) || 0}); document.getElementById('orderDetailModal').close();">
                                 <i class="fas fa-check mr-2"></i> Approve Order
                             </button>
                         </div>
@@ -815,7 +831,7 @@
             
             try {
                 await api.put(`/sales/orders.php?action=approve&id=${id}`, {});
-                showToast('Order approved successfully!', 'success');
+                showToast('Sales Order approved. Warehouse FG can now prepare it for delivery.', 'success');
                 loadOrders();
             } catch (error) {
                 console.error('Error approving order:', error);
@@ -845,7 +861,7 @@
                     cancellation_reason: `Rejected by GM: ${reason}`
                 });
                 document.getElementById('rejectModal').close();
-                showToast('Order rejected', 'info');
+                showToast('Sales Order rejected. Sales can review the reason and revise it.', 'info');
                 loadOrders();
             } catch (error) {
                 console.error('Error rejecting order:', error);

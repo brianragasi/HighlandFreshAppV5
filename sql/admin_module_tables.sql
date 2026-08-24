@@ -179,14 +179,9 @@ GENERATED ALWAYS AS (
     END
 ) STORED;
 
--- Insert sample storage tanks
-INSERT INTO storage_tanks (tank_name, tank_code, tank_type, capacity_liters, current_volume, location, status) VALUES
-('Raw Milk Tank 1', 'RMT-001', 'raw_milk', 5000, 2500, 'Receiving Area A', 'in_use'),
-('Raw Milk Tank 2', 'RMT-002', 'raw_milk', 5000, 0, 'Receiving Area A', 'available'),
-('Pasteurized Tank 1', 'PT-001', 'pasteurized', 3000, 1800, 'Processing Area', 'in_use'),
-('Processing Tank 1', 'PRT-001', 'processing', 2000, 500, 'Processing Area', 'in_use'),
-('Storage Tank 1', 'ST-001', 'storage', 10000, 4500, 'Cold Storage Room', 'in_use')
-ON DUPLICATE KEY UPDATE updated_at = NOW();
+-- Storage tanks are physical assets and must be registered explicitly by the
+-- General Manager. Do not seed fictional occupancy: current_volume and in_use
+-- are derived from the milk inventory ledgers.
 
 -- Insert sample chillers
 INSERT INTO chillers (chiller_name, chiller_code, chiller_type, capacity_liters, location, target_temperature, status) VALUES

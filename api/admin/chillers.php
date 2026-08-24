@@ -122,7 +122,7 @@ function getChillers($conn) {
                 END as temperature_status
             FROM chiller_locations cl
             $whereClause
-            ORDER BY cl.chiller_code ASC
+            ORDER BY cl.id DESC
             LIMIT ? OFFSET ?";
     
     $params[] = $limit;
@@ -216,6 +216,31 @@ function getChiller($conn, $id) {
 /**
  * Create new chiller location
  */
+function validateChillerCapacityPayload(array &$data, array $existing = []): void {
+    try {
+        $capacity = array_key_exists('capacity', $data)
+            ? hfParseBusinessInteger($data['capacity'], 'Chiller capacity', 1, 100000000)
+            : (int) ($existing['capacity'] ?? 0);
+        $currentCount = array_key_exists('current_count', $data)
+            ? hfParseBusinessInteger($data['current_count'], 'Current chiller count', 0, 100000000)
+            : (int) ($existing['current_count'] ?? 0);
+    } catch (InvalidArgumentException $error) {
+        sendError($error->getMessage(), 400);
+        return;
+    }
+
+    if ($currentCount > $capacity) {
+        sendError('Current chiller count cannot exceed capacity', 400);
+        return;
+    }
+    if (array_key_exists('capacity', $data)) {
+        $data['capacity'] = $capacity;
+    }
+    if (array_key_exists('current_count', $data)) {
+        $data['current_count'] = $currentCount;
+    }
+}
+
 function createChiller($conn) {
     $data = json_decode(file_get_contents('php://input'), true);
     
@@ -227,6 +252,10 @@ function createChiller($conn) {
             return;
         }
     }
+    if (!array_key_exists('current_count', $data)) {
+        $data['current_count'] = 0;
+    }
+    validateChillerCapacityPayload($data);
     
     // Generate chiller code if not provided
     if (empty($data['chiller_code'])) {
@@ -282,7 +311,7 @@ function updateChiller($conn, $id) {
     $data = json_decode(file_get_contents('php://input'), true);
     
     // Check if chiller exists
-    $checkStmt = $conn->prepare("SELECT id, chiller_code FROM chiller_locations WHERE id = ?");
+    $checkStmt = $conn->prepare("SELECT * FROM chiller_locations WHERE id = ?");
     $checkStmt->execute([$id]);
     $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
     
@@ -290,6 +319,7 @@ function updateChiller($conn, $id) {
         sendError('Chiller not found', 404);
         return;
     }
+    validateChillerCapacityPayload($data, $existing);
     
     // Build dynamic update
     $updates = [];

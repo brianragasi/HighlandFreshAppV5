@@ -391,11 +391,11 @@
                             <div class="grid grid-cols-2 gap-3">
                                 <div class="form-control">
                                     <label class="label py-0"><span class="label-text text-xs">Cream Output (kg)</span></label>
-                                    <input type="number" class="input input-bordered input-sm w-full" id="creamOutputKg" step="0.1" placeholder="~20% of milk">
+                                    <input type="number" class="input input-bordered input-sm w-full" id="creamOutputKg" step="0.1" min="0" placeholder="~20% of milk">
                                 </div>
                                 <div class="form-control">
                                     <label class="label py-0"><span class="label-text text-xs">Skim Milk Output (L)</span></label>
-                                    <input type="number" class="input input-bordered input-sm w-full" id="skimMilkOutputL" step="0.1" placeholder="~80% of milk">
+                                    <input type="number" class="input input-bordered input-sm w-full" id="skimMilkOutputL" step="0.1" min="0" placeholder="~80% of milk">
                                 </div>
                             </div>
                         </div>
@@ -646,10 +646,7 @@
 
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `
-                <i class="fas ${icon}"></i>
-                <span>${message}</span>
-            `;
+            HighlandSecurity.renderToastContent(toast, message, `fas ${icon}`);
             container.appendChild(toast);
 
             setTimeout(() => {
@@ -762,13 +759,15 @@
 
         async function loadRecipes() {
             try {
-                const response = await ProductionService.getRecipes({ limit: 100 });
+                // New direct runs use the same current bulk-recipe rule as
+                // pre-run requisitions; historical recipes remain viewable elsewhere.
+                const response = await ProductionService.getRecipes({ limit: 100, for_requisition: 1 });
                 if (response.success) {
-                    recipes = response.data;
+                    recipes = Array.isArray(response.data) ? response.data : [];
 
                     const select = document.getElementById('recipeSelect');
                     select.innerHTML = '<option value="">Select a recipe...</option>' +
-                        recipes.map(r => `<option value="${r.id}">${r.recipe_code} — ${r.product_name}</option>`).join('');
+                        recipes.map(r => `<option value="${r.id}">${r.label || `${r.recipe_code} — ${r.product_name} · Standard yield: ${Number(r.bulk_yield_liters || r.expected_yield)} L`}${r.packaging_ready ? '' : ' · bulk-only'}</option>`).join('');
                 }
             } catch (error) {
                 console.error('Error loading recipes:', error);
@@ -1042,7 +1041,7 @@
                 line.innerHTML = `<i class="fas fa-exclamation-triangle text-error mt-0.5"></i>
                     <div class="flex-1">
                         <div class="text-error font-semibold">No issued milk available</div>
-                        <div class="text-xs text-base-content/60">${state.message || 'Submit a requisition and wait for Warehouse Raw to fulfill it.'}</div>
+                        <div class="text-xs text-base-content/60">${escapeHtml(state.message || 'Submit a requisition and wait for Warehouse Raw to fulfill it.')}</div>
                     </div>`;
             }
         }
@@ -1067,7 +1066,7 @@
                 line.innerHTML = `<i class="fas fa-exclamation-triangle text-warning mt-0.5"></i>
                     <div class="flex-1">
                         <div class="text-warning font-semibold">Ingredients missing</div>
-                        <div class="text-xs text-base-content/60">${state.message || 'Some ingredients are not yet issued by Warehouse Raw.'}</div>
+                        <div class="text-xs text-base-content/60">${escapeHtml(state.message || 'Some ingredients are not yet issued by Warehouse Raw.')}</div>
                     </div>`;
             }
         }
@@ -1357,11 +1356,14 @@
                 return `
                 <tr class="hover">
                     <td>
-                        <code class="text-sm font-semibold bg-base-200 px-2 py-1 rounded">${run.run_code}</code>
+                        <code class="text-sm font-semibold bg-base-200 px-2 py-1 rounded">${escapeHtml(run.run_code)}</code>
                     </td>
                     <td>
-                        <div class="font-medium">${run.product_name}</div>
-                        <div class="text-xs text-base-content/60"><span class="badge badge-ghost badge-xs">${run.product_type || ''}</span></div>
+                        <div class="font-medium">${escapeHtml(run.product_name)}</div>
+                        <div class="text-xs text-base-content/60"><span class="badge badge-ghost badge-xs">${escapeHtml(run.product_type || '')}</span></div>
+                        ${run.qc_batch_status === 'on_hold'
+                            ? `<div class="badge badge-warning badge-sm mt-1 gap-1"><i class="fas fa-calculator"></i> QC count hold ${Number(run.qc_count_hold_variance) > 0 ? '+' : ''}${Number(run.qc_count_hold_variance || 0)}</div>`
+                            : ''}
                     </td>
                     <td>
                         <span class="badge ${config.class} gap-1">
@@ -1566,6 +1568,26 @@
                         await loadRecipes();
                         recipeSelect.value = want;
                     }
+                    // A fulfilled requisition is an approved historical snapshot.
+                    // If its recipe was retired by a newer version, load that exact
+                    // record only for this requisition-driven handoff.
+                    if (recipeSelect.value !== want && reqId) {
+                        try {
+                            const historicalResponse = await ProductionService.getRecipe(recipeId);
+                            const historicalRecipe = historicalResponse?.success ? historicalResponse.data : null;
+                            if (historicalRecipe) {
+                                historicalRecipe.historical_requisition_recipe = true;
+                                recipes.push(historicalRecipe);
+                                recipeSelect.add(new Option(
+                                    `${historicalRecipe.recipe_code} — ${historicalRecipe.product_name} · approved historical plan`,
+                                    String(historicalRecipe.id)
+                                ));
+                                recipeSelect.value = want;
+                            }
+                        } catch (historyError) {
+                            console.error('Unable to load historical requisition recipe:', historyError);
+                        }
+                    }
                     if (recipeSelect.value === want) {
                         // Ensure the control is enabled so the selected value is visible/usable.
                         recipeSelect.disabled = false;
@@ -1714,8 +1736,18 @@
             try {
                 const response = await ProductionService.startRun(id);
                 if (response.success) {
-                    showToast('Production run started', 'success');
-                    loadRuns();
+                    const wasAlreadyStarted = response?.data?.already_started === true;
+                    showToast(
+                        wasAlreadyStarted
+                            ? 'This run was already started. The latest details are now shown.'
+                            : 'Production run started',
+                        'success'
+                    );
+                    await Promise.all([loadRuns(), loadStats()]);
+                    const refreshed = await ProductionService.getRun(id);
+                    if (refreshed.success) {
+                        renderRunDetails(refreshed.data);
+                    }
                 } else {
                     showToast(response.message || 'Failed to start run', 'error');
                 }
@@ -1781,8 +1813,8 @@
 
             const unitSelect = document.getElementById('outputUnit');
             unitSelect.innerHTML = `
-                <option value="pieces">${currentProductConversion.primary}</option>
-                <option value="boxes">${currentProductConversion.secondary}</option>
+                <option value="pieces">${escapeHtml(currentProductConversion.primary)}</option>
+                <option value="boxes">${escapeHtml(currentProductConversion.secondary)}</option>
             `;
 
             document.getElementById('secondaryUnitLabel').textContent = currentProductConversion.secondary;
@@ -1815,8 +1847,8 @@
                         });
                         const unitSelect = document.getElementById('outputUnit');
                         unitSelect.innerHTML = `
-                            <option value="pieces">${currentProductConversion.primary}</option>
-                            <option value="boxes">${currentProductConversion.secondary}</option>
+                            <option value="pieces">${escapeHtml(currentProductConversion.primary)}</option>
+                            <option value="boxes">${escapeHtml(currentProductConversion.secondary)}</option>
                         `;
                         document.getElementById('secondaryUnitLabel').textContent = currentProductConversion.secondary;
                         document.getElementById('primaryUnitLabel').textContent = currentProductConversion.primary;
@@ -1852,7 +1884,7 @@
                             <i class="fas fa-exclamation-triangle"></i>
                             <div>
                                 <div class="font-bold">CCP Logs Required Before Completing</div>
-                                <div class="text-sm">Missing: ${missing.join(', ')}</div>
+                                <div class="text-sm">Missing: ${escapeHtml(missing.join(', '))}</div>
                                 <a href="ccp_logging.html?run_id=${id}" class="btn btn-sm btn-error mt-2">
                                     <i class="fas fa-clipboard-check"></i> Log CCP Now
                                 </a>
@@ -1868,7 +1900,7 @@
                             <i class="fas fa-times-circle"></i>
                             <div>
                                 <div class="font-bold">Failed CCP Checks Detected</div>
-                                <div class="text-sm">${failed.join(' and ')} check(s) failed. Re-log with correct reading to fix.</div>
+                                <div class="text-sm">${escapeHtml(failed.join(' and '))} check(s) failed. Re-log with correct reading to fix.</div>
                                 <a href="ccp_logging.html?run_id=${id}" class="btn btn-sm btn-error mt-2">
                                     <i class="fas fa-redo"></i> Re-log CCP
                                 </a>
@@ -2069,6 +2101,16 @@
                    </div>`
                 : '';
 
+            const qcCountHoldBanner = run.qc_batch_status === 'on_hold'
+                ? `<div class="alert alert-warning mb-4">
+                       <i class="fas fa-calculator"></i>
+                       <div>
+                           <div class="font-semibold">QC placed this finished batch on physical-count hold</div>
+                           <div class="text-sm">Difference: ${Number(run.qc_count_hold_variance) > 0 ? '+' : ''}${Number(run.qc_count_hold_variance || 0)} unit(s). ${escapeHtml(run.qc_count_hold_reason || 'Production must help investigate the recorded packaging quantity before QC release.')}</div>
+                       </div>
+                   </div>`
+                : '';
+
             // Hero header: run code (big), product + recipe, status pill, primary CTA.
             // The CTA is intentionally in the hero (not the footer) so the user
             // sees "what to do next" at a glance.
@@ -2090,7 +2132,7 @@
                         <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ${hero.bg} ${hero.color} font-semibold text-sm border ${hero.border}">
                             <i class="fas ${hero.icon}"></i> ${hero.label}
                         </span>
-                        <div class="text-xs text-base-content/60 max-w-[16rem] text-right">${hero.desc}</div>
+                        <div class="text-xs text-base-content/60 max-w-[16rem] text-right">${escapeHtml(hero.desc)}</div>
                         ${ctaHTML ? `<div class="mt-1">${ctaHTML}</div>` : ''}
                     </div>
                 </div>
@@ -2252,6 +2294,7 @@
             // Assemble the body
             document.getElementById('runDetailsContent').innerHTML = `
                 ${lineageBanner}
+                ${qcCountHoldBanner}
                 ${heroHTML}
                 ${quantitiesHTML}
                 ${processHTML}
@@ -2352,7 +2395,7 @@
                 }
             }
 
-            return `${run.actual_quantity} ${run.yield_unit || 'units'}`;
+            return `${Number(run.actual_quantity) || 0} ${escapeHtml(run.yield_unit || 'units')}`;
         }
     </script>
 </body>

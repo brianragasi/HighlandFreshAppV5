@@ -277,6 +277,8 @@
             <form id="recallForm" onsubmit="submitRecall(event)">
                 <div class="space-y-4">
                     <div class="form-control"><label class="label"><span class="label-text">Batch *</span></label>
+                        <input type="search" id="batchSearch" class="input input-bordered w-full mb-2"
+                            placeholder="Search batch code or product..." oninput="queueRecallBatchSearch(this.value)">
                         <select id="batchId" class="select select-bordered w-full" required>
                             <option value="">Loading released batches...</option>
                         </select>
@@ -397,6 +399,7 @@
         let currentRecallData = null;
         let userRole = '';
         let recallBatchOptions = [];
+        let recallBatchSearchTimer = null;
 
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -408,9 +411,17 @@
             const cls = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type];
             const t = document.createElement('div');
             t.className = `alert ${cls} shadow-lg`;
-            t.innerHTML = `<span>${msg}</span>`;
+            const text = document.createElement('span');
+            text.textContent = String(msg ?? '');
+            t.appendChild(text);
             container.appendChild(t);
             setTimeout(() => t.remove(), 4000);
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, character => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+            }[character]));
         }
 
         const classLabels = {
@@ -502,23 +513,23 @@
                         return;
                     }
                     table.innerHTML = items.map(r => {
-                        const cls = classLabels[r.recall_class] || { label: r.recall_class, badge: 'badge-ghost' };
+                        const cls = classLabels[r.recall_class] || { label: r.recall_class, badge: 'badge-ghost', icon: 'info-circle' };
                         const sts = statusLabels[r.status] || { label: r.status, badge: 'badge-ghost' };
-                        const recoveryRate = r.recovery_rate || 0;
+                        const recoveryRate = Number(r.recovery_rate || 0);
                         const recoveryColor = recoveryRate >= 80 ? 'success' : (recoveryRate >= 50 ? 'warning' : 'error');
                         return `
                         <tr class="${r.recall_class === 'class_i' && !['completed', 'cancelled'].includes(r.status) ? 'bg-error/5' : ''}">
-                            <td><span class="font-mono text-xs">${r.recall_code}</span></td>
-                            <td><div class="font-medium text-sm">${r.product_name}</div><div class="text-xs text-base-content/60">${r.batch_code}</div></td>
-                            <td><span class="badge ${cls.badge} gap-1"><i class="fas fa-${cls.icon}"></i>${cls.label}</span></td>
-                            <td class="text-center font-semibold">${r.total_dispatched}</td>
+                            <td><span class="font-mono text-xs">${escapeHtml(r.recall_code || '-')}</span></td>
+                            <td><div class="font-medium text-sm">${escapeHtml(r.product_name || '-')}</div><div class="text-xs text-base-content/60">${escapeHtml(r.batch_code || '-')}</div></td>
+                            <td><span class="badge ${cls.badge} gap-1"><i class="fas fa-${cls.icon}"></i>${escapeHtml(cls.label || '-')}</span></td>
+                            <td class="text-center font-semibold">${Number(r.total_dispatched || 0).toLocaleString()}</td>
                             <td>
                                 <div class="flex items-center gap-2">
                                     <progress class="progress progress-${recoveryColor} w-16" value="${recoveryRate}" max="100"></progress>
                                     <span class="text-xs">${recoveryRate}%</span>
                                 </div>
                             </td>
-                            <td><span class="badge ${sts.badge}">${sts.label}</span></td>
+                            <td><span class="badge ${sts.badge}">${escapeHtml(sts.label || '-')}</span></td>
                             <td class="text-xs">${RecallService.formatDate(r.initiated_at)}</td>
                             <td class="text-center">${getActionButtons(r)}</td>
                         </tr>`;
@@ -529,7 +540,7 @@
 
         function getActionButtons(r) {
             let btns = `<button class="btn btn-ghost btn-xs" onclick="viewRecall(${r.id})" title="View"><i class="fas fa-eye"></i></button>`;
-            const isGM = ['general_manager', 'admin'].includes(userRole);
+            const isGM = userRole === 'general_manager';
 
             if (r.status === 'pending_approval' && isGM) {
                 btns += `<button class="btn btn-success btn-xs" onclick="openApprovalModal(${r.id})" title="Approve/Reject"><i class="fas fa-gavel"></i></button>`;
@@ -558,14 +569,19 @@
             return `${product} - ${batchCode} - ${mfg} - ${dispatched} dispatched / ${warehouse} in warehouse`;
         }
 
-        async function loadRecallBatchOptions() {
+        function queueRecallBatchSearch(search) {
+            clearTimeout(recallBatchSearchTimer);
+            recallBatchSearchTimer = setTimeout(() => loadRecallBatchOptions(search), 250);
+        }
+
+        async function loadRecallBatchOptions(search = '') {
             const select = document.getElementById('batchId');
             const help = document.getElementById('batchHelp');
             select.innerHTML = '<option value="">Loading released batches...</option>';
             help.textContent = 'Choose the released batch being recalled.';
 
             try {
-                const res = await RecallService.getEligibleBatches();
+                const res = await RecallService.getEligibleBatches(String(search).trim());
                 recallBatchOptions = res.success ? (res.data || []) : [];
 
                 if (recallBatchOptions.length === 0) {
@@ -574,9 +590,10 @@
                     return;
                 }
 
-                select.innerHTML = '<option value="">Select released batch...</option>' + recallBatchOptions.map(batch =>
-                    `<option value="${batch.id}">${formatRecallBatchOption(batch)}</option>`
-                ).join('');
+                select.replaceChildren(new Option('Select released batch...', ''));
+                recallBatchOptions.forEach(batch => {
+                    select.add(new Option(formatRecallBatchOption(batch), String(Number(batch.id) || '')));
+                });
             } catch (e) {
                 select.innerHTML = '<option value="">Unable to load batches</option>';
                 help.textContent = e.message || 'Batch list could not be loaded.';
@@ -619,19 +636,19 @@
 
                     document.getElementById('viewRecallTitle').innerHTML = `
                         <span class="badge ${cls.badge} mr-2"><i class="fas fa-${cls.icon}"></i> ${cls.label}</span>
-                        Recall: ${r.recall_code}
+                        Recall: ${escapeHtml(r.recall_code || '-')}
                     `;
 
                     document.getElementById('recallDetails').innerHTML = `
                         <div class="grid grid-cols-2 gap-4">
-                            <div><label class="text-xs text-base-content/60">Product</label><p class="font-semibold">${r.product_name}</p></div>
-                            <div><label class="text-xs text-base-content/60">Batch Code</label><p class="font-mono">${r.batch_code}</p></div>
-                            <div><label class="text-xs text-base-content/60">Status</label><p><span class="badge ${sts.badge}">${sts.label}</span></p></div>
+                            <div><label class="text-xs text-base-content/60">Product</label><p class="font-semibold">${escapeHtml(r.product_name || '-')}</p></div>
+                            <div><label class="text-xs text-base-content/60">Batch Code</label><p class="font-mono">${escapeHtml(r.batch_code || '-')}</p></div>
+                            <div><label class="text-xs text-base-content/60">Status</label><p><span class="badge ${sts.badge}">${escapeHtml(sts.label || '-')}</span></p></div>
                             <div><label class="text-xs text-base-content/60">Initiated</label><p>${RecallService.formatDateTime(r.initiated_at)}</p></div>
                         </div>
                         <div class="divider my-2"></div>
-                        <div><label class="text-xs text-base-content/60">Reason</label><p class="text-sm">${r.reason}</p></div>
-                        ${r.evidence_notes ? `<div><label class="text-xs text-base-content/60">Evidence</label><p class="text-sm">${r.evidence_notes}</p></div>` : ''}
+                        <div><label class="text-xs text-base-content/60">Reason</label><p class="text-sm">${escapeHtml(r.reason || '-')}</p></div>
+                        ${r.evidence_notes ? `<div><label class="text-xs text-base-content/60">Evidence</label><p class="text-sm">${escapeHtml(r.evidence_notes)}</p></div>` : ''}
                         <div class="divider my-2"></div>
                         <div class="stats stats-horizontal w-full">
                             <div class="stat place-items-center py-2">
@@ -660,10 +677,10 @@
                                 <tbody>
                                     ${r.affected_locations.map(l => `
                                         <tr>
-                                            <td>${l.location_name}</td>
-                                            <td>${l.units_dispatched}</td>
-                                            <td>${l.units_returned}</td>
-                                            <td>${l.notification_sent ? '<i class="fas fa-check text-success"></i> <span class="text-xs">' + (l.notification_method || '') + '</span>' : '<i class="fas fa-times text-error"></i>'}</td>
+                                            <td>${escapeHtml(l.location_name || '-')}</td>
+                                            <td>${Number(l.units_dispatched || 0).toLocaleString()}</td>
+                                            <td>${Number(l.units_returned || 0).toLocaleString()}</td>
+                                            <td>${l.notification_sent ? '<i class="fas fa-check text-success"></i> <span class="text-xs">' + escapeHtml(l.notification_method || '') + '</span>' : '<i class="fas fa-times text-error"></i>'}</td>
                                             <td class="text-center">
                                                 ${!l.notification_sent && ['approved', 'in_progress'].includes(r.status) ? `
                                                     <button class="btn btn-xs btn-info" onclick="sendNotification(${id}, ${l.id}, 'phone')" title="Mark as notified by phone">
@@ -704,12 +721,12 @@
                         <div class="alert ${r.recall_class === 'class_i' ? 'alert-error' : 'alert-warning'}">
                             <i class="fas fa-${cls.icon}"></i>
                             <div>
-                                <div class="font-bold">${cls.label} - ${cls.desc}</div>
-                                <div class="text-sm">${r.product_name} (${r.batch_code})</div>
+                                <div class="font-bold">${escapeHtml(cls.label || '-')} - ${escapeHtml(cls.desc || '-')}</div>
+                                <div class="text-sm">${escapeHtml(r.product_name || '-')} (${escapeHtml(r.batch_code || '-')})</div>
                             </div>
                         </div>
-                        <p><strong>Reason:</strong> ${r.reason}</p>
-                        <p><strong>Units Dispatched:</strong> ${r.total_dispatched}</p>
+                        <p><strong>Reason:</strong> ${escapeHtml(r.reason || '-')}</p>
+                        <p><strong>Units Dispatched:</strong> ${Number(r.total_dispatched || 0).toLocaleString()}</p>
                     `;
                     document.getElementById('approvalNotes').value = '';
                     document.getElementById('approvalModal').showModal();
@@ -748,10 +765,12 @@
                         showToast('No remaining units to recover for this recall', 'warning');
                         return;
                     }
-                    select.innerHTML = locations.map(l => {
+                    select.replaceChildren(...locations.map(l => {
                         const remaining = getLocationRemaining(l);
-                        return `<option value="${l.id}" data-remaining="${remaining}">${l.location_name} (${remaining} remaining)</option>`;
-                    }).join('');
+                        const option = new Option(`${l.location_name || 'Location'} (${remaining} remaining)`, String(Number(l.id) || ''));
+                        option.dataset.remaining = String(remaining);
+                        return option;
+                    }));
                     document.getElementById('returnForm').reset();
                     updateReturnLimit();
                     document.getElementById('logReturnModal').showModal();

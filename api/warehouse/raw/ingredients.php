@@ -19,6 +19,7 @@
  */
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/plain_text.php';
 require_once __DIR__ . '/ingredient_stock_helpers.php';
 
 // Require Warehouse Raw role
@@ -69,14 +70,7 @@ function handleGet($db, $currentUser) {
             $categoryId = getParam('category_id');
             $lowStockOnly = getParam('low_stock') === '1';
             $search = getParam('search');
-            $usableStockSql = "COALESCE((
-                SELECT SUM(ib.remaining_quantity)
-                FROM ingredient_batches ib
-                WHERE ib.ingredient_id = i.id
-                  AND ib.status IN ('available', 'partially_used')
-                  AND ib.remaining_quantity > 0
-                  AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())
-            ), 0)";
+            $usableStockSql = usableIngredientBatchStockSql('i.id', 'usable_ib');
             
             $sql = "
                 SELECT 
@@ -97,6 +91,16 @@ function handleGet($db, $currentUser) {
                      AND ib.status IN ('available', 'partially_used')
                      AND ib.remaining_quantity > 0
                      AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())) as batch_stock,
+                    (SELECT COALESCE(SUM(ib.remaining_quantity), 0) FROM ingredient_batches ib
+                     WHERE ib.ingredient_id = i.id
+                     AND ib.status IN ('available', 'partially_used', 'quarantine', 'expired')
+                     AND ib.remaining_quantity > 0) as accounted_batch_stock,
+                    (SELECT COALESCE(SUM(ib.remaining_quantity), 0) FROM ingredient_batches ib
+                     WHERE ib.ingredient_id = i.id
+                     AND ib.status IN ('available', 'partially_used', 'quarantine', 'expired')
+                     AND ib.remaining_quantity > 0
+                     AND ib.expiry_date IS NOT NULL
+                     AND ib.expiry_date < CURDATE()) as expired_batch_stock,
                     (SELECT MIN(expiry_date) FROM ingredient_batches ib
                      WHERE ib.ingredient_id = i.id
                      AND ib.status IN ('available', 'partially_used')
@@ -133,10 +137,17 @@ function handleGet($db, $currentUser) {
             foreach ($ingredients as &$ingredient) {
                 $onFileStock = (float) ($ingredient['current_stock'] ?? 0);
                 $usableStock = (float) ($ingredient['batch_stock'] ?? 0);
+                $accountedStock = (float) ($ingredient['accounted_batch_stock'] ?? 0);
+                $expiredStock = (float) ($ingredient['expired_batch_stock'] ?? 0);
                 $ingredient['current_stock_on_file'] = $onFileStock;
                 $ingredient['current_stock'] = $usableStock;
                 $ingredient['stock_variance'] = round($onFileStock - $usableStock, 3);
-                $ingredient['needs_stock_check'] = abs($ingredient['stock_variance']) > 0.0005;
+                $ingredient['missing_batch_stock'] = max(0, round($onFileStock - $accountedStock, 3));
+                $ingredient['batch_stock_surplus'] = max(0, round($accountedStock - $onFileStock, 3));
+                $ingredient['restricted_stock'] = max(0, round($accountedStock - $usableStock, 3));
+                $ingredient['expired_batch_stock'] = $expiredStock;
+                $ingredient['needs_stock_check'] = $ingredient['missing_batch_stock'] > 0.0005
+                    || $ingredient['batch_stock_surplus'] > 0.0005;
             }
             unset($ingredient);
             
@@ -162,28 +173,58 @@ function handleGet($db, $currentUser) {
                 Response::error('Ingredient not found', 404);
             }
             
-            // Get batches (FIFO order)
+            // Show every batch that is still physically in the warehouse.
+            // Expired and quarantined batches stay visible but are never
+            // included in usable FIFO stock.
             $batches = $db->prepare("
                 SELECT 
                     ib.*,
                     u.first_name as received_by_first,
                     u.last_name as received_by_last,
-                    DATEDIFF(ib.expiry_date, CURDATE()) as days_until_expiry
+                    DATEDIFF(ib.expiry_date, CURDATE()) as days_until_expiry,
+                    CASE
+                        WHEN ib.status IN ('available', 'partially_used')
+                         AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())
+                        THEN 1 ELSE 0
+                    END AS is_usable,
+                    CASE
+                        WHEN ib.expiry_date IS NOT NULL AND ib.expiry_date < CURDATE()
+                        THEN 1 ELSE 0
+                    END AS is_expired
                 FROM ingredient_batches ib
-                JOIN users u ON ib.received_by = u.id
+                LEFT JOIN users u ON ib.received_by = u.id
                 WHERE ib.ingredient_id = ?
-                AND ib.status IN ('available', 'partially_used')
+                AND ib.status IN ('available', 'partially_used', 'quarantine', 'expired')
                 AND ib.remaining_quantity > 0
-                AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())
-                ORDER BY ib.expiry_date ASC, ib.received_date ASC, ib.id ASC
+                ORDER BY
+                    CASE WHEN ib.expiry_date IS NOT NULL AND ib.expiry_date < CURDATE() THEN 0 ELSE 1 END,
+                    ib.expiry_date ASC,
+                    ib.received_date ASC,
+                    ib.id ASC
             ");
             $batches->execute([$id]);
             $batchList = $batches->fetchAll();
-            $batchStock = array_reduce($batchList, function ($sum, $batch) {
+            $accountedBatchStock = array_reduce($batchList, function ($sum, $batch) {
                 return $sum + (float) ($batch['remaining_quantity'] ?? 0);
             }, 0.0);
-            $ingredientData['batch_stock'] = $batchStock;
-            $ingredientData['stock_variance'] = round(((float) ($ingredientData['current_stock'] ?? 0)) - $batchStock, 3);
+            $usableBatchStock = array_reduce($batchList, function ($sum, $batch) {
+                return $sum + ((int) ($batch['is_usable'] ?? 0) === 1
+                    ? (float) ($batch['remaining_quantity'] ?? 0)
+                    : 0);
+            }, 0.0);
+            $expiredBatchStock = array_reduce($batchList, function ($sum, $batch) {
+                return $sum + ((int) ($batch['is_expired'] ?? 0) === 1
+                    ? (float) ($batch['remaining_quantity'] ?? 0)
+                    : 0);
+            }, 0.0);
+            $onFileStock = (float) ($ingredientData['current_stock'] ?? 0);
+            $ingredientData['batch_stock'] = $usableBatchStock;
+            $ingredientData['accounted_batch_stock'] = $accountedBatchStock;
+            $ingredientData['expired_batch_stock'] = $expiredBatchStock;
+            $ingredientData['restricted_stock'] = max(0, round($accountedBatchStock - $usableBatchStock, 3));
+            $ingredientData['stock_variance'] = round($onFileStock - $usableBatchStock, 3);
+            $ingredientData['missing_batch_stock'] = max(0, round($onFileStock - $accountedBatchStock, 3));
+            $ingredientData['batch_stock_surplus'] = max(0, round($accountedBatchStock - $onFileStock, 3));
             $ingredientData['batch_count'] = count($batchList);
             
             // Get recent transactions
@@ -334,14 +375,7 @@ function handleGet($db, $currentUser) {
         case 'reorder_alerts':
             // Get all items below reorder threshold (for Reorder Alert Report)
             $includeOk = getParam('include_ok') === '1';
-            $usableStockSql = "COALESCE((
-                SELECT SUM(ib.remaining_quantity)
-                FROM ingredient_batches ib
-                WHERE ib.ingredient_id = i.id
-                  AND ib.status IN ('available', 'partially_used')
-                  AND ib.remaining_quantity > 0
-                  AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())
-            ), 0)";
+            $usableStockSql = usableIngredientBatchStockSql('i.id', 'alert_ib');
             
             $sql = "
                 SELECT 
@@ -354,7 +388,7 @@ function handleGet($db, $currentUser) {
                     i.current_stock AS current_stock_on_file,
                     {$usableStockSql} AS current_stock,
                     i.minimum_stock,
-                    COALESCE(i.reorder_point, i.minimum_stock * 1.5) AS reorder_point,
+                    " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . " AS reorder_point,
                     i.maximum_stock,
                     COALESCE(i.lead_time_days, 7) AS lead_time_days,
                     i.unit_cost,
@@ -363,7 +397,7 @@ function handleGet($db, $currentUser) {
                         WHEN {$usableStockSql} <= 0 THEN 0
                         ELSE ROUND(({$usableStockSql} / NULLIF(i.minimum_stock, 0)) * 100, 1)
                     END AS stock_percentage,
-                    " . StockRule::reorderQtySql($usableStockSql, 'i.reorder_point', 'i.maximum_stock') . " AS qty_to_reorder
+                    " . StockRule::reorderQtySql($usableStockSql, 'i.reorder_point', 'i.maximum_stock', 'i.minimum_stock') . " AS qty_to_reorder
                 FROM ingredients i
                 LEFT JOIN ingredient_categories ic ON i.category_id = ic.id
                 WHERE i.is_active = 1
@@ -438,19 +472,19 @@ function handlePost($db, $currentUser) {
                 Response::error('Only GM or Purchaser can create ingredients', 403);
             }
 
-            $ingredientCode = getParam('ingredient_code');
-            $ingredientName = getParam('ingredient_name');
+            $ingredientCode = hfPlainText(getParam('ingredient_code'), 40, false);
+            $ingredientName = hfPlainText(getParam('ingredient_name'), 160, false);
             $categoryId = getParam('category_id');
-            $unitOfMeasure = getParam('unit_of_measure');
+            $unitOfMeasure = hfPlainText(getParam('unit_of_measure'), 40, false);
             $minimumStock = getParam('minimum_stock', 0);
             $maximumStock = getParam('maximum_stock');
-            $storageLocation = getParam('storage_location');
-            $storageRequirements = getParam('storage_requirements');
+            $storageLocation = hfPlainText(getParam('storage_location'), 160, false);
+            $storageRequirements = hfPlainText(getParam('storage_requirements'), 1000, true);
             $shelfLifeDays = getParam('shelf_life_days');
             $isPerishable = getParam('is_perishable', 1);
             $packSizeValue = getParam('pack_size_value');
-            $packSizeUnit = getParam('pack_size_unit');
-            $packLabel = getParam('pack_label');
+            $packSizeUnit = hfPlainText(getParam('pack_size_unit'), 40, false);
+            $packLabel = hfPlainText(getParam('pack_label'), 50, false);
 
             if (!$ingredientCode || !$ingredientName || !$unitOfMeasure) {
                 Response::error('Ingredient code, name, and unit of measure are required', 400);
@@ -649,8 +683,17 @@ function handlePut($db, $currentUser) {
                 );
 
                 if (!$repair) {
-                    $batchStock = getUsableIngredientBatchStock($db, $ingredientId);
-                    throw new Exception("No missing FIFO batch to repair. Stock on file: {$ingredientData['current_stock']}, FIFO stock: {$batchStock}");
+                    $usableStock = getUsableIngredientBatchStock($db, $ingredientId);
+                    $accountedStock = getAccountedIngredientBatchStock($db, $ingredientId);
+                    $expiredStock = getExpiredIngredientBatchStock($db, $ingredientId);
+                    if ($expiredStock > 0.0005 && abs((float) $ingredientData['current_stock'] - $accountedStock) <= 0.0005) {
+                        throw new Exception(
+                            "No batch record is missing. {$expiredStock} {$ingredientData['unit_of_measure']} is expired and blocked from use. Confirm the physical stock, then record it as waste."
+                        );
+                    }
+                    throw new Exception(
+                        "No missing batch record to repair. Stock on file: {$ingredientData['current_stock']}, physically accounted: {$accountedStock}, usable: {$usableStock}"
+                    );
                 }
 
                 $db->commit();
@@ -670,12 +713,23 @@ function handlePut($db, $currentUser) {
                 Response::error('Only Warehouse Raw or GM can adjust stock', 403);
             }
             
-            $ingredientId = getParam('ingredient_id');
+            $ingredientId = (int) getParam('ingredient_id', 0);
             $newQuantity = getParam('new_quantity');
-            $reason = getParam('reason');
+            $reason = hfPlainText(getParam('reason'), 500, true);
             
-            if (!$ingredientId || $newQuantity === null || !$reason) {
+            if ($ingredientId <= 0 || $newQuantity === null || $reason === '') {
                 Response::error('Ingredient ID, new quantity, and reason are required', 400);
+            }
+            try {
+                $newQuantity = hfParseBusinessDecimal(
+                    $newQuantity,
+                    'New physical stock quantity',
+                    0.00,
+                    99999999.99,
+                    2
+                );
+            } catch (InvalidArgumentException $error) {
+                Response::error($error->getMessage(), 400);
             }
             
             try {
@@ -690,18 +744,46 @@ function handlePut($db, $currentUser) {
                 }
                 
                 $oldQuantity = (float) $ingredientData['current_stock'];
-                $newQuantity = (float) $newQuantity;
                 $difference = $newQuantity - $oldQuantity;
 
                 if ($newQuantity < 0) {
                     throw new Exception('New quantity cannot be negative');
                 }
 
-                if ($difference > 0) {
-                    throw new Exception('Stock increases must come from PO receiving. Use the receiving workflow.');
+                if (abs($difference) <= 0.0005) {
+                    throw new Exception('The new physical count is the same as the current stock on file.');
                 }
 
-                $adjustedBatches = reduceIngredientBatchesToQuantity($db, $ingredientData, $newQuantity, $currentUser, $reason);
+                $accountedStock = getAccountedIngredientBatchStock($db, $ingredientId);
+                $usableStock = getUsableIngredientBatchStock($db, $ingredientId);
+                $restrictedStock = max(0, round($accountedStock - $usableStock, 3));
+                if ($difference < -0.0005 && $restrictedStock > 0.0005) {
+                    throw new Exception(
+                        "This item has {$restrictedStock} {$ingredientData['unit_of_measure']} of expired or held stock. " .
+                        'Record the affected batch through Spoilage & Waste instead of using a general stock adjustment.'
+                    );
+                }
+
+                if ($difference > 0.0005) {
+                    if (stripos($reason, 'damage') !== false || stripos($reason, 'spoil') !== false) {
+                        throw new Exception('Damage or spoilage cannot increase stock. Enter the physical count or choose the correct reason.');
+                    }
+                    $adjustedBatches = increaseIngredientBatchesToQuantity(
+                        $db,
+                        $ingredientData,
+                        $newQuantity,
+                        $currentUser,
+                        $reason
+                    );
+                } else {
+                    $adjustedBatches = reduceIngredientBatchesToQuantity(
+                        $db,
+                        $ingredientData,
+                        $newQuantity,
+                        $currentUser,
+                        $reason
+                    );
+                }
                 
                 // Update ingredient stock
                 $stmt = $db->prepare("
@@ -714,14 +796,17 @@ function handlePut($db, $currentUser) {
                 $stmt = $db->prepare("
                     INSERT INTO inventory_transactions 
                     (transaction_code, transaction_type, item_type, item_id,
-                     quantity, unit_of_measure, performed_by, reason)
-                    VALUES (?, 'physical_adjust', 'ingredient', ?, ?, ?, ?, ?)
+                     quantity, unit_of_measure, quantity_before, quantity_after,
+                     performed_by, reason)
+                    VALUES (?, 'physical_adjust', 'ingredient', ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
                     $txCode,
                     $ingredientId,
                     $difference,
                     $ingredientData['unit_of_measure'],
+                    $oldQuantity,
+                    $newQuantity,
                     $currentUser['user_id'],
                     "Stock adjustment: $reason (Old: $oldQuantity, New: $newQuantity)"
                 ]);
@@ -767,10 +852,21 @@ function handlePut($db, $currentUser) {
             $allowedFields = ['ingredient_name', 'category_id', 'minimum_stock', 'maximum_stock',
                              'storage_location', 'storage_requirements', 'shelf_life_days', 'is_perishable',
                              'pack_size_value', 'pack_size_unit', 'pack_label'];
+            $plainTextFields = [
+                'ingredient_name' => [160, false],
+                'storage_location' => [160, false],
+                'storage_requirements' => [1000, true],
+                'pack_size_unit' => [40, false],
+                'pack_label' => [50, false]
+            ];
 
             foreach ($allowedFields as $field) {
                 $value = getParam($field);
                 if ($value !== null) {
+                    if (isset($plainTextFields[$field])) {
+                        [$limit, $preserveNewlines] = $plainTextFields[$field];
+                        $value = hfPlainText($value, $limit, $preserveNewlines);
+                    }
                     if ($field === 'is_perishable') {
                         $value = $value ? 1 : 0;
                     }
@@ -890,11 +986,14 @@ function handlePut($db, $currentUser) {
             
         case 'update_settings':
             // Update ingredient settings (min stock, lead time, reorder point)
+            $settingsInput = getRequestBody();
             $ingredientId = getParam('ingredient_id');
             $minimumStock = getParam('minimum_stock');
             $leadTimeDays = getParam('lead_time_days');
             $reorderPoint = getParam('reorder_point');
             $maximumStock = getParam('maximum_stock');
+            $hasReorderPoint = array_key_exists('reorder_point', $settingsInput);
+            $hasMaximumStock = array_key_exists('maximum_stock', $settingsInput);
             
             if (!$ingredientId) {
                 Response::error('Ingredient ID is required', 400);
@@ -907,6 +1006,24 @@ function handlePut($db, $currentUser) {
             
             if (!$ingredient) {
                 Response::notFound('Ingredient not found');
+            }
+
+            $nextMinimumStock = ($minimumStock !== null && $minimumStock !== '')
+                ? (float) $minimumStock
+                : (float) $ingredient['minimum_stock'];
+            $nextReorderPoint = $hasReorderPoint
+                ? (($reorderPoint === null || $reorderPoint === '') ? null : (float) $reorderPoint)
+                : ((float) ($ingredient['reorder_point'] ?? 0) > 0 ? (float) $ingredient['reorder_point'] : null);
+            $nextMaximumStock = $hasMaximumStock
+                ? (($maximumStock === null || $maximumStock === '') ? null : (float) $maximumStock)
+                : ((float) ($ingredient['maximum_stock'] ?? 0) > 0 ? (float) $ingredient['maximum_stock'] : null);
+            $thresholdError = StockRule::thresholdValidationError(
+                $nextMinimumStock,
+                $nextReorderPoint,
+                $nextMaximumStock
+            );
+            if ($thresholdError !== null) {
+                Response::error($thresholdError, 400);
             }
             
             // Build dynamic update query
@@ -923,14 +1040,14 @@ function handlePut($db, $currentUser) {
                 $params[] = intval($leadTimeDays);
             }
             
-            if ($reorderPoint !== null && $reorderPoint !== '') {
+            if ($hasReorderPoint) {
                 $updates[] = "reorder_point = ?";
-                $params[] = floatval($reorderPoint);
+                $params[] = ($reorderPoint === null || $reorderPoint === '') ? null : floatval($reorderPoint);
             }
 
-            if ($maximumStock !== null && $maximumStock !== '') {
+            if ($hasMaximumStock) {
                 $updates[] = "maximum_stock = ?";
-                $params[] = floatval($maximumStock);
+                $params[] = ($maximumStock === null || $maximumStock === '') ? null : floatval($maximumStock);
             }
             
             if (empty($updates)) {

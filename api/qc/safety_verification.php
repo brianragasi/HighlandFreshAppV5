@@ -33,6 +33,7 @@ ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/plain_text.php';
 
 $currentUser = Auth::requireRole(['qc_officer', 'general_manager']);
 
@@ -103,7 +104,7 @@ try {
             $packaging = (int) getParam('packaging_integrity_passed', 0);
             $visual = (int) getParam('visual_inspection_passed', 0);
             $tempReading = getParam('temperature_reading');
-            $notes = getParam('notes', '');
+            $notes = hfPlainText(getParam('notes', ''), 2000, true);
 
             if (!$inventoryId) {
                 Response::validationError(['inventory_id' => 'Inventory ID is required']);

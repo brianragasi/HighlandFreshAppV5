@@ -5,6 +5,7 @@
  */
 
 require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../helpers/storage_tank_inventory.php';
 
 // Require GM/Admin role
 Auth::requireRole(['general_manager', 'admin']);
@@ -66,8 +67,12 @@ function getTanks($conn) {
     $tankType = isset($_GET['tank_type']) ? $_GET['tank_type'] : '';
     $milkTypeId = isset($_GET['milk_type_id']) ? intval($_GET['milk_type_id']) : null;
     $status = isset($_GET['status']) ? $_GET['status'] : '';
-    $isActive = isset($_GET['is_active']) ? $_GET['is_active'] : '';
+    // Active assets are the normal register. Use is_active=all explicitly for history.
+    $isActive = isset($_GET['is_active']) ? $_GET['is_active'] : '1';
     
+    $ledgerVolumeSql = storageTankLedgerVolumeSql('st.id');
+    $displayStatusSql = storageTankDisplayStatusSql('st');
+
     // Build WHERE clause
     $where = [];
     $params = [];
@@ -91,11 +96,11 @@ function getTanks($conn) {
     }
     
     if ($status) {
-        $where[] = "st.status = ?";
+        $where[] = "{$displayStatusSql} = ?";
         $params[] = $status;
     }
     
-    if ($isActive !== '') {
+    if ($isActive !== '' && $isActive !== 'all') {
         $where[] = "st.is_active = ?";
         $params[] = intval($isActive);
     }
@@ -108,6 +113,8 @@ function getTanks($conn) {
     $countStmt->execute($params);
     $total = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
     
+    // Occupancy is derived from the inventory ledgers. The cached tank volume
+    // is returned separately only to expose reconciliation problems.
     // Get tanks with milk type info
     $sql = "SELECT 
                 st.id,
@@ -117,13 +124,17 @@ function getTanks($conn) {
                 mt.type_code as milk_type_code,
                 mt.type_name as milk_type_name,
                 st.capacity_liters,
-                st.current_volume,
-                ROUND((st.current_volume / st.capacity_liters) * 100, 1) as fill_percentage,
+                {$ledgerVolumeSql} as current_volume,
+                st.current_volume as recorded_volume,
+                ROUND(({$ledgerVolumeSql} / NULLIF(st.capacity_liters, 0)) * 100, 1) as fill_percentage,
                 st.location,
                 st.tank_type,
                 st.temperature_celsius,
                 st.last_cleaned_at,
-                st.status,
+                {$displayStatusSql} as status,
+                st.status as recorded_status,
+                CASE WHEN ABS(st.current_volume - {$ledgerVolumeSql}) > 0.005 THEN 1 ELSE 0 END as volume_mismatch,
+                CASE WHEN st.status <> {$displayStatusSql} THEN 1 ELSE 0 END as status_mismatch,
                 st.is_active,
                 st.notes,
                 st.created_at,
@@ -156,6 +167,8 @@ function getTanks($conn) {
  * Get single tank by ID
  */
 function getTank($conn, $id) {
+    $ledgerVolumeSql = storageTankLedgerVolumeSql('st.id');
+    $displayStatusSql = storageTankDisplayStatusSql('st');
     $sql = "SELECT 
                 st.id,
                 st.tank_code,
@@ -164,13 +177,15 @@ function getTank($conn, $id) {
                 mt.type_code as milk_type_code,
                 mt.type_name as milk_type_name,
                 st.capacity_liters,
-                st.current_volume,
-                ROUND((st.current_volume / st.capacity_liters) * 100, 1) as fill_percentage,
+                {$ledgerVolumeSql} as current_volume,
+                st.current_volume as recorded_volume,
+                ROUND(({$ledgerVolumeSql} / NULLIF(st.capacity_liters, 0)) * 100, 1) as fill_percentage,
                 st.location,
                 st.tank_type,
                 st.temperature_celsius,
                 st.last_cleaned_at,
-                st.status,
+                {$displayStatusSql} as status,
+                st.status as recorded_status,
                 st.is_active,
                 st.notes,
                 st.created_at,
@@ -245,6 +260,37 @@ function createTank($conn) {
         sendError('Invalid tank type. Valid types: ' . implode(', ', $validTypes), 400);
         return;
     }
+
+    try {
+        $data['capacity_liters'] = hfParseBusinessDecimal(
+            $data['capacity_liters'] ?? null,
+            'Tank capacity',
+            1.00,
+            99999999.99,
+            2
+        );
+        if (array_key_exists('current_volume', $data)) {
+            $submittedVolume = hfParseBusinessDecimal(
+                $data['current_volume'],
+                'Current tank volume',
+                0.00,
+                99999999.99,
+                2
+            );
+            if ($submittedVolume > 0.005) {
+                sendError('Tank volume is derived from milk inventory and cannot be entered manually', 400);
+            }
+        }
+    } catch (InvalidArgumentException $error) {
+        sendError($error->getMessage(), 400);
+        return;
+    }
+    $requestedStatus = $data['status'] ?? 'available';
+    $validStatuses = ['available', 'cleaning', 'maintenance', 'offline'];
+    if (!in_array($requestedStatus, $validStatuses, true)) {
+        sendError('A new empty tank cannot be marked in use. Assign milk through Warehouse Raw.', 400);
+        return;
+    }
     
     // Generate tank code if not provided
     if (empty($data['tank_code'])) {
@@ -283,12 +329,12 @@ function createTank($conn) {
         $data['tank_name'],
         $data['milk_type_id'] ?? null,
         $data['capacity_liters'],
-        $data['current_volume'] ?? 0.00,
+        0.00,
         $data['location'] ?? null,
         $data['tank_type'],
         $data['temperature_celsius'] ?? null,
         $data['last_cleaned_at'] ?? null,
-        $data['status'] ?? 'available',
+        $requestedStatus,
         $data['is_active'] ?? 1,
         $data['notes'] ?? null
     ]);
@@ -309,7 +355,7 @@ function updateTank($conn, $id) {
     $data = json_decode(file_get_contents('php://input'), true);
     
     // Check if tank exists
-    $checkStmt = $conn->prepare("SELECT id, tank_code FROM storage_tanks WHERE id = ?");
+    $checkStmt = $conn->prepare("SELECT * FROM storage_tanks WHERE id = ?");
     $checkStmt->execute([$id]);
     $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
     
@@ -323,7 +369,7 @@ function updateTank($conn, $id) {
     $params = [];
     
     $allowedFields = [
-        'tank_code', 'tank_name', 'milk_type_id', 'capacity_liters', 'current_volume',
+        'tank_code', 'tank_name', 'milk_type_id', 'capacity_liters',
         'location', 'tank_type', 'temperature_celsius', 'last_cleaned_at',
         'status', 'is_active', 'notes'
     ];
@@ -338,6 +384,60 @@ function updateTank($conn, $id) {
     if (empty($updates)) {
         sendError('No fields to update', 400);
         return;
+    }
+
+    $ledgerVolume = storageTankLedgerVolume($conn, (int) $id);
+    if (array_key_exists('current_volume', $data)) {
+        try {
+            $submittedVolume = hfParseBusinessDecimal(
+                $data['current_volume'],
+                'Current tank volume',
+                0.00,
+                99999999.99,
+                2
+            );
+        } catch (InvalidArgumentException $error) {
+            sendError($error->getMessage(), 400);
+            return;
+        }
+        if (abs($submittedVolume - $ledgerVolume) > 0.005) {
+            sendError('Tank volume is read-only and is calculated from milk inventory', 400);
+            return;
+        }
+    }
+    if (array_key_exists('capacity_liters', $data)) {
+        try {
+            $data['capacity_liters'] = hfParseBusinessDecimal(
+                $data['capacity_liters'],
+                'Tank capacity',
+                1.00,
+                99999999.99,
+                2
+            );
+        } catch (InvalidArgumentException $error) {
+            sendError($error->getMessage(), 400);
+            return;
+        }
+        if ($data['capacity_liters'] + 0.005 < $ledgerVolume) {
+            sendError('Capacity cannot be below the milk currently stored', 400);
+            return;
+        }
+    }
+
+    if (array_key_exists('status', $data)) {
+        $validStatuses = ['available', 'in_use', 'cleaning', 'maintenance', 'offline'];
+        if (!in_array($data['status'], $validStatuses, true)) {
+            sendError('Invalid tank status', 400);
+            return;
+        }
+        if ($ledgerVolume > 0.005 && $data['status'] !== 'in_use') {
+            sendError('A tank containing milk must remain in use until Warehouse empties it', 400);
+            return;
+        }
+        if ($ledgerVolume <= 0.005 && $data['status'] === 'in_use') {
+            sendError('An empty tank cannot be marked in use', 400);
+            return;
+        }
     }
     
     // Validate tank_type if provided
@@ -364,6 +464,7 @@ function updateTank($conn, $id) {
     
     $stmt = $conn->prepare($sql);
     $stmt->execute($params);
+    reconcileStorageTankInventory($conn, (int) $id);
     
     sendSuccess(['message' => 'Tank updated successfully']);
 }
@@ -394,6 +495,11 @@ function deleteTank($conn, $id) {
         return;
     }
 
+    if (storageTankLedgerVolume($conn, (int) $id) > 0.005) {
+        sendError('Cannot archive a tank that still contains milk', 409);
+        return;
+    }
+
     $stmt = $conn->prepare("UPDATE storage_tanks SET is_active = 0, status = 'offline' WHERE id = ?");
     $stmt->execute([$id]);
 
@@ -413,7 +519,13 @@ function getAvailableTanks($conn) {
     $milkTypeId = isset($_GET['milk_type_id']) ? intval($_GET['milk_type_id']) : null;
     $tankType = isset($_GET['tank_type']) ? $_GET['tank_type'] : null;
     
-    $where = ["st.is_active = 1", "st.status = 'available'"];
+    $ledgerVolumeSql = storageTankLedgerVolumeSql('st.id');
+    $displayStatusSql = storageTankDisplayStatusSql('st');
+    $where = [
+        "st.is_active = 1",
+        "{$displayStatusSql} = 'available'",
+        "{$ledgerVolumeSql} <= 0.005"
+    ];
     $params = [];
     
     if ($milkTypeId) {
@@ -434,8 +546,8 @@ function getAvailableTanks($conn) {
                 st.tank_name,
                 st.tank_type,
                 st.capacity_liters,
-                st.current_volume,
-                (st.capacity_liters - st.current_volume) as available_capacity,
+                {$ledgerVolumeSql} as current_volume,
+                (st.capacity_liters - {$ledgerVolumeSql}) as available_capacity,
                 mt.type_name as milk_type
             FROM storage_tanks st
             LEFT JOIN milk_types mt ON st.milk_type_id = mt.id
@@ -454,18 +566,21 @@ function getAvailableTanks($conn) {
  */
 function getTankStatistics($conn) {
     $stats = [];
+    $ledgerVolumeSql = storageTankLedgerVolumeSql('st.id');
+    $displayStatusSql = storageTankDisplayStatusSql('st');
     
-    // Total tanks by status
+    // Operational totals describe active assets; archived rows are reported
+    // separately and never inflate available capacity.
     $stmt = $conn->query("SELECT 
-        COUNT(*) as total,
-        SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active,
-        SUM(CASE WHEN is_active = 0 THEN 1 ELSE 0 END) as inactive,
-        SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) as available,
-        SUM(CASE WHEN status = 'in_use' THEN 1 ELSE 0 END) as in_use,
-        SUM(CASE WHEN status = 'cleaning' THEN 1 ELSE 0 END) as cleaning,
-        SUM(CASE WHEN status = 'maintenance' THEN 1 ELSE 0 END) as maintenance,
-        SUM(CASE WHEN status = 'offline' THEN 1 ELSE 0 END) as offline
-    FROM storage_tanks");
+        SUM(CASE WHEN st.is_active = 1 THEN 1 ELSE 0 END) as total,
+        SUM(CASE WHEN st.is_active = 1 THEN 1 ELSE 0 END) as active,
+        SUM(CASE WHEN st.is_active = 0 THEN 1 ELSE 0 END) as inactive,
+        SUM(CASE WHEN st.is_active = 1 AND {$displayStatusSql} = 'available' THEN 1 ELSE 0 END) as available,
+        SUM(CASE WHEN st.is_active = 1 AND {$displayStatusSql} = 'in_use' THEN 1 ELSE 0 END) as in_use,
+        SUM(CASE WHEN st.is_active = 1 AND {$displayStatusSql} = 'cleaning' THEN 1 ELSE 0 END) as cleaning,
+        SUM(CASE WHEN st.is_active = 1 AND {$displayStatusSql} = 'maintenance' THEN 1 ELSE 0 END) as maintenance,
+        SUM(CASE WHEN st.is_active = 1 AND {$displayStatusSql} = 'offline' THEN 1 ELSE 0 END) as offline
+    FROM storage_tanks st");
     $stats['totals'] = $stmt->fetch(PDO::FETCH_ASSOC);
     
     // By tank type
@@ -473,10 +588,10 @@ function getTankStatistics($conn) {
         tank_type, 
         COUNT(*) as count,
         SUM(capacity_liters) as total_capacity,
-        SUM(current_volume) as total_volume
-    FROM storage_tanks
-    WHERE is_active = 1
-    GROUP BY tank_type");
+        SUM({$ledgerVolumeSql}) as total_volume
+    FROM storage_tanks st
+    WHERE st.is_active = 1
+    GROUP BY st.tank_type");
     $stats['by_type'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     // By milk type
@@ -484,7 +599,7 @@ function getTankStatistics($conn) {
         mt.type_name, 
         COUNT(st.id) as count,
         SUM(st.capacity_liters) as total_capacity,
-        SUM(st.current_volume) as total_volume
+        SUM({$ledgerVolumeSql}) as total_volume
     FROM storage_tanks st
     LEFT JOIN milk_types mt ON st.milk_type_id = mt.id
     WHERE st.is_active = 1 AND st.milk_type_id IS NOT NULL
@@ -493,11 +608,11 @@ function getTankStatistics($conn) {
     
     // Capacity utilization
     $stmt = $conn->query("SELECT 
-        SUM(capacity_liters) as total_capacity,
-        SUM(current_volume) as total_volume,
-        ROUND((SUM(current_volume) / SUM(capacity_liters)) * 100, 1) as utilization_percent
-    FROM storage_tanks
-    WHERE is_active = 1");
+        SUM(st.capacity_liters) as total_capacity,
+        SUM({$ledgerVolumeSql}) as total_volume,
+        ROUND((SUM({$ledgerVolumeSql}) / NULLIF(SUM(st.capacity_liters), 0)) * 100, 1) as utilization_percent
+    FROM storage_tanks st
+    WHERE st.is_active = 1");
     $stats['utilization'] = $stmt->fetch(PDO::FETCH_ASSOC);
     
     // Tanks needing cleaning (not cleaned in 24 hours)

@@ -367,9 +367,17 @@
         function showToast(message, type = 'info') {
             const toast = document.createElement('div');
             toast.className = `alert alert-${type} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            const text = document.createElement('span');
+            text.textContent = String(message ?? '');
+            toast.appendChild(text);
             document.getElementById('toastContainer').appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[char]));
         }
         
         function formatCurrency(amount) {
@@ -413,11 +421,10 @@
         async function loadDashboardData() {
             try {
                 // Load dashboard stats
-                const [statsRes, ordersRes, agingRes, topCustomersRes] = await Promise.all([
+                const [statsRes, ordersRes, agingRes] = await Promise.all([
                     SalesService.getDashboardStats(),
                     SalesService.getRecentOrders(10),
-                    SalesService.getAgingSummary(),
-                    SalesService.getTopCustomersByBalance(5)
+                    SalesService.getAgingSummary()
                 ]);
                 
                 // Update stats cards
@@ -468,8 +475,23 @@
                 // Render recent orders
                 renderRecentOrders(ordersRes.data || []);
                 
-                // Render top customers
-                renderTopCustomers(topCustomersRes.data || []);
+                // Use the same customer-aging result for both widgets. This
+                // avoids a duplicate request and guarantees matching balances.
+                const topCustomers = [...(aging.customers || [])]
+                    .filter(customer => Number(customer.total || 0) > 0)
+                    .sort((a, b) => Number(b.total || 0) - Number(a.total || 0))
+                    .slice(0, 5)
+                    .map(customer => ({
+                        id: Number(customer.id),
+                        name: customer.customer_name,
+                        customer_type: customer.customer_type,
+                        outstanding_balance: Number(customer.total || 0),
+                        days_overdue: customer.over_90 > 0 ? 91
+                            : customer.days_61_90 > 0 ? 61
+                                : customer.days_31_60 > 0 ? 31
+                                    : customer.days_1_30 > 0 ? 1 : 0
+                    }));
+                renderTopCustomers(topCustomers);
                 
             } catch (error) {
                 console.error('Failed to load dashboard data:', error);
@@ -495,17 +517,27 @@
                 'cancelled': 'badge-error'
             };
             
-            tbody.innerHTML = orders.slice(0, 8).map(order => `
-                <tr class="hover:bg-base-200/50 cursor-pointer" onclick="window.location.href='orders.html?id=${order.id}'">
-                    <td class="font-mono text-xs font-semibold text-primary">${order.order_number || `ORD-${order.id}`}</td>
+            tbody.innerHTML = orders.slice(0, 8).map(order => {
+                const orderId = Number.parseInt(order.id, 10);
+                const status = String(order.status || 'draft');
+                return `
+                <tr class="hover:bg-base-200/50 cursor-pointer" onclick="openRecentOrder(${Number.isFinite(orderId) ? orderId : 0})">
+                    <td class="font-mono text-xs font-semibold text-primary">${escapeHtml(order.order_number || `ORD-${orderId}`)}</td>
                     <td>
-                        <div class="text-sm font-medium leading-tight">${order.customer_name || 'Unknown'}</div>
+                        <div class="text-sm font-medium leading-tight">${escapeHtml(order.customer_name || 'Unknown')}</div>
                         <div class="text-[11px] text-base-content/45">${formatDate(order.created_at)}</div>
                     </td>
                     <td class="text-right money text-sm font-semibold">${formatCurrency(order.total_amount)}</td>
-                    <td><span class="badge ${statusBadges[order.status] || 'badge-ghost'} badge-sm badge-outline">${order.status}</span></td>
+                    <td><span class="badge ${statusBadges[status] || 'badge-ghost'} badge-sm badge-outline">${escapeHtml(status)}</span></td>
                 </tr>
-            `).join('');
+            `;
+            }).join('');
+        }
+
+        function openRecentOrder(orderId) {
+            if (Number.isInteger(orderId) && orderId > 0) {
+                window.location.href = `orders.html?id=${orderId}`;
+            }
         }
         
         function renderTopCustomers(customers) {
@@ -516,18 +548,22 @@
                 return;
             }
             
-            container.innerHTML = customers.map((c, i) => `
+            container.innerHTML = customers.map((c, i) => {
+                const customerId = Number.parseInt(c.id, 10);
+                const daysOverdue = Number(c.days_overdue || 0);
+                return `
                 <button type="button" class="text-left rounded-lg border border-base-300 p-3 hover:border-base-content/20 transition-colors"
-                     onclick="window.location.href='customers.html?id=${c.id}'">
+                     onclick="window.location.href='customers.html?id=${Number.isFinite(customerId) ? customerId : 0}'">
                     <div class="flex items-start justify-between gap-2 mb-1">
                         <span class="text-[11px] font-semibold text-base-content/40">#${i + 1}</span>
-                        ${c.days_overdue > 0 ? `<span class="text-[10px] font-medium text-error">${c.days_overdue}d overdue</span>` : ''}
+                        ${daysOverdue > 0 ? `<span class="text-[10px] font-medium text-error">${daysOverdue}d overdue</span>` : ''}
                     </div>
-                    <p class="font-medium text-sm truncate" title="${String(c.name || '').replace(/"/g, '&quot;')}">${c.name || 'Customer'}</p>
-                    <p class="text-[11px] text-base-content/45 truncate mb-2">${c.customer_type || 'Customer'}</p>
-                    <p class="text-sm font-bold money ${c.days_overdue > 0 ? 'text-error' : ''}">${formatCurrency(c.outstanding_balance)}</p>
+                    <p class="font-medium text-sm truncate" title="${escapeHtml(c.name || '')}">${escapeHtml(c.name || 'Customer')}</p>
+                    <p class="text-[11px] text-base-content/45 truncate mb-2">${escapeHtml(c.customer_type || 'Customer')}</p>
+                    <p class="text-sm font-bold money ${daysOverdue > 0 ? 'text-error' : ''}">${formatCurrency(c.outstanding_balance)}</p>
                 </button>
-            `).join('');
+            `;
+            }).join('');
         }
         
         // ==================== RECALL NOTIFICATION FUNCTIONS ====================
@@ -606,9 +642,9 @@
                             <div class="min-w-0">
                                 <div class="flex flex-wrap items-center gap-1.5 mb-0.5">
                                     <span class="badge ${cls.badge} badge-sm">${cls.label}</span>
-                                    <code class="text-xs font-mono">${r.recall_code}</code>
+                                    <code class="text-xs font-mono">${escapeHtml(r.recall_code)}</code>
                                 </div>
-                                <p class="font-semibold text-sm">${r.product_name}</p>
+                                <p class="font-semibold text-sm">${escapeHtml(r.product_name)}</p>
                                 <p class="text-xs text-base-content/50">Batch ${r.batch_code} · ${r.total_dispatched} units · ${notifiedLocations.length} notified</p>
                             </div>
                             <span class="badge badge-ghost badge-sm">${pendingLocations.length} to contact</span>
@@ -617,8 +653,8 @@
                             ${pendingLocations.map(l => `
                                 <div class="flex flex-wrap items-center justify-between gap-2 py-2 px-2 rounded-md bg-base-200/60">
                                     <div class="min-w-0">
-                                        <p class="text-sm font-medium truncate">${l.location_name}</p>
-                                        <p class="text-[11px] text-base-content/50">${l.units_dispatched} units${l.location_address ? ' · ' + l.location_address : ''}</p>
+                                        <p class="text-sm font-medium truncate">${escapeHtml(l.location_name)}</p>
+                                        <p class="text-[11px] text-base-content/50">${Number(l.units_dispatched) || 0} units${l.location_address ? ' · ' + escapeHtml(l.location_address) : ''}</p>
                                     </div>
                                     <div class="flex gap-1 shrink-0">
                                         <button type="button" class="btn btn-xs btn-ghost" onclick="sendRecallNotification(${r.id}, ${l.id}, 'phone')">

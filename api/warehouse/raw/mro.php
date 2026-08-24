@@ -14,6 +14,7 @@
  */
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/plain_text.php';
 require_once __DIR__ . '/mro_stock_helpers.php';
 
 // Require appropriate roles
@@ -272,14 +273,14 @@ function handlePost($db, $currentUser) {
                 Response::error('Only GM or Purchaser can create MRO items', 403);
             }
             
-            $itemCode = getParam('item_code');
-            $itemName = getParam('item_name');
+            $itemCode = hfPlainText(getParam('item_code'), 40, false);
+            $itemName = hfPlainText(getParam('item_name'), 160, false);
             $categoryId = getParam('category_id');
-            $unitOfMeasure = getParam('unit_of_measure', 'pcs');
+            $unitOfMeasure = hfPlainText(getParam('unit_of_measure', 'pcs'), 40, false);
             $minimumStock = getParam('minimum_stock', 0);
             $maximumStock = getParam('maximum_stock');
-            $storageLocation = getParam('storage_location');
-            $compatibleEquipment = getParam('compatible_equipment');
+            $storageLocation = hfPlainText(getParam('storage_location'), 160, false);
+            $compatibleEquipment = hfPlainText(getParam('compatible_equipment'), 500, true);
             $isCritical = getParam('is_critical', 0);
             $isPerishable = getParam('is_perishable', 0);
             
@@ -337,7 +338,7 @@ function handlePut($db, $currentUser) {
             $mroItemId = getParam('mro_item_id');
             $quantity = getParam('quantity');
             $requisitionId = getParam('requisition_id');
-            $reason = getParam('reason', 'Issued for maintenance');
+            $reason = getParam('reason', 'Issued for operations');
             
             if (!$mroItemId || !$quantity || $quantity <= 0) {
                 Response::error('MRO Item ID and valid quantity are required', 400);
@@ -580,10 +581,19 @@ function handlePut($db, $currentUser) {
             
             $allowedFields = ['item_name', 'category_id', 'minimum_stock', 'maximum_stock',
                              'storage_location', 'compatible_equipment', 'is_critical', 'is_perishable'];
+            $plainTextFields = [
+                'item_name' => [160, false],
+                'storage_location' => [160, false],
+                'compatible_equipment' => [500, true]
+            ];
             
             foreach ($allowedFields as $field) {
                 $value = getParam($field);
                 if ($value !== null) {
+                    if (isset($plainTextFields[$field])) {
+                        [$limit, $preserveNewlines] = $plainTextFields[$field];
+                        $value = hfPlainText($value, $limit, $preserveNewlines);
+                    }
                     if ($field === 'is_critical' || $field === 'is_perishable') {
                         $value = $value ? 1 : 0;
                     }

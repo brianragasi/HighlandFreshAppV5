@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Modal notification layer fixture</title>
+</head>
+<body data-result="pending">
+    <div id="toastContainer"></div>
+    <dialog id="firstDialog"><p>First modal</p></dialog>
+    <dialog id="secondDialog"><p>Second modal</p></dialog>
+
+    <script src="../js/config/api.js"></script>
+    <script>
+        const checks = [];
+        const toast = document.getElementById('toastContainer');
+        const first = document.getElementById('firstDialog');
+        const second = document.getElementById('secondDialog');
+
+        first.showModal();
+        checks.push(toast.parentElement === first);
+
+        second.showModal();
+        checks.push(toast.parentElement === second);
+
+        const alert = document.createElement('div');
+        HighlandSecurity.renderToastContent(alert, '<img src=x onerror="window.__xss=true">');
+        toast.appendChild(alert);
+        checks.push(alert.textContent.includes('<img'));
+        checks.push(window.__xss === undefined);
+
+        second.close();
+        checks.push(toast.parentElement === first);
+
+        first.close();
+        checks.push(toast.parentElement === document.body);
+
+        document.body.dataset.result = checks.every(Boolean) ? 'pass' : 'fail';
+        document.body.dataset.checks = checks.join(',');
+    </script>
+</body>
+</html>

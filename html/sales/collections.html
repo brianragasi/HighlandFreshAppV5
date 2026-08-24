@@ -262,7 +262,7 @@
         function showToast(message, type = 'info') {
             const toast = document.createElement('div');
             toast.className = `alert alert-${type} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            HighlandSecurity.renderToastContent(toast, message);
             document.getElementById('toastContainer').appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
         }
@@ -396,16 +396,16 @@
                     statusText = 'Due This Week';
                 }
                 
-                const code = inv.customer_code || '';
+                const code = escapeHtml(inv.customer_code || '');
                 const typeLabel = formatCustomerType(inv.customer_type);
                 return `
                 <tr class="${rowClass}">
                     <td>
-                        <div class="font-medium">${inv.customer_name || '-'}</div>
+                        <div class="font-medium">${escapeHtml(inv.customer_name || '-')}</div>
                         <div class="text-xs font-mono text-base-content/60">${code}</div>
-                        ${typeLabel ? `<span class="badge ${typeBadgeClass(inv.customer_type)} badge-xs mt-1">${typeLabel}</span>` : ''}
+                        ${typeLabel ? `<span class="badge ${typeBadgeClass(inv.customer_type)} badge-xs mt-1">${escapeHtml(typeLabel)}</span>` : ''}
                     </td>
-                    <td class="font-mono text-sm">${inv.invoice_number || inv.order_number || '-'}</td>
+                    <td class="font-mono text-sm">${escapeHtml(inv.invoice_number || inv.order_number || '-')}</td>
                     <td class="text-sm">${formatDateOnly(inv.invoice_date)}</td>
                     <td class="text-sm ${isOverdue ? 'text-error font-semibold' : isDueToday ? 'text-warning font-semibold' : ''}">${formatDateOnly(inv.due_date)}</td>
                     <td class="text-right font-mono">${formatCurrency(inv.total_amount)}</td>

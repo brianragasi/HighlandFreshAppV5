@@ -25,6 +25,7 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/plain_text.php';
 
 // Require QC role
 $currentUser = Auth::requireRole(['qc_officer', 'general_manager']);
@@ -33,6 +34,49 @@ $currentUser = Auth::requireRole(['qc_officer', 'general_manager']);
 define('BASE_PRICE', 25.00);
 define('INCENTIVE', 5.00);
 define('STANDARD_PRICE', 30.00); // BASE_PRICE + INCENTIVE
+
+function ensureMilkAnalyzerColumns(PDO $db): void {
+    if (!auditColumnExists($db, 'qc_milk_tests', 'salts_percentage')) {
+        $db->exec("ALTER TABLE qc_milk_tests
+            ADD COLUMN salts_percentage DECIMAL(6,3) NULL AFTER snf_percentage");
+    }
+    if (!auditColumnExists($db, 'qc_milk_tests', 'sample_temperature')) {
+        $db->exec("ALTER TABLE qc_milk_tests
+            ADD COLUMN sample_temperature DECIMAL(6,2) NULL AFTER freezing_point");
+    }
+}
+
+function validateQcMeasurement(
+    $rawValue,
+    string $field,
+    string $label,
+    float $minimum,
+    float $maximum,
+    bool $required,
+    array &$errors
+) {
+    if ($rawValue === null || (is_string($rawValue) && trim($rawValue) === '')) {
+        if ($required) $errors[$field] = "{$label} is required";
+        return null;
+    }
+    if (is_array($rawValue) || is_object($rawValue) || is_bool($rawValue)) {
+        $errors[$field] = "{$label} must be a regular number";
+        return null;
+    }
+
+    $text = trim((string) $rawValue);
+    if (!preg_match('/^-?\d+(?:\.\d+)?$/D', $text)) {
+        $errors[$field] = "{$label} must be a regular number without exponent notation";
+        return null;
+    }
+
+    $value = (float) $text;
+    if (!is_finite($value) || $value < $minimum || $value > $maximum) {
+        $errors[$field] = "{$label} must be between {$minimum} and {$maximum}";
+        return null;
+    }
+    return $value;
+}
 
 /**
  * Calculate fat adjustment based on ANNEX B
@@ -126,6 +170,7 @@ function calculateMilkGrade($fatPercentage, $titratableAcidity, $sedimentGrade) 
 
 try {
     $db = Database::getInstance()->getConnection();
+    ensureMilkAnalyzerColumns($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -254,25 +299,26 @@ try {
             $freezingPoint = getParam('freezing_point');
             $sampleTemperature = getParam('sample_temperature');
             
-            $notes = trim(getParam('notes', ''));
+            $notes = hfPlainText(getParam('notes', ''), 2000, true);
             
-            // Validation (updated for receiving_id - revised schema)
+            // Hard plausibility limits reject entry mistakes while still allowing
+            // genuine out-of-spec milk to be recorded and graded/rejected.
             $errors = [];
             if (empty($receivingId)) $errors['receiving_id'] = 'Receiving record is required';
-            if (!isset($fatPercentage) || $fatPercentage < 0) {
-                $errors['fat_percentage'] = 'Valid fat percentage is required';
-            }
-            if (!isset($titratableAcidity) || $titratableAcidity < 0) {
-                $errors['titratable_acidity'] = 'Valid titratable acidity is required';
-            }
-            if (!isset($temperatureCelsius)) {
-                $errors['temperature_celsius'] = 'Temperature is required';
-            }
+            $fatPercentage = validateQcMeasurement($fatPercentage, 'fat_percentage', 'Fat percentage', 0, 10, true, $errors);
+            $titratableAcidity = validateQcMeasurement($titratableAcidity, 'titratable_acidity', 'Titratable acidity', 0, 1, true, $errors);
+            $temperatureCelsius = validateQcMeasurement($temperatureCelsius, 'temperature_celsius', 'Receiving temperature', -10, 60, true, $errors);
+            $density = validateQcMeasurement($density, 'density', 'Specific gravity', 1, 1.1, true, $errors);
+            $proteinPercentage = validateQcMeasurement($proteinPercentage, 'protein_percentage', 'Protein percentage', 0, 20, false, $errors);
+            $snfPercentage = validateQcMeasurement($snfPercentage, 'snf_percentage', 'SNF percentage', 0, 30, false, $errors);
+            $lactosePercentage = validateQcMeasurement($lactosePercentage, 'lactose_percentage', 'Lactose percentage', 0, 20, false, $errors);
+            $saltsPercentage = validateQcMeasurement($saltsPercentage, 'salts_percentage', 'Salts percentage', 0, 10, false, $errors);
+            $totalSolidsPercentage = validateQcMeasurement($totalSolidsPercentage, 'total_solids_percentage', 'Total solids percentage', 0, 100, false, $errors);
+            $addedWaterPercentage = validateQcMeasurement($addedWaterPercentage, 'added_water_percentage', 'Added water percentage', 0, 100, false, $errors);
+            $freezingPoint = validateQcMeasurement($freezingPoint, 'freezing_point', 'Freezing point', -2, 0, false, $errors);
+            $sampleTemperature = validateQcMeasurement($sampleTemperature, 'sample_temperature', 'Sample temperature', -10, 100, false, $errors);
             if (!in_array($sedimentGrade, [1, 2, 3, '1', '2', '3'])) {
                 $errors['sediment_grade'] = 'Sediment grade must be 1, 2, or 3';
-            }
-            if (isset($density) && $density !== '' && $density !== null && floatval($density) < 1.0) {
-                $errors['density'] = 'Invalid specific gravity';
             }
             
             // Check receiving exists and is pending (using milk_receiving - revised schema)
@@ -356,11 +402,11 @@ try {
                     INSERT INTO qc_milk_tests (
                         test_code, receiving_id, milk_type_id, tested_by, test_datetime,
                         fat_percentage, titratable_acidity, temperature_celsius, sediment_grade,
-                        specific_gravity, protein_percentage, lactose_percentage, snf_percentage,
-                        total_solids_percentage, added_water_percentage, freezing_point,
+                        specific_gravity, protein_percentage, lactose_percentage, snf_percentage, salts_percentage,
+                        total_solids_percentage, added_water_percentage, freezing_point, sample_temperature,
                         base_price_per_liter, fat_adjustment, acidity_deduction, sediment_deduction,
                         final_price_per_liter, total_amount, is_accepted, grade, rejection_reason, notes
-                    ) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
                     $testCode, 
@@ -371,13 +417,15 @@ try {
                     $titratableAcidity, 
                     $temperatureCelsius, 
                     $sedimentGrade,
-                    $density ?: null, 
-                    $proteinPercentage ?: null, 
-                    $lactosePercentage ?: null, 
-                    $snfPercentage ?: null,
-                    $totalSolidsPercentage ?: null,
-                    $addedWaterPercentage ?: null,
-                    $freezingPoint ?: null,
+                    $density,
+                    $proteinPercentage,
+                    $lactosePercentage,
+                    $snfPercentage,
+                    $saltsPercentage,
+                    $totalSolidsPercentage,
+                    $addedWaterPercentage,
+                    $freezingPoint,
+                    $sampleTemperature,
                     STANDARD_PRICE, 
                     $fatAdjustment, 
                     $acidityDeduction,

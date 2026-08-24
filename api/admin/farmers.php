@@ -5,12 +5,47 @@
  */
 
 require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../helpers/plain_text.php';
 
 // Require GM/Admin role
 Auth::requireRole(['general_manager', 'admin']);
 
 // Get database connection
 $conn = Database::getInstance()->getConnection();
+ensureFarmerPaymentProfileColumns($conn);
+
+function ensureFarmerPaymentProfileColumns($conn) {
+    $columns = [
+        'payment_payee_name' => "ALTER TABLE farmers ADD COLUMN payment_payee_name VARCHAR(160) NULL AFTER bank_account_number",
+        'ewallet_provider' => "ALTER TABLE farmers ADD COLUMN ewallet_provider VARCHAR(80) NULL AFTER payment_payee_name",
+        'ewallet_account_name' => "ALTER TABLE farmers ADD COLUMN ewallet_account_name VARCHAR(160) NULL AFTER ewallet_provider",
+        'ewallet_mobile_number' => "ALTER TABLE farmers ADD COLUMN ewallet_mobile_number VARCHAR(20) NULL AFTER ewallet_account_name"
+    ];
+    foreach ($columns as $column => $sql) {
+        if (!auditColumnExists($conn, 'farmers', $column)) $conn->exec($sql);
+    }
+}
+
+function validateFarmerPaymentProfile(&$data) {
+    $errors = [];
+    foreach (['payment_payee_name' => 'Payment payee name', 'ewallet_account_name' => 'E-wallet registered name'] as $field => $label) {
+        if (!empty($data[$field]) && !hfPersonNameHasLetter($data[$field])) {
+            $errors[$field] = "{$label} must contain at least one letter";
+        }
+    }
+    if (!empty($data['ewallet_provider']) && !preg_match('/\p{L}/u', $data['ewallet_provider'])) {
+        $errors['ewallet_provider'] = 'E-wallet provider must contain at least one letter';
+    }
+    if (array_key_exists('ewallet_mobile_number', $data)) {
+        $mobile = preg_replace('/\D+/', '', (string) $data['ewallet_mobile_number']);
+        if (preg_match('/^63\d{10}$/', $mobile)) $mobile = '0' . substr($mobile, 2);
+        if ($mobile !== '' && !preg_match('/^09\d{9}$/', $mobile)) {
+            $errors['ewallet_mobile_number'] = 'Use an 11-digit Philippine mobile number beginning with 09';
+        }
+        $data['ewallet_mobile_number'] = $mobile;
+    }
+    if ($errors) sendValidationError($errors);
+}
 
 // Get request method and handle routing
 $method = $_SERVER['REQUEST_METHOD'];
@@ -119,6 +154,10 @@ function getFarmers($conn) {
                 f.base_price_per_liter,
                 f.bank_name,
                 f.bank_account_number,
+                f.payment_payee_name,
+                f.ewallet_provider,
+                f.ewallet_account_name,
+                f.ewallet_mobile_number,
                 f.is_active,
                 f.created_at,
                 f.updated_at,
@@ -127,7 +166,7 @@ function getFarmers($conn) {
             FROM farmers f
             LEFT JOIN milk_types mt ON f.milk_type_id = mt.id
             $whereClause
-            ORDER BY f.farmer_code ASC
+            ORDER BY f.id DESC
             LIMIT ? OFFSET ?";
     
     $params[] = $limit;
@@ -167,6 +206,10 @@ function getFarmer($conn, $id) {
                 f.base_price_per_liter,
                 f.bank_name,
                 f.bank_account_number,
+                f.payment_payee_name,
+                f.ewallet_provider,
+                f.ewallet_account_name,
+                f.ewallet_mobile_number,
                 f.is_active,
                 f.created_at,
                 f.updated_at
@@ -224,13 +267,52 @@ function getFarmer($conn, $id) {
 /**
  * Create new farmer
  */
+function validateFarmerBasePrice(array &$data): void {
+    if (!array_key_exists('base_price_per_liter', $data)
+        || $data['base_price_per_liter'] === ''
+        || $data['base_price_per_liter'] === null) {
+        return;
+    }
+
+    try {
+        $data['base_price_per_liter'] = hfParseBusinessDecimal(
+            $data['base_price_per_liter'],
+            'Base price per liter',
+            0.01,
+            10000.00,
+            2
+        );
+    } catch (InvalidArgumentException $error) {
+        sendValidationError(['base_price_per_liter' => $error->getMessage()]);
+    }
+}
+
 function createFarmer($conn) {
     $data = json_decode(file_get_contents('php://input'), true);
+    $data = hfPlainTextFields(is_array($data) ? $data : [], [
+        'farmer_code' => [30, false],
+        'first_name' => [100, false],
+        'last_name' => [100, false],
+        'address' => [500, true],
+        'bank_name' => [100, false],
+        'bank_account_number' => [100, false],
+        'payment_payee_name' => [160, false],
+        'ewallet_provider' => [80, false],
+        'ewallet_account_name' => [160, false],
+        'ewallet_mobile_number' => [20, false],
+    ]);
     $contactCheck = hfValidateContactPayload($data, ['contact_number'], '__no_email_field__');
     if (!empty($contactCheck['errors'])) {
         sendValidationError($contactCheck['errors']);
     }
     $data = $contactCheck['data'];
+    $bankAccountCheck = hfValidateBankAccountNumber($data['bank_account_number'] ?? '');
+    if ($bankAccountCheck['error'] !== null) {
+        sendValidationError(['bank_account_number' => $bankAccountCheck['error']]);
+    }
+    $data['bank_account_number'] = $bankAccountCheck['value'];
+    validateFarmerPaymentProfile($data);
+    validateFarmerBasePrice($data);
     
     // Validate required fields
     $required = ['first_name', 'milk_type_id'];
@@ -239,6 +321,16 @@ function createFarmer($conn) {
             sendError("Field '$field' is required", 400);
             return;
         }
+    }
+    $nameErrors = [];
+    if (!hfPersonNameHasLetter($data['first_name'] ?? '')) {
+        $nameErrors['first_name'] = 'First name must contain at least one letter';
+    }
+    if (!hfPersonNameHasLetter($data['last_name'] ?? '', true)) {
+        $nameErrors['last_name'] = 'Last name must contain at least one letter when provided';
+    }
+    if ($nameErrors) {
+        sendValidationError($nameErrors);
     }
     
     // Generate farmer code if not provided
@@ -261,8 +353,9 @@ function createFarmer($conn) {
     $sql = "INSERT INTO farmers (
                 farmer_code, first_name, last_name, contact_number, address,
                 milk_type_id, membership_type, base_price_per_liter,
-                bank_name, bank_account_number, is_active
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                bank_name, bank_account_number, payment_payee_name,
+                ewallet_provider, ewallet_account_name, ewallet_mobile_number, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
     $stmt = $conn->prepare($sql);
     $stmt->execute([
@@ -276,6 +369,10 @@ function createFarmer($conn) {
         $data['base_price_per_liter'] ?? 40.00,
         $data['bank_name'] ?? null,
         $data['bank_account_number'] ?? null,
+        $data['payment_payee_name'] ?? null,
+        $data['ewallet_provider'] ?? null,
+        $data['ewallet_account_name'] ?? null,
+        $data['ewallet_mobile_number'] ?? null,
         $data['is_active'] ?? 1
     ]);
     
@@ -293,11 +390,44 @@ function createFarmer($conn) {
  */
 function updateFarmer($conn, $id) {
     $data = json_decode(file_get_contents('php://input'), true);
+    $data = hfPlainTextFields(is_array($data) ? $data : [], [
+        'farmer_code' => [30, false],
+        'first_name' => [100, false],
+        'last_name' => [100, false],
+        'address' => [500, true],
+        'bank_name' => [100, false],
+        'bank_account_number' => [100, false],
+        'payment_payee_name' => [160, false],
+        'ewallet_provider' => [80, false],
+        'ewallet_account_name' => [160, false],
+        'ewallet_mobile_number' => [20, false],
+    ]);
     $contactCheck = hfValidateContactPayload($data, ['contact_number'], '__no_email_field__');
     if (!empty($contactCheck['errors'])) {
         sendValidationError($contactCheck['errors']);
     }
     $data = $contactCheck['data'];
+
+    if (array_key_exists('bank_account_number', $data)) {
+        $bankAccountCheck = hfValidateBankAccountNumber($data['bank_account_number']);
+        if ($bankAccountCheck['error'] !== null) {
+            sendValidationError(['bank_account_number' => $bankAccountCheck['error']]);
+        }
+        $data['bank_account_number'] = $bankAccountCheck['value'];
+    }
+    validateFarmerPaymentProfile($data);
+    validateFarmerBasePrice($data);
+
+    $nameErrors = [];
+    if (array_key_exists('first_name', $data) && !hfPersonNameHasLetter($data['first_name'])) {
+        $nameErrors['first_name'] = 'First name must contain at least one letter';
+    }
+    if (array_key_exists('last_name', $data) && !hfPersonNameHasLetter($data['last_name'], true)) {
+        $nameErrors['last_name'] = 'Last name must contain at least one letter when provided';
+    }
+    if ($nameErrors) {
+        sendValidationError($nameErrors);
+    }
     
     // Check if farmer exists
     $checkStmt = $conn->prepare("SELECT id, farmer_code FROM farmers WHERE id = ?");
@@ -316,7 +446,8 @@ function updateFarmer($conn, $id) {
     $allowedFields = [
         'farmer_code', 'first_name', 'last_name', 'contact_number', 'address',
         'milk_type_id', 'membership_type', 'base_price_per_liter',
-        'bank_name', 'bank_account_number', 'is_active'
+        'bank_name', 'bank_account_number', 'payment_payee_name',
+        'ewallet_provider', 'ewallet_account_name', 'ewallet_mobile_number', 'is_active'
     ];
     
     foreach ($allowedFields as $field) {

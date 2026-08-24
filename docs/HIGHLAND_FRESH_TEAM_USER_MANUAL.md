@@ -89,7 +89,7 @@ Master records should normally be archived or marked inactive. Past transactions
 Do not move stock or money without the correct system record.
 
 - Production material: Requisition -> GM approval -> Warehouse Raw release.
-- Raw material purchase: PRS -> three supplier quotes -> PO -> GM approval -> delivery -> RR -> Purchaser verification.
+- Raw material purchase: physical stock check -> multi-item PRS -> registered supplier review -> PO -> GM approval -> delivery -> RR -> Purchaser verification.
 - Finished product: Production output -> QC release -> FG receiving -> picking -> DR -> dispatch.
 - Credit payment: DR balance -> Cashier collection -> OR. A check remains pending until bank clearing.
 
@@ -129,17 +129,19 @@ This is the full operating chain. A teammate should understand where their work 
 ## Flow B: Low stock to a closed supplier purchase
 
 1. The system shows a low-stock warning to Warehouse Raw. The warning is information only.
-2. Warehouse Raw checks physical stock and manually creates a Purchase Request Slip, or PRS.
-3. Purchaser opens the PRS in **Canvassing**.
-4. Purchaser records three different supplier quotations for each requested line.
-5. The system identifies the cheapest quotation. If prices tie, Purchaser must still review delivery time and terms before continuing.
-6. After every line has a valid selected quotation, Purchaser selects **Create & Send to GM**.
-7. The system groups items for the same supplier into one PO, creates separate POs for different suppliers, and sends all resulting POs to GM in that single action.
-8. GM reviews and approves or rejects each supplier PO separately.
-9. After approval, the system sends the approved PO PDF to the selected supplier's registered email and Finance can see the obligation.
-10. When the supplier delivers, Warehouse Raw checks the goods, records accepted quantities, updates inventory, and generates the Receiving Report.
-11. Purchaser opens the Receiving Report, compares it with the approved PO, and selects **Verify RR** only when the delivered goods match.
-12. The verified RR closes the purchasing transaction. Finance handles payment according to the approved documents and terms.
+2. Warehouse Raw checks physical stock and manually creates a Purchase Request Slip, or PRS. Items found during the same check should be placed in one slip.
+3. Purchaser opens **Warehouse Requests**, selects the related PRSs, and chooses **Review selected** once. The first table is clearly marked as an internal Warehouse Request Overview, not a PO.
+4. The system loads the agreed prices of every supplier accredited for each requested item.
+5. The system recommends the lowest valid price. If prices tie, it recommends the faster delivery.
+6. Purchaser reviews the recommendation. Choosing another approved supplier requires a business reason.
+7. Purchaser opens the **Supplier PO Preview** selector and checks each resulting PO. Choosing Bern shows only Warehouse-requested materials assigned to Bern; choosing Lordniel shows only Lordniel's materials.
+8. After every selected line has an approved supplier and saved price, Purchaser selects **Create N Separate POs & Send to GM**.
+9. The system processes every selected slip in one action, groups its items by supplier, creates the required vendor-only POs, and sends them to GM. The original PRSs remain separate internal records.
+10. GM reviews and approves or rejects each supplier PO separately. A one- or two-supplier market is identified automatically.
+11. After approval, the system sends the approved PO PDF to the selected supplier's registered email and Finance can see the obligation.
+12. When the supplier delivers, Warehouse Raw checks the goods, records accepted quantities, updates inventory, and generates the Receiving Report.
+13. Purchaser opens the Receiving Report, compares it with the approved PO, and selects **Verify RR** only when the delivered goods match.
+14. The verified RR closes the purchasing transaction. Finance handles payment according to the approved documents and terms.
 
 ## Flow C: Production request to finished goods
 
@@ -197,8 +199,8 @@ This is the full operating chain. A teammate should understand where their work 
 | Status | Meaning | Next person |
 |---|---|---|
 | Draft PRS | Warehouse Raw has not submitted it | Warehouse Raw |
-| Submitted PRS | Ready for canvassing | Purchaser |
-| Canvassing | Supplier quotes are being entered | Purchaser |
+| Submitted PRS | Ready for registered supplier review | Purchaser |
+| Supplier Review | Approved partner prices are being compared | Purchaser |
 | Draft PO | PO exists but has not been sent for approval | Purchaser |
 | Pending GM Approval | PO is locked for GM decision | General Manager |
 | Approved | Supplier order is authorized | Supplier, Finance, Warehouse Raw |
@@ -256,6 +258,16 @@ You are the final decision maker for controlled actions. You approve spending, p
 - **Orders for Approval:** review controlled customer orders.
 - **Disposals, Recalls, QC Standards:** oversee loss and safety controls.
 
+## Maintain formula bases and sellable SKUs
+
+1. Open **Products** and choose **New formula / base**.
+2. Enter one name for one manufacturable formula. Include the flavor when it changes the recipe, such as **Milkbar-UBE** or **Milkbar-Chocolate**.
+3. Under that base, add only sellable packaging SKUs: packaging type, size, unit, and selling price.
+4. Configure the packaging BOM for each SKU, such as its bottle, cap, label, or cellophane requirement.
+5. Open **Recipes** and create one bulk recipe for that formula/base. Do not create a different recipe for every bottle size.
+
+A flavor with different ingredients is a different formula/base, not an SKU variant. For example, Milkbar-UBE 250 mL and Milkbar-UBE 1 L are two SKUs under one UBE base; Milkbar-Chocolate is another base with its own recipe.
+
 ## Start-of-day checklist
 
 - Open **Dashboard** and read Pending Actions.
@@ -275,27 +287,33 @@ You are the final decision maker for controlled actions. You approve spending, p
 ## Approving a Purchase Order
 
 1. Open **Pending Approvals**, then **Procurement**.
-2. Review the PRS reference, selected supplier, three-quote canvass result, line quantities, prices, terms, and expected delivery.
+2. Review the PRS reference, selected registered supplier, compared partner prices, line quantities, terms, and expected delivery. A limited market with one or two accredited suppliers is allowed and shown clearly.
 3. Approve or reject. The Purchaser cannot approve their own PO.
 4. Approval locks the decision and allows the approved PO to be sent to the supplier.
+5. After deciding, open **Recent PO Decisions** on the dashboard or **Purchase Order Decision History** on the Pending Approvals page to reopen the PO in read-only evidence mode.
+6. The evidence view retains the supplier, PRS, items, quantities, prices, decision, decision maker, date and time, remarks, audit reference, and tamper-evident audit fingerprint.
 
 ## Registering and accrediting a supplier
 
 1. Open **Suppliers** from the GM/Admin sidebar.
 2. Select **Register Supplier**.
-3. Enter the supplier name, contact details, address, payment terms, and email used for approved PO delivery.
-4. Under **Ingredients Supplied**, choose every ingredient the supplier is approved to provide. An ingredient may have several approved suppliers.
-5. Enter an optional reference price when management has one. Purchasing still records the current price during canvassing.
-6. Set the supplier to **Accredited** only after the supplier has passed management review.
-7. Save the record. Purchasing can now use this supplier only for the linked ingredients.
-8. Use **Archive** when the company should no longer place new orders with that supplier. Old purchase records remain available.
+3. Complete **Supplier details**, including the contact and delivery or business address.
+4. Choose the **Usual Supplier Payment Term**. Credit days begin on the Purchase Order date; COD becomes due after Receiving verifies the delivered goods.
+5. Confirm **Accredited and active** only after management approval. This status makes the supplier available for linked items; supporting accreditation documents and expiry dates are not stored on this screen.
+6. Under **Items Supplied & Standard Pricing**, optionally search for and select every item the supplier may provide. The supplier can also be linked later from the Items page.
+7. For each selected item, choose whether the supplier price is **Per Warehouse unit** or **Per whole package**.
+8. For a whole package, choose the exact purchase package, enter the **Quantity inside one package**, its **Unit of measure**, and the price for one package. The live card shows the package, supplier price, and Warehouse comparison cost.
+9. Purchasing orders whole packages and may round up to cover a Warehouse request. The PO keeps both the package quantity and the converted Warehouse quantity.
+10. Save the record. Purchasing can use the supplier only for linked items.
+11. Use **Archive** when the company should no longer place new orders with that supplier. Old purchase records remain available.
 
-## Linking suppliers from the Ingredients page
+## Creating the ingredient before supplier accreditation
 
 1. Open **Ingredients** and add or edit an ingredient.
-2. Under **Accredited Suppliers**, choose every supplier allowed to provide it.
-3. Save the ingredient. The same links appear in Supplier Accreditation.
-4. Keep at least three approved suppliers. The system blocks an active ingredient or supplier change that would leave fewer than three because Purchasing could not complete the required canvass.
+2. Choose the Warehouse stock unit, such as `kg` for Sugar. Do not describe a supplier sack or bottle here.
+3. Save the ingredient.
+4. Open **Supplier Management** and add the supplier-specific pricing basis, packaging, and standard prices there.
+5. Link every supplier genuinely approved to provide the ingredient. Three suppliers are preferred when available, but one or two are accepted as a limited market and shown to the GM for review.
 
 ## Account management
 
@@ -356,12 +374,14 @@ You protect raw milk, ingredients, packaging, and MRO supplies. You physically r
 ## Create a PRS from low stock
 
 1. Open **Low Stock Alerts**.
-2. Check the physical quantity and existing batches.
-3. Open **Purchase Requests** and choose **New PRS**.
-4. Add low-stock ingredients, packaging, or MRO items and the quantity needed.
-5. Submit the PRS to Purchaser.
+2. Count the item on the shelf. Do not simply copy the saved balance shown by the system.
+3. Open **Purchase Requests**, expand **Build PR from low stock**, and select all items found during that stock check.
+4. Select **Create one PRS**. Use separate slips only for a separate check, emergency, or purpose.
+5. Enter the actual shelf count for every item. The system shows each saved balance and difference.
+6. If a shelf count is lower, explain the loss, breakage, spoilage, or unrecorded use. The system corrects the balance and recalculates the quantity needed.
+7. Submit the multi-item PRS to Purchaser.
 
-The low-stock alert never creates the PRS automatically. Warehouse Raw makes the request after checking the real stock.
+The low-stock alert never creates the PRS automatically. Warehouse Raw makes the request after checking the real stock. A submitted PRS keeps the saved balance, physical count, difference, explanation, custodian, and count time. A shelf count higher than the saved balance must first be handled through receiving or the stock-correction screen; a PRS cannot silently add stock.
 
 ## Receive supplier goods and create RR
 
@@ -404,45 +424,50 @@ You turn Warehouse Raw requests into controlled supplier purchases. You compare 
 ## Main pages
 
 - **Dashboard:** request, PO, payment, and supplier summaries.
-- **Canvassing:** open PRS records and record supplier quotations.
+- **Supplier Review:** open PRS records and review registered supplier agreements.
 - **Purchase Orders:** submit POs for approval and track delivery/RR status.
 - **Approved Suppliers:** view GM-accredited supplier contact details and terms. This page is read-only.
 - **Requisitions / PRS queue:** requests waiting for purchasing action.
 
-## Canvass three suppliers
+## Review registered suppliers
 
-1. Open **Canvassing**.
-2. Select the PRS and choose **Open**.
-3. For each item, add a quotation from three different GM-accredited suppliers shown for that ingredient.
-4. Record unit price, delivery days, and payment terms correctly.
-5. The system identifies the cheapest quotation after the third valid quote.
-6. Review tied prices and delivery terms. Do not assume equal prices mean equal service.
-7. Repeat until every PRS line is complete.
+1. Open **Warehouse Requests**.
+2. Select one PRS, or select several related PRSs and choose **Review selected** once.
+3. Review the approved suppliers and agreed prices loaded for every requested item. Each line keeps its source PRS number.
+4. Confirm the system's lowest-price recommendation and review delivery time and payment terms.
+5. If another approved supplier is more suitable, select it and record the business reason.
+6. A genuine market of one or two approved suppliers is accepted and marked for GM review automatically.
+7. If a price or supplier agreement is missing, ask the GM to complete Supplier Accreditation before continuing.
 
-## Create and submit a PO
+## Build and submit a supplier PO
 
-1. Review supplier, quantity, price, payment terms, delivery date, and PRS reference after every line has a valid quotation result.
-2. Choose **Create & Send to GM**.
-3. The system creates one PO for each selected supplier and submits all of them together.
-4. Open **Purchase Orders** to track the resulting POs while waiting for the GM decision. You cannot edit a PO while it is locked for approval.
-5. After approval, confirm the system's supplier-email result. Use the supplier contact details to follow up if needed.
+1. Open **Purchase Orders**, choose a submitted Warehouse PRS, and select one accredited supplier.
+2. Add only the requested lines and quantities to place with that supplier. A partial quantity is allowed; the unplaced balance remains available for a later PO.
+3. Review the saved agreed price, payment terms, expected delivery, delivery instructions, and PRS reference.
+4. Choose **Submit for GM Approval** once. The button locks while the request is being processed.
+5. Open the resulting PO and confirm it is waiting for GM approval. You cannot edit it while it is locked for approval.
+6. After approval, confirm the system's supplier-email result. Use the supplier contact details to follow up if needed.
 
-Older draft POs created before this combined action can be submitted together. Select **Send N to GM** on the first draft from that PRS; all remaining draft POs from the same PRS are sent in one action.
+The system rejects an exact duplicate while the first matching PO is still active. If an order was entered incorrectly, cancel or reject it through the normal audited workflow before creating its replacement. A later PO may use a genuinely different remaining quantity, supplier, or delivery schedule.
 
 ## Verify the Receiving Report
 
 1. After Warehouse Raw receives the delivery, open **Purchase Orders**.
 2. Open the approved PO and its Receiving Report.
 3. Compare each ordered line with accepted delivery quantity and condition.
-4. Select **Verify RR** only if the documents match.
-5. If they do not match, record the discrepancy and return it for correction or supplier action.
-6. Verification closes the purchase and provides complete evidence for Finance.
+4. Select **Verify RR** when accepted quantities match. Earlier rejected stock remains visible in the history; a completed supplier replacement may still be verified.
+5. For a temporary shortage, leave the PO partially received and wait for the backorder delivery.
+6. If the supplier confirms that the balance cannot be delivered, enter a clear reason and select **Close Short & Verify**. The PO keeps its originally approved quantities, Finance pays only accepted stock, and only the undelivered PR balance becomes available for future sourcing.
+7. Do not cancel a PO after any stock has been received. Use the audited short-close action instead.
+8. Verification closes the purchase and provides complete evidence for Finance.
 
 ## Do not
 
 - Create the PRS on behalf of Warehouse Raw just because stock is low.
-- Use fewer than three suppliers when the three-quote rule applies.
+- Retype routine partner prices that should already be stored in Supplier Accreditation.
 - Ask an unregistered supplier for a quote without first asking GM to update Supplier Accreditation.
+- Choose a higher-priced approved supplier without recording a business reason.
+- Submit the same active PO twice because the PRS still has an unplaced balance.
 - Approve your own PO.
 - Verify an RR without reading both documents.
 - Manually email a changed, unofficial PO after GM approval.
@@ -847,16 +872,18 @@ Use a small quantity and one clearly available product. Keep each account in a s
 2. Open **Low Stock Alerts**, confirm a low item, then open **Purchase Requests**.
 3. Create and submit a PRS with one or more ingredients or packaging items.
 4. Log in as Purchaser.
-5. Open **Canvassing**, open the PRS, and confirm that each line shows only suppliers accredited for that ingredient.
-6. Enter three supplier quotes for every line.
-7. Review the cheapest result and select **Create & Send to GM**.
-8. Open **Purchase Orders** and confirm that every supplier PO is waiting for GM approval.
-9. Log in as GM and approve the PO.
-10. Log in as Warehouse Raw after the supplier delivery.
-11. Open **Receive Deliveries**, record the accepted delivery, and generate the RR.
-12. Log in as Purchaser.
-13. Open the PO and select **Verify RR** after comparing quantities.
-14. Log in as Finance and confirm the payable is visible only because a real approved purchase exists.
+5. Open **Warehouse Requests**, open the PRS, and confirm that the first table is labeled as an internal overview.
+6. Confirm that saved agreed prices appear automatically and the lowest valid price is recommended.
+7. If the item has only one or two approved suppliers, confirm that it is ready without a repeated explanation form.
+8. In **Supplier PO Preview**, select each resulting PO and confirm it shows only that supplier's requested items.
+9. Select **Create N Separate POs & Send to GM** once.
+10. Open **Purchase Orders** and confirm that every supplier PO is waiting for GM approval.
+11. Log in as GM and approve the PO.
+12. Log in as Warehouse Raw after the supplier delivery.
+13. Open **Receive Deliveries**, record the accepted delivery, and generate the RR.
+14. Log in as Purchaser.
+15. Open the PO and select **Verify RR** after comparing quantities.
+16. Log in as Finance and confirm the payable is visible only because a real approved purchase exists.
 
 ## Demonstration 2: Production to Finished Goods
 
@@ -993,7 +1020,7 @@ Before showing the system to an instructor or panel:
 - Every teammate knows their role and the role immediately before and after it.
 - Test accounts use only the nine active roles.
 - The team can explain why customers, farmers, suppliers, and drivers do not log in.
-- The team can show PRS -> three quotes -> PO -> GM -> RR -> Purchaser verification.
+- The team can show PRS -> registered supplier review -> grouped PO -> GM -> RR -> Purchaser verification.
 - The team can show requisition -> production -> QC -> Finished Goods.
 - The team can explain that an emailed PDF is preserved and manually encoded beside the original.
 - The team can explain when a customer phone call record is required.

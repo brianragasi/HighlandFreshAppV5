@@ -14,6 +14,8 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/plain_text.php';
+require_once dirname(__DIR__) . '/helpers/customer_accounts.php';
 
 // Require Sales Custodian or GM role
 $currentUser = Auth::requireRole(['sales_custodian', 'general_manager']);
@@ -35,6 +37,7 @@ function hfNormalizeSalesCustomerType(?string $type): string {
 
 try {
     $db = Database::getInstance()->getConnection();
+    hfEnsureCustomerAccountSchema($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -68,12 +71,8 @@ function handleGet($db, $action, $validCustomerTypes) {
             $limit = (int) getParam('limit', 20);
             $offset = ($page - 1) * $limit;
             
-            $sql = "SELECT c.*, 
-                    (SELECT COALESCE(SUM(dr.total_amount - dr.amount_paid), 0) 
-                     FROM delivery_receipts dr 
-                     WHERE dr.customer_id = c.id 
-                     AND dr.payment_status != 'paid' 
-                     AND dr.status NOT IN ('cancelled', 'draft')) as outstanding_balance
+            $outstandingSql = hfCustomerOutstandingSql('c.id');
+            $sql = "SELECT c.*, {$outstandingSql} as outstanding_balance
                     FROM customers c WHERE 1=1";
             $params = [];
             
@@ -119,6 +118,8 @@ function handleGet($db, $action, $validCustomerTypes) {
                 $c['phone'] = $c['contact_number'] ?? $c['phone'] ?? null;
                 $c['payment_terms'] = (int)($c['payment_terms_days'] ?? $c['payment_terms'] ?? 0);
                 $c['outstanding_balance'] = round((float)($c['outstanding_balance'] ?? 0), 2);
+                $c['current_balance'] = $c['outstanding_balance'];
+                $c['default_payment_mode'] = $c['default_payment_type'] ?? 'cash';
             }
             unset($c);
             
@@ -171,6 +172,8 @@ function handleGet($db, $action, $validCustomerTypes) {
                 ? round($sales / $orders, 2)
                 : round((float)($customer['avg_order_value'] ?? 0), 2);
             $customer['outstanding_balance'] = round((float)($customer['outstanding_balance'] ?? 0), 2);
+            $customer['current_balance'] = $customer['outstanding_balance'];
+            $customer['default_payment_mode'] = $customer['default_payment_type'] ?? 'cash';
             $limit = (float)($customer['credit_limit'] ?? 0);
             $outstanding = (float)$customer['outstanding_balance'];
             $customer['available_credit'] = $limit > 0 ? max(0, round($limit - $outstanding, 2)) : null;
@@ -209,6 +212,7 @@ function handleGet($db, $action, $validCustomerTypes) {
 
             // Running AR ledger (debits = invoices, credits = payments) ending at outstanding
             $customer['balance_history'] = buildCustomerBalanceHistory($db, (int)$id, (float)$outstanding);
+            $customer['locations'] = hfCustomerLocations($db, (int) $id, true);
             
             Response::success($customer, 'Customer details retrieved');
             break;
@@ -247,8 +251,7 @@ function handleGet($db, $action, $validCustomerTypes) {
             $minBalance = (float)getParam('min_balance', 0);
             
             $invoiceDateExpr = "DATE(COALESCE(dr.delivered_at, dr.created_at))";
-            $termsExpr = "COALESCE(NULLIF(c.payment_terms_days, 0), 30)";
-            $dueDateExpr = "DATE_ADD({$invoiceDateExpr}, INTERVAL {$termsExpr} DAY)";
+            $dueDateExpr = "COALESCE(dr.due_date, {$invoiceDateExpr})";
             $daysLateExpr = "DATEDIFF(CURDATE(), {$dueDateExpr})";
             $balExpr = "(dr.total_amount - COALESCE(dr.amount_paid, 0))";
 
@@ -324,8 +327,7 @@ function handleGet($db, $action, $validCustomerTypes) {
             }
 
             $invoiceDateExpr = "DATE(COALESCE(dr.delivered_at, dr.created_at))";
-            $termsExpr = "COALESCE(NULLIF(c.payment_terms_days, 0), 30)";
-            $dueDateExpr = "DATE_ADD({$invoiceDateExpr}, INTERVAL {$termsExpr} DAY)";
+            $dueDateExpr = "COALESCE(dr.due_date, {$invoiceDateExpr})";
             $daysLateExpr = "DATEDIFF(CURDATE(), {$dueDateExpr})";
             $balExpr = "(dr.total_amount - COALESCE(dr.amount_paid, 0))";
 
@@ -438,42 +440,39 @@ function handlePost($db, $action, $currentUser, $validCustomerTypes, $validPayme
     $data = getRequestBody();
     
     if ($action === 'create') {
+        $data = hfPlainTextFields($data, [
+            'name' => [160, false], 'customer_name' => [160, false],
+            'contact_person' => [160, false], 'address' => [500, true],
+            'blocked_reason' => [500, true], 'notes' => [1000, true],
+        ]);
         $data['name'] = $data['name'] ?? $data['customer_name'] ?? null;
         $data['customer_type'] = hfNormalizeSalesCustomerType($data['customer_type'] ?? '');
-        $data['default_payment_type'] = $data['default_payment_type']
-            ?? $data['default_payment_mode']
-            ?? 'cash';
         $contactCheck = hfValidateContactPayload($data, ['phone', 'contact_number'], 'email');
         if (!empty($contactCheck['errors'])) {
             Response::validationError($contactCheck['errors']);
         }
-        $data = $contactCheck['data'];
-
-        // Validation
-        $errors = [];
-        
-        if (empty($data['name'])) {
-            $errors['name'] = 'Customer name is required';
+        $data = hfCustomerNormalizePayload($contactCheck['data']);
+        $errors = hfValidateCustomerAccountPayload($data, [], true);
+        if (!hfPersonNameHasLetter($data['contact_person'] ?? '', true)) {
+            $errors['contact_person'] = 'Contact person must contain at least one letter.';
         }
-        
-        if (empty($data['customer_type']) || !in_array($data['customer_type'], $validCustomerTypes)) {
-            $errors['customer_type'] = 'Valid customer type is required: ' . implode(', ', $validCustomerTypes);
-        }
-        
-        $paymentType = $data['default_payment_type'] ?? 'cash';
-        if (!in_array($paymentType, $validPaymentTypes)) {
-            $errors['default_payment_type'] = 'Valid payment type is required: ' . implode(', ', $validPaymentTypes);
-        }
-        
-        if (!empty($errors)) {
+        if ($errors) {
             Response::validationError($errors);
         }
+        $paymentType = $data['default_payment_type'];
         
         // Check for duplicate
         $check = $db->prepare("SELECT id FROM customers WHERE name = ? AND customer_type = ?");
         $check->execute([$data['name'], $data['customer_type']]);
         if ($check->fetch()) {
             Response::error('A customer with this name and type already exists', 400);
+        }
+        if (!empty($data['email'])) {
+            $emailCheck = $db->prepare("SELECT id FROM customers WHERE status = 'active' AND LOWER(TRIM(email)) = LOWER(TRIM(?)) LIMIT 1");
+            $emailCheck->execute([$data['email']]);
+            if ($emailCheck->fetch()) {
+                Response::error('This email is already assigned to another active customer', 409);
+            }
         }
         
         // Generate customer code based on type
@@ -483,39 +482,34 @@ function handlePost($db, $action, $currentUser, $validCustomerTypes, $validPayme
         $maxNum = $codeStmt->fetch()['max_num'] ?? 0;
         $customerCode = $typePrefix . '-' . str_pad($maxNum + 1, 4, '0', STR_PAD_LEFT);
         
-        // Set default credit limit based on type
-        $defaultCreditLimits = [
-            'walk_in' => 0,
-            'institutional' => 100000,
-            'supermarket' => 500000,
-            'feeding_program' => 200000,
-            'distributor' => 50000,
-            'restaurant' => 20000
-        ];
-        $creditLimit = $data['credit_limit'] ?? $defaultCreditLimits[$data['customer_type']] ?? 0;
-        
         $stmt = $db->prepare("
             INSERT INTO customers 
-            (customer_code, name, customer_type, contact_person, contact_number, email, address,
-             default_payment_type, credit_limit, payment_terms_days, status, notes, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, NOW())
+            (customer_code, name, customer_type, sub_location, contact_person, contact_number, email, address,
+             default_payment_type, credit_limit, current_balance, payment_terms_days, status, blocked_reason, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NOW())
         ");
         
         $stmt->execute([
             $customerCode,
             $data['name'],
             $data['customer_type'],
+            $data['sub_location'] ?? null,
             $data['contact_person'] ?? null,
             $data['phone'] ?? $data['contact_number'] ?? null,
             $data['email'] ?? null,
             $data['address'] ?? null,
             $paymentType,
-            $creditLimit,
-            $data['payment_terms_days'] ?? 30,
+            $data['credit_limit'] ?? 0,
+            $data['payment_terms_days'] ?? 0,
+            $data['status'] ?? 'active',
+            $data['blocked_reason'] ?? null,
             $data['notes'] ?? null
         ]);
         
         $customerId = $db->lastInsertId();
+        if (isset($data['locations']) && is_array($data['locations'])) {
+            hfSaveCustomerLocations($db, (int) $customerId, $data['locations']);
+        }
         
         logAudit($currentUser['user_id'], 'CREATE', 'customers', $customerId, null, $data);
         
@@ -535,6 +529,11 @@ function handlePost($db, $action, $currentUser, $validCustomerTypes, $validPayme
  */
 function handlePut($db, $action, $currentUser, $validCustomerTypes, $validPaymentTypes) {
     $data = getRequestBody();
+    $data = hfPlainTextFields($data, [
+        'name' => [160, false], 'customer_name' => [160, false],
+        'contact_person' => [160, false], 'address' => [500, true],
+        'blocked_reason' => [500, true], 'notes' => [1000, true],
+    ]);
     if (array_key_exists('customer_name', $data) && !array_key_exists('name', $data)) {
         $data['name'] = $data['customer_name'];
     }
@@ -549,6 +548,9 @@ function handlePut($db, $action, $currentUser, $validCustomerTypes, $validPaymen
         Response::validationError($contactCheck['errors']);
     }
     $data = $contactCheck['data'];
+    if (array_key_exists('contact_person', $data) && !hfPersonNameHasLetter($data['contact_person'], true)) {
+        Response::validationError(['contact_person' => 'Contact person must contain at least one letter when provided']);
+    }
     $id = getParam('id') ?? ($data['id'] ?? null);
     
     if (!$id) {
@@ -566,28 +568,36 @@ function handlePut($db, $action, $currentUser, $validCustomerTypes, $validPaymen
     
     switch ($action) {
         case 'update':
-            // Validate customer type if provided
-            if (!empty($data['customer_type']) && !in_array($data['customer_type'], $validCustomerTypes)) {
-                Response::validationError(['customer_type' => 'Invalid customer type']);
+            $data = hfCustomerNormalizePayload($data, $current);
+            $errors = hfValidateCustomerAccountPayload($data, $current);
+            if ($errors) {
+                Response::validationError($errors);
             }
-            
-            // Validate payment type if provided
-            if (!empty($data['default_payment_type']) && !in_array($data['default_payment_type'], $validPaymentTypes)) {
-                Response::validationError(['default_payment_type' => 'Invalid payment type']);
+            $effectiveEmail = array_key_exists('email', $data) ? trim((string) $data['email']) : trim((string) ($current['email'] ?? ''));
+            $effectiveStatus = array_key_exists('status', $data) ? (string) $data['status'] : (string) $current['status'];
+            if ($effectiveStatus === 'active' && $effectiveEmail !== '') {
+                $emailCheck = $db->prepare("SELECT id FROM customers WHERE status = 'active' AND LOWER(TRIM(email)) = LOWER(TRIM(?)) AND id <> ? LIMIT 1");
+                $emailCheck->execute([$effectiveEmail, $id]);
+                if ($emailCheck->fetch()) {
+                    Response::error('This email is already assigned to another active customer', 409);
+                }
             }
             
             $stmt = $db->prepare("
                 UPDATE customers SET
                     name = COALESCE(?, name),
                     customer_type = COALESCE(?, customer_type),
+                    sub_location = COALESCE(?, sub_location),
                     contact_person = COALESCE(?, contact_person),
                     contact_number = COALESCE(?, contact_number),
                     email = COALESCE(?, email),
                     address = COALESCE(?, address),
                     default_payment_type = COALESCE(?, default_payment_type),
                     payment_terms_days = COALESCE(?, payment_terms_days),
+                    credit_limit = COALESCE(?, credit_limit),
                     notes = COALESCE(?, notes),
                     status = COALESCE(?, status),
+                    blocked_reason = ?,
                     updated_at = NOW()
                 WHERE id = ?
             ");
@@ -595,16 +605,23 @@ function handlePut($db, $action, $currentUser, $validCustomerTypes, $validPaymen
             $stmt->execute([
                 $data['name'] ?? null,
                 $data['customer_type'] ?? null,
+                $data['sub_location'] ?? null,
                 $data['contact_person'] ?? null,
                 $data['phone'] ?? $data['contact_number'] ?? null,
                 $data['email'] ?? null,
                 $data['address'] ?? null,
                 $data['default_payment_type'] ?? null,
                 $data['payment_terms_days'] ?? null,
+                $data['credit_limit'] ?? null,
                 $data['notes'] ?? null,
                 $data['status'] ?? null,
+                $data['blocked_reason'] ?? null,
                 $id
             ]);
+            if (isset($data['locations']) && is_array($data['locations'])) {
+                hfSaveCustomerLocations($db, (int) $id, $data['locations']);
+            }
+            $outstanding = hfSyncCustomerBalance($db, (int) $id);
             
             logAudit($currentUser['user_id'], 'UPDATE', 'customers', $id, $current, $data);
             
@@ -612,6 +629,9 @@ function handlePut($db, $action, $currentUser, $validCustomerTypes, $validPaymen
             $getStmt = $db->prepare("SELECT * FROM customers WHERE id = ?");
             $getStmt->execute([$id]);
             $customer = $getStmt->fetch();
+            $customer['outstanding_balance'] = $outstanding;
+            $customer['current_balance'] = $outstanding;
+            $customer['locations'] = hfCustomerLocations($db, (int) $id, true);
             
             Response::success($customer, 'Customer updated successfully');
             break;
@@ -621,21 +641,18 @@ function handlePut($db, $action, $currentUser, $validCustomerTypes, $validPaymen
                 Response::validationError(['credit_limit' => 'Credit limit is required']);
             }
             
-            $newLimit = (float) $data['credit_limit'];
-            if ($newLimit < 0) {
-                Response::validationError(['credit_limit' => 'Credit limit cannot be negative']);
+            $rawLimit = trim((string) $data['credit_limit']);
+            if (!preg_match('/^\d+(?:\.\d{1,2})?$/', $rawLimit)) {
+                Response::validationError(['credit_limit' => 'Enter a normal peso amount with up to two decimal places.']);
             }
-            
-            // Check outstanding balance
-            $balanceStmt = $db->prepare("
-                SELECT COALESCE(SUM(total_amount - amount_paid), 0) as outstanding 
-                FROM delivery_receipts 
-                WHERE customer_id = ? 
-                AND payment_status != 'paid' 
-                AND status NOT IN ('cancelled', 'draft')
-            ");
-            $balanceStmt->execute([$id]);
-            $outstanding = $balanceStmt->fetch()['outstanding'];
+            $newLimit = (float) $rawLimit;
+            if (!is_finite($newLimit) || $newLimit > 9999999999.99) {
+                Response::validationError(['credit_limit' => 'Credit limit must not exceed PHP 9,999,999,999.99.']);
+            }
+            if (($current['default_payment_type'] ?? 'cash') !== 'credit' || $newLimit <= 0) {
+                Response::validationError(['credit_limit' => 'Only credit customers can have a positive credit limit.']);
+            }
+            $outstanding = hfCustomerOutstandingBalance($db, (int) $id);
             
             if ($newLimit < $outstanding) {
                 Response::error("Cannot set credit limit below outstanding balance of " . number_format($outstanding, 2), 400);

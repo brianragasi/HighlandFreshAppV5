@@ -291,6 +291,47 @@
         </main>
     </div>
 
+    <!-- Bulk PR shelf-count confirmation -->
+    <dialog id="bulkAuditModal" class="modal">
+        <div class="modal-box w-11/12 max-w-5xl">
+            <button type="button" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onclick="closeBulkAuditModal()" aria-label="Close">✕</button>
+            <h3 class="font-bold text-lg">Confirm what is actually on the shelf</h3>
+            <p class="text-sm text-base-content/60 mt-1">
+                Count each selected item before creating the Purchase Request. This prevents ordering from an outdated computer balance.
+            </p>
+
+            <div class="alert alert-info py-2 mt-4 text-sm">
+                <i class="fas fa-clipboard-check"></i>
+                <span>If your count is lower than the saved balance, enter a short reason. A higher count must be recorded through receiving or stock correction first.</span>
+            </div>
+
+            <div class="overflow-x-auto border border-base-300 rounded-lg mt-4" style="max-height:55vh">
+                <table class="table table-sm">
+                    <thead class="bg-base-200 sticky top-0 z-10">
+                        <tr>
+                            <th>Item</th>
+                            <th class="w-32 text-right">Saved balance</th>
+                            <th class="w-40">Counted on shelf</th>
+                            <th>Reason if different</th>
+                            <th class="w-32 text-right">Will request</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bulkAuditRows"></tbody>
+                </table>
+            </div>
+
+            <p id="bulkAuditError" class="text-sm text-error mt-3 hidden"></p>
+            <div class="modal-action">
+                <button type="button" class="btn btn-ghost" onclick="closeBulkAuditModal()">Cancel</button>
+                <button type="button" id="bulkAuditSubmitBtn" class="btn btn-primary" onclick="submitBulkAuditedPR()">
+                    <i class="fas fa-file-signature"></i>
+                    Confirm Counts &amp; Create PR
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button onclick="closeBulkAuditModal()">close</button></form>
+    </dialog>
+
     <!-- Toast Container -->
     <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
 
@@ -312,6 +353,7 @@
         let categories = new Set();
         let createdReorderPRs = new Set();
         let pendingReorderPRs = new Map();
+        let bulkAuditAlerts = [];
 
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -729,24 +771,146 @@
                 showToast(`Skipping ${skippable.length} already at/above par: ${names}`, 'info');
             }
 
-            // Build a single consolidated payload with all items bundled
-            // into one PR. The backend supports multi-item PRs natively.
-            const hasUrgent = orderable.some(a => a.stock_status === 'OUT_OF_STOCK');
-            const priority = hasUrgent ? 'urgent' : 'normal';
+            openBulkAuditModal(orderable);
+        }
 
-            // Use the shortest lead time so the PR arrives before the most
-            // urgent item runs out.
+        function displayAuditNumber(value) {
+            return Number(value || 0).toLocaleString('en-PH', { maximumFractionDigits: 3 });
+        }
+
+        function openBulkAuditModal(orderable) {
+            bulkAuditAlerts = [...orderable];
+            const rows = document.getElementById('bulkAuditRows');
+            const error = document.getElementById('bulkAuditError');
+            if (error) {
+                error.textContent = '';
+                error.classList.add('hidden');
+            }
+            rows.innerHTML = bulkAuditAlerts.map(alert => {
+                const id = Number(alert.item_id);
+                const saved = finiteNumber(alert.current_stock) || 0;
+                const unit = alert.unit_of_measure || 'units';
+                return `
+                    <tr data-audit-item-id="${id}">
+                        <td>
+                            <div class="font-semibold">${escapeHtml(alert.item_name || 'Unnamed item')}</div>
+                            <div class="text-xs text-base-content/50 font-mono">${escapeHtml(alert.item_code || '')}</div>
+                        </td>
+                        <td class="text-right font-mono">${displayAuditNumber(saved)} <span class="text-xs text-base-content/55">${escapeHtml(unit)}</span></td>
+                        <td>
+                            <input type="number" class="input input-bordered input-sm w-full bulk-audit-count" min="0" step="0.001"
+                                placeholder="Count it" data-item-id="${id}" data-saved-stock="${saved}" oninput="updateBulkAuditRow(this)">
+                            <p class="bulk-audit-count-help text-xs text-base-content/50 mt-1">Required</p>
+                        </td>
+                        <td>
+                            <input type="text" class="input input-bordered input-sm w-full bulk-audit-reason" maxlength="255"
+                                placeholder="Needed only when lower" disabled>
+                        </td>
+                        <td class="bulk-audit-request text-right font-mono text-base-content/45">—</td>
+                    </tr>`;
+            }).join('');
+            document.getElementById('bulkAuditSubmitBtn').disabled = false;
+            document.getElementById('bulkAuditModal').showModal();
+            rows.querySelector('.bulk-audit-count')?.focus();
+        }
+
+        function closeBulkAuditModal() {
+            const modal = document.getElementById('bulkAuditModal');
+            if (modal?.open) modal.close();
+            bulkAuditAlerts = [];
+        }
+
+        function updateBulkAuditRow(input) {
+            const row = input.closest('tr');
+            const alert = bulkAuditAlerts.find(item => String(item.item_id) === String(input.dataset.itemId));
+            if (!row || !alert) return;
+
+            const counted = finiteNumber(input.value);
+            const saved = finiteNumber(alert.current_stock) || 0;
+            const unit = alert.unit_of_measure || 'units';
+            const reason = row.querySelector('.bulk-audit-reason');
+            const help = row.querySelector('.bulk-audit-count-help');
+            const request = row.querySelector('.bulk-audit-request');
+            input.classList.remove('input-error', 'input-success');
+
+            if (counted === null || counted < 0) {
+                reason.disabled = true;
+                reason.required = false;
+                request.textContent = '—';
+                help.className = 'bulk-audit-count-help text-xs text-error mt-1';
+                help.textContent = 'Enter zero or a positive count.';
+                return;
+            }
+
+            if (counted > saved + 0.0005) {
+                input.classList.add('input-error');
+                reason.disabled = true;
+                reason.required = false;
+                request.textContent = 'Fix stock first';
+                help.className = 'bulk-audit-count-help text-xs text-error mt-1';
+                help.textContent = `Higher than the saved ${displayAuditNumber(saved)} ${unit}. Record the missing receipt or stock correction first.`;
+                return;
+            }
+
+            input.classList.add('input-success');
+            const differs = Math.abs(counted - saved) > 0.0005;
+            reason.disabled = !differs;
+            reason.required = differs;
+            if (!differs) reason.value = '';
+            const replenishmentTarget = saved + getOrderQty(alert);
+            const qty = Math.max(0, replenishmentTarget - counted);
+            request.innerHTML = `<strong class="text-primary">${displayAuditNumber(qty)}</strong> <span class="text-xs text-base-content/55">${escapeHtml(unit)}</span>`;
+            help.className = 'bulk-audit-count-help text-xs text-base-content/55 mt-1';
+            help.textContent = differs
+                ? `Saved balance is ${displayAuditNumber(saved)} ${unit}; explain the shortage.`
+                : 'Matches the saved balance.';
+        }
+
+        async function submitBulkAuditedPR() {
+            const error = document.getElementById('bulkAuditError');
+            const items = [];
             let earliestNeededBy = null;
-            const items = orderable.map(alert => {
-                const stock = parseFloat(alert.current_stock) || 0;
-                const reorderPoint = parseFloat(alert.reorder_point) || 0;
-                const qty = getOrderQty(alert);
+
+            for (let index = 0; index < bulkAuditAlerts.length; index++) {
+                const alert = bulkAuditAlerts[index];
+                const row = document.querySelector(`#bulkAuditRows tr[data-audit-item-id="${Number(alert.item_id)}"]`);
+                const countInput = row?.querySelector('.bulk-audit-count');
+                const reasonInput = row?.querySelector('.bulk-audit-reason');
+                const counted = finiteNumber(countInput?.value);
+                const saved = finiteNumber(alert.current_stock) || 0;
+                const reason = reasonInput?.value.trim() || '';
+
+                const fail = message => {
+                    error.textContent = `Line ${index + 1}: ${message}`;
+                    error.classList.remove('hidden');
+                    countInput?.classList.add('input-error');
+                    countInput?.focus();
+                };
+                if (counted === null || counted < 0) {
+                    fail('enter the quantity you physically counted on the shelf.');
+                    return;
+                }
+                if (counted > saved + 0.0005) {
+                    fail('the count is higher than the saved balance. Record the missing receipt or stock correction first.');
+                    return;
+                }
+                if (Math.abs(counted - saved) > 0.0005 && !reason) {
+                    fail('explain why the shelf count is lower than the saved balance.');
+                    reasonInput?.focus();
+                    return;
+                }
+
+                const replenishmentTarget = saved + getOrderQty(alert);
+                const qty = Math.max(0, replenishmentTarget - counted);
+                if (qty <= 0) {
+                    fail('this count is already at the replenishment target, so no order is needed.');
+                    return;
+                }
                 const neededBy = new Date();
                 neededBy.setDate(neededBy.getDate() + parseInt(alert.lead_time_days || 7, 10));
-                if (!earliestNeededBy || neededBy < earliestNeededBy) {
-                    earliestNeededBy = neededBy;
-                }
-                return {
+                if (!earliestNeededBy || neededBy < earliestNeededBy) earliestNeededBy = neededBy;
+
+                items.push({
                     ingredient_id: parseInt(alert.item_id, 10),
                     mro_item_id: null,
                     item_description: alert.item_name || '',
@@ -754,24 +918,30 @@
                     unit: alert.unit_of_measure || 'units',
                     estimated_unit_price: parseFloat(alert.unit_cost) || 0,
                     purpose: 'Stock below reorder point',
-                    notes: `Current stock: ${stock} ${alert.unit_of_measure || ''}. Reorder point: ${reorderPoint} ${alert.unit_of_measure || ''}. Status: ${alert.stock_status}.`
-                };
-            });
+                    audited_stock: counted,
+                    audit_reason: reason || null,
+                    notes: `Shelf count confirmed from Reorder Alerts. Saved balance: ${saved} ${alert.unit_of_measure || ''}. Counted: ${counted} ${alert.unit_of_measure || ''}.`
+                });
+            }
 
+            error.textContent = '';
+            error.classList.add('hidden');
+            const priority = bulkAuditAlerts.some(alert => alert.stock_status === 'OUT_OF_STOCK') ? 'urgent' : 'normal';
             const payload = {
                 status: 'pending',
                 priority,
                 needed_by_date: earliestNeededBy.toISOString().slice(0, 10),
                 purpose: 'Stock below reorder point',
-                notes: `Bulk reorder from Reorder Alerts — ${items.length} item${items.length === 1 ? '' : 's'}.`,
+                notes: `Bulk reorder from Reorder Alerts — ${items.length} item${items.length === 1 ? '' : 's'} with shelf counts confirmed.`,
                 items
             };
 
-            // Disable the buttons while we work to prevent double-clicks.
             const heroCta = document.getElementById('reorderHeroCta');
             const bulkBtn = document.getElementById('bulkCreateBtn');
+            const submitBtn = document.getElementById('bulkAuditSubmitBtn');
             if (heroCta) heroCta.disabled = true;
             if (bulkBtn) bulkBtn.disabled = true;
+            submitBtn.disabled = true;
             showToast(`Creating Purchase Requisition with ${items.length} item${items.length === 1 ? '' : 's'}…`, 'info');
 
             try {
@@ -788,29 +958,36 @@
                 const res = await response.json();
 
                 if (response.ok && (res.success || res.data?.success)) {
-                    orderable.forEach(a => createdReorderPRs.add(String(a.item_id)));
+                    bulkAuditAlerts.forEach(alert => createdReorderPRs.add(String(alert.item_id)));
                     showToast(`Created Purchase Requisition with ${items.length} item${items.length === 1 ? '' : 's'}`, 'success');
                     selectedItemIds.clear();
+                    document.getElementById('bulkAuditModal').close();
+                    bulkAuditAlerts = [];
                     updateBulkActionBar();
                     renderAlerts();
                     setTimeout(() => { window.location.href = 'purchase_requests.html'; }, 800);
                 } else if (response.status === 409 && res?.errors?.duplicate_pr_number) {
                     showToast(`A pending PR already covers these items (${res.errors.duplicate_pr_number})`, 'info');
-                    orderable.forEach(a => rememberPendingPR(a, res.errors));
+                    bulkAuditAlerts.forEach(alert => rememberPendingPR(alert, res.errors));
+                    document.getElementById('bulkAuditModal').close();
+                    bulkAuditAlerts = [];
                     renderAlerts();
                 } else {
                     const errMsg = res.message || `HTTP ${response.status}`;
+                    error.textContent = errMsg;
+                    error.classList.remove('hidden');
                     console.error('[bulk] API error:', errMsg, res);
-                    showToast(`Failed to create PR: ${errMsg}`, 'error');
                 }
             } catch (e) {
                 const msg = e?.message || 'Network error';
+                error.textContent = `Could not create the Purchase Request: ${msg}`;
+                error.classList.remove('hidden');
                 console.error('[bulk] FAILED:', msg, e);
-                showToast(`Failed to create PR: ${msg}`, 'error');
+            } finally {
+                if (heroCta) heroCta.disabled = false;
+                submitBtn.disabled = false;
+                updateBulkActionBar();
             }
-
-            if (heroCta) heroCta.disabled = false;
-            updateBulkActionBar();
         }
 
         function renderAlerts() {
@@ -1124,7 +1301,9 @@
             const cls = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type];
             const t = document.createElement('div');
             t.className = `alert ${cls} shadow-lg`;
-            t.innerHTML = `<span>${msg}</span>`;
+            const text = document.createElement('span');
+            text.textContent = String(msg ?? '');
+            t.appendChild(text);
             c.appendChild(t);
             setTimeout(() => t.remove(), 3000);
         }

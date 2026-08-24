@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="emerald">
 <head>
+    <style id="roleGuardPending">html { visibility: hidden; }</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Farmers Management | Highland Fresh Admin</title>
@@ -374,11 +375,11 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="form-control">
                         <label class="label"><span class="label-text">First Name <span class="text-error">*</span></span></label>
-                        <input type="text" id="first_name" class="input input-bordered" required />
+                        <input type="text" id="first_name" class="input input-bordered" maxlength="100" data-person-name required />
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Last Name</span></label>
-                        <input type="text" id="last_name" class="input input-bordered" />
+                        <input type="text" id="last_name" class="input input-bordered" maxlength="100" data-person-name />
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Milk Type <span class="text-error">*</span></span></label>
@@ -400,13 +401,13 @@
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Contact Number</span></label>
-                        <input type="tel" id="contact_number" class="input input-bordered" inputmode="tel"
-                            maxlength="16" placeholder="09171234567" />
+                        <input type="tel" id="contact_number" class="input input-bordered" inputmode="numeric"
+                            maxlength="11" placeholder="09171234567" />
                         <span class="label-text-alt text-base-content/55 mt-1">Philippine mobile or landline</span>
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Base Price per Liter</span></label>
-                        <input type="number" id="base_price_per_liter" class="input input-bordered" value="40.00" step="0.01" min="0" />
+                        <input type="number" id="base_price_per_liter" class="input input-bordered" value="40.00" step="0.01" min="0.01" max="10000" inputmode="decimal" title="Enter a price from ₱0.01 to ₱10,000.00 per liter" />
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Bank Name</span></label>
@@ -414,7 +415,29 @@
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Bank Account Number</span></label>
-                        <input type="text" id="bank_account_number" class="input input-bordered" />
+                        <input type="text" id="bank_account_number" class="input input-bordered"
+                            inputmode="numeric" maxlength="20" pattern="[0-9]{6,20}" data-bank-account
+                            placeholder="6 to 20 digits" title="Enter 6 to 20 digits" />
+                        <label class="label py-1"><span class="label-text-alt text-base-content/60">Digits only; 6–20 digits.</span></label>
+                    </div>
+                    <div class="form-control md:col-span-2">
+                        <label class="label"><span class="label-text">Payment Payee Name</span></label>
+                        <input type="text" id="payment_payee_name" class="input input-bordered" maxlength="160"
+                            data-person-name placeholder="Name shown on bank, check, or cash receipt" />
+                        <label class="label py-1"><span class="label-text-alt text-base-content/60">Required before Finance can record any payout.</span></label>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">E-Wallet Provider</span></label>
+                        <input type="text" id="ewallet_provider" class="input input-bordered" maxlength="80" placeholder="e.g., GCash or Maya" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">E-Wallet Registered Name</span></label>
+                        <input type="text" id="ewallet_account_name" class="input input-bordered" maxlength="160" data-person-name />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">E-Wallet Mobile Number</span></label>
+                        <input type="tel" id="ewallet_mobile_number" class="input input-bordered" inputmode="numeric"
+                            maxlength="11" placeholder="09171234567" data-philippine-phone />
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Status</span></label>
@@ -457,6 +480,7 @@
     
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/ui/notification-layer.js?v=20260816-1"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="general_manager,admin"></script>
     <script src="../../js/admin/admin.service.js"></script>
     
@@ -466,6 +490,16 @@
         let currentPage = 1;
         const pageSize = 10;
         let recordToArchive = null;
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, character => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            }[character]));
+        }
         
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -543,23 +577,23 @@
                 tbody.innerHTML = pageData.map(item => `
                     <tr class="hover">
                         <td>
-                            <span class="font-mono text-sm">${item.farmer_code || '-'}</span>
+                            <span class="font-mono text-sm">${escapeHtml(item.farmer_code || '-')}</span>
                         </td>
                         <td>
                             <div class="flex items-center gap-3">
                                 <div class="avatar placeholder">
                                     <div class="w-10 rounded-full bg-primary/10 text-primary">
-                                        <span>${(item.first_name || 'F').substring(0, 1).toUpperCase()}${(item.last_name || '').substring(0, 1).toUpperCase()}</span>
+                                        <span>${escapeHtml((item.first_name || 'F').substring(0, 1).toUpperCase())}${escapeHtml((item.last_name || '').substring(0, 1).toUpperCase())}</span>
                                     </div>
                                 </div>
                                 <div>
-                                    <div class="font-semibold">${item.full_name || item.first_name || '-'}</div>
+                                    <div class="font-semibold">${escapeHtml(item.full_name || item.first_name || '-')}</div>
                                 </div>
                             </div>
                         </td>
                         <td>
                             <span class="badge badge-sm ${item.milk_type_code === 'COW' ? 'badge-info' : 'badge-accent'}">
-                                ${item.milk_type_name || '-'}
+                                ${escapeHtml(item.milk_type_name || '-')}
                             </span>
                         </td>
                         <td class="text-sm">${farmerContactHtml(item.contact_number)}</td>
@@ -576,7 +610,7 @@
                                 <button class="btn btn-ghost btn-sm btn-square" onclick="editRecord(${item.id})" title="Edit">
                                     <i class="fas fa-edit text-primary"></i>
                                 </button>
-                                <button class="btn btn-ghost btn-sm btn-square" onclick="archiveRecord(${item.id}, '${item.full_name || item.first_name}')" title="Archive">
+                                <button class="btn btn-ghost btn-sm btn-square" onclick="archiveRecord(${Number(item.id) || 0})" title="Archive">
                                     <i class="fas fa-box-archive text-warning"></i>
                                 </button>
                             </div>
@@ -637,6 +671,10 @@
                     document.getElementById('base_price_per_liter').value = data.base_price_per_liter || 40.00;
                     document.getElementById('bank_name').value = data.bank_name || '';
                     document.getElementById('bank_account_number').value = data.bank_account_number || '';
+                    document.getElementById('payment_payee_name').value = data.payment_payee_name || data.full_name?.trim() || '';
+                    document.getElementById('ewallet_provider').value = data.ewallet_provider || '';
+                    document.getElementById('ewallet_account_name').value = data.ewallet_account_name || '';
+                    document.getElementById('ewallet_mobile_number').value = data.ewallet_mobile_number || '';
                     document.getElementById('is_active').value = data.is_active || 1;
                     document.getElementById('formModal').showModal();
                 }
@@ -685,6 +723,10 @@
                 base_price_per_liter: document.getElementById('base_price_per_liter').value,
                 bank_name: document.getElementById('bank_name').value,
                 bank_account_number: document.getElementById('bank_account_number').value,
+                payment_payee_name: document.getElementById('payment_payee_name').value,
+                ewallet_provider: document.getElementById('ewallet_provider').value,
+                ewallet_account_name: document.getElementById('ewallet_account_name').value,
+                ewallet_mobile_number: document.getElementById('ewallet_mobile_number').value,
                 is_active: document.getElementById('is_active').value
             };
             
@@ -703,6 +745,7 @@
                 if (response.success) {
                     showToast(recordId ? 'Farmer updated successfully' : 'Farmer created successfully', 'success');
                     document.getElementById('formModal').close();
+                    if (!recordId) currentPage = 1;
                     loadData();
                 } else {
                     showToast(response.message || 'Failed to save farmer', 'error');
@@ -717,9 +760,10 @@
             }
         }
         
-        function archiveRecord(id, name) {
+        function archiveRecord(id) {
+            const farmer = allData.find(item => Number(item.id) === Number(id));
             recordToArchive = id;
-            document.getElementById('deleteName').textContent = name;
+            document.getElementById('deleteName').textContent = farmer?.full_name || farmer?.first_name || 'this farmer';
             document.getElementById('archiveModal').showModal();
         }
         
@@ -747,8 +791,11 @@
             const alertClass = { 'success': 'alert-success', 'error': 'alert-error', 'warning': 'alert-warning', 'info': 'alert-info' }[type] || 'alert-info';
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            const text = document.createElement('span');
+            text.textContent = String(message ?? '');
+            toast.appendChild(text);
             container.appendChild(toast);
+            window.HighlandNotificationLayer?.sync();
             setTimeout(() => toast.remove(), 3000);
         }
         

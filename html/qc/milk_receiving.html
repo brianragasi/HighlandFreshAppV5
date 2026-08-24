@@ -388,7 +388,7 @@
                             <span class="label-text">Volume (Liters) <span class="text-error">*</span></span>
                         </label>
                         <input type="number" class="input input-bordered w-full" id="deliveryVolume" step="0.01"
-                            min="0.01" required placeholder="Enter volume in liters">
+                            min="0.01" max="100000" required placeholder="Enter volume in liters">
                     </div>
 
                     <div class="form-control">
@@ -528,8 +528,8 @@
                             <span class="label-text">Temperature at Receiving (°C) <span
                                     class="text-error">*</span></span>
                         </label>
-                        <input type="number" class="input input-bordered w-full" id="testTemp" step="0.1" required
-                            placeholder="e.g., 4.0">
+                        <input type="number" class="input input-bordered w-full" id="testTemp" step="0.1"
+                            min="-10" max="60" data-allow-negative required placeholder="e.g., 4.0">
                         <label class="label">
                             <span class="label-text-alt">Should be chilled (target: 4°C)</span>
                         </label>
@@ -544,21 +544,21 @@
                                 <span class="label-text text-xs">Protein (%)</span>
                             </label>
                             <input type="number" class="input input-bordered input-sm w-full" id="testProtein"
-                                step="0.01" placeholder="3.50">
+                                step="0.01" min="0" max="20" placeholder="3.50">
                         </div>
                         <div class="form-control">
                             <label class="label py-1">
                                 <span class="label-text text-xs">SNF (%)</span>
                             </label>
                             <input type="number" class="input input-bordered input-sm w-full" id="testSnf" step="0.01"
-                                placeholder="8.50">
+                                min="0" max="30" placeholder="8.50">
                         </div>
                         <div class="form-control">
                             <label class="label py-1">
                                 <span class="label-text text-xs">Lactose (%)</span>
                             </label>
                             <input type="number" class="input input-bordered input-sm w-full" id="testLactose"
-                                step="0.01" placeholder="4.80">
+                                step="0.01" min="0" max="20" placeholder="4.80">
                         </div>
                     </div>
 
@@ -568,21 +568,21 @@
                                 <span class="label-text text-xs">Salts (%)</span>
                             </label>
                             <input type="number" class="input input-bordered input-sm w-full" id="testSalts" step="0.01"
-                                placeholder="0.70">
+                                min="0" max="10" placeholder="0.70">
                         </div>
                         <div class="form-control">
                             <label class="label py-1">
                                 <span class="label-text text-xs">Total Solids (%)</span>
                             </label>
                             <input type="number" class="input input-bordered input-sm w-full" id="testTotalSolids"
-                                step="0.01" placeholder="12.50">
+                                step="0.01" min="0" max="100" placeholder="12.50">
                         </div>
                         <div class="form-control">
                             <label class="label py-1">
                                 <span class="label-text text-xs">Added Water (%)</span>
                             </label>
                             <input type="number" class="input input-bordered input-sm w-full" id="testAddedWater"
-                                step="0.01" placeholder="0.00">
+                                step="0.01" min="0" max="100" placeholder="0.00">
                         </div>
                     </div>
 
@@ -592,14 +592,14 @@
                                 <span class="label-text text-xs">Freezing Point (°C)</span>
                             </label>
                             <input type="number" class="input input-bordered input-sm w-full" id="testFreezingPoint"
-                                step="0.001" placeholder="-0.520">
+                                step="0.001" min="-2" max="0" data-allow-negative placeholder="-0.520">
                         </div>
                         <div class="form-control">
                             <label class="label py-1">
                                 <span class="label-text text-xs">Sample Temperature (°C)</span>
                             </label>
                             <input type="number" class="input input-bordered input-sm w-full" id="testSampleTemp"
-                                step="0.1" placeholder="25.0">
+                                step="0.1" min="-10" max="100" data-allow-negative placeholder="25.0">
                         </div>
                     </div>
 
@@ -684,7 +684,9 @@
             const alertClass = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type];
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            const text = document.createElement('span');
+            text.textContent = String(message ?? '');
+            toast.appendChild(text);
             container.appendChild(toast);
             setTimeout(() => { toast.remove(); }, 3000);
         }
@@ -698,6 +700,12 @@
         function formatCurrency(amount) {
             if (amount === null || amount === undefined) return '-';
             return '₱' + parseFloat(amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, character => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+            }[character]));
         }
 
         function formatDate(dateStr, style = 'short') {
@@ -747,6 +755,7 @@
         let currentPage = 1;
         const limit = 20;
         let farmers = [];
+        let currentDeliveries = [];
 
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
@@ -796,7 +805,7 @@
                     select.innerHTML = '<option value="">Select Farmer...</option>' +
                         farmers.map(f => {
                             const fullName = [f.first_name, f.last_name].filter(Boolean).join(' ') || 'Unknown';
-                            return `<option value="${f.id}" data-name="${fullName}" data-membership="${f.membership_type}" data-price="${f.base_price_per_liter}">${f.farmer_code} - ${fullName}</option>`;
+                            return `<option value="${Number(f.id) || 0}" data-name="${escapeHtml(fullName)}" data-membership="${f.membership_type === 'member' ? 'member' : 'non_member'}" data-price="${Number(f.base_price_per_liter) || 0}">${escapeHtml(f.farmer_code || 'N/A')} - ${escapeHtml(fullName)}</option>`;
                         }).join('');
                 }
             } catch (error) {
@@ -823,15 +832,16 @@
                 const response = await DeliveriesService.getAll(params);
 
                 if (response.success) {
+                    currentDeliveries = response.data;
                     document.getElementById('totalRecords').textContent = `${response.pagination.total} records`;
 
                     if (response.data.length > 0) {
                         table.innerHTML = response.data.map(d => `
                             <tr>
-                                <td><code class="text-xs bg-base-200 px-2 py-1 rounded">${d.delivery_code}</code></td>
+                                <td><code class="text-xs bg-base-200 px-2 py-1 rounded">${escapeHtml(d.delivery_code || '-')}</code></td>
                                 <td>
-                                    <div class="font-medium text-sm">${d.farmer_code}</div>
-                                    <div class="text-xs text-base-content/60">${d.farmer_first_name} ${d.farmer_last_name}</div>
+                                    <div class="font-medium text-sm">${escapeHtml(d.farmer_code || 'N/A')}</div>
+                                    <div class="text-xs text-base-content/60">${escapeHtml([d.farmer_first_name, d.farmer_last_name].filter(Boolean).join(' ') || 'Unknown')}</div>
                                 </td>
                                 <td>
                                     <div class="text-sm">${formatDate(d.delivery_date)}</div>
@@ -845,7 +855,7 @@
                                 <td class="text-center">
                                     <div class="flex justify-center gap-1">
                                         ${['pending_qc', 'pending_test', 'in_testing'].includes(d.status) ? `
-                                            <button class="btn ${d.apt_result === 'positive' ? 'btn-warning' : 'btn-success'} btn-xs" onclick="openGradeModal(${d.id}, '${d.delivery_code}', '${d.farmer_first_name} ${d.farmer_last_name}', ${d.volume_liters}, ${d.membership_type === 'member' ? 40 : 38}, '${d.apt_result || 'negative'}')" title="${d.apt_result === 'positive' ? 'APT Positive - Will be rejected' : 'Grade Milk'}">
+                                            <button class="btn ${d.apt_result === 'positive' ? 'btn-warning' : 'btn-success'} btn-xs" onclick="openGradeModalForDelivery(${Number(d.id) || 0})" title="${d.apt_result === 'positive' ? 'APT Positive - Will be rejected' : 'Grade Milk'}">
                                                 <i class="fas fa-flask"></i>${d.apt_result === 'positive' ? ' <i class="fas fa-exclamation-triangle"></i>' : ''}
                                             </button>
                                         ` : ''}
@@ -958,6 +968,23 @@
 
         // Store current delivery's APT result for preview calculation
         let currentDeliveryApt = 'negative';
+
+        function openGradeModalForDelivery(deliveryId) {
+            const delivery = currentDeliveries.find(item => Number(item.id) === Number(deliveryId));
+            if (!delivery) {
+                showToast('Delivery details are no longer available. Refresh the page and try again.', 'error');
+                return;
+            }
+
+            openGradeModal(
+                Number(delivery.id),
+                String(delivery.delivery_code || ''),
+                [delivery.farmer_first_name, delivery.farmer_last_name].filter(Boolean).join(' ') || 'Unknown',
+                Number(delivery.volume_liters) || 0,
+                delivery.membership_type === 'member' ? 40 : 38,
+                delivery.apt_result === 'positive' ? 'positive' : 'negative'
+            );
+        }
 
         // Open grade modal
         function openGradeModal(deliveryId, deliveryCode, farmerName, volume, basePrice, aptResult = 'negative') {

@@ -330,15 +330,16 @@
     <script src="../../../js/vendor/axios.min.js"></script>
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js?v=20260814-3"></script>
-    <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_raw,general_manager"></script>
+    <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_raw,finance_officer,general_manager"></script>
     <script src="../../../js/purchasing/purchasing.service.js"></script>
+    <script src="../../../js/finance/finance.service.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             if (!AuthService.isAuthenticated()) {
                 window.location.href = '../../login.html';
                 return;
             }
-            setupPrintControls(['warehouse_raw', 'general_manager']);
+            setupPrintControls(['warehouse_raw', 'finance_officer', 'general_manager']);
 
             const params = new URLSearchParams(window.location.search);
             const poId = params.get('po_id');
@@ -348,14 +349,26 @@
             }
 
             try {
-                const response = await PurchasingService.getPurchaseOrderDetail(poId);
+                const signedInUser = AuthService.getCurrentUser();
+                const response = signedInUser?.role === 'finance_officer'
+                    ? await FinanceService.getPayableDetail(poId)
+                    : await PurchasingService.getPurchaseOrderDetail(poId);
                 const po = response?.data;
                 if (!po) {
                     document.getElementById('itemsBody').innerHTML = '<tr><td colspan="9" class="right">PO not found</td></tr>';
                     return;
                 }
 
-                const receivedStatuses = ['partial_received', 'received'];
+                if (signedInUser?.role === 'finance_officer' && po.latest_receiving_report) {
+                    const report = po.latest_receiving_report;
+                    const purchaseOrderStatus = po.status;
+                    Object.assign(po, report);
+                    po.id = poId;
+                    po.status = purchaseOrderStatus;
+                    po.items = response.data.items || [];
+                }
+
+                const receivedStatuses = ['partial_received', 'received', 'closed'];
                 if (!receivedStatuses.includes(po.status)) {
                     document.querySelector('.actions .btn-primary')?.setAttribute('disabled', 'disabled');
                     document.getElementById('itemsBody').innerHTML = '<tr><td colspan="9" class="right">Receiving Report is available after delivery has been received.</td></tr>';

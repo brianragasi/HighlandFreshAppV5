@@ -516,27 +516,33 @@
                         <div id="productionPackedInfo" class="text-sm text-base-content/70">
                             <span class="loading loading-spinner loading-xs"></span> Loading production output...
                         </div>
-                        <!-- Default: single pieces count (used when product has no box config) -->
-                        <div id="countSimple" class="form-control">
-                            <label class="label py-1">
-                                <span class="label-text text-xs font-medium" id="countSimpleLabel">Pieces you counted</span>
-                            </label>
-                            <input type="number" min="0" class="input input-bordered input-sm max-w-xs" id="qcVerifiedPieces" placeholder="0">
+                        <div id="existingCountHold" class="hidden alert alert-warning py-3 text-sm">
+                            <i class="fas fa-pause-circle"></i>
+                            <div>
+                                <div class="font-semibold">This batch is on hold for a count difference</div>
+                                <p id="existingCountHoldText" class="text-xs mt-1"></p>
+                            </div>
                         </div>
-                        <!-- Boxed products only: boxes + loose split -->
-                        <div id="countBoxed" class="grid grid-cols-2 gap-3 hidden">
-                            <div class="form-control">
-                                <label class="label py-1">
-                                    <span class="label-text text-xs font-medium">Full boxes physically counted</span>
-                                </label>
-                                <input type="number" min="0" class="input input-bordered input-sm" id="qcVerifiedBoxes" placeholder="0">
-                            </div>
-                            <div class="form-control">
-                                <label class="label py-1">
-                                    <span class="label-text text-xs font-medium">Extra loose pieces physically counted</span>
-                                </label>
-                                <input type="number" min="0" class="input input-bordered input-sm" id="qcVerifiedPiecesBoxed" placeholder="0">
-                            </div>
+                        <div class="overflow-x-auto border border-base-300 rounded-lg">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Packaging SKU</th>
+                                        <th class="text-right">Production recorded</th>
+                                        <th class="w-40">Physically counted</th>
+                                        <th class="text-right">Difference</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="qcCountLines"></tbody>
+                            </table>
+                        </div>
+                        <!-- Legacy aggregate fields remain hidden for old batches without packaging lines. -->
+                        <div id="countSimple" class="form-control hidden">
+                            <input type="number" min="0" class="input input-bordered input-sm" id="qcVerifiedPieces" placeholder="0">
+                        </div>
+                        <div id="countBoxed" class="hidden">
+                            <input type="number" min="0" id="qcVerifiedBoxes">
+                            <input type="number" min="0" id="qcVerifiedPiecesBoxed">
                         </div>
                         <p id="countBoxedGuide" class="text-xs text-base-content/60 hidden"></p>
                         <p id="countComparisonHint" class="text-xs text-base-content/50 hidden"></p>
@@ -550,14 +556,21 @@
                         <div class="flex gap-4">
                             <label class="flex items-center gap-2 cursor-pointer" id="releaseDecisionLabel">
                                 <input type="radio" name="verifyDecision" value="released" id="verifyDecisionRelease"
-                                    class="radio radio-success radio-sm" checked onchange="toggleRejectReason()">
-                                <span class="text-success font-medium flex items-center gap-1">
+                                    class="radio radio-success radio-sm" checked onchange="toggleDecisionFields()">
+                                <span class="text-success font-medium flex items-center gap-1" id="releaseDecisionText">
                                     <i class="fas fa-check-circle"></i> Release for Sale
                                 </span>
                             </label>
                             <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="verifyDecision" value="hold" id="verifyDecisionHold"
+                                    class="radio radio-warning radio-sm" onchange="toggleDecisionFields()">
+                                <span class="text-warning font-medium flex items-center gap-1">
+                                    <i class="fas fa-pause-circle"></i> Place on Hold
+                                </span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
                                 <input type="radio" name="verifyDecision" value="rejected" id="verifyDecisionReject"
-                                    class="radio radio-error radio-sm" onchange="toggleRejectReason()">
+                                    class="radio radio-error radio-sm" onchange="toggleDecisionFields()">
                                 <span class="text-error font-medium flex items-center gap-1">
                                     <i class="fas fa-times-circle"></i> Reject Batch
                                 </span>
@@ -566,6 +579,40 @@
                         <p id="releaseBlockedHint" class="text-xs text-error mt-2 hidden">
                             Release is blocked until required production CCP checks pass (pasteurization 75°C / cooling ≤4°C).
                         </p>
+                    </div>
+
+                    <div class="hidden bg-warning/10 border border-warning/30 rounded-xl p-4 space-y-3" id="holdReasonGroup">
+                        <h4 class="font-semibold text-sm">Count Difference Report</h4>
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text">Why does the count differ?</span></label>
+                            <select id="holdReasonCategory" class="select select-bordered select-sm w-full">
+                                <option value="">Select a reason...</option>
+                                <option value="production_entry_error">Production may have entered the wrong quantity</option>
+                                <option value="damaged">Damaged or leaking finished units</option>
+                                <option value="sampling">Units used for sampling</option>
+                                <option value="missing">Units are missing or unaccounted for</option>
+                                <option value="wrong_sku">Wrong SKU or bottle size was counted</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        <textarea id="holdReasonNotes" class="textarea textarea-bordered w-full" rows="2"
+                            placeholder="Describe the recount and what Production must investigate..."></textarea>
+                    </div>
+
+                    <div class="hidden bg-success/10 border border-success/30 rounded-xl p-4 space-y-3" id="countResolutionGroup">
+                        <h4 class="font-semibold text-sm">Resolve Saved Count Hold</h4>
+                        <p class="text-xs text-base-content/70">Select what the investigation confirmed. The original Production quantity remains in the history.</p>
+                        <select id="countResolutionType" class="select select-bordered select-sm w-full" onchange="syncCountResolutionChoices()">
+                            <option value="">Select the resolution...</option>
+                            <option value="recount_matched">Recount now matches Production</option>
+                            <option value="items_found">Missing units were located</option>
+                            <option value="production_record_corrected">Production confirmed its original count was wrong</option>
+                            <option value="damaged_disposal">Difference is damaged/leaking — create disposal request</option>
+                            <option value="sample_usage">Difference was used for sampling — create write-off request</option>
+                        </select>
+                        <p id="countResolutionGuide" class="text-xs text-base-content/70"></p>
+                        <textarea id="countResolutionNotes" class="textarea textarea-bordered w-full" rows="2"
+                            placeholder="Who investigated, what was confirmed, and any reference or corrective action..."></textarea>
                     </div>
 
                     <!-- Rejection Reason -->
@@ -719,10 +766,16 @@
         // Show toast notification
         function showToast(message, type = 'info') {
             const container = document.getElementById('toastContainer');
+            const messageText = String(message ?? '');
+            const duplicate = Array.from(container.children).find(toast => toast.dataset.message === messageText);
+            if (duplicate) return;
             const alertClass = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type];
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            toast.dataset.message = messageText;
+            const text = document.createElement('span');
+            text.textContent = messageText;
+            toast.appendChild(text);
             container.appendChild(toast);
             setTimeout(() => { toast.remove(); }, 3000);
         }
@@ -788,15 +841,15 @@
                             const coolTemp = summary.cooling_temp ?? b.cooling_temp;
                             return `
                             <tr class="hover:bg-base-200/50">
-                                <td class="font-mono text-xs font-semibold">${b.batch_code}</td>
+                                <td class="font-mono text-xs font-semibold">${escapeHtml(b.batch_code || '-')}</td>
                                 <td>
-                                    <span class="font-medium">${b.product_name || b.product_type || 'Unknown'}</span>
-                                    <span class="text-xs text-base-content/60 block">${b.product_variant || b.recipe_variant || ''}</span>
+                                    <span class="font-medium">${escapeHtml(b.product_name || b.product_type || 'Unknown')}</span>
+                                    <span class="text-xs text-base-content/60 block">${escapeHtml(b.product_variant || b.recipe_variant || '')}</span>
                                 </td>
                                 <td>${b.raw_milk_liters?.toLocaleString() || '-'} L</td>
                                 <td>${b.manufacturing_date ? formatDate(b.manufacturing_date) : '-'}</td>
                                 <td>${b.expiry_date ? formatDate(b.expiry_date) : '-'}</td>
-                                <td><span class="badge badge-warning">${b.qc_status || 'Pending'}</span></td>
+                                <td><span class="badge badge-warning">${escapeHtml(b.qc_status || 'Pending')}</span></td>
                                 <td>
                                     <span class="badge ${getCCPBadge(pastTemp, pastMin, false, summary.pasteurization_status)} badge-sm gap-1" title="Pasteurization standard: min ${pastMin}°C">
                                         <i class="fas fa-fire text-xs"></i> ${formatTemp(pastTemp)}
@@ -807,7 +860,7 @@
                                     ${summary.can_release === false ? '<span class="badge badge-error badge-xs ml-1">CCP</span>' : ''}
                                 </td>
                                 <td class="text-right">
-                                    <button class="btn btn-primary btn-xs gap-1" onclick="openVerifyModal(${b.id})">
+                                    <button class="btn btn-primary btn-xs gap-1" onclick="openVerifyModal(${Number(b.id) || 0})">
                                         <i class="fas fa-clipboard-check"></i> Verify
                                     </button>
                                 </td>
@@ -831,7 +884,7 @@
                             <td colspan="8" class="text-center py-12 text-base-content/60">
                                 <i class="fas fa-exclamation-circle text-warning text-3xl mb-2"></i>
                                 <h4 class="text-lg font-bold mb-1 mt-2">Could Not Load Batches</h4>
-                                <p class="text-sm">${response.message || 'An error occurred. Please try refreshing the page.'}</p>
+                                <p class="text-sm">${escapeHtml(response.message || 'An error occurred. Please try refreshing the page.')}</p>
                             </td>
                         </tr>
                     `;
@@ -844,7 +897,7 @@
                         <td colspan="8" class="text-center py-12 text-base-content/60">
                             <i class="fas fa-exclamation-triangle text-error text-3xl mb-2"></i>
                             <h4 class="text-lg font-bold mb-1 mt-2">Failed to Load Batches</h4>
-                            <p class="text-sm mb-3">${errorMessage}</p>
+                            <p class="text-sm mb-3">${escapeHtml(errorMessage)}</p>
                             <button class="btn btn-primary btn-sm" onclick="loadPendingBatches()">
                                 <i class="fas fa-redo"></i> Try Again
                             </button>
@@ -876,18 +929,18 @@
                     if (batches.length > 0) {
                         table.innerHTML = batches.map(b => `
                             <tr class="hover">
-                                <td><code class="font-mono font-semibold">${b.batch_code}</code></td>
-                                <td>${b.product_name || b.product_type || '-'}</td>
+                                <td><code class="font-mono font-semibold">${escapeHtml(b.batch_code || '-')}</code></td>
+                                <td>${escapeHtml(b.product_name || b.product_type || '-')}</td>
                                 <td class="text-right">${b.raw_milk_liters?.toLocaleString() || '-'} L</td>
                                 <td>${b.manufacturing_date ? formatDate(b.manufacturing_date) : '-'}</td>
                                 <td>${b.qc_released_at ? formatDateTime(b.qc_released_at) : '-'}</td>
-                                <td>${b.released_by_first ? (b.released_by_first + ' ' + (b.released_by_last || '')) : '-'}</td>
+                                <td>${escapeHtml(b.released_by_first ? (b.released_by_first + ' ' + (b.released_by_last || '')) : '-')}</td>
                                 <td class="text-center">
                                     <div class="flex gap-1 justify-center">
-                                        <button class="btn btn-ghost btn-sm btn-square" onclick="viewBatch(${b.id})" title="View Details">
+                                        <button class="btn btn-ghost btn-sm btn-square" onclick="viewBatch(${Number(b.id) || 0})" title="View Details">
                                             <i class="fas fa-eye"></i>
                                         </button>
-                                        <a href="print-labels.html?batch_id=${b.id}" class="btn btn-ghost btn-sm btn-square text-primary" title="Print Labels">
+                                        <a href="print-labels.html?batch_id=${Number(b.id) || 0}" class="btn btn-ghost btn-sm btn-square text-primary" title="Print Labels">
                                             <i class="fas fa-print"></i>
                                         </a>
                                     </div>
@@ -933,16 +986,16 @@
                     if (batches.length > 0) {
                         table.innerHTML = batches.map(b => `
                             <tr class="hover">
-                                <td><code class="font-mono font-semibold">${b.batch_code}</code></td>
-                                <td>${b.product_name || b.product_type || '-'}</td>
+                                <td><code class="font-mono font-semibold">${escapeHtml(b.batch_code || '-')}</code></td>
+                                <td>${escapeHtml(b.product_name || b.product_type || '-')}</td>
                                 <td class="text-right">${b.raw_milk_liters?.toLocaleString() || '-'} L</td>
                                 <td>${b.updated_at ? formatDateTime(b.updated_at) : '-'}</td>
                                 <td>
-                                    <span class="text-error truncate max-w-[200px] block" title="${b.qc_notes || '-'}">
-                                        ${b.qc_notes || '-'}
+                                    <span class="text-error truncate max-w-[200px] block" title="${escapeHtml(b.qc_notes || '-')}">
+                                        ${escapeHtml(b.qc_notes || '-')}
                                     </span>
                                 </td>
-                                <td>${b.created_by_first ? (b.created_by_first + ' ' + (b.created_by_last || '')) : '-'}</td>
+                                <td>${escapeHtml(b.created_by_first ? (b.created_by_first + ' ' + (b.created_by_last || '')) : '-')}</td>
                             </tr>
                         `).join('');
                     } else {
@@ -1009,7 +1062,7 @@
             };
             const cls = map[status] || 'badge-ghost';
             const text = label || (status === 'missing' ? 'No Data' : (status ? status.charAt(0).toUpperCase() + status.slice(1) : 'No Data'));
-            return `<span class="badge ${cls} badge-sm">${text}</span>`;
+            return `<span class="badge ${cls} badge-sm">${escapeHtml(text)}</span>`;
         }
 
         function metStandardBadge(row) {
@@ -1050,11 +1103,11 @@
             return rows.map(row => `
                 <tr>
                     <td class="font-medium">
-                        ${row.control_point_name || row.check_type || '—'}
+                        ${escapeHtml(row.control_point_name || row.check_type || '—')}
                         ${row.required ? '<span class="badge badge-outline badge-xs ml-1">Required</span>' : ''}
                     </td>
-                    <td class="font-mono">${row.recorded_value_display || '—'}</td>
-                    <td class="text-sm">${row.standard || '—'}</td>
+                    <td class="font-mono">${escapeHtml(row.recorded_value_display || '—')}</td>
+                    <td class="text-sm">${escapeHtml(row.standard || '—')}</td>
                     <td>${metStandardBadge(row)}</td>
                 </tr>
             `).join('');
@@ -1108,7 +1161,7 @@
                     checkCcp.checked = Boolean(summary?.all_passed);
                 }
             }
-            toggleRejectReason();
+            toggleDecisionFields();
         }
 
         function escapeHtml(value) {
@@ -1127,11 +1180,11 @@
             const lines = batch.packaging_lines || [];
 
             if (total <= 0 && lines.length === 0) {
-                el.innerHTML = '<span class="text-warning"><i class="fas fa-exclamation-triangle"></i> No packaging records found for this batch. Count against actual yield: <strong>' + (batch.actual_yield || 0) + ' pieces</strong></span>';
+                el.innerHTML = '<span class="text-warning"><i class="fas fa-exclamation-triangle"></i> No packaging records found for this batch. Count against actual yield: <strong>' + Number(batch.actual_yield || 0).toLocaleString() + ' pieces</strong></span>';
                 return;
             }
 
-            let html = '<p class="font-medium mb-1">Production recorded: <strong>' + total + ' pieces</strong> across ' + lines.length + ' line(s)</p>';
+            let html = '<p class="font-medium mb-1">Production recorded: <strong>' + Number(total).toLocaleString() + ' pieces</strong> across ' + lines.length + ' line(s)</p>';
             if (batchHasBoxConfig(batch)) {
                 const split = getExpectedBoxSplit(batch, total);
                 html += '<p class="text-xs text-base-content/60 mb-2">Expected count format: <strong>' + split.boxes + ' full ' + escapeHtml(batch.box_unit || 'box') + '(es)</strong> + <strong>' + split.loose + ' loose ' + escapeHtml(batch.base_unit || 'piece') + '(s)</strong> (' + split.piecesPerBox + ' pieces per box).</p>';
@@ -1139,9 +1192,8 @@
             if (lines.length > 0) {
                 html += '<ul class="list-disc list-inside text-xs space-y-0.5">';
                 lines.forEach(l => {
-                    const size = l.size_ml ? l.size_ml + (l.unit_measure || 'ml') : '';
-                    const variant = l.product_variant ? ' (' + l.product_variant + ')' : '';
-                    html += '<li>' + (l.product_name || 'Product') + variant + (size ? ' · ' + size : '') + ' — <strong>' + l.quantity + ' pcs</strong></li>';
+                    const size = l.size_ml ? Number(l.size_ml).toLocaleString() + escapeHtml(l.unit_measure || 'ml') : '';
+                    html += '<li>' + escapeHtml(l.product_name || 'Product') + (size ? ' · ' + size : '') + ' — <strong>' + Number(l.quantity || 0).toLocaleString() + ' units</strong></li>';
                 });
                 html += '</ul>';
             }
@@ -1164,44 +1216,134 @@
             return ppb > 1;
         }
 
+        function renderQcCountLines(batch) {
+            const body = document.getElementById('qcCountLines');
+            const lines = batch?.packaging_lines || [];
+            const savedLines = new Map((batch?.count_discrepancy?.lines || []).map(line => [
+                Number(line.packaging_run_item_id),
+                line
+            ]));
+            if (!lines.length) {
+                body.innerHTML = '<tr><td colspan="4" class="text-center text-warning py-4">No packaging SKU lines were recorded. Production must complete the packaging allocation before QC release.</td></tr>';
+                return;
+            }
+            body.innerHTML = lines.map(line => {
+                const id = Number(line.packaging_run_item_id);
+                const expected = Number(line.quantity || 0);
+                const saved = savedLines.get(id);
+                const initial = batch.qc_status === 'on_hold' && saved ? Number(saved.counted_quantity) : '';
+                const size = line.size_ml ? `${Number(line.size_ml).toLocaleString()} ${escapeHtml(line.unit_measure || 'ml')}` : '';
+                return `<tr data-count-line="${id}" data-expected="${expected}">
+                    <td><div class="font-medium">${escapeHtml(line.product_name || 'Finished product')}</div><div class="text-xs text-base-content/60">${size}</div></td>
+                    <td class="text-right font-semibold">${expected.toLocaleString()}</td>
+                    <td><input type="number" min="0" step="1" class="input input-bordered input-sm w-full qc-count-input" id="qcCount-${id}" value="${initial}" placeholder="${expected}" oninput="updateCountHint()"></td>
+                    <td class="text-right font-semibold" id="qcDiff-${id}">—</td>
+                </tr>`;
+            }).join('');
+        }
+
+        function readQcCountLines() {
+            return Array.from(document.querySelectorAll('#qcCountLines tr[data-count-line]')).map(row => {
+                const id = Number(row.dataset.countLine);
+                const input = document.getElementById(`qcCount-${id}`);
+                return {
+                    packaging_run_item_id: id,
+                    counted_quantity: input?.value === '' ? null : Number(input.value),
+                    expected_quantity: Number(row.dataset.expected || 0),
+                };
+            });
+        }
+
         // V4.1: Read QC's physical count as total pieces, based on active mode
         function readQcCountPieces() {
-            if (currentVerifyBatch && batchHasBoxConfig(currentVerifyBatch)) {
-                const boxes = parseInt(document.getElementById('qcVerifiedBoxes').value) || 0;
-                const loose = parseInt(document.getElementById('qcVerifiedPiecesBoxed').value) || 0;
-                const ppb = Number(currentVerifyBatch.pieces_per_box) || 1;
-                return (boxes * ppb) + loose;
-            }
-            return parseInt(document.getElementById('qcVerifiedPieces').value) || 0;
+            return readQcCountLines().reduce((total, line) => total + (Number(line.counted_quantity) || 0), 0);
         }
 
         // V4.1: Live count comparison as QC types
         function updateCountHint() {
             const hint = document.getElementById('countComparisonHint');
             if (!currentVerifyBatch) { hint.classList.add('hidden'); return; }
+            const countLines = readQcCountLines();
+            if (!countLines.length || countLines.some(line => line.counted_quantity === null)) {
+                hint.classList.add('hidden');
+                syncCountResolutionChoices();
+                return;
+            }
             const qcTotal = readQcCountPieces();
-            if (qcTotal === 0) { hint.classList.add('hidden'); return; }
             const prodTotal = currentVerifyBatch.production_packed_total || currentVerifyBatch.actual_yield || 0;
             const diff = qcTotal - prodTotal;
+            const hasSkuDifference = countLines.some(line => Number(line.counted_quantity) !== Number(line.expected_quantity));
+            countLines.forEach(line => {
+                const lineDiff = Number(line.counted_quantity) - Number(line.expected_quantity);
+                const diffEl = document.getElementById(`qcDiff-${line.packaging_run_item_id}`);
+                if (!diffEl) return;
+                diffEl.textContent = `${lineDiff > 0 ? '+' : ''}${lineDiff}`;
+                diffEl.className = `text-right font-semibold ${lineDiff === 0 ? 'text-success' : 'text-error'}`;
+            });
             hint.classList.remove('hidden');
-            if (diff === 0) {
+            if (!hasSkuDifference) {
                 hint.className = 'text-xs text-success';
-                hint.innerHTML = '<i class="fas fa-check-circle"></i> Your count matches production (' + prodTotal + ' pieces)';
+                hint.innerHTML = '<i class="fas fa-check-circle"></i> Every packaging SKU count matches Production (' + prodTotal + ' total units).';
             } else {
                 hint.className = 'text-xs text-error';
-                if (batchHasBoxConfig(currentVerifyBatch)) {
-                    const boxes = parseInt(document.getElementById('qcVerifiedBoxes').value) || 0;
-                    const loose = parseInt(document.getElementById('qcVerifiedPiecesBoxed').value) || 0;
-                    const ppb = Number(currentVerifyBatch.pieces_per_box) || 1;
-                    hint.innerHTML = '<i class="fas fa-exclamation-circle"></i> You entered ' + boxes + ' box(es) x ' + ppb + ' plus ' + loose + ' loose = ' + qcTotal + ' pieces. Production recorded ' + prodTotal + '. Variance: ' + (diff > 0 ? '+' : '') + diff + '. Release will be blocked.';
-                } else {
-                    hint.innerHTML = '<i class="fas fa-exclamation-circle"></i> Variance: ' + (diff > 0 ? '+' : '') + diff + ' (you: ' + qcTotal + ', production: ' + prodTotal + '). Release will be blocked.';
-                }
+                hint.innerHTML = diff === 0
+                    ? '<i class="fas fa-exclamation-circle"></i> The grand total matches, but one or more packaging SKU counts differ. Place the batch on hold and report the SKU difference.'
+                    : '<i class="fas fa-exclamation-circle"></i> Difference: ' + (diff > 0 ? '+' : '') + diff + ' (counted ' + qcTotal + ', Production recorded ' + prodTotal + '). Place the batch on hold and report the reason.';
             }
+            syncCountResolutionChoices();
         }
-        document.getElementById('qcVerifiedBoxes')?.addEventListener('input', updateCountHint);
-        document.getElementById('qcVerifiedPieces')?.addEventListener('input', updateCountHint);
-        document.getElementById('qcVerifiedPiecesBoxed')?.addEventListener('input', updateCountHint);
+
+        function syncCountResolutionChoices() {
+            const select = document.getElementById('countResolutionType');
+            const guide = document.getElementById('countResolutionGuide');
+            if (!select || !guide) return;
+
+            const isResolving = currentVerifyBatch?.qc_status === 'on_hold'
+                && currentVerifyBatch?.count_discrepancy?.status === 'open';
+            if (!isResolving) {
+                guide.textContent = '';
+                return;
+            }
+
+            const lines = readQcCountLines();
+            const complete = lines.length > 0 && lines.every(line => line.counted_quantity !== null);
+            const hasDifference = complete && lines.some(line =>
+                Number(line.counted_quantity) !== Number(line.expected_quantity));
+            const expectedTotal = lines.reduce((sum, line) => sum + Number(line.expected_quantity || 0), 0);
+            const countedTotal = lines.reduce((sum, line) => sum + Number(line.counted_quantity || 0), 0);
+            const isShort = complete && countedTotal < expectedTotal;
+
+            const setDisabled = (value, disabled) => {
+                const option = select.querySelector(`option[value="${value}"]`);
+                if (option) option.disabled = disabled;
+            };
+
+            setDisabled('recount_matched', !complete || hasDifference);
+            setDisabled('items_found', !complete || hasDifference);
+            setDisabled('production_record_corrected', !complete || !hasDifference);
+            setDisabled('damaged_disposal', !complete || !hasDifference || !isShort);
+            setDisabled('sample_usage', !complete || !hasDifference || !isShort);
+
+            const selectedOption = select.selectedOptions[0];
+            if (selectedOption?.disabled) select.value = '';
+
+            if (!complete) {
+                guide.className = 'text-xs text-warning';
+                guide.textContent = 'Enter the physical count for every packaging SKU before choosing how to resolve this hold.';
+                return;
+            }
+
+            if (!hasDifference) {
+                if (!select.value) select.value = 'recount_matched';
+                guide.className = 'text-xs text-success';
+                guide.textContent = `All SKU counts now match Production (${expectedTotal} units). Confirm the recount and add investigation notes.`;
+                return;
+            }
+
+            guide.className = 'text-xs text-warning';
+            const difference = countedTotal - expectedTotal;
+            guide.textContent = `The count is still ${countedTotal}, while Production recorded ${expectedTotal} (${difference > 0 ? '+' : ''}${difference}). “Recount matches” cannot be used. Choose whether Production's record was wrong, or account for the shortage as damaged units or samples.`;
+        }
 
         async function openVerifyModal(batchId) {
             currentBatchId = batchId;
@@ -1232,31 +1374,33 @@
                     document.getElementById('verifyNotes').value = '';
                     document.getElementById('rejectReason').value = '';
                     document.getElementById('rejectReasonGroup').classList.add('hidden');
+                    document.getElementById('holdReasonCategory').value = '';
+                    document.getElementById('holdReasonNotes').value = '';
+                    document.getElementById('countResolutionType').value = '';
+                    document.getElementById('countResolutionNotes').value = '';
+                    document.getElementById('holdReasonGroup').classList.add('hidden');
+                    document.getElementById('countResolutionGroup').classList.add('hidden');
 
-                    // V4.1: Reset count fields and show production's packaging output
-                    document.getElementById('qcVerifiedBoxes').value = '';
-                    document.getElementById('qcVerifiedPieces').value = '';
-                    document.getElementById('qcVerifiedPiecesBoxed').value = '';
+                    // Count every sellable packaging SKU separately. A matching
+                    // grand total is not enough when bottle sizes differ.
                     document.getElementById('countComparisonHint').classList.add('hidden');
-                    // Show boxes+loose split only for products actually packed in boxes
-                    const boxed = batchHasBoxConfig(b);
-                    document.getElementById('countSimple').classList.toggle('hidden', boxed);
-                    document.getElementById('countBoxed').classList.toggle('hidden', !boxed);
-                    const boxGuide = document.getElementById('countBoxedGuide');
-                    if (boxed) {
-                        const split = getExpectedBoxSplit(b, packedPieces);
-                        document.getElementById('qcVerifiedBoxes').placeholder = String(split.boxes);
-                        document.getElementById('qcVerifiedPiecesBoxed').placeholder = String(split.loose);
-                        boxGuide.classList.remove('hidden');
-                        boxGuide.innerHTML = 'Production count equals <strong>' + split.boxes + ' full ' + escapeHtml(b.box_unit || 'box') + '(es)</strong> and <strong>' + split.loose + ' loose ' + escapeHtml(b.base_unit || 'piece') + '(s)</strong>. Enter what you physically counted.';
-                    } else {
-                        document.getElementById('qcVerifiedPieces').placeholder = String(packedPieces || 0);
-                        boxGuide.classList.add('hidden');
-                        boxGuide.textContent = '';
-                    }
+                    renderQcCountLines(b);
                     renderProductionPackedInfo(b);
 
                     applyCcpGateToVerifyForm(b.ccp_summary);
+
+                    const isHeld = b.qc_status === 'on_hold' && b.count_discrepancy?.status === 'open';
+                    document.getElementById('existingCountHold').classList.toggle('hidden', !isHeld);
+                    document.getElementById('releaseDecisionText').innerHTML = isHeld
+                        ? '<i class="fas fa-check-circle"></i> Resolve Hold & Release Verified Quantity'
+                        : '<i class="fas fa-check-circle"></i> Release for Sale';
+                    if (isHeld) {
+                        const d = b.count_discrepancy;
+                        document.getElementById('existingCountHoldText').textContent =
+                            `Production recorded ${Number(d.expected_total)}; QC counted ${Number(d.counted_total)}; difference ${Number(d.variance) > 0 ? '+' : ''}${Number(d.variance)}. Reason: ${d.reason_notes}`;
+                    }
+                    toggleDecisionFields();
+                    updateCountHint();
 
                     document.getElementById('verifyModal').showModal();
                 }
@@ -1266,16 +1410,29 @@
             }
         }
 
-        function toggleRejectReason() {
+        function toggleDecisionFields() {
             const selected = document.querySelector('[name="verifyDecision"]:checked');
             const isRejected = selected && selected.value === 'rejected';
+            const isHold = selected && selected.value === 'hold';
+            const isResolving = selected && selected.value === 'released'
+                && currentVerifyBatch?.qc_status === 'on_hold'
+                && currentVerifyBatch?.count_discrepancy?.status === 'open';
             const rejectGroup = document.getElementById('rejectReasonGroup');
-            if (isRejected) {
-                rejectGroup.classList.remove('hidden');
-            } else {
-                rejectGroup.classList.add('hidden');
-            }
+            rejectGroup.classList.toggle('hidden', !isRejected);
+            document.getElementById('holdReasonGroup').classList.toggle('hidden', !isHold);
+            document.getElementById('countResolutionGroup').classList.toggle('hidden', !isResolving);
             document.getElementById('rejectReason').required = !!isRejected;
+            document.getElementById('holdReasonCategory').required = !!isHold;
+            document.getElementById('holdReasonNotes').required = !!isHold;
+            document.getElementById('countResolutionType').required = !!isResolving;
+            document.getElementById('countResolutionNotes').required = !!isResolving;
+            const needsReleaseChecks = selected?.value === 'released';
+            const ccpCheck = document.getElementById('checkCCP');
+            if (ccpCheck && !ccpCheck.disabled) ccpCheck.required = needsReleaseChecks;
+            document.getElementById('checkAppearance').required = needsReleaseChecks;
+            document.getElementById('checkPackaging').required = needsReleaseChecks;
+            document.getElementById('checkLabeling').required = needsReleaseChecks;
+            if (isResolving) syncCountResolutionChoices();
         }
 
         async function submitVerification(e) {
@@ -1292,7 +1449,31 @@
             }
 
             try {
-                const action = decision === 'released' ? 'release' : 'reject';
+                const resolvingHold = decision === 'released'
+                    && currentVerifyBatch?.qc_status === 'on_hold'
+                    && currentVerifyBatch?.count_discrepancy?.status === 'open';
+                const action = decision === 'released'
+                    ? (resolvingHold ? 'resolve_release' : 'release')
+                    : (decision === 'hold' ? 'hold' : 'reject');
+
+                if (resolvingHold) {
+                    const countLines = readQcCountLines();
+                    const resolutionType = document.getElementById('countResolutionType').value;
+                    const hasMissingCount = !countLines.length || countLines.some(line => line.counted_quantity === null);
+                    const hasSkuDifference = countLines.some(line =>
+                        Number(line.counted_quantity) !== Number(line.expected_quantity));
+                    if (hasMissingCount) {
+                        showToast('Enter the physical count for every packaging SKU before resolving this hold.', 'error');
+                        btn.disabled = false;
+                        return;
+                    }
+                    if (['recount_matched', 'items_found'].includes(resolutionType) && hasSkuDifference) {
+                        showToast('The physical count still differs from Production. Update the count to match, or choose the resolution that explains the remaining difference.', 'error');
+                        document.getElementById('countResolutionType').focus();
+                        btn.disabled = false;
+                        return;
+                    }
+                }
 
                 const data = {
                     batch_id: document.getElementById('verifyBatchId').value,
@@ -1305,10 +1486,14 @@
                     // V4.1: Packaging integrity + physical count
                     packaging_integrity_passed: document.getElementById('checkPackaging').checked,
                     labeling_passed: document.getElementById('checkLabeling').checked,
-                    qc_verified_boxes: batchHasBoxConfig(currentVerifyBatch) ? (document.getElementById('qcVerifiedBoxes').value || null) : null,
-                    qc_verified_pieces: batchHasBoxConfig(currentVerifyBatch)
-                        ? (document.getElementById('qcVerifiedPiecesBoxed').value || null)
-                        : (document.getElementById('qcVerifiedPieces').value || null),
+                    count_lines: readQcCountLines().map(line => ({
+                        packaging_run_item_id: line.packaging_run_item_id,
+                        counted_quantity: line.counted_quantity,
+                    })),
+                    hold_reason_category: document.getElementById('holdReasonCategory').value,
+                    hold_reason_notes: document.getElementById('holdReasonNotes').value,
+                    resolution_type: document.getElementById('countResolutionType').value,
+                    resolution_notes: document.getElementById('countResolutionNotes').value,
                 };
 
                 if (decision === 'rejected') {
@@ -1324,7 +1509,10 @@
                 const response = await BatchReleaseService.verify(data.batch_id, data);
 
                 if (response.success) {
-                    showToast(decision === 'released' ? 'Batch released successfully' : 'Batch rejected', 'success');
+                    const resultMessage = decision === 'released'
+                        ? 'Verified quantity released successfully'
+                        : (decision === 'hold' ? 'Batch placed on hold; count difference saved' : 'Batch rejected');
+                    showToast(resultMessage, 'success');
                     document.getElementById('verifyModal').close();
                     loadPendingBatches();
                     loadStats();
@@ -1378,7 +1566,7 @@
                         'pending_qc': '<span class="badge badge-warning">Pending</span>',
                     };
                     document.getElementById('viewBatchStatus').innerHTML = statusBadges[qcStatus]
-                        || `<span class="badge">${qcStatus || '-'}</span>`;
+                        || `<span class="badge">${escapeHtml(qcStatus || '-')}</span>`;
 
                     document.getElementById('viewProdDate').textContent = b.manufacturing_date
                         ? formatDate(b.manufacturing_date)
@@ -1395,23 +1583,23 @@
                     if (ccpLogs.length > 0) {
                         ccpTable.innerHTML = ccpLogs.map(log => `
                             <tr>
-                                <td>${log.control_point_name || log.check_type || '-'}</td>
-                                <td class="font-mono">${log.recorded_value_display || formatTemp(log.temperature)}</td>
-                                <td class="text-sm">${log.standard || '—'}</td>
+                                <td>${escapeHtml(log.control_point_name || log.check_type || '-')}</td>
+                                <td class="font-mono">${escapeHtml(log.recorded_value_display || formatTemp(log.temperature))}</td>
+                                <td class="text-sm">${escapeHtml(log.standard || '—')}</td>
                                 <td>${statusBadgeHtml(log.status, log.status === 'pass' ? 'Pass' : null)}</td>
                                 <td>${log.recorded_at || log.check_datetime ? formatDateTime(log.recorded_at || log.check_datetime) : '-'}</td>
-                                <td>${log.recorded_by_name || '-'}</td>
+                                <td>${escapeHtml(log.recorded_by_name || '-')}</td>
                             </tr>
                         `).join('');
                     } else if (comparison.length > 0) {
                         ccpTable.innerHTML = comparison.map(row => `
                             <tr>
-                                <td>${row.control_point_name || '-'}</td>
-                                <td class="font-mono">${row.recorded_value_display || '—'}</td>
-                                <td class="text-sm">${row.standard || '—'}</td>
+                                <td>${escapeHtml(row.control_point_name || '-')}</td>
+                                <td class="font-mono">${escapeHtml(row.recorded_value_display || '—')}</td>
+                                <td class="text-sm">${escapeHtml(row.standard || '—')}</td>
                                 <td>${metStandardBadge(row)}</td>
                                 <td>${row.check_datetime ? formatDateTime(row.check_datetime) : '-'}</td>
-                                <td>${row.recorded_by_name || '-'}</td>
+                                <td>${escapeHtml(row.recorded_by_name || '-')}</td>
                             </tr>
                         `).join('');
                     } else {

@@ -17,6 +17,8 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/config/ccp_standards.php';
+require_once dirname(__DIR__) . '/helpers/plain_text.php';
+require_once dirname(__DIR__) . '/helpers/qc_count_discrepancy.php';
 
 // Require QC role
 $currentUser = Auth::requireRole(['qc_officer', 'general_manager']);
@@ -30,8 +32,86 @@ if (!defined('MAX_COOLING_TEMP')) {
     define('MAX_COOLING_TEMP', $ccpThresholds['cooling_max']);
 }
 
+function qcUpsertReleaseDecision(PDO $db, array $batch, array $user, $decision, $notes = '')
+{
+    $code = 'QCR-' . date('Ymd') . '-' . str_pad((int) $batch['id'], 5, '0', STR_PAD_LEFT);
+    $approved = $decision === 'approved';
+    $stmt = $db->prepare("
+        INSERT INTO qc_batch_release
+            (release_code, batch_id, inspection_datetime, release_decision,
+             rejection_reason, corrective_action, inspected_by, approved_by,
+             approval_datetime, notes)
+        VALUES (?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+            inspection_datetime = VALUES(inspection_datetime),
+            release_decision = VALUES(release_decision),
+            rejection_reason = VALUES(rejection_reason),
+            corrective_action = VALUES(corrective_action),
+            inspected_by = VALUES(inspected_by),
+            approved_by = VALUES(approved_by),
+            approval_datetime = VALUES(approval_datetime),
+            notes = VALUES(notes)
+    ");
+    $stmt->execute([
+        $code,
+        (int) $batch['id'],
+        $decision,
+        $decision === 'rejected' ? $notes : null,
+        $decision === 'hold' ? $notes : null,
+        (int) $user['user_id'],
+        $approved ? (int) $user['user_id'] : null,
+        $approved ? date('Y-m-d H:i:s') : null,
+        $notes ?: null,
+    ]);
+}
+
+function qcCreateCountDisposal(PDO $db, array $batch, array $snapshot, array $user, $resolutionType, $notes)
+{
+    $quantity = 0;
+    foreach ($snapshot['lines'] as $line) {
+        $quantity += max(0, (int) $line['expected_quantity'] - (int) $line['counted_quantity']);
+    }
+    if ($quantity <= 0) return null;
+
+    $prefix = 'DSP-' . date('Ymd') . '-';
+    $stmt = $db->prepare('SELECT disposal_code FROM disposals WHERE disposal_code LIKE ? ORDER BY id DESC LIMIT 1');
+    $stmt->execute([$prefix . '%']);
+    $last = (string) ($stmt->fetchColumn() ?: '');
+    $next = $last ? ((int) substr($last, -4) + 1) : 1;
+    $code = $prefix . str_pad($next, 4, '0', STR_PAD_LEFT);
+    $category = $resolutionType === 'damaged_disposal' ? 'damaged' : 'production_waste';
+    $reason = ($resolutionType === 'damaged_disposal'
+        ? 'Damaged or leaking finished units found during QC physical count. '
+        : 'Finished units used for approved sampling or recorded production loss. ')
+        . $notes;
+
+    $insert = $db->prepare("
+        INSERT INTO disposals
+            (disposal_code, source_type, source_id, source_reference,
+             product_id, product_name, quantity, unit, disposal_category,
+             disposal_reason, disposal_method, status, initiated_by,
+             initiated_at, notes)
+        VALUES (?, 'production_batch', ?, ?, ?, ?, ?, 'pcs', ?, ?, 'other',
+                'pending', ?, NOW(), ?)
+    ");
+    $insert->execute([
+        $code,
+        (int) $batch['id'],
+        $batch['batch_code'],
+        $batch['product_id'] ?? null,
+        $batch['product_type'] ?? 'Finished product',
+        $quantity,
+        $category,
+        $reason,
+        (int) $user['user_id'],
+        'Automatically opened from QC count discrepancy resolution; requires GM approval.',
+    ]);
+    return (int) $db->lastInsertId();
+}
+
 try {
     $db = Database::getInstance()->getConnection();
+    ensureQcCountDiscrepancyTables($db);
 
     switch ($requestMethod) {
         case 'GET':
@@ -87,30 +167,29 @@ try {
 
                 $batch = ccp_enrich_batch($db, $batch, true, true);
 
-                // V4.1: Include production's packaging summary so QC knows what to verify
-                $pkgSummaryStmt = $db->prepare("
-                    SELECT COALESCE(SUM(pri.quantity), 0) AS total_pieces,
-                           COUNT(DISTINCT pri.id) AS line_count
-                    FROM packaging_run_items pri
-                    JOIN packaging_runs pr ON pri.packaging_run_id = pr.id
-                    WHERE pr.batch_id = ? OR pr.production_run_id = ?
-                ");
-                $pkgSummaryStmt->execute([(int) $batch['id'], (int) ($batch['run_id'] ?? 0)]);
-                $pkgRow = $pkgSummaryStmt->fetch(PDO::FETCH_ASSOC);
-                $batch['production_packed_total'] = (int) ($pkgRow['total_pieces'] ?? 0);
-                $batch['production_packed_lines'] = (int) ($pkgRow['line_count'] ?? 0);
-
-                // Also fetch the packaging line details for display
-                $pkgDetailStmt = $db->prepare("
-                    SELECT pri.product_name, pri.product_variant, pri.size_ml,
-                           pri.unit_measure, pri.quantity
-                    FROM packaging_run_items pri
-                    JOIN packaging_runs pr ON pri.packaging_run_id = pr.id
-                    WHERE pr.batch_id = ? OR pr.production_run_id = ?
-                    ORDER BY pri.id
-                ");
-                $pkgDetailStmt->execute([(int) $batch['id'], (int) ($batch['run_id'] ?? 0)]);
-                $batch['packaging_lines'] = $pkgDetailStmt->fetchAll(PDO::FETCH_ASSOC);
+                // Production's immutable packaging record is shown beside QC's
+                // physical count. Any later released-quantity correction lives
+                // in the discrepancy record; the original is never overwritten.
+                $batch['packaging_lines'] = qcGetBatchPackagingLines(
+                    $db,
+                    (int) $batch['id'],
+                    (int) ($batch['run_id'] ?? 0)
+                );
+                $batch['production_packed_total'] = array_sum(array_map(
+                    fn($line) => (int) ($line['quantity'] ?? 0),
+                    $batch['packaging_lines']
+                ));
+                $batch['production_packed_lines'] = count($batch['packaging_lines']);
+                $batch['count_discrepancy'] = qcGetLatestCountDiscrepancy($db, (int) $batch['id']);
+                $effectiveLines = qcGetEffectiveReleasedPackagingLines(
+                    $db,
+                    (int) $batch['id'],
+                    (int) ($batch['run_id'] ?? 0)
+                );
+                $batch['qc_released_total'] = array_sum(array_map(
+                    fn($line) => (int) ($line['quantity'] ?? 0),
+                    $effectiveLines
+                ));
 
                 // Give the QC modal the pack size so physical counts can be entered
                 // as boxes + loose pieces when the product master supports it.
@@ -186,10 +265,20 @@ try {
             break;
 
         case 'PUT':
-            // Release or Reject a batch
+            // Release, hold for count investigation, resolve a hold, or reject.
             $batchId = getParam('batch_id');
-            $action = getParam('action'); // 'release' or 'reject'
-            $qcNotes = trim(getParam('qc_notes', ''));
+            $action = getParam('action');
+            $qcNotes = hfPlainText(getParam('qc_notes', ''), 2000, true);
+            $countLines = getParam('count_lines', []);
+            if (is_string($countLines)) {
+                $decoded = json_decode($countLines, true);
+                $countLines = is_array($decoded) ? $decoded : [];
+            }
+            $holdReasonCategory = hfPlainText(getParam('hold_reason_category', ''), 40, false);
+            $holdReasonNotes = hfPlainText(getParam('hold_reason_notes', ''), 2000, true);
+            $resolutionType = hfPlainText(getParam('resolution_type', ''), 40, false);
+            $resolutionNotes = hfPlainText(getParam('resolution_notes', ''), 2000, true);
+            $releaseRequested = in_array($action, ['release', 'resolve_release'], true);
 
             // Organoleptic checks
             $organolepticTaste = filter_var(getParam('organoleptic_taste', false), FILTER_VALIDATE_BOOLEAN);
@@ -210,8 +299,8 @@ try {
             if (!$batchId) {
                 $errors['batch_id'] = 'Batch ID is required';
             }
-            if (!$action || !in_array($action, ['release', 'reject'], true)) {
-                $errors['action'] = 'Action must be release or reject';
+            if (!$action || !in_array($action, ['release', 'hold', 'resolve_release', 'reject'], true)) {
+                $errors['action'] = 'Choose Release, Place on Hold, Resolve and Release, or Reject';
             }
 
             if ($action === 'reject' && empty($qcNotes)) {
@@ -235,9 +324,140 @@ try {
                 Response::error('Batch has already been released', 400);
             }
 
+            $packagingLines = qcGetBatchPackagingLines($db, (int) $batchId, (int) ($batch['run_id'] ?? 0));
+            $countSnapshot = qcBuildCountSnapshot($packagingLines, is_array($countLines) ? $countLines : []);
+
+            if (in_array($action, ['release', 'hold', 'resolve_release'], true) && !$countSnapshot['success']) {
+                Response::validationError($countSnapshot['errors']);
+            }
+            $hasSkuCountMismatch = $countSnapshot['success'] && count(array_filter(
+                $countSnapshot['lines'],
+                fn($line) => (int) $line['variance'] !== 0
+            )) > 0;
+
+            if ($action === 'hold') {
+                $allowedReasons = ['production_entry_error', 'damaged', 'sampling', 'missing', 'wrong_sku', 'other'];
+                $holdErrors = [];
+                if (!$hasSkuCountMismatch) {
+                    $holdErrors['count_lines'] = 'The count matches Production. Use Release for Sale instead of a count hold.';
+                }
+                if (!in_array($holdReasonCategory, $allowedReasons, true)) {
+                    $holdErrors['hold_reason_category'] = 'Select why the physical count differs';
+                }
+                if ($holdReasonNotes === '') {
+                    $holdErrors['hold_reason_notes'] = 'Describe what was recounted and what must be investigated';
+                }
+                if (!empty($holdErrors)) {
+                    Response::validationError($holdErrors);
+                }
+
+                $db->beginTransaction();
+                try {
+                    $db->prepare("UPDATE qc_batch_count_discrepancies SET status = 'superseded' WHERE batch_id = ? AND status = 'open'")
+                        ->execute([(int) $batchId]);
+                    $insert = $db->prepare("
+                        INSERT INTO qc_batch_count_discrepancies
+                            (batch_id, status, reason_category, reason_notes,
+                             expected_total, counted_total, variance, opened_by, opened_at)
+                        VALUES (?, 'open', ?, ?, ?, ?, ?, ?, NOW())
+                    ");
+                    $insert->execute([
+                        (int) $batchId,
+                        $holdReasonCategory,
+                        $holdReasonNotes,
+                        $countSnapshot['expected_total'],
+                        $countSnapshot['counted_total'],
+                        $countSnapshot['variance'],
+                        (int) $currentUser['user_id'],
+                    ]);
+                    $discrepancyId = (int) $db->lastInsertId();
+                    $lineInsert = $db->prepare("
+                        INSERT INTO qc_batch_count_discrepancy_lines
+                            (discrepancy_id, packaging_run_item_id, product_id,
+                             product_name, size_ml, expected_quantity,
+                             counted_quantity, variance)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ");
+                    foreach ($countSnapshot['lines'] as $line) {
+                        $lineInsert->execute([
+                            $discrepancyId,
+                            $line['packaging_run_item_id'],
+                            $line['product_id'],
+                            $line['product_name'],
+                            $line['size_ml'],
+                            $line['expected_quantity'],
+                            $line['counted_quantity'],
+                            $line['variance'],
+                        ]);
+                    }
+                    $db->prepare("
+                        UPDATE production_batches
+                        SET qc_status = 'on_hold', qc_notes = ?,
+                            qc_verified_boxes = NULL, qc_verified_pieces = ?,
+                            qc_count_variance = ?, fg_received = 0
+                        WHERE id = ?
+                    ")->execute([
+                        $holdReasonNotes,
+                        $countSnapshot['counted_total'],
+                        $countSnapshot['variance'],
+                        (int) $batchId,
+                    ]);
+                    qcUpsertReleaseDecision($db, $batch, $currentUser, 'hold', $holdReasonNotes);
+                    $db->commit();
+                } catch (Throwable $e) {
+                    if ($db->inTransaction()) $db->rollBack();
+                    throw $e;
+                }
+
+                logAudit($currentUser['user_id'], 'QC_COUNT_HOLD', 'production_batches', $batchId, null, [
+                    'expected_total' => $countSnapshot['expected_total'],
+                    'counted_total' => $countSnapshot['counted_total'],
+                    'variance' => $countSnapshot['variance'],
+                    'reason_category' => $holdReasonCategory,
+                    'reason_notes' => $holdReasonNotes,
+                ]);
+                Response::success([
+                    'batch_id' => (int) $batchId,
+                    'status' => 'on_hold',
+                    'discrepancy_id' => $discrepancyId,
+                    'expected_total' => $countSnapshot['expected_total'],
+                    'counted_total' => $countSnapshot['counted_total'],
+                    'variance' => $countSnapshot['variance'],
+                ], 'Batch placed on hold. The count difference was saved for investigation.');
+            }
+
+            $latestDiscrepancy = qcGetLatestCountDiscrepancy($db, (int) $batchId);
+            if ($action === 'release' && $batch['qc_status'] === 'on_hold') {
+                Response::validationError([
+                    'resolution_type' => 'Resolve the saved physical-count hold before releasing this batch',
+                ]);
+            }
+            if ($action === 'resolve_release') {
+                $resolutionErrors = [];
+                $allowedResolutions = ['recount_matched', 'items_found', 'production_record_corrected', 'damaged_disposal', 'sample_usage'];
+                if ($batch['qc_status'] !== 'on_hold' || !$latestDiscrepancy || $latestDiscrepancy['status'] !== 'open') {
+                    $resolutionErrors['resolution_type'] = 'This batch has no open physical-count hold to resolve';
+                }
+                if (!in_array($resolutionType, $allowedResolutions, true)) {
+                    $resolutionErrors['resolution_type'] = 'Select how the count difference was resolved';
+                }
+                if ($resolutionNotes === '') {
+                    $resolutionErrors['resolution_notes'] = 'Record who investigated and what was confirmed';
+                }
+                if (in_array($resolutionType, ['recount_matched', 'items_found'], true) && $hasSkuCountMismatch) {
+                    $resolutionErrors['count_lines'] = 'This resolution requires every packaging SKU count to match Production';
+                }
+                if ($countSnapshot['variance'] > 0 && in_array($resolutionType, ['damaged_disposal', 'sample_usage'], true)) {
+                    $resolutionErrors['count_lines'] = 'Damaged or sampled resolution cannot explain an overage';
+                }
+                if (!empty($resolutionErrors)) {
+                    Response::validationError($resolutionErrors);
+                }
+            }
+
             // Server-side CCP gate: only for release (reject always allowed)
             $ccpValidation = null;
-            if ($action === 'release') {
+            if ($releaseRequested) {
                 $ccpValidation = ccp_validate_for_release($db, $batch);
                 if (!$ccpValidation['ok']) {
                     Response::validationError($ccpValidation['errors']);
@@ -260,52 +480,15 @@ try {
                     ]);
                 }
 
-                // V4.1: Physical count verification — QC must enter what they counted
-                if ($qcVerifiedBoxes === null && $qcVerifiedPieces === null) {
-                    Response::validationError([
-                        'qc_verified_pieces' => 'Enter the number of pieces you physically counted (boxes and/or loose pieces)',
-                    ]);
-                }
+                $qcTotalPieces = $countSnapshot['counted_total'];
+                $productionTotalPieces = $countSnapshot['expected_total'];
+                $countVariance = $countSnapshot['variance'];
 
-                // Compare QC count against what production recorded.
-                // If QC counted sealed boxes, convert boxes into pieces using the
-                // product's pack size. Loose pieces remain as-is.
-                $piecesPerBoxStmt = $db->prepare("
-                    SELECT COALESCE(NULLIF(p.pieces_per_box, 0), 1) AS pieces_per_box
-                    FROM packaging_run_items pri
-                    JOIN packaging_runs pr ON pri.packaging_run_id = pr.id
-                    JOIN products p ON p.id = pri.product_id
-                    WHERE pr.batch_id = ? OR pr.production_run_id = ?
-                    ORDER BY pri.id ASC
-                    LIMIT 1
-                ");
-                $piecesPerBoxStmt->execute([(int) $batchId, (int) ($batch['run_id'] ?? 0)]);
-                $piecesPerBox = max(1, (int) ($piecesPerBoxStmt->fetchColumn() ?: 1));
-                $qcTotalPieces = (($qcVerifiedBoxes ?? 0) * $piecesPerBox) + ($qcVerifiedPieces ?? 0);
-                $productionTotalPieces = 0;
-
-                // Get production's total from packaging_run_items linked to this batch
-                $pkgStmt = $db->prepare("
-                    SELECT COALESCE(SUM(pri.quantity), 0) AS total_packed
-                    FROM packaging_run_items pri
-                    JOIN packaging_runs pr ON pri.packaging_run_id = pr.id
-                    WHERE pr.batch_id = ? OR pr.production_run_id = ?
-                ");
-                $pkgStmt->execute([(int) $batchId, (int) ($batch['run_id'] ?? 0)]);
-                $productionTotalPieces = (int) $pkgStmt->fetchColumn();
-
-                // If no packaging records exist, fall back to batch actual_yield
-                if ($productionTotalPieces <= 0) {
-                    $productionTotalPieces = (int) ($batch['actual_yield'] ?? 0);
-                }
-
-                $countVariance = $qcTotalPieces - $productionTotalPieces;
-
-                if ($countVariance !== 0) {
+                if ($action === 'release' && $hasSkuCountMismatch) {
                     Response::validationError([
                         'qc_count_mismatch' => "Count mismatch: you counted {$qcTotalPieces} pieces but production recorded {$productionTotalPieces}. "
                             . "Variance: " . ($countVariance > 0 ? "+" : "") . "{$countVariance}. "
-                            . "Re-count or investigate before releasing.",
+                            . "Choose Place on Hold and record the reason before releasing.",
                     ]);
                 }
             }
@@ -314,9 +497,64 @@ try {
             $db->beginTransaction();
 
             try {
-                $newStatus = $action === 'release' ? 'released' : 'rejected';
-                $releasedAt = $action === 'release' ? date('Y-m-d H:i:s') : null;
-                $releasedBy = $action === 'release' ? $currentUser['user_id'] : null;
+                $newStatus = $releaseRequested ? 'released' : 'rejected';
+                $releasedAt = $releaseRequested ? date('Y-m-d H:i:s') : null;
+                $releasedBy = $releaseRequested ? $currentUser['user_id'] : null;
+                $disposalId = null;
+
+                if ($action === 'resolve_release') {
+                    if (in_array($resolutionType, ['damaged_disposal', 'sample_usage'], true)) {
+                        $disposalId = qcCreateCountDisposal(
+                            $db,
+                            $batch,
+                            $countSnapshot,
+                            $currentUser,
+                            $resolutionType,
+                            $resolutionNotes
+                        );
+                    }
+                    $lineUpdate = $db->prepare("
+                        UPDATE qc_batch_count_discrepancy_lines
+                        SET counted_quantity = ?, variance = ?, released_quantity = ?
+                        WHERE discrepancy_id = ? AND packaging_run_item_id = ?
+                    ");
+                    foreach ($countSnapshot['lines'] as $line) {
+                        $lineUpdate->execute([
+                            $line['counted_quantity'],
+                            $line['variance'],
+                            $line['counted_quantity'],
+                            (int) $latestDiscrepancy['id'],
+                            $line['packaging_run_item_id'],
+                        ]);
+                    }
+                    $db->prepare("
+                        UPDATE qc_batch_count_discrepancies
+                        SET status = 'resolved', counted_total = ?, variance = ?,
+                            resolution_type = ?, resolution_notes = ?, disposal_id = ?,
+                            resolved_by = ?, resolved_at = NOW()
+                        WHERE id = ? AND status = 'open'
+                    ")->execute([
+                        $countSnapshot['counted_total'],
+                        $countSnapshot['variance'],
+                        $resolutionType,
+                        $resolutionNotes,
+                        $disposalId,
+                        (int) $currentUser['user_id'],
+                        (int) $latestDiscrepancy['id'],
+                    ]);
+                    $qcNotes = trim($qcNotes . ($qcNotes ? ' · ' : '') . 'Count hold resolved: ' . $resolutionNotes);
+                } elseif ($action === 'reject' && $latestDiscrepancy && $latestDiscrepancy['status'] === 'open') {
+                    $db->prepare("
+                        UPDATE qc_batch_count_discrepancies
+                        SET status = 'resolved', resolution_type = 'rejected_batch',
+                            resolution_notes = ?, resolved_by = ?, resolved_at = NOW()
+                        WHERE id = ?
+                    ")->execute([
+                        $qcNotes,
+                        (int) $currentUser['user_id'],
+                        (int) $latestDiscrepancy['id'],
+                    ]);
+                }
 
                 // Keep denormalized temps in sync from production logs on release
                 $summary = $ccpValidation['summary'] ?? ccp_build_summary(
@@ -329,7 +567,7 @@ try {
 
                 // Generate barcode if releasing
                 $barcode = null;
-                if ($action === 'release' && empty($batch['barcode'])) {
+                if ($releaseRequested && empty($batch['barcode'])) {
                     $barcode = $batch['batch_code'] . '-' . date('ymd', strtotime($batch['manufacturing_date']));
                 }
 
@@ -367,13 +605,21 @@ try {
                     $barcode,
                     $pasteTemp,
                     $coolTemp,
-                    $action === 'release' ? ($packagingIntegrityPassed ? 1 : 0) : null,
-                    $action === 'release' ? ($labelingPassed ? 1 : 0) : null,
-                    $action === 'release' ? $qcVerifiedBoxes : null,
-                    $action === 'release' ? $qcVerifiedPieces : null,
-                    $action === 'release' ? ($countVariance ?? 0) : null,
+                    $releaseRequested ? ($packagingIntegrityPassed ? 1 : 0) : null,
+                    $releaseRequested ? ($labelingPassed ? 1 : 0) : null,
+                    null,
+                    $releaseRequested ? ($countSnapshot['counted_total'] ?? 0) : null,
+                    $releaseRequested ? ($countSnapshot['variance'] ?? 0) : null,
                     $batchId,
                 ]);
+
+                qcUpsertReleaseDecision(
+                    $db,
+                    $batch,
+                    $currentUser,
+                    $releaseRequested ? 'approved' : 'rejected',
+                    $action === 'resolve_release' ? $resolutionNotes : $qcNotes
+                );
 
                 // Note: fg_received is explicitly set to 0 when QC releases a batch.
                 // The FG Warehouse team will set fg_received = 1 when they physically
@@ -382,13 +628,18 @@ try {
                 $db->commit();
 
                 // Log audit
-                logAudit($currentUser['user_id'], $action === 'release' ? 'RELEASE' : 'REJECT', 'production_batches', $batchId, null, [
+                logAudit($currentUser['user_id'], $releaseRequested ? 'RELEASE' : 'REJECT', 'production_batches', $batchId, null, [
                     'action' => $action,
                     'qc_notes' => $qcNotes,
                     'ccp_summary' => $summary,
+                    'count_snapshot' => $releaseRequested ? $countSnapshot : null,
+                    'resolution_type' => $resolutionType ?: null,
+                    'disposal_id' => $disposalId,
                 ]);
 
-                $message = $action === 'release' ? '✅ Batch released successfully!' : '❌ Batch rejected';
+                $message = $releaseRequested
+                    ? ($action === 'resolve_release' ? 'Count hold resolved and verified quantity released.' : 'Batch released successfully!')
+                    : 'Batch rejected';
 
                 Response::success([
                     'batch_id' => $batchId,
@@ -396,15 +647,16 @@ try {
                     'status' => $newStatus,
                     'barcode' => $barcode ?: $batch['barcode'],
                     'ccp_summary' => $summary,
-                    'packaging_integrity_passed' => $action === 'release' ? $packagingIntegrityPassed : null,
-                    'labeling_passed' => $action === 'release' ? $labelingPassed : null,
-                    'qc_verified_boxes' => $action === 'release' ? $qcVerifiedBoxes : null,
-                    'qc_verified_pieces' => $action === 'release' ? $qcVerifiedPieces : null,
-                    'qc_count_variance' => $action === 'release' ? ($countVariance ?? 0) : null,
+                    'packaging_integrity_passed' => $releaseRequested ? $packagingIntegrityPassed : null,
+                    'labeling_passed' => $releaseRequested ? $labelingPassed : null,
+                    'qc_verified_boxes' => null,
+                    'qc_verified_pieces' => $releaseRequested ? ($countSnapshot['counted_total'] ?? 0) : null,
+                    'qc_count_variance' => $releaseRequested ? ($countSnapshot['variance'] ?? 0) : null,
+                    'disposal_id' => $disposalId,
                 ], $message);
 
-            } catch (Exception $e) {
-                $db->rollBack();
+            } catch (Throwable $e) {
+                if ($db->inTransaction()) $db->rollBack();
                 throw $e;
             }
             break;

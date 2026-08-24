@@ -1,6 +1,6 @@
 -- ============================================================
 -- Phase 1: Purchase Requests (PR) tables
--- Flow: Warehouse Raw creates PR → GM approves → Purchaser creates PO
+-- Flow: Warehouse Raw audits stock and creates PRS -> Purchaser canvasses and creates PO -> GM approves PO
 -- ============================================================
 
 -- Purchase Requests (created by Warehouse Raw)
@@ -56,6 +56,15 @@ CREATE TABLE IF NOT EXISTS `purchase_request_items` (
     `estimated_total` DECIMAL(12,2) DEFAULT NULL,
     `purpose` VARCHAR(255) DEFAULT NULL,
     `notes` TEXT DEFAULT NULL,
+    `system_stock_before` DECIMAL(12,3) DEFAULT NULL COMMENT 'Saved balance immediately before the physical count was applied',
+    `audited_stock` DECIMAL(12,3) DEFAULT NULL COMMENT 'Quantity physically counted by Warehouse Raw',
+    `stock_variance` DECIMAL(12,3) DEFAULT NULL COMMENT 'Physical count minus saved balance',
+    `audit_reason` VARCHAR(255) DEFAULT NULL COMMENT 'Required when physical and saved quantities differ',
+    `audited_by` INT(11) DEFAULT NULL,
+    `audited_at` DATETIME DEFAULT NULL,
+    `target_stock_at_request` DECIMAL(12,3) DEFAULT NULL COMMENT 'Replenishment target used when the PRS was submitted',
+    `calculated_quantity` DECIMAL(12,2) DEFAULT NULL COMMENT 'System-calculated request quantity for stock-based reasons',
+    `calculation_basis` VARCHAR(255) DEFAULT NULL COMMENT 'Human-readable quantity rule retained for audit and review',
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_pri_pr_id` (`purchase_request_id`),

@@ -507,11 +507,11 @@
 
                 tbody.innerHTML = losses.map(l => `
                     <tr class="loss-row hover">
-                        <td><span class="badge ${stageColors[l.stage] || 'badge-ghost'} badge-sm">${l.stage}</span></td>
+                        <td><span class="badge ${stageColors[l.stage] || 'badge-ghost'} badge-sm">${escapeHtml(l.stage)}</span></td>
                         <td class="font-medium">${typeLabels[l.loss_type] || l.loss_type}</td>
                         <td class="text-right font-bold text-error">${Number(l.loss_volume_ml).toLocaleString()}</td>
                         <td class="text-right">${l.loss_percentage}%</td>
-                        <td class="max-w-[200px] truncate text-base-content/60 text-sm">${l.notes || '—'}</td>
+                        <td class="max-w-[200px] truncate text-base-content/60 text-sm">${escapeHtml(l.notes || '—')}</td>
                         <td class="text-xs text-base-content/50">${new Date(l.recorded_at).toLocaleString()}</td>
                         <td class="text-center">
                             <button class="btn btn-ghost btn-xs text-error" onclick="promptDeleteLoss(${l.id})" title="Delete">
@@ -521,7 +521,13 @@
                     </tr>
                 `).join('');
             } catch (e) {
-                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-error">${e.message}</td></tr>`;
+                const cell = document.createElement('td');
+                cell.colSpan = 7;
+                cell.className = 'text-center py-4 text-error';
+                cell.textContent = String(e.message || 'Failed to load yield records');
+                const row = document.createElement('tr');
+                row.appendChild(cell);
+                tbody.replaceChildren(row);
             }
         }
 
@@ -550,7 +556,7 @@
                         ${estimates.map(e => `
                             <div class="flex items-center justify-between bg-base-200 rounded-lg p-2.5">
                                 <div>
-                                    <span class="font-semibold text-sm">${e.packaging_label}</span>
+                                    <span class="font-semibold text-sm">${escapeHtml(e.packaging_label)}</span>
                                     <span class="text-xs text-base-content/50 ml-1">(${e.packaging_size_ml} mL)</span>
                                 </div>
                                 <span class="font-bold text-lg text-primary">${e.estimated_units}×</span>
@@ -659,7 +665,7 @@
             const colors = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' };
             const el = document.createElement('div');
             el.className = `alert ${colors[type]} shadow-lg max-w-sm text-sm`;
-            el.innerHTML = `<i class="fas fa-${icons[type]}"></i><span>${msg}</span>`;
+            HighlandSecurity.renderToastContent(el, msg, `fas fa-${icons[type]}`);
             document.getElementById('toastContainer').appendChild(el);
             setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 300); }, 4000);
         }

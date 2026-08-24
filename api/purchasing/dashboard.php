@@ -9,6 +9,8 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/procurement_notifications.php';
+require_once dirname(__DIR__) . '/warehouse/raw/ingredient_stock_helpers.php';
 
 // Require Purchaser or GM role
 $currentUser = Auth::requireRole(['purchaser', 'general_manager']);
@@ -57,6 +59,7 @@ function handleGet($db, $action) {
 
 function getDashboardStats($db) {
     $stats = [];
+    $usableIngredientStockSql = usableIngredientBatchStockSql('i.id', 'stats_ib');
     
     // Total Active Suppliers
     $stmt = $db->query("SELECT COUNT(*) as count FROM suppliers WHERE is_active = 1");
@@ -92,9 +95,9 @@ function getDashboardStats($db) {
     // Low stock ingredients count
     $stmt = $db->query("
         SELECT COUNT(*) as count
-        FROM ingredients
-        WHERE is_active = 1
-        AND current_stock <= " . StockRule::lowThresholdSql('reorder_point', 'minimum_stock') . "
+        FROM ingredients i
+        WHERE i.is_active = 1
+        AND {$usableIngredientStockSql} <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . "
     ");
     $stats['low_stock_ingredients'] = (int) $stmt->fetch()['count'];
 
@@ -106,6 +109,18 @@ function getDashboardStats($db) {
         AND current_stock <= " . StockRule::lowThresholdSql('reorder_point', 'minimum_stock') . "
     ");
     $stats['low_stock_mro'] = (int) $stmt->fetch()['count'];
+
+    // Items that have reached the warehouse's physical minimum. This is more
+    // urgent than the broader reorder list shown elsewhere on the dashboard.
+    $stmt = $db->query("
+        SELECT (
+            (SELECT COUNT(*) FROM ingredients i
+             WHERE i.is_active = 1 AND {$usableIngredientStockSql} <= i.minimum_stock) +
+            (SELECT COUNT(*) FROM mro_items
+             WHERE is_active = 1 AND current_stock <= minimum_stock)
+        ) AS count
+    ");
+    $stats['critical_stock_items'] = (int) $stmt->fetch()['count'];
     
     // Pending material requisitions
     $stmt = $db->query("
@@ -146,27 +161,29 @@ function getLowStockAlerts($db) {
     // shared StockRule so the threshold matches every other surface instead
     // of the old per-tier critical/low/reorder breakdown.
     $ingThreshold = StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock');
+    $usableIngredientStockSql = usableIngredientBatchStockSql('i.id', 'alert_ib');
     $stmt = $db->query("
         SELECT
             i.id,
             i.ingredient_code,
             i.ingredient_name,
             i.unit_of_measure,
-            i.current_stock,
+            {$usableIngredientStockSql} as current_stock,
+            i.current_stock as current_stock_on_file,
             i.reorder_point,
             i.minimum_stock,
             i.lead_time_days,
             i.unit_cost,
             ic.category_name,
             'ingredient' as item_type,
-            " . StockRule::statusCaseSql('i.current_stock', 'i.reorder_point', 'i.minimum_stock') . " as stock_status
+            " . StockRule::statusCaseSql($usableIngredientStockSql, 'i.reorder_point', 'i.minimum_stock') . " as stock_status
         FROM ingredients i
         LEFT JOIN ingredient_categories ic ON i.category_id = ic.id
         WHERE i.is_active = 1
-        AND i.current_stock <= {$ingThreshold}
+        AND {$usableIngredientStockSql} <= {$ingThreshold}
         ORDER BY
             CASE
-                WHEN i.current_stock <= 0 THEN 1
+                WHEN {$usableIngredientStockSql} <= 0 THEN 1
                 ELSE 2
             END,
             i.ingredient_name ASC
@@ -223,7 +240,8 @@ function getRecentPOs($db) {
         FROM purchase_orders po
         JOIN suppliers s ON po.supplier_id = s.id
         LEFT JOIN users u ON po.created_by = u.id
-        ORDER BY po.order_date DESC, po.created_at DESC
+        WHERE po.status IN ('draft', 'pending', 'approved', 'ordered', 'partial_received')
+        ORDER BY po.created_at DESC, po.id DESC
         LIMIT ?
     ");
     $stmt->execute([(int) $limit]);
@@ -302,6 +320,8 @@ function getPurchaserNotifications($db) {
             KEY `idx_procurement_notifications_role` (`target_role`, `is_read`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     ");
+
+    closeMisroutedProcurementNotifications($db);
 
     $stmt = $db->prepare("
         SELECT id, notification_type, title, message, reference_type, reference_id, created_at

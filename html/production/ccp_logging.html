@@ -307,7 +307,8 @@
                                     <div id="otherInputGroup" class="hidden">
                                         <div class="flex items-center gap-2">
                                             <input type="number" id="tempInput" class="input input-bordered flex-1 text-center text-lg font-bold" 
-                                                   step="0.1" placeholder="Enter exact temperature"
+                                                   step="0.1" min="-20" max="150" data-allow-negative
+                                                   placeholder="Enter exact temperature"
                                                    oninput="handleManualInput()">
                                             <span class="text-lg font-bold">°C</span>
                                             <button type="button" class="btn btn-ghost btn-sm" onclick="cancelOtherInput()">
@@ -331,7 +332,8 @@
                                             Hold Time (seconds)
                                         </span>
                                     </label>
-                                    <input type="number" id="holdTime" class="input input-bordered" min="0" step="1" placeholder="e.g., 15">
+                                    <input type="number" id="holdTime" class="input input-bordered" min="0" max="86400"
+                                           step="1" placeholder="e.g., 15">
                                     <label class="label">
                                         <span class="label-text-alt text-warning">Pasteurization requires 15+ seconds at 75°C</span>
                                     </label>
@@ -631,15 +633,15 @@
                 const reading = log.pressure_psi ? `${log.pressure_psi} psi` : `${log.temperature}°C`;
                 return `
                 <tr class="hover">
-                    <td><code class="text-xs bg-base-200 px-2 py-1 rounded">${log.run_code}</code></td>
+                    <td><code class="text-xs bg-base-200 px-2 py-1 rounded">${escapeHtml(log.run_code)}</code></td>
                     <td>
                         <i class="fas fa-${icon}"></i>
-                        <span class="text-sm">${log.check_type}</span>
+                        <span class="text-sm">${escapeHtml(log.check_type)}</span>
                     </td>
                     <td class="font-bold">${reading}</td>
                     <td>
                         <span class="badge ${log.status === 'pass' ? 'badge-success' : 'badge-error'} badge-sm">
-                            ${log.status}
+                            ${escapeHtml(log.status)}
                         </span>
                     </td>
                     <td class="text-sm text-base-content/60">${new Date(log.check_datetime).toLocaleTimeString()}</td>
@@ -922,7 +924,7 @@
                 <div id="otherPressureInputGroup" class="hidden">
                     <div class="flex items-center gap-2">
                         <input type="number" id="pressureInput" class="input input-bordered flex-1 text-center text-lg font-bold" 
-                               step="10" placeholder="Enter exact pressure"
+                               step="10" min="0" max="5000" placeholder="Enter exact pressure"
                                oninput="handleManualPressureInput()">
                         <span class="text-lg font-bold">psi</span>
                         <button type="button" class="btn btn-ghost btn-sm" onclick="cancelOtherPressureInput()">
@@ -1194,10 +1196,7 @@
             
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `
-                <i class="fas fa-${icon}"></i>
-                <span>${message}</span>
-            `;
+            HighlandSecurity.renderToastContent(toast, message, `fas fa-${icon}`);
             container.appendChild(toast);
             
             setTimeout(() => {

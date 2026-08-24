@@ -14,6 +14,7 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/customer_accounts.php';
 
 // Require Cashier or GM role
 $currentUser = Auth::requireRole(['cashier', 'general_manager']);
@@ -22,6 +23,7 @@ $action = getParam('action', 'outstanding');
 
 try {
     $db = Database::getInstance()->getConnection();
+    hfEnsureCustomerAccountSchema($db);
     
     // Ensure payment_collections table exists
     ensureCollectionsTable($db);
@@ -124,8 +126,7 @@ function applyCollectionToReceivable($db, array $collection): array {
         ->execute([$newAmountPaid, $paymentStatus, $dr['id']]);
 
     if (!empty($collection['customer_id'])) {
-        $db->prepare('UPDATE customers SET current_balance = GREATEST(0, current_balance - ?) WHERE id = ?')
-            ->execute([$amount, $collection['customer_id']]);
+        hfSyncCustomerBalance($db, (int) $collection['customer_id']);
     }
 
     try {
@@ -201,8 +202,9 @@ function handleGet($db, $action, $currentUser) {
                     c.id as customer_id_record,
                     c.contact_person,
                     c.credit_limit,
-                    c.current_balance as customer_total_balance,
-                    COALESCE(c.payment_terms_days, 30) as payment_terms
+                    " . hfCustomerOutstandingSql('c.id') . " as customer_total_balance,
+                    dr.payment_terms_days as payment_terms,
+                    dr.due_date
                 FROM delivery_receipts dr
                 LEFT JOIN customers c ON dr.customer_id = c.id
                 WHERE " . ($drId ? "dr.id = ?" : "dr.dr_number = ?");
@@ -269,7 +271,7 @@ function handleGet($db, $action, $currentUser) {
                     dr.dr_number,
                     COALESCE(c.customer_type, 'institutional') as customer_type,
                     dr.customer_name,
-                    COALESCE(c.sub_location, '') as sub_location,
+                    COALESCE(dr.sub_location, c.sub_location, '') as sub_location,
                     dr.total_amount,
                     COALESCE(dr.amount_paid, 0) as amount_paid,
                     (dr.total_amount - COALESCE(dr.amount_paid, 0)) as amount_due,
@@ -280,9 +282,10 @@ function handleGet($db, $action, $currentUser) {
                     dr.status as delivery_status,
                     dr.created_at,
                     dr.delivered_at,
-                    DATEDIFF(CURDATE(), COALESCE(dr.delivered_at, dr.created_at)) as days_outstanding,
+                    DATEDIFF(CURDATE(), COALESCE(dr.due_date, DATE(dr.created_at))) as days_outstanding,
                     c.id as customer_id,
-                    COALESCE(c.payment_terms_days, 30) as payment_terms
+                    dr.payment_terms_days as payment_terms,
+                    dr.due_date
                 FROM delivery_receipts dr
                 LEFT JOIN customers c ON dr.customer_id = c.id OR dr.customer_name = c.name
                 LEFT JOIN (
@@ -564,7 +567,17 @@ function handlePost($db, $action, $currentUser) {
             // Validate required fields
             $drId = $data['dr_id'] ?? null;
             $drNumber = $data['dr_number'] ?? null;
-            $amountCollected = floatval($data['amount_collected'] ?? 0);
+            try {
+                $amountCollected = hfParseBusinessDecimal(
+                    $data['amount_collected'] ?? 0,
+                    'Amount collected',
+                    0.01,
+                    9999999999.99,
+                    2
+                );
+            } catch (InvalidArgumentException $error) {
+                Response::validationError(['amount_collected' => $error->getMessage()]);
+            }
             $paymentMethod = $data['payment_method'] ?? 'cash';
             
             if (!$drId && !$drNumber) {
@@ -952,13 +965,8 @@ function handlePost($db, $action, $currentUser) {
                     $collection['dr_id']
                 ]);
                 
-                // Reverse customer balance
                 if ($collection['customer_id']) {
-                    $db->prepare("
-                        UPDATE customers 
-                        SET current_balance = current_balance + ?
-                        WHERE id = ?
-                    ")->execute([$collection['amount_collected'], $collection['customer_id']]);
+                    hfSyncCustomerBalance($db, (int) $collection['customer_id']);
                 }
                 
                 $db->commit();

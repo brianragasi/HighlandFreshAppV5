@@ -6,6 +6,7 @@
  */
 
 require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../helpers/recipe_production_readiness.php';
 
 Auth::requireRole(['general_manager', 'admin']);
 
@@ -101,7 +102,7 @@ function resolveProductMaster(PDO $conn, $data) {
     if ($baseProductId) {
         try {
             $stmt = $conn->prepare("
-                SELECT bp.id, bp.code, bp.name, bp.category, bp.milk_type_id,
+                SELECT bp.id, bp.code, bp.name, bp.category, bp.milk_type_id, bp.is_active,
                        bp.default_shelf_life_days, bp.description,
                        mt.type_name AS milk_type_name
                 FROM base_products bp
@@ -117,7 +118,8 @@ function resolveProductMaster(PDO $conn, $data) {
             return [null, ['base_product_id' => 'Base product not found']];
         }
 
-        // Optional SKU under this base; pick first active if product_id not given
+        // A recipe belongs to the bulk/base product. A packaging SKU is only
+        // retained when an older client explicitly submits one.
         $sku = null;
         if ($productId) {
             $s = $conn->prepare("
@@ -129,14 +131,6 @@ function resolveProductMaster(PDO $conn, $data) {
             if (!$sku) {
                 return [null, ['product_id' => 'SKU does not belong to the selected base product']];
             }
-        } else {
-            $s = $conn->prepare("
-                SELECT id, product_code, product_name, category, milk_type_id, unit_size, unit_measure, is_active
-                FROM products WHERE base_product_id = ? AND is_active = 1
-                ORDER BY unit_size DESC, id ASC LIMIT 1
-            ");
-            $s->execute([$baseProductId]);
-            $sku = $s->fetch(PDO::FETCH_ASSOC) ?: null;
         }
 
         $skus = [];
@@ -147,10 +141,11 @@ function resolveProductMaster(PDO $conn, $data) {
         $skuList->execute([$baseProductId]);
         $skus = $skuList->fetchAll(PDO::FETCH_ASSOC);
 
-        // Milk type: base first, then SKU fallback
+        // Base product is the source of truth. A packaging SKU must not silently
+        // repair missing bulk-product master data.
         $milkTypeId = $base['milk_type_id'] !== null && $base['milk_type_id'] !== ''
             ? (int) $base['milk_type_id']
-            : ($sku['milk_type_id'] ?? null);
+            : null;
         $milkTypeName = $base['milk_type_name'] ?? null;
         if ($milkTypeId && !$milkTypeName) {
             $mt = $conn->prepare("SELECT type_name FROM milk_types WHERE id = ?");
@@ -158,11 +153,11 @@ function resolveProductMaster(PDO $conn, $data) {
             $milkTypeName = $mt->fetchColumn() ?: null;
         }
 
-        $category = $base['category'] ?: ($sku['category'] ?? 'pasteurized_milk');
+        $category = $base['category'] ?: 'pasteurized_milk';
 
         return [[
             'base_product_id' => (int) $base['id'],
-            'product_id' => $sku ? (int) $sku['id'] : null,
+            'product_id' => null,
             'product_name' => $base['name'],
             'product_type' => mapCategoryToRecipeType($category),
             'category' => $category,
@@ -170,6 +165,7 @@ function resolveProductMaster(PDO $conn, $data) {
             'milk_type_name' => $milkTypeName,
             'shelf_life_days' => (int) ($base['default_shelf_life_days'] ?? 7),
             'description_product' => $base['description'] ?? null,
+            'base_product_is_active' => (int) ($base['is_active'] ?? 1),
             'skus' => $skus,
         ], null];
     }
@@ -221,18 +217,35 @@ function resolveProductMaster(PDO $conn, $data) {
 function normalizeRecipeIngredients(PDO $conn, array $lines) {
     $normalized = [];
     $errors = [];
+    $seenIngredientLines = [];
 
     foreach ($lines as $idx => $line) {
         $ingId = isset($line['ingredient_id']) ? (int) $line['ingredient_id'] : 0;
-        $qty = isset($line['quantity']) ? (float) $line['quantity']
-            : (isset($line['quantity_required']) ? (float) $line['quantity_required'] : 0);
+        $rawQty = $line['quantity'] ?? ($line['quantity_required'] ?? null);
+        try {
+            $qty = hfParseBusinessDecimal(
+                $rawQty,
+                'Ingredient quantity',
+                0.001,
+                9999999.999,
+                3
+            );
+        } catch (InvalidArgumentException $error) {
+            $qty = null;
+            $errors["ingredients.$idx.quantity"] = $error->getMessage();
+        }
 
         if ($ingId <= 0) {
             $errors["ingredients.$idx.ingredient_id"] = 'Ingredient is required';
             continue;
         }
-        if ($qty <= 0) {
-            $errors["ingredients.$idx.quantity"] = 'Quantity must be greater than 0';
+        if (isset($seenIngredientLines[$ingId])) {
+            $firstLine = $seenIngredientLines[$ingId] + 1;
+            $errors["ingredients.$idx.ingredient_id"] = "This ingredient is already on line {$firstLine}. Keep one row and update its quantity.";
+            continue;
+        }
+        $seenIngredientLines[$ingId] = $idx;
+        if ($qty === null) {
             continue;
         }
 
@@ -250,6 +263,11 @@ function normalizeRecipeIngredients(PDO $conn, array $lines) {
             continue;
         }
 
+        if (isPackagingIngredientCategoryName($ing['category_name'] ?? '')) {
+            $errors["ingredients.$idx.ingredient_id"] = 'Packaging materials belong to the SKU Packaging BOM under Admin → Products, not the bulk recipe';
+            continue;
+        }
+
         $unit = $ing['unit_of_measure'] ?: 'kg';
         $normalized[] = [
             'ingredient_id' => (int) $ing['id'],
@@ -262,6 +280,12 @@ function normalizeRecipeIngredients(PDO $conn, array $lines) {
     }
 
     return [$normalized, $errors];
+}
+
+function isPackagingIngredientCategoryName($categoryName) {
+    $categoryName = strtolower(trim((string) $categoryName));
+    return strpos($categoryName, 'packag') !== false
+        || strpos($categoryName, 'container') !== false;
 }
 
 function insertRecipeIngredients(PDO $conn, $recipeId, array $ingredients) {
@@ -285,9 +309,40 @@ function insertRecipeIngredients(PDO $conn, $recipeId, array $ingredients) {
     }
 }
 
+function summarizeRecipeComponents(array $ingredients) {
+    $summary = [
+        'liquid_liters' => 0.0,
+        'solid_kg' => 0.0,
+        'counted_units' => 0.0,
+    ];
+
+    foreach ($ingredients as $line) {
+        $quantity = (float) ($line['quantity'] ?? 0);
+        if ($quantity <= 0) {
+            continue;
+        }
+
+        // The ingredient master is authoritative when an older recipe row has a stale unit.
+        $unit = strtolower(trim((string) ($line['master_unit'] ?? $line['unit'] ?? '')));
+        if (in_array($unit, ['l', 'lt', 'liter', 'liters', 'litre', 'litres'], true)) {
+            $summary['liquid_liters'] += $quantity;
+        } elseif (in_array($unit, ['ml', 'milliliter', 'milliliters', 'millilitre', 'millilitres'], true)) {
+            $summary['liquid_liters'] += $quantity / 1000;
+        } elseif (in_array($unit, ['kg', 'kilogram', 'kilograms'], true)) {
+            $summary['solid_kg'] += $quantity;
+        } elseif (in_array($unit, ['g', 'gram', 'grams'], true)) {
+            $summary['solid_kg'] += $quantity / 1000;
+        } else {
+            $summary['counted_units'] += $quantity;
+        }
+    }
+
+    return $summary;
+}
+
 /**
- * Mass-balance guardrail: process input (base milk + BOM) must be ≥ 90% of expected yield.
- * Also enforces milk ≥ 90% of yield when yield is liquid liters (catches 10 L milk / 95 L yield).
+ * Compare like with like. Liquid volume can be checked against a liquid yield.
+ * Solids and counted packaging stay separate unless a density/conversion rule exists.
  *
  * @return array field => message errors
  */
@@ -299,25 +354,53 @@ function validateRecipeMassBalance($baseMilkLiters, $expectedYield, $yieldUnit, 
         return $errors; // other validators already catch these
     }
 
-    $bomTotal = 0.0;
-    foreach ($ingredients as $line) {
-        $q = (float) ($line['quantity'] ?? 0);
-        if ($q > 0) {
-            $bomTotal += $q;
-        }
-    }
-    $processInput = $milk + $bomTotal;
+    $components = summarizeRecipeComponents($ingredients);
+    $liquidInput = $milk + $components['liquid_liters'];
     $minRatio = 0.90;
+    $yu = strtolower(trim((string) $yieldUnit));
+    $isLiquidYield = in_array($yu, ['liters', 'liter', 'litres', 'litre', 'l', 'lt'], true);
 
-    if ($processInput + 1e-9 < $yield * $minRatio) {
-        $errors['mass_balance'] = 'Configuration Error: Total ingredient volume does not match the expected yield. '
-            . "Input {$processInput} (milk {$milk} + BOM {$bomTotal}) is below 90% of yield {$yield}.";
+    if ($isLiquidYield && $liquidInput + 1e-9 < $yield * $minRatio) {
+        $errors['mass_balance'] = 'Configuration Error: Liquid input is below 90% of the expected liquid yield. '
+            . "Liquid input {$liquidInput} L (milk {$milk} L + liquid BOM {$components['liquid_liters']} L) "
+            . "cannot support a {$yield} L yield. Solids and packaging are not counted as liters.";
     }
 
-    $yu = strtolower((string) $yieldUnit);
-    if (in_array($yu, ['liters', 'liter', 'l', 'lt'], true) && $milk + 1e-9 < $yield * $minRatio) {
-        $errors['base_milk_liters'] = 'Configuration Error: Total ingredient volume does not match the expected yield. '
-            . "Base milk ({$milk} L) is far below expected yield ({$yield} L).";
+    // The inverse catches silent, implausible losses such as 100 L milk being
+    // saved as a 50 L pasteurized-liquid standard batch.
+    $minRetainedRatio = 0.80;
+    if ($isLiquidYield && $yield + 1e-9 < $liquidInput * $minRetainedRatio) {
+        $errors['expected_yield'] = 'Configuration Error: Expected liquid yield is below 80% of liquid input. '
+            . "Liquid input is {$liquidInput} L but expected yield is {$yield} L. "
+            . 'Record an approved process-loss rule before saving a loss this large.';
+    }
+
+    return $errors;
+}
+
+/** Catch likely unit-entry mistakes such as 50 kg salt in a 100 L milk batch. */
+function validateRecipeDoseGuardrails($baseMilkLiters, array $ingredients) {
+    $errors = [];
+    $milk = (float) $baseMilkLiters;
+    if ($milk <= 0) {
+        return $errors;
+    }
+
+    foreach ($ingredients as $idx => $line) {
+        $quantity = (float) ($line['quantity'] ?? 0);
+        $unit = strtolower(trim((string) ($line['master_unit'] ?? $line['unit'] ?? '')));
+        $solidKg = null;
+        if (in_array($unit, ['kg', 'kilogram', 'kilograms'], true)) {
+            $solidKg = $quantity;
+        } elseif (in_array($unit, ['g', 'gram', 'grams'], true)) {
+            $solidKg = $quantity / 1000;
+        }
+
+        if ($solidKg !== null && $solidKg > $milk * 0.25 + 1e-9) {
+            $name = trim((string) ($line['ingredient_name'] ?? 'Solid ingredient'));
+            $errors["ingredients.$idx.quantity"] = "{$name} is {$solidKg} kg for a {$milk} L milk batch. "
+                . 'A single solid component above 25% of the milk volume requires formula review; check the amount and unit.';
+        }
     }
 
     return $errors;
@@ -439,7 +522,7 @@ function getRecipes($conn) {
             LEFT JOIN users u ON r.created_by = u.id
             {$bpJoin}
             $whereClause
-            ORDER BY r.product_name ASC
+            ORDER BY r.id DESC
             LIMIT $limit OFFSET $offset";
     $stmt = $conn->prepare($sql);
     $stmt->execute($params);
@@ -500,12 +583,55 @@ function getRecipeStatistics($conn) {
     sendSuccess($stats);
 }
 
+function validateRecipeNumericPayload(array &$data): void {
+    $errors = [];
+    foreach ([
+        'base_milk_liters' => ['Base milk liters', 1.00, 99999999.99, 2],
+        'pasteurization_temp' => ['Pasteurization temperature', 0.00, 150.00, 2],
+        'cooling_temp' => ['Cooling temperature', -20.00, 50.00, 2],
+    ] as $field => [$label, $minimum, $maximum, $scale]) {
+        if (!array_key_exists($field, $data) || $data[$field] === '' || $data[$field] === null) {
+            continue;
+        }
+        try {
+            $data[$field] = hfParseBusinessDecimal($data[$field], $label, $minimum, $maximum, $scale);
+        } catch (InvalidArgumentException $error) {
+            $errors[$field] = $error->getMessage();
+        }
+    }
+    foreach ([
+        'expected_yield' => ['Expected yield', 1, 2147483647],
+        'pasteurization_time_mins' => ['Pasteurization time', 1, 1440],
+    ] as $field => [$label, $minimum, $maximum]) {
+        if (!array_key_exists($field, $data) || $data[$field] === '' || $data[$field] === null) {
+            continue;
+        }
+        try {
+            $data[$field] = hfParseBusinessInteger($data[$field], $label, $minimum, $maximum);
+        } catch (InvalidArgumentException $error) {
+            $errors[$field] = $error->getMessage();
+        }
+    }
+    if ($errors) {
+        sendValidationError($errors);
+    }
+}
+
 function createRecipe($conn) {
     $data = json_decode(file_get_contents('php://input'), true) ?: [];
+    validateRecipeNumericPayload($data);
     $user = Auth::getCurrentUser();
 
     list($master, $masterErrors) = resolveProductMaster($conn, $data);
     $errors = $masterErrors ?: [];
+    $willBeActive = isset($data['is_active']) ? (int) $data['is_active'] === 1 : true;
+
+    if ($master && empty($master['milk_type_id'])) {
+        $errors['milk_type_id'] = 'Set the milk type on the base product before saving a recipe';
+    }
+    if ($master && $willBeActive && (int) ($master['base_product_is_active'] ?? 1) !== 1) {
+        $errors['base_product_id'] = 'Activate the base product before making its recipe active for production';
+    }
 
     if (empty($data['base_milk_liters']) || (float) $data['base_milk_liters'] < 1) {
         $errors['base_milk_liters'] = 'Base milk liters must be at least 1';
@@ -532,6 +658,10 @@ function createRecipe($conn) {
         $ingredients
     );
     $errors = array_merge($errors, $massErrors);
+    $errors = array_merge(
+        $errors,
+        validateRecipeDoseGuardrails((float) ($data['base_milk_liters'] ?? 0), $ingredients)
+    );
 
     if (!empty($errors)) {
         sendValidationError($errors);
@@ -546,6 +676,12 @@ function createRecipe($conn) {
     $conn->beginTransaction();
 
     try {
+        $retiredCount = 0;
+        if ($willBeActive && !empty($master['base_product_id'])) {
+            lockRecipeBaseProduct($conn, $master['base_product_id']);
+            $retiredCount = retireOtherActiveRecipes($conn, $master['base_product_id']);
+        }
+
         $sql = "INSERT INTO master_recipes (
                     recipe_code, product_id, base_product_id, product_name, product_type,
                     milk_type_id, description, base_milk_liters, expected_yield, yield_unit,
@@ -574,6 +710,7 @@ function createRecipe($conn) {
         ]);
 
         $recipeId = $conn->lastInsertId();
+        persistRecipeBulkYield($conn, $recipeId, $data['expected_yield'], $yieldUnit);
         insertRecipeIngredients($conn, $recipeId, $ingredients);
 
         $conn->commit();
@@ -583,7 +720,11 @@ function createRecipe($conn) {
         $recipe = enrichRecipeRow($conn, $stmt->fetch(PDO::FETCH_ASSOC));
         $recipe['ingredients'] = loadRecipeIngredients($conn, $recipeId);
 
-        sendSuccess(['recipe' => $recipe], 'Recipe created successfully');
+        $message = 'Recipe created successfully';
+        if ($willBeActive && $retiredCount > 0) {
+            $message .= "; {$retiredCount} older active recipe(s) for this base product were retired";
+        }
+        sendSuccess(['recipe' => $recipe], $message);
     } catch (Exception $e) {
         $conn->rollBack();
         throw $e;
@@ -592,6 +733,7 @@ function createRecipe($conn) {
 
 function updateRecipe($conn, $id) {
     $data = json_decode(file_get_contents('php://input'), true) ?: [];
+    validateRecipeNumericPayload($data);
 
     $stmt = $conn->prepare("SELECT * FROM master_recipes WHERE id = ?");
     $stmt->execute([$id]);
@@ -628,6 +770,16 @@ function updateRecipe($conn, $id) {
         }
     }
 
+    $willBeActive = isset($data['is_active'])
+        ? (int) $data['is_active'] === 1
+        : (int) $existing['is_active'] === 1;
+    if ($master && empty($master['milk_type_id'])) {
+        $errors['milk_type_id'] = 'Set the milk type on the base product before saving a recipe';
+    }
+    if ($master && $willBeActive && (int) ($master['base_product_is_active'] ?? 1) !== 1) {
+        $errors['base_product_id'] = 'Activate the base product before making its recipe active for production';
+    }
+
     if (isset($data['base_milk_liters']) && (float) $data['base_milk_liters'] < 1) {
         $errors['base_milk_liters'] = 'Base milk liters must be at least 1';
     }
@@ -655,6 +807,7 @@ function updateRecipe($conn, $id) {
     }
     $massErrors = validateRecipeMassBalance($milkForBalance, $yieldForBalance, $yieldUnitForBalance, $ingsForBalance);
     $errors = array_merge($errors, $massErrors);
+    $errors = array_merge($errors, validateRecipeDoseGuardrails($milkForBalance, $ingsForBalance));
 
     if (!empty($errors)) {
         sendValidationError($errors);
@@ -667,6 +820,12 @@ function updateRecipe($conn, $id) {
         $yieldUnit = $data['yield_unit'] ?? $existing['yield_unit'] ?? 'liters';
         if (!in_array($yieldUnit, ['liters', 'kg', 'units'], true)) {
             $yieldUnit = 'liters';
+        }
+
+        $retiredCount = 0;
+        if ($willBeActive && !empty($master['base_product_id'])) {
+            lockRecipeBaseProduct($conn, $master['base_product_id']);
+            $retiredCount = retireOtherActiveRecipes($conn, $master['base_product_id'], $id);
         }
 
         $sql = "UPDATE master_recipes SET
@@ -705,6 +864,11 @@ function updateRecipe($conn, $id) {
             $id
         ]);
 
+        $savedYield = isset($data['expected_yield'])
+            ? (float) $data['expected_yield']
+            : (float) $existing['expected_yield'];
+        persistRecipeBulkYield($conn, $id, $savedYield, $yieldUnit);
+
         if ($ingredients !== null) {
             $del = $conn->prepare("DELETE FROM recipe_ingredients WHERE recipe_id = ?");
             $del->execute([$id]);
@@ -718,7 +882,11 @@ function updateRecipe($conn, $id) {
         $recipe = enrichRecipeRow($conn, $stmt->fetch(PDO::FETCH_ASSOC));
         $recipe['ingredients'] = loadRecipeIngredients($conn, $id);
 
-        sendSuccess(['recipe' => $recipe], 'Recipe updated successfully');
+        $message = 'Recipe updated successfully';
+        if ($willBeActive && $retiredCount > 0) {
+            $message .= "; {$retiredCount} older active recipe(s) for this base product were retired";
+        }
+        sendSuccess(['recipe' => $recipe], $message);
     } catch (Exception $e) {
         $conn->rollBack();
         throw $e;

@@ -15,6 +15,67 @@ if (!defined('HIGHLAND_FRESH')) {
 }
 
 class Response {
+
+    /**
+     * Convert internal database/runtime errors into messages that are safe and
+     * useful to show to an employee. The original detail stays in the PHP log.
+     */
+    public static function safeErrorMessage($message, $code = 400) {
+        $message = trim((string) $message);
+        $technicalPatterns = [
+            '/SQLSTATE/i',
+            '/PDOException/i',
+            '/Duplicate entry/i',
+            '/Integrity constraint/i',
+            '/foreign key constraint/i',
+            '/Unknown column/i',
+            '/Base table or view/i',
+            '/Table [^\n]+ doesn[\x27\x{2019}]?t exist/iu',
+            '/Column [^\n]+ cannot be null/i',
+            '/SQL syntax/i',
+            '/Stack trace/i',
+            '/Call to undefined/i',
+            '/Undefined (array key|variable|index)/i',
+            '/in [A-Z]:\\\\[^\n]+ on line \d+/i',
+            '/in \/[^\n]+ on line \d+/i'
+        ];
+
+        $isTechnical = false;
+        foreach ($technicalPatterns as $pattern) {
+            if (preg_match($pattern, $message)) {
+                $isTechnical = true;
+                break;
+            }
+        }
+
+        if ($code >= 500 || $isTechnical) {
+            self::logInternalError($message, $code);
+
+            if ((int) $code === 409 || stripos($message, 'duplicate') !== false) {
+                return 'This record already exists or conflicts with existing data. Check the entered information and try again.';
+            }
+
+            if ((int) $code === 400 || (int) $code === 422) {
+                return 'The request could not be saved. Check the entered information and try again.';
+            }
+
+            return 'Something went wrong while processing the request. Please try again.';
+        }
+
+        return $message !== '' ? $message : 'The request could not be completed.';
+    }
+
+    private static function logInternalError($message, $code) {
+        $method = $_SERVER['REQUEST_METHOD'] ?? 'CLI';
+        $uri = $_SERVER['REQUEST_URI'] ?? 'unknown';
+        error_log(sprintf(
+            '[HighlandFresh API %d] %s %s: %s',
+            (int) $code,
+            $method,
+            $uri,
+            $message !== '' ? $message : 'No error detail provided'
+        ));
+    }
     
     /**
      * Send success response
@@ -34,10 +95,14 @@ class Response {
      * Send error response
      */
     public static function error($message = 'Error', $code = 400, $errors = null) {
+        $safeMessage = self::safeErrorMessage($message, $code);
+        if ((int) $code >= 500) {
+            $errors = null;
+        }
         http_response_code($code);
         echo json_encode([
             'success' => false,
-            'message' => $message,
+            'message' => $safeMessage,
             'errors' => $errors,
             'timestamp' => date('Y-m-d H:i:s')
         ]);

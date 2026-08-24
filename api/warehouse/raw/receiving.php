@@ -13,6 +13,9 @@
  */
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/procurement_notifications.php';
+
+class ReceivingValidationException extends RuntimeException {}
 
 // Require Warehouse Raw, Purchaser, Finance, or GM role
 $currentUser = Auth::requireRole(['warehouse_raw', 'purchaser', 'finance_officer', 'general_manager']);
@@ -36,9 +39,31 @@ try {
         default:
             Response::error('Method not allowed', 405);
     }
+} catch (ReceivingValidationException $e) {
+    error_log("Receiving validation: " . $e->getMessage());
+    Response::error($e->getMessage(), 400);
 } catch (Exception $e) {
     error_log("Receiving Report API Error: " . $e->getMessage());
     Response::error('Server error: ' . $e->getMessage(), 500);
+}
+
+function requireFutureReceivingExpiry(string $itemName, $value): string {
+    $expiryDate = trim((string) $value);
+    $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $expiryDate);
+
+    if (!$parsed || $parsed->format('Y-m-d') !== $expiryDate) {
+        throw new ReceivingValidationException(
+            $itemName . ': enter the expiry date printed on the supplier item.'
+        );
+    }
+
+    if ($parsed <= new DateTimeImmutable('today')) {
+        throw new ReceivingValidationException(
+            $itemName . ': the expiry date must be after today. Reject expired or same-day stock, or enter the correct supplier expiry date.'
+        );
+    }
+
+    return $expiryDate;
 }
 
 function ensureProcurementNotificationSupport($db) {
@@ -62,12 +87,7 @@ function ensureProcurementNotificationSupport($db) {
 }
 
 function createProcurementNotification($db, $targetRole, $type, $title, $message, $referenceType = null, $referenceId = null) {
-    $stmt = $db->prepare("
-        INSERT INTO procurement_notifications
-        (target_role, notification_type, title, message, reference_type, reference_id)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ");
-    $stmt->execute([$targetRole, $type, $title, $message, $referenceType, $referenceId]);
+    writeProcurementNotification($db, $targetRole, $type, $title, $message, $referenceType, $referenceId);
 }
 
 /**
@@ -635,9 +655,15 @@ function stockInItem($db, $item, $quantity, $poId, $rrId, $currentUser) {
         // Generate batch code
         $batchCode = 'IB-RR' . $rrId . '-' . date('Ymd') . '-' . str_pad(rand(1, 999), 3, '0', STR_PAD_LEFT);
         
-        // Calculate expiry
-        $shelfLife = $ing['shelf_life_days'] ?? 365;
-        $expiryDate = date('Y-m-d', strtotime("+{$shelfLife} days"));
+        // Use the date physically printed on the supplier's goods. A configured
+        // shelf life is planning data and must never replace the delivered lot's date.
+        $isPerishable = (int) ($ing['is_perishable'] ?? 1) === 1;
+        $expiryDate = $isPerishable
+            ? requireFutureReceivingExpiry(
+                (string) ($ing['ingredient_name'] ?? $item['item_description'] ?? 'Ingredient'),
+                $item['expiry_date'] ?? null
+            )
+            : null;
         
         // Create batch
         $db->prepare("
@@ -788,172 +814,22 @@ function handlePut($db, $action, $currentUser) {
     switch ($action) {
         case 'verify':
             requireActionRole($currentUser, ['purchaser', 'general_manager'], 'Only Purchaser or GM can verify receiving reports');
-            verifyReceivingReport($db, $currentUser);
+            Response::error(
+                'Receiving Report verification has moved to Purchasing > Purchase Orders so exact matches, replacements, and short closes use one audited workflow.',
+                410
+            );
             break;
             
         case 'update_payment':
             requireActionRole($currentUser, ['finance_officer', 'general_manager'], 'Only Finance or GM can update payment details');
-            updatePaymentMetadata($db, $currentUser);
+            Response::error(
+                'Supplier payments must be released from Finance > Supplier Payables after the PO, Receiving Report, and invoice are verified.',
+                410
+            );
             break;
             
         default:
             Response::error('Invalid action', 400);
-    }
-}
-
-/**
- * Verify receiving report (Purchaser action)
- */
-function verifyReceivingReport($db, $currentUser) {
-    if ($currentUser['role'] !== 'purchaser') {
-        Response::error('Only the Purchaser can verify receiving reports', 403);
-    }
-    
-    $id = getParam('id');
-    if (!$id) {
-        Response::error('RR ID required', 400);
-    }
-    
-    $data = getRequestBody();
-    
-    // Get RR
-    $stmt = $db->prepare("SELECT * FROM receiving_reports WHERE id = ?");
-    $stmt->execute([$id]);
-    $rr = $stmt->fetch();
-    
-    if (!$rr) {
-        Response::error('Receiving report not found', 404);
-    }
-    
-    if ($rr['status'] !== 'pending_verification' && $rr['status'] !== 'discrepancy') {
-        Response::error('This receiving report cannot be verified', 400);
-    }
-
-    $mismatch = findReceivingMismatchForPO($db, (int)$rr['po_id']);
-    if ($mismatch !== null) {
-        Response::error($mismatch, 400);
-    }
-    
-    // Update RR status
-    $newStatus = 'verified';
-    $notes = $rr['notes'];
-    
-    if (!empty($data['notes'])) {
-        $notes = ($notes ? $notes . "\n" : '') . '[Verification] ' . $data['notes'];
-    }
-    
-    $db->prepare("
-        UPDATE receiving_reports 
-        SET status = ?, verified_by = ?, verified_at = NOW(), notes = ?, updated_at = NOW()
-        WHERE id = ?
-    ")->execute([$newStatus, $currentUser['user_id'], $notes, $id]);
-
-    $db->prepare("
-        UPDATE receiving_reports
-        SET status = 'verified',
-            verified_by = COALESCE(verified_by, ?),
-            verified_at = COALESCE(verified_at, NOW()),
-            updated_at = NOW()
-        WHERE po_id = ?
-          AND status IN ('pending_verification', 'discrepancy')
-    ")->execute([$currentUser['user_id'], $rr['po_id']]);
-
-    $db->prepare("
-        UPDATE purchase_orders
-        SET status = 'closed', updated_at = NOW()
-        WHERE id = ?
-    ")->execute([$rr['po_id']]);
-    
-    // Adjust payable amount based on actual received
-    if ($rr['total_rejected'] > 0) {
-        adjustPayableForRejection($db, $rr);
-    }
-    
-    // Log audit
-    logAudit($currentUser['user_id'], 'VERIFY', 'receiving_reports', $id, 
-        ['status' => $rr['status']], 
-        ['status' => 'verified', 'po_status' => 'closed']
-    );
-
-    createProcurementNotification(
-        $db,
-        'finance_officer',
-        'rr_verified_transaction_closed',
-        'RR verified, transaction closed',
-        'Purchasing verified RR ' . $rr['rr_number'] . ' against the approved PO. The transaction is closed and ready for payment processing.',
-        'purchase_order',
-        $rr['po_id']
-    );
-    
-    Response::success(null, 'Receiving report verified and PO closed');
-}
-
-function findReceivingMismatchForPO($db, $poId) {
-    $stmt = $db->prepare("
-        SELECT id, item_description, quantity, quantity_received, quantity_rejected
-        FROM purchase_order_items
-        WHERE po_id = ?
-    ");
-    $stmt->execute([$poId]);
-    $items = $stmt->fetchAll();
-
-    $rrStmt = $db->prepare("
-        SELECT rri.po_item_id, SUM(rri.quantity_received) as quantity_received, SUM(rri.quantity_rejected) as quantity_rejected
-        FROM receiving_report_items rri
-        JOIN receiving_reports rr ON rr.id = rri.rr_id
-        WHERE rr.po_id = ?
-        GROUP BY rri.po_item_id
-    ");
-    $rrStmt->execute([$poId]);
-    $rrItems = [];
-    foreach ($rrStmt->fetchAll() as $row) {
-        $rrItems[(int)$row['po_item_id']] = $row;
-    }
-
-    foreach ($items as $item) {
-        $ordered = (float)$item['quantity'];
-        $received = (float)$item['quantity_received'];
-        $rejected = (float)$item['quantity_rejected'];
-        $rrReceived = isset($rrItems[(int)$item['id']]) ? (float)$rrItems[(int)$item['id']]['quantity_received'] : 0.0;
-        $rrRejected = isset($rrItems[(int)$item['id']]) ? (float)$rrItems[(int)$item['id']]['quantity_rejected'] : 0.0;
-        $name = $item['item_description'] ?: ('PO item #' . $item['id']);
-
-        if ($received + 0.0001 < $ordered || $rrReceived + 0.0001 < $ordered) {
-            return $name . ' is not fully received yet.';
-        }
-        if ($rejected > 0.0001 || $rrRejected > 0.0001) {
-            return $name . ' has rejected quantity. Resolve the discrepancy before closing this transaction.';
-        }
-    }
-
-    return null;
-}
-
-/**
- * Adjust payable amount for rejected items
- */
-function adjustPayableForRejection($db, $rr) {
-    // Get rejections for this RR
-    $stmt = $db->prepare("
-        SELECT SUM(total_value) as total_rejection_value 
-        FROM supplier_rejections 
-        WHERE rr_id = ?
-    ");
-    $stmt->execute([$rr['id']]);
-    $result = $stmt->fetch();
-    
-    $rejectionValue = (float) ($result['total_rejection_value'] ?? 0);
-    
-    if ($rejectionValue > 0) {
-        // Update PO totals to reflect accepted quantities
-        $db->prepare("
-            UPDATE purchase_orders 
-            SET subtotal = GREATEST(subtotal - ?, 0),
-                total_amount = GREATEST(total_amount - ?, 0), 
-                notes = CONCAT(COALESCE(notes, ''), '\n[Adjusted for rejections: -₱', ?, ']'),
-                updated_at = NOW()
-            WHERE id = ?
-        ")->execute([$rejectionValue, $rejectionValue, number_format($rejectionValue, 2), $rr['po_id']]);
     }
 }
 

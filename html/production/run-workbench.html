@@ -332,15 +332,18 @@
                             </div>
                             <div class="form-control" id="ccpTempGroup">
                                 <label class="label py-1"><span class="label-text">Temperature (°C)</span></label>
-                                <input type="number" id="ccpTemp" class="input input-bordered input-lg font-bold" step="0.1" placeholder="75">
+                                <input type="number" id="ccpTemp" class="input input-bordered input-lg font-bold"
+                                    step="0.1" min="-20" max="150" data-allow-negative placeholder="75">
                             </div>
                             <div class="form-control hidden" id="ccpPsiGroup">
                                 <label class="label py-1"><span class="label-text">Pressure (psi)</span></label>
-                                <input type="number" id="ccpPsi" class="input input-bordered input-lg font-bold" step="1" placeholder="1200">
+                                <input type="number" id="ccpPsi" class="input input-bordered input-lg font-bold"
+                                    step="1" min="0" max="5000" placeholder="1200">
                             </div>
                             <div class="form-control" id="ccpHoldGroup">
                                 <label class="label py-1"><span class="label-text">Hold time (sec)</span></label>
-                                <input type="number" id="ccpHold" class="input input-bordered" value="15" min="0">
+                                <input type="number" id="ccpHold" class="input input-bordered" value="15"
+                                    min="0" max="86400" step="1">
                             </div>
                         </div>
                         <button class="btn btn-error touch-btn gap-2" onclick="submitCcp()"><i class="fas fa-plus"></i> Record CCP</button>
@@ -469,7 +472,7 @@
                                     <input type="text" id="lossNotes" class="input input-bordered" placeholder="Optional">
                                 </div>
                             </div>
-                            <button class="btn btn-warning touch-btn gap-2" onclick="submitLoss()">
+                            <button id="addLossBtn" class="btn btn-warning touch-btn gap-2" onclick="submitLoss()">
                                 <i class="fas fa-plus"></i> Add loss &amp; recalculate yield
                             </button>
                             <div id="lossList" class="text-sm space-y-1 pt-1"></div>
@@ -516,12 +519,31 @@
                         </div>
                         <div id="packagingLines" class="space-y-3"></div>
                         <div class="flex flex-wrap gap-2">
-                            <button type="button" class="btn btn-outline btn-sm gap-2" onclick="addPackagingLine()">
+                            <button type="button" id="pkgAddSizeBtn" class="btn btn-outline btn-sm gap-2" onclick="addPackagingLine()">
                                 <i class="fas fa-plus"></i> Add another size
                             </button>
                             <button type="button" id="pkgResetRecommendBtn" class="btn btn-ghost btn-sm gap-2 hidden" onclick="applyRecommendedPackaging()">
                                 <i class="fas fa-rotate-left"></i> Reset to recommended
                             </button>
+                        </div>
+
+                        <div id="pkgMaterialRequirementsBox" class="alert alert-info hidden items-start">
+                            <i class="fas fa-boxes-stacked mt-1"></i>
+                            <div>
+                                <p class="font-semibold text-sm">Packaging materials from SKU BOM</p>
+                                <div id="pkgMaterialRequirementsText" class="text-xs mt-1">—</div>
+                            </div>
+                        </div>
+
+                        <div id="pkgWarehouseHandoverBox" class="alert alert-warning items-start">
+                            <i class="fas fa-warehouse mt-1"></i>
+                            <div class="flex-1">
+                                <p class="font-semibold text-sm">Warehouse packaging handover</p>
+                                <p id="pkgWarehouseHandoverText" class="text-xs mt-1">Choose the SKU quantities, then send the calculated materials to Warehouse.</p>
+                                <button type="button" id="requestPackagingBtn" class="btn btn-primary btn-sm mt-3 gap-2" onclick="requestPackagingMaterials()">
+                                    <i class="fas fa-paper-plane"></i> Send packaging request to Warehouse
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Process loss -->
@@ -545,6 +567,7 @@
                         <button id="completeRunBtn" class="btn btn-success btn-lg touch-btn w-full gap-2" onclick="completeFromWorkbench()">
                             <i class="fas fa-check-double"></i> Complete run (send to QC)
                         </button>
+                        <p id="completePackagingGateText" class="text-xs text-warning text-center">Warehouse must issue the packaging materials before this run can be completed.</p>
                         <button type="button" class="btn btn-outline touch-btn w-full gap-2" onclick="showPanel('stages', { force: true })">
                             <i class="fas fa-plus"></i> Go back to record more losses
                         </button>
@@ -575,6 +598,7 @@
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/ui/dialogs.js"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="production_staff,general_manager"></script>
     <script>window.PRODUCTION_ACTIVE_PAGE = "workbench";</script>
     <script src="../../js/production/sidebar.js"></script>
@@ -583,6 +607,8 @@
     <script>
         let selectedRunId = null;
         let wb = null; // { run, yieldData, estimates, reconciliation, nextStep }
+        let lossSubmissionInFlight = false;
+        let completionSubmissionInFlight = false;
         let wizardState = null;
         let wizardMode = localStorage.getItem('hf_wizard_mode') !== '0'; // default ON
         let currentPanel = 'overview';
@@ -686,10 +712,16 @@
 
         function showToast(msg, type = 'info') {
             const colors = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' };
+            const message = String(msg || 'Something went wrong');
+            const container = document.getElementById('toastContainer');
+            if (Array.from(container.children).some(item => item.dataset.toastMessage === message)) return;
             const el = document.createElement('div');
             el.className = `alert ${colors[type] || 'alert-info'} shadow-lg max-w-sm text-sm`;
-            el.innerHTML = `<span>${msg}</span>`;
-            document.getElementById('toastContainer').appendChild(el);
+            el.dataset.toastMessage = message;
+            const span = document.createElement('span');
+            span.textContent = message;
+            el.appendChild(span);
+            container.appendChild(el);
             setTimeout(() => el.remove(), 4000);
         }
 
@@ -733,6 +765,8 @@
         async function onRunPicked() {
             const id = document.getElementById('runSelector').value;
             selectedRunId = id || null;
+            const packagingLines = document.getElementById('packagingLines');
+            if (packagingLines) packagingLines.innerHTML = '';
             if (!selectedRunId) {
                 document.getElementById('workbench').classList.add('hidden');
                 document.getElementById('emptyState').classList.remove('hidden');
@@ -866,9 +900,9 @@
                 return `
                     <button type="button" class="wizard-step ${cls}" data-wizard-id="${s.id}"
                         onclick="onWizardStepClick('${s.id}')"
-                        title="${s.locked ? (s.lockReason || 'Locked') : s.description}">
+                        title="${escapeHtml(s.locked ? (s.lockReason || 'Locked') : s.description)}">
                         <div class="bubble">${bubble}</div>
-                        <div class="wlabel">${s.short}</div>
+                        <div class="wlabel">${escapeHtml(s.short)}</div>
                     </button>`;
             }).join('');
         }
@@ -1205,7 +1239,7 @@
                 return `
                     <div class="bg-base-200 rounded-xl p-4">
                         <div class="flex justify-between items-center mb-1">
-                            <span class="font-semibold">${r.label}</span>
+                            <span class="font-semibold">${escapeHtml(r.label)}</span>
                             <span class="badge ${cls}">${status}</span>
                         </div>
                         <p class="text-2xl font-bold">${val}</p>
@@ -1262,7 +1296,7 @@
                     '<div class="space-y-1">' +
                     losses.map(l =>
                         `<div class="flex justify-between bg-base-100 border border-base-300 rounded-lg px-3 py-2">
-                            <span>${l.stage} · ${String(l.loss_type || '').replace(/_/g, ' ')}</span>
+                            <span>${escapeHtml(l.stage)} · ${escapeHtml(String(l.loss_type || '').replace(/_/g, ' '))}</span>
                             <span class="font-bold text-error">${(Number(l.loss_volume_ml) / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 })} L</span>
                         </div>`
                     ).join('') +
@@ -1270,12 +1304,14 @@
                 // Ensure footer space still correct after list grows
                 syncStickyFooterSpace();
             } catch (e) {
-                box.innerHTML = `<p class="text-error text-sm">${e.message || 'Could not load losses'}</p>`;
+                box.textContent = String(e.message || 'Could not load losses');
+                box.className = 'text-error text-sm';
             }
         }
 
         async function submitLoss() {
             if (!selectedRunId) return;
+            if (lossSubmissionInFlight) return;
             // Prefer liters field (UI); convert to mL for API
             const litersEl = document.getElementById('lossVolumeLiters');
             const liters = litersEl ? Number(litersEl.value) : 0;
@@ -1290,6 +1326,13 @@
             if (!volumeMl || volumeMl <= 0) {
                 showToast('Enter how many liters were lost', 'warning');
                 return;
+            }
+            const addButton = document.getElementById('addLossBtn');
+            const originalButtonHtml = addButton?.innerHTML || '';
+            lossSubmissionInFlight = true;
+            if (addButton) {
+                addButton.disabled = true;
+                addButton.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Recording loss…';
             }
             try {
                 const r = await ProductionService.recordLoss({
@@ -1310,6 +1353,31 @@
                 showPanel('stages', { force: true });
             } catch (e) {
                 showToast(e.message || 'Failed to record loss', 'error');
+            } finally {
+                lossSubmissionInFlight = false;
+                if (addButton) {
+                    addButton.disabled = false;
+                    addButton.innerHTML = originalButtonHtml;
+                }
+            }
+        }
+
+        async function removeLossFromWorkbench(lossId) {
+            const confirmed = await AppDialogs.confirm({
+                title: 'Remove mistaken loss?',
+                message: 'Remove this loss entry and recalculate the remaining milk and recommended bottle count?',
+                confirmText: 'Remove loss',
+                variant: 'warning',
+                icon: 'fa-trash-alt'
+            });
+            if (!confirmed) return;
+            try {
+                const response = await ProductionService.deleteLoss(lossId);
+                if (!response.success) throw new Error(response.message || 'Could not remove loss');
+                showToast('Mistaken loss removed — yield recalculated', 'success');
+                await refreshAll({ stayOnPanel: true });
+            } catch (error) {
+                showToast(error?.message || 'Could not remove loss', 'error');
             }
         }
 
@@ -1367,9 +1435,12 @@
                         <p class="font-semibold text-sm mb-1">Losses recorded (${totalL.toLocaleString(undefined, { maximumFractionDigits: 3 })} L total)</p>
                         <div class="space-y-1 max-h-40 overflow-y-auto">
                             ${losses.map(l => `
-                                <div class="flex justify-between text-sm bg-base-200 rounded-lg px-3 py-2">
-                                    <span>${l.stage} · ${String(l.loss_type || '').replace(/_/g, ' ')}</span>
-                                    <span class="font-bold text-error">${fmtLitersFromMl(l.loss_volume_ml)} L</span>
+                                <div class="flex items-center justify-between gap-2 text-sm bg-base-200 rounded-lg px-3 py-2">
+                                    <span>${escapeHtml(l.stage)} · ${escapeHtml(String(l.loss_type || '').replace(/_/g, ' '))}</span>
+                                    <span class="ml-auto font-bold text-error">${fmtLitersFromMl(l.loss_volume_ml)} L</span>
+                                    <button type="button" class="btn btn-ghost btn-xs text-error" onclick="removeLossFromWorkbench(${Number(l.id)})" title="Remove mistaken loss">
+                                        <i class="fas fa-trash-alt"></i>
+                                    </button>
                                 </div>
                             `).join('')}
                         </div>
@@ -1413,7 +1484,7 @@
                         return `
                         <div class="bg-base-200 rounded-xl p-4 text-center border ${changed ? 'border-warning' : 'border-transparent'}">
                             <p class="text-3xl font-bold text-primary">${afterU}</p>
-                            <p class="font-medium">${e.packaging_label}</p>
+                            <p class="font-medium">${escapeHtml(e.packaging_label)}</p>
                             <p class="text-xs text-base-content/50">${e.packaging_size_ml} mL each</p>
                             ${hasRev && beforeU != null ? `<p class="text-xs mt-1 ${changed ? 'text-warning font-semibold' : 'text-base-content/40'}">was ${beforeU} at start</p>` : ''}
                         </div>`;
@@ -1473,9 +1544,12 @@
                         <p class="font-semibold text-sm">Loss detail</p>
                         <div class="space-y-1 max-h-36 overflow-y-auto">
                             ${lossesList.map(l => `
-                                <div class="flex justify-between text-sm bg-base-200 rounded-lg px-3 py-2">
-                                    <span>${l.stage} · ${String(l.loss_type || '').replace(/_/g, ' ')}</span>
-                                    <span class="font-bold text-error">${fmtLitersFromMl(l.loss_volume_ml)} L</span>
+                                <div class="flex items-center justify-between gap-2 text-sm bg-base-200 rounded-lg px-3 py-2">
+                                    <span>${escapeHtml(l.stage)} · ${escapeHtml(String(l.loss_type || '').replace(/_/g, ' '))}</span>
+                                    <span class="ml-auto font-bold text-error">${fmtLitersFromMl(l.loss_volume_ml)} L</span>
+                                    <button type="button" class="btn btn-ghost btn-xs text-error" onclick="removeLossFromWorkbench(${Number(l.id)})" title="Remove mistaken loss">
+                                        <i class="fas fa-trash-alt"></i>
+                                    </button>
                                 </div>
                             `).join('')}
                         </div>`;
@@ -1659,6 +1733,7 @@
         // V4.1 — PACKAGING OUTPUT FORM (SKU dropdown, no free-text sizes)
         // =====================================================
         let pkgLineCounter = 0;
+        let packagingFormInitInFlight = false;
 
         function getPackConfig() {
             const run = wb?.run || {};
@@ -1677,10 +1752,26 @@
             return wb?.estimates?.available_skus || [];
         }
 
+        function escapePackagingText(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
         function addPackagingLine(prefill = {}) {
             pkgLineCounter++;
             const cfg = getPackConfig();
             const skus = getAvailableSkus();
+            const selectedSkuValues = new Set(Array.from(document.querySelectorAll('#packagingLines [data-pkg="sku_select"]'))
+                .map(select => select.value)
+                .filter(Boolean));
+            if (!prefill.product_id && !prefill.size_ml && skus.length > 0 && selectedSkuValues.size >= skus.length) {
+                showToast('Every available product size is already listed. Update an existing row instead.', 'info');
+                return;
+            }
             const id = pkgLineCounter;
             const container = document.getElementById('packagingLines');
             const div = document.createElement('div');
@@ -1693,11 +1784,11 @@
                 skuOptions = '<option value="" disabled>Select a product/size...</option>';
                 skus.forEach((sku, idx) => {
                     const selected = (prefill.size_ml && Number(sku.packaging_size_ml) === Number(prefill.size_ml)) ? 'selected' : '';
-                    skuOptions += `<option value="${idx}" ${selected}>${sku.packaging_label || (sku.product_name + ' · ' + sku.packaging_size_ml + 'ml')}</option>`;
+                    const readiness = sku.packaging_bom_ready ? '' : ' · Packaging BOM needed';
+                    skuOptions += `<option value="${idx}" ${selected}>${escapePackagingText(sku.packaging_label || (sku.product_name + ' · ' + sku.packaging_size_ml + 'ml'))}${readiness}</option>`;
                 });
             } else {
-                // Fallback: no SKUs in catalog, allow manual entry
-                skuOptions = '<option value="manual" selected>Manual entry (no catalog sizes)</option>';
+                skuOptions = '<option value="" selected disabled>No packaging SKU configured</option>';
             }
 
             const hasSkus = skus.length > 0;
@@ -1719,24 +1810,12 @@
                             oninput="updatePkgTotals()">
                     </div>
                 </div>
-                ${!hasSkus ? `
-                <div class="grid grid-cols-2 gap-3">
-                    <div class="form-control">
-                        <label class="label"><span class="label-text text-xs">Product name</span></label>
-                        <input type="text" class="input input-bordered input-sm" data-pkg="product_name"
-                            value="${(prefill.product_name || cfg.productName).replace(/"/g, '&quot;')}" placeholder="e.g., Fresh Milk">
-                    </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text text-xs">Size (ml)</span></label>
-                        <input type="number" class="input input-bordered input-sm" data-pkg="size_ml"
-                            value="${prefill.size_ml || ''}" min="0" step="0.1" placeholder="e.g., 500">
-                    </div>
-                </div>` : ''}
-                <input type="hidden" data-pkg="product_id" value="${prefill.product_id || ''}">
+                ${!hasSkus ? '<p class="text-xs text-error">Ask Admin to add an active SKU and its Packaging BOM under Products before completing this run.</p>' : ''}
+                <input type="hidden" data-pkg="product_id" value="${Number(prefill.product_id) || ''}">
                 <input type="hidden" data-pkg="product_name" value="${hasSkus ? (prefill.product_name || '') : ''}">
                 <input type="hidden" data-pkg="size_ml" value="${hasSkus ? (prefill.size_ml || '') : ''}">
-                <input type="hidden" data-pkg="product_variant" value="${prefill.product_variant || ''}">
-                <input type="hidden" data-pkg="unit_measure" value="${prefill.unit_measure || 'ml'}">
+                <input type="hidden" data-pkg="product_variant" value="${escapeHtml(prefill.product_variant || '')}">
+                <input type="hidden" data-pkg="unit_measure" value="${escapeHtml(prefill.unit_measure || 'ml')}">
             `;
             container.appendChild(div);
 
@@ -1744,6 +1823,7 @@
             if (hasSkus && prefill.size_ml) {
                 onSkuSelect(id);
             }
+            refreshPackagingSkuChoices();
             updatePkgTotals();
         }
 
@@ -1756,17 +1836,54 @@
             const idx = parseInt(select.value, 10);
             if (isNaN(idx) || !skus[idx]) return;
             const sku = skus[idx];
+            const selects = Array.from(document.querySelectorAll('#packagingLines [data-pkg="sku_select"]'));
+            const existing = selects.find(candidate => candidate !== select && candidate.value === select.value);
+            if (existing) {
+                const existingLineRow = existing.closest('[id^="pkgLine_"]');
+                const rows = Array.from(document.querySelectorAll('#packagingLines [id^="pkgLine_"]'));
+                const existingLine = rows.indexOf(existingLineRow) + 1;
+                select.value = select.dataset.lastValue || '';
+                showToast(`${sku.packaging_label || sku.product_name || 'This product size'} is already on line ${existingLine}. Update its quantity there.`, 'warning');
+                existingLineRow?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                existingLineRow?.classList.add('ring', 'ring-warning', 'ring-2');
+                setTimeout(() => existingLineRow?.classList.remove('ring', 'ring-warning', 'ring-2'), 1600);
+                existing?.focus();
+                refreshPackagingSkuChoices();
+                return;
+            }
+            select.dataset.lastValue = select.value;
             line.querySelector('[data-pkg="product_id"]').value = sku.product_id || '';
             line.querySelector('[data-pkg="product_name"]').value = sku.product_name || '';
             line.querySelector('[data-pkg="size_ml"]').value = sku.packaging_size_ml || '';
             line.querySelector('[data-pkg="product_variant"]').value = sku.packaging_label || '';
             line.querySelector('[data-pkg="unit_measure"]').value = 'ml';
+            refreshPackagingSkuChoices();
             updatePkgTotals();
+        }
+
+        function refreshPackagingSkuChoices() {
+            const selects = Array.from(document.querySelectorAll('#packagingLines [data-pkg="sku_select"]'));
+            const selectedValues = new Set(selects.map(select => select.value).filter(Boolean));
+            selects.forEach(select => {
+                Array.from(select.options).forEach(option => {
+                    if (!option.value) return;
+                    option.disabled = option.value !== select.value && selectedValues.has(option.value);
+                });
+            });
+            const addButton = document.getElementById('pkgAddSizeBtn');
+            if (addButton && !(wb?.run?.packaging_request)) {
+                const skus = getAvailableSkus();
+                addButton.disabled = skus.length > 0 && selectedValues.size >= skus.length;
+                addButton.title = addButton.disabled
+                    ? 'Every available product size is already listed'
+                    : 'Add another product size';
+            }
         }
 
         function removePackagingLine(id) {
             const el = document.getElementById(`pkgLine_${id}`);
             if (el) el.remove();
+            refreshPackagingSkuChoices();
             updatePkgTotals();
         }
 
@@ -1790,6 +1907,164 @@
             } else {
                 box.classList.add('hidden');
                 txt.textContent = '—';
+            }
+            renderPackagingMaterialRequirements(items);
+        }
+
+        function calculatePackagingMaterialRequirements(items = collectPackagingItems()) {
+            const skus = getAvailableSkus();
+            const totals = new Map();
+            const missing = [];
+
+            items.forEach(item => {
+                const sku = skus.find(candidate => Number(candidate.product_id) === Number(item.product_id));
+                const bom = sku?.packaging_bom || [];
+                if (!sku || !sku.packaging_bom_ready || bom.length === 0) {
+                    missing.push(sku?.product_code || sku?.packaging_label || item.product_name || 'Selected SKU');
+                    return;
+                }
+                bom.forEach(component => {
+                    const ingredientId = Number(component.ingredient_id);
+                    const required = Number(item.quantity || 0)
+                        * Number(component.quantity_per_unit || 0)
+                        * (1 + Number(component.waste_percent || 0) / 100);
+                    if (!totals.has(ingredientId)) {
+                        totals.set(ingredientId, {
+                            ingredient_id: ingredientId,
+                            ingredient_name: component.ingredient_name,
+                            unit: component.unit,
+                            current_stock: Number(component.available_stock ?? component.current_stock ?? 0),
+                            quantity_required: 0
+                        });
+                    }
+                    totals.get(ingredientId).quantity_required += required;
+                });
+            });
+
+            return { ready: items.length > 0 && missing.length === 0, missing: [...new Set(missing)], totals: [...totals.values()] };
+        }
+
+        function renderPackagingMaterialRequirements(items) {
+            const box = document.getElementById('pkgMaterialRequirementsBox');
+            const text = document.getElementById('pkgMaterialRequirementsText');
+            if (!box || !text) return;
+            const result = calculatePackagingMaterialRequirements(items);
+            if (!items.length) {
+                box.classList.add('hidden');
+                text.textContent = '—';
+                return;
+            }
+
+            box.classList.remove('hidden', 'alert-info', 'alert-error', 'alert-warning');
+            if (result.missing.length) {
+                box.classList.add('alert-error');
+                text.innerHTML = `Packaging BOM missing for: ${result.missing.map(escapePackagingText).join(', ')}. Configure it in Admin → Products.`;
+                return;
+            }
+
+            const insufficient = result.totals.filter(material => material.quantity_required > material.current_stock + 0.0001);
+            box.classList.add(insufficient.length ? 'alert-warning' : 'alert-info');
+            const packagingRequest = wb?.run?.packaging_request || null;
+            const issuedByMaterial = new Map((packagingRequest?.items || []).map(item => [
+                Number(item.item_id),
+                Number(item.issued_quantity || 0)
+            ]));
+            text.innerHTML = result.totals.map(material => {
+                const needed = Number(material.quantity_required).toLocaleString(undefined, { maximumFractionDigits: 3 });
+                const stock = Number(material.current_stock).toLocaleString(undefined, { maximumFractionDigits: 3 });
+                const shortage = material.quantity_required > material.current_stock + 0.0001 ? ' <strong>(insufficient)</strong>' : '';
+                const issued = issuedByMaterial.has(Number(material.ingredient_id))
+                    ? Number(issuedByMaterial.get(Number(material.ingredient_id))).toLocaleString(undefined, { maximumFractionDigits: 3 })
+                    : null;
+                const issuedText = issued !== null ? ` · Warehouse issued ${issued} ${escapePackagingText(material.unit)}` : '';
+                return `<div>${escapePackagingText(material.ingredient_name)}: <strong>plan uses ${needed} ${escapePackagingText(material.unit)}</strong>${issuedText} · Warehouse balance ${stock}${shortage}</div>`;
+            }).join('') || 'No packaging materials calculated.';
+        }
+
+        function renderPackagingRequestState() {
+            const request = wb?.run?.packaging_request || null;
+            const box = document.getElementById('pkgWarehouseHandoverBox');
+            const text = document.getElementById('pkgWarehouseHandoverText');
+            const requestBtn = document.getElementById('requestPackagingBtn');
+            const completeBtn = document.getElementById('completeRunBtn');
+            const gateText = document.getElementById('completePackagingGateText');
+            if (!box || !text || !requestBtn || !completeBtn) return;
+
+            const fulfilled = request?.status === 'fulfilled';
+            const requested = !!request;
+            box.classList.remove('alert-info', 'alert-warning', 'alert-success');
+            box.classList.add(fulfilled ? 'alert-success' : (requested ? 'alert-warning' : 'alert-info'));
+
+            if (!requested) {
+                text.textContent = 'Choose the SKU quantities, then send the calculated bottles, caps, labels, and wraps to Warehouse.';
+                requestBtn.classList.remove('hidden');
+                requestBtn.disabled = false;
+            } else if (fulfilled) {
+                text.textContent = `${request.requisition_code} was fully issued by Warehouse. You may now package and complete the run.`;
+                requestBtn.classList.add('hidden');
+            } else {
+                const issued = (request.items || []).filter(item => item.status === 'fulfilled').length;
+                text.textContent = `${request.requisition_code} is ${request.status}. Warehouse has completed ${issued} of ${(request.items || []).length} material line(s).`;
+                requestBtn.classList.add('hidden');
+            }
+
+            completeBtn.disabled = !fulfilled;
+            completeBtn.classList.toggle('btn-disabled', !fulfilled);
+            gateText?.classList.toggle('hidden', fulfilled);
+
+            // Once sent, the request is an audit record. Do not let the floor
+            // silently change the planned SKU mix after Warehouse starts issuing.
+            document.querySelectorAll('#packagingLines select').forEach(control => {
+                control.disabled = requested;
+            });
+            document.querySelectorAll('#packagingLines [data-pkg="quantity"]').forEach(control => {
+                if (requested && !control.dataset.requestedMaximum) {
+                    control.dataset.requestedMaximum = control.value;
+                    control.max = control.value;
+                }
+                // The plan is frozen while Warehouse prepares it. After issue,
+                // Production may lower the number to record breakage, but the
+                // server will not allow more units than Warehouse covered.
+                control.disabled = requested && !fulfilled;
+            });
+            document.getElementById('pkgAddSizeBtn')?.classList.toggle('hidden', requested);
+            document.getElementById('pkgResetRecommendBtn')?.classList.toggle('hidden', requested);
+            document.querySelectorAll('#packagingLines button').forEach(button => {
+                button.classList.toggle('hidden', requested);
+            });
+        }
+
+        async function requestPackagingMaterials() {
+            if (!selectedRunId) return;
+            if (wb?.run?.status !== 'packaging') {
+                showToast('Move the run to the Packaging stage first.', 'warning');
+                return;
+            }
+            const packagingItems = collectPackagingItems();
+            if (!packagingItems.length) {
+                showToast('Choose at least one SKU and enter how many units you plan to package.', 'warning');
+                return;
+            }
+            if (!validatePackagingSkuUniqueness(packagingItems, true)) return;
+            const materialPlan = calculatePackagingMaterialRequirements(packagingItems);
+            if (!materialPlan.ready) {
+                showToast(`Packaging BOM missing for ${materialPlan.missing.join(', ')}`, 'error');
+                return;
+            }
+
+            const btn = document.getElementById('requestPackagingBtn');
+            btn.disabled = true;
+            try {
+                const response = await ProductionService.requestPackagingMaterials(selectedRunId, packagingItems);
+                if (!response.success) throw new Error(response.message || 'Could not send packaging request');
+                showToast(response.message || 'Packaging request sent to Warehouse', 'success');
+                await refreshAll({ stayOnPanel: true });
+            } catch (error) {
+                const message = error?.errors
+                    ? Object.values(error.errors).flat().join('; ')
+                    : (error.message || 'Could not send packaging request');
+                showToast(message, 'error');
+                btn.disabled = false;
             }
         }
 
@@ -1815,6 +2090,27 @@
                 });
             });
             return items;
+        }
+
+        function validatePackagingSkuUniqueness(items, focusRows = false) {
+            const seen = new Map();
+            const rows = Array.from(document.querySelectorAll('#packagingLines [id^="pkgLine_"]'));
+            for (let index = 0; index < (items || []).length; index++) {
+                const item = items[index];
+                const productId = Number(item.product_id || 0);
+                if (!productId) continue;
+                if (seen.has(productId)) {
+                    const firstLine = seen.get(productId);
+                    showToast(`${item.product_variant || item.product_name || 'This product size'} is already on line ${firstLine}. Keep one row and update its quantity.`, 'error');
+                    if (focusRows && rows[index]) {
+                        rows[index].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        rows[index].querySelector('[data-pkg="sku_select"]')?.focus();
+                    }
+                    return false;
+                }
+                seen.set(productId, index + 1);
+            }
+            return true;
         }
 
         /** Get the system's recommended packaging counts (revised estimate if losses were logged) */
@@ -1848,39 +2144,77 @@
         /** Initialize packaging form when reconcile panel is shown */
         async function initPackagingForm() {
             const container = document.getElementById('packagingLines');
-            if (container.children.length > 0) return; // already initialized
-
-            // Refresh estimates so the recommendation reflects the latest losses
-            if (selectedRunId) {
-                try {
-                    const est = await ProductionService.getEstimates(selectedRunId);
-                    if (est.success) wb.estimates = est.data;
-                } catch (e) { /* proceed with whatever we have */ }
+            if (container.children.length > 0) {
+                renderPackagingRequestState();
+                return;
             }
+            if (packagingFormInitInFlight) return;
+            packagingFormInitInFlight = true;
 
-            const rec = getRecommendedPackaging();
+            try {
+                // Refresh estimates so the recommendation reflects the latest losses
+                if (selectedRunId) {
+                    try {
+                        const est = await ProductionService.getEstimates(selectedRunId);
+                        if (est.success) wb.estimates = est.data;
+                    } catch (e) { /* proceed with whatever we have */ }
+                }
+
+                // showPanel() can be reached twice while a deep link is loading.
+                // The first call may have populated the form while this call was
+                // awaiting estimates, so never append the saved plan a second time.
+                if (container.children.length > 0) {
+                    renderPackagingRequestState();
+                    return;
+                }
+
+            const savedRequestPlan = wb?.run?.packaging_request?.packaging_plan || [];
+            const rec = savedRequestPlan.length ? savedRequestPlan.map(item => ({
+                packaging_size_ml: item.size_ml,
+                estimated_units: item.quantity,
+                packaging_label: item.product_variant || item.product_name,
+                product_id: item.product_id,
+            })) : getRecommendedPackaging();
             const banner = document.getElementById('pkgRecommendBox');
             const bannerText = document.getElementById('pkgRecommendText');
             const resetBtn = document.getElementById('pkgResetRecommendBtn');
 
             if (rec.length > 0) {
                 const est = wb.estimates;
-                const basisMl = est.has_revision ? est.revised_estimate?.basis_volume_ml : est.initial_estimate?.basis_volume_ml;
+                const basisMl = est?.has_revision ? est.revised_estimate?.basis_volume_ml : est?.initial_estimate?.basis_volume_ml;
                 const summary = rec.map(i => `${i.estimated_units} × ${i.packaging_label || (i.packaging_size_ml + 'ml')}`).join(' + ');
                 if (banner && bannerText) {
-                    bannerText.textContent = `Recommended from ${fmtLitersFromMl(basisMl)} L remaining milk: ${summary}. Adjust below only if your real count differed.`;
+                    bannerText.textContent = savedRequestPlan.length
+                        ? `Packaging plan saved on ${wb.run.packaging_request.requisition_code}: ${summary}.`
+                        : `Recommended from ${fmtLitersFromMl(basisMl)} L remaining milk: ${summary}. Adjust below only if your real count differed.`;
                     banner.classList.remove('hidden');
                 }
                 if (resetBtn) resetBtn.classList.remove('hidden');
-                applyRecommendedPackaging();
+                if (savedRequestPlan.length) {
+                    savedRequestPlan.forEach(item => addPackagingLine({
+                        product_id: item.product_id,
+                        product_name: item.product_name,
+                        size_ml: item.size_ml,
+                        quantity: item.quantity,
+                        product_variant: item.product_variant,
+                        unit_measure: item.unit_measure,
+                    }));
+                } else {
+                    applyRecommendedPackaging();
+                }
             } else {
                 // No estimate available — start with one empty line
                 addPackagingLine();
+            }
+                renderPackagingRequestState();
+            } finally {
+                packagingFormInitInFlight = false;
             }
         }
 
         async function completeFromWorkbench() {
             if (!selectedRunId) return;
+            if (completionSubmissionInFlight) return;
             const ccp = ProductionRunFlow.ccpStatus(wb.run);
             if (!ccp.requiredMet) {
                 showToast('Cannot complete: ' + ccp.message, 'error');
@@ -1896,12 +2230,29 @@
             // V4.1: Collect packaging line items
             const packagingItems = collectPackagingItems();
             if (packagingItems.length === 0) {
-                showToast('Enter at least one packaging line (what did you pack?)', 'warning');
+                showToast('Select at least one configured packaging SKU and enter what was packed', 'warning');
+                return;
+            }
+            if (!validatePackagingSkuUniqueness(packagingItems, true)) return;
+            if (wb?.run?.packaging_request?.status !== 'fulfilled') {
+                showToast('Warehouse must fully issue the packaging-material request before this run can be completed.', 'warning');
+                return;
+            }
+            const packagingMaterialPlan = calculatePackagingMaterialRequirements(packagingItems);
+            if (!packagingMaterialPlan.ready) {
+                showToast(`Cannot complete: Packaging BOM missing for ${packagingMaterialPlan.missing.join(', ')}`, 'error');
                 return;
             }
             const processLossMl = parseFloat(document.getElementById('pkgProcessLoss')?.value) || 0;
 
             const notes = document.getElementById('reconNotes').value.trim();
+            const completeButton = document.getElementById('completeRunBtn');
+            const originalCompleteHtml = completeButton?.innerHTML || '';
+            completionSubmissionInFlight = true;
+            if (completeButton) {
+                completeButton.disabled = true;
+                completeButton.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Completing run…';
+            }
             try {
                 try {
                     await ProductionService.reconcileRun(selectedRunId, notes || 'Completed from workbench', !!notes);
@@ -1920,6 +2271,12 @@
             } catch (e) {
                 const msg = e?.errors ? Object.values(e.errors).flat().join('; ') : (e.message || 'Complete failed');
                 showToast(msg, 'error');
+            } finally {
+                completionSubmissionInFlight = false;
+                if (completeButton) {
+                    completeButton.disabled = false;
+                    completeButton.innerHTML = originalCompleteHtml;
+                }
             }
         }
     </script>

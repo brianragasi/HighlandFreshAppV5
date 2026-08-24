@@ -14,6 +14,7 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/helpers/pack_uom.php';
+require_once dirname(__DIR__) . '/helpers/customer_accounts.php';
 
 // Different roles for different operations
 // GET: Warehouse FG can view orders (to see approved orders for DR creation)
@@ -37,6 +38,7 @@ if (in_array($requestMethod, ['POST', 'PUT', 'DELETE']) && !in_array($currentUse
 
 try {
     $db = Database::getInstance()->getConnection();
+    hfEnsureCustomerAccountSchema($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -714,9 +716,13 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
                 Response::validationError(['items' => 'Add a quantity for at least one product.']);
             }
 
-            $paymentType = strtolower(trim((string) ($data['payment_type'] ?? $customer['default_payment_type'] ?? 'cash')));
+            $paymentType = strtolower(trim((string) ($customer['default_payment_type'] ?? 'cash')));
             if (!in_array($paymentType, ['cash', 'credit'], true)) {
                 Response::validationError(['payment_type' => 'Payment must be Cash or Credit.']);
+            }
+            $requestedPaymentType = strtolower(trim((string) ($data['payment_type'] ?? $paymentType)));
+            if ($requestedPaymentType !== $paymentType) {
+                Response::validationError(['payment_type' => 'This order must use the customer account payment type. Update the customer agreement first if it changed.']);
             }
             $creditLimit = max(0, (float) ($customer['credit_limit'] ?? 0));
             $currentBalance = max(0, (float) ($customer['outstanding_balance'] ?? 0));
@@ -724,17 +730,42 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
                 && ($currentBalance + $subtotal) > $creditLimit;
 
             $termsDays = $paymentType === 'credit' ? max(0, (int) ($customer['payment_terms_days'] ?? 0)) : 0;
+            if ($paymentType === 'credit' && ($termsDays <= 0 || $creditLimit <= 0)) {
+                Response::validationError(['payment_type' => 'This credit account is incomplete. Set positive payment terms and a positive credit limit before ordering.']);
+            }
             $dueDate = $paymentType === 'credit'
                 ? date('Y-m-d', strtotime('+' . $termsDays . ' days'))
                 : null;
             $orderNumber = generateOrderNumber($db);
             $notes = trim((string) ($data['notes'] ?? ''));
+            $creditOverrideReason = trim((string) ($data['credit_override_reason'] ?? ''));
+            if ($needsCreditOverride && mb_strlen($creditOverrideReason) < 10) {
+                Response::validationError(['credit_override_reason' => 'Explain why the GM should approve this credit exception (at least 10 characters).']);
+            }
+            if (mb_strlen($creditOverrideReason) > 500) {
+                Response::validationError(['credit_override_reason' => 'Credit exception reason must be 500 characters or fewer.']);
+            }
+            $subAccountId = !empty($data['sub_account_id']) ? (int) $data['sub_account_id'] : null;
+            $deliveryAddress = trim((string) ($data['delivery_address'] ?? $customer['address'] ?? ''));
+            if ($subAccountId) {
+                $locationStmt = $db->prepare("SELECT id, address FROM sales_customer_sub_accounts WHERE id = ? AND customer_id = ? AND status = 'active'");
+                $locationStmt->execute([$subAccountId, $customerId]);
+                $location = $locationStmt->fetch(PDO::FETCH_ASSOC);
+                if (!$location) {
+                    Response::validationError(['sub_account_id' => 'Choose a valid saved delivery location for this customer.']);
+                }
+                $deliveryAddress = trim((string) ($location['address'] ?? ''));
+            }
+            if ($deliveryAddress === '') {
+                Response::validationError(['delivery_address' => 'Delivery address is required.']);
+            }
             $controlNotes = ['[DIRECT ORDER] GM approval required before Warehouse FG fulfillment.'];
             if ($needsCreditOverride) {
                 $controlNotes[] = sprintf(
-                    '[GM-CREDIT-OVERRIDE] Projected balance PHP %.2f exceeds the PHP %.2f credit limit.',
+                    '[GM-CREDIT-OVERRIDE] Projected balance PHP %.2f exceeds the PHP %.2f credit limit. Reason: %s',
                     $currentBalance + $subtotal,
-                    $creditLimit
+                    $creditLimit,
+                    $creditOverrideReason
                 );
             }
             $notes = implode("\n", array_filter(array_merge([$notes], $controlNotes)));
@@ -743,23 +774,24 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
             try {
                 $orderStmt = $db->prepare("
                     INSERT INTO sales_orders (
-                        order_number, customer_id, customer_name, customer_type,
+                        order_number, customer_id, sub_account_id, customer_name, customer_type,
                         source_type, payment_type, payment_terms_days,
                         contact_person, contact_number, delivery_address, delivery_date,
                         total_items, total_quantity, subtotal, total_amount,
                         balance_due, due_date, status, created_by, notes
-                    ) VALUES (?, ?, ?, ?, 'direct_sales', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, 'direct_sales', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
                 ");
                 $orderStmt->execute([
                     $orderNumber,
                     $customerId,
+                    $subAccountId,
                     $customer['name'],
                     $customer['customer_type'],
                     $paymentType,
                     $termsDays,
                     $customer['contact_person'] ?? null,
                     $customer['contact_number'] ?? null,
-                    trim((string) ($data['delivery_address'] ?? $customer['address'] ?? '')) ?: null,
+                    $deliveryAddress,
                     $deliveryDate ?: null,
                     count($prepared),
                     $totalQuantity,

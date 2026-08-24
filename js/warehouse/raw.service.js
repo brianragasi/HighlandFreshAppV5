@@ -384,7 +384,7 @@ const WarehouseRawService = {
      * @param {number} requisitionId - Optional requisition ID
      * @param {string} reason - Reason for issuing
      */
-    async issueMROItem(mroItemId, quantity, requisitionId = null, reason = 'Issued for maintenance') {
+    async issueMROItem(mroItemId, quantity, requisitionId = null, reason = 'Issued for operations') {
         return await api.put(`${this.baseUrl}/mro.php`, {
             action: 'issue',
             mro_item_id: mroItemId,

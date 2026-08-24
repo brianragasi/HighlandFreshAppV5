@@ -25,6 +25,14 @@ require_once __DIR__ . '/mro_stock_helpers.php';
 $currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'production_staff']);
 
 function ensureWarehouseRequisitionQuantityPrecision($db) {
+    if (!auditColumnExists($db, 'material_requisitions', 'request_type')) {
+        $db->exec("ALTER TABLE material_requisitions
+            ADD COLUMN request_type VARCHAR(30) NOT NULL DEFAULT 'cooking' AFTER production_run_id");
+    }
+    if (!auditColumnExists($db, 'material_requisitions', 'packaging_plan_json')) {
+        $db->exec("ALTER TABLE material_requisitions
+            ADD COLUMN packaging_plan_json LONGTEXT NULL AFTER request_type");
+    }
     $precisionStmt = $db->prepare("
         SELECT COLUMN_NAME, COLUMN_TYPE
         FROM INFORMATION_SCHEMA.COLUMNS
@@ -44,6 +52,28 @@ function ensureWarehouseRequisitionQuantityPrecision($db) {
     if (($columnTypes['issued_quantity'] ?? '') !== 'decimal(10,3)') {
         $db->exec("ALTER TABLE requisition_items MODIFY issued_quantity DECIMAL(10,3) DEFAULT 0.000");
     }
+}
+
+/**
+ * Parse an issued quantity without accepting exponent notation, signs, NaN,
+ * infinity, or more precision than the DECIMAL(10,3) inventory columns store.
+ */
+function parseWarehouseIssueQuantity($rawValue, string $label = 'Issue quantity'): float {
+    if (is_array($rawValue) || is_object($rawValue) || is_bool($rawValue) || $rawValue === null) {
+        throw new Exception("{$label} must be a positive decimal number.");
+    }
+
+    $text = trim((string) $rawValue);
+    if ($text === '' || !preg_match('/^\d+(?:\.\d{1,3})?$/D', $text)) {
+        throw new Exception("{$label} must be a positive decimal number with at most 3 decimal places.");
+    }
+
+    $quantity = (float) $text;
+    if (!is_finite($quantity) || $quantity <= 0) {
+        throw new Exception("{$label} must be greater than zero.");
+    }
+
+    return round($quantity, 3);
 }
 
 try {
@@ -202,7 +232,7 @@ function handleGet($db, $currentUser) {
                         WHEN ri.item_type = 'raw_milk' OR LOWER(ri.item_name) IN ('raw', 'raw milk', 'fresh milk', 'carabao', 'cow milk', 'goat milk', 'whole milk')
                             OR (LOWER(ri.item_name) LIKE '%milk%' AND LOWER(ri.item_name) NOT LIKE '%powder%' AND LOWER(ri.item_name) NOT LIKE '%chocolate%')
                         THEN (SELECT COALESCE(SUM(remaining_liters), 0) FROM raw_milk_inventory WHERE status IN ('available', 'reserved') AND remaining_liters > 0 AND expiry_date >= CURDATE())
-                        WHEN ri.item_type = 'ingredient' THEN (
+                        WHEN ri.item_type IN ('ingredient', 'packaging') THEN (
                             SELECT GREATEST(
                                 COALESCE(i.current_stock, 0),
                                 COALESCE((
@@ -354,6 +384,7 @@ function handlePut($db, $currentUser) {
 
                 $requisition = $db->prepare("
                     SELECT * FROM material_requisitions WHERE id = ? AND status IN ('approved', 'partial', 'in_progress')
+                    FOR UPDATE
                 ");
                 $requisition->execute([$id]);
                 $reqData = $requisition->fetch();
@@ -366,7 +397,8 @@ function handlePut($db, $currentUser) {
                 // planned_quantity before warehouse raw can issue materials.
                 // Otherwise production staff can't start a run from it after
                 // fulfillment, and the issued materials are stuck in limbo.
-                if (empty($reqData['planned_recipe_id']) || empty($reqData['planned_quantity']) || (float)$reqData['planned_quantity'] <= 0) {
+                if (($reqData['request_type'] ?? 'cooking') !== 'packaging'
+                    && (empty($reqData['planned_recipe_id']) || empty($reqData['planned_quantity']) || (float)$reqData['planned_quantity'] <= 0)) {
                     throw new Exception(
                         'Cannot fulfill: this requisition is missing a planned recipe or planned quantity. ' .
                         'The requester must open the requisition and set the planned product + planned quantity first.'
@@ -376,14 +408,15 @@ function handlePut($db, $currentUser) {
                 // Get all pending items
                 $items = $db->prepare("
                     SELECT ri.*, 
-                        CASE ri.item_type
-                            WHEN 'ingredient' THEN i.unit_of_measure
+                        CASE
+                            WHEN ri.item_type IN ('ingredient', 'packaging') THEN i.unit_of_measure
                             WHEN 'mro' THEN m.unit_of_measure
                         END as unit_of_measure
                     FROM requisition_items ri
-                    LEFT JOIN ingredients i ON ri.item_type = 'ingredient' AND ri.item_id = i.id
+                    LEFT JOIN ingredients i ON ri.item_type IN ('ingredient', 'packaging') AND ri.item_id = i.id
                     LEFT JOIN mro_items m ON ri.item_type = 'mro' AND ri.item_id = m.id
                     WHERE ri.requisition_id = ? AND ri.status IN ('pending', 'partial')
+                    FOR UPDATE
                 ");
                 $items->execute([$id]);
                 $itemList = $items->fetchAll();
@@ -393,13 +426,47 @@ function handlePut($db, $currentUser) {
                 }
                 
                 $fulfilledItems = [];
-                $issuedQuantities = getParam('issued_quantities', []); // Optional: specify exact quantities
-                
+                $issuedQuantities = getParam('issued_quantities', []);
+                if (!is_array($issuedQuantities) || empty($issuedQuantities)) {
+                    throw new Exception('Enter at least one quantity to release.');
+                }
+
+                $itemsById = [];
                 foreach ($itemList as $item) {
-                    $requestedQty = $item['requested_quantity'];
-                    $issuedQty = isset($issuedQuantities[$item['id']]) 
-                        ? (float)$issuedQuantities[$item['id']] 
-                        : $requestedQty;
+                    $itemsById[(int) $item['id']] = $item;
+                }
+
+                // Validate the entire request before changing any inventory row.
+                $validatedIssues = [];
+                foreach ($issuedQuantities as $itemId => $rawQuantity) {
+                    $numericItemId = (int) $itemId;
+                    if ($numericItemId <= 0 || !isset($itemsById[$numericItemId])) {
+                        throw new Exception('The request contains an invalid or unavailable requisition item.');
+                    }
+
+                    $item = $itemsById[$numericItemId];
+                    $itemLabel = trim((string) ($item['item_name'] ?? 'Item')) ?: 'Item';
+                    $quantity = parseWarehouseIssueQuantity($rawQuantity, "Quantity for {$itemLabel}");
+                    $requested = (float) ($item['requested_quantity'] ?? 0);
+                    $alreadyIssued = (float) ($item['issued_quantity'] ?? 0);
+                    $remaining = max(0.0, $requested - $alreadyIssued);
+
+                    if ($quantity > $remaining + 0.0005) {
+                        throw new Exception(
+                            "Quantity for {$itemLabel} exceeds the remaining request. " .
+                            "Remaining: " . number_format($remaining, 3, '.', '') . '.'
+                        );
+                    }
+
+                    $validatedIssues[$numericItemId] = $quantity;
+                }
+
+                foreach ($itemList as $item) {
+                    $itemId = (int) $item['id'];
+                    if (!array_key_exists($itemId, $validatedIssues)) {
+                        continue;
+                    }
+                    $issuedQty = $validatedIssues[$itemId];
                     
                     // Determine effective item type - detect raw milk from item_name if not explicitly set
                     $effectiveItemType = $item['item_type'];
@@ -426,6 +493,9 @@ function handlePut($db, $currentUser) {
                     } elseif ($effectiveItemType === 'ingredient') {
                         // Issue ingredient
                         $result = issueIngredient($db, $item['item_id'], $issuedQty, $id, $currentUser);
+                        $fulfilledItems[] = array_merge($item, ['issued' => $result]);
+                    } elseif ($effectiveItemType === 'packaging') {
+                        $result = issueIngredient($db, $item['item_id'], $issuedQty, $id, $currentUser, 'packaging');
                         $fulfilledItems[] = array_merge($item, ['issued' => $result]);
                     } elseif ($effectiveItemType === 'mro') {
                         // Issue MRO item
@@ -492,16 +562,19 @@ function handlePut($db, $currentUser) {
                 
                 // Log audit
                 logAudit($currentUser['user_id'], 'fulfill_requisition', 'material_requisitions', $id, 
-                    ['status' => 'approved'], 
-                    ['status' => 'fulfilled']
+                    ['status' => $reqData['status']],
+                    ['status' => $newReqStatus]
                 );
                 
                 $db->commit();
                 
                 Response::success([
                     'requisition_id' => $id,
-                    'fulfilled_items' => $fulfilledItems
-                ], 'Requisition fulfilled successfully');
+                    'fulfilled_items' => $fulfilledItems,
+                    'status' => $newReqStatus
+                ], $newReqStatus === 'fulfilled'
+                    ? 'Requisition fulfilled successfully'
+                    : 'Selected quantities released; requisition remains partial');
                 
             } catch (Exception $e) {
                 $db->rollBack();
@@ -512,10 +585,16 @@ function handlePut($db, $currentUser) {
         case 'fulfill_item':
             // Fulfill a single item from requisition
             $itemId = getParam('item_id');
-            $issuedQuantity = getParam('issued_quantity');
+            $issuedQuantityRaw = getParam('issued_quantity');
             
-            if (!$itemId || $issuedQuantity === null) {
+            if (!$itemId || $issuedQuantityRaw === null) {
                 Response::error('Item ID and issued quantity are required', 400);
+            }
+
+            try {
+                $issuedQuantity = parseWarehouseIssueQuantity($issuedQuantityRaw);
+            } catch (Exception $e) {
+                Response::error($e->getMessage(), 400);
             }
             
             $db->beginTransaction();
@@ -523,11 +602,12 @@ function handlePut($db, $currentUser) {
             try {
                 // Get item
                 $item = $db->prepare("
-                    SELECT ri.*, ir.status as req_status,
+                    SELECT ri.*, ir.status as req_status, ir.request_type,
                            ir.planned_recipe_id, ir.planned_quantity
                     FROM requisition_items ri
                     JOIN material_requisitions ir ON ri.requisition_id = ir.id
                     WHERE ri.id = ? AND ri.requisition_id = ?
+                    FOR UPDATE
                 ");
                 $item->execute([$itemId, $id]);
                 $itemData = $item->fetch();
@@ -542,10 +622,21 @@ function handlePut($db, $currentUser) {
                 }
 
                 // Plan guard: see the equivalent check in the 'fulfill' case above.
-                if (empty($itemData['planned_recipe_id']) || empty($itemData['planned_quantity']) || (float)$itemData['planned_quantity'] <= 0) {
+                if (($itemData['request_type'] ?? 'cooking') !== 'packaging'
+                    && (empty($itemData['planned_recipe_id']) || empty($itemData['planned_quantity']) || (float)$itemData['planned_quantity'] <= 0)) {
                     throw new Exception(
                         'Cannot fulfill: this requisition is missing a planned recipe or planned quantity. ' .
                         'The requester must open the requisition and set the planned product + planned quantity first.'
+                    );
+                }
+
+                $requestedQuantity = (float) ($itemData['requested_quantity'] ?? 0);
+                $alreadyIssued = (float) ($itemData['issued_quantity'] ?? 0);
+                $remainingQuantity = max(0.0, $requestedQuantity - $alreadyIssued);
+                if ($issuedQuantity > $remainingQuantity + 0.0005) {
+                    throw new Exception(
+                        'Issue quantity exceeds the remaining request. Remaining: ' .
+                        number_format($remainingQuantity, 3, '.', '') . '.'
                     );
                 }
                 
@@ -572,6 +663,8 @@ function handlePut($db, $currentUser) {
                     issueMilk($db, $issuedQuantity, $id, $currentUser);
                 } elseif ($effectiveItemType === 'ingredient') {
                     issueIngredient($db, $itemData['item_id'], $issuedQuantity, $id, $currentUser);
+                } elseif ($effectiveItemType === 'packaging') {
+                    issueIngredient($db, $itemData['item_id'], $issuedQuantity, $id, $currentUser, 'packaging');
                 } elseif ($effectiveItemType === 'mro') {
                     issueMRO($db, $itemData['item_id'], $issuedQuantity, $id, $currentUser);
                 }
@@ -748,7 +841,7 @@ function issueMilk($db, $liters, $requisitionId, $currentUser) {
 /**
  * Issue ingredient (FIFO)
  */
-function issueIngredient($db, $ingredientId, $quantity, $requisitionId, $currentUser) {
+function issueIngredient($db, $ingredientId, $quantity, $requisitionId, $currentUser, $inventoryItemType = 'ingredient') {
     // Validate ingredient ID
     if (!$ingredientId || $ingredientId <= 0) {
         throw new Exception("Invalid ingredient ID");
@@ -795,17 +888,21 @@ function issueIngredient($db, $ingredientId, $quantity, $requisitionId, $current
             (transaction_code, transaction_type, item_type, item_id, batch_id,
              quantity, unit_of_measure, reference_type, reference_id,
              from_location, performed_by, reason)
-            VALUES (?, 'production_issue', 'ingredient', ?, ?, ?, ?, 'requisition', ?, ?, ?, 'Requisition fulfillment')
+            VALUES (?, 'production_issue', ?, ?, ?, ?, ?, 'requisition', ?, ?, ?, ?)
         ");
         $stmt->execute([
             $txCode,
+            $inventoryItemType,
             $ingredientId,
             $batch['id'],
             $issueFromBatch,
             $ingredientData['unit_of_measure'],
             $requisitionId,
             $ingredientData['storage_location'],
-            $currentUser['user_id']
+            $currentUser['user_id'],
+            $inventoryItemType === 'packaging'
+                ? 'Packaging material issued to Production'
+                : 'Requisition fulfillment'
         ]);
         
         $issued[] = [

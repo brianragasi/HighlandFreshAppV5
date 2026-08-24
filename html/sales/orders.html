@@ -522,10 +522,15 @@
                     </label>
                     <label class="form-control">
                         <span class="label-text mb-2">Payment *</span>
-                        <select id="directPayment" class="select select-bordered w-full">
+                        <select id="directPayment" class="select select-bordered w-full" disabled>
                             <option value="credit">Credit</option>
                             <option value="cash">Cash</option>
                         </select>
+                        <span class="label-text-alt mt-1">Uses the customer’s approved account setting.</span>
+                    </label>
+                    <label class="form-control">
+                        <span class="label-text mb-2">Delivery Location</span>
+                        <select id="directLocation" class="select select-bordered w-full"><option value="">Main address</option></select>
                     </label>
                     <label class="form-control md:col-span-2">
                         <span class="label-text mb-2">Delivery Address</span>
@@ -541,6 +546,10 @@
                         <div><span class="block text-xs text-base-content/50">Credit available</span><strong id="directCustomerCredit">-</strong></div>
                     </div>
                     <p id="directCreditNotice" class="text-xs mt-3 hidden"></p>
+                    <label id="directCreditReasonField" class="form-control mt-3 hidden">
+                        <span class="label-text mb-2">Why should the GM approve this credit exception? *</span>
+                        <textarea id="directCreditReason" class="textarea textarea-bordered" maxlength="500" placeholder="State the business reason for exceeding the approved limit."></textarea>
+                    </label>
                 </div>
 
                 <div class="border-t border-base-300 pt-5">
@@ -627,7 +636,7 @@
         function showToast(message, type = 'info') {
             const toast = document.createElement('div');
             toast.className = `alert alert-${type} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            HighlandSecurity.renderToastContent(toast, message);
             document.getElementById('toastContainer').appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
         }
@@ -714,6 +723,7 @@
             renderDirectItems();
             document.getElementById('directAddress').value = '';
             document.getElementById('directNotes').value = '';
+            document.getElementById('directCreditReason').value = '';
             document.getElementById('directPayment').value = 'credit';
             document.getElementById('directDeliveryDate').min = getLocalDateISO();
             document.getElementById('directDeliveryDate').value = getLocalDateISO();
@@ -754,14 +764,35 @@
             select.innerHTML = '<option value="">Select customer...</option>' + directCustomers.map(customer =>
                 `<option value="${Number(customer.id)}">${escapeHtml(customer.name || customer.customer_name)}</option>`
             ).join('');
-            select.onchange = () => {
+            select.onchange = async () => {
                 const customer = directCustomers.find(item => Number(item.id) === Number(select.value));
                 document.getElementById('directAddress').value = customer?.address || '';
                 document.getElementById('directPayment').value = customer?.default_payment_type || 'credit';
+                if (customer) {
+                    try {
+                        const detail = await SalesService.getCustomer(customer.id);
+                        Object.assign(customer, detail?.data || {});
+                    } catch (error) {
+                        console.warn('Saved delivery locations could not be loaded.', error);
+                    }
+                }
+                renderDirectLocations(customer);
                 updateDirectCustomerSummary();
             };
             document.getElementById('directPayment').onchange = updateDirectCustomerSummary;
             updateDirectCustomerSummary();
+        }
+
+        function renderDirectLocations(customer) {
+            const select = document.getElementById('directLocation');
+            const locations = (customer?.locations || []).filter(location => (location.status || 'active') === 'active');
+            select.innerHTML = '<option value="">Main address</option>' + locations.map(location =>
+                `<option value="${Number(location.id)}">${escapeHtml(location.sub_name)}</option>`
+            ).join('');
+            select.onchange = () => {
+                const selected = locations.find(location => Number(location.id) === Number(select.value));
+                document.getElementById('directAddress').value = selected?.address || customer?.address || '';
+            };
         }
 
         function updateDirectCustomerSummary() {
@@ -793,8 +824,10 @@
             notice.classList.toggle('hidden', !needsOverride);
             notice.className = `text-xs mt-3 ${needsOverride ? 'text-warning font-semibold' : 'hidden'}`;
             notice.innerHTML = needsOverride
-                ? '<i class="fas fa-triangle-exclamation mr-1"></i>This order exceeds the available credit. The GM must approve the credit exception.'
+                ? '<i class="fas fa-triangle-exclamation mr-1"></i>This order exceeds the available credit. Enter a reason, then the GM must approve the credit exception.'
                 : '';
+            document.getElementById('directCreditReasonField').classList.toggle('hidden', !needsOverride);
+            document.getElementById('directCreditReason').required = needsOverride;
             summary.classList.remove('hidden');
         }
 
@@ -900,6 +933,14 @@
             }
             const customer = directCustomers.find(item => Number(item.id) === customerId);
             const total = directItems.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+            const paymentType = document.getElementById('directPayment').value;
+            const projected = Number(customer?.outstanding_balance || 0) + total;
+            const needsOverride = paymentType === 'credit' && projected > Number(customer?.credit_limit || 0);
+            const overrideReason = document.getElementById('directCreditReason').value.trim();
+            if (needsOverride && overrideReason.length < 10) {
+                showToast('Explain the credit exception in at least 10 characters.', 'warning');
+                return;
+            }
             const confirmed = await AuthService.confirmAction({
                 title: 'Send Direct Order to GM',
                 message: 'The order will stay pending. Warehouse FG cannot prepare or dispatch it until the GM approves.',
@@ -918,7 +959,9 @@
                     customer_id: customerId,
                     delivery_date: deliveryDate,
                     delivery_address: document.getElementById('directAddress').value.trim(),
-                    payment_type: document.getElementById('directPayment').value,
+                    sub_account_id: Number(document.getElementById('directLocation').value) || null,
+                    payment_type: paymentType,
+                    credit_override_reason: overrideReason,
                     notes: document.getElementById('directNotes').value.trim(),
                     items: directItems.map(item => ({
                         product_id: item.product_id,
@@ -1040,7 +1083,7 @@
                         <tr class="hover cursor-pointer" onclick="viewOrder(${o.id})">
                             <td class="font-mono text-sm font-medium">${o.order_number || 'ORD-' + o.id}</td>
                             <td>
-                                <div class="font-medium">${o.customer_name || 'Unknown'}</div>
+                                <div class="font-medium">${escapeHtml(o.customer_name || 'Unknown')}</div>
                                 ${typeLabel ? `<span class="badge badge-ghost badge-xs mt-0.5 font-medium">${typeLabel}</span>` : ''}
                             </td>
                             <td class="text-sm tabular-nums">${orderDateStr}</td>
@@ -1048,7 +1091,7 @@
                             <td class="text-center tabular-nums font-medium">${itemCount.toLocaleString()}</td>
                             <td class="text-right font-mono font-semibold">${formatCurrency(o.total_amount)}</td>
                             <td><span class="badge badge-outline badge-sm ${payRaw === 'credit' ? 'badge-info' : ''}">${payLabel}</span></td>
-                            <td><span class="badge ${statusBadges[o.status] || 'badge-ghost'} badge-sm" title="${o.status}">${statusListLabel(o.status)}</span></td>
+                            <td><span class="badge ${statusBadges[o.status] || 'badge-ghost'} badge-sm" title="${escapeHtml(o.status)}">${escapeHtml(statusListLabel(o.status))}</span></td>
                             <td>
                                 <div class="dropdown dropdown-end" onclick="event.stopPropagation()">
                                     <label tabindex="0" class="btn btn-ghost btn-xs"><i class="fas fa-ellipsis-v"></i></label>
@@ -1162,7 +1205,7 @@
                         return `
                         <tr class="${rowReturn ? 'od-row-return' : ''}">
                             <td class="od-product">
-                                ${item.product_name || 'Unknown'}
+                                ${escapeHtml(item.product_name || 'Unknown')}
                                 ${rowReturn ? '<div class="text-xs text-warning mt-0.5"><i class="fas fa-undo mr-1"></i>Return applied</div>' : ''}
                             </td>
                             <td class="od-num">${ordered}</td>
@@ -1200,7 +1243,7 @@
                         <h3 class="od-header__title">
                             <i class="fas fa-file-invoice"></i>
                             <span>${orderNum}</span>
-                            <span class="badge ${statusBadges[order.status] || 'badge-ghost'} od-header__badge" title="${order.status}">${statusLabel}</span>
+                            <span class="badge ${statusBadges[order.status] || 'badge-ghost'} od-header__badge" title="${escapeHtml(order.status)}">${escapeHtml(statusLabel)}</span>
                             ${hasReturns ? '<span class="badge badge-warning badge-sm">With returns</span>' : ''}
                         </h3>
                     </header>
@@ -1208,7 +1251,7 @@
                     <div class="od-meta">
                         <div class="od-meta__item">
                             <span class="od-meta__label">Customer</span>
-                            <span class="od-meta__value">${order.customer_name || '—'}</span>
+                            <span class="od-meta__value">${escapeHtml(order.customer_name || '—')}</span>
                         </div>
                         <div class="od-meta__item">
                             <span class="od-meta__label">Order Date</span>
@@ -1254,7 +1297,7 @@
                     ${order.notes ? `
                         <div class="od-notes">
                             <span class="od-notes__label">Notes</span>
-                            <p class="od-notes__body">${order.notes}</p>
+                            <p class="od-notes__body">${escapeHtml(order.notes)}</p>
                         </div>
                     ` : ''}
 

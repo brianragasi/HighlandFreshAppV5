@@ -704,7 +704,9 @@
             const alertClass = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type];
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            const text = document.createElement('span');
+            text.textContent = String(message ?? '');
+            toast.appendChild(text);
             container.appendChild(toast);
             setTimeout(() => { toast.remove(); }, 3000);
         }
@@ -944,10 +946,10 @@
                                 <tr>
                                     <td>${formatDate(item.received_date)}</td>
                                     <td>
-                                        <div class="font-medium text-sm">${item.farmer_name || '-'}</div>
-                                        <div class="text-xs text-base-content/60">${item.farmer_code || ''}</div>
+                                        <div class="font-medium text-sm">${escapeHtml(item.farmer_name || '-')}</div>
+                                        <div class="text-xs text-base-content/60">${escapeHtml(item.farmer_code || '')}</div>
                                     </td>
-                                    <td><span class="badge ${getGradeBadgeClass(item.grade)} badge-sm">${item.grade || '-'}</span></td>
+                                    <td><span class="badge ${getGradeBadgeClass(item.grade)} badge-sm">${escapeHtml(item.grade || '-')}</span></td>
                                     <td class="text-right">${(item.original_liters || 0).toLocaleString()} L</td>
                                     <td class="text-right font-semibold">${(item.remaining_liters || 0).toLocaleString()} L</td>
                                     <td>${formatDate(item.expiry_date)}</td>
@@ -1012,12 +1014,12 @@
                         table.innerHTML = transformations.map(t => `
                             <tr>
                                 <td>${formatDateTime(t.transformed_at)}</td>
-                                <td>${t.source_product_name || '-'}</td>
-                                <td class="text-right">${(t.input_quantity || 0).toLocaleString()} ${t.input_unit || 'L'}</td>
-                                <td>${t.output_product_name || 'Yogurt'}</td>
-                                <td class="text-right">${(t.output_quantity || 0).toLocaleString()} ${t.output_unit || 'L'}</td>
-                                <td><span class="badge badge-ghost badge-sm">${formatReason(t.reason)}</span></td>
-                                <td>${t.processed_by_name || '-'}</td>
+                                <td>${escapeHtml(t.source_product_name || '-')}</td>
+                                <td class="text-right">${Number(t.input_quantity || 0).toLocaleString()} ${escapeHtml(t.input_unit || 'L')}</td>
+                                <td>${escapeHtml(t.output_product_name || 'Yogurt')}</td>
+                                <td class="text-right">${Number(t.output_quantity || 0).toLocaleString()} ${escapeHtml(t.output_unit || 'L')}</td>
+                                <td><span class="badge badge-ghost badge-sm">${escapeHtml(formatReason(t.reason))}</span></td>
+                                <td>${escapeHtml(t.processed_by_name || '-')}</td>
                             </tr>
                         `).join('');
                     } else {
@@ -1036,9 +1038,9 @@
                 if (response.success) {
                     yogurtProducts = response.data || [];
                     const select = document.getElementById('transformOutput');
-                    select.innerHTML = '<option value="">Select yogurt product...</option>';
+                    select.replaceChildren(new Option('Select yogurt product...', ''));
                     yogurtProducts.forEach(p => {
-                        select.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+                        select.add(new Option(String(p.name || 'Unnamed product'), String(Number(p.id) || '')));
                     });
                 }
             } catch (error) {

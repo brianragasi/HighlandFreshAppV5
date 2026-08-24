@@ -245,7 +245,7 @@
                 </label>
                 <label class="form-control">
                     <span class="label-text-alt font-semibold mb-1">Driver Name</span>
-                    <input type="text" id="driverName" class="input input-bordered input-sm" placeholder="Driver / courier">
+                    <input type="text" id="driverName" class="input input-bordered input-sm" maxlength="100" data-person-name placeholder="Driver / courier">
                 </label>
                 <label class="form-control">
                     <span class="label-text-alt font-semibold mb-1">Vehicle Plate</span>
@@ -296,6 +296,7 @@
     <script src="../../../js/vendor/axios.min.js"></script>
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../../js/ui/live-refresh.js?v=20260820-1"></script>
     <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_raw,general_manager"></script>
     <script src="../../../js/purchasing/purchasing.service.js"></script>
     <script src="../../../js/warehouse/raw.service.js"></script>
@@ -338,6 +339,10 @@
             syncChipsFromSelect();
             syncStatCardsFromSelect();
             await Promise.all([loadPurchaseOrders(), loadReceivingStats()]);
+            HighlandLiveRefresh.start(() => Promise.all([
+                loadPurchaseOrders(),
+                loadReceivingStats()
+            ]));
         });
 
         function debounceSearch() {
@@ -613,8 +618,8 @@
                                             <i class="fas fa-arrow-left"></i>
                                         </button>
                                         <div>
-                                            <h2 class="text-xl font-bold">PO #${po.po_number}</h2>
-                                            <p class="text-sm text-base-content/60">${po.supplier_name}</p>
+                                            <h2 class="text-xl font-bold">PO #${escapeHtml(po.po_number)}</h2>
+                                            <p class="text-sm text-base-content/60">${escapeHtml(po.supplier_name)}</p>
                                         </div>
                                         <span class="badge ${sBadge}">${PurchasingService.formatStatus(po.status)}</span>
                                         <span class="badge ${pBadge} badge-outline">${PurchasingService.formatStatus(po.payment_status)}</span>
@@ -647,10 +652,10 @@
                             <div class="bg-base-200 rounded-xl p-4 mb-6">
                                 <h4 class="font-semibold text-sm mb-2"><i class="fas fa-truck-field mr-2"></i>Supplier</h4>
                                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                                    <div><span class="text-base-content/50">Name:</span> <span class="font-medium">${po.supplier_name}</span></div>
-                                    <div><span class="text-base-content/50">Code:</span> <span class="font-mono">${po.supplier_code}</span></div>
-                                    ${po.supplier_contact ? `<div><span class="text-base-content/50">Contact:</span> ${po.supplier_contact}</div>` : ''}
-                                    ${po.supplier_terms ? `<div><span class="text-base-content/50">Terms:</span> ${po.supplier_terms}</div>` : ''}
+                                    <div><span class="text-base-content/50">Name:</span> <span class="font-medium">${escapeHtml(po.supplier_name)}</span></div>
+                                    <div><span class="text-base-content/50">Code:</span> <span class="font-mono">${escapeHtml(po.supplier_code)}</span></div>
+                                    ${po.supplier_contact ? `<div><span class="text-base-content/50">Contact:</span> ${escapeHtml(po.supplier_contact)}</div>` : ''}
+                                    ${po.supplier_terms ? `<div><span class="text-base-content/50">Terms:</span> ${escapeHtml(po.supplier_terms)}</div>` : ''}
                                 </div>
                             </div>
 
@@ -677,12 +682,12 @@
                                             return `
                                             <tr>
                                                 <td>${i + 1}</td>
-                                                <td class="font-medium">${item.item_description}
-                                                    ${item.ingredient_name ? `<div class="text-xs text-base-content/50">Ingredient: ${item.ingredient_name}</div>` : ''}
-                                                    ${item.mro_item_name ? `<div class="text-xs text-base-content/50">MRO: ${item.mro_item_name}</div>` : ''}
+                                                <td class="font-medium">${escapeHtml(item.item_description)}
+                                                    ${item.ingredient_name ? `<div class="text-xs text-base-content/50">Ingredient: ${escapeHtml(item.ingredient_name)}</div>` : ''}
+                                                    ${item.mro_item_name ? `<div class="text-xs text-base-content/50">MRO: ${escapeHtml(item.mro_item_name)}</div>` : ''}
                                                 </td>
                                                 <td class="text-right">${parseFloat(item.quantity).toFixed(2)}</td>
-                                                <td>${item.unit}</td>
+                                                <td>${escapeHtml(item.unit)}</td>
                                                 <td class="text-right">${formatCurrency(item.unit_price)}</td>
                                                 <td class="text-right font-semibold">${formatCurrency(payableTotal)}</td>
                                                 <td class="text-right text-success">${received.toFixed(2)}</td>
@@ -715,7 +720,7 @@
                             ${po.notes ? `
                                 <div class="bg-base-200 rounded-xl p-4">
                                     <h4 class="font-semibold text-sm mb-1"><i class="fas fa-sticky-note mr-2"></i>Notes</h4>
-                                    <p class="text-sm text-base-content/70 whitespace-pre-line">${po.notes}</p>
+                                    <p class="text-sm text-base-content/70 whitespace-pre-line">${escapeHtml(po.notes)}</p>
                                 </div>
                             ` : ''}
                         </div>
@@ -734,7 +739,7 @@
 
         function openPrintableReceivingReport(id) {
             if (!id) return;
-            window.open(`print_receiving_report.html?po_id=${id}`, '_blank', 'noopener');
+            window.open(`print_receiving_report.html?po_id=${id}&v=20260824-2`, '_blank', 'noopener');
         }
 
         async function markReceived(id) {
@@ -767,15 +772,27 @@
                             ? String(item.ingredient_is_perishable ?? '1') === '1'
                             : String(item.mro_is_perishable ?? '0') === '1';
                         const itemCode = item.ingredient_code || item.mro_item_code || `ITEM${item.id}`;
+                        const supplierQty = parseFloat(item.supplier_order_quantity || 0);
+                        const supplierUnit = String(item.supplier_order_unit || '').trim();
+                        const stockPerSupplierUnit = parseFloat(item.stock_quantity_per_supplier_unit || 0);
+                        const hasSupplierPackage = supplierQty > 0 && supplierUnit && stockPerSupplierUnit > 0;
+                        const remainingSupplierQty = hasSupplierPackage ? remaining / stockPerSupplierUnit : 0;
+                        const sourceRequested = parseFloat(item.source_pr_allocation_quantity || ordered);
+                        const packageExtra = Math.max(0, ordered - sourceRequested);
+                        const packageSummary = hasSupplierPackage
+                            ? `${formatCompactReceivingNumber(supplierQty)} ${escapeHtml(supplierUnit)} = ${formatCompactReceivingNumber(ordered)} ${escapeHtml(item.unit)}`
+                            : `${formatCompactReceivingNumber(ordered)} ${escapeHtml(item.unit)}`;
 
                         return `
                             <div class="border rounded-lg ${alreadyDone ? 'border-success/30 bg-success/5 opacity-70' : 'border-base-300 bg-base-100'}">
                                 <div class="p-4">
                                     <div class="flex items-start justify-between gap-3 mb-3">
                                         <div class="flex-1">
-                                            <p class="font-semibold">${item.item_description}</p>
+                                            <p class="font-semibold">${escapeHtml(item.item_description)}</p>
                                             <p class="text-xs text-base-content/60">System lot: ${itemCode}-Lot-###${isPerishable ? ' - Expiry required' : ' - Non-perishable'}</p>
-                                            <p class="text-sm text-base-content/60">${ordered.toFixed(2)} ${item.unit} ordered @ ${formatCurrency(item.unit_price)}</p>
+                                            <p class="text-sm text-base-content/70 font-medium">Supplier delivery: ${packageSummary}</p>
+                                            ${hasSupplierPackage ? `<p class="text-xs text-base-content/55">Each ${escapeHtml(supplierUnit)} adds ${formatCompactReceivingNumber(stockPerSupplierUnit)} ${escapeHtml(item.unit)} to inventory.${packageExtra > 0.0005 ? ` Warehouse requested ${formatCompactReceivingNumber(sourceRequested)} ${escapeHtml(item.unit)}; ${formatCompactReceivingNumber(packageExtra)} extra is from ordering full packages.` : ''}</p>` : ''}
+                                            <p class="text-xs text-base-content/50">Inventory order value: ${formatCurrency(item.total_amount || ordered * item.unit_price)}</p>
                                             ${prevAccepted > 0 || prevRejected > 0 ? `<p class="text-xs mt-1"><span class="text-success">Previously accepted: ${prevAccepted.toFixed(2)}</span>${prevRejected > 0 ? `  <span class="text-error">Previously rejected: ${prevRejected.toFixed(2)}</span>` : ''}</p>` : ''}
                                         </div>
                                         ${alreadyDone ? '<span class="badge badge-success badge-sm">Fully Received</span>' : `<span class="badge badge-warning badge-sm">Accepted Needed: ${remaining.toFixed(2)}</span>`}
@@ -783,23 +800,38 @@
                                     ${!alreadyDone ? `
                                     <div class="space-y-3">
                                         <!-- Primary input: physically received (counted at the door) -->
-                                        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                        <div class="grid grid-cols-1 ${hasSupplierPackage ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-3">
+                                            ${hasSupplierPackage ? `
                                             <div class="form-control">
-                                                <label class="label py-0"><span class="label-text-alt text-primary font-semibold">Physically Received *</span></label>
-                                                <input type="number" step="0.01" min="0" max="${ordered}"
-                                                       class="input input-bordered input-sm w-full recv-received"
+                                                <label class="label py-0"><span class="label-text-alt text-primary font-semibold">Packages Received *</span></label>
+                                                <div class="join w-full">
+                                                    <input type="number" step="1" min="0" max="${remainingSupplierQty}" inputmode="numeric"
+                                                           class="input input-bordered input-sm join-item w-full recv-supplier-qty"
+                                                           id="recvSupplierQty-${idx}" value="0"
+                                                           onkeydown="blockInvalidReceivingNumber(event)"
+                                                           oninput="syncReceivingPackageToStock(${idx}, this)">
+                                                    <span class="join-item px-3 bg-base-200 border border-base-300 flex items-center text-xs">${escapeHtml(supplierUnit)}</span>
+                                                </div>
+                                                <label class="label py-0"><span class="label-text-alt text-base-content/50">Maximum now: ${formatCompactReceivingNumber(remainingSupplierQty)} ${escapeHtml(supplierUnit)}</span></label>
+                                            </div>` : ''}
+                                            <div class="form-control">
+                                                <label class="label py-0"><span class="label-text-alt ${hasSupplierPackage ? 'text-base-content/60' : 'text-primary font-semibold'}">${hasSupplierPackage ? 'Inventory Quantity (calculated)' : 'Physically Received *'}</span></label>
+                                                <input type="number" step="0.01" min="0" max="${remaining}" inputmode="decimal"
+                                                       class="input input-bordered input-sm w-full recv-received ${hasSupplierPackage ? 'bg-base-200' : ''}"
                                                        id="recvReceived-${idx}" value="0"
                                                        data-ordered="${ordered}" data-prev="${prevAccepted}" data-idx="${idx}"
-                                                       oninput="updateRecvTotals()">
-                                                <label class="label py-0"><span class="label-text-alt text-base-content/50">What you actually counted at the door</span></label>
+                                                       ${hasSupplierPackage ? 'readonly' : ''}
+                                                       onkeydown="blockInvalidReceivingNumber(event)"
+                                                       oninput="limitReceivingLine(${idx}, 'received', this)">
+                                                <label class="label py-0"><span class="label-text-alt text-base-content/50">Maximum for this delivery: ${remaining.toFixed(2)} ${escapeHtml(item.unit)}</span></label>
                                             </div>
                                             <div class="form-control">
                                                 <label class="label py-0"><span class="label-text-alt text-base-content/60">Net accepted to inventory</span></label>
-                                                <p class="input input-bordered input-sm w-full bg-base-200 text-success font-semibold flex items-center px-3" id="recvNetAccepted-${idx}">0.00 ${item.unit}</p>
+                                                <p class="input input-bordered input-sm w-full bg-base-200 text-success font-semibold flex items-center px-3" id="recvNetAccepted-${idx}">0.00 ${escapeHtml(item.unit)}</p>
                                             </div>
                                             <div class="form-control">
                                                 <label class="label py-0"><span class="label-text-alt text-base-content/60">Short by</span></label>
-                                                <p class="input input-bordered input-sm w-full bg-base-200 text-warning font-semibold flex items-center px-3" id="recvShortBy-${idx}">0.00 ${item.unit}</p>
+                                                <p class="input input-bordered input-sm w-full bg-base-200 text-warning font-semibold flex items-center px-3" id="recvShortBy-${idx}">0.00 ${escapeHtml(item.unit)}</p>
                                             </div>
                                             <div class="form-control">
                                                 <label class="label py-0"><span class="label-text-alt text-base-content/60">Remaining after this</span></label>
@@ -822,19 +854,21 @@
                                             <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
                                                 <div class="form-control">
                                                     <label class="label py-0"><span class="label-text-alt text-error font-semibold">Damaged qty</span></label>
-                                                    <input type="number" step="0.01" min="0"
+                                                    <input type="number" step="0.01" min="0" max="0" inputmode="decimal"
                                                            class="input input-bordered input-sm w-full recv-damaged"
                                                            id="recvDamaged-${idx}" value="0"
                                                            data-idx="${idx}"
-                                                           oninput="updateRecvTotals()">
+                                                           onkeydown="blockInvalidReceivingNumber(event)"
+                                                           oninput="limitReceivingLine(${idx}, 'damaged', this)">
                                                 </div>
                                                 <div class="form-control">
                                                     <label class="label py-0"><span class="label-text-alt text-error font-semibold">Wrong item qty</span></label>
-                                                    <input type="number" step="0.01" min="0"
+                                                    <input type="number" step="0.01" min="0" max="0" inputmode="decimal"
                                                            class="input input-bordered input-sm w-full recv-wrong"
                                                            id="recvWrong-${idx}" value="0"
                                                            data-idx="${idx}"
-                                                           oninput="updateRecvTotals()">
+                                                           onkeydown="blockInvalidReceivingNumber(event)"
+                                                           oninput="limitReceivingLine(${idx}, 'wrong', this)">
                                                 </div>
                                                 <div class="form-control md:col-span-2">
                                                     <label class="label py-0"><span class="label-text-alt">Rejection Category</span></label>
@@ -911,15 +945,6 @@
                                                     <option value="requires_qc_review">Requires QC review</option>
                                                 </select>
                                             </div>
-                                            <div class="form-control md:col-span-2">
-                                                <label class="label py-0"><span class="label-text-alt">New Price (if changed)</span></label>
-                                                <input type="number" step="0.01" min="0"
-                                                       class="input input-bordered input-sm w-full"
-                                                       id="recvPrice-${idx}"
-                                                       placeholder="${parseFloat(item.unit_price).toFixed(2)}"
-                                                       data-item-id="${item.ingredient_id || item.mro_item_id || ''}"
-                                                       data-item-type="${item.ingredient_id ? 'ingredient' : (item.mro_item_id ? 'mro' : '')}">
-                                            </div>
                                             <div class="form-control md:col-span-6">
                                                 <label class="label py-0"><span class="label-text-alt">Line Notes</span></label>
                                                 <input type="text" class="input input-bordered input-sm w-full"
@@ -964,6 +989,82 @@
          * The system derives Net accepted (Received - Damaged - Wrong) and Short by
          * (Ordered - Previously received - Received) and Remaining after this delivery.
          */
+        function blockInvalidReceivingNumber(event) {
+            if (['e', 'E', '+', '-'].includes(event.key)) event.preventDefault();
+        }
+
+        function formatCompactReceivingNumber(value, decimals = 3) {
+            const number = Number(value) || 0;
+            return number.toLocaleString('en-PH', {maximumFractionDigits: decimals});
+        }
+
+        function syncReceivingPackageToStock(idx, input) {
+            const item = currentReceiveItems[idx];
+            if (!item) return;
+            const stockPerPackage = Number(item.stock_quantity_per_supplier_unit) || 0;
+            const ordered = Number(item.quantity) || 0;
+            const previouslyAccepted = Number(item.quantity_received) || 0;
+            const remaining = Math.max(0, ordered - previouslyAccepted);
+            const maxPackages = stockPerPackage > 0 ? remaining / stockPerPackage : 0;
+            const packageResult = clampReceivingValue(input, maxPackages);
+            const receivedInput = document.getElementById(`recvReceived-${idx}`);
+            if (receivedInput) {
+                receivedInput.value = String(Math.min(remaining, packageResult.value * stockPerPackage));
+                limitReceivingLine(idx, 'received', receivedInput);
+            }
+        }
+
+        function clampReceivingValue(input, maximum) {
+            if (!input) return { value: 0, adjusted: false };
+            const max = Math.max(0, Number(maximum) || 0);
+            input.max = String(max);
+
+            if (input.value === '') return { value: 0, adjusted: false };
+            const parsed = Number(input.value);
+            const safe = Number.isFinite(parsed) ? Math.max(0, parsed) : max;
+            const clamped = Math.min(safe, max);
+            const adjusted = !Number.isFinite(parsed) || parsed < 0 || parsed > max;
+            if (adjusted) input.value = String(clamped);
+            return { value: clamped, adjusted };
+        }
+
+        function limitReceivingLine(idx, changedField, changedInput) {
+            const item = currentReceiveItems[idx];
+            if (!item) return;
+
+            const ordered = Number(item.quantity) || 0;
+            const previouslyAccepted = Number(item.quantity_received) || 0;
+            const remaining = Math.max(0, ordered - previouslyAccepted);
+            const receivedInput = document.getElementById(`recvReceived-${idx}`);
+            const damagedInput = document.getElementById(`recvDamaged-${idx}`);
+            const wrongInput = document.getElementById(`recvWrong-${idx}`);
+
+            const receivedResult = clampReceivingValue(receivedInput, remaining);
+            const received = receivedResult.value;
+            let adjusted = receivedResult.adjusted;
+
+            if (changedField === 'damaged') {
+                const wrong = clampReceivingValue(wrongInput, received).value;
+                const damagedResult = clampReceivingValue(damagedInput, Math.max(0, received - wrong));
+                adjusted = adjusted || damagedResult.adjusted;
+            } else {
+                const damagedResult = clampReceivingValue(damagedInput, received);
+                const wrongResult = clampReceivingValue(wrongInput, Math.max(0, received - damagedResult.value));
+                adjusted = adjusted || damagedResult.adjusted || wrongResult.adjusted;
+            }
+
+            const damaged = Number(damagedInput?.value) || 0;
+            if (wrongInput) wrongInput.max = String(Math.max(0, received - damaged));
+            const wrong = Number(wrongInput?.value) || 0;
+            if (damagedInput) damagedInput.max = String(Math.max(0, received - wrong));
+
+            if (adjusted && changedInput) {
+                changedInput.classList.add('input-warning');
+                window.setTimeout(() => changedInput.classList.remove('input-warning'), 700);
+            }
+            updateRecvTotals();
+        }
+
         function updateLineDerived(idx) {
             const item = currentReceiveItems[idx];
             if (!item) return;
@@ -1110,6 +1211,19 @@
                     showToast(`${item.item_description}: Expiry date is required because this item is marked perishable`, 'error');
                     hasError = true;
                     return;
+                }
+                if (accepted > 0 && isPerishable) {
+                    const now = new Date();
+                    const today = [
+                        now.getFullYear(),
+                        String(now.getMonth() + 1).padStart(2, '0'),
+                        String(now.getDate()).padStart(2, '0')
+                    ].join('-');
+                    if (expiryDate <= today) {
+                        showToast(`${item.item_description}: Expiry must be after today. Reject expired or same-day stock, or enter the correct supplier expiry date.`, 'error');
+                        hasError = true;
+                        return;
+                    }
                 }
 
                 const entry = {
@@ -1282,7 +1396,7 @@
             const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle';
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg text-sm`;
-            toast.innerHTML = `<i class="fas fa-${icon}"></i><span>${message}</span>`;
+            HighlandSecurity.renderToastContent(toast, message, `fas fa-${icon}`);
             container.appendChild(toast);
             setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 3000);
         }

@@ -5,12 +5,15 @@
  */
 
 require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../helpers/plain_text.php';
+require_once __DIR__ . '/../helpers/customer_accounts.php';
 
 // Require GM/Admin role
 Auth::requireRole(['general_manager', 'admin']);
 
 // Get database connection
 $conn = Database::getInstance()->getConnection();
+hfEnsureCustomerAccountSchema($conn);
 
 // Get request method and handle routing
 $method = $_SERVER['REQUEST_METHOD'];
@@ -106,6 +109,7 @@ function getCustomers($conn) {
     $total = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
     
     // Get customers
+    $outstandingSql = hfCustomerOutstandingSql('c.id');
     $sql = "SELECT 
                 c.id,
                 c.customer_code,
@@ -126,22 +130,11 @@ function getCustomers($conn) {
                 c.updated_at,
                 (SELECT COUNT(*) FROM sales_orders so WHERE so.customer_id = c.id) as total_orders,
                 (SELECT COALESCE(SUM(so.total_amount), 0) FROM sales_orders so WHERE so.customer_id = c.id AND so.status NOT IN ('cancelled', 'rejected')) as total_purchases,
-                -- Outstanding AR: prefer open order balances, fall back to customer ledger balance
-                GREATEST(
-                    0,
-                    COALESCE((
-                        SELECT SUM(GREATEST(COALESCE(so.balance_due, 0), 0))
-                        FROM sales_orders so
-                        WHERE so.customer_id = c.id
-                          AND so.status NOT IN ('cancelled', 'rejected', 'draft')
-                          AND COALESCE(so.balance_due, 0) > 0
-                    ), 0),
-                    COALESCE(c.current_balance, 0)
-                ) AS outstanding_balance,
+                {$outstandingSql} AS outstanding_balance,
                 (SELECT MAX(so.created_at) FROM sales_orders so WHERE so.customer_id = c.id) AS last_order_at
             FROM customers c
             $whereClause
-            ORDER BY c.name ASC
+            ORDER BY c.id DESC
             LIMIT ? OFFSET ?";
     
     $params[] = $limit;
@@ -156,6 +149,7 @@ function getCustomers($conn) {
         $limitAmt = (float) ($row['credit_limit'] ?? 0);
         $outstanding = (float) ($row['outstanding_balance'] ?? 0);
         $row['outstanding_balance'] = round($outstanding, 2);
+        $row['current_balance'] = $row['outstanding_balance'];
         $row['available_credit'] = round(max(0, $limitAmt - $outstanding), 2);
         $row['credit_utilization'] = $limitAmt > 0
             ? round(min(100, ($outstanding / $limitAmt) * 100), 1)
@@ -193,6 +187,7 @@ function getCustomer($conn, $id) {
                 c.payment_terms_days,
                 c.default_payment_type,
                 c.status,
+                c.blocked_reason,
                 c.notes,
                 c.created_at,
                 c.updated_at
@@ -242,6 +237,10 @@ function getCustomer($conn, $id) {
     $statsStmt = $conn->prepare($statsSql);
     $statsStmt->execute([$id]);
     $customer['statistics'] = $statsStmt->fetch(PDO::FETCH_ASSOC);
+    $customer['outstanding_balance'] = hfCustomerOutstandingBalance($conn, (int) $id);
+    $customer['current_balance'] = $customer['outstanding_balance'];
+    $customer['available_credit'] = max(0, (float) $customer['credit_limit'] - $customer['outstanding_balance']);
+    $customer['locations'] = hfCustomerLocations($conn, (int) $id, true);
     
     sendSuccess(['customer' => $customer]);
 }
@@ -251,26 +250,28 @@ function getCustomer($conn, $id) {
  */
 function createCustomer($conn) {
     $data = json_decode(file_get_contents('php://input'), true);
+    $data = hfPlainTextFields(is_array($data) ? $data : [], [
+        'customer_code' => [50, false],
+        'name' => [160, false],
+        'sub_location' => [160, false],
+        'contact_person' => [160, false],
+        'address' => [500, true],
+        'blocked_reason' => [500, true],
+        'notes' => [1000, true],
+    ]);
+    $data = hfCustomerNormalizePayload($data);
     $contactCheck = hfValidateContactPayload($data, ['contact_number'], 'email');
     if (!empty($contactCheck['errors'])) {
         sendValidationError($contactCheck['errors']);
     }
     $data = $contactCheck['data'];
-    
-    // Validate required fields
-    $required = ['name', 'customer_type'];
-    foreach ($required as $field) {
-        if (empty($data[$field])) {
-            sendError("Field '$field' is required", 400);
-            return;
-        }
+    if (!hfPersonNameHasLetter($data['contact_person'] ?? '', true)) {
+        sendValidationError(['contact_person' => 'Contact person must contain at least one letter when provided']);
     }
     
-    // Validate customer_type
-    $validTypes = ['walk_in', 'institutional', 'supermarket', 'feeding_program', 'distributor', 'restaurant'];
-    if (!in_array($data['customer_type'], $validTypes)) {
-        sendError('Invalid customer type', 400);
-        return;
+    $accountErrors = hfValidateCustomerAccountPayload($data, [], true);
+    if ($accountErrors) {
+        sendValidationError($accountErrors);
     }
     
     // Generate customer code if not provided
@@ -296,8 +297,8 @@ function createCustomer($conn) {
                 customer_code, customer_type, name, sub_location,
                 contact_person, contact_number, email, address,
                 credit_limit, current_balance, payment_terms_days,
-                default_payment_type, status, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                default_payment_type, status, blocked_reason, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)";
     
     $stmt = $conn->prepare($sql);
     $stmt->execute([
@@ -310,14 +311,25 @@ function createCustomer($conn) {
         $data['email'] ?? null,
         $data['address'] ?? null,
         $data['credit_limit'] ?? 0.00,
-        $data['current_balance'] ?? 0.00,
         $data['payment_terms_days'] ?? 0,
         $data['default_payment_type'] ?? 'cash',
         $data['status'] ?? 'active',
+        $data['blocked_reason'] ?? null,
         $data['notes'] ?? null
     ]);
     
     $customerId = $conn->lastInsertId();
+    if (isset($data['locations']) && is_array($data['locations'])) {
+        hfSaveCustomerLocations($conn, (int) $customerId, $data['locations']);
+    }
+    if (!empty($data['email'])) {
+        $emailStmt = $conn->prepare("SELECT id FROM customers WHERE status = 'active' AND LOWER(TRIM(email)) = LOWER(TRIM(?)) LIMIT 1");
+        $emailStmt->execute([$data['email']]);
+        if ($emailStmt->fetch()) {
+            sendError('This email is already assigned to another active customer', 409);
+            return;
+        }
+    }
     
     sendSuccess([
         'message' => 'Customer created successfully',
@@ -331,29 +343,49 @@ function createCustomer($conn) {
  */
 function updateCustomer($conn, $id) {
     $data = json_decode(file_get_contents('php://input'), true);
-    $contactCheck = hfValidateContactPayload($data, ['contact_number'], 'email');
+    $data = hfPlainTextFields(is_array($data) ? $data : [], [
+        'customer_code' => [50, false],
+        'name' => [160, false],
+        'sub_location' => [160, false],
+        'contact_person' => [160, false],
+        'address' => [500, true],
+        'blocked_reason' => [500, true],
+        'notes' => [1000, true],
+    ]);
+    $contactCheck = hfValidateContactPayload($data, ['contact_number', 'phone'], 'email');
     if (!empty($contactCheck['errors'])) {
         sendValidationError($contactCheck['errors']);
     }
 
-    if (!empty($data['email'])) {
-        $emailStmt = $conn->prepare("SELECT id FROM customers WHERE status = 'active' AND LOWER(TRIM(email)) = LOWER(TRIM(?)) LIMIT 1");
-        $emailStmt->execute([$data['email']]);
-        if ($emailStmt->fetch()) {
-            sendError('This email is already assigned to another active customer', 409);
-            return;
-        }
-    }
     $data = $contactCheck['data'];
+    if (array_key_exists('contact_person', $data) && !hfPersonNameHasLetter($data['contact_person'], true)) {
+        sendValidationError(['contact_person' => 'Contact person must contain at least one letter when provided']);
+    }
     
     // Check if customer exists
-    $checkStmt = $conn->prepare("SELECT id, customer_code, email, status FROM customers WHERE id = ?");
+    $checkStmt = $conn->prepare("SELECT * FROM customers WHERE id = ?");
     $checkStmt->execute([$id]);
     $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
     
     if (!$existing) {
         sendError('Customer not found', 404);
         return;
+    }
+
+    $data = hfCustomerNormalizePayload($data, $existing);
+    $accountErrors = hfValidateCustomerAccountPayload($data, $existing);
+    if ($accountErrors) {
+        sendValidationError($accountErrors);
+    }
+    $effectiveEmail = array_key_exists('email', $data) ? trim((string) $data['email']) : trim((string) ($existing['email'] ?? ''));
+    $effectiveStatus = array_key_exists('status', $data) ? (string) $data['status'] : (string) $existing['status'];
+    if ($effectiveStatus === 'active' && $effectiveEmail !== '') {
+        $emailStmt = $conn->prepare("SELECT id FROM customers WHERE status = 'active' AND LOWER(TRIM(email)) = LOWER(TRIM(?)) AND id <> ? LIMIT 1");
+        $emailStmt->execute([$effectiveEmail, $id]);
+        if ($emailStmt->fetch()) {
+            sendError('This email is already assigned to another active customer', 409);
+            return;
+        }
     }
     
     // Build dynamic update
@@ -363,8 +395,8 @@ function updateCustomer($conn, $id) {
     $allowedFields = [
         'customer_code', 'customer_type', 'name', 'sub_location',
         'contact_person', 'contact_number', 'email', 'address',
-        'credit_limit', 'current_balance', 'payment_terms_days',
-        'default_payment_type', 'status', 'notes'
+        'credit_limit', 'payment_terms_days',
+        'default_payment_type', 'status', 'blocked_reason', 'notes'
     ];
     
     foreach ($allowedFields as $field) {
@@ -394,6 +426,10 @@ function updateCustomer($conn, $id) {
     
     $stmt = $conn->prepare($sql);
     $stmt->execute($params);
+    if (isset($data['locations']) && is_array($data['locations'])) {
+        hfSaveCustomerLocations($conn, (int) $id, $data['locations']);
+    }
+    hfSyncCustomerBalance($conn, (int) $id);
     
     sendSuccess(['message' => 'Customer updated successfully']);
 }
@@ -413,19 +449,6 @@ function deleteCustomer($conn, $id) {
         sendError('Customer not found', 404);
         return;
     }
-
-
-    $effectiveEmail = array_key_exists('email', $data) ? trim((string)$data['email']) : trim((string)($existing['email'] ?? ''));
-    $effectiveStatus = array_key_exists('status', $data) ? (string)$data['status'] : (string)$existing['status'];
-    if ($effectiveStatus === 'active' && $effectiveEmail !== '') {
-        $emailStmt = $conn->prepare("SELECT id FROM customers WHERE status = 'active' AND LOWER(TRIM(email)) = LOWER(TRIM(?)) AND id <> ? LIMIT 1");
-        $emailStmt->execute([$effectiveEmail, $id]);
-        if ($emailStmt->fetch()) {
-            sendError('This email is already assigned to another active customer', 409);
-            return;
-        }
-    }
-
     if ($customer['status'] === 'inactive') {
         sendSuccess([
             'message' => 'Customer is already archived',
@@ -452,6 +475,7 @@ function deleteCustomer($conn, $id) {
  */
 function getCustomerStatistics($conn) {
     $stats = [];
+    $outstandingSql = hfCustomerOutstandingSql('c.id');
     
     // Total customers by status
     $stmt = $conn->query("SELECT 
@@ -481,12 +505,12 @@ function getCustomerStatistics($conn) {
     $stats['by_payment_type'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     // Total receivables
-    $stmt = $conn->query("SELECT 
-        SUM(current_balance) as total_receivables,
-        SUM(credit_limit) as total_credit_limit,
-        COUNT(CASE WHEN current_balance > 0 THEN 1 END) as customers_with_balance
-    FROM customers
-    WHERE status = 'active'");
+    $stmt = $conn->query("SELECT
+        SUM(x.outstanding_balance) AS total_receivables,
+        SUM(x.credit_limit) AS total_credit_limit,
+        SUM(CASE WHEN x.outstanding_balance > 0 THEN 1 ELSE 0 END) AS customers_with_balance
+      FROM (SELECT c.credit_limit, {$outstandingSql} AS outstanding_balance
+            FROM customers c WHERE c.status = 'active') x");
     $stats['receivables'] = $stmt->fetch(PDO::FETCH_ASSOC);
     
     // Top 10 customers by purchases
@@ -513,29 +537,30 @@ function getCustomerStatistics($conn) {
  */
 function getReceivables($conn) {
     // Get customers with outstanding balance
-    $sql = "SELECT 
+    $outstandingSql = hfCustomerOutstandingSql('c.id');
+    $sql = "SELECT * FROM (SELECT
                 c.id,
                 c.customer_code,
                 c.name,
                 c.customer_type,
                 c.payment_terms_days,
                 c.credit_limit,
-                c.current_balance,
-                (SELECT COUNT(*) FROM sales_orders so 
-                 WHERE so.customer_id = c.id AND so.payment_status != 'paid' 
-                 AND so.status NOT IN ('cancelled', 'rejected')) as unpaid_orders
+                {$outstandingSql} AS outstanding_balance,
+                (SELECT COUNT(*) FROM delivery_receipts dr
+                 WHERE dr.customer_id = c.id AND dr.payment_status != 'paid'
+                 AND dr.status NOT IN ('cancelled', 'draft')) as unpaid_deliveries
             FROM customers c
-            WHERE c.current_balance > 0
-            ORDER BY c.current_balance DESC";
+            ) receivables
+            WHERE outstanding_balance > 0
+            ORDER BY outstanding_balance DESC";
     
     $stmt = $conn->query($sql);
     $receivables = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     // Summary
-    $summaryStmt = $conn->query("SELECT 
-        SUM(current_balance) as total_receivables,
-        COUNT(*) as customer_count
-    FROM customers WHERE current_balance > 0");
+    $summaryStmt = $conn->query("SELECT SUM(outstanding_balance) AS total_receivables,
+        SUM(CASE WHEN outstanding_balance > 0 THEN 1 ELSE 0 END) AS customer_count
+        FROM (SELECT {$outstandingSql} AS outstanding_balance FROM customers c) x");
     $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC);
     
     sendSuccess([
@@ -548,6 +573,7 @@ function getReceivables($conn) {
  * Export customers to CSV
  */
 function exportCustomers($conn) {
+    $outstandingSql = hfCustomerOutstandingSql('c.id');
     $sql = "SELECT 
                 c.customer_code,
                 c.customer_type,
@@ -558,7 +584,7 @@ function exportCustomers($conn) {
                 c.email,
                 c.address,
                 c.credit_limit,
-                c.current_balance,
+                {$outstandingSql} AS outstanding_balance,
                 c.payment_terms_days,
                 c.default_payment_type,
                 c.status,

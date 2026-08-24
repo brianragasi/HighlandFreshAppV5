@@ -24,6 +24,7 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/recipe_production_readiness.php';
 
 // Require Production, GM, or Warehouse Raw role.
 //   - production_staff: create + cancel own pending
@@ -77,6 +78,7 @@ function findActiveDuplicateRequisition(
             FROM material_requisitions
             WHERE requested_by = ?
               AND production_run_id = ?
+              AND COALESCE(request_type, 'cooking') = 'cooking'
               AND status IN ('pending', 'approved', 'partial')
             ORDER BY id DESC
             LIMIT 1
@@ -90,6 +92,7 @@ function findActiveDuplicateRequisition(
         FROM material_requisitions
         WHERE requested_by = ?
           AND production_run_id IS NULL
+          AND COALESCE(request_type, 'cooking') = 'cooking'
           AND planned_recipe_id = ?
           AND ABS(COALESCE(planned_quantity, 0) - ?) < 0.001
           AND LOWER(TRIM(COALESCE(planned_yield_unit, ''))) = LOWER(TRIM(?))
@@ -107,6 +110,14 @@ function findActiveDuplicateRequisition(
 }
 
 function ensureProductionRequisitionPlanColumns($db) {
+    if (!auditColumnExists($db, 'material_requisitions', 'request_type')) {
+        $db->exec("ALTER TABLE material_requisitions
+            ADD COLUMN request_type VARCHAR(30) NOT NULL DEFAULT 'cooking' AFTER production_run_id");
+    }
+    if (!auditColumnExists($db, 'material_requisitions', 'packaging_plan_json')) {
+        $db->exec("ALTER TABLE material_requisitions
+            ADD COLUMN packaging_plan_json LONGTEXT NULL AFTER request_type");
+    }
     if (!auditColumnExists($db, 'material_requisitions', 'planned_recipe_id')) {
         $db->exec("ALTER TABLE material_requisitions ADD COLUMN planned_recipe_id INT(11) DEFAULT NULL AFTER production_run_id");
     }
@@ -524,23 +535,20 @@ function getRequisitionRecipeItemsForPlan($db, $recipeId, $plannedQuantity) {
         Response::notFound('Recipe not found or inactive');
     }
 
-    // Scale materials from bulk liquid volume (liters), not bottle SKU count.
-    // Denominator priority: bulk_yield_liters → base_milk_liters → expected_yield (legacy).
-    $bulkYield = null;
-    if (isset($recipe['bulk_yield_liters']) && $recipe['bulk_yield_liters'] !== null && (float) $recipe['bulk_yield_liters'] > 0) {
-        $bulkYield = (float) $recipe['bulk_yield_liters'];
-    } else {
-        $yu = strtolower((string) ($recipe['yield_unit'] ?? ''));
-        if (in_array($yu, ['liter', 'liters', 'l', 'lt'], true) && (float) ($recipe['expected_yield'] ?? 0) > 0) {
-            $bulkYield = (float) $recipe['expected_yield'];
-        } elseif ((float) ($recipe['base_milk_liters'] ?? 0) > 0) {
-            $bulkYield = (float) $recipe['base_milk_liters'];
-        } else {
-            $bulkYield = (float) ($recipe['expected_yield'] ?? 0);
-        }
+    if (!isBulkProductionRecipe($recipe)) {
+        Response::validationError([
+            'recipe_id' => 'Choose a bulk recipe with a base product and a liquid yield in liters',
+        ]);
+    }
+    $currentRecipe = getCurrentActiveBulkRecipeForBase($db, $recipe['base_product_id']);
+    if (!$currentRecipe || (int) $currentRecipe['id'] !== (int) $recipe['id']) {
+        $replacement = $currentRecipe ? ' Use ' . $currentRecipe['recipe_code'] . ' instead.' : '';
+        Response::error('This recipe has been superseded and cannot be used for a new requisition.' . $replacement, 409);
     }
 
-    $expectedYield = $bulkYield > 0 ? $bulkYield : (float) ($recipe['expected_yield'] ?? 0);
+    // Scale only from a declared liquid standard. Bottle counts and base-milk
+    // volume are not interchangeable with finished bulk liters.
+    $expectedYield = getStrictRecipeBulkYieldLiters($recipe);
     $scaleFactor = $expectedYield > 0 ? max(0, (float) $plannedQuantity) / $expectedYield : 1;
     $requiredMilk = round(((float) $recipe['base_milk_liters']) * $scaleFactor, 3);
     $items = [];
@@ -866,7 +874,7 @@ try {
                     Response::validationError(['recipe_id' => 'Recipe is required']);
                 }
                 if ($plannedQuantity <= 0) {
-                    Response::validationError(['planned_quantity' => 'Planned quantity must be greater than 0']);
+                    Response::validationError(['planned_quantity' => 'Planned finished amount must be greater than 0 L']);
                 }
 
                 Response::success(
@@ -989,7 +997,10 @@ try {
                 LEFT JOIN production_runs pr ON ir.production_run_id = pr.id
                 LEFT JOIN master_recipes pmr ON ir.planned_recipe_id = pmr.id
             ";
-            $where = "WHERE 1=1";
+            // The cooking-material screen remains focused on the initial batch
+            // request. Packaging requests are tracked on the active run and in
+            // Warehouse's issuing queue.
+            $where = "WHERE COALESCE(ir.request_type, 'cooking') = 'cooking'";
             $params = [];
 
             switch ($workflow) {
@@ -1150,15 +1161,99 @@ try {
             if (!$productionRunId && !$plannedRecipeId) {
                 $errors['planned_recipe_id'] = 'Choose the planned recipe before submitting a pre-run requisition';
             }
-            if (!$productionRunId && (!$plannedQuantity || (float) $plannedQuantity <= 0)) {
-                $errors['planned_quantity'] = 'Planned quantity must be greater than 0';
+            if (!$productionRunId) {
+                try {
+                    $plannedQuantity = hfParseBusinessDecimal(
+                        $plannedQuantity,
+                        'Planned finished amount',
+                        0.01,
+                        1000000.00,
+                        2
+                    );
+                } catch (InvalidArgumentException $error) {
+                    $errors['planned_quantity'] = $error->getMessage();
+                }
+            }
+
+            if (is_array($items)) {
+                $seenRequestItems = [];
+                foreach ($items as $index => $item) {
+                    $lineNo = $index + 1;
+                    $itemType = strtolower(trim((string) ($item['item_type'] ?? 'ingredient')));
+                    $itemId = (int) ($item['item_id'] ?? 0);
+                    $itemName = trim((string) ($item['item_name'] ?? ''));
+                    try {
+                        $quantity = hfParseBusinessDecimal(
+                            $item['quantity'] ?? null,
+                            "Line {$lineNo} material quantity",
+                            0.001,
+                            1000000.000,
+                            3
+                        );
+                    } catch (InvalidArgumentException $error) {
+                        $quantity = false;
+                        $errors["items.$index.quantity"] = $error->getMessage();
+                    }
+                    if (array_key_exists('quantity_in_packs', $item)
+                        && $item['quantity_in_packs'] !== ''
+                        && $item['quantity_in_packs'] !== null) {
+                        try {
+                            hfParseBusinessDecimal(
+                                $item['quantity_in_packs'],
+                                "Line {$lineNo} pack quantity",
+                                0.001,
+                                1000000.000,
+                                3
+                            );
+                        } catch (InvalidArgumentException $error) {
+                            $errors["items.$index.quantity_in_packs"] = $error->getMessage();
+                        }
+                    }
+
+                    if ($itemType === 'raw_milk') {
+                        $itemKey = 'raw_milk';
+                    } elseif ($itemId > 0) {
+                        $itemKey = $itemType . ':' . $itemId;
+                    } else {
+                        $itemKey = $itemType . ':name:' . strtolower($itemName);
+                    }
+
+                    if ($itemName === '' || $itemKey === $itemType . ':name:') {
+                        $errors["items.$index.item_name"] = "Line {$lineNo}: select a material";
+                        continue;
+                    }
+                    if (isset($seenRequestItems[$itemKey])) {
+                        $firstLine = $seenRequestItems[$itemKey];
+                        $errors["items.$index.item_id"] = "Line {$lineNo}: {$itemName} is already on line {$firstLine}. Keep one row and update its quantity.";
+                        continue;
+                    }
+                    $seenRequestItems[$itemKey] = $lineNo;
+
+                    if ($quantity === false && !isset($errors["items.$index.quantity"])) {
+                        $errors["items.$index.quantity"] = "Line {$lineNo}: quantity must be greater than zero";
+                    }
+                }
             }
 
             if (!$productionRunId && $plannedRecipeId) {
-                $recipeCheck = $db->prepare("SELECT id FROM master_recipes WHERE id = ? AND is_active = 1");
+                $recipeCheck = $db->prepare("SELECT * FROM master_recipes WHERE id = ? AND is_active = 1");
                 $recipeCheck->execute([$plannedRecipeId]);
-                if (!$recipeCheck->fetch()) {
+                $plannedRecipe = $recipeCheck->fetch();
+                if (!$plannedRecipe) {
                     $errors['planned_recipe_id'] = 'Choose an active planned recipe';
+                } elseif (!isBulkProductionRecipe($plannedRecipe)) {
+                    $errors['planned_recipe_id'] = 'Choose a bulk recipe with a base product and a liquid yield in liters';
+                } else {
+                    $currentRecipe = getCurrentActiveBulkRecipeForBase($db, $plannedRecipe['base_product_id']);
+                    if (!$currentRecipe || (int) $currentRecipe['id'] !== (int) $plannedRecipe['id']) {
+                        $errors['planned_recipe_id'] = $currentRecipe
+                            ? 'This recipe was superseded; choose ' . $currentRecipe['recipe_code']
+                            : 'This base product has no current bulk recipe';
+                    } else {
+                        // The API owns the plan unit; clients cannot relabel liters
+                        // as bottles/units and corrupt downstream scaling.
+                        $plannedYieldUnit = 'liters';
+                    }
                 }
             }
             

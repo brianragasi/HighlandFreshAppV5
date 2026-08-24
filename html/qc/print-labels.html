@@ -722,6 +722,7 @@
         function getBatchUnitQty(batch) {
             if (!batch) return 0;
             const candidates = [
+                batch.qc_released_total,
                 batch.quantity_produced,
                 batch.actual_yield,
                 batch.expected_yield,
@@ -770,13 +771,18 @@
                 const batches = response.data || [];
 
                 const select = document.getElementById('batchSelect');
-                select.innerHTML = '<option value="">Select a released batch...</option>';
+                select.replaceChildren(new Option('Select a released batch...', ''));
 
                 batches.forEach(b => {
                     const expiry = b.expiry_date ? new Date(b.expiry_date).toLocaleDateString() : 'N/A';
                     const productName = b.product_name || 'Unknown Product';
                     const qty = getBatchUnitQty(b);
-                    select.innerHTML += `<option value="${b.id}" data-qty="${qty}">${b.batch_code} — ${productName} · ${qty} units (Exp: ${expiry})</option>`;
+                    const option = new Option(
+                        `${b.batch_code || 'Batch'} - ${productName} - ${qty.toLocaleString()} units (Exp: ${expiry})`,
+                        String(Number(b.id) || '')
+                    );
+                    option.dataset.qty = String(qty);
+                    select.add(option);
                 });
 
                 if (batches.length === 0) {
@@ -812,11 +818,13 @@
 
                 const base = getBaseBarcode(currentBatch);
                 if (currentBatch.barcode || currentBatch.batch_code) {
-                    document.getElementById('infoBarcode').innerHTML =
-                        `<span class="text-success">${base}</span>`;
+                    const barcode = document.getElementById('infoBarcode');
+                    barcode.textContent = base;
+                    barcode.className = 'font-mono font-semibold text-success';
                 } else {
-                    document.getElementById('infoBarcode').innerHTML =
-                        '<span class="text-error">Missing</span>';
+                    const barcode = document.getElementById('infoBarcode');
+                    barcode.textContent = 'Missing';
+                    barcode.className = 'font-mono font-semibold text-error';
                 }
 
                 document.getElementById('infoProduct').textContent = currentBatch.product_name || '—';
@@ -826,9 +834,16 @@
                 document.getElementById('infoExpDate').textContent = currentBatch.expiry_date
                     ? new Date(currentBatch.expiry_date).toLocaleDateString() : '—';
 
-                document.getElementById('infoStatus').innerHTML = currentBatch.qc_status === 'released'
-                    ? '<span class="badge badge-success badge-sm">Released</span>'
-                    : `<span class="badge badge-sm">${currentBatch.qc_status || 'Unknown'}</span>`;
+                const status = document.getElementById('infoStatus');
+                status.replaceChildren();
+                const statusBadge = document.createElement('span');
+                statusBadge.className = currentBatch.qc_status === 'released'
+                    ? 'badge badge-success badge-sm'
+                    : 'badge badge-sm';
+                statusBadge.textContent = currentBatch.qc_status === 'released'
+                    ? 'Released'
+                    : String(currentBatch.qc_status || 'Unknown');
+                status.appendChild(statusBadge);
 
                 // Default print qty = full batch
                 const countInput = document.getElementById('labelCount');

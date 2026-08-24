@@ -459,7 +459,7 @@
 
     <!-- Payment Modal -->
     <dialog id="paymentModal" class="modal">
-        <div class="modal-box max-w-md">
+        <div class="modal-box max-w-4xl">
             <h3 class="font-bold text-lg mb-4">
                 <i class="fas fa-money-bill-wave text-primary mr-2"></i>
                 Record Payment
@@ -479,11 +479,12 @@
                 <div class="grid grid-cols-2 gap-3 mb-3">
                     <div class="form-control">
                         <label class="label"><span class="label-text">Payment Date</span></label>
-                        <input type="date" id="payDate" class="input input-bordered w-full">
+                        <input type="date" id="payDate" class="input input-bordered w-full" onchange="updatePaymentDateGuidance()">
+                        <div id="payDateHint" class="text-xs text-base-content/60 mt-1">Date the funds were actually released.</div>
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Amount to Pay</span></label>
-                        <input type="number" id="payAmountInput" class="input input-bordered w-full" min="0.01" step="0.01" placeholder="0.00" oninput="updatePaymentPreview()">
+                        <input type="number" id="payAmountInput" class="input input-bordered w-full" min="0.01" max="9999999999.99" step="0.01" placeholder="0.00" oninput="updatePaymentPreview()" onkeydown="return !['e','E','+','-'].includes(event.key)">
                     </div>
                 </div>
 
@@ -493,37 +494,71 @@
                     <div class="flex items-center justify-between"><span class="muted-hint">Remaining Balance</span><strong id="payRemaining">PHP 0.00</strong></div>
                 </div>
 
-                <div class="form-control mb-3">
-                    <label class="label"><span class="label-text">Payment Method</span></label>
-                    <select id="payMethod" class="select select-bordered w-full">
-                        <option value="cash">Cash</option>
-                        <option value="check">Check</option>
-                        <option value="bank_transfer">Bank Transfer</option>
-                    </select>
+                <div class="border border-base-300 rounded-xl mb-4 overflow-hidden">
+                    <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-base-200">
+                        <div>
+                            <div class="font-semibold">PO and receiving comparison</div>
+                            <div class="text-xs text-base-content/60">Review what was ordered, what arrived, and what Finance will pay.</div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button type="button" class="btn btn-xs btn-outline" onclick="openPaymentSource('po')"><i class="fas fa-file-lines"></i> Open PO</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="openPaymentSource('rr')"><i class="fas fa-truck-ramp-box"></i> Open RR</button>
+                        </div>
+                    </div>
+                    <div id="paymentDocumentReview" class="p-4 text-sm">
+                        <span class="loading loading-spinner loading-sm"></span> Loading comparison...
+                    </div>
+                </div>
+
+                <div class="border border-base-300 rounded-xl p-4 mb-4">
+                    <div class="font-semibold mb-1">Supplier invoice</div>
+                    <div class="text-xs text-base-content/60 mb-3">The invoice number comes from receiving. Finance supplies the date, total, and actual invoice file.</div>
+                    <div class="grid md:grid-cols-3 gap-3">
+                        <div class="form-control">
+                            <label class="label"><span class="label-text">Invoice Number</span></label>
+                            <input type="text" id="payInvoiceNumber" class="input input-bordered w-full" readonly>
+                        </div>
+                        <div class="form-control">
+                            <label class="label"><span class="label-text">Invoice Date</span></label>
+                            <input type="date" id="payInvoiceDate" class="input input-bordered w-full" required>
+                        </div>
+                        <div class="form-control">
+                            <label class="label"><span class="label-text">Invoice Total</span></label>
+                            <input type="number" id="payInvoiceTotal" class="input input-bordered w-full" min="0.01" max="9999999999.99" step="0.01" required onkeydown="return !['e','E','+','-'].includes(event.key)">
+                        </div>
+                    </div>
+                    <div class="form-control mt-3">
+                        <label class="label"><span class="label-text">Supplier Invoice File</span></label>
+                        <input type="file" id="payInvoiceFile" class="file-input file-input-bordered w-full" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png">
+                        <div id="payInvoiceFileHint" class="text-xs text-base-content/60 mt-1">PDF, JPG, or PNG; maximum 5 MB.</div>
+                    </div>
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-3 mb-3">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Payment Method</span></label>
+                        <select id="payMethod" class="select select-bordered w-full" onchange="updatePaymentMethodFields()">
+                            <option value="cash">Cash</option>
+                            <option value="check">Check</option>
+                            <option value="bank_transfer">Bank Transfer</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text" id="payReferenceLabel">Cash Acknowledgment Number</span></label>
+                        <input type="text" id="payReference" class="input input-bordered w-full" minlength="4" maxlength="100" required>
+                    </div>
                 </div>
 
                 <div class="form-control mb-3">
-                    <label class="label"><span class="label-text">Reference Number</span></label>
-                    <input type="text" id="payReference" class="input input-bordered w-full"
-                        placeholder="Check # / Transfer Ref #">
+                    <label class="label"><span class="label-text" id="payProofLabel">Signed Cash Acknowledgment</span></label>
+                    <input type="file" id="payProofFile" class="file-input file-input-bordered w-full" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" required>
+                    <div class="text-xs text-base-content/60 mt-1">PDF, JPG, or PNG; maximum 5 MB. This is evidence that funds were actually released.</div>
                 </div>
 
-                <div class="bg-base-200 rounded-xl p-3 mb-3 text-xs">
-                    <div class="font-semibold mb-2">Verification Checklist</div>
-                    <label class="label cursor-pointer justify-start gap-3">
-                        <input type="checkbox" id="verifyPo" class="checkbox checkbox-sm checkbox-primary">
-                        <span class="label-text">I verified the PO document.</span>
-                    </label>
-                    <label class="label cursor-pointer justify-start gap-3">
-                        <input type="checkbox" id="verifyRR" class="checkbox checkbox-sm checkbox-primary">
-                        <span class="label-text">I verified the Receiving Report.</span>
-                    </label>
-                    <label class="label cursor-pointer justify-start gap-3">
-                        <input type="checkbox" id="verifyInvoice" class="checkbox checkbox-sm checkbox-primary">
-                        <span class="label-text">I verified the supplier invoice.</span>
-                    </label>
-                    <div class="text-xs text-base-content/60 mt-1" id="paymentVerifyHint">RR and invoice must be available before payment.</div>
-                </div>
+                <label class="flex items-start gap-3 bg-base-200 rounded-xl p-3 mb-3 cursor-pointer">
+                    <input type="checkbox" id="confirmRelease" class="checkbox checkbox-sm checkbox-primary mt-0.5">
+                    <span class="text-sm"><strong>I released the funds using the selected method.</strong><br><span class="text-xs text-base-content/60">The reference and attached proof belong to this exact payment.</span></span>
+                </label>
 
                 <div class="form-control mb-4">
                     <label class="label"><span class="label-text">Notes</span></label>
@@ -686,16 +721,24 @@
                                 : currentQueue === 'overdue'
                                     ? 'No overdue supplier balances found.'
                                     : 'No open supplier balances found.';
-                    tbody.innerHTML = `<tr><td colspan="5" class="text-center py-12 text-base-content/60">
-                        <i class="fas fa-inbox text-3xl mb-2"></i><p>${message}</p></td></tr>`;
+                    const emptyCell = document.createElement('td');
+                    emptyCell.colSpan = 5;
+                    emptyCell.className = 'text-center py-12 text-base-content/60';
+                    HighlandSecurity.renderToastContent(emptyCell, message, 'fas fa-inbox text-3xl mb-2');
+                    const emptyRow = document.createElement('tr');
+                    emptyRow.appendChild(emptyCell);
+                    tbody.replaceChildren(emptyRow);
                     renderPagination(meta);
                     return;
                 }
 
                 tbody.innerHTML = payables.map(po => {
                     const overdueClass = po.is_overdue == 1 ? 'row-overdue' : '';
+                    const rrCount = parseInt(po.rr_count || 0, 10);
+                    const rrReadyCount = parseInt(po.rr_ready_count || 0, 10);
+                    const allReceiptsReady = rrCount > 0 && rrReadyCount === rrCount;
                     const rrVerified = ['verified', 'completed'].includes(String(po.rr_status || '').toLowerCase());
-                    const canPay = po.balance_due > 0 && po.payment_status !== 'cancelled' && po.rr_number && po.invoice_number && rrVerified;
+                    const canPay = po.balance_due > 0 && po.payment_status !== 'cancelled' && allReceiptsReady;
                     const isPaid = po.payment_status === 'paid' || po.balance_due <= 0;
                     let readinessTitle = 'Ready to pay';
                     let readinessIcon = 'circle-check';
@@ -703,21 +746,21 @@
                     let blockedText = '';
                     if (isPaid) {
                         readinessTitle = 'Payment complete';
-                    } else if (!po.rr_number) {
+                    } else if (rrCount === 0 || !po.rr_number) {
                         readinessTitle = 'Waiting for Receiving Report';
                         readinessIcon = 'clock';
                         readinessColor = 'text-amber-700';
                         blockedText = 'Warehouse Raw must complete receiving first.';
-                    } else if (!po.invoice_number) {
+                    } else if (rrReadyCount < rrCount && !po.invoice_number) {
                         readinessTitle = 'Waiting for supplier invoice';
                         readinessIcon = 'file-circle-exclamation';
                         readinessColor = 'text-amber-700';
                         blockedText = 'Add the supplier invoice before payment.';
-                    } else if (!rrVerified) {
+                    } else if (!allReceiptsReady || !rrVerified) {
                         readinessTitle = 'Waiting for Purchaser verification';
                         readinessIcon = 'user-check';
                         readinessColor = 'text-amber-700';
-                        blockedText = 'The Purchaser must verify the RR against the PO.';
+                        blockedText = 'Every receiving report must be verified and have an invoice number.';
                     }
                     return `
                         <tr class="payable-row ${overdueClass}">
@@ -740,7 +783,7 @@
                             <td>
                                 <div class="amount-total">${formatCurrency(po.balance_due)}</div>
                                 ${po.amount_paid > 0 ? `<div class="amount-meta">Paid ${formatCurrency(po.amount_paid)}</div>` : ''}
-                                <div class="amount-meta">Due ${formatDate(po.due_date)}</div>
+                                <div class="amount-meta">Due ${formatDate(po.payment_due_date || po.due_date)}</div>
                                 <div class="amount-meta">${formatPaymentTerms(po.payment_terms || po.supplier_terms)}</div>
                             </td>
                             <td>
@@ -803,39 +846,142 @@
         // PAYMENT
         // ========================================
 
-        function openPaymentModal(id) {
+        async function openPaymentModal(id) {
             const po = payablesIndex[id];
             if (!po) return;
-            currentPayable = po;
-
+            currentPayable = null;
+            document.getElementById('paymentModal').showModal();
+            document.getElementById('paymentDocumentReview').innerHTML = '<span class="loading loading-spinner loading-sm"></span> Loading comparison...';
             document.getElementById('payPoId').value = id;
             document.getElementById('payPoNumber').textContent = po.po_number;
             document.getElementById('paySupplier').textContent = po.supplier_name;
-            document.getElementById('payTerms').textContent = formatPaymentTerms(po.payment_terms || po.supplier_terms);
-            document.getElementById('payDueDate').textContent = formatDate(po.due_date);
-            document.getElementById('payAmount').textContent = formatCurrency(po.balance_due);
-            document.getElementById('payTotal').textContent = formatCurrency(po.payable_total);
-            document.getElementById('payPaid').textContent = formatCurrency(po.amount_paid);
-            document.getElementById('payRemaining').textContent = formatCurrency(po.balance_due);
-
-            document.getElementById('payDate').value = new Date().toISOString().slice(0, 10);
-            document.getElementById('payAmountInput').value = po.balance_due.toFixed(2);
             document.getElementById('payMethod').value = 'cash';
             document.getElementById('payReference').value = '';
             document.getElementById('payNotes').value = '';
-            document.getElementById('verifyPo').checked = false;
-            document.getElementById('verifyRR').checked = false;
-            document.getElementById('verifyInvoice').checked = false;
+            document.getElementById('confirmRelease').checked = false;
+            document.getElementById('payInvoiceFile').value = '';
+            document.getElementById('payProofFile').value = '';
+            updatePaymentMethodFields();
 
-            const verifyHint = document.getElementById('paymentVerifyHint');
-            if (verifyHint) {
-                const missing = [];
-                if (!po.rr_number) missing.push('receiving report');
-                if (!po.invoice_number) missing.push('invoice');
-                verifyHint.textContent = missing.length ? `Missing ${missing.join(' and ')}. Payment is blocked until documents are complete.` : 'All required documents are available.';
+            try {
+                const response = await FinanceService.getPayableDetail(id);
+                const detail = response?.data;
+                if (!detail) throw new Error('Purchase order details were not found');
+                detail.payable_total = parseFloat(detail.payable_total || 0);
+                detail.amount_paid = parseFloat(detail.amount_paid || 0);
+                detail.balance_due = parseFloat(detail.balance_due || 0);
+                currentPayable = detail;
+
+                document.getElementById('payTerms').textContent = formatPaymentTerms(detail.payment_terms || detail.supplier_terms);
+                document.getElementById('payDueDate').textContent = formatDate(detail.due_date);
+                document.getElementById('payAmount').textContent = formatCurrency(detail.balance_due);
+                document.getElementById('payTotal').textContent = formatCurrency(detail.payable_total);
+                document.getElementById('payPaid').textContent = formatCurrency(detail.amount_paid);
+                document.getElementById('payRemaining').textContent = formatCurrency(detail.balance_due);
+
+                const today = getLocalISODate();
+                const verifiedDates = (detail.receiving_reports || [])
+                    .map(report => String(report.verified_at || report.received_at || '').slice(0, 10))
+                    .filter(Boolean)
+                    .sort();
+                detail.earliest_payment_date = verifiedDates.length ? verifiedDates[verifiedDates.length - 1] : '';
+                document.getElementById('payDate').value = today;
+                document.getElementById('payDate').max = today;
+                document.getElementById('payDate').min = detail.earliest_payment_date;
+                document.getElementById('payAmountInput').value = detail.balance_due.toFixed(2);
+                document.getElementById('payAmountInput').max = detail.balance_due.toFixed(2);
+                const invoiceNumbers = [...new Set((detail.receiving_reports || []).map(report => report.invoice_number).filter(Boolean))];
+                document.getElementById('payInvoiceNumber').value = invoiceNumbers.join(', ');
+                document.getElementById('payInvoiceTotal').value = detail.payable_total.toFixed(2);
+
+                const evidence = detail.invoice_evidence;
+                const invoiceFile = document.getElementById('payInvoiceFile');
+                const invoiceHint = document.getElementById('payInvoiceFileHint');
+                if (evidence) {
+                    document.getElementById('payInvoiceDate').value = evidence.invoice_date || '';
+                    invoiceFile.required = false;
+                    invoiceHint.innerHTML = `Invoice already stored: <strong>${escapeHtml(evidence.original_name || 'invoice')}</strong> <button type="button" class="link link-primary" onclick="viewSupplierPaymentFile(${evidence.payment_id}, 'invoice')">View</button>. Upload only to replace it.`;
+                } else {
+                    document.getElementById('payInvoiceDate').value = '';
+                    invoiceFile.required = true;
+                    invoiceHint.textContent = 'Required for the first payment. PDF, JPG, or PNG; maximum 5 MB.';
+                }
+                renderPaymentComparison(detail);
+                updatePaymentDateGuidance();
+            } catch (error) {
+                document.getElementById('paymentDocumentReview').innerHTML = `<div class="text-error"><i class="fas fa-circle-exclamation mr-1"></i>${escapeHtml(error.message || 'Could not load payment review')}</div>`;
+                showToast(error.message || 'Could not load payment review', 'error');
             }
+        }
 
-            document.getElementById('paymentModal').showModal();
+        function renderPaymentComparison(po) {
+            const reports = po.receiving_reports || [];
+            const items = po.items || [];
+            const allReportsReady = reports.length > 0 && reports.every(report => ['verified', 'completed'].includes(String(report.status || '').toLowerCase()) && report.invoice_number);
+            document.getElementById('paymentDocumentReview').innerHTML = `
+                <div class="grid sm:grid-cols-3 gap-2 mb-3">
+                    <div class="rounded-lg bg-base-200 p-3"><span class="text-xs text-base-content/60">Approved PO</span><div class="font-semibold text-success"><i class="fas fa-check-circle mr-1"></i>${escapeHtml(po.po_number)}</div></div>
+                    <div class="rounded-lg bg-base-200 p-3"><span class="text-xs text-base-content/60">Receiving Reports</span><div class="font-semibold ${allReportsReady ? 'text-success' : 'text-error'}"><i class="fas fa-${allReportsReady ? 'check-circle' : 'circle-exclamation'} mr-1"></i>${reports.length} report${reports.length === 1 ? '' : 's'} checked</div></div>
+                    <div class="rounded-lg bg-base-200 p-3"><span class="text-xs text-base-content/60">Supplier Invoices</span><div class="font-semibold ${allReportsReady ? 'text-success' : 'text-error'}"><i class="fas fa-${allReportsReady ? 'check-circle' : 'circle-exclamation'} mr-1"></i>${reports.filter(report => report.invoice_number).length} invoice number${reports.length === 1 ? '' : 's'}</div></div>
+                </div>
+                <div class="grid sm:grid-cols-2 gap-2 mb-3">${reports.map(report => `
+                    <div class="border border-base-300 rounded-lg p-2 text-xs">
+                        <div class="font-semibold">${escapeHtml(report.rr_number || 'Receiving Report')}</div>
+                        <div>Invoice: ${escapeHtml(report.invoice_number || 'Missing')}</div>
+                        <div>Status: ${escapeHtml(FinanceService.formatStatus(report.status || '-'))}</div>
+                        <div>Verified: ${formatDateTime(report.verified_at || report.received_at)}</div>
+                    </div>`).join('')}</div>
+                <div class="overflow-x-auto">
+                    <table class="table table-xs">
+                        <thead><tr><th>Item</th><th>Ordered</th><th>Accepted</th><th>Unit Price</th><th>Finance Pays</th></tr></thead>
+                        <tbody>${items.map(item => `
+                            <tr>
+                                <td>${escapeHtml(item.item_description)}</td>
+                                <td>${formatQuantity(item.quantity)} ${escapeHtml(item.unit || '')}</td>
+                                <td>${formatQuantity(item.payable_quantity)} ${escapeHtml(item.unit || '')}</td>
+                                <td>${formatCurrency(item.unit_price)}</td>
+                                <td class="font-semibold">${formatCurrency(item.payable_total)}</td>
+                            </tr>`).join('')}</tbody>
+                        <tfoot><tr><td colspan="4" class="text-right font-semibold">System payable total</td><td class="font-bold text-primary">${formatCurrency(po.payable_total)}</td></tr></tfoot>
+                    </table>
+                </div>`;
+        }
+
+        function openPaymentSource(kind) {
+            if (!currentPayable) return;
+            const documentVersion = '20260824-2';
+            const path = kind === 'po'
+                ? `../purchasing/print_po.html?po_id=${encodeURIComponent(currentPayable.id)}&v=${documentVersion}`
+                : `../warehouse/raw/print_receiving_report.html?po_id=${encodeURIComponent(currentPayable.id)}&v=${documentVersion}`;
+            window.open(path, '_blank', 'noopener');
+        }
+
+        function updatePaymentMethodFields() {
+            const method = document.getElementById('payMethod').value;
+            const labels = {
+                cash: ['Cash Acknowledgment Number', 'Signed Cash Acknowledgment', 'e.g., CASH-ACK-2026-001'],
+                check: ['Check Number', 'Check Image or Deposit Slip', 'e.g., CHK-008412'],
+                bank_transfer: ['Bank Transfer Reference Number', 'Bank Transfer Receipt', 'Enter or paste the exact bank reference']
+            };
+            const selected = labels[method] || labels.cash;
+            document.getElementById('payReferenceLabel').textContent = selected[0];
+            document.getElementById('payProofLabel').textContent = selected[1];
+            document.getElementById('payReference').placeholder = selected[2];
+        }
+
+        function updatePaymentDateGuidance() {
+            const input = document.getElementById('payDate');
+            const hint = document.getElementById('payDateHint');
+            const selectedDate = input.value;
+            const earliestDate = currentPayable?.earliest_payment_date || '';
+            const isTooEarly = Boolean(selectedDate && earliestDate && selectedDate < earliestDate);
+            input.setCustomValidity(isTooEarly ? `Choose ${formatDate(earliestDate)} or later` : '');
+            hint.className = `text-xs mt-1 ${isTooEarly ? 'text-error font-semibold' : 'text-base-content/60'}`;
+            hint.textContent = earliestDate
+                ? `${isTooEarly ? 'Too early. ' : ''}Funds can only be recorded from ${formatDate(earliestDate)}, after the latest Receiving Report was verified.`
+                : 'Date the funds were actually released.';
+            const invoiceDateInput = document.getElementById('payInvoiceDate');
+            if (invoiceDateInput) invoiceDateInput.max = selectedDate || '';
         }
 
         function updatePaymentPreview() {
@@ -859,9 +1005,11 @@
 
                 const paymentAmount = parseFloat(document.getElementById('payAmountInput').value || 0);
                 const paymentDate = document.getElementById('payDate').value;
-                const verifyPo = document.getElementById('verifyPo').checked;
-                const verifyRR = document.getElementById('verifyRR').checked;
-                const verifyInvoice = document.getElementById('verifyInvoice').checked;
+                const invoiceTotal = parseFloat(document.getElementById('payInvoiceTotal').value || 0);
+                const invoiceDate = document.getElementById('payInvoiceDate').value;
+                const reference = document.getElementById('payReference').value.trim();
+                const invoiceFile = document.getElementById('payInvoiceFile').files[0];
+                const proofFile = document.getElementById('payProofFile').files[0];
 
                 if (!paymentDate) {
                     showToast('Payment date is required', 'error');
@@ -878,8 +1026,31 @@
                     return;
                 }
 
-                if (!verifyPo || !verifyRR || !verifyInvoice) {
-                    showToast('Please verify PO, Receiving Report, and invoice before payment', 'error');
+                if (!invoiceDate || !Number.isFinite(invoiceTotal) || Math.abs(invoiceTotal - currentPayable.payable_total) > 0.01) {
+                    showToast(`Invoice date is required and its total must match ${formatCurrency(currentPayable.payable_total)}`, 'error');
+                    return;
+                }
+
+                if (currentPayable.earliest_payment_date && paymentDate < currentPayable.earliest_payment_date) {
+                    showToast(`Payment date must be ${formatDate(currentPayable.earliest_payment_date)} or later because that is when receiving was verified`, 'error');
+                    document.getElementById('payDate').focus();
+                    updatePaymentDateGuidance();
+                    return;
+                }
+                if (!/^[A-Za-z0-9][A-Za-z0-9 ._\/-]{3,99}$/.test(reference)) {
+                    showToast('Enter a valid 4 to 100 character payment reference', 'error');
+                    return;
+                }
+                if (!currentPayable.invoice_evidence && !invoiceFile) {
+                    showToast('Attach the supplier invoice', 'error');
+                    return;
+                }
+                if ((invoiceFile && !isAllowedPaymentFile(invoiceFile)) || !proofFile || !isAllowedPaymentFile(proofFile)) {
+                    showToast('Invoice and proof files must be PDF, JPG, or PNG and no larger than 5 MB', 'error');
+                    return;
+                }
+                if (!document.getElementById('confirmRelease').checked) {
+                    showToast('Confirm that the funds were released and the proof belongs to this payment', 'error');
                     return;
                 }
 
@@ -888,18 +1059,20 @@
                     return;
                 }
 
-                await FinanceService.recordPayment({
-                    po_id: document.getElementById('payPoId').value,
-                    payment_method: document.getElementById('payMethod').value,
-                    reference_number: document.getElementById('payReference').value,
-                    notes: document.getElementById('payNotes').value,
-                    payment_amount: paymentAmount,
-                    payment_date: paymentDate,
-                    verify_po: verifyPo,
-                    verify_rr: verifyRR,
-                    verify_invoice: verifyInvoice,
-                    step_up_token: stepUpToken
-                });
+                const formData = new FormData();
+                formData.append('po_id', document.getElementById('payPoId').value);
+                formData.append('payment_method', document.getElementById('payMethod').value);
+                formData.append('reference_number', reference);
+                formData.append('notes', document.getElementById('payNotes').value);
+                formData.append('payment_amount', paymentAmount.toFixed(2));
+                formData.append('payment_date', paymentDate);
+                formData.append('invoice_date', invoiceDate);
+                formData.append('invoice_total', invoiceTotal.toFixed(2));
+                formData.append('confirm_release', '1');
+                formData.append('step_up_token', stepUpToken);
+                if (invoiceFile) formData.append('invoice_file', invoiceFile);
+                formData.append('proof_file', proofFile);
+                await FinanceService.recordPayment(formData);
                 document.getElementById('paymentModal').close();
                 showToast('Payment recorded successfully!', 'success');
                 await Promise.all([loadPayablesOverview(), loadPayables()]);
@@ -910,6 +1083,12 @@
                 btn.innerHTML = '<i class="fas fa-check mr-1"></i> Confirm Payment';
             }
         });
+
+        function isAllowedPaymentFile(file) {
+            if (!file || file.size <= 0 || file.size > 5 * 1024 * 1024) return false;
+            const extension = (file.name.split('.').pop() || '').toLowerCase();
+            return ['pdf', 'jpg', 'jpeg', 'png'].includes(extension);
+        }
 
         // ========================================
         // DETAIL MODAL
@@ -933,12 +1112,12 @@
                     <div class="grid grid-cols-2 gap-4 mb-4">
                         <div>
                             <p class="text-sm text-base-content/60">PO Number</p>
-                            <p class="font-bold text-lg">${po.po_number}</p>
+                            <p class="font-bold text-lg">${escapeHtml(po.po_number)}</p>
                         </div>
                         <div>
                             <p class="text-sm text-base-content/60">Supplier</p>
-                            <p class="font-bold">${po.supplier_name}</p>
-                            <p class="text-xs text-base-content/50">${po.supplier_code}</p>
+                            <p class="font-bold">${escapeHtml(po.supplier_name)}</p>
+                            <p class="text-xs text-base-content/50">${escapeHtml(po.supplier_code)}</p>
                         </div>
                         <div>
                             <p class="text-sm text-base-content/60">Order Date</p>
@@ -974,11 +1153,11 @@
                         </div>
                         <div>
                             <p class="text-sm text-base-content/60">Receiving Report</p>
-                            <p class="font-medium">${po.rr_number || '-'}</p>
+                            <p class="font-medium">${escapeHtml(po.rr_number || '-')}</p>
                         </div>
                         <div>
                             <p class="text-sm text-base-content/60">Invoice Number</p>
-                            <p class="font-medium">${po.invoice_number || '-'}</p>
+                            <p class="font-medium">${escapeHtml(po.invoice_number || '-')}</p>
                         </div>
                     </div>
 
@@ -992,9 +1171,9 @@
                             <tbody>
                                 ${items.map(item => `
                                     <tr>
-                                        <td>${item.item_description}</td>
+                                        <td>${escapeHtml(item.item_description)}</td>
                                         <td>${parseFloat((item.payable_quantity ?? item.quantity) || 0).toLocaleString()}</td>
-                                        <td>${item.unit}</td>
+                                        <td>${escapeHtml(item.unit)}</td>
                                         <td>${formatCurrency(item.unit_price)}</td>
                                         <td class="font-semibold">${formatCurrency(item.payable_total ?? item.total_amount)}</td>
                                     </tr>
@@ -1013,7 +1192,7 @@
                         <div class="overflow-x-auto">
                             <table class="table table-xs">
                                 <thead>
-                                    <tr><th>Date</th><th>Amount</th><th>Method</th><th>Reference</th><th>Remarks</th><th>Recorded By</th></tr>
+                                    <tr><th>Date</th><th>Amount</th><th>Method</th><th>Reference</th><th>Evidence</th><th>Recorded By</th></tr>
                                 </thead>
                                 <tbody>
                                     ${po.payments.map(pay => `
@@ -1021,9 +1200,15 @@
                                             <td>${formatDate(pay.payment_date)}</td>
                                             <td class="font-semibold">${formatCurrency(pay.amount_paid)}</td>
                                             <td>${formatPaymentMethod(pay.payment_method)}</td>
-                                            <td>${pay.reference_number || '-'}</td>
-                                            <td>${pay.remarks || '-'}</td>
-                                            <td>${pay.paid_by_name || 'Finance'}</td>
+                                            <td>${escapeHtml(pay.reference_number || '-')}</td>
+                                            <td>
+                                                <div class="flex flex-wrap gap-1">
+                                                    ${pay.has_invoice_file ? `<button class="btn btn-ghost btn-xs" onclick="viewSupplierPaymentFile(${pay.id}, 'invoice')"><i class="fas fa-file-invoice"></i> Invoice</button>` : '<span class="text-base-content/40">No invoice file</span>'}
+                                                    ${pay.has_proof_file ? `<button class="btn btn-ghost btn-xs" onclick="viewSupplierPaymentFile(${pay.id}, 'proof')"><i class="fas fa-receipt"></i> Proof</button>` : '<span class="text-base-content/40">No proof</span>'}
+                                                </div>
+                                                ${pay.remarks ? `<div class="text-xs text-base-content/60 mt-1">${escapeHtml(pay.remarks)}</div>` : ''}
+                                            </td>
+                                            <td>${escapeHtml(pay.paid_by_name || 'Finance')}</td>
                                         </tr>
                                     `).join('')}
                                 </tbody>
@@ -1031,10 +1216,16 @@
                         </div>
                     ` : '<p class="text-sm text-base-content/60">No payments recorded yet.</p>'}
 
-                    ${po.notes ? `<div class="mt-3 p-3 bg-base-200 rounded-lg text-sm"><strong>Notes:</strong> ${po.notes}</div>` : ''}
+                    ${po.notes ? `<div class="mt-3 p-3 bg-base-200 rounded-lg text-sm"><strong>Notes:</strong> ${escapeHtml(po.notes)}</div>` : ''}
                 `;
             } catch (error) {
-                document.getElementById('detailContent').innerHTML = `<p class="text-error"><i class="fas fa-exclamation-circle mr-2"></i>${error.message || 'Error loading details'}</p>`;
+                const detailContent = document.getElementById('detailContent');
+                detailContent.className = 'text-error';
+                HighlandSecurity.renderToastContent(
+                    detailContent,
+                    error.message || 'Error loading details',
+                    'fas fa-exclamation-circle mr-2'
+                );
             }
         }
 
@@ -1044,6 +1235,23 @@
 
         function formatCurrency(amount) {
             return 'PHP ' + parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatQuantity(value) {
+            return parseFloat(value || 0).toLocaleString('en-PH', { maximumFractionDigits: 3 });
+        }
+
+        async function viewSupplierPaymentFile(paymentId, kind) {
+            try {
+                const response = await FinanceService.getSupplierPaymentFile(paymentId, kind);
+                const blob = response?.data;
+                if (!blob) throw new Error('File was not found');
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank', 'noopener');
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+            } catch (error) {
+                showToast(error.message || `Could not open ${kind}`, 'error');
+            }
         }
 
         function escapeHtml(value) {
@@ -1058,6 +1266,20 @@
         function formatDate(dateStr) {
             if (!dateStr) return '-';
             return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function getLocalISODate(date = new Date()) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function formatDateTime(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(String(dateStr).replace(' ', 'T')).toLocaleString('en-PH', {
+                month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
+            });
         }
 
         function formatPaymentTerms(terms) {
@@ -1087,7 +1309,7 @@
             const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle';
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg text-sm`;
-            toast.innerHTML = `<i class="fas fa-${icon}"></i><span>${message}</span>`;
+            HighlandSecurity.renderToastContent(toast, message, `fas fa-${icon}`);
             container.appendChild(toast);
             setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 3000);
         }

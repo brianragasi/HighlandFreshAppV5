@@ -1181,17 +1181,42 @@ function hfFindImportedOrderCustomer(PDO $db, string $sender, string $customerCo
     return count($customers) === 1 ? $customers[0] : null;
 }
 
+function hfCustomerOrderParseQuantity($value): ?int
+{
+    $text = trim((string)$value);
+    if (preg_match('/^\d+(?:\.0+)?$/D', $text) !== 1) {
+        return null;
+    }
+    $quantity = (int)$text;
+    return $quantity >= 1 && $quantity <= 1000000 ? $quantity : null;
+}
+
+function hfCustomerOrderParseMoney($value): array
+{
+    $text = trim((string)$value);
+    if ($text === '') {
+        return ['valid' => true, 'value' => null];
+    }
+    if (preg_match('/^\d{1,8}(?:\.\d{1,2})?$/D', $text) !== 1) {
+        return ['valid' => false, 'value' => null];
+    }
+    $amount = (float)$text;
+    if ($amount > 99999999.99) {
+        return ['valid' => false, 'value' => null];
+    }
+    return ['valid' => true, 'value' => $amount];
+}
+
 function hfMatchCustomerOrderLine(PDO $db, array $row): array
 {
     $code = trim((string) ($row['product_code'] ?? ''));
-    $quantityEntered = filter_var(
-        $row['quantity'] ?? null,
-        FILTER_VALIDATE_FLOAT
-    );
+    $quantityEntered = hfCustomerOrderParseQuantity($row['quantity'] ?? null);
     $unitEntered = strtolower(trim((string) ($row['unit'] ?? '')));
-    $poPrice = ($row['unit_price'] ?? '') === ''
-        ? null
-        : filter_var($row['unit_price'], FILTER_VALIDATE_FLOAT);
+    $priceUnit = strtolower(trim((string)($row['price_unit'] ?? $unitEntered)));
+    $parsedPrice = hfCustomerOrderParseMoney($row['unit_price'] ?? null);
+    $enteredPoPrice = $parsedPrice['value'];
+    $priceInvalid = !$parsedPrice['valid'];
+    $poPrice = $enteredPoPrice;
 
     $productStmt = $db->prepare("
         SELECT id, product_code, product_name, variant, selling_price,
@@ -1214,8 +1239,8 @@ function hfMatchCustomerOrderLine(PDO $db, array $row): array
     if (!$product) {
         $issues[] = "Unknown or inactive Finished Goods product code '{$code}'.";
     }
-    if ($quantityEntered === false || $quantityEntered <= 0 || floor($quantityEntered) != $quantityEntered) {
-        $issues[] = 'Quantity must be a positive whole number.';
+    if ($quantityEntered === null) {
+        $issues[] = 'Quantity must be a positive whole number no greater than 1,000,000.';
     }
 
     if ($product && !$issues) {
@@ -1234,21 +1259,45 @@ function hfMatchCustomerOrderLine(PDO $db, array $row): array
         } else {
             $issues[] = "Unit '{$unitEntered}' does not match {$product['base_unit']} or {$product['box_unit']}.";
         }
+
+        if ($enteredPoPrice !== null) {
+            if (in_array($priceUnit, $boxAliases, true)) {
+                $poPrice = $enteredPoPrice / (int)$product['pieces_per_box'];
+                $priceUnit = strtolower((string)$product['box_unit']);
+            } elseif (in_array($priceUnit, $baseAliases, true)) {
+                $poPrice = $enteredPoPrice;
+                $priceUnit = strtolower((string)$product['base_unit']);
+            } else {
+                $issues[] = "Price unit '{$priceUnit}' does not match {$product['base_unit']} or {$product['box_unit']}.";
+            }
+        }
     }
 
     $systemPrice = $product ? (float) $product['selling_price'] : null;
-    if ($poPrice === false || ($poPrice !== null && $poPrice < 0)) {
-        $issues[] = 'Unit price is invalid.';
+    if ($priceInvalid) {
+        $issues[] = 'Customer price must be a normal amount up to 99,999,999.99 with no more than two decimal places.';
         $poPrice = null;
     } elseif ($product && $poPrice !== null && abs((float) $poPrice - $systemPrice) > 0.009) {
-        $warnings[] = 'PO price differs from the current system price.';
+        $warnings[] = sprintf(
+            'Customer price %s per %s equals %.2f per %s; the current Highland Fresh price is %.2f per %s.',
+            number_format((float)$enteredPoPrice, 2),
+            $priceUnit,
+            (float)$poPrice,
+            strtolower((string)$product['base_unit']),
+            $systemPrice,
+            strtolower((string)$product['base_unit'])
+        );
     }
+
+    $raw = $row;
+    $raw['price_unit'] = $priceUnit;
+    $raw['entered_unit_price'] = $enteredPoPrice;
 
     return [
         'customer_product_code' => $code,
         'description' => trim((string) ($row['description'] ?? ($product['product_name'] ?? ''))),
         'product_id' => $product ? (int) $product['id'] : null,
-        'quantity_entered' => $quantityEntered === false ? null : $quantityEntered,
+        'quantity_entered' => $quantityEntered,
         'unit_entered' => $unitEntered,
         'quantity_base' => $quantityBase,
         'quantity_boxes' => $boxes,
@@ -1257,7 +1306,7 @@ function hfMatchCustomerOrderLine(PDO $db, array $row): array
         'system_unit_price' => $systemPrice,
         'line_status' => $issues ? 'blocked' : ($warnings ? 'warning' : 'matched'),
         'issue_text' => implode(' ', array_merge($issues, $warnings)) ?: null,
-        'raw' => $row,
+        'raw' => $raw,
     ];
 }
 
@@ -1447,6 +1496,7 @@ function hfManualCheckedLines(PDO $db, array $submittedLines): array
         $quantity = trim((string)($submitted['quantity'] ?? ''));
         $unit = trim((string)($submitted['unit'] ?? ''));
         $price = trim((string)($submitted['unit_price'] ?? ''));
+        $priceUnit = trim((string)($submitted['price_unit'] ?? $unit));
         $remarks = trim((string)($submitted['remarks'] ?? ''));
         if ($productCode === '' && $quantity === '' && $unit === '' && $price === '' && $remarks === '') {
             continue;
@@ -1457,6 +1507,7 @@ function hfManualCheckedLines(PDO $db, array $submittedLines): array
             'quantity' => $quantity,
             'unit' => $unit,
             'unit_price' => $price,
+            'price_unit' => $priceUnit,
         ]);
         $line['line_id'] = (int)($submitted['line_id'] ?? 0);
         $line['row_number'] = (int)($submitted['row_number'] ?? ($index + 1));
@@ -1467,6 +1518,8 @@ function hfManualCheckedLines(PDO $db, array $submittedLines): array
             'quantity' => $quantity,
             'unit' => $unit,
             'unit_price' => $price,
+            'price_unit' => $priceUnit,
+            'entered_unit_price' => $line['raw']['entered_unit_price'] ?? null,
             'remarks' => $remarks,
         ];
         $checked[] = $line;
@@ -1518,7 +1571,9 @@ function hfManualCheckedLines(PDO $db, array $submittedLines): array
 
 function hfManualLatestCall(PDO $db, int $importId): ?array
 {
-    $stmt = $db->prepare('SELECT * FROM customer_order_call_confirmations WHERE import_id = ? ORDER BY id DESC LIMIT 1');
+    $stmt = $db->prepare("SELECT * FROM customer_order_call_confirmations
+        WHERE import_id = ? AND confirmation_method = 'phone_call'
+        ORDER BY id DESC LIMIT 1");
     $stmt->execute([$importId]);
     $call = $stmt->fetch(PDO::FETCH_ASSOC);
     return $call ?: null;
@@ -1712,11 +1767,7 @@ function hfSaveManualCustomerOrder(PDO $db, int $importId, array $data, int $use
         $callMatches = false;
         if ($latestCall) {
             $approvedSnapshot = json_decode((string)$latestCall['approved_snapshot'], true) ?: [];
-            $callMatches = hfManualSnapshotMatches($approvedSnapshot, $currentSnapshot)
-                || (
-                    !empty($import['entry_saved_at'])
-                    && strtotime((string)$latestCall['confirmed_at']) + 60 >= strtotime((string)$import['entry_saved_at'])
-                );
+            $callMatches = hfManualSnapshotMatches($approvedSnapshot, $currentSnapshot);
         }
         $issueCount = 0;
         $warningCount = 0;
@@ -1810,7 +1861,8 @@ function hfCorrectManualCustomerOrderEncoding(PDO $db, int $importId, string $re
             throw new RuntimeException('Encoding correction is only available when the saved entry differs from the original encoding.');
         }
 
-        $callStmt = $db->prepare('SELECT COUNT(*) FROM customer_order_call_confirmations WHERE import_id = ?');
+        $callStmt = $db->prepare("SELECT COUNT(*) FROM customer_order_call_confirmations
+            WHERE import_id = ? AND confirmation_method = 'phone_call'");
         $callStmt->execute([$importId]);
         $adjustmentStmt = $db->prepare('SELECT COUNT(*) FROM customer_order_adjustments WHERE import_id = ?');
         $adjustmentStmt->execute([$importId]);
@@ -1933,11 +1985,12 @@ function hfCorrectManualCustomerOrderEncoding(PDO $db, int $importId, string $re
 function hfRecordCustomerOrderCall(PDO $db, int $importId, array $data, int $userId): array
 {
     hfEnsureManualCustomerOrderSchema($db);
+    $clarificationOnly = filter_var($data['clarification_only'] ?? false, FILTER_VALIDATE_BOOLEAN);
     $contactName = trim((string)($data['contact_name'] ?? ''));
     $changeSummary = trim((string)($data['change_summary'] ?? ''));
     $reason = trim((string)($data['reason'] ?? ''));
     $note = trim((string)($data['note'] ?? ''));
-    if ($contactName === '' || strlen($contactName) > 150) {
+    if ($contactName === '' || strlen($contactName) > 150 || preg_match('/\p{L}/u', $contactName) !== 1) {
         throw new InvalidArgumentException('Enter the name of the customer representative contacted.');
     }
     if ($changeSummary === '' || strlen($changeSummary) > 5000) {
@@ -1962,49 +2015,65 @@ function hfRecordCustomerOrderCall(PDO $db, int $importId, array $data, int $use
         if (!empty($import['sales_order_id']) || in_array($import['status'], ['order_created', 'converted'], true)) {
             throw new RuntimeException('This customer PO already has a Sales Order.');
         }
-        if (empty($import['entry_saved_at'])) {
+        if (empty($import['entry_saved_at']) && !$clarificationOnly) {
             throw new RuntimeException('Save the entered order details before recording a customer call.');
         }
-        $lineStmt = $db->prepare('SELECT * FROM customer_order_import_lines WHERE import_id = ? ORDER BY row_number, id');
-        $lineStmt->execute([$importId]);
-        $lines = $lineStmt->fetchAll(PDO::FETCH_ASSOC);
-        if (!$lines) {
-            throw new RuntimeException('Enter the customer order details before recording a customer call.');
+        if ($clarificationOnly) {
+            $snapshot = [];
+        } else {
+            $lineStmt = $db->prepare('SELECT * FROM customer_order_import_lines WHERE import_id = ? ORDER BY row_number, id');
+            $lineStmt->execute([$importId]);
+            $lines = $lineStmt->fetchAll(PDO::FETCH_ASSOC);
+            if (!$lines) {
+                throw new RuntimeException('Enter the customer order details before recording a customer call.');
+            }
+            $snapshot = hfManualOrderSnapshot(
+                (int)$import['customer_id'],
+                (string)$import['customer_po_number'],
+                $import['entered_delivery_date'] ?: null,
+                $lines
+            );
         }
-        $snapshot = hfManualOrderSnapshot(
-            (int)$import['customer_id'],
-            (string)$import['customer_po_number'],
-            $import['entered_delivery_date'] ?: null,
-            $lines
-        );
+        $confirmationMethod = $clarificationOnly ? 'phone_clarification' : 'phone_call';
         $insert = $db->prepare("INSERT INTO customer_order_call_confirmations (
             import_id, change_summary, reason, contact_name, confirmation_method,
             confirmed_at, note, approved_snapshot, recorded_by
-        ) VALUES (?, ?, ?, ?, 'phone_call', ?, ?, ?, ?)");
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $insert->execute([
             $importId,
             $changeSummary,
             $reason,
             $contactName,
+            $confirmationMethod,
             $confirmedAt,
             $note !== '' ? $note : null,
             json_encode($snapshot, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             $userId,
         ]);
-        $db->prepare("UPDATE customer_order_imports SET status = 'customer_confirmed', error_message = NULL WHERE id = ?")
-            ->execute([$importId]);
+        $newStatus = (string)$import['status'];
+        if ($clarificationOnly) {
+            if (in_array($newStatus, ['received', 'ready_to_create', 'ready'], true) && empty($import['entry_saved_at'])) {
+                $newStatus = 'for_encoding';
+            }
+        } else {
+            $newStatus = 'customer_confirmed';
+        }
+        $db->prepare('UPDATE customer_order_imports SET status = ?, error_message = NULL WHERE id = ?')
+            ->execute([$newStatus, $importId]);
         $db->commit();
         if (function_exists('logAudit')) {
             logAudit($userId, 'RECORD_CUSTOMER_PHONE_CONFIRMATION', 'customer_order_imports', $importId, null, [
                 'contact_name' => $contactName,
                 'change_summary' => $changeSummary,
                 'confirmed_at' => $confirmedAt,
+                'clarification_only' => $clarificationOnly,
             ]);
         }
         return [
             'import_id' => $importId,
-            'status' => 'customer_confirmed',
+            'status' => $newStatus,
             'confirmed_at' => $confirmedAt,
+            'clarification_only' => $clarificationOnly,
         ];
     } catch (Throwable $e) {
         if ($db->inTransaction()) {
@@ -2266,12 +2335,53 @@ function hfAdjustCustomerOrderImportLine(
     }
 }
 
+/**
+ * Return a base-item price and an exact line total while preserving whether the
+ * customer quoted a box price or an individual-item price.
+ */
+function hfCustomerOrderLinePricing(array $line): array
+{
+    $baseQuantity = max(0, (int)($line['quantity_base'] ?? 0));
+    $piecesPerBox = max(1, (int)($line['pieces_per_box'] ?? 1));
+    $baseUnit = strtolower(trim((string)($line['base_unit'] ?? 'piece')));
+    $boxUnit = strtolower(trim((string)($line['box_unit'] ?? 'box')));
+    $raw = json_decode((string)($line['raw_data'] ?? '{}'), true) ?: [];
+    $enteredPrice = $raw['entered_unit_price'] ?? $raw['unit_price'] ?? null;
+    $priceUnit = strtolower(trim((string)($raw['price_unit'] ?? $line['unit_entered'] ?? $baseUnit)));
+
+    if ($enteredPrice !== null && $enteredPrice !== '' && is_numeric($enteredPrice)) {
+        $enteredPrice = (float)$enteredPrice;
+        if ($priceUnit === $boxUnit || in_array($priceUnit, ['box', 'boxes', 'case', 'cases', 'crate', 'crates'], true)) {
+            return [
+                'base_price' => $enteredPrice / $piecesPerBox,
+                'line_total' => ($baseQuantity / $piecesPerBox) * $enteredPrice,
+                'price_unit' => $boxUnit,
+            ];
+        }
+        return [
+            'base_price' => $enteredPrice,
+            'line_total' => $baseQuantity * $enteredPrice,
+            'price_unit' => $baseUnit,
+        ];
+    }
+
+    $basePrice = (float)($line['po_unit_price'] ?? $line['system_unit_price'] ?? 0);
+    return [
+        'base_price' => $basePrice,
+        'line_total' => $baseQuantity * $basePrice,
+        'price_unit' => $baseUnit,
+    ];
+}
+
 function hfConvertCustomerOrderImport(
     PDO $db,
     int $importId,
     int $userId,
-    bool $acceptWarnings
+    bool $acceptWarnings,
+    string $creditOverrideReason = ''
 ): array {
+    require_once __DIR__ . '/customer_accounts.php';
+    hfEnsureCustomerAccountSchema($db);
     hfEnsureManualCustomerOrderSchema($db);
     hfEnsureCustomerOrderAdjustmentTable($db);
     $db->beginTransaction();
@@ -2288,6 +2398,11 @@ function hfConvertCustomerOrderImport(
                    c.payment_terms_days,
                    c.credit_limit,
                    c.current_balance,
+                   (SELECT COALESCE(SUM(dr.total_amount - dr.amount_paid), 0)
+                    FROM delivery_receipts dr
+                    WHERE dr.customer_id = c.id
+                      AND dr.payment_status != 'paid'
+                      AND dr.status NOT IN ('cancelled', 'draft')) AS outstanding_balance,
                    c.status AS customer_status
             FROM customer_order_imports coi
             LEFT JOIN customers c ON c.id = coi.customer_id
@@ -2330,7 +2445,8 @@ function hfConvertCustomerOrderImport(
         }
 
         $linesStmt = $db->prepare("
-            SELECT l.*, p.product_name, p.unit_size, p.unit_measure
+            SELECT l.*, p.product_name, p.unit_size, p.unit_measure,
+                   p.base_unit, p.box_unit, p.pieces_per_box
             FROM customer_order_import_lines l
             LEFT JOIN products p ON p.id = l.product_id
             WHERE l.import_id = ?
@@ -2419,8 +2535,12 @@ function hfConvertCustomerOrderImport(
         }
         $paymentType = $source['default_payment_type'] ?? 'credit';
         $terms = (int) ($source['payment_terms_days'] ?? 0);
+        if ($paymentType === 'cash') {
+            $terms = 0;
+        }
         $allowedOrderCustomerTypes = [
             'supermarket',
+            'institutional',
             'school',
             'feeding_program',
             'restaurant',
@@ -2430,7 +2550,7 @@ function hfConvertCustomerOrderImport(
         ];
         $orderCustomerType = in_array($source['customer_type'], $allowedOrderCustomerTypes, true)
             ? $source['customer_type']
-            : ($source['customer_type'] === 'institutional' ? 'supermarket' : 'other');
+            : 'other';
         $dueDate = ($paymentType === 'credit' && $terms > 0)
             ? date('Y-m-d', strtotime('+' . $terms . ' days'))
             : null;
@@ -2455,23 +2575,34 @@ function hfConvertCustomerOrderImport(
             if ((int)($line['quantity_base'] ?? 0) <= 0) {
                 continue;
             }
-            $price = $line['po_unit_price'] !== null
-                ? (float) $line['po_unit_price']
-                : (float) $line['system_unit_price'];
-            $subtotal += ((int) $line['quantity_base']) * $price;
+            $pricing = hfCustomerOrderLinePricing($line);
+            $subtotal += $pricing['line_total'];
             $totalQty += (int) $line['quantity_base'];
         }
         $creditLimit = (float) ($source['credit_limit'] ?? 0);
-        $currentBalance = max(0, (float) ($source['current_balance'] ?? 0));
-        if (
-            $paymentType === 'credit'
-            && $creditLimit > 0
-            && ($currentBalance + $subtotal) > $creditLimit
-            && !$acceptWarnings
-        ) {
+        $currentBalance = max(0, (float) ($source['outstanding_balance'] ?? $source['current_balance'] ?? 0));
+        $creditExceeded = $paymentType === 'credit'
+            && ($currentBalance + $subtotal) > $creditLimit;
+        if ($creditExceeded && !$acceptWarnings) {
             throw new RuntimeException('This order exceeds the customer credit limit. Review and accept the warning first.');
         }
+        $creditOverrideReason = trim($creditOverrideReason);
+        if ($creditExceeded && mb_strlen($creditOverrideReason) < 10) {
+            throw new RuntimeException('Enter a written reason for the General Manager credit review (at least 10 characters).');
+        }
+        if (mb_strlen($creditOverrideReason) > 500) {
+            throw new RuntimeException('The credit review reason must be 500 characters or fewer.');
+        }
         $notes = 'Entered from customer email by Highland Fresh. Original attachment retained. Source PO: ' . $source['customer_po_number'];
+        if ($creditExceeded) {
+            $notes .= sprintf(
+                '. GM credit review required: existing unpaid balance %.2f plus this draft %.2f exceeds the %.2f credit limit. Reason: %s',
+                $currentBalance,
+                $subtotal,
+                $creditLimit,
+                $creditOverrideReason
+            );
+        }
         if ($stockWarnings) {
             $notes .= '. Waiting for production/QC: ' . implode('; ', $stockWarnings);
         }
@@ -2542,9 +2673,8 @@ function hfConvertCustomerOrderImport(
             if ((int)($line['quantity_base'] ?? 0) <= 0) {
                 continue;
             }
-            $price = $line['po_unit_price'] !== null
-                ? (float) $line['po_unit_price']
-                : (float) $line['system_unit_price'];
+            $pricing = hfCustomerOrderLinePricing($line);
+            $price = $pricing['base_price'];
             $qty = (int) $line['quantity_base'];
             $boxes = (int) $line['quantity_boxes'];
             $pieces = (int) $line['quantity_pieces'];
@@ -2564,7 +2694,7 @@ function hfConvertCustomerOrderImport(
                 $pieces,
                 $unitType,
                 $price,
-                $qty * $price,
+                $pricing['line_total'],
                 $remarks !== '' ? $remarks : null,
             ]);
         }

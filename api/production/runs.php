@@ -17,6 +17,8 @@
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/config/ccp_standards.php';
 require_once dirname(__DIR__) . '/helpers/pack_uom.php';
+require_once dirname(__DIR__) . '/helpers/recipe_production_readiness.php';
+require_once dirname(__DIR__) . '/helpers/qc_count_discrepancy.php';
 require_once __DIR__ . '/helpers/yield_helpers.php';
 
 // Require Production role
@@ -24,6 +26,22 @@ $currentUser = Auth::requireRole(['production_staff', 'general_manager', 'qc_off
 
 function productionRunMaterialStatusesSql() {
     return "'planned', 'in_progress', 'pasteurization', 'processing', 'cooling', 'packaging', 'completed'";
+}
+
+/**
+ * Packaging is issued through the normal Warehouse requisition queue, but it
+ * is a separate request from the ingredients used to cook the bulk liquid.
+ * Runtime guards keep upgraded local databases usable without a manual import.
+ */
+function ensureProductionPackagingRequestSchema(PDO $db) {
+    if (!auditColumnExists($db, 'material_requisitions', 'request_type')) {
+        $db->exec("ALTER TABLE material_requisitions
+            ADD COLUMN request_type VARCHAR(30) NOT NULL DEFAULT 'cooking' AFTER production_run_id");
+    }
+    if (!auditColumnExists($db, 'material_requisitions', 'packaging_plan_json')) {
+        $db->exec("ALTER TABLE material_requisitions
+            ADD COLUMN packaging_plan_json LONGTEXT NULL AFTER request_type");
+    }
 }
 
 function normalizeProductionUnit($unit) {
@@ -82,20 +100,7 @@ function parseIngredientAdjustments($ingredientAdjustmentsJson) {
  * Priority: bulk_yield_liters → expected_yield if unit is liters → base_milk_liters → expected_yield.
  */
 function getRecipeBulkPlanDenominator(array $recipe) {
-    if (isset($recipe['bulk_yield_liters']) && $recipe['bulk_yield_liters'] !== null && (float) $recipe['bulk_yield_liters'] > 0) {
-        return (float) $recipe['bulk_yield_liters'];
-    }
-    $yu = strtolower((string) ($recipe['yield_unit'] ?? ''));
-    if (in_array($yu, ['liter', 'liters', 'l', 'lt'], true) && (float) ($recipe['expected_yield'] ?? 0) > 0) {
-        return (float) $recipe['expected_yield'];
-    }
-    if ((float) ($recipe['base_milk_liters'] ?? 0) > 0) {
-        return (float) $recipe['base_milk_liters'];
-    }
-    if ((float) ($recipe['expected_yield'] ?? 0) > 0) {
-        return (float) $recipe['expected_yield'];
-    }
-    return 1.0;
+    return getStrictRecipeBulkYieldLiters($recipe) ?? 1.0;
 }
 
 /** Scale factor: planned bulk liters / recipe bulk denominator. */
@@ -428,6 +433,8 @@ function getReservedRawMilkLiters($db, $earliestIssuedAt = null) {
 
 try {
     $db = Database::getInstance()->getConnection();
+    ensureProductionPackagingRequestSchema($db);
+    ensureQcCountDiscrepancyTables($db);
     
     // Ensure output_breakdown column exists for multi-unit output tracking
     try {
@@ -568,12 +575,25 @@ try {
                            mrq.requisition_code as linked_requisition_code,
                            mrq.status as linked_requisition_status,
                            mrq.planned_quantity as linked_requisition_planned_quantity,
-                           mrq.planned_yield_unit as linked_requisition_yield_unit
+                           mrq.planned_yield_unit as linked_requisition_yield_unit,
+                           (SELECT pb.qc_status FROM production_batches pb WHERE pb.run_id = pr.id ORDER BY pb.id DESC LIMIT 1) AS qc_batch_status,
+                           (SELECT d.variance
+                              FROM qc_batch_count_discrepancies d
+                              JOIN production_batches pb2 ON pb2.id = d.batch_id
+                             WHERE pb2.run_id = pr.id AND d.status = 'open'
+                             ORDER BY d.id DESC LIMIT 1) AS qc_count_hold_variance,
+                           (SELECT d.reason_notes
+                              FROM qc_batch_count_discrepancies d
+                              JOIN production_batches pb3 ON pb3.id = d.batch_id
+                             WHERE pb3.run_id = pr.id AND d.status = 'open'
+                             ORDER BY d.id DESC LIMIT 1) AS qc_count_hold_reason
                     FROM production_runs pr
                     JOIN master_recipes mr ON pr.recipe_id = mr.id
                     LEFT JOIN users u1 ON pr.started_by = u1.id
                     LEFT JOIN users u2 ON pr.completed_by = u2.id
-                    LEFT JOIN material_requisitions mrq ON mrq.production_run_id = pr.id
+                    LEFT JOIN material_requisitions mrq
+                      ON mrq.production_run_id = pr.id
+                     AND COALESCE(mrq.request_type, 'cooking') = 'cooking'
                     WHERE pr.id = ?
                 ");
                 $stmt->execute([$runId]);
@@ -607,6 +627,35 @@ try {
                 ");
                 $byStmt->execute([$runId]);
                 $run['byproducts'] = $byStmt->fetchAll();
+
+                // Separate Warehouse handover for bottles, caps, labels, etc.
+                $packReqStmt = $db->prepare("
+                    SELECT id, requisition_code, status, packaging_plan_json,
+                           requested_by, approved_by, approved_at,
+                           fulfilled_by, fulfilled_at, created_at
+                    FROM material_requisitions
+                    WHERE production_run_id = ? AND request_type = 'packaging'
+                      AND status NOT IN ('cancelled', 'rejected')
+                    ORDER BY id DESC LIMIT 1
+                ");
+                $packReqStmt->execute([$runId]);
+                $packagingRequest = $packReqStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+                if ($packagingRequest) {
+                    $packItemStmt = $db->prepare("
+                        SELECT id, item_id, item_name, requested_quantity,
+                               issued_quantity, unit_of_measure, status
+                        FROM requisition_items
+                        WHERE requisition_id = ? ORDER BY id
+                    ");
+                    $packItemStmt->execute([(int) $packagingRequest['id']]);
+                    $packagingRequest['items'] = $packItemStmt->fetchAll(PDO::FETCH_ASSOC);
+                    $packagingRequest['packaging_plan'] = json_decode(
+                        (string) ($packagingRequest['packaging_plan_json'] ?? ''),
+                        true
+                    ) ?: [];
+                    unset($packagingRequest['packaging_plan_json']);
+                }
+                $run['packaging_request'] = $packagingRequest;
 
                 // Suggested starting volume for yield tracking (mL).
                 // Prefer milk already planned on the run / issued via requisition —
@@ -763,7 +812,13 @@ try {
                        pr.yield_variance, pr.created_at,
                        pr.initial_volume_ml, pr.total_loss_ml, pr.total_byproduct_ml, pr.net_yield_ml,
                        pr.material_reconciled, pr.reconciliation_notes,
-                       mr.recipe_code, mr.product_name, mr.product_type, mr.variant, mr.yield_unit
+                       mr.recipe_code, mr.product_name, mr.product_type, mr.variant, mr.yield_unit,
+                       (SELECT pb.qc_status FROM production_batches pb WHERE pb.run_id = pr.id ORDER BY pb.id DESC LIMIT 1) AS qc_batch_status,
+                       (SELECT d.variance
+                          FROM qc_batch_count_discrepancies d
+                          JOIN production_batches pb2 ON pb2.id = d.batch_id
+                         WHERE pb2.run_id = pr.id AND d.status = 'open'
+                         ORDER BY d.id DESC LIMIT 1) AS qc_count_hold_variance
                 FROM production_runs pr
                 JOIN master_recipes mr ON pr.recipe_id = mr.id
                 {$where}
@@ -806,7 +861,7 @@ try {
             // Validation
             $errors = [];
             if (!$recipeId) $errors['recipe_id'] = 'Recipe is required';
-            if ($plannedQuantity <= 0) $errors['planned_quantity'] = 'Planned quantity must be greater than 0';
+            if ($plannedQuantity <= 0) $errors['planned_quantity'] = 'Planned finished amount must be greater than 0 L';
 
             // If a source requisition is provided, validate it up front so the rest of
             // the flow can assume the link is legitimate.
@@ -848,8 +903,8 @@ try {
                     $reqPlanned = (float)($sourceRequisition['planned_quantity'] ?? 0);
                     if ($reqPlanned > 0 && abs((float)$plannedQuantity - $reqPlanned) > 0.001) {
                         $errors['planned_quantity'] = sprintf(
-                            'Planned volume must match the source requisition (%s %s). ' .
-                            'Edit the requisition to change the batch size.',
+                            'Planned finished amount must match the approved requisition (%s %s). ' .
+                            'Edit the requisition to change the finished liters.',
                             number_format($reqPlanned, 3),
                             $sourceRequisition['planned_yield_unit'] ?? ''
                         );
@@ -870,13 +925,31 @@ try {
                 }
             }
 
-            // Verify recipe exists
-            $recipeStmt = $db->prepare("SELECT * FROM master_recipes WHERE id = ? AND is_active = 1");
+            // A fulfilled/partial requisition is an approved historical snapshot.
+            // Its exact recipe may have been retired after approval, so keep that
+            // one path usable while new/direct runs require the current recipe.
+            $historicalRecipeAllowed = $sourceRequisition
+                && in_array($sourceRequisition['status'], ['fulfilled', 'partial'], true)
+                && empty($sourceRequisition['production_run_id'])
+                && (int) ($sourceRequisition['planned_recipe_id'] ?? 0) === (int) $recipeId;
+
+            $recipeStmt = $db->prepare("SELECT * FROM master_recipes WHERE id = ?");
             $recipeStmt->execute([$recipeId]);
             $recipe = $recipeStmt->fetch();
 
             if (!$recipe) {
-                $errors['recipe_id'] = 'Recipe not found or inactive';
+                $errors['recipe_id'] = 'Recipe not found';
+            } elseif ((int) ($recipe['is_active'] ?? 0) !== 1 && !$historicalRecipeAllowed) {
+                $errors['recipe_id'] = 'Recipe is inactive; choose the current recipe';
+            } elseif (!isBulkProductionRecipe($recipe)) {
+                $errors['recipe_id'] = 'Choose a bulk recipe with a base product and a liquid yield in liters';
+            } elseif (!$historicalRecipeAllowed) {
+                $currentRecipe = getCurrentActiveBulkRecipeForBase($db, $recipe['base_product_id']);
+                if (!$currentRecipe || (int) $currentRecipe['id'] !== (int) $recipe['id']) {
+                    $errors['recipe_id'] = $currentRecipe
+                        ? 'Recipe was superseded; choose ' . $currentRecipe['recipe_code']
+                        : 'This base product has no current bulk recipe';
+                }
             }
             
             // Calculate required milk liters (bulk-batch aware).
@@ -1114,6 +1187,16 @@ try {
             switch ($action) {
                 case 'start':
                     // Start the production run
+                    // Starting is idempotent: a browser retry after a lost/error
+                    // response should learn that the desired state was already
+                    // reached instead of showing a misleading 400 error.
+                    if ($run['status'] === 'in_progress') {
+                        Response::success([
+                            'status' => 'in_progress',
+                            'initial_volume_ml' => (float) ($run['initial_volume_ml'] ?? 0),
+                            'already_started' => true
+                        ], 'Production run is already started');
+                    }
                     if ($run['status'] !== 'planned') {
                         Response::error('Can only start a planned run', 400);
                     }
@@ -1129,31 +1212,42 @@ try {
                         }
                     }
 
+                    // Initialize optional packaging storage before opening the
+                    // run transaction. Its schema check must never perform DDL
+                    // from inside this transaction.
+                    ensureSkuPackagingBomTable($db);
+
                     $db->beginTransaction();
+                    try {
+                        if ($initialVolumeMl && (float)$initialVolumeMl > 0) {
+                            // Set initial volume and net yield (net = initial at start, no losses yet)
+                            $stmt = $db->prepare("
+                                UPDATE production_runs
+                                SET status = 'in_progress', start_datetime = NOW(), started_by = ?,
+                                    initial_volume_ml = ?, net_yield_ml = ?
+                                WHERE id = ? AND status = 'planned'
+                            ");
+                            $stmt->execute([$currentUser['user_id'], (float)$initialVolumeMl, (float)$initialVolumeMl, $runId]);
 
-                    if ($initialVolumeMl && (float)$initialVolumeMl > 0) {
-                        // Set initial volume and net yield (net = initial at start, no losses yet)
-                        $stmt = $db->prepare("
-                            UPDATE production_runs
-                            SET status = 'in_progress', start_datetime = NOW(), started_by = ?,
-                                initial_volume_ml = ?, net_yield_ml = ?
-                            WHERE id = ?
-                        ");
-                        $stmt->execute([$currentUser['user_id'], (float)$initialVolumeMl, (float)$initialVolumeMl, $runId]);
+                            // Auto-trigger Stage 1 packaging estimate
+                            $estimateResult = generatePackagingEstimate($db, $runId, 'initial', (float)$initialVolumeMl);
+                        } else {
+                            $stmt = $db->prepare("
+                                UPDATE production_runs
+                                SET status = 'in_progress', start_datetime = NOW(), started_by = ?
+                                WHERE id = ? AND status = 'planned'
+                            ");
+                            $stmt->execute([$currentUser['user_id'], $runId]);
+                            $estimateResult = null;
+                        }
 
-                        // Auto-trigger Stage 1 packaging estimate
-                        $estimateResult = generatePackagingEstimate($db, $runId, 'initial', (float)$initialVolumeMl);
-                    } else {
-                        $stmt = $db->prepare("
-                            UPDATE production_runs
-                            SET status = 'in_progress', start_datetime = NOW(), started_by = ?
-                            WHERE id = ?
-                        ");
-                        $stmt->execute([$currentUser['user_id'], $runId]);
-                        $estimateResult = null;
+                        $db->commit();
+                    } catch (Throwable $e) {
+                        if ($db->inTransaction()) {
+                            $db->rollBack();
+                        }
+                        throw $e;
                     }
-
-                    $db->commit();
 
                     $responseData = ['status' => 'in_progress'];
                     if ($initialVolumeMl) {
@@ -1266,6 +1360,142 @@ try {
 
                     Response::success(['status' => $newStatus], 'Status updated');
                     break;
+
+                case 'request_packaging':
+                    if ($currentUser['role'] !== 'production_staff') {
+                        Response::forbidden('Only Production staff can request packaging materials');
+                    }
+                    if ($run['status'] !== 'packaging') {
+                        Response::validationError([
+                            'run_status' => 'Move the run to the Packaging stage before requesting bottles, caps, labels, or wraps.'
+                        ]);
+                    }
+
+                    $requestedPackagingItems = getParam('packaging_items', []);
+                    if (!is_array($requestedPackagingItems) || !$requestedPackagingItems) {
+                        Response::validationError([
+                            'packaging_items' => 'Choose at least one packaging SKU and enter the quantity planned.'
+                        ]);
+                    }
+
+                    // Server replaces all client product names/sizes and calculates
+                    // the material quantities from the saved SKU Packaging BOM.
+                    $packagingPlan = calculateSkuPackagingRequirements(
+                        $db,
+                        (int) $run['recipe_id'],
+                        $requestedPackagingItems
+                    );
+                    if (!$packagingPlan['success']) {
+                        Response::validationError($packagingPlan['errors']);
+                    }
+                    $plannedSkuItems = $packagingPlan['items'];
+                    $packagingRequirements = $packagingPlan['requirements'];
+
+                    $existingStmt = $db->prepare("
+                        SELECT id, requisition_code, status
+                        FROM material_requisitions
+                        WHERE production_run_id = ? AND request_type = 'packaging'
+                          AND status NOT IN ('cancelled', 'rejected')
+                        ORDER BY id DESC LIMIT 1
+                    ");
+                    $existingStmt->execute([$runId]);
+                    $existing = $existingStmt->fetch(PDO::FETCH_ASSOC);
+                    if ($existing) {
+                        Response::success([
+                            'requisition_id' => (int) $existing['id'],
+                            'requisition_code' => $existing['requisition_code'],
+                            'status' => $existing['status'],
+                            'already_requested' => true,
+                        ], $existing['requisition_code'] . ' already covers this run. Open the existing Warehouse request.');
+                    }
+
+                    // The original cooking request proves the run already passed GM
+                    // approval. Packaging therefore goes directly to Warehouse.
+                    $sourceStmt = $db->prepare("
+                        SELECT id, approved_by
+                        FROM material_requisitions
+                        WHERE production_run_id = ?
+                          AND COALESCE(request_type, 'cooking') = 'cooking'
+                          AND status = 'fulfilled'
+                        ORDER BY id DESC LIMIT 1
+                    ");
+                    $sourceStmt->execute([$runId]);
+                    $sourceRequest = $sourceStmt->fetch(PDO::FETCH_ASSOC);
+                    if (!$sourceRequest) {
+                        Response::validationError([
+                            'source_requisition' => 'This run has no fulfilled cooking-material request. Warehouse must issue the approved cooking materials first.'
+                        ]);
+                    }
+
+                    $db->beginTransaction();
+                    try {
+                        $requisitionCode = 'PKG-REQ-' . str_pad((string) $runId, 6, '0', STR_PAD_LEFT);
+                        $insertReq = $db->prepare("
+                            INSERT INTO material_requisitions (
+                                requisition_code, production_run_id, request_type, packaging_plan_json,
+                                planned_recipe_id, planned_quantity, planned_yield_unit,
+                                requested_by, department, priority, purpose, total_items,
+                                status, approved_by, approved_at
+                            ) VALUES (?, ?, 'packaging', ?, ?, ?, 'liters', ?, 'production',
+                                      'normal', ?, ?, 'approved', ?, NOW())
+                        ");
+                        $insertReq->execute([
+                            $requisitionCode,
+                            $runId,
+                            json_encode($plannedSkuItems, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                            (int) $run['recipe_id'],
+                            (float) ($run['planned_quantity'] ?? 0),
+                            $currentUser['user_id'],
+                            'Packaging materials for ' . ($run['run_code'] ?? ('run #' . $runId)),
+                            count($packagingRequirements),
+                            $sourceRequest['approved_by'] ?: null,
+                        ]);
+                        $packagingRequisitionId = (int) $db->lastInsertId();
+
+                        $insertItem = $db->prepare("
+                            INSERT INTO requisition_items (
+                                requisition_id, item_type, item_id, item_code, item_name,
+                                requested_quantity, unit_of_measure, status, notes
+                            ) VALUES (?, 'packaging', ?, ?, ?, ?, ?, 'pending', ?)
+                        ");
+                        foreach ($packagingRequirements as $requirement) {
+                            $insertItem->execute([
+                                $packagingRequisitionId,
+                                (int) $requirement['ingredient_id'],
+                                $requirement['ingredient_code'] ?? null,
+                                $requirement['ingredient_name'],
+                                (float) $requirement['quantity_required'],
+                                $requirement['unit'],
+                                'Calculated from the saved SKU Packaging BOM',
+                            ]);
+                        }
+
+                        logAudit(
+                            $currentUser['user_id'],
+                            'request_packaging_materials',
+                            'material_requisitions',
+                            $packagingRequisitionId,
+                            null,
+                            [
+                                'run_id' => (int) $runId,
+                                'status' => 'approved',
+                                'source_requisition_id' => (int) $sourceRequest['id'],
+                            ]
+                        );
+                        $db->commit();
+
+                        Response::success([
+                            'requisition_id' => $packagingRequisitionId,
+                            'requisition_code' => $requisitionCode,
+                            'status' => 'approved',
+                            'packaging_plan' => $plannedSkuItems,
+                            'requirements' => $packagingRequirements,
+                        ], 'Packaging request sent to Warehouse. Complete the run after Warehouse issues every material.');
+                    } catch (Throwable $e) {
+                        if ($db->inTransaction()) $db->rollBack();
+                        throw $e;
+                    }
+                    break;
                     
                 case 'complete':
                     // Complete the production run
@@ -1361,6 +1591,113 @@ try {
                     if (is_string($packagingItems)) {
                         $decoded = json_decode($packagingItems, true);
                         $packagingItems = is_array($decoded) ? $decoded : null;
+                    }
+
+                    if (!is_array($packagingItems) || count($packagingItems) === 0) {
+                        Response::validationError([
+                            'packaging_items' => 'Allocate the actual yield to at least one configured packaging SKU'
+                        ]);
+                    }
+
+                    // Product identity, size, and packaging BOM all come from the
+                    // SKU master. Never trust client-supplied names or bottle sizes.
+                    $packagingPlan = calculateSkuPackagingRequirements(
+                        $db,
+                        $run['recipe_id'],
+                        $packagingItems
+                    );
+                    if (!$packagingPlan['success']) {
+                        Response::validationError($packagingPlan['errors']);
+                    }
+                    $packagingItems = $packagingPlan['items'];
+                    $packagingMaterialRequirements = $packagingPlan['requirements'];
+
+                    // Packaging stock must already have been physically issued by
+                    // Warehouse. Completion records usage but never deducts it a
+                    // second time.
+                    $packReqStmt = $db->prepare("
+                        SELECT id, requisition_code, status, packaging_plan_json
+                        FROM material_requisitions
+                        WHERE production_run_id = ? AND request_type = 'packaging'
+                          AND status NOT IN ('cancelled', 'rejected')
+                        ORDER BY id DESC LIMIT 1
+                    ");
+                    $packReqStmt->execute([$runId]);
+                    $packReq = $packReqStmt->fetch(PDO::FETCH_ASSOC);
+                    if (!$packReq) {
+                        Response::validationError([
+                            'packaging_request' => 'Send the packaging-material request to Warehouse before completing this run.'
+                        ]);
+                    }
+                    if ($packReq['status'] !== 'fulfilled') {
+                        Response::validationError([
+                            'packaging_request' => $packReq['requisition_code'] . ' is still ' . $packReq['status'] . '. Warehouse must issue every packaging material first.'
+                        ]);
+                    }
+
+                    $requestedSkuItems = json_decode((string) ($packReq['packaging_plan_json'] ?? ''), true) ?: [];
+                    $requestedBySku = [];
+                    foreach ($requestedSkuItems as $item) {
+                        $requestedBySku[(int) ($item['product_id'] ?? 0)] = (int) ($item['quantity'] ?? 0);
+                    }
+                    $planErrors = [];
+                    foreach ($packagingItems as $idx => $item) {
+                        $productId = (int) ($item['product_id'] ?? 0);
+                        $actualQty = (int) ($item['quantity'] ?? 0);
+                        $requestedQty = (int) ($requestedBySku[$productId] ?? 0);
+                        if ($requestedQty <= 0) {
+                            $planErrors["packaging_items.$idx.product_id"] = 'This SKU was not included in the Warehouse packaging request';
+                        } elseif ($actualQty > $requestedQty) {
+                            $planErrors["packaging_items.$idx.quantity"] = "Warehouse issued packaging for {$requestedQty} unit(s), but {$actualQty} were entered";
+                        }
+                    }
+                    $requestedFinishedUnits = array_sum(array_map(
+                        static fn($item) => (int) ($item['quantity'] ?? 0),
+                        $requestedSkuItems
+                    ));
+                    $actualFinishedUnits = array_sum(array_map(
+                        static fn($item) => (int) ($item['quantity'] ?? 0),
+                        $packagingItems
+                    ));
+                    if ($actualFinishedUnits < $requestedFinishedUnits && trim((string) $reconNotes) === '') {
+                        $planErrors['reconciliation_notes'] = sprintf(
+                            'Warehouse issued packaging for %d finished unit(s), but Production recorded %d. Explain damaged or unused packaging in Notes.',
+                            $requestedFinishedUnits,
+                            $actualFinishedUnits
+                        );
+                    }
+                    if ($planErrors) {
+                        Response::validationError($planErrors);
+                    }
+
+                    $issuedStmt = $db->prepare("
+                        SELECT item_id, SUM(issued_quantity) AS issued_quantity
+                        FROM requisition_items
+                        WHERE requisition_id = ? AND item_type = 'packaging'
+                        GROUP BY item_id
+                    ");
+                    $issuedStmt->execute([(int) $packReq['id']]);
+                    $issuedByMaterial = [];
+                    foreach ($issuedStmt->fetchAll(PDO::FETCH_ASSOC) as $issued) {
+                        $issuedByMaterial[(int) $issued['item_id']] = (float) $issued['issued_quantity'];
+                    }
+                    $issueErrors = [];
+                    foreach ($packagingMaterialRequirements as $idx => $requirement) {
+                        $ingredientId = (int) $requirement['ingredient_id'];
+                        $needed = (float) $requirement['quantity_required'];
+                        $issued = (float) ($issuedByMaterial[$ingredientId] ?? 0);
+                        if ($issued + 0.0001 < $needed) {
+                            $issueErrors["packaging_materials.$idx"] = sprintf(
+                                '%s needs %.3f %s but Warehouse issued %.3f',
+                                $requirement['ingredient_name'],
+                                $needed,
+                                $requirement['unit'],
+                                $issued
+                            );
+                        }
+                    }
+                    if ($issueErrors) {
+                        Response::validationError($issueErrors);
                     }
 
                     // Validate packaging items when provided
@@ -1500,6 +1837,7 @@ try {
                         'pack_formula' => format_pack_config_line($packCfg),
                     ]);
                     
+                    $packagingMaterialsConsumed = [];
                     $db->beginTransaction();
                     
                     try {
@@ -1689,6 +2027,27 @@ try {
 
                             error_log("Production run {$run['run_code']}: Created packaging run {$packagingCode} with " . count($packagingItems) . " items ({$totalPackagedPieces} pieces)");
                         }
+
+                        // Warehouse already reduced stock when it physically issued
+                        // PKG-REQ. Record actual usage for traceability only.
+                        $packagingMaterialsConsumed = [];
+                        $packagingUsageStmt = $db->prepare("
+                            INSERT INTO ingredient_consumption
+                                (run_id, ingredient_id, ingredient_name, quantity_used, unit, batch_code, notes)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ");
+                        foreach ($packagingMaterialRequirements as $requirement) {
+                            $packagingUsageStmt->execute([
+                                $runId,
+                                (int) $requirement['ingredient_id'],
+                                $requirement['ingredient_name'],
+                                (float) $requirement['quantity_required'],
+                                $requirement['unit'],
+                                $batchCode,
+                                'Packaging usage; stock issued earlier by Warehouse through ' . $packReq['requisition_code'],
+                            ]);
+                            $packagingMaterialsConsumed[] = $requirement;
+                        }
                         
                         // =====================================================
                         // CRITICAL GAP #1 FIX: Record Ingredient Consumption
@@ -1759,6 +2118,11 @@ try {
                             'qc_status' => 'pending',
                             'packaging_run_id' => $packagingRunId,
                             'packaging_items_count' => is_array($packagingItems) ? count($packagingItems) : 0,
+                            'packaging_material_requirements' => $packagingMaterialRequirements,
+                            'packaging_materials_consumed' => $packagingMaterialsConsumed,
+                            'packaging_requisition_id' => (int) $packReq['id'],
+                            'packaging_requisition_code' => $packReq['requisition_code'],
+                            'packaging_stock_deducted_by_warehouse' => true,
                             'process_loss_ml' => $processLossMl,
                             'message' => 'Production completed! Batch sent to QC for final verification.',
                             'output_breakdown' => [
@@ -1772,8 +2136,15 @@ try {
                             'yield_variance' => $variance
                         ], 'Production run completed - Batch sent to QC for verification');
                         
+                    } catch (SkuPackagingStockException $e) {
+                        if ($db->inTransaction()) {
+                            $db->rollBack();
+                        }
+                        Response::validationError($e->getValidationErrors());
                     } catch (Exception $e) {
-                        $db->rollBack();
+                        if ($db->inTransaction()) {
+                            $db->rollBack();
+                        }
                         throw $e;
                     }
                     break;

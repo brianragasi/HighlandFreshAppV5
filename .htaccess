@@ -35,14 +35,19 @@ RewriteEngine On
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 </IfModule>
 
-# Redirect to HTTPS
+# Redirect non-loopback traffic to HTTPS.
+# Local browser automation must be able to use plain HTTP because XAMPP's
+# development certificate is not trusted by the Computer Use safety layer.
+# This exception never applies to another device on the LAN: its Host header
+# is the laptop's LAN address or hostname, so it remains HTTPS-only.
 # InfinityFree uses a reverse proxy — Apache sees HTTPS as "off" even when
 # the client connected via HTTPS. Check X-Forwarded-Proto first (set by the
 # proxy), falling back to the native %{HTTPS} for hosts that terminate SSL
 # at Apache (e.g. local XAMPP with SSL, Azure).
 RewriteCond %{HTTP:X-Forwarded-Proto} !https
 RewriteCond %{HTTPS} off
-RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.(1|2)|\[::1\])(:[0-9]+)?$ [NC]
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=302]
 
 # Allow direct access to existing files and directories
 RewriteCond %{REQUEST_FILENAME} -f [OR]
@@ -65,6 +70,34 @@ RewriteRule ^ index.php [L]
     Header set X-Content-Type-Options "nosniff"
     Header set X-XSS-Protection "1; mode=block"
 </IfModule>
+
+# This file decides where every API request is sent. Always revalidate it so
+# devices on the local network do not keep an older localhost-only address.
+<Files "api.js">
+    <IfModule mod_headers.c>
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </IfModule>
+</Files>
+
+# Protected pages contain their allowed-role list in the HTML. Revalidate all
+# screens so a browser cannot keep enforcing an older RBAC policy after an update.
+<FilesMatch "\.html$">
+    <IfModule mod_headers.c>
+        Header set Cache-Control "no-cache, must-revalidate"
+    </IfModule>
+</FilesMatch>
+
+# Role-protected printable documents change when workflow permissions change.
+# Revalidate them so an older allowed-role list cannot remain in browser cache.
+<FilesMatch "^(print_po|print_pr|print_receiving_report)\.html$">
+    <IfModule mod_headers.c>
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </IfModule>
+</FilesMatch>
 
 # Deny access to sensitive files
 <FilesMatch "\.(pem|sh|md)$">

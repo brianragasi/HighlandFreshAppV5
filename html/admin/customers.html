@@ -2,6 +2,7 @@
 <html lang="en" data-theme="emerald">
 
 <head>
+    <style id="roleGuardPending">html { visibility: hidden; }</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Customers Management | Highland Fresh Admin</title>
@@ -433,65 +434,75 @@
                         <label class="label"><span class="label-text-alt text-base-content/50">Walk-in cash buyers are
                                 not registered here — they are handled at POS.</span></label>
                     </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Sub-Location</span></label>
-                        <input type="text" id="sub_location" class="input input-bordered"
-                            placeholder="e.g., Specific school name" />
+                    <div class="form-control md:col-span-2">
+                        <div class="flex items-center justify-between">
+                            <label class="label"><span class="label-text font-medium">Saved Delivery Locations</span></label>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="addLocationRow()"><i class="fas fa-plus"></i> Add location</button>
+                        </div>
+                        <div id="locationRows" class="space-y-2"></div>
+                        <label class="label"><span class="label-text-alt">Save branches, schools, or delivery sites here. The order will use one selected location.</span></label>
                     </div>
 
                     <div class="form-control">
                         <label class="label"><span class="label-text">Contact Person <span
                                     class="text-error">*</span></span></label>
-                        <input type="text" id="contact_person" class="input input-bordered" required />
+                        <input type="text" id="contact_person" class="input input-bordered" maxlength="160" data-person-name required />
                     </div>
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Contact Number</span></label>
-                        <input type="tel" id="contact_number" class="input input-bordered" inputmode="tel"
-                            maxlength="16" placeholder="09171234567" />
+                        <label class="label"><span class="label-text">Contact Number <span class="text-error">*</span></span></label>
+                        <input type="tel" id="contact_number" class="input input-bordered" inputmode="numeric"
+                            maxlength="11" pattern="(?:\+639|09)\d{9}" required placeholder="09171234567" />
                     </div>
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Email</span></label>
+                        <label class="label"><span class="label-text">Email <span class="text-error">*</span></span></label>
                         <input type="email" id="email" class="input input-bordered" maxlength="254"
-                            placeholder="name@example.com" />
+                            required placeholder="name@example.com" />
+                        <label class="label"><span class="label-text-alt">Used to match this customer in the PO Inbox.</span></label>
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Default Payment Type</span></label>
-                        <select id="default_payment_type" class="select select-bordered">
+                        <select id="default_payment_type" class="select select-bordered" onchange="handlePaymentTypeChange()">
                             <option value="cash">Cash</option>
                             <option value="credit">Credit</option>
                         </select>
                     </div>
                     <div class="form-control md:col-span-2">
-                        <label class="label"><span class="label-text">Address</span></label>
-                        <textarea id="address" class="textarea textarea-bordered" rows="2"></textarea>
+                        <label class="label"><span class="label-text">Main Billing / Delivery Address <span class="text-error">*</span></span></label>
+                        <textarea id="address" class="textarea textarea-bordered" rows="2" required></textarea>
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Credit Limit (₱)</span></label>
                         <input type="number" id="credit_limit" class="input input-bordered" value="0" min="0"
-                            step="0.01" />
+                            max="9999999999.99" step="0.01" inputmode="decimal" />
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Payment Terms</span></label>
                         <select id="payment_terms_days" class="select select-bordered">
                             <option value="0">Cash (0 days)</option>
+                            <option value="7">Net 7 days</option>
+                            <option value="14">Net 14 days</option>
                             <option value="15">Net 15 days</option>
                             <option value="30">Net 30 days</option>
                             <option value="45">Net 45 days</option>
                             <option value="60">Net 60 days</option>
+                            <option value="90">Net 90 days</option>
                         </select>
                     </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Current Balance (₱)</span></label>
-                        <input type="number" id="current_balance" class="input input-bordered" value="0" min="0"
-                            step="0.01" readonly />
+                    <div id="outstandingPanel" class="form-control rounded-lg bg-base-200 p-3 hidden">
+                        <span class="text-xs text-base-content/60">Outstanding Balance (calculated from unpaid Delivery Receipts)</span>
+                        <span id="outstanding_balance" class="font-bold text-lg">₱0.00</span>
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Status</span></label>
-                        <select id="status" class="select select-bordered">
+                        <select id="status" class="select select-bordered" onchange="handleStatusChange()">
                             <option value="active">Active</option>
                             <option value="inactive">Inactive</option>
                             <option value="blocked">Blocked</option>
                         </select>
+                    </div>
+                    <div id="blockedReasonField" class="form-control md:col-span-2 hidden">
+                        <label class="label"><span class="label-text">Why is this customer blocked? <span class="text-error">*</span></span></label>
+                        <textarea id="blocked_reason" class="textarea textarea-bordered" rows="2" maxlength="500"></textarea>
                     </div>
                     <div class="form-control md:col-span-2">
                         <label class="label"><span class="label-text">Notes</span></label>
@@ -530,6 +541,7 @@
 
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/ui/notification-layer.js?v=20260816-1"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="general_manager,admin"></script>
     <script src="../../js/admin/admin.service.js"></script>
 
@@ -539,6 +551,12 @@
         let currentPage = 1;
         const pageSize = 10;
         let recordToDelete = null;
+
+        function escapeHtml(value) {
+            const div = document.createElement('div');
+            div.textContent = value == null ? '' : String(value);
+            return div.innerHTML;
+        }
 
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -604,19 +622,62 @@
             // On-Account = all named accounts (this entire master file)
             document.getElementById('statWholesale').textContent = allData.length;
             // On Credit = accounts using credit payment terms
-            document.getElementById('statRetail').textContent = allData.filter(c => (parseInt(c.payment_terms_days) || 0) > 0).length;
+            document.getElementById('statRetail').textContent = allData.filter(c => c.default_payment_type === 'credit').length;
 
             const totalSales = allData.reduce((sum, c) => sum + (parseFloat(c.total_purchases) || 0), 0);
             document.getElementById('statSales').textContent = formatCurrency(totalSales);
         }
 
         function handleCustomerTypeChange(type) {
-            // No walk-in in this form — this function is kept for edit compatibility
-            // Auto-set defaults for institutional/distributor types
-            const paymentTerms = document.getElementById('payment_terms_days');
-            if (type === 'distributor' || type === 'supermarket') {
-                if (paymentTerms && paymentTerms.value === '0') paymentTerms.value = '30';
+            document.getElementById('email').required = type !== 'walk_in';
+        }
+
+        function handlePaymentTypeChange() {
+            const isCredit = document.getElementById('default_payment_type').value === 'credit';
+            const terms = document.getElementById('payment_terms_days');
+            const limit = document.getElementById('credit_limit');
+            terms.disabled = !isCredit;
+            limit.disabled = !isCredit;
+            terms.required = isCredit;
+            limit.required = isCredit;
+            limit.min = isCredit ? '0.01' : '0';
+            if (!isCredit) {
+                terms.value = '0';
+                limit.value = '0';
+            } else if (terms.value === '0') {
+                terms.value = '30';
             }
+        }
+
+        function handleStatusChange() {
+            const blocked = document.getElementById('status').value === 'blocked';
+            document.getElementById('blockedReasonField').classList.toggle('hidden', !blocked);
+            document.getElementById('blocked_reason').required = blocked;
+        }
+
+        function addLocationRow(location = {}) {
+            const row = document.createElement('div');
+            row.className = 'grid grid-cols-1 md:grid-cols-[1fr_2fr_auto] gap-2 location-row';
+            row.innerHTML = `
+                <input type="text" class="input input-bordered location-name" maxlength="200" placeholder="Branch / school name" value="${escapeHtml(location.sub_name || '')}">
+                <input type="text" class="input input-bordered location-address" maxlength="500" placeholder="Delivery address" value="${escapeHtml(location.address || '')}">
+                <button type="button" class="btn btn-ghost btn-square text-error" title="Remove location"><i class="fas fa-trash"></i></button>`;
+            row.querySelector('button').addEventListener('click', () => row.remove());
+            document.getElementById('locationRows').appendChild(row);
+        }
+
+        function setLocationRows(locations = []) {
+            const holder = document.getElementById('locationRows');
+            holder.innerHTML = '';
+            locations.filter(l => (l.status || 'active') === 'active').forEach(addLocationRow);
+            if (!holder.children.length) addLocationRow();
+        }
+
+        function collectLocations() {
+            return [...document.querySelectorAll('.location-row')].map(row => ({
+                sub_name: row.querySelector('.location-name').value.trim(),
+                address: row.querySelector('.location-address').value.trim()
+            })).filter(location => location.sub_name || location.address);
         }
 
         function filterData() {
@@ -651,46 +712,51 @@
                     <p class="text-base-content/60">No customers found</p>
                 </td></tr>`;
             } else {
-                tbody.innerHTML = pageData.map(item => `
+                tbody.innerHTML = pageData.map(item => {
+                    const id = Number(item.id) || 0;
+                    const paymentType = item.default_payment_type === 'credit' ? 'credit' : 'cash';
+                    const status = ['active', 'inactive', 'blocked'].includes(item.status) ? item.status : 'inactive';
+                    return `
                     <tr class="hover">
                         <td>
                             <div class="flex items-center gap-3">
                                 <div class="avatar placeholder">
-                                    <div class="w-10 rounded-full bg-${item.default_payment_type === 'credit' ? 'info' : 'success'}/10 text-${item.default_payment_type === 'credit' ? 'info' : 'success'}">
-                                        <span>${(item.name || 'C').substring(0, 2).toUpperCase()}</span>
+                                    <div class="w-10 rounded-full bg-${paymentType === 'credit' ? 'info' : 'success'}/10 text-${paymentType === 'credit' ? 'info' : 'success'}">
+                                        <span>${escapeHtml((item.name || 'C').substring(0, 2).toUpperCase())}</span>
                                     </div>
                                 </div>
                                 <div>
-                                    <div class="font-semibold">${item.name || '-'}</div>
-                                    <div class="text-xs text-base-content/60">${item.customer_code || item.contact_person || 'No code'}</div>
+                                    <div class="font-semibold">${escapeHtml(item.name || '-')}</div>
+                                    <div class="text-xs text-base-content/60">${escapeHtml(item.customer_code || item.contact_person || 'No code')}</div>
                                 </div>
                             </div>
                         </td>
-                        <td><span class="badge badge-sm badge-ghost">${item.customer_type?.replace('_', ' ') || '-'}</span></td>
-                        <td class="text-sm">${item.contact_number || '-'}</td>
+                        <td><span class="badge badge-sm badge-ghost">${escapeHtml(item.customer_type?.replace('_', ' ') || '-')}</span></td>
+                        <td class="text-sm">${escapeHtml(item.contact_number || '-')}</td>
                         <td class="text-sm font-mono tabular-nums">${formatCurrency(item.credit_limit)}</td>
                         <td>
-                            <span class="badge badge-sm ${item.default_payment_type === 'credit' ? 'badge-info' : 'badge-success'}">${item.default_payment_type || 'cash'}</span>
+                            <span class="badge badge-sm ${paymentType === 'credit' ? 'badge-info' : 'badge-success'}">${paymentType}</span>
                             ${item.payment_terms_days > 0 ? `<br><span class="text-xs text-base-content/60">${item.payment_terms_days} days</span>` : ''}
                         </td>
                         <td class="text-sm">${formatOutstandingCell(item)}</td>
                         <td>
-                            <span class="badge badge-sm ${item.status === 'active' ? 'badge-success' :
-                        item.status === 'inactive' ? 'badge-error' : 'badge-warning'
-                    }">${item.status}</span>
+                            <span class="badge badge-sm ${status === 'active' ? 'badge-success' :
+                        status === 'inactive' ? 'badge-ghost' : 'badge-error'
+                    }">${escapeHtml(status)}</span>
                         </td>
                         <td>
                             <div class="flex items-center justify-center gap-1">
-                                <button class="btn btn-ghost btn-sm btn-square" onclick="editRecord(${item.id})" title="Edit">
+                                <button class="btn btn-ghost btn-sm btn-square" onclick="editRecord(${id})" title="Edit">
                                     <i class="fas fa-edit text-primary"></i>
                                 </button>
-                                <button class="btn btn-ghost btn-sm btn-square" onclick="deleteRecord(${item.id}, '${item.name}')" title="Archive">
+                                <button class="btn btn-ghost btn-sm btn-square" onclick="deleteRecord(${id})" title="Archive">
                                     <i class="fas fa-box-archive text-warning"></i>
                                 </button>
                             </div>
                         </td>
                     </tr>
-                `).join('');
+                `;
+                }).join('');
             }
 
             document.getElementById('showingStart').textContent = filteredData.length === 0 ? 0 : start + 1;
@@ -726,6 +792,10 @@
             document.getElementById('modalTitle').textContent = 'Add Customer Account';
             document.getElementById('dataForm').reset();
             document.getElementById('recordId').value = '';
+            setLocationRows();
+            document.getElementById('outstandingPanel').classList.add('hidden');
+            handlePaymentTypeChange();
+            handleStatusChange();
             document.getElementById('formModal').showModal();
         }
 
@@ -738,23 +808,26 @@
                     document.getElementById('recordId').value = data.id;
                     document.getElementById('name').value = data.name || '';
                     document.getElementById('customer_type').value = data.customer_type || 'walk_in';
-                    document.getElementById('sub_location').value = data.sub_location || '';
+                    const locations = Array.isArray(data.locations) ? data.locations : [];
+                    if (!locations.length && data.sub_location) locations.push({sub_name: data.sub_location, address: data.address || ''});
+                    setLocationRows(locations);
                     document.getElementById('contact_person').value = data.contact_person || '';
                     document.getElementById('contact_number').value = data.contact_number || '';
                     document.getElementById('email').value = data.email || '';
                     document.getElementById('default_payment_type').value = data.default_payment_type || 'cash';
                     document.getElementById('address').value = data.address || '';
                     document.getElementById('credit_limit').value = data.credit_limit || 0;
-                    // Payment terms: match to nearest valid option
                     const ptDays = parseInt(data.payment_terms_days) || 0;
-                    const validTerms = [0, 15, 30, 45, 60];
-                    const nearestTerm = validTerms.reduce((prev, curr) => Math.abs(curr - ptDays) < Math.abs(prev - ptDays) ? curr : prev);
-                    document.getElementById('payment_terms_days').value = nearestTerm;
-                    document.getElementById('current_balance').value = data.current_balance || 0;
+                    document.getElementById('payment_terms_days').value = String(ptDays);
+                    document.getElementById('outstanding_balance').textContent = formatCurrency(data.outstanding_balance || 0);
+                    document.getElementById('outstandingPanel').classList.remove('hidden');
                     document.getElementById('status').value = data.status || 'active';
+                    document.getElementById('blocked_reason').value = data.blocked_reason || '';
                     document.getElementById('notes').value = data.notes || '';
                     // Trigger walk-in UI update
                     handleCustomerTypeChange(data.customer_type || 'walk_in');
+                    handlePaymentTypeChange();
+                    handleStatusChange();
                     document.getElementById('formModal').showModal();
                 }
             } catch (error) {
@@ -767,10 +840,16 @@
             event.preventDefault();
 
             const recordId = document.getElementById('recordId').value;
+            const locations = collectLocations();
+            if (locations.some(location => !location.sub_name || !location.address)) {
+                showToast('Each saved location needs both a name and delivery address.', 'warning');
+                return;
+            }
             const formData = {
                 name: document.getElementById('name').value,
                 customer_type: document.getElementById('customer_type').value,
-                sub_location: document.getElementById('sub_location').value,
+                sub_location: locations[0]?.sub_name || '',
+                locations,
                 contact_person: document.getElementById('contact_person').value,
                 contact_number: document.getElementById('contact_number').value,
                 email: document.getElementById('email').value,
@@ -779,6 +858,7 @@
                 credit_limit: document.getElementById('credit_limit').value,
                 payment_terms_days: parseInt(document.getElementById('payment_terms_days').value) || 0,
                 status: document.getElementById('status').value,
+                blocked_reason: document.getElementById('blocked_reason').value,
                 notes: document.getElementById('notes').value
             };
 
@@ -797,6 +877,7 @@
                 if (response.success) {
                     showToast(recordId ? 'Customer updated successfully' : 'Customer created successfully', 'success');
                     document.getElementById('formModal').close();
+                    if (!recordId) currentPage = 1;
                     loadData();
                 } else {
                     showToast(response.message || 'Failed to save customer', 'error');
@@ -811,9 +892,10 @@
             }
         }
 
-        function deleteRecord(id, name) {
+        function deleteRecord(id) {
             recordToDelete = id;
-            document.getElementById('deleteName').textContent = name;
+            const record = allData.find(item => Number(item.id) === Number(id));
+            document.getElementById('deleteName').textContent = record?.name || 'this customer';
             document.getElementById('deleteModal').showModal();
         }
 
@@ -841,7 +923,9 @@
             const alertClass = { 'success': 'alert-success', 'error': 'alert-error', 'warning': 'alert-warning', 'info': 'alert-info' }[type] || 'alert-info';
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            const messageElement = document.createElement('span');
+            messageElement.textContent = String(message ?? '');
+            toast.appendChild(messageElement);
             container.appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
         }

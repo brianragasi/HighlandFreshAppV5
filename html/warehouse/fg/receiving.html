@@ -511,6 +511,7 @@
     <script src="../../../js/vendor/axios.min.js?v=20260221"></script>
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../../js/ui/live-refresh.js?v=20260820-1"></script>
     <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_fg,general_manager"></script>
     <script src="../../../js/utils/units.js?v=20260712"></script>
     <script src="../../../js/warehouse/fg.service.js?v=20260718"></script>
@@ -544,7 +545,7 @@
         function showToast(message, type = 'info') {
             const toast = document.createElement('div');
             toast.className = `alert alert-${type} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            HighlandSecurity.renderToastContent(toast, message);
             document.getElementById('toastContainer').appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
         }
@@ -574,6 +575,11 @@
                 await loadChillers();
                 await loadPendingBatches();
                 await loadRecentReceipts();
+                HighlandLiveRefresh.start(() => Promise.all([
+                    loadPendingBatches(),
+                    loadRecentReceipts(),
+                    loadChillers()
+                ]));
             } catch (error) {
                 console.error('Init error:', error);
                 showToast('Failed to initialize', 'error');
@@ -640,7 +646,7 @@
                     <tr><td colspan="7" class="text-center py-8 text-error">
                         <i class="fas fa-exclamation-triangle text-4xl mb-2"></i>
                         <p class="font-semibold">Failed to load items</p>
-                        <p class="text-sm text-base-content/60 mt-1">${msg}</p>
+                        <p class="text-sm text-base-content/60 mt-1">${HighlandSecurity.escapeHtml(msg)}</p>
                         <button type="button" class="btn btn-sm btn-outline mt-3" onclick="loadPendingBatches()">Retry</button>
                     </td></tr>`;
                 if (typeof showToast === 'function') {
@@ -689,16 +695,16 @@
                 const qcOk = !batch.qc_status || batch.qc_status === 'released' || batch.qc_decision === 'approved';
                 const qcBadge = qcOk
                     ? '<span class="badge badge-success badge-sm gap-1"><i class="fas fa-check"></i> QC Passed</span>'
-                    : `<span class="badge badge-warning badge-sm">${batch.qc_status || 'Pending QC'}</span>`;
+                    : `<span class="badge badge-warning badge-sm">${escapeHtml(batch.qc_status || 'Pending QC')}</span>`;
 
                 return `
                 <tr class="pending-row hover">
                     <td>
-                        <code class="font-mono text-sm bg-base-200 px-2 py-1 rounded">${batch.batch_code || batch.batch_number || ('FG-' + batch.id)}</code>
+                        <code class="font-mono text-sm bg-base-200 px-2 py-1 rounded">${escapeHtml(batch.batch_code || batch.batch_number || ('FG-' + batch.id))}</code>
                     </td>
                     <td>
                         <div class="font-medium">${productName}</div>
-                        <div class="text-xs text-base-content/60">${batch.variant || batch.product_variant || ''}</div>
+                        <div class="text-xs text-base-content/60">${escapeHtml(batch.variant || batch.product_variant || '')}</div>
                         <div class="text-xs text-info mt-0.5">${packLine}</div>
                         ${integrityHtml}
                     </td>
@@ -771,16 +777,16 @@
                 return `
                 <tr class="hover">
                     <td class="text-sm">${new Date(r.created_at).toLocaleString()}</td>
-                    <td><code class="text-xs bg-base-200 px-2 py-1 rounded">${r.batch_code || 'N/A'}</code></td>
+                    <td><code class="text-xs bg-base-200 px-2 py-1 rounded">${escapeHtml(r.batch_code || 'N/A')}</code></td>
                     <td class="font-medium">
-                        ${r.product_name || 'Unknown'}
+                        ${escapeHtml(r.product_name || 'Unknown')}
                         <div class="text-xs text-info">${PackUnits.formatPackLine(row)}</div>
                     </td>
                     <td class="text-right">${packs > 0 ? packs : '-'}</td>
                     <td class="text-right">${loose > 0 ? loose : '-'}</td>
                     <td class="text-right font-semibold">${total.toLocaleString()} ${baseLabel}</td>
-                    <td><span class="badge badge-ghost badge-sm">${r.chiller_name || 'N/A'}</span></td>
-                    <td class="text-sm text-base-content/70">${r.received_by_name || 'System'}</td>
+                    <td><span class="badge badge-ghost badge-sm">${escapeHtml(r.chiller_name || 'N/A')}</span></td>
+                    <td class="text-sm text-base-content/70">${escapeHtml(r.received_by_name || 'System')}</td>
                 </tr>
             `}).join('');
         }

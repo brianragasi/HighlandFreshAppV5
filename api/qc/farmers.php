@@ -11,6 +11,7 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/plain_text.php';
 
 // Require QC or GM role
 $currentUser = Auth::requireRole(['qc_officer', 'general_manager', 'finance_officer']);
@@ -74,18 +75,23 @@ try {
             
         case 'POST':
             // Create farmer (with milk_type_id - revised schema)
-            $firstName = trim(getParam('first_name', ''));
-            $lastName = trim(getParam('last_name', ''));
+            $firstName = hfPlainText(getParam('first_name', ''), 100, false);
+            $lastName = hfPlainText(getParam('last_name', ''), 100, false);
             $contactNumber = trim(getParam('contact_number', ''));
-            $address = trim(getParam('address', ''));
+            $address = hfPlainText(getParam('address', ''), 500, true);
             $membershipType = getParam('membership_type', 'non_member');
             $milkTypeId = getParam('milk_type_id', 1); // Default to COW (1)
-            $bankName = trim(getParam('bank_name', ''));
-            $bankAccount = trim(getParam('bank_account_number', ''));
+            $bankName = hfPlainText(getParam('bank_name', ''), 100, false);
+            $bankAccount = hfPlainText(getParam('bank_account_number', ''), 100, false);
             
             // Validation
             $errors = [];
             if (empty($firstName)) $errors['first_name'] = 'First name is required';
+            elseif (!hfPersonNameHasLetter($firstName)) $errors['first_name'] = 'First name must contain at least one letter';
+            if (!hfPersonNameHasLetter($lastName, true)) $errors['last_name'] = 'Last name must contain at least one letter when provided';
+            $bankAccountCheck = hfValidateBankAccountNumber($bankAccount);
+            if ($bankAccountCheck['error'] !== null) $errors['bank_account_number'] = $bankAccountCheck['error'];
+            $bankAccount = $bankAccountCheck['value'];
             if (!in_array($membershipType, ['member', 'non_member'])) {
                 $errors['membership_type'] = 'Invalid membership type';
             }

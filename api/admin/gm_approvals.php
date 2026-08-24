@@ -10,6 +10,8 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/plain_text.php';
+require_once dirname(__DIR__) . '/helpers/procurement_notifications.php';
 
 // Require GM role only
 $currentUser = Auth::requireRole(['general_manager']);
@@ -77,14 +79,52 @@ function handleGet($db, $action, $currentUser) {
             // Get items for each order
             foreach ($orders as &$order) {
                 $itemsStmt = $db->prepare("
-                    SELECT item_description, quantity, unit, unit_price, total_amount
+                    SELECT item_description, quantity, unit, unit_price, total_amount,
+                           supplier_order_quantity, supplier_order_unit,
+                           supplier_order_unit_price, stock_quantity_per_supplier_unit
                     FROM purchase_order_items WHERE po_id = ?
                 ");
                 $itemsStmt->execute([$order['id']]);
                 $order['items'] = $itemsStmt->fetchAll();
+                addProcurementQuantityDisplays($order['items']);
             }
             
             Response::success($orders, 'Pending POs retrieved');
+            break;
+
+        case 'decision_history':
+            $limit = min(50, max(5, (int) getParam('limit', 12)));
+            $stmt = $db->prepare("
+                SELECT
+                    a.id AS audit_id,
+                    a.action AS decision,
+                    a.entry_hash AS audit_hash,
+                    a.created_at AS decision_at,
+                    po.id AS po_id,
+                    po.po_number,
+                    po.status AS current_status,
+                    po.total_amount,
+                    po.payment_terms,
+                    po.approval_remarks,
+                    po.rejection_reason,
+                    po.purchase_request_id,
+                    pr.pr_number,
+                    s.supplier_name,
+                    s.supplier_code,
+                    COALESCE(u.full_name, po.approver_name, 'General Manager') AS decided_by
+                FROM audit_logs a
+                JOIN purchase_orders po ON po.id = a.record_id
+                JOIN suppliers s ON s.id = po.supplier_id
+                LEFT JOIN purchase_requests pr ON pr.id = po.purchase_request_id
+                LEFT JOIN users u ON u.id = a.user_id
+                WHERE a.table_name = 'purchase_orders'
+                  AND a.action IN ('APPROVE', 'REJECT')
+                ORDER BY a.id DESC
+                LIMIT ?
+            ");
+            $stmt->bindValue(1, $limit, PDO::PARAM_INT);
+            $stmt->execute();
+            Response::success($stmt->fetchAll(PDO::FETCH_ASSOC), 'GM Purchase Order decision history retrieved');
             break;
             
         case 'pending_requisitions':
@@ -491,6 +531,7 @@ function fetchApprovalDetail(PDO $db) {
                 $itemStmt = $db->prepare("SELECT * FROM purchase_order_items WHERE po_id = ?");
                 $itemStmt->execute([$sourceId]);
                 $detail['items'] = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
+                addProcurementQuantityDisplays($detail['items']);
             }
             break;
 
@@ -521,6 +562,39 @@ function fetchApprovalDetail(PDO $db) {
     Response::success($detail);
 }
 
+function approvalCompactNumber($value, $decimals = 3) {
+    return rtrim(rtrim(number_format((float) $value, $decimals, '.', ','), '0'), '.');
+}
+
+function addProcurementQuantityDisplays(&$items) {
+    foreach ($items as &$item) {
+        $warehouseQuantity = (float) ($item['quantity'] ?? 0);
+        $warehouseUnit = trim((string) ($item['unit'] ?? 'unit')) ?: 'unit';
+        $supplierQuantity = (float) ($item['supplier_order_quantity'] ?? 0);
+        $supplierUnit = trim((string) ($item['supplier_order_unit'] ?? ''));
+        $stockPerPackage = (float) ($item['stock_quantity_per_supplier_unit'] ?? 0);
+
+        if ($supplierQuantity > 0 && $supplierUnit !== '' && $stockPerPackage > 0) {
+            $coveredQuantity = $supplierQuantity * $stockPerPackage;
+            $display = approvalCompactNumber($supplierQuantity) . ' ' . $supplierUnit
+                . ' = ' . approvalCompactNumber($coveredQuantity) . ' ' . $warehouseUnit;
+            $extra = $coveredQuantity - $warehouseQuantity;
+            if ($extra > 0.0005) {
+                $display .= ' (requested ' . approvalCompactNumber($warehouseQuantity) . ' ' . $warehouseUnit
+                    . '; extra ' . approvalCompactNumber($extra) . ' from full packages)';
+            }
+            $item['quantity_display'] = $display;
+            $item['price_display'] = 'PHP ' . number_format((float) ($item['supplier_order_unit_price'] ?? 0), 2)
+                . ' / ' . $supplierUnit;
+        } else {
+            $item['quantity_display'] = approvalCompactNumber($warehouseQuantity) . ' ' . $warehouseUnit;
+            $item['price_display'] = 'PHP ' . number_format((float) ($item['unit_price'] ?? 0), 2)
+                . ' / ' . $warehouseUnit;
+        }
+    }
+    unset($item);
+}
+
 function approvalUnitLabel(string $unit, int $quantity): string {
     if ($quantity === 1 || substr(strtolower($unit), -1) === 's') {
         return $unit;
@@ -535,7 +609,7 @@ function processApprovalDecision(PDO $db, string $decision, $currentUser) {
     $input = json_decode(file_get_contents('php://input'), true);
     $type = $input['type'] ?? '';
     $sourceId = (int)($input['source_id'] ?? 0);
-    $remarks = trim($input['remarks'] ?? '');
+    $remarks = hfPlainText($input['remarks'] ?? '', 1000, true);
 
     if (!$sourceId || !$type) {
         Response::error('Missing type or source_id', 400);
@@ -621,12 +695,8 @@ function processApprovalDecision(PDO $db, string $decision, $currentUser) {
                     $poAmt = number_format((float)($poInfo['total_amount'] ?? 0), 2);
                     $poTerms = $poInfo['payment_terms'] ?? 'N/A';
 
-                    $notifStmt = $db->prepare("
-                        INSERT INTO procurement_notifications (target_role, notification_type, title, message, reference_type, reference_id)
-                        VALUES (?, ?, ?, ?, 'purchase_order', ?)
-                    ");
-                    $notifStmt->execute(['warehouse_raw', 'po_approved_pending_delivery', 'Approved PO pending delivery', "PO {$poNum} has been approved by GM and is ready for Warehouse receiving.", $sourceId]);
-                    $notifStmt->execute(['finance_officer', 'po_approved_prepare_funds', 'PO approved — prepare funds', "PO {$poNum} ({$poAmt}) was approved by GM. Payment terms: {$poTerms}. Please prepare funds.", $sourceId]);
+                    writeProcurementNotification($db, 'warehouse_raw', 'po_approved_pending_delivery', 'Approved PO pending delivery', "PO {$poNum} has been approved by GM and is ready for Warehouse receiving.", 'purchase_order', $sourceId);
+                    writeProcurementNotification($db, 'finance_officer', 'po_approved_prepare_funds', 'PO approved - prepare funds', "PO {$poNum} ({$poAmt}) was approved by GM. Payment terms: {$poTerms}. Please prepare funds.", 'purchase_order', $sourceId);
                 }
                 break;
 

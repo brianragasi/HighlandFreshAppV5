@@ -422,14 +422,14 @@
 
                 tbody.innerHTML = collections.map(c => `
                     <tr class="hover">
-                        <td><span class="font-mono font-semibold text-primary">${c.or_number}</span></td>
-                        <td class="font-medium">${c.customer_name}</td>
-                        <td class="text-sm">${c.dr_number || '-'}</td>
+                        <td><span class="font-mono font-semibold text-primary">${escapeHtml(c.or_number)}</span></td>
+                        <td class="font-medium">${escapeHtml(c.customer_name)}</td>
+                        <td class="text-sm">${escapeHtml(c.dr_number || '-')}</td>
                         <td class="font-bold">${formatCurrency(c.amount_collected)}</td>
                         <td class="text-sm">${methodIcons[c.payment_method] || c.payment_method}</td>
                         <td class="text-sm">${formatCurrency(c.balance_before)}</td>
                         <td class="text-sm ${parseFloat(c.balance_after) === 0 ? 'text-success font-semibold' : ''}">${formatCurrency(c.balance_after)}</td>
-                        <td class="text-sm">${c.collected_by_name || '-'}</td>
+                        <td class="text-sm">${escapeHtml(c.collected_by_name || '-')}</td>
                         <td class="text-sm">${formatDateTime(c.status === 'cleared' ? c.cleared_at : c.collected_at)}</td>
                         <td><span class="badge badge-sm ${statusBadges[c.status] || 'badge-ghost'}">${formatStatus(c.status)}</span></td>
                     </tr>
@@ -488,7 +488,7 @@
                         <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-base-200">
                             <div class="w-7 h-7 rounded-full bg-base-200 flex items-center justify-center text-xs font-bold text-base-content/50">${i + 1}</div>
                             <div class="flex-1 min-w-0">
-                                <p class="font-medium text-sm truncate">${d.customer_name}</p>
+                                <p class="font-medium text-sm truncate">${escapeHtml(d.customer_name)}</p>
                                 <p class="text-xs text-base-content/50">${d.invoice_count} invoice${d.invoice_count > 1 ? 's' : ''}</p>
                             </div>
                             <span class="font-bold text-sm">${formatCurrency(d.total_balance)}</span>
@@ -519,7 +519,11 @@
             const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg text-sm`;
-            toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'info-circle'}"></i><span>${message}</span>`;
+            HighlandSecurity.renderToastContent(
+                toast,
+                message,
+                `fas fa-${type === 'success' ? 'check-circle' : 'info-circle'}`
+            );
             container.appendChild(toast);
             setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 3000);
         }

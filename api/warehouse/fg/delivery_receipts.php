@@ -12,6 +12,7 @@
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
 require_once __DIR__ . '/inventory_helpers.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/customer_accounts.php';
 
 // Different roles for different operations:
 // - GET: Sales can view DRs (to track delivery status)
@@ -23,6 +24,7 @@ $action = getParam('action', 'list');
 
 try {
     $db = Database::getInstance()->getConnection();
+    hfEnsureCustomerAccountSchema($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -116,10 +118,18 @@ function handleGet($db, $action) {
             $stmt = $db->prepare("
                 SELECT dr.*,
                     u.first_name as prepared_by_name,
-                    d.first_name as dispatched_by_name
+                    u.last_name as prepared_by_lastname,
+                    d.first_name as dispatched_by_name,
+                    d.last_name as dispatched_by_lastname,
+                    ck.first_name as checked_by_name,
+                    ck.last_name as checked_by_lastname,
+                    so.order_number,
+                    so.delivery_date as order_delivery_date
                 FROM delivery_receipts dr
-                LEFT JOIN users u ON dr.created_by = u.id
+                LEFT JOIN users u ON COALESCE(dr.prepared_by, dr.created_by) = u.id
                 LEFT JOIN users d ON dr.dispatched_by = d.id
+                LEFT JOIN users ck ON dr.checked_by = ck.id
+                LEFT JOIN sales_orders so ON dr.order_id = so.id
                 WHERE dr.id = ?
             ");
             $stmt->execute([$id]);
@@ -344,9 +354,11 @@ function handlePost($db, $action, $currentUser) {
         
         // Get the order
         $orderStmt = $db->prepare("
-            SELECT o.*, c.name as customer_name, c.customer_type, c.address, c.contact_number
+            SELECT o.*, c.name as customer_name, c.customer_type, c.address, c.contact_number,
+                   location.sub_name AS selected_sub_location
             FROM sales_orders o
             LEFT JOIN customers c ON o.customer_id = c.id
+            LEFT JOIN sales_customer_sub_accounts location ON location.id = o.sub_account_id
             WHERE o.id = ?
         ");
         $orderStmt->execute([$orderId]);
@@ -474,24 +486,31 @@ function handlePost($db, $action, $currentUser) {
             // Status = 'picking' - items must be scanned/picked before DR is generated
             $stmt = $db->prepare("
                 INSERT INTO delivery_receipts 
-                (dr_number, order_id, customer_id, customer_name, delivery_address, 
-                 contact_number, total_items, total_amount, status, picking_started_at, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'picking', NOW(), ?)
+                (dr_number, order_id, customer_id, sub_account_id, customer_name, sub_location,
+                 delivery_address, contact_number, total_items, total_amount,
+                 payment_type, payment_terms_days, due_date, status, picking_started_at, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURDATE()), 'picking', NOW(), ?)
             ");
             
             $stmt->execute([
                 $pickingNumber,
                 $orderId,
                 $order['customer_id'],
+                $order['sub_account_id'] ?? null,
                 $order['customer_name'],
+                $order['selected_sub_location'] ?? null,
                 $order['delivery_address'] ?? $order['address'],
                 $order['contact_number'],
                 count($orderItems),
                 $order['total_amount'],
+                $order['payment_type'] ?? 'cash',
+                ($order['payment_type'] ?? 'cash') === 'credit' ? (int) ($order['payment_terms_days'] ?? 0) : 0,
+                $order['due_date'] ?? null,
                 $currentUser['user_id']
             ]);
             
             $drId = $db->lastInsertId();
+            hfSyncCustomerBalance($db, (int) $order['customer_id']);
             
             // Create DR items from order items
             $itemStmt = $db->prepare("
@@ -531,11 +550,15 @@ function handlePost($db, $action, $currentUser) {
     }
     
     if ($action === 'create') {
-        $required = ['customer_type', 'customer_name'];
-        foreach ($required as $field) {
-            if (empty($data[$field])) {
-                Response::error("$field is required", 400);
-            }
+        $customerId = (int) ($data['customer_id'] ?? 0);
+        if ($customerId <= 0) {
+            Response::validationError(['customer_id' => 'Choose a registered customer.']);
+        }
+        $customerStmt = $db->prepare("SELECT * FROM customers WHERE id = ? AND status = 'active'");
+        $customerStmt->execute([$customerId]);
+        $customer = $customerStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$customer) {
+            Response::validationError(['customer_id' => 'Customer was not found or is not active.']);
         }
         
         $db->beginTransaction();
@@ -546,18 +569,22 @@ function handlePost($db, $action, $currentUser) {
             
             $stmt = $db->prepare("
                 INSERT INTO delivery_receipts 
-                (dr_number, customer_type, customer_name, sub_location, contact_number, 
-                 delivery_address, status, created_by, notes)
-                VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?)
+                (dr_number, customer_id, customer_type, customer_name, sub_location, contact_number,
+                 delivery_address, payment_type, payment_terms_days, due_date, status, created_by, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
             ");
             
             $stmt->execute([
                 $drNumber,
-                $data['customer_type'],
-                $data['customer_name'],
-                $data['sub_location'] ?? null,
-                $data['contact_number'] ?? null,
-                $data['delivery_address'] ?? null,
+                $customerId,
+                $customer['customer_type'],
+                $customer['name'],
+                $data['sub_location'] ?? $customer['sub_location'] ?? null,
+                $data['contact_number'] ?? $customer['contact_number'] ?? null,
+                $data['delivery_address'] ?? $customer['address'] ?? null,
+                $customer['default_payment_type'] ?? 'cash',
+                ($customer['default_payment_type'] ?? 'cash') === 'credit' ? (int) ($customer['payment_terms_days'] ?? 0) : 0,
+                hfCustomerDueDate(date('Y-m-d'), (string) ($customer['default_payment_type'] ?? 'cash'), (int) ($customer['payment_terms_days'] ?? 0)),
                 $currentUser['user_id'],
                 $data['notes'] ?? null
             ]);
@@ -1194,6 +1221,7 @@ function handlePut($db, $action, $currentUser) {
                 }
 
                 $stockSummary = fgDeliveryCompleteAllocations($db, $id);
+                hfSyncCustomerBalance($db, (int) $current['customer_id']);
 
                 $db->commit();
                 Response::success([
@@ -1232,6 +1260,7 @@ function handlePut($db, $action, $currentUser) {
                           AND status IN ('picking', 'ready', 'preparing')
                     ")->execute([$current['order_id']]);
                 }
+                hfSyncCustomerBalance($db, (int) $current['customer_id']);
                 $db->commit();
                 Response::success([
                     'restocked_quantity' => $restocked

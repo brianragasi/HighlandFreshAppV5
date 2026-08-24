@@ -3,7 +3,7 @@
  * Highland Fresh System - Price Canvassing API
  * 
  * GET - List canvass requests, get quotes
- * POST - Create canvass, add quotes
+ * POST - Prepare supplier reviews and record approved-supplier selections
  * PUT - Select quote, complete canvass
  * 
  * @package HighlandFresh
@@ -80,9 +80,42 @@ function handleGet($db, $action) {
                     i.ingredient_name,
                     m.item_name as mro_item_name,
                     u.full_name as created_by_name,
-                    (SELECT COUNT(DISTINCT supplier_id) FROM canvass_quotes WHERE canvass_id = c.id) as quote_count,
-                    (SELECT MIN(unit_price) FROM canvass_quotes WHERE canvass_id = c.id) as lowest_price,
-                    (SELECT MAX(unit_price) FROM canvass_quotes WHERE canvass_id = c.id) as highest_price
+                    (
+                        SELECT COUNT(DISTINCT q.supplier_id)
+                        FROM canvass_quotes q
+                        JOIN suppliers qs ON qs.id = q.supplier_id AND qs.is_active = 1
+                        LEFT JOIN ingredients qi ON qi.id = c.ingredient_id AND qi.is_active = 1
+                        LEFT JOIN supplier_ingredients qsi
+                          ON qsi.supplier_id = q.supplier_id
+                         AND qsi.ingredient_id = c.ingredient_id
+                         AND qsi.is_active = 1
+                        WHERE q.canvass_id = c.id
+                          AND (c.ingredient_id IS NULL OR (qi.id IS NOT NULL AND qsi.id IS NOT NULL))
+                    ) as quote_count,
+                    (
+                        SELECT MIN(q.unit_price)
+                        FROM canvass_quotes q
+                        JOIN suppliers qs ON qs.id = q.supplier_id AND qs.is_active = 1
+                        LEFT JOIN ingredients qi ON qi.id = c.ingredient_id AND qi.is_active = 1
+                        LEFT JOIN supplier_ingredients qsi
+                          ON qsi.supplier_id = q.supplier_id
+                         AND qsi.ingredient_id = c.ingredient_id
+                         AND qsi.is_active = 1
+                        WHERE q.canvass_id = c.id
+                          AND (c.ingredient_id IS NULL OR (qi.id IS NOT NULL AND qsi.id IS NOT NULL))
+                    ) as lowest_price,
+                    (
+                        SELECT MAX(q.unit_price)
+                        FROM canvass_quotes q
+                        JOIN suppliers qs ON qs.id = q.supplier_id AND qs.is_active = 1
+                        LEFT JOIN ingredients qi ON qi.id = c.ingredient_id AND qi.is_active = 1
+                        LEFT JOIN supplier_ingredients qsi
+                          ON qsi.supplier_id = q.supplier_id
+                         AND qsi.ingredient_id = c.ingredient_id
+                         AND qsi.is_active = 1
+                        WHERE q.canvass_id = c.id
+                          AND (c.ingredient_id IS NULL OR (qi.id IS NOT NULL AND qsi.id IS NOT NULL))
+                    ) as highest_price
                 FROM price_canvass c
                 LEFT JOIN ingredients i ON c.ingredient_id = i.id
                 LEFT JOIN mro_items m ON c.mro_item_id = m.id
@@ -133,8 +166,20 @@ function handleGet($db, $action) {
                     s.contact_person,
                     s.phone
                 FROM canvass_quotes q
-                JOIN suppliers s ON q.supplier_id = s.id
+                JOIN price_canvass quote_canvass ON quote_canvass.id = q.canvass_id
+                JOIN suppliers s ON q.supplier_id = s.id AND s.is_active = 1
+                LEFT JOIN ingredients active_ingredient
+                    ON active_ingredient.id = quote_canvass.ingredient_id
+                   AND active_ingredient.is_active = 1
+                LEFT JOIN supplier_ingredients active_link
+                    ON active_link.supplier_id = q.supplier_id
+                   AND active_link.ingredient_id = quote_canvass.ingredient_id
+                   AND active_link.is_active = 1
                 WHERE q.canvass_id = ?
+                  AND (
+                      quote_canvass.ingredient_id IS NULL
+                      OR (active_ingredient.id IS NOT NULL AND active_link.id IS NOT NULL)
+                  )
                 ORDER BY q.unit_price ASC
             ");
             $quotesStmt->execute([$id]);
@@ -219,6 +264,17 @@ function handlePost($db, $action, $currentUser) {
                     Response::error("$field is required", 400);
                 }
             }
+            try {
+                $data['quantity'] = hfParseBusinessDecimal(
+                    $data['quantity'],
+                    'Canvass quantity',
+                    0.01,
+                    1000000.00,
+                    2
+                );
+            } catch (InvalidArgumentException $error) {
+                Response::validationError(['quantity' => $error->getMessage()]);
+            }
             
             $canvassCode = nextCanvassCode($db);
             
@@ -277,11 +333,12 @@ function handlePost($db, $action, $currentUser) {
 
             if (!empty($canvass['ingredient_id'])) {
                 $catalogCheck = $db->prepare("
-                    SELECT id
-                    FROM supplier_ingredients
-                    WHERE supplier_id = ?
-                      AND ingredient_id = ?
-                      AND is_active = 1
+                    SELECT si.id
+                    FROM supplier_ingredients si
+                    JOIN ingredients i ON i.id = si.ingredient_id AND i.is_active = 1
+                    WHERE si.supplier_id = ?
+                      AND si.ingredient_id = ?
+                      AND si.is_active = 1
                     LIMIT 1
                 ");
                 $catalogCheck->execute([$supplierId, $canvass['ingredient_id']]);
@@ -290,9 +347,22 @@ function handlePost($db, $action, $currentUser) {
                 }
             }
 
-            $unitPrice = (float) $data['unit_price'];
-            if ($unitPrice <= 0) {
-                Response::error('Unit price must be greater than zero', 400);
+            try {
+                $unitPrice = hfParseBusinessDecimal(
+                    $data['unit_price'],
+                    'Quoted unit price',
+                    0.01,
+                    999999.99,
+                    2
+                );
+                $deliveryDays = hfParseBusinessInteger(
+                    $data['delivery_days'] ?? 7,
+                    'Delivery days',
+                    0,
+                    3650
+                );
+            } catch (InvalidArgumentException $error) {
+                Response::validationError(['quote' => $error->getMessage()]);
             }
             
             // Check if supplier already quoted
@@ -312,7 +382,7 @@ function handlePost($db, $action, $currentUser) {
                 $data['canvass_id'],
                 $supplierId,
                 $unitPrice,
-                $data['delivery_days'] ?? 7,
+                $deliveryDays,
                 $data['payment_terms'] ?? 'cash',
                 $data['validity_date'] ?? null,
                 $data['notes'] ?? null
@@ -341,18 +411,19 @@ function handlePost($db, $action, $currentUser) {
             $created = 0;
 
             foreach ($prs['items'] as $item) {
-                if (!empty($item['canvass'])) {
-                    continue;
+                $canvassId = (int) ($item['canvass']['id'] ?? 0);
+                if ($canvassId <= 0) {
+                    $canvassId = createCanvassForPRSItem($db, $prs, $item, $currentUser);
+                    $created++;
                 }
-                createCanvassForPRSItem($db, $prs, $item, $currentUser);
-                $created++;
+                syncRegisteredPartnerPricesForCanvass($db, $canvassId);
             }
 
             $fresh = getSubmittedPRSForCanvassing($db, $prId);
             Response::success([
                 'created' => $created,
                 'prs' => $fresh
-            ], $created > 0 ? 'Canvass records prepared' : 'Canvass records already prepared', 201);
+            ], $created > 0 ? 'Supplier review prepared' : 'Supplier review already prepared', 201);
             break;
             
         default:
@@ -511,7 +582,12 @@ function getSubmittedPRSForCanvassing(PDO $db, int $prId): array {
         $canvass = $canvassStmt->fetch(PDO::FETCH_ASSOC);
 
         if ($canvass) {
+            syncRegisteredPartnerPricesForCanvass($db, (int) $canvass['id']);
             autoSelectCheapestQuoteIfReady($db, (int) $canvass['id']);
+
+            // Return the selection made above in this same response.
+            $canvassStmt->execute([$item['id']]);
+            $canvass = $canvassStmt->fetch(PDO::FETCH_ASSOC);
 
             $quotesStmt = $db->prepare("
                 SELECT
@@ -521,8 +597,20 @@ function getSubmittedPRSForCanvassing(PDO $db, int $prId): array {
                     s.contact_person,
                     s.phone
                 FROM canvass_quotes q
-                JOIN suppliers s ON q.supplier_id = s.id
+                JOIN price_canvass quote_canvass ON quote_canvass.id = q.canvass_id
+                JOIN suppliers s ON q.supplier_id = s.id AND s.is_active = 1
+                LEFT JOIN ingredients active_ingredient
+                    ON active_ingredient.id = quote_canvass.ingredient_id
+                   AND active_ingredient.is_active = 1
+                LEFT JOIN supplier_ingredients active_link
+                    ON active_link.supplier_id = q.supplier_id
+                   AND active_link.ingredient_id = quote_canvass.ingredient_id
+                   AND active_link.is_active = 1
                 WHERE q.canvass_id = ?
+                  AND (
+                      quote_canvass.ingredient_id IS NULL
+                      OR (active_ingredient.id IS NOT NULL AND active_link.id IS NOT NULL)
+                  )
                 ORDER BY q.is_selected DESC, q.unit_price ASC
             ");
             $quotesStmt->execute([$canvass['id']]);
@@ -551,13 +639,37 @@ function autoSelectCheapestQuoteIfReady(PDO $db, int $canvassId): ?array {
             c.selection_method
         FROM canvass_quotes q
         JOIN price_canvass c ON c.id = q.canvass_id
+        JOIN suppliers s ON s.id = q.supplier_id AND s.is_active = 1
+        LEFT JOIN ingredients active_ingredient
+            ON active_ingredient.id = c.ingredient_id
+           AND active_ingredient.is_active = 1
+        LEFT JOIN supplier_ingredients active_link
+            ON active_link.supplier_id = q.supplier_id
+           AND active_link.ingredient_id = c.ingredient_id
+           AND active_link.is_active = 1
         WHERE q.canvass_id = ?
+          AND (
+              c.ingredient_id IS NULL
+              OR (active_ingredient.id IS NOT NULL AND active_link.id IS NOT NULL)
+          )
         ORDER BY q.unit_price ASC, q.delivery_days ASC, q.id ASC
     ");
     $stmt->execute([$canvassId]);
     $quotes = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    if (count(array_unique(array_column($quotes, 'supplier_id'))) < 3) {
+    $canvassStmt = $db->prepare("SELECT id, ingredient_id, mro_item_id FROM price_canvass WHERE id = ?");
+    $canvassStmt->execute([$canvassId]);
+    $canvass = $canvassStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$canvass || !$quotes) {
+        return null;
+    }
+
+    $quoteCount = count(array_unique(array_column($quotes, 'supplier_id')));
+    $eligibleCount = getCanvassEligibleSupplierCount($db, $canvass);
+    if (!empty($canvass['ingredient_id']) && ($eligibleCount < 1 || $quoteCount < $eligibleCount)) {
+        return null;
+    }
+    if (empty($canvass['ingredient_id']) && $quoteCount < 3) {
         return null;
     }
 
@@ -575,11 +687,155 @@ function autoSelectCheapestQuoteIfReady(PDO $db, int $canvassId): ?array {
     }
 
     $best = $quotes[0];
-    if ((int) ($best['is_selected'] ?? 0) === 1 && (int) ($best['selected_quote_id'] ?? 0) === (int) $best['quote_id']) {
+    $selectionMethod = $eligibleCount < 3 ? 'limited_market' : 'registered_price';
+    $selectionReason = $eligibleCount < 3
+        ? sprintf(
+            'Registered partner comparison: %d accredited supplier(s) provide this item. All available saved prices were compared automatically.',
+            $eligibleCount
+        )
+        : sprintf(
+            'Registered partner comparison: all %d accredited supplier prices were compared. Lowest unit price recommended; ties use faster delivery.',
+            $eligibleCount
+        );
+
+    if ((int) ($best['is_selected'] ?? 0) === 1
+        && (int) ($best['selected_quote_id'] ?? 0) === (int) $best['quote_id']
+        && ($best['selection_method'] ?? null) === $selectionMethod) {
         return $best;
     }
 
-    return selectCanvassQuote($db, $canvassId, (int) $best['quote_id'], 'auto_cheapest', 'System recommendation: lowest unit price; ties use faster delivery, then earliest quote.');
+    return selectCanvassQuote($db, $canvassId, (int) $best['quote_id'], $selectionMethod, $selectionReason);
+}
+
+function normalizePartnerPaymentTerms(?string $terms): string {
+    $value = strtolower(trim((string) $terms));
+    if ($value === 'cod' || $value === 'cash') {
+        return 'cash';
+    }
+    if (preg_match('/(7|15|30|45|60)/', $value, $matches)) {
+        return 'credit_' . $matches[1];
+    }
+    return 'credit_30';
+}
+
+function resolveRegisteredPartnerPrice(PDO $db, int $ingredientId, int $supplierId, $savedPrice): ?array {
+    if ($savedPrice !== null && (float) $savedPrice > 0) {
+        return ['unit_price' => (float) $savedPrice, 'source' => 'supplier agreement'];
+    }
+
+    $quoteStmt = $db->prepare("
+        SELECT q.unit_price, q.delivery_days, q.payment_terms
+        FROM canvass_quotes q
+        JOIN price_canvass c ON c.id = q.canvass_id
+        WHERE c.ingredient_id = ? AND q.supplier_id = ? AND q.unit_price > 0
+        ORDER BY q.id DESC
+        LIMIT 1
+    ");
+    $quoteStmt->execute([$ingredientId, $supplierId]);
+    $price = $quoteStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$price) {
+        $poStmt = $db->prepare("
+            SELECT poi.unit_price,
+                   GREATEST(0, DATEDIFF(po.expected_delivery, po.order_date)) AS delivery_days,
+                   po.payment_terms
+            FROM purchase_order_items poi
+            JOIN purchase_orders po ON po.id = poi.po_id
+            WHERE poi.ingredient_id = ? AND po.supplier_id = ? AND poi.unit_price > 0
+            ORDER BY poi.id DESC
+            LIMIT 1
+        ");
+        $poStmt->execute([$ingredientId, $supplierId]);
+        $price = $poStmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    if (!$price) {
+        return null;
+    }
+
+    $db->prepare("
+        UPDATE supplier_ingredients
+        SET reference_unit_price = ?
+        WHERE ingredient_id = ? AND supplier_id = ? AND is_active = 1
+    ")->execute([(float) $price['unit_price'], $ingredientId, $supplierId]);
+
+    return [
+        'unit_price' => (float) $price['unit_price'],
+        'delivery_days' => (int) ($price['delivery_days'] ?? 7),
+        'payment_terms' => $price['payment_terms'] ?? null,
+        'source' => 'latest approved purchasing record'
+    ];
+}
+
+function syncRegisteredPartnerPricesForCanvass(PDO $db, int $canvassId): array {
+    $stmt = $db->prepare("
+        SELECT c.ingredient_id, COALESCE(i.lead_time_days, 7) AS lead_time_days,
+               i.unit_of_measure AS stock_unit
+        FROM price_canvass c
+        LEFT JOIN ingredients i ON i.id = c.ingredient_id
+        WHERE c.id = ?
+    ");
+    $stmt->execute([$canvassId]);
+    $canvass = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$canvass || empty($canvass['ingredient_id'])) {
+        return ['eligible' => 0, 'priced' => 0];
+    }
+
+    $suppliers = supplierCatalogGetIngredientSuppliers($db, (int) $canvass['ingredient_id']);
+    $priced = 0;
+    foreach ($suppliers as $supplier) {
+        $price = resolveRegisteredPartnerPrice(
+            $db,
+            (int) $canvass['ingredient_id'],
+            (int) $supplier['supplier_id'],
+            $supplier['reference_unit_price'] ?? null
+        );
+        if (!$price) {
+            continue;
+        }
+
+        $deliveryDays = max(0, (int) ($price['delivery_days'] ?? $canvass['lead_time_days'] ?? 7));
+        $paymentTerms = normalizePartnerPaymentTerms($price['payment_terms'] ?? $supplier['payment_terms'] ?? null);
+        $stockUnit = $canvass['stock_unit'] ?: 'stock unit';
+        if (($supplier['purchase_format'] ?? 'direct_unit') === 'packaged') {
+            $offerLabel = $supplier['offer_label'] ?: 'supplier package';
+            $quotedPrice = (float) ($supplier['quoted_price'] ?? 0);
+            $notes = sprintf(
+                'Supplier offer: %s at PHP %s; normalized to PHP %s per %s for comparison.',
+                $offerLabel,
+                number_format($quotedPrice, 2),
+                number_format((float) $price['unit_price'], 2),
+                $stockUnit
+            );
+        } else {
+            $notes = sprintf(
+                'Supplier offer: direct/bulk at PHP %s per %s.',
+                number_format((float) $price['unit_price'], 2),
+                $stockUnit
+            );
+        }
+        $quoteStmt = $db->prepare("
+            INSERT INTO canvass_quotes
+                (canvass_id, supplier_id, unit_price, delivery_days, payment_terms, notes)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                unit_price = VALUES(unit_price),
+                delivery_days = VALUES(delivery_days),
+                payment_terms = VALUES(payment_terms),
+                notes = VALUES(notes)
+        ");
+        $quoteStmt->execute([
+            $canvassId,
+            (int) $supplier['supplier_id'],
+            (float) $price['unit_price'],
+            $deliveryDays,
+            $paymentTerms,
+            $notes
+        ]);
+        $priced++;
+    }
+
+    return ['eligible' => count($suppliers), 'priced' => $priced];
 }
 
 function getCanvassEligibleSupplierCount(PDO $db, array $canvass): int {
@@ -587,6 +843,7 @@ function getCanvassEligibleSupplierCount(PDO $db, array $canvass): int {
         $stmt = $db->prepare("
             SELECT COUNT(DISTINCT si.supplier_id)
             FROM supplier_ingredients si
+            JOIN ingredients i ON i.id = si.ingredient_id AND i.is_active = 1
             JOIN suppliers s ON s.id = si.supplier_id AND s.is_active = 1
             WHERE si.ingredient_id = ? AND si.is_active = 1
         ");
@@ -598,56 +855,35 @@ function getCanvassEligibleSupplierCount(PDO $db, array $canvass): int {
 }
 
 function selectLimitedMarketQuote(PDO $db, int $canvassId, string $reason): array {
-    $canvassStmt = $db->prepare("
-        SELECT id, status, ingredient_id, mro_item_id
-        FROM price_canvass
-        WHERE id = ?
-    ");
-    $canvassStmt->execute([$canvassId]);
-    $canvass = $canvassStmt->fetch(PDO::FETCH_ASSOC);
-    if (!$canvass || !in_array($canvass['status'], ['open', 'completed'], true)) {
-        Response::error('Canvass is no longer available', 400);
+    // Kept for older clients. Limited markets are now detected from supplier accreditation,
+    // so the Purchaser no longer has to explain why only one or two partners are registered.
+    syncRegisteredPartnerPricesForCanvass($db, $canvassId);
+    $selected = autoSelectCheapestQuoteIfReady($db, $canvassId);
+    if (!$selected) {
+        Response::error('Complete the supplier accreditation and agreed prices for this item first', 400);
     }
-
-    $eligibleCount = getCanvassEligibleSupplierCount($db, $canvass);
-    if ($eligibleCount < 1) {
-        Response::error('No accredited supplier is registered for this item', 400);
-    }
-    if ($eligibleCount >= 3) {
-        Response::error('Three or more suppliers are available. Complete the normal three-quote canvass.', 400);
-    }
-
-    $quoteStmt = $db->prepare("
-        SELECT q.id, q.supplier_id
-        FROM canvass_quotes q
-        WHERE q.canvass_id = ?
-        ORDER BY q.unit_price ASC, q.delivery_days ASC, q.id ASC
-    ");
-    $quoteStmt->execute([$canvassId]);
-    $quotes = $quoteStmt->fetchAll(PDO::FETCH_ASSOC);
-    if (count(array_unique(array_column($quotes, 'supplier_id'))) < $eligibleCount) {
-        Response::error('Record a quote from every available supplier before using the limited-supplier option', 400);
-    }
-
-    $reason = trim($reason);
-    if (mb_strlen($reason) < 10) {
-        Response::error('Explain why fewer than three suppliers are available', 400);
-    }
-
-    $evidence = sprintf(
-        'Limited supplier market: %d accredited supplier(s) available and all were canvassed. Purchaser reason: %s',
-        $eligibleCount,
-        $reason
-    );
-    return selectCanvassQuote($db, $canvassId, (int) $quotes[0]['id'], 'limited_market', $evidence);
+    return $selected;
 }
 
 function selectCanvassQuote(PDO $db, int $canvassId, int $quoteId, string $method, ?string $reason = null): array {
     $quoteStmt = $db->prepare("
         SELECT q.id as quote_id, q.supplier_id, q.unit_price, q.delivery_days
         FROM canvass_quotes q
+        JOIN price_canvass c ON c.id = q.canvass_id
+        JOIN suppliers s ON s.id = q.supplier_id AND s.is_active = 1
+        LEFT JOIN ingredients active_ingredient
+            ON active_ingredient.id = c.ingredient_id
+           AND active_ingredient.is_active = 1
+        LEFT JOIN supplier_ingredients active_link
+            ON active_link.supplier_id = q.supplier_id
+           AND active_link.ingredient_id = c.ingredient_id
+           AND active_link.is_active = 1
         WHERE q.id = ?
           AND q.canvass_id = ?
+          AND (
+              c.ingredient_id IS NULL
+              OR (active_ingredient.id IS NOT NULL AND active_link.id IS NOT NULL)
+          )
         LIMIT 1
     ");
     $quoteStmt->execute([$quoteId, $canvassId]);
@@ -740,22 +976,16 @@ function handlePut($db, $action, $currentUser) {
                 Response::error('Canvass is no longer available for selection', 400);
             }
 
-            // Enforce Rule of 3: canvass must have at least 3 supplier quotes before selection
-            $quoteCountStmt = $db->prepare("SELECT COUNT(DISTINCT supplier_id) as quote_count FROM canvass_quotes WHERE canvass_id = ?");
-            $quoteCountStmt->execute([$quote['canvass_id']]);
-            $quoteCount = (int) $quoteCountStmt->fetch()['quote_count'];
-
-            if ($quoteCount < 3) {
-                Response::error('At least 3 supplier quotes are required before selecting a winner', 400);
-            }
-            
             $autoSelection = autoSelectCheapestQuoteIfReady($db, (int) $quote['canvass_id']);
+            if (!$autoSelection) {
+                Response::error('Every accredited supplier must have a saved agreed price before a recommendation can be made', 400);
+            }
             Response::success([
                 'canvass_id' => $quote['canvass_id'],
                 'selected_quote_id' => $autoSelection['quote_id'] ?? null,
                 'selected_supplier_id' => $autoSelection['supplier_id'] ?? null,
                 'unit_price' => $autoSelection['unit_price'] ?? null
-            ], 'Cheapest quote selected automatically');
+            ], 'Registered supplier recommendation saved');
             break;
 
         case 'override_quote':
@@ -783,12 +1013,6 @@ function handlePut($db, $action, $currentUser) {
                 Response::error('Canvass is no longer available for supplier choice', 400);
             }
 
-            $quoteCountStmt = $db->prepare("SELECT COUNT(DISTINCT supplier_id) as quote_count FROM canvass_quotes WHERE canvass_id = ?");
-            $quoteCountStmt->execute([$quote['canvass_id']]);
-            if ((int) $quoteCountStmt->fetch()['quote_count'] < 3) {
-                Response::error('At least 3 supplier quotes are required before choosing a supplier', 400);
-            }
-
             $selected = selectCanvassQuote($db, (int) $quote['canvass_id'], $quoteId, 'manual_override', $reason);
             Response::success([
                 'canvass_id' => (int) $quote['canvass_id'],
@@ -813,7 +1037,7 @@ function handlePut($db, $action, $currentUser) {
                 'selected_supplier_id' => (int) $selected['supplier_id'],
                 'unit_price' => (float) $selected['unit_price'],
                 'requires_gm_review' => true
-            ], 'Limited-supplier reason saved. The GM will review it with the Purchase Order.');
+            ], 'Registered supplier comparison saved. The GM will see the limited market on the Purchase Order.');
             break;
             
         case 'cancel':

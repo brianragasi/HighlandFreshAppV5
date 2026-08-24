@@ -329,6 +329,7 @@
                                 <option value="institutional">Institutional</option>
                                 <option value="feeding_program">Feeding Program</option>
                                 <option value="distributor">Wholesaler</option>
+                                <option value="restaurant">Restaurant / Food Service</option>
                                 <option value="walk_in">Direct / Small Retail</option>
                             </select>
                         </div>
@@ -336,7 +337,11 @@
                             <select id="paymentTermsFilter" class="select select-bordered select-sm" onchange="filterCustomers()">
                                 <option value="">All Payment Terms</option>
                                 <option value="0">Cash (0 days)</option>
+                                <option value="7">Net 7</option>
+                                <option value="14">Net 14</option>
+                                <option value="15">Net 15</option>
                                 <option value="30">Net 30</option>
+                                <option value="45">Net 45</option>
                                 <option value="60">Net 60</option>
                                 <option value="90">Net 90</option>
                             </select>
@@ -346,7 +351,7 @@
                                 <option value="">All Status</option>
                                 <option value="active">Active</option>
                                 <option value="inactive">Inactive</option>
-                                <option value="suspended">Suspended</option>
+                                <option value="blocked">Blocked</option>
                             </select>
                         </div>
                     </div>
@@ -432,35 +437,41 @@
                             <option value="institutional">Institutional</option>
                             <option value="feeding_program">Feeding Program (DepEd)</option>
                             <option value="distributor">Wholesaler</option>
+                            <option value="restaurant">Restaurant / Food Service</option>
                             <option value="walk_in">Direct / Small Retail</option>
                         </select>
                     </div>
                     
-                    <div class="form-control" id="subLocationField" style="display: none;">
-                        <label class="label"><span class="label-text">Sub-Location / School Name</span></label>
-                        <input type="text" id="customerSubLocation" class="input input-bordered" placeholder="e.g., Lumbia Elementary School">
+                    <div class="form-control md:col-span-2" id="subLocationField">
+                        <div class="flex items-center justify-between">
+                            <label class="label"><span class="label-text">Saved Delivery Locations</span></label>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="addSalesLocationRow()"><i class="fas fa-plus"></i> Add location</button>
+                        </div>
+                        <div id="salesLocationRows" class="space-y-2"></div>
+                        <label class="label"><span class="label-text-alt">The correct branch or school is selected when creating an order.</span></label>
                     </div>
                     
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Contact Person</span></label>
-                        <input type="text" id="customerContact" class="input input-bordered" placeholder="Contact name">
+                        <label class="label"><span class="label-text">Contact Person *</span></label>
+                        <input type="text" id="customerContact" class="input input-bordered" maxlength="160" data-person-name required placeholder="Contact name">
                     </div>
                     
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Phone Number</span></label>
-                        <input type="tel" id="customerPhone" class="input input-bordered" inputmode="tel"
-                            maxlength="16" placeholder="09171234567">
+                        <label class="label"><span class="label-text">Phone Number *</span></label>
+                        <input type="tel" id="customerPhone" class="input input-bordered" inputmode="numeric"
+                            maxlength="11" pattern="(?:09\d{9}|0[2-8]\d{8,9})" required placeholder="09171234567">
                     </div>
                     
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Email</span></label>
+                        <label class="label"><span class="label-text">Email <span id="salesEmailRequired">*</span></span></label>
                         <input type="email" id="customerEmail" class="input input-bordered" maxlength="254"
                             placeholder="name@example.com">
+                        <label class="label"><span class="label-text-alt">Required when this customer uses the PO Inbox.</span></label>
                     </div>
                     
                     <div class="form-control md:col-span-2">
-                        <label class="label"><span class="label-text">Address</span></label>
-                        <textarea id="customerAddress" class="textarea textarea-bordered" placeholder="Full delivery address"></textarea>
+                        <label class="label"><span class="label-text">Main Billing / Delivery Address *</span></label>
+                        <textarea id="customerAddress" class="textarea textarea-bordered" required placeholder="Full delivery address"></textarea>
                     </div>
                 </div>
                 
@@ -479,7 +490,11 @@
                         <label class="label"><span class="label-text">Payment Terms</span></label>
                         <select id="customerPaymentTerms" class="select select-bordered">
                             <option value="0">Cash (0 days)</option>
+                            <option value="7">Net 7</option>
+                            <option value="14">Net 14</option>
+                            <option value="15">Net 15</option>
                             <option value="30">Net 30</option>
+                            <option value="45">Net 45</option>
                             <option value="60">Net 60</option>
                             <option value="90">Net 90</option>
                         </select>
@@ -487,21 +502,25 @@
                     
                     <div class="form-control">
                         <label class="label"><span class="label-text">Default Payment Mode</span></label>
-                        <select id="customerDefaultPayment" class="select select-bordered">
+                        <select id="customerDefaultPayment" class="select select-bordered" onchange="handleSalesPaymentTypeChange()">
                             <option value="cash">Cash</option>
                             <option value="credit">Credit</option>
                         </select>
-                        <label class="label">
-                            <span class="label-text-alt text-base-content/60">Hybrid allowed per transaction</span>
-                        </label>
+                        <label class="label"><span class="label-text-alt text-base-content/60">Cash disables terms and credit limit.</span></label>
                     </div>
                 </div>
                 
-                <div class="form-control mt-4">
-                    <label class="cursor-pointer label justify-start gap-4">
-                        <input type="checkbox" id="customerActive" class="checkbox checkbox-primary" checked>
-                        <span class="label-text">Active Customer</span>
-                    </label>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Status</span></label>
+                        <select id="customerStatus" class="select select-bordered" onchange="handleSalesCustomerStatus()">
+                            <option value="active">Active</option><option value="inactive">Inactive</option><option value="blocked">Blocked</option>
+                        </select>
+                    </div>
+                    <div id="salesBlockedReasonField" class="form-control hidden">
+                        <label class="label"><span class="label-text">Why is this customer blocked? *</span></label>
+                        <input type="text" id="salesBlockedReason" class="input input-bordered" maxlength="500">
+                    </div>
                 </div>
                 
                 <div class="modal-action">
@@ -669,7 +688,7 @@
         function showToast(message, type = 'info') {
             const toast = document.createElement('div');
             toast.className = `alert alert-${type} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            HighlandSecurity.renderToastContent(toast, message);
             document.getElementById('toastContainer').appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
         }
@@ -683,8 +702,57 @@
         
         function toggleSubLocation() {
             const type = document.getElementById('customerType').value;
-            const field = document.getElementById('subLocationField');
-            field.style.display = (type === 'feeding_program' || type === 'institutional') ? 'block' : 'none';
+            const needsEmail = type !== 'walk_in';
+            document.getElementById('customerEmail').required = needsEmail;
+            document.getElementById('salesEmailRequired').classList.toggle('hidden', !needsEmail);
+        }
+
+        function handleSalesPaymentTypeChange() {
+            const isCredit = document.getElementById('customerDefaultPayment').value === 'credit';
+            const terms = document.getElementById('customerPaymentTerms');
+            const limit = document.getElementById('customerCreditLimit');
+            terms.disabled = !isCredit;
+            limit.disabled = !isCredit;
+            terms.required = isCredit;
+            limit.required = isCredit;
+            limit.min = isCredit ? '0.01' : '0';
+            if (!isCredit) {
+                terms.value = '0';
+                limit.value = '0';
+            } else if (terms.value === '0') {
+                terms.value = '30';
+            }
+        }
+
+        function handleSalesCustomerStatus() {
+            const blocked = document.getElementById('customerStatus').value === 'blocked';
+            document.getElementById('salesBlockedReasonField').classList.toggle('hidden', !blocked);
+            document.getElementById('salesBlockedReason').required = blocked;
+        }
+
+        function addSalesLocationRow(location = {}) {
+            const row = document.createElement('div');
+            row.className = 'grid grid-cols-1 md:grid-cols-[1fr_2fr_auto] gap-2 sales-location-row';
+            row.innerHTML = `
+                <input type="text" class="input input-bordered sales-location-name" maxlength="200" placeholder="Branch / school name" value="${escapeHtml(location.sub_name || '')}">
+                <input type="text" class="input input-bordered sales-location-address" maxlength="500" placeholder="Delivery address" value="${escapeHtml(location.address || '')}">
+                <button type="button" class="btn btn-ghost btn-square text-error" title="Remove location"><i class="fas fa-trash"></i></button>`;
+            row.querySelector('button').addEventListener('click', () => row.remove());
+            document.getElementById('salesLocationRows').appendChild(row);
+        }
+
+        function setSalesLocations(locations = []) {
+            const holder = document.getElementById('salesLocationRows');
+            holder.innerHTML = '';
+            locations.filter(l => (l.status || 'active') === 'active').forEach(addSalesLocationRow);
+            if (!holder.children.length) addSalesLocationRow();
+        }
+
+        function collectSalesLocations() {
+            return [...document.querySelectorAll('.sales-location-row')].map(row => ({
+                sub_name: row.querySelector('.sales-location-name').value.trim(),
+                address: row.querySelector('.sales-location-address').value.trim()
+            })).filter(location => location.sub_name || location.address);
         }
         
         document.addEventListener('DOMContentLoaded', async () => {
@@ -753,10 +821,10 @@
             };
             
             tbody.innerHTML = list.map(c => {
-                const name = c.customer_name || c.name || 'Unknown';
+                const name = escapeHtml(c.customer_name || c.name || 'Unknown');
                 const paymentTerms = c.payment_terms_days ?? c.payment_terms ?? 0;
-                const phone = c.phone || c.contact_number || '';
-                const code = c.customer_code || `CUS${String(c.id).padStart(5, '0')}`;
+                const phone = escapeHtml(c.phone || c.contact_number || '');
+                const code = escapeHtml(c.customer_code || `CUS${String(c.id).padStart(5, '0')}`);
                 const outstanding = Number(c.outstanding_balance || 0);
                 const limit = Number(c.credit_limit || 0);
                 const available = limit - outstanding;
@@ -777,9 +845,9 @@
                             </div>
                         </div>
                     </td>
-                    <td><span class="badge badge-outline badge-sm">${typeLabels[c.customer_type] || (c.customer_type ? c.customer_type.charAt(0).toUpperCase() + c.customer_type.slice(1) : '—')}</span></td>
+                    <td><span class="badge badge-outline badge-sm">${escapeHtml(typeLabels[c.customer_type] || (c.customer_type ? c.customer_type.charAt(0).toUpperCase() + c.customer_type.slice(1) : '—'))}</span></td>
                     <td>
-                        <div class="text-sm">${c.contact_person || '—'}</div>
+                        <div class="text-sm">${escapeHtml(c.contact_person || '—')}</div>
                         <div class="text-xs text-base-content/60">${phone || '—'}</div>
                     </td>
                     <td>
@@ -840,20 +908,31 @@
             document.getElementById('customerModalTitle').textContent = 'Add New Customer';
             document.getElementById('customerForm').reset();
             document.getElementById('customerId').value = '';
-            document.getElementById('customerActive').checked = true;
-            document.getElementById('subLocationField').style.display = 'none';
+            document.getElementById('customerStatus').value = 'active';
+            setSalesLocations();
+            toggleSubLocation();
+            handleSalesPaymentTypeChange();
+            handleSalesCustomerStatus();
             document.getElementById('customerModal').showModal();
         }
         
-        function editCustomer(id) {
-            const customer = customers.find(c => c.id === id);
+        async function editCustomer(id) {
+            let customer = customers.find(c => Number(c.id) === Number(id));
             if (!customer) return;
+            try {
+                const detail = await SalesService.getCustomer(id);
+                customer = { ...customer, ...(detail?.data || {}) };
+            } catch (error) {
+                console.warn('Using customer list data because details could not be loaded.', error);
+            }
             
             document.getElementById('customerModalTitle').textContent = 'Edit Customer';
             document.getElementById('customerId').value = customer.id;
             document.getElementById('customerName').value = customer.name;
             document.getElementById('customerType').value = customer.customer_type || '';
-            document.getElementById('customerSubLocation').value = customer.sub_location || '';
+            const locations = Array.isArray(customer.locations) ? customer.locations : [];
+            if (!locations.length && customer.sub_location) locations.push({sub_name: customer.sub_location, address: customer.address || ''});
+            setSalesLocations(locations);
             document.getElementById('customerContact').value = customer.contact_person || '';
             document.getElementById('customerPhone').value = customer.phone || '';
             document.getElementById('customerEmail').value = customer.email || '';
@@ -861,10 +940,13 @@
             document.getElementById('customerCreditLimit').value = customer.credit_limit || '';
             document.getElementById('customerPaymentTerms').value = String(customer.payment_terms_days ?? customer.payment_terms ?? 30);
             document.getElementById('customerPhone').value = customer.phone || customer.contact_number || '';
-            document.getElementById('customerDefaultPayment').value = customer.default_payment_mode || 'cash';
-            document.getElementById('customerActive').checked = (customer.status || 'active') === 'active';
+            document.getElementById('customerDefaultPayment').value = customer.default_payment_type || customer.default_payment_mode || 'cash';
+            document.getElementById('customerStatus').value = customer.status || 'active';
+            document.getElementById('salesBlockedReason').value = customer.blocked_reason || '';
             
             toggleSubLocation();
+            handleSalesPaymentTypeChange();
+            handleSalesCustomerStatus();
             document.getElementById('customerModal').showModal();
         }
         
@@ -872,18 +954,25 @@
             e.preventDefault();
             
             const id = document.getElementById('customerId').value;
+            const locations = collectSalesLocations();
+            if (locations.some(location => !location.sub_name || !location.address)) {
+                showToast('Each saved location needs both a name and delivery address.', 'warning');
+                return;
+            }
             const data = {
                 name: document.getElementById('customerName').value,
                 customer_type: document.getElementById('customerType').value,
-                sub_location: document.getElementById('customerSubLocation').value,
+                sub_location: locations[0]?.sub_name || '',
+                locations,
                 contact_person: document.getElementById('customerContact').value,
                 phone: document.getElementById('customerPhone').value,
                 email: document.getElementById('customerEmail').value,
                 address: document.getElementById('customerAddress').value,
                 credit_limit: parseFloat(document.getElementById('customerCreditLimit').value) || 0,
-                payment_terms: parseInt(document.getElementById('customerPaymentTerms').value) || 0,
-                default_payment_mode: document.getElementById('customerDefaultPayment').value,
-                status: document.getElementById('customerActive').checked ? 'active' : 'inactive'
+                payment_terms_days: parseInt(document.getElementById('customerPaymentTerms').value) || 0,
+                default_payment_type: document.getElementById('customerDefaultPayment').value,
+                status: document.getElementById('customerStatus').value,
+                blocked_reason: document.getElementById('salesBlockedReason').value
             };
             
             try {

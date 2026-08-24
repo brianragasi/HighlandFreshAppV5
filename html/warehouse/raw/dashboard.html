@@ -512,8 +512,8 @@
                     <a href="receive_deliveries.html" class="items-start gap-3">
                         <i class="fas fa-truck-loading text-primary mt-1"></i>
                         <span>
-                            <span class="font-semibold block">${n.title}</span>
-                            <span class="text-xs text-base-content/60">${n.message}</span>
+                            <span class="font-semibold block">${escapeHtml(n.title)}</span>
+                            <span class="text-xs text-base-content/60">${escapeHtml(n.message)}</span>
                         </span>
                     </a>
                 </li>
@@ -561,10 +561,10 @@
             container.innerHTML = requisitions.slice(0, 5).map(req => `
                 <div class="flex items-center justify-between p-3 bg-base-200 rounded-xl">
                     <div>
-                        <p class="font-semibold text-sm">${req.requisition_code}</p>
-                        <p class="text-xs text-base-content/60">${req.department} - ${req.total_items} items</p>
+                        <p class="font-semibold text-sm">${escapeHtml(req.requisition_code)}</p>
+                        <p class="text-xs text-base-content/60">${escapeHtml(req.department)} - ${Number(req.total_items) || 0} items</p>
                     </div>
-                    <span class="badge ${priorityBadge[req.priority]} badge-sm">${req.priority}</span>
+                    <span class="badge ${priorityBadge[req.priority] || 'badge-ghost'} badge-sm">${escapeHtml(req.priority)}</span>
                 </div>
             `).join('');
         }
@@ -585,8 +585,8 @@
                 <div class="flex items-center gap-3 p-3 ${alert.current_stock <= 0 ? 'bg-error/10' : 'bg-warning/10'} rounded-xl">
                     <i class="fas fa-${alert.type === 'mro' ? 'tools' : 'box'} ${alert.current_stock <= 0 ? 'text-error' : 'text-warning'}"></i>
                     <div class="flex-1 min-w-0">
-                        <p class="font-semibold text-sm truncate">${alert.name}</p>
-                        <p class="text-xs text-base-content/60">${alert.code}</p>
+                        <p class="font-semibold text-sm truncate">${escapeHtml(alert.name)}</p>
+                        <p class="text-xs text-base-content/60">${escapeHtml(alert.code)}</p>
                     </div>
                     <div class="text-right">
                         <p class="font-bold ${alert.current_stock <= 0 ? 'text-error' : 'text-warning'}">${alert.current_stock}</p>
@@ -597,6 +597,12 @@
                     </a>
                 </div>
             `).join('');
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, character => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+            }[character]));
         }
 
         function renderPendingMilkStorage(pendingMilk) {
@@ -614,8 +620,8 @@
             container.innerHTML = pendingMilk.map(milk => `
                 <div class="flex items-center justify-between p-3 bg-blue-500/10 rounded-xl">
                     <div>
-                        <p class="font-semibold text-sm">${milk.farmer_name}</p>
-                        <p class="text-xs text-base-content/60">${milk.farmer_code} - ${formatDate(milk.received_date)}</p>
+                        <p class="font-semibold text-sm">${escapeHtml(milk.farmer_name || 'Unknown')}</p>
+                        <p class="text-xs text-base-content/60">${escapeHtml(milk.farmer_code || 'N/A')} - ${formatDate(milk.received_date)}</p>
                     </div>
                     <div class="text-right">
                         <p class="font-bold text-primary">${parseFloat(milk.volume_liters).toLocaleString()}L</p>
@@ -643,14 +649,14 @@
 
             tbody.innerHTML = transactions.map(tx => `
                 <tr>
-                    <td><code class="text-xs">${tx.transaction_code}</code></td>
-                    <td><span class="badge ${typeBadge[tx.transaction_type]} badge-sm">${tx.transaction_type}</span></td>
+                    <td><code class="text-xs">${escapeHtml(tx.transaction_code)}</code></td>
+                    <td><span class="badge ${typeBadge[tx.transaction_type] || 'badge-ghost'} badge-sm">${escapeHtml(tx.transaction_type)}</span></td>
                     <td>
-                        <div class="font-medium text-sm">${tx.item_name || 'Raw Milk'}</div>
-                        <div class="text-xs text-base-content/60">${tx.item_type}</div>
+                        <div class="font-medium text-sm">${escapeHtml(tx.item_name || 'Raw Milk')}</div>
+                        <div class="text-xs text-base-content/60">${escapeHtml(tx.item_type)}</div>
                     </td>
                     <td class="text-right font-semibold">${tx.quantity > 0 ? '+' : ''}${parseFloat(tx.quantity).toLocaleString()}</td>
-                    <td class="text-sm">${tx.first_name} ${tx.last_name}</td>
+                    <td class="text-sm">${escapeHtml(tx.first_name)} ${escapeHtml(tx.last_name)}</td>
                     <td class="text-xs text-base-content/60">${formatDate(tx.created_at)}</td>
                 </tr>
             `).join('');
@@ -667,7 +673,7 @@
             const alertClass = { success: 'alert-success', error: 'alert-error', warning: 'alert-warning', info: 'alert-info' }[type];
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
-            toast.innerHTML = `<span>${message}</span>`;
+            HighlandSecurity.renderToastContent(toast, message);
             container.appendChild(toast);
             setTimeout(() => { toast.remove(); }, 3000);
         }
@@ -731,10 +737,10 @@
                 <div class="flex flex-col md:flex-row md:items-center gap-4 p-4 bg-error/5 border border-error/20 rounded-xl">
                     <div class="flex-1">
                         <div class="flex items-center gap-2 mb-1">
-                            <code class="text-sm font-mono text-error">${d.disposal_code}</code>
+                            <code class="text-sm font-mono text-error">${escapeHtml(d.disposal_code)}</code>
                             <span class="badge badge-error badge-sm">${categoryLabels[d.disposal_category] || d.disposal_category}</span>
                         </div>
-                        <p class="font-semibold">${d.product_name || 'Raw Milk'}</p>
+                        <p class="font-semibold">${escapeHtml(d.product_name || 'Raw Milk')}</p>
                         <p class="text-sm text-base-content/60">
                             <i class="fas fa-box mr-1"></i>${parseFloat(d.quantity).toLocaleString()} ${d.unit || 'liters'}
                             <span class="mx-2">•</span>
@@ -743,7 +749,7 @@
                         <p class="text-xs text-base-content/50 mt-1">
                             Approved by: ${d.approved_by_name || 'GM'} on ${formatDate(d.approved_at)}
                         </p>
-                        ${d.disposal_reason ? `<p class="text-xs text-base-content/60 mt-1 italic">"${d.disposal_reason}"</p>` : ''}
+                        ${d.disposal_reason ? `<p class="text-xs text-base-content/60 mt-1 italic">"${escapeHtml(d.disposal_reason)}"</p>` : ''}
                     </div>
                     <div class="flex gap-2">
                         <button class="btn btn-success btn-sm" onclick="openCompleteModal(${d.id})">
@@ -767,11 +773,11 @@
                         <div class="space-y-2">
                             <div class="flex justify-between">
                                 <span class="text-base-content/60">Code:</span>
-                                <code class="font-mono">${d.disposal_code}</code>
+                                <code class="font-mono">${escapeHtml(d.disposal_code)}</code>
                             </div>
                             <div class="flex justify-between">
                                 <span class="text-base-content/60">Product:</span>
-                                <span class="font-semibold">${d.product_name || 'Raw Milk'}</span>
+                                <span class="font-semibold">${escapeHtml(d.product_name || 'Raw Milk')}</span>
                             </div>
                             <div class="flex justify-between">
                                 <span class="text-base-content/60">Quantity:</span>

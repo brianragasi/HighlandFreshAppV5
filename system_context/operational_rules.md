@@ -103,11 +103,27 @@ Stock Level: ████████████│░░░░░░░░░�
 1. **System Detects:** Stock level reaches or falls below threshold
 2. **Warehouse Check:** Warehouse Raw confirms the physical stock condition
 3. **Manual PRS:** Warehouse Raw submits a Purchase Request Slip
-4. **Purchaser Action:** Canvass at least three suppliers and prepare the PO
+4. **Purchaser Action:** Review registered supplier agreements; the system recommends the lowest valid price and groups the resulting POs by supplier
 5. **GM Approval:** Approve or reject the PO
 6. **Supplier Delivery:** The system sends the approved PO; supplier ships and delivers
 7. **Receiving Report:** Warehouse Raw receives the items and generates the RR
 8. **Final Verification:** Purchaser verifies the RR against the approved PO
+
+One or two approved suppliers are valid when that is the real registered market. The system records the limited market for GM review automatically; the Purchaser does not repeatedly re-enter the same partner prices.
+
+### Ingredient Measurement and Supplier Packaging
+
+An ingredient uses three separate levels. They must never be merged into one field:
+
+1. **Stock measurement** records the material itself: kg/g for solids, liter/ml for liquids, or a count unit for counted items.
+2. **Inner container** records how that material is held, such as a bottle, sachet, bag, or drum, plus the amount inside it.
+3. **Outer purchase package** optionally records a box, case, or crate and how many inner containers it holds.
+
+Every ingredient must explicitly choose its purchasing format. **Direct or bulk** means it is bought and priced in its stock unit and does not require a container. **Packaged** means the inner container and the amount inside it are required. The outer box, case, or crate remains optional.
+
+The supplier price must state whether it covers one stock unit, one inner container, or one outer package. The system derives the comparable stock-unit cost. It never converts mass to volume unless an approved material-specific density rule exists.
+
+Inner-container choices follow the material form. Solids use dry-goods containers such as bags, sacks, sachets, packets, drums, or pails. Liquids use bottles, jugs, drums, pails, or tanks. Counted supplies use packs, packets, bundles, or rolls. A box, case, or crate is recorded separately as the outer purchase package.
 
 ### Dashboard Indicator Example
 

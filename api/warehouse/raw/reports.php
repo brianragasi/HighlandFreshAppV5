@@ -78,6 +78,22 @@ function handleInventoryReport($db) {
                              AND ib.remaining_quantity > 0
                              AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())), 0)"
                         : "i.current_stock") . " AS usable_stock,
+                    " . ($hasIngredientBatches
+                        ? "COALESCE((SELECT SUM(ib.remaining_quantity)
+                           FROM ingredient_batches ib
+                           WHERE ib.ingredient_id = i.id
+                             AND ib.status IN ('available', 'partially_used', 'quarantine', 'expired')
+                             AND ib.remaining_quantity > 0), 0)"
+                        : "i.current_stock") . " AS accounted_stock,
+                    " . ($hasIngredientBatches
+                        ? "COALESCE((SELECT SUM(ib.remaining_quantity)
+                           FROM ingredient_batches ib
+                           WHERE ib.ingredient_id = i.id
+                             AND ib.status IN ('available', 'partially_used', 'quarantine', 'expired')
+                             AND ib.remaining_quantity > 0
+                             AND ib.expiry_date IS NOT NULL
+                             AND ib.expiry_date < CURDATE()), 0)"
+                        : "0") . " AS expired_stock,
                     " . ($hasMro ? "0" : "0") . " AS is_critical,
                     (SELECT MAX(it.created_at) FROM inventory_transactions it
                      WHERE it.item_type = 'ingredient' AND it.item_id = i.id) AS last_movement
@@ -108,6 +124,14 @@ function handleInventoryReport($db) {
                              AND mi.status IN ('available', 'partially_used')
                              AND mi.remaining_quantity > 0), 0)"
                         : "m.current_stock") . " AS usable_stock,
+                    " . ($hasMroInventory
+                        ? "COALESCE((SELECT SUM(mi.remaining_quantity)
+                           FROM mro_inventory mi
+                           WHERE mi.mro_item_id = m.id
+                             AND mi.status IN ('available', 'partially_used')
+                             AND mi.remaining_quantity > 0), 0)"
+                        : "m.current_stock") . " AS accounted_stock,
+                    0 AS expired_stock,
                     m.is_critical,
                     (SELECT MAX(it.created_at) FROM inventory_transactions it
                      WHERE it.item_type = 'mro' AND it.item_id = m.id) AS last_movement
@@ -127,8 +151,11 @@ function handleInventoryReport($db) {
             : null;
         $row['unit_cost']     = (float) ($row['unit_cost'] ?? 0);
         $row['usable_stock']  = (float) ($row['usable_stock'] ?? $row['current_stock']);
+        $row['accounted_stock'] = (float) ($row['accounted_stock'] ?? $row['usable_stock']);
+        $row['expired_stock'] = (float) ($row['expired_stock'] ?? 0);
         $row['is_critical']   = (int) ($row['is_critical'] ?? 0);
-        $row['stock_variance'] = round($row['current_stock'] - $row['usable_stock'], 3);
+        $row['stock_variance'] = round($row['current_stock'] - $row['accounted_stock'], 3);
+        $row['restricted_stock'] = max(0, round($row['accounted_stock'] - $row['usable_stock'], 3));
         $row['needs_stock_check'] = abs($row['stock_variance']) > 0.0005;
         $row['low_stock_at'] = $row['reorder_point'] > 0
             ? $row['reorder_point']

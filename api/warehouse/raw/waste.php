@@ -160,7 +160,7 @@ function getWasteAvailableItems($db) {
                 FROM ingredient_batches ib
                 WHERE ib.ingredient_id = ingredients.id
                   AND ib.remaining_quantity > 0
-                  AND ib.status IN ('available','partially_used','quarantine')) AS disposal_stock
+                  AND ib.status IN ('available','partially_used','quarantine','expired')) AS disposal_stock
         FROM ingredients
         WHERE is_active = 1
         HAVING current_stock > 0 OR disposal_stock > 0
@@ -199,7 +199,7 @@ function getWasteBatches($db) {
             FROM ingredient_batches ib
             JOIN ingredients i ON i.id = ib.ingredient_id
             WHERE ib.ingredient_id = ? AND ib.remaining_quantity > 0
-              AND ib.status IN ('available','partially_used','quarantine')
+              AND ib.status IN ('available','partially_used','quarantine','expired')
             ORDER BY ib.expiry_date ASC, ib.received_date ASC, ib.id ASC
         ");
     } else {
