@@ -883,7 +883,9 @@ function buildGmUnifiedQueue(PDO $db): array {
                 'status' => 'pending',
             ];
         }
-    } catch (Exception $e) { /* ignore */ }
+    } catch (Exception $e) {
+        error_log('GM queue could not load ready found-stock requests: ' . $e->getMessage());
+    }
 
     // Disposals
     try {

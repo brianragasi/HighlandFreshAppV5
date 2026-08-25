@@ -216,6 +216,43 @@ try {
 function fetchGmPendingActions(PDO $pdo): array {
     $actions = [];
 
+    // Found stock whose price and required QC check are finished. These used
+    // to appear only on the separate approvals page, which made the GM's main
+    // dashboard look clear even though Warehouse was waiting for a decision.
+    try {
+        $stmt = $pdo->query("
+            SELECT osr.id, osr.request_code, osr.quantity_to_add, osr.unit,
+                   osr.request_purpose, osr.source_type, osr.source_reference,
+                   osr.created_at, i.ingredient_name, i.is_perishable
+            FROM ingredient_opening_stock_requests osr
+            JOIN ingredients i ON i.id = osr.ingredient_id
+            WHERE osr.status = 'pending'
+              AND osr.price_status IN ('matched_po', 'verified')
+              AND osr.qc_status IN ('approved', 'not_required')
+            ORDER BY osr.created_at ASC
+            LIMIT 5
+        ");
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $isLotCorrection = ($row['request_purpose'] ?? 'found_stock') === 'traceability_correction';
+            $actions[] = [
+                'id' => 'open-' . $row['id'],
+                'source_id' => (int) $row['id'],
+                'type' => 'ingredient_opening_stock',
+                'category' => 'inventory',
+                'priority' => $row['is_perishable'] ? 'high' : 'medium',
+                'title' => $row['ingredient_name'] . ($isLotCorrection
+                    ? ' - Missing Lot Review'
+                    : ' - Unrecorded Stock Review'),
+                'detail' => $row['request_code'] . ' · Purchasing and QC checks complete',
+                'meta' => rtrim(rtrim(number_format((float) $row['quantity_to_add'], 3, '.', ','), '0'), '.') . ' ' . $row['unit'],
+                'href' => 'gm_approvals.html?queue=inventory',
+                'requested_at' => $row['created_at'],
+            ];
+        }
+    } catch (Exception $e) {
+        error_log('GM dashboard could not load ready found-stock requests: ' . $e->getMessage());
+    }
+
     // Pending disposals awaiting signature
     try {
         $stmt = $pdo->query("

@@ -947,6 +947,7 @@
 
         function typeIcon(type) {
             switch (String(type || '')) {
+                case 'ingredient_opening_stock': return 'fa-box-open text-success';
                 case 'disposal': return 'fa-trash-alt text-error';
                 case 'purchase_order': return 'fa-file-invoice-dollar text-warning';
                 case 'purchase_request': return 'fa-file-alt text-info';
@@ -979,11 +980,13 @@
                 const sourceId = hasRealSource ? a.source_id : (a.id || '');
                 const category = a.category || actionType;
                 const numericSourceId = parseInt(String(sourceId).replace(/\D/g, ''), 10) || 0;
-                const allowedCategories = ['credit', 'disposal', 'procurement', 'production'];
-                const allowedTypes = ['credit', 'credit_override', 'sales_order', 'disposal', 'purchase_order', 'requisition'];
+                const allowedCategories = ['credit', 'disposal', 'procurement', 'production', 'inventory'];
+                const allowedTypes = ['credit', 'credit_override', 'sales_order', 'disposal', 'purchase_order', 'requisition', 'ingredient_opening_stock'];
                 const safeCategory = allowedCategories.includes(category) ? category : '';
                 const safeType = allowedTypes.includes(actionType) ? actionType : '';
-                const onclick = hasRealSource
+                const onclick = actionType === 'ingredient_opening_stock'
+                    ? `window.location.href='gm_approvals.html?queue=inventory'`
+                    : hasRealSource
                     ? `openApprovalModal(${numericSourceId}, '${safeCategory}', '${safeType}')`
                     : `window.location.href='gm_approvals.html'`;
                 return `

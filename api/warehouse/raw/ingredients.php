@@ -352,6 +352,7 @@ function handleGet($db, $currentUser) {
             $pendingStmt = $db->prepare("
                 SELECT osr.id, osr.request_code, osr.ingredient_id, osr.counted_quantity,
                        osr.quantity_to_add, osr.unit, osr.status, osr.created_at,
+                       osr.held_batch_id, osr.price_status, osr.qc_status,
                        i.ingredient_name
                 FROM ingredient_opening_stock_requests osr
                 JOIN ingredients i ON i.id = osr.ingredient_id

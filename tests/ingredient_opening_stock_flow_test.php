@@ -6,6 +6,8 @@ $ingredientsPage = file_get_contents($root . '/html/warehouse/raw/ingredients.ht
 $alertsPage = file_get_contents($root . '/html/warehouse/raw/reorder_alerts.html');
 $gmApi = file_get_contents($root . '/api/admin/gm_approvals.php');
 $gmPage = file_get_contents($root . '/html/admin/gm_approvals.html');
+$gmDashboardApi = file_get_contents($root . '/api/admin/dashboard.php');
+$gmDashboardPage = file_get_contents($root . '/html/admin/dashboard.html');
 $purchasingApi = file_get_contents($root . '/api/purchasing/dashboard.php');
 $purchasingPage = file_get_contents($root . '/html/purchasing/dashboard.html');
 $qcApi = file_get_contents($root . '/api/qc/dashboard.php');
@@ -37,6 +39,15 @@ $checks = [
         str_contains($gmApi, "case 'ingredient_opening_stock'")
         && str_contains($gmApi, 'decideIngredientOpeningStock')
         && str_contains($gmPage, 'Found Stock'),
+    'GM dashboard cannot falsely look clear while found stock awaits approval' =>
+        str_contains($gmDashboardApi, "'type' => 'ingredient_opening_stock'")
+        && str_contains($gmDashboardApi, "price_status IN ('matched_po', 'verified')")
+        && str_contains($gmDashboardApi, "qc_status IN ('approved', 'not_required')")
+        && str_contains($gmDashboardPage, "gm_approvals.html?queue=inventory"),
+    'Warehouse shows the exact reviewer currently holding the request' =>
+        str_contains($ingredientsApi, 'osr.held_batch_id, osr.price_status, osr.qc_status')
+        && str_contains($ingredientsPage, 'openingStockReviewStep')
+        && str_contains($ingredientsPage, 'Ready for GM'),
     'Warehouse does not enter inventory valuation and sees only mapped suppliers' =>
         !str_contains($ingredientsPage, 'id="openingStockUnitCost"')
         && str_contains($ingredientsApi, 'FROM supplier_ingredients si')
