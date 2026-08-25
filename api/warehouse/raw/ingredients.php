@@ -165,10 +165,14 @@ function handleGet($db, $currentUser) {
                 $ingredient['missing_batch_stock'] = max(0, round($onFileStock - $accountedStock, 3));
                 $ingredient['batch_stock_surplus'] = max(0, round($accountedStock - $onFileStock, 3));
                 $ingredient['restricted_stock'] = max(0, round($accountedStock - $usableStock, 3));
+                $ingredient['unexplained_batch_surplus'] = max(0, round(
+                    $ingredient['batch_stock_surplus'] - $ingredient['restricted_stock'],
+                    3
+                ));
                 $ingredient['expired_batch_stock'] = $expiredStock;
                 $ingredient['untraceable_batch_stock'] = $untraceableStock;
                 $ingredient['needs_stock_check'] = $ingredient['missing_batch_stock'] > 0.0005
-                    || $ingredient['batch_stock_surplus'] > 0.0005;
+                    || $ingredient['unexplained_batch_surplus'] > 0.0005;
             }
             unset($ingredient);
             
@@ -262,6 +266,10 @@ function handleGet($db, $currentUser) {
             $ingredientData['stock_variance'] = round($onFileStock - $usableBatchStock, 3);
             $ingredientData['missing_batch_stock'] = max(0, round($onFileStock - $accountedBatchStock, 3));
             $ingredientData['batch_stock_surplus'] = max(0, round($accountedBatchStock - $onFileStock, 3));
+            $ingredientData['unexplained_batch_surplus'] = max(0, round(
+                $ingredientData['batch_stock_surplus'] - $ingredientData['restricted_stock'],
+                3
+            ));
             $ingredientData['batch_count'] = count($batchList);
             
             // Get recent transactions

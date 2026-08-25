@@ -62,6 +62,10 @@ $checks = [
         !str_contains($ingredientsApi, 'storage maximum')
         && !str_contains(file_get_contents($root . '/api/helpers/ingredient_opening_stock.php'), 'storage maximum')
         && str_contains($ingredientsPage, 'restocking target'),
+    'A held batch uses lot correction without a duplicate adjustment warning' =>
+        str_contains($ingredientsApi, 'unexplained_batch_surplus')
+        && str_contains($ingredientsPage, 'batchStockSurplus - restrictedStock')
+        && str_contains($ingredientsPage, 'isExpired || !traceabilityIssue'),
 ];
 foreach ($checks as $label => $passed) {
     if (!$passed) throw new RuntimeException("Failed: {$label}");

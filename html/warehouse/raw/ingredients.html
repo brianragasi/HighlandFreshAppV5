@@ -1790,8 +1790,11 @@
             const heldStock = Math.max(0, restrictedStock - expiredStock - untraceableStock);
             const missingBatchStock = parseFloat(ing.missing_batch_stock) || 0;
             const batchStockSurplus = parseFloat(ing.batch_stock_surplus) || 0;
+            const unexplainedBatchSurplus = Number.isFinite(parseFloat(ing.unexplained_batch_surplus))
+                ? parseFloat(ing.unexplained_batch_surplus)
+                : Math.max(0, batchStockSurplus - restrictedStock);
             const hasMissingBatch = missingBatchStock > 0.0005;
-            const hasBatchSurplus = batchStockSurplus > 0.0005;
+            const hasBatchSurplus = unexplainedBatchSurplus > 0.0005;
 
             // Stock status for hero bar
             const stockPct = maxStock > 0 ? Math.min(100, (batchStock / maxStock) * 100) : 0;
@@ -1846,7 +1849,7 @@
                 const stateClass = isExpired || traceabilityIssue ? 'text-error' : isUsable ? 'text-success' : 'text-warning';
                 // Expired and near-expiry batches with stock can be closed
                 // through the waste record while their receiving history stays intact.
-                const wasteHref = hasExpiry && remaining > 0
+                const wasteHref = hasExpiry && remaining > 0 && (isExpired || !traceabilityIssue)
                     ? `waste.html?item_type=ingredient&item_id=${ing.id}&batch_id=${b.id}&reason_category=${days <= 0 ? 'expired' : 'damaged'}`
                     : null;
                 const canRecordLot = traceabilityIssue
@@ -1923,7 +1926,7 @@
             const surplusBanner = hasBatchSurplus ? `
                 <div class="alert alert-warning mb-4 py-2">
                     <i class="fas fa-scale-balanced"></i>
-                    <span>Physical batches exceed the item file by ${batchStockSurplus.toLocaleString()} ${escapeHtml(unit)}. Record a physical count adjustment before issuing.</span>
+                    <span>Physical batches exceed the item file by ${unexplainedBatchSurplus.toLocaleString()} ${escapeHtml(unit)}. Check the shelf count before issuing.</span>
                 </div>
             ` : '';
 
@@ -1990,9 +1993,11 @@
                     <i class="fas fa-box-open"></i> Record Found Stock
                 </button>
                 ` : ''}
+                ${!hasTraceabilityHold && expiredStock <= 0.0005 ? `
                 <button class="btn-pro btn-pro--info" onclick="openAdjustModal(${ing.id}, '${escapedName}', ${stock}, '${unit}')">
                     <i class="fas fa-pen-to-square"></i> Adjust
                 </button>
+                ` : ''}
                 <button class="btn-pro btn-pro--warning" onclick="openIssueModal(${ing.id}, '${escapedName}', ${batchStock}, '${unit}')" ${batchStock <= 0 ? 'disabled' : ''}>
                     <i class="fas fa-arrow-up"></i> Issue Stock
                 </button>
