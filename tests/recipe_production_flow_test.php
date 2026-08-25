@@ -46,6 +46,14 @@ $checks = [
         str_contains($sources['requisitions_api'], 'This production request cannot be submitted because Warehouse does not have every required material')
         && !str_contains($sources['requisitions_page'], 'Submit with override')
         && !str_contains($sources['requisitions_page'], 'confirmStockOverride'),
+    'Shortage modal receives only real shortages and never uses a negative fallback' =>
+        str_contains($sources['requisitions_api'], "'shortages' => \$actualShortages")
+        && str_contains($sources['requisitions_page'], 'Array.isArray(stockCheck?.shortages)')
+        && str_contains($sources['requisitions_page'], 'requested > available && calculateShortage(s) > 0')
+        && !str_contains($sources['requisitions_page'], 's.shortage || (requested - available)'),
+    'Covered material preview shows how much stock remains' =>
+        str_contains($sources['requisitions_page'], 'Enough stock ·')
+        && str_contains($sources['requisitions_page'], 'would remain'),
     'Planned recipe materials are regenerated from the saved formula on the server' =>
         str_contains($sources['requisitions_api'], '$authoritativePlan')
         && str_contains($sources['requisitions_api'], '$items = $authoritativePlan[\'items\']'),
@@ -95,6 +103,15 @@ $tooLargeBatch = assessRecipeBatchPlan([
 ], 61);
 if (!$oneBatch['valid'] || $tooLargeBatch['valid']) {
     fwrite(STDERR, "Failed: production batch capacity guard did not enforce the one-run maximum.\n");
+    exit(1);
+}
+
+$sugarRequested = 0.168;
+$sugarAvailable = 101.0;
+$sugarShortage = max(0.0, $sugarRequested - $sugarAvailable);
+$sugarRemaining = max(0.0, $sugarAvailable - $sugarRequested);
+if (abs($sugarShortage) > 0.000001 || abs($sugarRemaining - 100.832) > 0.000001) {
+    fwrite(STDERR, "Failed: sufficient Sugar stock did not resolve to zero shortage and 100.832 kg remaining.\n");
     exit(1);
 }
 

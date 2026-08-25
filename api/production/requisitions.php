@@ -256,6 +256,7 @@ function checkRequisitionStock($db, $items) {
         $itemType = $item['item_type'] ?? null;
         $itemId = (int) ($item['item_id'] ?? 0);
         $itemName = trim($item['item_name'] ?? '');
+        $unit = trim((string) ($item['unit'] ?? 'units')) ?: 'units';
         $requestedRaw = (float) ($item['quantity'] ?? 0);
         $requestedPacks = isset($item['quantity_in_packs']) && $item['quantity_in_packs'] !== null && $item['quantity_in_packs'] !== ''
             ? (float) $item['quantity_in_packs']
@@ -345,6 +346,7 @@ function checkRequisitionStock($db, $items) {
             'item_id' => $itemId > 0 ? $itemId : null,
             'item_type' => $itemType,
             'item_name' => $itemName,
+            'unit' => $unit,
             'requested' => $requestedBase,
             'requested_packs' => $requestedPacks,
             'requested_raw' => $requestedRaw,
@@ -357,9 +359,18 @@ function checkRequisitionStock($db, $items) {
         ];
     }
 
+    // Keep the full calculation for audit and successful-response summaries,
+    // but give the shortage modal a dedicated list containing only quantities
+    // that cannot be covered. A sufficient line always has a zero shortage.
+    $actualShortages = array_values(array_filter(
+        $shortages,
+        fn($item) => (float) ($item['shortage'] ?? 0) > 0
+    ));
+
     return [
         'all_sufficient' => $allSufficient,
         'items' => $shortages,
+        'shortages' => $actualShortages,
     ];
 }
 
@@ -1345,10 +1356,7 @@ try {
             // than an employee override.
             // ----------------------------------------------------------------
             $stockCheck = checkRequisitionStock($db, $items);
-            $hasShortage = false;
-            foreach ($stockCheck['items'] as $s) {
-                if (!$s['sufficient']) { $hasShortage = true; break; }
-            }
+            $hasShortage = !empty($stockCheck['shortages']);
 
             if ($hasShortage) {
                 // Custom error response so we can include the full stock_check
@@ -1610,8 +1618,8 @@ try {
                     ],
                     'stock_summary' => [
                         'all_sufficient' => $stockCheck['all_sufficient'],
-                        'shortage_count' => count(array_filter($stockCheck['items'], fn($s) => !$s['sufficient'])),
-                        'shortages' => array_values(array_filter($stockCheck['items'], fn($s) => !$s['sufficient'])),
+                        'shortage_count' => count($stockCheck['shortages']),
+                        'shortages' => $stockCheck['shortages'],
                     ],
                 ], $message);
 

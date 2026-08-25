@@ -1120,12 +1120,13 @@
 
             const sufficient = baseQty <= available;
             const shortage = Math.max(baseQty - available, 0);
+            const remaining = Math.max(available - baseQty, 0);
             const status = option.dataset.stockStatus || '';
             const low = status === 'low_stock' || status === 'LOW';
 
             if (sufficient) {
                 const tone = low ? 'text-warning' : 'text-success';
-                preview.innerHTML = `<span class="inline-flex items-center gap-1.5 text-[11px] ${tone} mt-1 font-medium">${low ? 'Low' : 'OK'} · <span class="font-mono">${formatPackNumber(available)}</span> ${escapeHtml(unit)} available</span>`;
+                preview.innerHTML = `<span class="inline-flex items-center gap-1.5 text-[11px] ${tone} mt-1 font-medium">Enough stock · <span class="font-mono">${formatPackNumber(available)}</span> ${escapeHtml(unit)} available · <span class="font-mono">${formatPackNumber(remaining)}</span> ${escapeHtml(unit)} would remain</span>`;
             } else {
                 preview.innerHTML = `<span class="inline-flex items-center gap-1.5 text-[11px] text-error mt-1 font-medium">Short <span class="font-mono">${formatPackNumber(shortage)}</span> ${escapeHtml(unit)} · only <span class="font-mono">${formatPackNumber(available)}</span> on hand</span>`;
             }
@@ -2138,12 +2139,40 @@
             const list = document.getElementById('stockShortageList');
 
             list.innerHTML = '';
-            const items = (stockCheck && stockCheck.items) ? stockCheck.items : [];
+            const calculateShortage = (item) => {
+                const requested = Number(item?.requested || 0);
+                const available = Number(item?.available || 0);
+                const hasSuppliedShortage = item
+                    && item.shortage !== null
+                    && item.shortage !== undefined
+                    && item.shortage !== '';
+                const suppliedShortage = hasSuppliedShortage ? Number(item.shortage) : NaN;
+                return Math.max(
+                    Number.isFinite(suppliedShortage) ? suppliedShortage : requested - available,
+                    0
+                );
+            };
+            const sourceItems = Array.isArray(stockCheck?.shortages)
+                ? stockCheck.shortages
+                : (Array.isArray(stockCheck?.items) ? stockCheck.items : []);
+            const items = sourceItems.filter(s => {
+                const requested = Number(s.requested || 0);
+                const available = Number(s.available || 0);
+                return requested > available && calculateShortage(s) > 0;
+            });
+
+            if (items.length === 0) {
+                showToast('All requested materials have enough stock.', 'success');
+                closeStockShortageModal();
+                return;
+            }
+
             items.forEach(s => {
                 const name = escapeHtml(s.item_name || 'Item');
                 const requested = Number(s.requested || 0);
                 const available = Number(s.available || 0);
-                const shortage = Number(s.shortage || (requested - available));
+                const shortage = calculateShortage(s);
+                const unit = escapeHtml(s.unit || 'units');
                 const verified = s.verified !== false;
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -2151,9 +2180,9 @@
                         <div class="font-medium">${name}</div>
                         ${!verified ? '<div class="text-xs text-base-content/60">Stock could not be verified (free-text item)</div>' : ''}
                     </td>
-                    <td class="text-right font-mono">${formatPackNumber(requested)}</td>
-                    <td class="text-right font-mono">${formatPackNumber(available)}</td>
-                    <td class="text-right font-mono text-error font-semibold">${formatPackNumber(shortage)}</td>
+                    <td class="text-right font-mono">${formatPackNumber(requested)} ${unit}</td>
+                    <td class="text-right font-mono">${formatPackNumber(available)} ${unit}</td>
+                    <td class="text-right font-mono text-error font-semibold">${formatPackNumber(shortage)} ${unit}</td>
                 `;
                 list.appendChild(row);
             });
