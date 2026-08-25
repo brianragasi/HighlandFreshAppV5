@@ -169,7 +169,11 @@ function decideIngredientOpeningStock(PDO $db, int $requestId, string $decision,
             getAccountedIngredientBatchStock($db, (int) $ingredient['id'])
         );
     $recordedAtRequest = (float) $request['system_quantity'];
-    if (abs($comparisonNow - $recordedAtRequest) > 0.0005) {
+    // A lot correction belongs to one specific held batch. Another held batch
+    // for the same ingredient may be approved first, legitimately increasing
+    // usable stock. The selected batch itself is locked and rechecked below,
+    // so that independent approval must not strand this request.
+    if (!$isTraceabilityCorrection && abs($comparisonNow - $recordedAtRequest) > 0.0005) {
         throw new RuntimeException('Stock changed after Warehouse counted it. Reject this request and ask Warehouse to recount.');
     }
 

@@ -48,6 +48,9 @@ $checks = [
         str_contains($ingredientsApi, 'osr.held_batch_id, osr.price_status, osr.qc_status')
         && str_contains($ingredientsPage, 'openingStockReviewStep')
         && str_contains($ingredientsPage, 'Ready for GM'),
+    'Different held batches of the same ingredient can be reviewed separately' =>
+        str_contains($ingredientsApi, 'WHERE ingredient_id = ? AND held_batch_id = ?')
+        && str_contains($ingredientsPage, "String(request.held_batch_id || '') === String(heldBatchId)"),
     'Warehouse does not enter inventory valuation and sees only mapped suppliers' =>
         !str_contains($ingredientsPage, 'id="openingStockUnitCost"')
         && str_contains($ingredientsApi, 'FROM supplier_ingredients si')
@@ -220,6 +223,36 @@ $heldSummary = (float) $db->query("SELECT current_stock FROM ingredients WHERE i
 if (count($heldRows) !== 1 || (int) $heldRows[0]['id'] !== $heldBatchId
     || $heldRows[0]['supplier_batch_no'] !== 'REAL-LOT-5' || abs($heldSummary - 5) > 0.0005) {
     throw new RuntimeException('Correcting a held batch created duplicate physical stock');
+}
+$db->rollBack();
+
+// Two different held batches of the same ingredient may be submitted and
+// approved independently. Finishing the first must not make the second stale.
+$secondHeldBatchId = $seed + 13;
+$secondHeldRequestId = $seed + 14;
+$db->prepare("INSERT INTO ingredient_batches
+    (id, batch_code, ingredient_id, quantity, remaining_quantity, unit_cost, received_date,
+     expiry_date, qc_status, received_by, status, notes)
+    VALUES (?, ?, ?, 3, 3, 25, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 12 DAY),
+            'approved', ?, 'available', 'Second held row with missing lot')")
+    ->execute([$secondHeldBatchId, "HELD-BATCH-2-{$seed}", $heldIngredientId, $requester]);
+$db->prepare("INSERT INTO ingredient_opening_stock_requests
+    (id, request_code, ingredient_id, system_quantity, counted_quantity, quantity_to_add,
+     unit, source_type, source_reference, supplier_batch_no, received_date, expiry_date,
+     unit_cost, price_status, qc_status, qc_verified_by, qc_verified_at, reason, status,
+     requested_by, request_purpose, held_batch_id)
+    VALUES (?, ?, ?, 0, 3, 3, 'kg', 'opening_balance', 'COUNT-SHEET-HELD-2', 'REAL-LOT-3',
+            CURDATE(), DATE_ADD(CURDATE(), INTERVAL 12 DAY), 25, 'verified', 'approved', ?, NOW(),
+            'Second supplier document found', 'pending', ?, 'traceability_correction', ?)")
+    ->execute([$secondHeldRequestId, "REQ-HELD-2-{$seed}", $heldIngredientId, $gm, $requester, $secondHeldBatchId]);
+$db->beginTransaction();
+decideIngredientOpeningStock($db, $heldRequestId, 'approve', $gm, 'First lot checked');
+decideIngredientOpeningStock($db, $secondHeldRequestId, 'approve', $gm, 'Second lot checked');
+$usableAfterBoth = getUsableIngredientBatchStock($db, $heldIngredientId);
+$approvedBoth = (int) $db->query("SELECT COUNT(*) FROM ingredient_opening_stock_requests
+    WHERE id IN ({$heldRequestId}, {$secondHeldRequestId}) AND status = 'approved'")->fetchColumn();
+if (abs($usableAfterBoth - 8) > 0.0005 || $approvedBoth !== 2) {
+    throw new RuntimeException('Approving one held batch stranded another batch of the same ingredient');
 }
 $db->rollBack();
 

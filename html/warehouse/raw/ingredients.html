@@ -1798,9 +1798,8 @@
                 : Math.max(0, batchStockSurplus - restrictedStock);
             const hasMissingBatch = missingBatchStock > 0.0005;
             const hasBatchSurplus = unexplainedBatchSurplus > 0.0005;
-            const pendingRequest = (openingStockOptions?.pending_requests || [])
-                .find(request => String(request.ingredient_id) === String(ing.id));
-            const pendingStep = pendingRequest ? openingStockReviewStep(pendingRequest) : null;
+            const pendingRequests = (openingStockOptions?.pending_requests || [])
+                .filter(request => String(request.ingredient_id) === String(ing.id));
 
             // Stock status for hero bar
             const stockPct = maxStock > 0 ? Math.min(100, (batchStock / maxStock) * 100) : 0;
@@ -1860,9 +1859,10 @@
                     : null;
                 const canRecordLot = traceabilityIssue
                     && ['warehouse_raw', 'general_manager'].includes(AuthService.getCurrentUser()?.role || '');
-                const batchPending = pendingRequest && (
-                    !pendingRequest.held_batch_id || String(pendingRequest.held_batch_id) === String(b.id)
+                const batchPending = pendingRequests.find(request =>
+                    String(request.held_batch_id || '') === String(b.id)
                 );
+                const batchPendingStep = batchPending ? openingStockReviewStep(batchPending) : null;
                 return `
                     <div class="batch-row">
                         <div class="min-w-0 flex-1">
@@ -1886,7 +1886,7 @@
                             ` : ''}
                             ${canRecordLot && batchPending ? `
                             <span class="badge badge-warning badge-sm mt-1">
-                                <i class="fas fa-hourglass-half mr-1"></i>${escapeHtml(pendingStep.label)}
+                                <i class="fas fa-hourglass-half mr-1"></i>${escapeHtml(batchPendingStep.label)}
                             </span>
                             ` : ''}
                         </div>
@@ -1928,15 +1928,17 @@
                     </span>
                 </div>
             ` : '';
-            const reviewBanner = pendingRequest ? `
-                <div class="alert ${pendingStep.alertClass} mb-4 py-3">
-                    <i class="fas ${pendingStep.icon}"></i>
-                    <div>
-                        <strong>${escapeHtml(pendingRequest.request_code)}</strong>
-                        <p>${escapeHtml(pendingStep.message)}</p>
-                    </div>
-                </div>
-            ` : '';
+            const reviewBanner = pendingRequests.map(request => {
+                const step = openingStockReviewStep(request);
+                return `
+                    <div class="alert ${step.alertClass} mb-4 py-3">
+                        <i class="fas ${step.icon}"></i>
+                        <div>
+                            <strong>${escapeHtml(request.request_code)}</strong>
+                            <p>${escapeHtml(step.message)}</p>
+                        </div>
+                    </div>`;
+            }).join('');
             const missingBatchBanner = hasMissingBatch ? `
                 <div class="alert alert-warning mb-4 py-2">
                     <i class="fas fa-triangle-exclamation"></i>
@@ -2252,7 +2254,11 @@
             }
             try {
                 const options = await loadOpeningStockOptions(ingredientId);
-                const pending = (options.pending_requests || []).find(r => String(r.ingredient_id) === String(ingredientId));
+                const pending = (options.pending_requests || []).find(request => {
+                    if (String(request.ingredient_id) !== String(ingredientId)) return false;
+                    if (heldBatchId) return String(request.held_batch_id || '') === String(heldBatchId);
+                    return !request.held_batch_id;
+                });
                 if (pending) {
                     const step = openingStockReviewStep(pending);
                     showToast(`${pending.request_code}: ${step.message}`, step.toastType, 9000);

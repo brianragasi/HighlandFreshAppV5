@@ -681,10 +681,21 @@ function handlePost($db, $currentUser) {
                         : 'The counted quantity must be higher than the stock currently on file');
                 }
 
-                $pendingStmt = $db->prepare("SELECT request_code FROM ingredient_opening_stock_requests WHERE ingredient_id = ? AND status = 'pending' LIMIT 1 FOR UPDATE");
-                $pendingStmt->execute([$ingredientId]);
+                if ($requestPurpose === 'traceability_correction' && $heldBatchId > 0) {
+                    $pendingStmt = $db->prepare("SELECT request_code
+                        FROM ingredient_opening_stock_requests
+                        WHERE ingredient_id = ? AND held_batch_id = ? AND status = 'pending'
+                        LIMIT 1 FOR UPDATE");
+                    $pendingStmt->execute([$ingredientId, $heldBatchId]);
+                } else {
+                    $pendingStmt = $db->prepare("SELECT request_code
+                        FROM ingredient_opening_stock_requests
+                        WHERE ingredient_id = ? AND held_batch_id IS NULL AND status = 'pending'
+                        LIMIT 1 FOR UPDATE");
+                    $pendingStmt->execute([$ingredientId]);
+                }
                 $pendingCode = $pendingStmt->fetchColumn();
-                if ($pendingCode) throw new RuntimeException("{$pendingCode} is already moving through price, QC, or GM review for this ingredient");
+                if ($pendingCode) throw new RuntimeException("{$pendingCode} is already reviewing this same batch");
 
                 if ($supplierId > 0) {
                     $supplierStmt = $db->prepare("
