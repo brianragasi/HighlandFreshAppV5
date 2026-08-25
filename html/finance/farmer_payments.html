@@ -559,6 +559,7 @@
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/ui/dialogs.js"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="finance_officer,general_manager"></script>
     <script src="../../js/finance/finance.service.js"></script>
 
@@ -1061,7 +1062,15 @@
 
         async function changePayoutStatus(paymentId, status) {
             const labels = { failed: 'failed', cancelled: 'cancelled', reversed: 'reversed' };
-            const reason = window.prompt(`Explain why this payout is being marked ${labels[status]}. At least 10 characters are required.`);
+            const reason = await AppDialogs.prompt({
+                title: `Mark payout ${labels[status]}`,
+                message: 'Explain why this payout status is changing. The reason will be kept in the audit history.',
+                label: 'Reason',
+                placeholder: 'Enter a clear reason (at least 10 characters)',
+                confirmText: 'Continue',
+                variant: 'warning',
+                icon: 'fa-money-bill-transfer'
+            });
             if (reason === null) return;
             if (reason.trim().length < 10) {
                 showToast('Please enter a clear reason with at least 10 characters', 'error');

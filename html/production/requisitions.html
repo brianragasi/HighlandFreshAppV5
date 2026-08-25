@@ -488,6 +488,7 @@
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../js/ui/dialogs.js"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="production_staff,general_manager"></script>
     <script>window.PRODUCTION_ACTIVE_PAGE = "requisitions";</script>
     <script src="../../js/production/sidebar.js"></script>
@@ -1273,10 +1274,18 @@
             scheduleMaterialSummary();
         }
 
-        function unlockItemRow(btn) {
+        async function unlockItemRow(btn) {
             const row = btn.closest('.item-row');
             if (!row) return;
-            const reason = window.prompt('Why change this amount? (required for audit)');
+            const reason = await AppDialogs.prompt({
+                title: 'Change calculated amount?',
+                message: 'Explain why Production needs to change the calculated material amount. Warehouse will see this reason.',
+                label: 'Override reason',
+                placeholder: 'Explain the operational reason',
+                confirmText: 'Unlock Amount',
+                variant: 'warning',
+                icon: 'fa-pen-to-square'
+            });
             if (reason === null) return;
             const trimmed = (reason || '').trim();
             if (!trimmed) {
@@ -2037,9 +2046,13 @@
                 }
             });
             if (fullPackLines > 0) {
-                const ok = window.confirm(
-                    `${fullPackLines} line(s) request FULL PACKS (whole bags), not just the small batch amount.\n\nContinue only if Warehouse should issue whole packs.`
-                );
+                const ok = await AppDialogs.confirm({
+                    title: 'Issue full packages?',
+                    message: `${fullPackLines} line(s) request whole packages, not only the smaller batch amount. Continue only if Warehouse should issue the full packages.`,
+                    confirmText: 'Request Full Packages',
+                    variant: 'warning',
+                    icon: 'fa-boxes-stacked'
+                });
                 if (!ok) return;
             }
 

@@ -1049,6 +1049,7 @@
     <script src="../../../js/vendor/html5-qrcode.min.js"></script>
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js?v=20260814-3"></script>
+    <script src="../../../js/ui/dialogs.js"></script>
     <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_fg,general_manager"></script>
     <script src="../../../js/utils/units.js?v=20260712"></script>
     <script src="../../../js/warehouse/fg.service.js"></script>
@@ -1086,9 +1087,16 @@
             setTimeout(() => document.getElementById('pickBarcodeInput')?.focus(), 200);
         }
 
-        function closePickingModal() {
+        async function closePickingModal() {
             if (pickScannedItems.length > 0) {
-                if (!confirm('You have scanned items that have not been confirmed. Discard them?')) return;
+                const confirmed = await AppDialogs.confirm({
+                    title: 'Discard scanned items?',
+                    message: 'These scans have not been confirmed and will be removed from this picking session.',
+                    confirmText: 'Discard Scans',
+                    variant: 'danger',
+                    icon: 'fa-barcode'
+                });
+                if (!confirmed) return;
             }
             document.getElementById('pickingModal').close();
             pickScannedItems = [];
@@ -1547,7 +1555,14 @@
 
         async function pickClearScanned() {
             if (pickScannedItems.length === 0) return;
-            if (!confirm('Clear all scanned items?')) return;
+            const confirmed = await AppDialogs.confirm({
+                title: 'Clear all scanned items?',
+                message: 'All scans currently staged for this delivery receipt will be removed.',
+                confirmText: 'Clear Scans',
+                variant: 'danger',
+                icon: 'fa-trash-can'
+            });
+            if (!confirmed) return;
             pickScannedItems = [];
             pickRenderItems();
         }

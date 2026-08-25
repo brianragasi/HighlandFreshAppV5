@@ -404,6 +404,43 @@ recordResult(
         : implode('; ', $roleOutputFailures)
 );
 
+$nativeDialogFailures = [];
+$allHtmlIterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(__DIR__ . '/../html'));
+foreach ($allHtmlIterator as $file) {
+    if (!$file->isFile() || strtolower($file->getExtension()) !== 'html') {
+        continue;
+    }
+    $page = file_get_contents($file->getPathname());
+    preg_match_all('/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/i', $page, $scriptMatches);
+    $inlineScripts = implode("\n", $scriptMatches[1] ?? []);
+    if (preg_match('/(?<![\w$.])(?:window\.)?(?:alert|confirm|prompt)\s*\(/', $inlineScripts)) {
+        $nativeDialogFailures[] = str_replace(__DIR__ . '/../', '', $file->getPathname());
+    }
+}
+$allJsIterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(__DIR__ . '/../js'));
+foreach ($allJsIterator as $file) {
+    if (!$file->isFile() || strtolower($file->getExtension()) !== 'js') {
+        continue;
+    }
+    $normalizedPath = str_replace('\\', '/', $file->getPathname());
+    if (str_contains($normalizedPath, '/vendor/') || str_ends_with($normalizedPath, '/ui/dialogs.js')) {
+        continue;
+    }
+    if (preg_match('/(?<![\w$.])(?:window\.)?(?:alert|confirm|prompt)\s*\(/', file_get_contents($file->getPathname()))) {
+        $nativeDialogFailures[] = str_replace(__DIR__ . '/../', '', $file->getPathname());
+    }
+}
+recordResult(
+    $results,
+    'UT-118',
+    'No browser-native localhost dialogs',
+    empty($nativeDialogFailures),
+    'Use the branded AppDialogs or toast UI instead of alert, confirm, or prompt',
+    empty($nativeDialogFailures)
+        ? 'No application page can display a browser-native “localhost says” dialog'
+        : 'Native dialogs found in: ' . implode(', ', array_unique($nativeDialogFailures))
+);
+
 $passedCount = 0;
 echo "Security Unit Test Results\n";
 echo str_repeat('=', 80) . "\n";
