@@ -62,5 +62,8 @@ assertResolution(strpos($receivingPage, 'Repeated PO material') !== false, 'Rece
 assertResolution(strpos($receivingPage, 'copyReceivingTraceabilityToMatchingLines') !== false, 'Receiving must provide a safe lot-copy action for legacy repeated PO lines');
 assertResolution(strpos($receivingPage, 'receivingLineLabel(item, idx)') !== false, 'Receiving validation must identify the exact repeated PO line with missing traceability');
 assertResolution(strpos($receivingPage, 'receiveItemCard-${idx}') !== false, 'Receiving validation must be able to reveal the exact invalid line');
+assertResolution(strpos($receivingPage, 'function receivingUsesPackages(item)') !== false, 'Receiving must distinguish true packages from direct measured supplier units');
+assertResolution(strpos($receivingPage, 'Measured Quantity Received *') !== false, 'Direct-unit deliveries need measured-quantity wording instead of package wording');
+assertResolution(strpos($receivingPage, 'receiveFullMeasuredBalance') !== false, 'Warehouse needs a one-click way to enter the exact remaining measured delivery');
 
 echo "Receiving resolution tests passed.\n";

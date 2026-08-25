@@ -27,6 +27,7 @@ $helper = file_get_contents(__DIR__ . '/../api/helpers/supplier_ingredient_catal
 $supplierApi = file_get_contents(__DIR__ . '/../api/admin/suppliers.php');
 $assert($page !== false && str_contains($page, 'Quantity inside one package'), 'Clear package quantity wording is missing.');
 $assert($page !== false && str_contains($page, 'Effective Stock Unit Cost'), 'The live normalized stock-unit cost preview is missing.');
+$assert($page !== false && str_contains($page, 'Use this only when Receiving can verify an exact measured quantity'), 'Direct-unit setup does not warn Admin that Warehouse must be able to verify decimal deliveries.');
 $assert($page !== false && str_contains($page, 'offer-package-size-unit-'), 'The package quantity does not show its unit beside the input.');
 $assert($page !== false && str_contains($page, 'formatSupplierOfferFieldOnBlur'), 'Supplier package quantities and prices are not formatted on blur.');
 $assert($page !== false && str_contains($page, "format === 'packaged' ? 2 : 6"), 'Package prices are not limited to normal currency precision.');

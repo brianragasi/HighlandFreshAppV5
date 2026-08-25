@@ -775,13 +775,13 @@
                         const supplierQty = parseFloat(item.supplier_order_quantity || 0);
                         const supplierUnit = String(item.supplier_order_unit || '').trim();
                         const stockPerSupplierUnit = parseFloat(item.stock_quantity_per_supplier_unit || 0);
-                        const hasSupplierPackage = supplierQty > 0 && supplierUnit && stockPerSupplierUnit > 0;
+                        const hasSupplierPackage = receivingUsesPackages(item);
                         const remainingSupplierQty = hasSupplierPackage ? remaining / stockPerSupplierUnit : 0;
                         const sourceRequested = parseFloat(item.source_pr_allocation_quantity || ordered);
                         const packageExtra = Math.max(0, ordered - sourceRequested);
                         const packageSummary = hasSupplierPackage
                             ? `${formatCompactReceivingNumber(supplierQty)} ${escapeHtml(supplierUnit)} = ${formatCompactReceivingNumber(ordered)} ${escapeHtml(item.unit)}`
-                            : `${formatCompactReceivingNumber(ordered)} ${escapeHtml(item.unit)}`;
+                            : `${formatCompactReceivingNumber(ordered)} ${escapeHtml(item.unit)} measured in the Warehouse stock unit`;
                         const duplicateKey = receivingMaterialKey(item);
                         const matchingIndexes = currentReceiveItems
                             .map((candidate, candidateIndex) => receivingMaterialKey(candidate) === duplicateKey ? candidateIndex : -1)
@@ -799,6 +799,7 @@
                                             <p class="text-xs text-base-content/60">System lot: ${itemCode}-Lot-###${isPerishable ? ' - Expiry required' : ' - Non-perishable'}</p>
                                             <p class="text-sm text-base-content/70 font-medium">Supplier delivery: ${packageSummary}</p>
                                             ${hasSupplierPackage ? `<p class="text-xs text-base-content/55">Each ${escapeHtml(supplierUnit)} adds ${formatCompactReceivingNumber(stockPerSupplierUnit)} ${escapeHtml(item.unit)} to inventory.${packageExtra > 0.0005 ? ` Warehouse requested ${formatCompactReceivingNumber(sourceRequested)} ${escapeHtml(item.unit)}; ${formatCompactReceivingNumber(packageExtra)} extra is from ordering full packages.` : ''}</p>` : ''}
+                                            ${!hasSupplierPackage ? `<p class="text-xs text-info"><i class="fas fa-scale-balanced mr-1"></i>Bulk / measured delivery: copy the quantity from the supplier document, scale, or meter. Do not estimate it from the number of containers.</p>` : ''}
                                             <p class="text-xs text-base-content/50">Inventory order value: ${formatCurrency(item.total_amount || ordered * item.unit_price)}</p>
                                             ${prevAccepted > 0 || prevRejected > 0 ? `<p class="text-xs mt-1"><span class="text-success">Previously accepted: ${prevAccepted.toFixed(2)}</span>${prevRejected > 0 ? `  <span class="text-error">Previously rejected: ${prevRejected.toFixed(2)}</span>` : ''}</p>` : ''}
                                         </div>
@@ -822,8 +823,11 @@
                                                 <label class="label py-0"><span class="label-text-alt text-base-content/50">Maximum now: ${formatCompactReceivingNumber(remainingSupplierQty)} ${escapeHtml(supplierUnit)}</span></label>
                                             </div>` : ''}
                                             <div class="form-control">
-                                                <label class="label py-0"><span class="label-text-alt ${hasSupplierPackage ? 'text-base-content/60' : 'text-primary font-semibold'}">${hasSupplierPackage ? 'Inventory Quantity (calculated)' : 'Physically Received *'}</span></label>
-                                                <input type="number" step="0.01" min="0" max="${remaining}" inputmode="decimal"
+                                                <div class="label py-0 gap-2">
+                                                    <span class="label-text-alt ${hasSupplierPackage ? 'text-base-content/60' : 'text-primary font-semibold'}">${hasSupplierPackage ? 'Inventory Quantity (calculated)' : 'Measured Quantity Received *'}</span>
+                                                    ${!hasSupplierPackage ? `<button type="button" class="btn btn-ghost btn-xs text-primary" onclick="receiveFullMeasuredBalance(${idx})">Use full balance: ${formatCompactReceivingNumber(remaining)} ${escapeHtml(item.unit)}</button>` : ''}
+                                                </div>
+                                                <input type="number" step="0.001" min="0" max="${remaining}" inputmode="decimal"
                                                        class="input input-bordered input-sm w-full recv-received ${hasSupplierPackage ? 'bg-base-200' : ''}"
                                                        id="recvReceived-${idx}" value="0"
                                                        data-ordered="${ordered}" data-prev="${prevAccepted}" data-idx="${idx}"
@@ -1011,6 +1015,36 @@
         function formatCompactReceivingNumber(value, decimals = 3) {
             const number = Number(value) || 0;
             return number.toLocaleString('en-PH', {maximumFractionDigits: decimals});
+        }
+
+        function receivingUnitKey(unit) {
+            const normalized = String(unit || '').trim().toLowerCase();
+            const aliases = {
+                l: 'liter', litre: 'liter', litres: 'liter', liters: 'liter',
+                kgs: 'kg', kilogram: 'kg', kilograms: 'kg',
+                gms: 'g', gram: 'g', grams: 'g',
+                pc: 'piece', pcs: 'piece', pieces: 'piece'
+            };
+            return aliases[normalized] || normalized.replace(/s$/, '');
+        }
+
+        function receivingUsesPackages(item) {
+            const supplierQty = Number(item?.supplier_order_quantity || 0);
+            const supplierUnit = String(item?.supplier_order_unit || '').trim();
+            const stockPerSupplierUnit = Number(item?.stock_quantity_per_supplier_unit || 0);
+            if (!(supplierQty > 0) || !supplierUnit || !(stockPerSupplierUnit > 0)) return false;
+            return Math.abs(stockPerSupplierUnit - 1) > 0.000001
+                || receivingUnitKey(supplierUnit) !== receivingUnitKey(item?.unit);
+        }
+
+        function receiveFullMeasuredBalance(index) {
+            const item = currentReceiveItems[index];
+            const input = document.getElementById(`recvReceived-${index}`);
+            if (!item || !input || receivingUsesPackages(item)) return;
+            const remaining = Math.max(0, Number(item.quantity || 0) - Number(item.quantity_received || 0));
+            input.value = String(Math.round(remaining * 1000) / 1000);
+            limitReceivingLine(index, 'received', input);
+            input.focus();
         }
 
         function receivingMaterialKey(item) {
