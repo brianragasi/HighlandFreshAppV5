@@ -65,5 +65,8 @@ assertResolution(strpos($receivingPage, 'receiveItemCard-${idx}') !== false, 'Re
 assertResolution(strpos($receivingPage, 'function receivingUsesPackages(item)') !== false, 'Receiving must distinguish true packages from direct measured supplier units');
 assertResolution(strpos($receivingPage, 'Measured Quantity Received *') !== false, 'Direct-unit deliveries need measured-quantity wording instead of package wording');
 assertResolution(strpos($receivingPage, 'receiveFullMeasuredBalance') !== false, 'Warehouse needs a one-click way to enter the exact remaining measured delivery');
+assertResolution(strpos($receivingPage, 'rewriteAdjusted = true') !== false, 'Receiving decimal inputs need a non-destructive typing mode');
+assertResolution(strpos($receivingPage, 'preserveReceivedTyping') !== false, 'The live receiving calculation must not rewrite an unfinished decimal');
+assertResolution(strpos($receivingPage, 'limitReceivingLine(${idx}, \'received\', this, true)') !== false, 'Measured quantities must be finalized only after the user leaves the field');
 
 echo "Receiving resolution tests passed.\n";

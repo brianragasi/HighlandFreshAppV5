@@ -823,9 +823,8 @@
                                                 <label class="label py-0"><span class="label-text-alt text-base-content/50">Maximum now: ${formatCompactReceivingNumber(remainingSupplierQty)} ${escapeHtml(supplierUnit)}</span></label>
                                             </div>` : ''}
                                             <div class="form-control">
-                                                <div class="label py-0 gap-2">
+                                                <div class="label py-0">
                                                     <span class="label-text-alt ${hasSupplierPackage ? 'text-base-content/60' : 'text-primary font-semibold'}">${hasSupplierPackage ? 'Inventory Quantity (calculated)' : 'Measured Quantity Received *'}</span>
-                                                    ${!hasSupplierPackage ? `<button type="button" class="btn btn-ghost btn-xs text-primary" onclick="receiveFullMeasuredBalance(${idx})">Use full balance: ${formatCompactReceivingNumber(remaining)} ${escapeHtml(item.unit)}</button>` : ''}
                                                 </div>
                                                 <input type="number" step="0.001" min="0" max="${remaining}" inputmode="decimal"
                                                        class="input input-bordered input-sm w-full recv-received ${hasSupplierPackage ? 'bg-base-200' : ''}"
@@ -833,7 +832,9 @@
                                                        data-ordered="${ordered}" data-prev="${prevAccepted}" data-idx="${idx}"
                                                        ${hasSupplierPackage ? 'readonly' : ''}
                                                        onkeydown="blockInvalidReceivingNumber(event)"
-                                                       oninput="limitReceivingLine(${idx}, 'received', this)">
+                                                       oninput="limitReceivingLine(${idx}, 'received', this)"
+                                                       onblur="limitReceivingLine(${idx}, 'received', this, true)">
+                                                ${!hasSupplierPackage ? `<button type="button" class="btn btn-success btn-sm btn-outline w-full mt-2" onclick="receiveFullMeasuredBalance(${idx})"><i class="fas fa-check-double"></i> Receive full balance: ${formatCompactReceivingNumber(remaining)} ${escapeHtml(item.unit)}</button>` : ''}
                                                 <label class="label py-0"><span class="label-text-alt text-base-content/50">Maximum for this delivery: ${remaining.toFixed(2)} ${escapeHtml(item.unit)}</span></label>
                                             </div>
                                             <div class="form-control">
@@ -1117,7 +1118,7 @@
             }
         }
 
-        function clampReceivingValue(input, maximum) {
+        function clampReceivingValue(input, maximum, rewriteAdjusted = true) {
             if (!input) return { value: 0, adjusted: false };
             const max = Math.max(0, Number(maximum) || 0);
             input.max = String(max);
@@ -1127,11 +1128,11 @@
             const safe = Number.isFinite(parsed) ? Math.max(0, parsed) : max;
             const clamped = Math.min(safe, max);
             const adjusted = !Number.isFinite(parsed) || parsed < 0 || parsed > max;
-            if (adjusted) input.value = String(clamped);
+            if (adjusted && rewriteAdjusted) input.value = String(clamped);
             return { value: clamped, adjusted };
         }
 
-        function limitReceivingLine(idx, changedField, changedInput) {
+        function limitReceivingLine(idx, changedField, changedInput, finalize = false) {
             const item = currentReceiveItems[idx];
             if (!item) return;
 
@@ -1142,7 +1143,11 @@
             const damagedInput = document.getElementById(`recvDamaged-${idx}`);
             const wrongInput = document.getElementById(`recvWrong-${idx}`);
 
-            const receivedResult = clampReceivingValue(receivedInput, remaining);
+            // Do not rewrite the field while the user is still typing. For
+            // example, `0.` is an unfinished decimal and must remain in place
+            // long enough for the user to enter `0.5`.
+            const preserveReceivedTyping = !finalize && changedField === 'received' && changedInput === receivedInput;
+            const receivedResult = clampReceivingValue(receivedInput, remaining, !preserveReceivedTyping);
             const received = receivedResult.value;
             let adjusted = receivedResult.adjusted;
 
