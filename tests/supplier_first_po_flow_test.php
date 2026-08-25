@@ -85,9 +85,10 @@ $checks = [
         && str_contains($api, "'procurement_source' => 'purchaser_forecast'")
         && str_contains($api, 'explain the buffer in 10 to 500 characters'),
     'Forecast lines are clearly visible to the GM' =>
-        str_contains($gmApi, 'procurement_source, forecast_reason, notes')
+        str_contains($gmApi, 'poi.procurement_source, poi.forecast_reason, poi.notes')
         && str_contains($gmPage, 'Fast-moving forecast')
-        && str_contains($gmPage, 'Confirmed Warehouse shortage'),
+        && str_contains($gmPage, 'Confirmed Warehouse shortage')
+        && str_contains($gmPage, 'System early reorder · Warehouse confirmed'),
     'PO saves both supplier packages and the converted Warehouse quantity' =>
         str_contains($api, "'supplier_order_quantity' => \"ALTER TABLE `purchase_order_items`")
         && str_contains($api, 'function applySupplierOrderTerms')

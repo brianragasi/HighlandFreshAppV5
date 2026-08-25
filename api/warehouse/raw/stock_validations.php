@@ -4,6 +4,7 @@ require_once dirname(__DIR__, 2) . '/bootstrap.php';
 require_once __DIR__ . '/ingredient_stock_helpers.php';
 require_once dirname(__DIR__, 2) . '/helpers/stock_validation_support.php';
 require_once dirname(__DIR__, 2) . '/helpers/procurement_notifications.php';
+require_once dirname(__DIR__, 2) . '/helpers/early_reorder.php';
 
 $currentUser = Auth::requireRole(['warehouse_raw', 'purchaser', 'general_manager']);
 $action = getParam('action', 'list');
@@ -377,7 +378,7 @@ function createStockValidation(PDO $db, array $currentUser): void {
             $existingStmt->execute([$itemId]);
             $existingNumber = $existingStmt->fetchColumn();
             if ($existingNumber) {
-                throw new InvalidArgumentException($stock[$nameColumn] . " is already confirmed as low stock ({$existingNumber})");
+                throw new InvalidArgumentException($stock[$nameColumn] . " already has an active stock confirmation ({$existingNumber})");
             }
 
             $stockOnFile = (float) $stock['current_stock'];
@@ -401,7 +402,31 @@ function createStockValidation(PDO $db, array $currentUser): void {
             $reorder = max((float) ($stock['reorder_point'] ?? 0), $minimum);
             $maximum = (float) ($stock['maximum_stock'] ?? 0);
             $target = $maximum > $reorder ? $maximum : ($reorder > 0 ? $reorder * 2 : 0);
-            $quantityNeeded = round($target - $physicalStock, 3);
+            $recommendationType = strtolower(trim((string) ($submitted['recommendation_type'] ?? 'low_stock')));
+            $forecast = null;
+            if ($recommendationType === 'early_reorder') {
+                if ($type !== 'ingredient') throw new InvalidArgumentException("Line {$line}: early-reorder forecasting is currently available for ingredients only");
+                $evidenceMap = ingredientEarlyReorderEvidence($db, [$itemId]);
+                $savedEvidence = $evidenceMap[$itemId] ?? null;
+                if (!$savedEvidence) throw new InvalidArgumentException("Line {$line}: usage evidence could not be calculated");
+                $forecast = calculateIngredientEarlyReorder([
+                    'usable_stock' => $physicalStock,
+                    'minimum_stock' => $minimum,
+                    'reorder_point' => $reorder,
+                    'maximum_stock' => $maximum,
+                    'issued_quantity_30d' => $savedEvidence['issued_quantity_30d'],
+                    'best_supplier_lead_days' => $savedEvidence['supplier_lead_days'],
+                    'active_po_balance' => $savedEvidence['on_order_quantity'],
+                ]);
+                if (empty($forecast['early_reorder_recommended'])) {
+                    throw new InvalidArgumentException($stock[$nameColumn] . ' is no longer projected to reach its reorder point before delivery');
+                }
+                $target = (float) $forecast['forecast_target_stock'];
+                $quantityNeeded = (float) $forecast['suggested_early_order_quantity'];
+            } else {
+                $recommendationType = 'low_stock';
+                $quantityNeeded = round($target - $physicalStock, 3);
+            }
             if ($quantityNeeded <= 0.0005) {
                 throw new InvalidArgumentException($stock[$nameColumn] . ' is already at or above its replenishment target');
             }
@@ -434,8 +459,10 @@ function createStockValidation(PDO $db, array $currentUser): void {
                 INSERT INTO stock_validation_items
                     (stock_validation_id, ingredient_id, mro_item_id, item_description, unit,
                      system_stock_before, physical_stock, stock_variance, variance_reason,
-                     reorder_point_at_validation, target_stock_at_validation, quantity_needed)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     reorder_point_at_validation, target_stock_at_validation, quantity_needed,
+                     recommendation_type, average_daily_issue_30d, supplier_lead_days,
+                     on_order_quantity, projected_stock_at_delivery, forecast_reason)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
             $itemStmt->execute([
                 $validationId,
@@ -450,6 +477,14 @@ function createStockValidation(PDO $db, array $currentUser): void {
                 $reorder,
                 $target,
                 $quantityNeeded,
+                $recommendationType,
+                $forecast['average_daily_issue_30d'] ?? null,
+                $forecast['supplier_lead_days'] ?? null,
+                $forecast['on_order_quantity'] ?? null,
+                $forecast['projected_stock_at_delivery'] ?? null,
+                $recommendationType === 'early_reorder'
+                    ? 'System forecast from 30-day Production issues, confirmed shelf stock, active PO balance, and supplier delivery time.'
+                    : null,
             ]);
         }
 
@@ -457,8 +492,8 @@ function createStockValidation(PDO $db, array $currentUser): void {
             $db,
             'purchaser',
             'stock_validated',
-            'Low stock confirmed by Warehouse',
-            count($items) . ' confirmed item' . (count($items) === 1 ? ' is' : 's are') . ' ready for supplier selection.',
+            'Stock need confirmed by Warehouse',
+            count($items) . ' confirmed item' . (count($items) === 1 ? ' is' : 's are') . ' ready for Purchasing review.',
             'stock_validation',
             $validationId
         );

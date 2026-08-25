@@ -14,6 +14,7 @@ require_once dirname(__DIR__) . '/helpers/supplier_mro_catalog.php';
 require_once dirname(__DIR__) . '/helpers/supplier_price_list_history.php';
 require_once dirname(__DIR__) . '/helpers/supplier_delivery_terms.php';
 require_once dirname(__DIR__) . '/warehouse/raw/ingredient_stock_helpers.php';
+require_once dirname(__DIR__) . '/helpers/early_reorder.php';
 
 // Supplier changes are handled only by the GM/Admin endpoint.
 $currentUser = Auth::requireRole(['purchaser', 'general_manager', 'admin']);
@@ -221,7 +222,8 @@ function handleGet($db, $action, $currentUser) {
             $supplier['business_stats'] = $statsStmt->fetch();
             $supplier['ingredients'] = addIngredientDemandEvidence(
                 $db,
-                supplierCatalogGetSupplierIngredients($db, (int) $id)
+                supplierCatalogGetSupplierIngredients($db, (int) $id),
+                (int) ($supplier['lead_time_days'] ?? 0)
             );
             $supplier['mro_items'] = supplierMroGetSupplierItems($db, (int) $id);
             
@@ -406,75 +408,32 @@ function updateSupplierItemPrice(PDO $db, array $currentUser): void {
 }
 
 /**
- * Attach auditable consumption evidence used by the purchaser's optional
- * fast-moving buffer. The rate is deliberately a 30-calendar-day rate, not
- * an opaque sales forecast: issued quantity / 30 x saved lead time.
+ * Attach auditable early-reorder evidence for the selected supplier.
+ * This is a deterministic calculation, not an opaque AI forecast:
+ * usable stock + active PO balance - (30-day daily use x supplier lead time).
  */
-function addIngredientDemandEvidence(PDO $db, array $ingredients): array {
-    if (!$ingredients || !auditTableExists($db, 'inventory_transactions')) {
-        return $ingredients;
-    }
-
-    $ingredientIds = array_values(array_unique(array_map(
-        'intval',
-        array_column($ingredients, 'ingredient_id')
-    )));
-    $ingredientIds = array_values(array_filter($ingredientIds));
-    if (!$ingredientIds) {
-        return $ingredients;
-    }
-
-    $placeholders = implode(',', array_fill(0, count($ingredientIds), '?'));
-    $usableStockSql = usableIngredientBatchStockSql('i.id', 'supplier_evidence_ib');
-    $stmt = $db->prepare("
-        SELECT
-            i.id AS ingredient_id,
-            {$usableStockSql} AS current_stock,
-            i.reorder_point,
-            i.maximum_stock,
-            COALESCE(i.lead_time_days, 0) AS lead_time_days,
-            COALESCE(SUM(CASE
-                WHEN it.transaction_type = 'production_issue'
-                 AND it.item_type = 'ingredient'
-                 AND it.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                THEN ABS(it.quantity) ELSE 0 END), 0) AS issued_quantity_30d,
-            COUNT(CASE
-                WHEN it.transaction_type = 'production_issue'
-                 AND it.item_type = 'ingredient'
-                 AND it.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                THEN 1 END) AS issue_transaction_count_30d,
-            COUNT(DISTINCT CASE
-                WHEN it.transaction_type = 'production_issue'
-                 AND it.item_type = 'ingredient'
-                 AND it.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                THEN DATE(it.created_at) END) AS issue_active_days_30d,
-            MAX(CASE
-                WHEN it.transaction_type = 'production_issue'
-                 AND it.item_type = 'ingredient'
-                THEN it.created_at END) AS last_issue_at
-        FROM ingredients i
-        LEFT JOIN inventory_transactions it
-          ON it.item_id = i.id
-         AND it.item_type = 'ingredient'
-        WHERE i.id IN ($placeholders)
-        GROUP BY i.id, i.current_stock, i.reorder_point, i.maximum_stock, i.lead_time_days
-    ");
-    $stmt->execute($ingredientIds);
-
-    $evidenceById = [];
-    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $evidence) {
-        $issued = (float) $evidence['issued_quantity_30d'];
-        $leadTimeDays = max(0, (int) $evidence['lead_time_days']);
-        $evidence['average_daily_issue_30d'] = round($issued / 30, 6);
-        $evidence['suggested_lead_time_buffer'] = round(($issued / 30) * $leadTimeDays, 3);
-        $evidence['forecast_window_days'] = 30;
-        $evidenceById[(int) $evidence['ingredient_id']] = $evidence;
-    }
+function addIngredientDemandEvidence(PDO $db, array $ingredients, int $supplierLeadDays = 0): array {
+    if (!$ingredients) return $ingredients;
+    $ingredientIds = array_values(array_filter(array_map('intval', array_column($ingredients, 'ingredient_id'))));
+    $baseEvidence = ingredientEarlyReorderEvidence($db, $ingredientIds);
 
     foreach ($ingredients as &$ingredient) {
         $ingredientId = (int) ($ingredient['ingredient_id'] ?? 0);
-        if (isset($evidenceById[$ingredientId])) {
-            $ingredient = array_merge($ingredient, $evidenceById[$ingredientId]);
+        if (isset($baseEvidence[$ingredientId])) {
+            $base = $baseEvidence[$ingredientId];
+            $evidence = calculateIngredientEarlyReorder([
+                'usable_stock' => $base['usable_stock'],
+                'minimum_stock' => $base['minimum_stock'],
+                'reorder_point' => $base['reorder_point'],
+                'maximum_stock' => $base['maximum_stock'],
+                'issued_quantity_30d' => $base['issued_quantity_30d'],
+                'active_po_balance' => $base['on_order_quantity'],
+            ], $supplierLeadDays > 0 ? $supplierLeadDays : null);
+            $evidence['issue_transaction_count_30d'] = $base['issue_transaction_count_30d'];
+            $evidence['current_stock'] = $base['usable_stock'];
+            $evidence['lead_time_days'] = $evidence['supplier_lead_days'];
+            $evidence['suggested_lead_time_buffer'] = $evidence['lead_time_demand'];
+            $ingredient = array_merge($ingredient, $evidence);
         }
     }
     unset($ingredient);

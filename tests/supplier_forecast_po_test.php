@@ -3,8 +3,9 @@
 $root = dirname(__DIR__);
 $source = file_get_contents($root . '/api/purchasing/purchase_orders.php');
 $supplierSource = file_get_contents($root . '/api/purchasing/suppliers.php');
+$forecastSource = file_get_contents($root . '/api/helpers/early_reorder.php');
 $pageSource = file_get_contents($root . '/html/purchasing/purchase_orders.html');
-if ($source === false || $supplierSource === false || $pageSource === false) {
+if ($source === false || $supplierSource === false || $forecastSource === false || $pageSource === false) {
     fwrite(STDERR, "Unable to load Purchase Order API source.\n");
     exit(1);
 }
@@ -107,15 +108,16 @@ try {
     if (!str_contains($signature, 'forecast:11')) {
         throw new RuntimeException('Forecast line is missing from duplicate-PO signature');
     }
-    if (!str_contains($supplierSource, "ABS(it.quantity)")
-        || !str_contains($supplierSource, "\$issued / 30")
-        || !str_contains($supplierSource, 'suggested_lead_time_buffer')) {
-        throw new RuntimeException('Recorded 30-day issue evidence is not attached to supplier items');
+    if (!str_contains($supplierSource, 'ingredientEarlyReorderEvidence')
+        || !str_contains($forecastSource, "transaction_type = 'production_issue'")
+        || !str_contains($forecastSource, 'active_po_balance')
+        || !str_contains($forecastSource, 'projected_stock_at_delivery')) {
+        throw new RuntimeException('Recorded usage, active PO balance, and projected-delivery evidence are not attached to supplier items');
     }
     if (!str_contains($pageSource, 'function applyForecastEvidence')
-        || !str_contains($pageSource, '30-day issue history:')
-        || !str_contains($pageSource, '÷ 30 days ×')) {
-        throw new RuntimeException('Purchaser cannot see or apply the evidence-based lead-time buffer');
+        || !str_contains($pageSource, 'System early-reorder evidence:')
+        || !str_contains($pageSource, 'projected at delivery')) {
+        throw new RuntimeException('Purchaser cannot see or apply the evidence-based early-reorder calculation');
     }
     if (!str_contains($pageSource, 'id="extraItemDialog"')
         || !str_contains($pageSource, 'What item do you need?')

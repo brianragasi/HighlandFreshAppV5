@@ -22,7 +22,7 @@ $checks = [
         && !str_contains($validationApi, 'INSERT INTO purchase_requests'),
     'a second open confirmation for the same item is blocked' =>
         str_contains($validationApi, "sv.status IN ('open','partially_ordered')")
-        && str_contains($validationApi, 'is already confirmed as low stock'),
+        && str_contains($validationApi, 'already has an active stock confirmation'),
     'old open PRSs are carried forward without deleting history' =>
         str_contains($support, 'migrateOpenLegacyPRSToStockValidations')
         && str_contains($support, "CONCAT('LEGACY-', pr.pr_number)")

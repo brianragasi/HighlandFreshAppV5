@@ -23,6 +23,7 @@ require_once dirname(dirname(__DIR__)) . '/helpers/plain_text.php';
 require_once __DIR__ . '/ingredient_stock_helpers.php';
 require_once dirname(dirname(__DIR__)) . '/helpers/ingredient_opening_stock.php';
 require_once dirname(dirname(__DIR__)) . '/helpers/procurement_notifications.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/early_reorder.php';
 
 // Require Warehouse Raw role
 $currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'production_staff', 'purchaser']);
@@ -508,10 +509,6 @@ function handleGet($db, $currentUser) {
                 WHERE i.is_active = 1
             ";
             
-            if (!$includeOk) {
-                $sql .= " AND {$usableStockSql} <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock');
-            }
-
             $sql .= " ORDER BY
                 CASE
                     WHEN {$usableStockSql} <= 0 THEN 1
@@ -524,12 +521,29 @@ function handleGet($db, $currentUser) {
             $stmt = $db->prepare($sql);
             $stmt->execute();
             $alerts = $stmt->fetchAll();
+            $forecastByIngredient = ingredientEarlyReorderEvidence($db, array_column($alerts, 'item_id'));
+            foreach ($alerts as &$alert) {
+                $forecast = $forecastByIngredient[(int) $alert['item_id']] ?? [];
+                $alert = array_merge($alert, $forecast);
+                if (($alert['stock_status'] ?? '') === 'OK' && !empty($forecast['early_reorder_recommended'])) {
+                    $alert['stock_status'] = 'ORDER_SOON';
+                    $alert['qty_to_reorder'] = $forecast['suggested_early_order_quantity'];
+                }
+            }
+            unset($alert);
+            if (!$includeOk) {
+                $alerts = array_values(array_filter($alerts, fn($alert) => ($alert['stock_status'] ?? '') !== 'OK'));
+            }
+            $severity = ['OUT_OF_STOCK' => 1, 'LOW' => 2, 'ORDER_SOON' => 3, 'OK' => 4];
+            usort($alerts, fn($a, $b) => ($severity[$a['stock_status']] ?? 9) <=> ($severity[$b['stock_status']] ?? 9)
+                ?: strcasecmp((string) $a['item_name'], (string) $b['item_name']));
             
             // Summary counts. Critical was merged into Low Stock — the single
             // low-inventory tier that triggers a Purchase Request.
             $summary = [
                 'out_of_stock' => 0,
                 'low' => 0,
+                'order_soon' => 0,
                 'ok' => 0,
                 'total_alerts' => 0
             ];

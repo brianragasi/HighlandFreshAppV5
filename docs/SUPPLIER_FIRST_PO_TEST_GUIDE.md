@@ -2,8 +2,8 @@
 
 ## The finished flow
 
-1. The system marks a raw material as low stock.
-2. Warehouse counts the actual quantity on the shelf and confirms it in **Stock Validation**.
+1. The system marks a raw material as **Low** when it reaches the reorder point. It can also mark an item **Order Soon** when recorded Production use is projected to bring it to the reorder point before a supplier can deliver.
+2. Warehouse counts the actual quantity on the shelf and confirms it in **Stock Validation**. Warehouse does not guess whether an item is fast-moving.
 3. Purchasing reviews each confirmed shortage and chooses to order it now, defer it to a chosen date, or close it without ordering and record why.
 4. For an item being ordered, Purchasing chooses a supplier first.
 5. The page automatically shows only confirmed shortages linked to that supplier.
@@ -109,6 +109,60 @@ Expected result:
 - The extra quantity does not change the Warehouse-confirmed shortage.
 - A short or missing reason is blocked.
 
+## Test 5A: Automatic Order Soon warning
+
+This is the evidence-based path. It is separate from the purchaser's manual **Add extra item** exception.
+
+### Required data
+
+Choose an active ingredient that has all of these:
+
+1. Usable stock is currently **above** its reorder point.
+2. At least one active accredited supplier is linked to it and has a delivery lead time.
+3. Production has issued the ingredient during the last 30 calendar days.
+4. No active PO already provides enough incoming quantity to prevent the projected shortage.
+
+The system calculates:
+
+```text
+average daily use = total Production issues during the last 30 days / 30
+expected use before delivery = average daily use × supplier lead-time days
+projected stock at delivery = usable stock + outstanding active PO quantity - expected use before delivery
+```
+
+The item becomes **Order Soon** only when its current usable stock is above the reorder point but its projected stock at delivery is at or below that point.
+
+### Browser test
+
+1. Complete normal Production runs or material issues so the ingredient has genuine `production_issue` history. Do not enter a fake Warehouse opinion such as "fast-moving".
+2. Sign in as Warehouse Raw and open **Stock Validation**.
+3. Find the blue **Order Soon** row. Confirm it shows average daily use and projected stock at delivery.
+4. Select the row and click **Confirm Shelf Counts**.
+5. Enter the real shelf count. Submit the stock check.
+6. Sign in as Purchaser and open **New PO**.
+7. Select a supplier linked to the ingredient. Confirm the PO line says **Early reorder confirmed by Warehouse** and displays daily use, delivery days, and projected stock.
+8. Submit the PO for GM approval.
+9. Sign in as GM. Confirm the line says **System early reorder · Warehouse confirmed** and shows the calculation evidence.
+10. Approve the PO. Return to Warehouse Stock Validation and refresh.
+
+Expected result:
+
+- The warning is based on recorded Production consumption, not a Warehouse guess.
+- Warehouse only validates the physical stock.
+- Purchasing still chooses the supplier and order commitment.
+- An active PO balance is included in the calculation, so an adequately covered item no longer produces another early-order warning.
+- If an operational event is not visible in historical usage, Purchasing may still use **Add extra item**, but must write a reason for GM review.
+
+### Deterministic developer check
+
+If the current demonstration data has no natural **Order Soon** item, run:
+
+```powershell
+php tests/early_reorder_flow_test.php
+```
+
+The test verifies a known case: 10,000 usable units, 2,400 units/day, and a 3-day delivery produce 2,800 projected units. Against a 3,000 reorder point, the system recommends an early order. The same test adds 5,000 units on an active PO and verifies that the duplicate warning is suppressed.
+
 ## Test 6: Supplier price update
 
 1. Select Supplier A and find a confirmed shortage.
@@ -193,6 +247,7 @@ php tests/stock_validation_direct_flow_test.php
 php tests/purchasing_stock_decision_test.php
 php tests/supplier_first_po_flow_test.php
 php tests/supplier_forecast_po_test.php
+php tests/early_reorder_flow_test.php
 php tests/supplier_mro_po_flow_test.php
 php tests/purchaser_price_list_test.php
 php tests/purchasing_choice_eligibility_test.php

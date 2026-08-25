@@ -38,6 +38,12 @@ function ensureStockValidationSupport(PDO $db): void {
             reorder_point_at_validation DECIMAL(12,3) NOT NULL,
             target_stock_at_validation DECIMAL(12,3) NOT NULL,
             quantity_needed DECIMAL(12,3) NOT NULL,
+            recommendation_type VARCHAR(30) NOT NULL DEFAULT 'low_stock',
+            average_daily_issue_30d DECIMAL(12,6) NULL,
+            supplier_lead_days INT NULL,
+            on_order_quantity DECIMAL(12,3) NULL,
+            projected_stock_at_delivery DECIMAL(12,3) NULL,
+            forecast_reason VARCHAR(500) NULL,
             is_queue_active TINYINT(1) NOT NULL DEFAULT 1,
             purchasing_decision ENUM('pending','deferred','closed_without_order') NOT NULL DEFAULT 'pending',
             deferred_until DATE NULL,
@@ -57,6 +63,19 @@ function ensureStockValidationSupport(PDO $db): void {
     ");
     if (!auditColumnExists($db, 'stock_validation_items', 'is_queue_active')) {
         $db->exec("ALTER TABLE stock_validation_items ADD COLUMN is_queue_active TINYINT(1) NOT NULL DEFAULT 1 AFTER quantity_needed");
+    }
+    $forecastColumns = [
+        'recommendation_type' => "VARCHAR(30) NOT NULL DEFAULT 'low_stock' AFTER quantity_needed",
+        'average_daily_issue_30d' => 'DECIMAL(12,6) NULL AFTER recommendation_type',
+        'supplier_lead_days' => 'INT NULL AFTER average_daily_issue_30d',
+        'on_order_quantity' => 'DECIMAL(12,3) NULL AFTER supplier_lead_days',
+        'projected_stock_at_delivery' => 'DECIMAL(12,3) NULL AFTER on_order_quantity',
+        'forecast_reason' => 'VARCHAR(500) NULL AFTER projected_stock_at_delivery',
+    ];
+    foreach ($forecastColumns as $column => $definition) {
+        if (!auditColumnExists($db, 'stock_validation_items', $column)) {
+            $db->exec("ALTER TABLE stock_validation_items ADD COLUMN {$column} {$definition}");
+        }
     }
     if (!auditColumnExists($db, 'stock_validation_items', 'purchasing_decision')) {
         $db->exec("ALTER TABLE stock_validation_items ADD COLUMN purchasing_decision ENUM('pending','deferred','closed_without_order') NOT NULL DEFAULT 'pending' AFTER is_queue_active");

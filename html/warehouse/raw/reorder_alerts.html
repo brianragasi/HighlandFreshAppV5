@@ -188,7 +188,7 @@
                     How reorder alerts work
                 </div>
                 <div class="collapse-content">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                         <div class="flex items-start gap-3">
                             <span class="badge badge-ghost badge-sm flex-shrink-0">OUT</span>
                             <div>
@@ -201,6 +201,13 @@
                             <div>
                                 <p class="font-medium">Low Stock</p>
                                 <p class="text-base-content/60 text-xs">At or below the reorder point. Confirm the shelf count so Purchasing can act.</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="badge badge-info badge-sm flex-shrink-0">ORDER SOON</span>
+                            <div>
+                                <p class="font-medium">Early-reorder warning</p>
+                                <p class="text-base-content/60 text-xs">Recorded Production use may bring stock to the reorder point before a linked supplier can deliver. Confirm the shelf count first.</p>
                             </div>
                         </div>
                         <div class="md:col-span-2 flex items-start gap-3 rounded-lg bg-info/10 border border-info/20 p-3">
@@ -226,6 +233,7 @@
                             <option value="">All Alerts</option>
                             <option value="OUT_OF_STOCK">Out of Stock</option>
                             <option value="LOW">Low Stock</option>
+                            <option value="ORDER_SOON">Order Soon</option>
                         </select>
                         <select class="select select-bordered select-sm w-full md:w-40" id="categoryFilter">
                             <option value="">All Categories</option>
@@ -716,12 +724,13 @@
             const ctaLabelEl = document.getElementById('reorderHeroCtaLabel');
             if (!hero) return;
 
-            // Count only actionable alerts (Out / Low), not OK. Critical items
+            // Count only actionable alerts (Out / Low / Order Soon), not OK. Critical items
             // were folded into Low at ingest.
             const actionable = allAlerts.filter(a => a.stock_status !== 'OK');
             const out = allAlerts.filter(a => a.stock_status === 'OUT_OF_STOCK').length;
             const low = allAlerts.filter(a => a.stock_status === 'LOW').length;
-            const total = out + low;
+            const orderSoon = allAlerts.filter(a => a.stock_status === 'ORDER_SOON').length;
+            const total = out + low + orderSoon;
 
             if (total === 0) {
                 hero.classList.add('hidden');
@@ -734,6 +743,7 @@
             const parts = [];
             if (out) parts.push(`${out} out of stock`);
             if (low) parts.push(`${low} low`);
+            if (orderSoon) parts.push(`${orderSoon} order soon`);
             const pendingCount = actionable.filter(a => getOrderQty(a) > 0 && hasCoveredPR(a)).length;
             if (pendingCount) parts.push(`${pendingCount} already pending`);
             if (breakdownEl) breakdownEl.textContent = parts.join(' · ');
@@ -828,11 +838,15 @@
                 const id = Number(alert.item_id);
                 const saved = finiteNumber(alert.current_stock) || 0;
                 const unit = alert.unit_of_measure || 'units';
+                const forecastSummary = alert.stock_status === 'ORDER_SOON'
+                    ? `<div class="text-xs text-info mt-1"><i class="fas fa-chart-line mr-1"></i>${displayAuditNumber(alert.average_daily_issue_30d)} ${escapeHtml(unit)}/day · ${displayAuditNumber(alert.supplier_lead_days)}-day delivery · projected ${displayAuditNumber(alert.projected_stock_at_delivery)} ${escapeHtml(unit)} at delivery</div>`
+                    : '';
                 return `
                     <tr data-audit-item-id="${id}">
                         <td>
                             <div class="font-semibold">${escapeHtml(alert.item_name || 'Unnamed item')}</div>
                             <div class="text-xs text-base-content/50 font-mono">${escapeHtml(alert.item_code || '')}</div>
+                            ${forecastSummary}
                         </td>
                         <td class="text-right font-mono">${displayAuditNumber(saved)} <span class="text-xs text-base-content/55">${escapeHtml(unit)}</span></td>
                         <td>
@@ -965,7 +979,7 @@
                     return;
                 }
                 const neededBy = new Date();
-                neededBy.setDate(neededBy.getDate() + parseInt(alert.lead_time_days || 7, 10));
+                neededBy.setDate(neededBy.getDate() + parseInt((alert.stock_status === 'ORDER_SOON' ? alert.supplier_lead_days : alert.lead_time_days) || 7, 10));
                 if (!earliestNeededBy || neededBy < earliestNeededBy) earliestNeededBy = neededBy;
 
                 items.push({
@@ -975,7 +989,8 @@
                     quantity: qty,
                     unit: alert.unit_of_measure || 'units',
                     estimated_unit_price: parseFloat(alert.unit_cost) || 0,
-                    purpose: 'Stock below reorder point',
+                    purpose: alert.stock_status === 'ORDER_SOON' ? 'System early-reorder forecast' : 'Stock below reorder point',
+                    recommendation_type: alert.stock_status === 'ORDER_SOON' ? 'early_reorder' : 'low_stock',
                     audited_stock: counted,
                     audit_reason: reason || null,
                     notes: `Usable stock confirmed from Reorder Alerts. Usable balance: ${saved} ${alert.unit_of_measure || ''}. Confirmed: ${counted} ${alert.unit_of_measure || ''}.`
@@ -985,7 +1000,7 @@
             error.textContent = '';
             error.classList.add('hidden');
             const payload = {
-                notes: `${items.length} low-stock item${items.length === 1 ? '' : 's'} physically counted by Warehouse.`,
+                notes: `${items.length} stock need${items.length === 1 ? '' : 's'} physically counted by Warehouse.`,
                 items
             };
 
@@ -1056,12 +1071,13 @@
                 return;
             }
 
-            // Sort. Default urgency desc puts Out -> Low -> OK.
-            // Higher number = more urgent (0 = OK, 2 = Out).
+            // Sort. Default urgency desc puts Out -> Low -> Order Soon -> OK.
+            // Higher number = more urgent.
             const urgencyRank = (a) => {
                 switch (a.stock_status) {
-                    case 'OUT_OF_STOCK': return 2;
-                    case 'LOW':         return 1;
+                    case 'OUT_OF_STOCK': return 3;
+                    case 'LOW':         return 2;
+                    case 'ORDER_SOON':  return 1;
                     case 'OK':          return 0;
                     default:            return -1;
                 }
@@ -1107,11 +1123,13 @@
                 const statusBadgeClass = {
                     'OUT_OF_STOCK': 'badge-ghost',
                     'LOW':          'badge-warning',
+                    'ORDER_SOON':   'badge-info',
                     'OK':           'badge-success'
                 };
                 const statusText = {
                     'OUT_OF_STOCK': 'OUT',
                     'LOW':          'LOW',
+                    'ORDER_SOON':   'ORDER SOON',
                     'OK':           'OK'
                 };
                 let statusBadge, statusDot, barColor, avatarColor, avatarIcon;
@@ -1130,6 +1148,13 @@
                         avatarColor = 'bg-warning/10 text-warning';
                         avatarIcon = 'fa-exclamation-triangle';
                         break;
+                    case 'ORDER_SOON':
+                        statusBadge = '<span class="badge badge-info badge-sm">ORDER SOON</span>';
+                        statusDot = 'bg-info';
+                        barColor = 'bg-info';
+                        avatarColor = 'bg-info/10 text-info';
+                        avatarIcon = 'fa-chart-line';
+                        break;
                     case 'OK':
                     default:
                         statusBadge = '<span class="badge badge-success badge-sm">OK</span>';
@@ -1143,7 +1168,7 @@
                 // Stock progress bar. Capped at 100% to keep the bar from
                 // overflowing when current > max.
                 const pct = parLevel > 0 ? Math.min(100, (stock / parLevel) * 100) : 0;
-                const leadDays = parseInt(alert.lead_time_days) || 7;
+                const leadDays = parseInt(alert.stock_status === 'ORDER_SOON' ? alert.supplier_lead_days : alert.lead_time_days) || 7;
                 // Lead time color: red if > 7 days (urgency multiplier), yellow 4-7, green <= 3
                 let leadBadge = 'badge-ghost';
                 if (leadDays <= 3) leadBadge = 'badge-success';
@@ -1197,6 +1222,7 @@
                                 <div class="min-w-0">
                                     <div class="font-semibold text-sm truncate">${safeName}</div>
                                     <div class="text-xs text-base-content/50 font-mono">${safeCode}</div>
+                                    ${alert.stock_status === 'ORDER_SOON' ? `<div class="text-[11px] text-info mt-0.5">Uses about ${Number(alert.average_daily_issue_30d || 0).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${safeUnit}/day · ${Number(alert.projected_stock_at_delivery || 0).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${safeUnit} projected at delivery</div>` : ''}
                                 </div>
                             </div>
                         </td>
@@ -1240,6 +1266,7 @@
             switch (status) {
                 case 'OUT_OF_STOCK': return '<span class="badge badge-ghost">OUT</span>';
                 case 'LOW': return '<span class="badge badge-warning">LOW</span>';
+                case 'ORDER_SOON': return '<span class="badge badge-info">ORDER SOON</span>';
                 case 'OK': return '<span class="badge badge-success">OK</span>';
                 default: return '<span class="badge">' + status + '</span>';
             }

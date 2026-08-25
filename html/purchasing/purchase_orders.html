@@ -1391,7 +1391,9 @@
                             ...item,
                             source_purchase_request_id: Number(pr.id),
                             source_pr_number: pr.validation_number || pr.pr_number || `Validation ${pr.id}`,
-                            source_pr_purpose: 'Physical shelf count confirmed by Warehouse',
+                            source_pr_purpose: item.recommendation_type === 'early_reorder'
+                                ? 'Early-reorder forecast confirmed by Warehouse'
+                                : 'Physical shelf count confirmed by Warehouse',
                             supplier_unit_price: Number(supplierItem?.reference_unit_price || 0),
                             supplier_purchase_format: supplierItem?.purchase_format || 'direct_unit',
                             supplier_offer_label: supplierItem?.offer_label || `Direct per ${item.unit || 'unit'}`,
@@ -1610,8 +1612,8 @@
             });
             const repeatedProductCount = Array.from(productCounts.values()).filter(count => count > 1).length;
             const otherSupplierCount = Math.max(0, allOpenItems.length - eligiblePrItems.length);
-            title.textContent = `${eligiblePrItems.length} confirmed low-stock item${eligiblePrItems.length === 1 ? '' : 's'} available from ${supplier.supplier_name}`;
-            meta.textContent = `The supplier filter is applied across every confirmed shortage. All matching lines are selected automatically; every shelf check remains linked for review.`;
+            title.textContent = `${eligiblePrItems.length} confirmed stock need${eligiblePrItems.length === 1 ? '' : 's'} available from ${supplier.supplier_name}`;
+            meta.textContent = `The supplier filter is applied across low-stock and early-reorder confirmations. All matching lines are selected automatically; every Warehouse check remains linked for review.`;
             itemContainer.innerHTML = `
                 <span class="badge badge-primary badge-outline">${eligiblePrItems.length} shown for this supplier</span>
                 <span class="badge badge-outline">${allOpenItems.length} total open</span>
@@ -1648,6 +1650,13 @@
             const supplierOffer = isPackaged
                 ? `${item.supplier_offer_label} at ${formatCurrency(item.supplier_quoted_price)} each`
                 : `${formatCurrency(item.supplier_unit_price)} per ${warehouseUnit}`;
+            const isEarlyReorder = item.recommendation_type === 'early_reorder';
+            const confirmationLabel = isEarlyReorder
+                ? 'Early reorder confirmed by Warehouse'
+                : 'Physical count confirmed by Warehouse';
+            const forecastEvidence = isEarlyReorder
+                ? `<div class="text-xs text-info mt-1"><i class="fas fa-chart-line mr-1"></i>Uses ${plainNumber(item.average_daily_issue_30d || 0)} ${escapeHtml(warehouseUnit)}/day · ${plainNumber(item.supplier_lead_days || 0)}-day delivery · projected ${plainNumber(item.projected_stock_at_delivery || 0)} ${escapeHtml(warehouseUnit)} at delivery</div>`
+                : '';
 
             const row = document.createElement('tr');
             row.id = `lineItem-${rowId}`;
@@ -1661,7 +1670,8 @@
                 </td>
                 <td>
                     <div class="font-semibold">${escapeHtml(item.ingredient_name || item.item_description || 'Requested item')}</div>
-                    <div class="text-xs text-primary mt-1"><i class="fas fa-clipboard-check mr-1"></i>Physical count confirmed by Warehouse</div>
+                    <div class="text-xs ${isEarlyReorder ? 'text-info' : 'text-primary'} mt-1"><i class="fas ${isEarlyReorder ? 'fa-chart-line' : 'fa-clipboard-check'} mr-1"></i>${confirmationLabel}</div>
+                    ${forecastEvidence}
                 </td>
                 <td>
                     <div class="font-semibold">${plainNumber(remaining)} ${escapeHtml(warehouseUnit)}</div>
@@ -1859,7 +1869,9 @@
             const supplierUnit = isPackaged ? (item.package_type || 'package') : (item.unit_of_measure || 'units');
             const supplierPrice = isPackaged ? Number(item.quoted_price || 0) : Number(item.reference_unit_price || 0);
             const requiresWholePackages = isPackaged && Number(item.enforce_whole_packages || 0) === 1;
-            const suggestedStockBuffer = Math.max(0, Number(item.suggested_lead_time_buffer || 0));
+            const suggestedStockBuffer = item.early_reorder_recommended
+                ? Math.max(0, Number(item.suggested_early_order_quantity || 0))
+                : 0;
             const suggestedSupplierQuantity = suggestedStockBuffer > 0 && stockPerSupplierUnit > 0
                 ? (requiresWholePackages
                     ? Math.ceil(suggestedStockBuffer / stockPerSupplierUnit)
@@ -1884,16 +1896,20 @@
 
             const issued30 = Math.max(0, Number(item.issued_quantity_30d || 0));
             const issueCount = Math.max(0, Number(item.issue_transaction_count_30d || 0));
-            const leadDays = Math.max(0, Number(item.lead_time_days || 0));
+            const leadDays = Math.max(0, Number(item.supplier_lead_days || item.lead_time_days || 0));
+            const usable = Math.max(0, Number(item.usable_stock ?? item.current_stock ?? 0));
+            const onOrder = Math.max(0, Number(item.on_order_quantity || 0));
+            const projected = Math.max(0, Number(item.projected_stock_at_delivery || 0));
+            const threshold = Math.max(0, Number(item.forecast_reorder_threshold ?? item.reorder_point ?? 0));
             const suggestion = document.getElementById('extraItemSuggestion');
             if (config.suggestedSupplierQuantity > 0) {
-                suggestion.textContent = `Suggested: ${plainNumber(config.suggestedSupplierQuantity)} ${config.supplierUnit}${config.suggestedSupplierQuantity === 1 ? '' : 's'}, based on recent usage and the ${leadDays}-day delivery time.`;
-                const reason = `Recent usage: ${plainNumber(issued30)} ${item.unit_of_measure || 'units'} in ${issueCount} stock issue${issueCount === 1 ? '' : 's'} over the last 30 days; supplier delivery time: ${leadDays} day${leadDays === 1 ? '' : 's'}.`;
+                suggestion.textContent = `System recommends ${plainNumber(config.suggestedSupplierQuantity)} ${config.supplierUnit}${config.suggestedSupplierQuantity === 1 ? '' : 's'}: ${plainNumber(usable)} on hand + ${plainNumber(onOrder)} already ordered − expected use during ${leadDays}-day delivery = ${plainNumber(projected)}, at/below the ${plainNumber(threshold)} reorder point.`;
+                const reason = `System early-reorder evidence: ${plainNumber(issued30)} ${item.unit_of_measure || 'units'} issued in ${issueCount} Production issue${issueCount === 1 ? '' : 's'} over 30 days; ${plainNumber(usable)} usable; ${plainNumber(onOrder)} already ordered; ${leadDays}-day supplier delivery; projected stock ${plainNumber(projected)} versus reorder point ${plainNumber(threshold)}.`;
                 if (!document.getElementById('extraItemReason').value.trim()) {
                     document.getElementById('extraItemReason').value = reason.slice(0, 500);
                 }
             } else {
-                suggestion.textContent = 'No automatic suggestion is available. Enter the amount needed and explain your estimate.';
+                suggestion.textContent = `No automatic early-order warning for this supplier. Current usable stock is ${plainNumber(usable)}, projected stock at delivery is ${plainNumber(projected)}, and the reorder point is ${plainNumber(threshold)}. You may still enter a documented operational exception.`;
             }
         }
 
@@ -2010,9 +2026,14 @@
             const row = document.getElementById(`lineItem-${rowId}`);
             const issued30 = Math.max(0, Number(item.issued_quantity_30d || 0));
             const issueCount = Math.max(0, Number(item.issue_transaction_count_30d || 0));
-            const activeDays = Math.max(0, Number(item.issue_active_days_30d || 0));
-            const leadDays = Math.max(0, Number(item.lead_time_days || 0));
-            const suggestedStockBuffer = Math.max(0, Number(item.suggested_lead_time_buffer || 0));
+            const leadDays = Math.max(0, Number(item.supplier_lead_days || item.lead_time_days || 0));
+            const suggestedStockBuffer = item.early_reorder_recommended
+                ? Math.max(0, Number(item.suggested_early_order_quantity || 0))
+                : 0;
+            const usable = Math.max(0, Number(item.usable_stock ?? item.current_stock ?? 0));
+            const onOrder = Math.max(0, Number(item.on_order_quantity || 0));
+            const projected = Math.max(0, Number(item.projected_stock_at_delivery || 0));
+            const threshold = Math.max(0, Number(item.forecast_reorder_threshold ?? item.reorder_point ?? 0));
             const orderInput = document.getElementById(`order-${rowId}`);
             const reasonInput = document.getElementById(`forecast-reason-${rowId}`);
             const coverage = document.getElementById(`coverage-${rowId}`);
@@ -2020,7 +2041,7 @@
 
             if (!row || !coverage || !orderInput || !reasonInput) return;
             if (issued30 <= 0 || issueCount <= 0 || leadDays <= 0 || suggestedStockBuffer <= 0 || stockPerSupplierUnit <= 0) {
-                row.dataset.forecastEvidenceText = 'No automatic buffer is available: record production issues and a supplier lead time, or enter a documented manual forecast.';
+                row.dataset.forecastEvidenceText = `No automatic early-order warning: projected stock at delivery is ${plainNumber(projected)} ${stockUnit}, compared with a ${plainNumber(threshold)} ${stockUnit} reorder point. A documented manual exception is still allowed.`;
                 return;
             }
 
@@ -2030,9 +2051,9 @@
                 : Math.ceil(rawSupplierQuantity * 1000) / 1000;
             orderInput.value = String(suggestedSupplierQuantity);
 
-            const reason = `30-day issue history: ${plainNumber(issued30)} ${stockUnit} in ${issueCount} transaction${issueCount === 1 ? '' : 's'} across ${activeDays} active day${activeDays === 1 ? '' : 's'}; saved lead time: ${leadDays} day${leadDays === 1 ? '' : 's'}; calculated lead-time buffer: ${plainNumber(suggestedStockBuffer)} ${stockUnit}.`;
+            const reason = `System early-reorder evidence: ${plainNumber(issued30)} ${stockUnit} issued in ${issueCount} Production issue${issueCount === 1 ? '' : 's'} over 30 days; ${plainNumber(usable)} usable; ${plainNumber(onOrder)} already ordered; ${leadDays}-day supplier delivery; projected stock ${plainNumber(projected)} versus reorder point ${plainNumber(threshold)}.`;
             reasonInput.value = reason.slice(0, 500);
-            row.dataset.forecastEvidenceText = `Suggested from recorded usage: ${plainNumber(issued30)} ${stockUnit} ÷ 30 days × ${leadDays} lead-time days = ${plainNumber(suggestedStockBuffer)} ${stockUnit}.`;
+            row.dataset.forecastEvidenceText = `System calculation: ${plainNumber(usable)} usable + ${plainNumber(onOrder)} on active POs − (${plainNumber(issued30)} ÷ 30 × ${leadDays}) = ${plainNumber(projected)} ${stockUnit} projected at delivery. Suggested early order: ${plainNumber(suggestedStockBuffer)} ${stockUnit}.`;
         }
 
         function handleForecastOrderInput(rowId) {

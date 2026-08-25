@@ -240,7 +240,17 @@ function handleGet($db, $action) {
                     ,COALESCE(m.is_perishable, 0) as mro_is_perishable
                     ,COALESCE(source_validation.id, source_pr.id) as source_purchase_request_id
                     ,COALESCE(source_validation.validation_number, source_pr.pr_number) as source_pr_number
-                    ,CASE WHEN source_validation.id IS NOT NULL THEN 'Physical shelf count confirmed by Warehouse' ELSE source_pr.purpose END as source_pr_purpose
+                    ,CASE
+                        WHEN source_validation_item.recommendation_type = 'early_reorder' THEN 'Early-reorder forecast confirmed by Warehouse'
+                        WHEN source_validation.id IS NOT NULL THEN 'Physical shelf count confirmed by Warehouse'
+                        ELSE source_pr.purpose
+                     END as source_pr_purpose
+                    ,source_validation_item.recommendation_type
+                    ,source_validation_item.average_daily_issue_30d
+                    ,source_validation_item.supplier_lead_days AS forecast_supplier_lead_days
+                    ,source_validation_item.on_order_quantity AS forecast_on_order_quantity
+                    ,source_validation_item.projected_stock_at_delivery
+                    ,source_validation_item.reorder_point_at_validation
                     ,COALESCE((
                         SELECT svip.quantity
                         FROM stock_validation_item_po svip

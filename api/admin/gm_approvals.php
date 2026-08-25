@@ -93,11 +93,16 @@ function handleGet($db, $action, $currentUser) {
             // Get items for each order
             foreach ($orders as &$order) {
                 $itemsStmt = $db->prepare("
-                    SELECT item_description, quantity, unit, unit_price, total_amount,
-                           purchase_request_item_id, stock_validation_item_id, procurement_source, forecast_reason, notes,
+                    SELECT poi.item_description, poi.quantity, poi.unit, poi.unit_price, poi.total_amount,
+                           poi.purchase_request_item_id, poi.stock_validation_item_id, poi.procurement_source, poi.forecast_reason, poi.notes,
                            supplier_order_quantity, supplier_order_unit,
-                           supplier_order_unit_price, stock_quantity_per_supplier_unit
-                    FROM purchase_order_items WHERE po_id = ?
+                           supplier_order_unit_price, stock_quantity_per_supplier_unit,
+                           svi.recommendation_type, svi.average_daily_issue_30d,
+                           svi.supplier_lead_days, svi.on_order_quantity,
+                           svi.projected_stock_at_delivery, svi.reorder_point_at_validation
+                    FROM purchase_order_items poi
+                    LEFT JOIN stock_validation_items svi ON svi.id = poi.stock_validation_item_id
+                    WHERE poi.po_id = ?
                 ");
                 $itemsStmt->execute([$order['id']]);
                 $order['items'] = $itemsStmt->fetchAll();
