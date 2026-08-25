@@ -25,6 +25,11 @@ $checks = [
         str_contains($files['po_page'], 'getConfirmedLowStock()')
         && str_contains($files['po_page'], 'getScopedWarehouseRequests()')
         && str_contains($files['po_api'], 'supplier_ingredients'),
+    'system recommends relevant suppliers before Purchasing chooses' =>
+        str_contains($files['po_page'], 'function rankRelevantSuppliers')
+        && str_contains($files['po_page'], 'Covers everything')
+        && str_contains($files['po_page'], 'Best match')
+        && str_contains($files['po_page'], 'All matching lines are selected automatically'),
     'fast-moving dropdown is built from the selected supplier catalog' =>
         str_contains($files['po_page'], 'directSupplierIngredients = response?.data?.ingredients || []')
         && str_contains($files['po_page'], 'buildDirectItemOptions()')
@@ -64,4 +69,3 @@ if ($failed) {
 }
 
 echo "Professor procurement-flow checks passed.\n";
-

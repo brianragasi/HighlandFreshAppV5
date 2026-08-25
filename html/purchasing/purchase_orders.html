@@ -248,26 +248,20 @@
                             New Purchase Order
                         </h2>
 
-                        <section id="purchasingDecisionPanel" class="hidden rounded-xl border border-warning/30 bg-warning/5 p-4 mb-6" aria-labelledby="purchasingDecisionTitle">
-                            <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-2 mb-3">
+                        <section class="rounded-xl border border-primary/30 bg-primary/5 p-4 mb-5" aria-labelledby="supplierFirstTitle">
+                            <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,32rem)] gap-4 items-end">
                                 <div>
-                                    <h3 id="purchasingDecisionTitle" class="font-bold"><i class="fas fa-scale-balanced text-warning mr-2"></i>Confirmed items needing your decision</h3>
-                                    <p class="text-sm text-base-content/65 mt-1">To order an item, choose its supplier below. If it should not be ordered now, defer it or close it with a reason.</p>
+                                    <h3 id="supplierFirstTitle" class="font-bold"><span class="badge badge-primary mr-2">Step 1</span>Choose a supplier for the confirmed needs</h3>
+                                    <p id="confirmedNeedsSummary" class="text-sm text-base-content/65 mt-2">Loading the materials confirmed by Warehouse...</p>
                                 </div>
-                                <span id="purchasingDecisionCount" class="badge badge-warning badge-outline"></span>
-                            </div>
-                            <div id="purchasingDecisionItems" class="grid grid-cols-1 xl:grid-cols-2 gap-3"></div>
-                        </section>
-
-                        <section id="pausedDecisionPanel" class="hidden rounded-xl border border-base-300 bg-base-200/40 p-4 mb-6" aria-labelledby="pausedDecisionTitle">
-                            <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-2 mb-3">
-                                <div>
-                                    <h3 id="pausedDecisionTitle" class="font-bold"><i class="fas fa-clock-rotate-left text-base-content/60 mr-2"></i>Deferred or closed items</h3>
-                                    <p class="text-sm text-base-content/65 mt-1">These are not orderable right now. Reopen one if Purchasing needs to reconsider it.</p>
+                                <div class="form-control">
+                                    <label class="label pt-0"><span class="label-text font-semibold">Supplier *</span></label>
+                                    <select id="poSupplier" class="select select-bordered w-full" required onchange="onMainSupplierChange()">
+                                        <option value="">Loading accredited suppliers...</option>
+                                    </select>
                                 </div>
-                                <span id="pausedDecisionCount" class="badge badge-outline"></span>
                             </div>
-                            <div id="pausedDecisionItems" class="grid grid-cols-1 xl:grid-cols-2 gap-3"></div>
+                            <div id="supplierRecommendationList" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 mt-4"></div>
                         </section>
 
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -310,15 +304,6 @@
                                         <span class="label-text-alt mt-1">At least 10 characters. This explanation is saved with the Purchase Order.</span>
                                     </label>
                                 </div>
-                            </div>
-                            <div class="form-control">
-                                <label class="label"><span class="label-text">Supplier *</span></label>
-                                <select id="poSupplier" class="select select-bordered w-full" required onchange="onMainSupplierChange()">
-                                    <option value="">Loading accredited suppliers...</option>
-                                </select>
-                                <label class="label">
-                                    <span class="label-text-alt text-base-content/50">Choose the supplier first. Validated low-stock items it can provide will appear automatically.</span>
-                                </label>
                             </div>
                             <input type="hidden" id="poRequisition" value="">
                             <div class="form-control md:col-span-2">
@@ -406,6 +391,33 @@
                                 </table>
                             </div>
                         </div>
+
+                        <section id="purchasingDecisionPanel" class="hidden rounded-xl border border-warning/30 bg-warning/5 p-4 mb-4" aria-labelledby="purchasingDecisionTitle">
+                            <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-2 mb-3">
+                                <div>
+                                    <h3 id="purchasingDecisionTitle" class="font-bold"><i class="fas fa-scale-balanced text-warning mr-2"></i>Items not covered by this PO</h3>
+                                    <p id="purchasingDecisionHelp" class="text-sm text-base-content/65 mt-1">Choose a supplier above to build its PO. Use these actions only when an item should wait or should not be ordered.</p>
+                                </div>
+                                <span id="purchasingDecisionCount" class="badge badge-warning badge-outline"></span>
+                            </div>
+                            <div id="purchasingDecisionItems" class="grid grid-cols-1 xl:grid-cols-2 gap-3"></div>
+                        </section>
+
+                        <details id="pausedDecisionPanel" class="hidden rounded-xl border border-base-300 bg-base-200/40 mb-6" aria-labelledby="pausedDecisionTitle">
+                            <summary class="cursor-pointer list-none p-4 flex items-center justify-between gap-3">
+                                <span id="pausedDecisionTitle" class="font-bold"><i class="fas fa-clock-rotate-left text-base-content/60 mr-2"></i>Deferred or closed items</span>
+                                <span id="pausedDecisionCount" class="badge badge-outline"></span>
+                            </summary>
+                            <div class="border-t border-base-300 p-4 pt-3">
+                                <p class="text-sm text-base-content/65 mb-3">These are not orderable right now. Reopen one only when Purchasing needs to reconsider it.</p>
+                                <div class="overflow-x-auto">
+                                    <table class="table table-sm bg-base-100">
+                                        <thead><tr><th>Material</th><th>Decision</th><th>Reason</th><th></th></tr></thead>
+                                        <tbody id="pausedDecisionItems"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </details>
 
                         <div class="flex justify-end gap-2">
                             <button class="btn btn-ghost" onclick="cancelCreate()">Cancel</button>
@@ -563,19 +575,6 @@
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
 
-    <dialog id="orderNowSupplierDialog" class="modal">
-        <div class="modal-box max-w-xl">
-            <button type="button" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onclick="document.getElementById('orderNowSupplierDialog').close()">✕</button>
-            <h3 class="font-bold text-lg"><i class="fas fa-truck-field text-primary mr-2"></i>Choose a supplier</h3>
-            <p id="orderNowSupplierItem" class="text-sm text-base-content/65 mt-1"></p>
-            <div id="orderNowSupplierOptions" class="space-y-2 mt-4"></div>
-            <div class="modal-action">
-                <button type="button" class="btn btn-ghost" onclick="document.getElementById('orderNowSupplierDialog').close()">Cancel</button>
-            </div>
-        </div>
-        <form method="dialog" class="modal-backdrop"><button>close</button></form>
-    </dialog>
-
     <dialog id="extraItemDialog" class="modal">
         <div class="modal-box max-w-xl">
             <button type="button" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onclick="document.getElementById('extraItemDialog').close()">✕</button>
@@ -640,10 +639,7 @@
         let currentVerifyPOId = null;
         let currentVerifyRRId = null;
         let currentStockDecision = null;
-        let pendingAutoIncludeItemId = null;
-        let orderNowSupplierChoices = [];
         let extraItemEditRowId = null;
-        const supplierCatalogCache = new Map();
 
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -908,16 +904,14 @@
             // Supplier-first workbench: all still-open validated demand is kept
             // in the background and filtered only after the supplier is chosen.
             try {
-                const [prsResponse, decisionResponse, supplierResponse] = await Promise.all([
+                const [prsResponse, decisionResponse] = await Promise.all([
                     PurchasingService.getConfirmedLowStock(),
-                    PurchasingService.getConfirmedStockDecisions(),
-                    PurchasingService.getSuppliers({ status: 'active', orderable: 1 })
+                    PurchasingService.getConfirmedStockDecisions()
                 ]);
                 approvedPurchaseRequests = prsResponse?.data || [];
                 pausedStockDecisions = decisionResponse?.data || [];
-                availableSuppliers = (supplierResponse?.data || []).sort((a, b) =>
-                    String(a.supplier_name || '').localeCompare(String(b.supplier_name || ''))
-                );
+                const supplierResponse = await loadRelevantSuppliers();
+                availableSuppliers = rankRelevantSuppliers(supplierResponse?.data || []);
                 renderSupplierFirstOptions();
                 renderPurchasingDecisionPanel();
                 renderPausedStockDecisions();
@@ -948,12 +942,14 @@
             applySupplierPaymentTerms();
             renderSelectedSupplierDetails();
             clearSelectedPurchaseRequestSummary();
+            const needCount = getOpenConfirmedItems().length;
             select.innerHTML = availableSuppliers.length
-                ? '<option value="">Select an accredited supplier...</option>' + availableSuppliers.map(supplier =>
-                    `<option value="${supplier.id}">${escapeHtml(supplier.supplier_name)} (${escapeHtml(supplier.supplier_code)})</option>`
+                ? '<option value="">Select a relevant supplier...</option>' + availableSuppliers.map(supplier =>
+                    `<option value="${supplier.id}">${escapeHtml(supplier.supplier_name)} — covers ${Number(supplier.confirmed_coverage_count || 0)} of ${needCount}</option>`
                 ).join('')
-                : '<option value="">No active accredited supplier with orderable items</option>';
+                : '<option value="">No linked supplier for the confirmed needs</option>';
             document.getElementById('addForecastItemButton').disabled = true;
+            renderSupplierRecommendations();
         }
 
         function escapeHtml(value) {
@@ -974,6 +970,90 @@
             );
             const more = items.length > 2 ? ` +${items.length - 2} more` : '';
             return names.join(', ') + more;
+        }
+
+        function getOpenConfirmedItems() {
+            return approvedPurchaseRequests.flatMap(request => (request.items || []).filter(item =>
+                Number(item.remaining_quantity ?? item.quantity ?? 0) > 0.0001
+            ));
+        }
+
+        function getConfirmedNeedSupplierFilters() {
+            const items = getOpenConfirmedItems();
+            const ingredientIds = [...new Set(items.map(item => Number(item.ingredient_id || 0)).filter(Boolean))];
+            const mroIds = [...new Set(items.map(item => Number(item.mro_item_id || 0)).filter(Boolean))];
+            return {
+                status: 'active',
+                orderable: 1,
+                ...(ingredientIds.length ? { ingredient_ids: ingredientIds.join(',') } : {}),
+                ...(mroIds.length ? { mro_ids: mroIds.join(',') } : {})
+            };
+        }
+
+        async function loadRelevantSuppliers() {
+            return PurchasingService.getSuppliers(getConfirmedNeedSupplierFilters());
+        }
+
+        function supplierCoveredItems(supplier) {
+            const ingredientIds = new Set((supplier.matching_ingredient_ids || []).map(Number));
+            const mroIds = new Set((supplier.matching_mro_ids || []).map(Number));
+            return getOpenConfirmedItems().filter(item =>
+                (item.ingredient_id && ingredientIds.has(Number(item.ingredient_id)))
+                || (item.mro_item_id && mroIds.has(Number(item.mro_item_id)))
+            );
+        }
+
+        function rankRelevantSuppliers(suppliers) {
+            return (suppliers || []).map(supplier => ({
+                ...supplier,
+                confirmed_coverage_count: supplierCoveredItems(supplier).length
+            })).sort((a, b) =>
+                Number(b.confirmed_coverage_count || 0) - Number(a.confirmed_coverage_count || 0)
+                || String(a.supplier_name || '').localeCompare(String(b.supplier_name || ''))
+            );
+        }
+
+        function renderSupplierRecommendations() {
+            const container = document.getElementById('supplierRecommendationList');
+            const summary = document.getElementById('confirmedNeedsSummary');
+            if (!container || !summary) return;
+            const allNeeds = getOpenConfirmedItems();
+            const selectedSupplierId = document.getElementById('poSupplier')?.value;
+            const needNames = [...new Set(allNeeds.map(item => item.ingredient_name || item.mro_item_name || item.item_description || 'Material'))];
+            summary.textContent = allNeeds.length
+                ? `${allNeeds.length} confirmed material${allNeeds.length === 1 ? '' : 's'} still need purchasing: ${needNames.slice(0, 5).join(' • ')}${needNames.length > 5 ? ` • +${needNames.length - 5} more` : ''}. Best supplier coverage is shown first.`
+                : 'There are no confirmed shortages waiting. Use an extra item only when there is a documented forecast.';
+
+            if (!availableSuppliers.length) {
+                container.innerHTML = allNeeds.length
+                    ? '<div class="md:col-span-2 xl:col-span-3 alert alert-warning text-sm"><i class="fas fa-link-slash"></i><span>No accredited supplier is linked to these materials. Ask the GM or Admin to connect the supplier and material first.</span></div>'
+                    : '';
+                return;
+            }
+
+            container.innerHTML = availableSuppliers.map((supplier, index) => {
+                const covered = supplierCoveredItems(supplier);
+                const names = [...new Set(covered.map(item => item.ingredient_name || item.mro_item_name || item.item_description || 'Material'))];
+                const selected = String(selectedSupplierId) === String(supplier.id);
+                const coversAll = allNeeds.length > 0 && covered.length === allNeeds.length;
+                return `
+                    <button type="button" class="text-left rounded-lg border p-3 transition ${selected ? 'border-primary bg-primary/10 ring-2 ring-primary/20' : 'border-base-300 bg-base-100 hover:border-primary/50'}" onclick="chooseRecommendedSupplier(${Number(supplier.id)})">
+                        <span class="flex items-start justify-between gap-2">
+                            <span class="font-semibold">${escapeHtml(supplier.supplier_name)}</span>
+                            ${index === 0 && allNeeds.length ? '<span class="badge badge-primary badge-sm">Best match</span>' : ''}
+                        </span>
+                        <span class="block text-sm mt-1 ${coversAll ? 'text-success' : 'text-warning'}">${coversAll ? 'Covers everything' : `Covers ${covered.length} of ${allNeeds.length}`}</span>
+                        <span class="block text-xs text-base-content/60 mt-1 truncate">${escapeHtml(names.slice(0, 4).join(' • ') || 'Forecast items only')}${names.length > 4 ? ` • +${names.length - 4} more` : ''}</span>
+                    </button>`;
+            }).join('');
+        }
+
+        async function chooseRecommendedSupplier(supplierId) {
+            const select = document.getElementById('poSupplier');
+            if (!select) return;
+            select.value = String(supplierId);
+            renderSupplierRecommendations();
+            await onMainSupplierChange();
         }
 
         function renderSelectedSupplierDetails() {
@@ -1227,6 +1307,7 @@
             applySupplierDeliveryDates();
             applySupplierPaymentTerms();
             renderSelectedSupplierDetails();
+            renderSupplierRecommendations();
             const supplierId = document.getElementById('poSupplier')?.value;
             directSupplierIngredients = [];
             eligiblePrItems = [];
@@ -1236,6 +1317,7 @@
             if (!supplierId) {
                 renderDirectEntryPrompt('Choose an accredited supplier to see its validated low-stock demand.');
                 renderSupplierCoverageHint();
+                renderPurchasingDecisionPanel();
                 return;
             }
 
@@ -1285,14 +1367,15 @@
                 if (!eligiblePrItems.length) {
                     renderDirectEntryPrompt('No confirmed low-stock item is linked to this supplier. You may still add an extra item that is expected to run out soon.');
                     renderSupplierCoverageHint();
+                    renderPurchasingDecisionPanel();
                     return;
                 }
                 renderAllSupplierRequestedItems();
-                applyPendingAutoInclude();
+                renderPurchasingDecisionPanel();
             } catch (error) {
-                pendingAutoIncludeItemId = null;
                 renderDirectEntryPrompt('The supplier accreditation list could not be loaded.');
                 renderSupplierCoverageHint();
+                renderPurchasingDecisionPanel();
                 showToast(error?.message || 'Failed to load supplier items', 'error');
             }
         }
@@ -1312,10 +1395,22 @@
             const panel = document.getElementById('purchasingDecisionPanel');
             const container = document.getElementById('purchasingDecisionItems');
             const count = document.getElementById('purchasingDecisionCount');
-            if (!panel || !container || !count) return;
-            const items = getConfirmedDecisionItems();
+            const help = document.getElementById('purchasingDecisionHelp');
+            if (!panel || !container || !count || !help) return;
+            const supplierId = document.getElementById('poSupplier')?.value;
+            const itemsCoveredBySupplier = new Set(eligiblePrItems.map(item => Number(item.id)));
+            if (!supplierId) {
+                panel.classList.add('hidden');
+                count.textContent = '';
+                container.innerHTML = '';
+                return;
+            }
+            const items = getConfirmedDecisionItems().filter(item =>
+                !itemsCoveredBySupplier.has(Number(item.id))
+            );
             panel.classList.toggle('hidden', items.length === 0);
-            count.textContent = `${items.length} awaiting decision`;
+            count.textContent = `${items.length} remaining`;
+            help.textContent = 'These confirmed items need another supplier. Defer or close one only when it should not be ordered now.';
             container.innerHTML = items.map(item => {
                 const remaining = Number(item.remaining_quantity ?? item.quantity ?? 0);
                 return `
@@ -1325,7 +1420,6 @@
                             <p class="text-sm text-base-content/65">Warehouse confirmed ${plainNumber(item.physical_stock)} ${escapeHtml(item.unit || 'units')} on hand; ${plainNumber(remaining)} ${escapeHtml(item.unit || 'units')} remains to cover.</p>
                         </div>
                         <div class="flex flex-wrap gap-2 shrink-0">
-                            <button type="button" class="btn btn-primary btn-xs" onclick="focusSupplierForStockItem(${Number(item.id)}, this)"><i class="fas fa-cart-shopping"></i> Order now</button>
                             <button type="button" class="btn btn-outline btn-warning btn-xs" onclick="openStockDecision(${Number(item.id)}, 'defer')"><i class="fas fa-calendar-day"></i> Defer</button>
                             <button type="button" class="btn btn-outline btn-error btn-xs" onclick="openStockDecision(${Number(item.id)}, 'close')"><i class="fas fa-circle-xmark"></i> Close without order</button>
                         </div>
@@ -1345,114 +1439,13 @@
                 const isClosed = item.purchasing_decision === 'closed_without_order';
                 const state = isClosed ? 'Closed without order' : `Deferred until ${item.deferred_until || 'later'}`;
                 return `
-                    <article class="rounded-lg border border-base-300 bg-base-100 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                        <div>
-                            <p class="font-semibold">${escapeHtml(name)}</p>
-                            <p class="text-sm ${isClosed ? 'text-error' : 'text-warning'}">${escapeHtml(state)}</p>
-                            <p class="text-xs text-base-content/60 mt-1">Reason: ${escapeHtml(item.purchasing_decision_reason || 'No reason recorded')}</p>
-                        </div>
-                        <button type="button" class="btn btn-outline btn-primary btn-xs shrink-0" onclick="openReopenStockDecision(${Number(item.id)})"><i class="fas fa-rotate-left"></i> Reopen</button>
-                    </article>`;
+                    <tr>
+                        <td class="font-semibold">${escapeHtml(name)}</td>
+                        <td><span class="badge badge-sm ${isClosed ? 'badge-error badge-outline' : 'badge-warning badge-outline'}">${escapeHtml(state)}</span></td>
+                        <td class="text-sm text-base-content/65 max-w-md">${escapeHtml(item.purchasing_decision_reason || 'No reason recorded')}</td>
+                        <td class="text-right"><button type="button" class="btn btn-outline btn-primary btn-xs" onclick="openReopenStockDecision(${Number(item.id)})"><i class="fas fa-rotate-left"></i> Reopen</button></td>
+                    </tr>`;
             }).join('');
-        }
-
-        async function focusSupplierForStockItem(itemId, button = null) {
-            const item = getConfirmedDecisionItems().find(row => Number(row.id) === Number(itemId));
-            if (!item) return;
-
-            const alreadyVisible = eligiblePrItems.some(row => Number(row.id) === Number(itemId));
-            if (alreadyVisible && document.getElementById('poSupplier')?.value) {
-                pendingAutoIncludeItemId = Number(itemId);
-                applyPendingAutoInclude();
-                return;
-            }
-
-            if (button) {
-                button.disabled = true;
-                button.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Finding supplier';
-            }
-            try {
-                const details = await Promise.all(availableSuppliers.map(async supplier => {
-                    const key = String(supplier.id);
-                    if (supplierCatalogCache.has(key)) return supplierCatalogCache.get(key);
-                    const response = await PurchasingService.getSupplierDetail(supplier.id);
-                    const detail = response?.data || null;
-                    if (detail) supplierCatalogCache.set(key, detail);
-                    return detail;
-                }));
-                orderNowSupplierChoices = details.filter(detail => {
-                    if (!detail) return false;
-                    if (item.ingredient_id) {
-                        return (detail.ingredients || []).some(row => Number(row.ingredient_id || row.id) === Number(item.ingredient_id));
-                    }
-                    return (detail.mro_items || []).some(row => Number(row.mro_item_id || row.id) === Number(item.mro_item_id));
-                });
-
-                if (orderNowSupplierChoices.length === 0) {
-                    showToast('No accredited supplier is linked to this item. Ask the GM or Admin to connect one first.', 'warning');
-                    return;
-                }
-                if (orderNowSupplierChoices.length === 1) {
-                    await selectSupplierForStockItem(orderNowSupplierChoices[0].id, itemId);
-                    return;
-                }
-                showOrderNowSupplierChoices(item);
-            } catch (error) {
-                showToast(error?.message || 'Could not find the accredited suppliers for this item.', 'error');
-            } finally {
-                if (button) {
-                    button.disabled = false;
-                    button.innerHTML = '<i class="fas fa-cart-shopping"></i> Order now';
-                }
-            }
-        }
-
-        function showOrderNowSupplierChoices(item) {
-            const name = item.ingredient_name || item.mro_item_name || item.item_description || 'this item';
-            document.getElementById('orderNowSupplierItem').textContent = `${orderNowSupplierChoices.length} accredited suppliers can provide ${name}. Choose which one should receive the PO.`;
-            document.getElementById('orderNowSupplierOptions').innerHTML = orderNowSupplierChoices.map(supplier => {
-                const catalogItem = item.ingredient_id
-                    ? (supplier.ingredients || []).find(row => Number(row.ingredient_id || row.id) === Number(item.ingredient_id))
-                    : (supplier.mro_items || []).find(row => Number(row.mro_item_id || row.id) === Number(item.mro_item_id));
-                const price = Number(catalogItem?.reference_unit_price || catalogItem?.quoted_price || 0);
-                return `
-                    <button type="button" class="btn btn-outline w-full h-auto py-3 justify-between" onclick="selectSupplierForStockItem(${Number(supplier.id)}, ${Number(item.id)})">
-                        <span class="text-left"><span class="block font-semibold">${escapeHtml(supplier.supplier_name)}</span><span class="block text-xs font-normal text-base-content/60">${escapeHtml(supplier.supplier_code || '')} · ${Number(supplier.lead_time_days || 3)}-day delivery</span></span>
-                        <span class="font-semibold">${price > 0 ? formatCurrency(price) : 'Price not set'}</span>
-                    </button>`;
-            }).join('');
-            document.getElementById('orderNowSupplierDialog').showModal();
-        }
-
-        async function selectSupplierForStockItem(supplierId, itemId) {
-            const dialog = document.getElementById('orderNowSupplierDialog');
-            if (dialog.open) dialog.close();
-            const supplierSelect = document.getElementById('poSupplier');
-            supplierSelect.value = String(supplierId);
-            pendingAutoIncludeItemId = Number(itemId);
-            await onMainSupplierChange();
-        }
-
-        function applyPendingAutoInclude() {
-            if (!pendingAutoIncludeItemId) return;
-            const row = Array.from(document.querySelectorAll('#lineItemsBody tr')).find(candidate =>
-                Number(candidate.dataset.prItemId || 0) === Number(pendingAutoIncludeItemId)
-            );
-            if (!row) {
-                pendingAutoIncludeItemId = null;
-                showToast('The selected supplier is no longer linked to this confirmed item.', 'warning');
-                return;
-            }
-            const rowId = Number(String(row.id || '').replace('lineItem-', ''));
-            const checkbox = row.querySelector('.checkbox');
-            if (checkbox && !checkbox.checked) {
-                checkbox.checked = true;
-                toggleSupplierRequestedItem(rowId);
-            }
-            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            row.classList.add('bg-primary/5');
-            pendingAutoIncludeItemId = null;
-            showToast('Supplier selected and the confirmed item was added to the PO.', 'success');
         }
 
         function openStockDecision(itemId, decision) {
@@ -1566,7 +1559,7 @@
             const repeatedProductCount = Array.from(productCounts.values()).filter(count => count > 1).length;
             const otherSupplierCount = Math.max(0, allOpenItems.length - eligiblePrItems.length);
             title.textContent = `${eligiblePrItems.length} confirmed low-stock item${eligiblePrItems.length === 1 ? '' : 's'} available from ${supplier.supplier_name}`;
-            meta.textContent = `The supplier filter is applied across every confirmed shortage. Tick the lines to order; every shelf check remains linked for review.`;
+            meta.textContent = `The supplier filter is applied across every confirmed shortage. All matching lines are selected automatically; every shelf check remains linked for review.`;
             itemContainer.innerHTML = `
                 <span class="badge badge-primary badge-outline">${eligiblePrItems.length} shown for this supplier</span>
                 <span class="badge badge-outline">${allOpenItems.length} total open</span>
@@ -1609,10 +1602,10 @@
             row.dataset.mode = 'supplier_request';
             row.dataset.prItemId = Number(item.id);
             row.dataset.purchaseRequestId = Number(item.source_purchase_request_id);
-            row.className = 'opacity-70';
+            row.className = 'bg-primary/5';
             row.innerHTML = `
                 <td>
-                    <input type="checkbox" id="include-${rowId}" class="checkbox checkbox-primary checkbox-sm" aria-label="Include ${escapeHtml(item.ingredient_name || item.item_description || 'item')} in this PO" onchange="toggleSupplierRequestedItem(${rowId})">
+                    <input type="checkbox" id="include-${rowId}" class="checkbox checkbox-primary checkbox-sm" checked aria-label="Include ${escapeHtml(item.ingredient_name || item.item_description || 'item')} in this PO" onchange="toggleSupplierRequestedItem(${rowId})">
                 </td>
                 <td>
                     <div class="font-semibold">${escapeHtml(item.ingredient_name || item.item_description || 'Requested item')}</div>
@@ -1633,7 +1626,7 @@
                 </td>
                 <td>
                     <div class="join">
-                        <input type="number" id="order-${rowId}" class="input input-bordered input-sm w-24 join-item" value="${recommendedOrder}" min="${isPackaged ? 1 : 0.01}" step="${isPackaged && item.supplier_enforce_whole_packages ? 1 : 0.01}" disabled oninput="handleSupplierOrderInput(${rowId})">
+                        <input type="number" id="order-${rowId}" class="input input-bordered input-sm w-24 join-item" value="${recommendedOrder}" min="${isPackaged ? 1 : 0.01}" step="${isPackaged && item.supplier_enforce_whole_packages ? 1 : 0.01}" oninput="handleSupplierOrderInput(${rowId})">
                         <span class="join-item px-3 flex items-center bg-base-200 border border-base-300 text-xs" id="order-unit-${rowId}">${escapeHtml(orderUnit)}</span>
                     </div>
                     <input type="hidden" id="qty-${rowId}" value="${isPackaged ? recommendedOrder * stockPerPackage : recommendedOrder}" max="${isPackaged && item.supplier_enforce_whole_packages ? recommendedOrder * stockPerPackage : remaining}">
@@ -1781,7 +1774,7 @@
                 .filter(row => document.getElementById(`include-${row.id.split('-')[1]}`)?.checked === true)
                 .length;
             hint.classList.add(selectedCount > 0 ? 'alert-success' : 'alert-info');
-            text.textContent = `${eligibleCount} confirmed low-stock item${eligibleCount === 1 ? '' : 's'} ${eligibleCount === 1 ? 'is' : 'are'} shown for ${supplierName}. ${selectedCount} selected for this PO. Tick an item, then confirm or change its recommended order number.`;
+            text.textContent = `${eligibleCount} confirmed low-stock item${eligibleCount === 1 ? '' : 's'} ${eligibleCount === 1 ? 'is' : 'are'} shown for ${supplierName}. All ${selectedCount} ${selectedCount === 1 ? 'item is' : 'items are'} selected for this PO. Untick only what should not be included, then confirm or change the recommended order amounts.`;
         }
 
         function addForecastLineItem() {
@@ -2294,12 +2287,10 @@
             resetSupplierSpecificPOFields();
 
             try {
-                const [prsResponse, supplierResponse] = await Promise.all([
-                    PurchasingService.getConfirmedLowStock(),
-                    PurchasingService.getSuppliers({ status: 'active', orderable: 1 })
-                ]);
+                const prsResponse = await PurchasingService.getConfirmedLowStock();
                 approvedPurchaseRequests = prsResponse?.data || [];
-                availableSuppliers = supplierResponse?.data || [];
+                const supplierResponse = await loadRelevantSuppliers();
+                availableSuppliers = rankRelevantSuppliers(supplierResponse?.data || []);
                 renderSupplierFirstOptions();
                 const remainingCount = approvedPurchaseRequests.reduce((count, request) =>
                     count + (request.items || []).filter(item => Number(item.remaining_quantity || 0) > 0.0001).length, 0

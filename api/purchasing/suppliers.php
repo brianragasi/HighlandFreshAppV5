@@ -67,13 +67,27 @@ function handleGet($db, $action, $currentUser) {
                 }
                 $ingredientIds = array_slice(array_values($ingredientIds), 0, 200);
             }
+            $mroIds = [];
+            $mroIdsParam = trim((string) getParam('mro_ids', ''));
+            if ($mroIdsParam !== '') {
+                foreach (explode(',', $mroIdsParam) as $mroId) {
+                    $mroId = filter_var(trim($mroId), FILTER_VALIDATE_INT, [
+                        'options' => ['min_range' => 1],
+                    ]);
+                    if ($mroId !== false) {
+                        $mroIds[(int) $mroId] = (int) $mroId;
+                    }
+                }
+                $mroIds = array_slice(array_values($mroIds), 0, 200);
+            }
+            $hasRequestedItems = (bool) ($ingredientIds || $mroIds);
 
             $params = [];
             $sql = "SELECT suppliers.*";
             if ($ingredientIds) {
                 $matchingPlaceholders = implode(',', array_fill(0, count($ingredientIds), '?'));
                 $sql .= ", (
-                    SELECT COUNT(DISTINCT matching_offer.ingredient_id)
+                    SELECT GROUP_CONCAT(DISTINCT matching_offer.ingredient_id ORDER BY matching_offer.ingredient_id)
                     FROM supplier_ingredients matching_offer
                     JOIN ingredients matching_ingredient
                       ON matching_ingredient.id = matching_offer.ingredient_id
@@ -81,8 +95,22 @@ function handleGet($db, $action, $currentUser) {
                     WHERE matching_offer.supplier_id = suppliers.id
                       AND matching_offer.is_active = 1
                       AND matching_offer.ingredient_id IN ($matchingPlaceholders)
-                ) AS matching_ingredient_count";
+                ) AS matching_ingredient_ids";
                 array_push($params, ...$ingredientIds);
+            }
+            if ($mroIds) {
+                $matchingMroPlaceholders = implode(',', array_fill(0, count($mroIds), '?'));
+                $sql .= ", (
+                    SELECT GROUP_CONCAT(DISTINCT matching_offer.mro_item_id ORDER BY matching_offer.mro_item_id)
+                    FROM supplier_mro_items matching_offer
+                    JOIN mro_items matching_item
+                      ON matching_item.id = matching_offer.mro_item_id
+                     AND matching_item.is_active = 1
+                    WHERE matching_offer.supplier_id = suppliers.id
+                      AND matching_offer.is_active = 1
+                      AND matching_offer.mro_item_id IN ($matchingMroPlaceholders)
+                ) AS matching_mro_ids";
+                array_push($params, ...$mroIds);
             }
             $sql .= " FROM suppliers WHERE 1=1";
             
@@ -93,27 +121,32 @@ function handleGet($db, $action, $currentUser) {
             }
 
             if ($orderable) {
-                $sql .= " AND (EXISTS (
-                    SELECT 1
-                    FROM supplier_ingredients si
-                    JOIN ingredients i ON i.id = si.ingredient_id AND i.is_active = 1
-                    WHERE si.supplier_id = suppliers.id
-                      AND si.is_active = 1
-                ";
-                if ($ingredientIds) {
-                    $sql .= " AND si.ingredient_id IN ($matchingPlaceholders)";
-                    array_push($params, ...$ingredientIds);
+                $orderableParts = [];
+                if (!$hasRequestedItems || $ingredientIds) {
+                    $ingredientClause = "EXISTS (
+                        SELECT 1
+                        FROM supplier_ingredients si
+                        JOIN ingredients i ON i.id = si.ingredient_id AND i.is_active = 1
+                        WHERE si.supplier_id = suppliers.id AND si.is_active = 1";
+                    if ($ingredientIds) {
+                        $ingredientClause .= " AND si.ingredient_id IN ($matchingPlaceholders)";
+                        array_push($params, ...$ingredientIds);
+                    }
+                    $orderableParts[] = $ingredientClause . ")";
                 }
-                $sql .= ")";
-                if (!$ingredientIds) {
-                    $sql .= " OR EXISTS (
+                if (!$hasRequestedItems || $mroIds) {
+                    $mroClause = "EXISTS (
                         SELECT 1
                         FROM supplier_mro_items smi
                         JOIN mro_items m ON m.id = smi.mro_item_id AND m.is_active = 1
-                        WHERE smi.supplier_id = suppliers.id AND smi.is_active = 1
-                    )";
+                        WHERE smi.supplier_id = suppliers.id AND smi.is_active = 1";
+                    if ($mroIds) {
+                        $mroClause .= " AND smi.mro_item_id IN ($matchingMroPlaceholders)";
+                        array_push($params, ...$mroIds);
+                    }
+                    $orderableParts[] = $mroClause . ")";
                 }
-                $sql .= ")";
+                $sql .= " AND (" . implode(' OR ', $orderableParts) . ")";
             }
             
             if ($search) {
@@ -129,6 +162,16 @@ function handleGet($db, $action, $currentUser) {
             $stmt = $db->prepare($sql);
             $stmt->execute($params);
             $suppliers = $stmt->fetchAll();
+            foreach ($suppliers as &$supplier) {
+                foreach (['matching_ingredient_ids', 'matching_mro_ids'] as $matchingField) {
+                    $supplier[$matchingField] = empty($supplier[$matchingField])
+                        ? []
+                        : array_map('intval', explode(',', (string) $supplier[$matchingField]));
+                }
+                $supplier['matching_ingredient_count'] = count($supplier['matching_ingredient_ids']);
+                $supplier['matching_mro_count'] = count($supplier['matching_mro_ids']);
+            }
+            unset($supplier);
             
             Response::success($suppliers, 'Suppliers retrieved');
             break;

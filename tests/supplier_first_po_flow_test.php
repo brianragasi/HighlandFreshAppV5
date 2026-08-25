@@ -18,8 +18,8 @@ $checks = [
         str_contains($page, '<span class="hidden md:inline">New PO</span>')
         && str_contains($page, '<i class="fas fa-file-circle-plus"></i> New PO'),
     'Visible form starts with supplier and removes the Warehouse PRS field' =>
-        str_contains($page, '<span class="label-text">Supplier *</span>')
-        && str_contains($page, 'Choose the supplier first. Validated low-stock items it can provide will appear automatically.')
+        str_contains($page, '>Supplier *</span>')
+        && str_contains($page, 'Choose a supplier for the confirmed needs')
         && !str_contains($page, '<span class="label-text">Warehouse PRS *</span>')
         && !str_contains($page, 'id="poPurchaseRequest"'),
     'Dashboard opens the supplier-first workbench without a PRS query field' =>
@@ -29,15 +29,15 @@ $checks = [
         str_contains($page, 'getScopedWarehouseRequests().flatMap(pr =>')
         && str_contains($page, 'source_purchase_request_id: Number(pr.id)')
         && str_contains($page, 'suppliedByIngredientId.has(Number(item.ingredient_id))'),
-    'Order now automatically resolves the accredited supplier and selects the item' =>
-        str_contains($page, 'async function focusSupplierForStockItem')
-        && str_contains($page, 'orderNowSupplierChoices.length === 1')
-        && str_contains($page, 'showOrderNowSupplierChoices(item)')
-        && str_contains($page, 'await onMainSupplierChange()')
-        && str_contains($page, 'function applyPendingAutoInclude()')
-        && str_contains($page, 'checkbox.checked = true'),
-    'Every displayed item includes its Warehouse request number' =>
-        str_contains($page, '${escapeHtml(item.source_pr_number)}</div>')
+    'Relevant suppliers are ranked and every matching line starts selected' =>
+        str_contains($page, 'function rankRelevantSuppliers')
+        && str_contains($page, 'Best supplier coverage is shown first')
+        && str_contains($page, 'covers ${Number(supplier.confirmed_coverage_count || 0)} of ${needCount}')
+        && str_contains($page, 'checked aria-label="Include')
+        && !str_contains($page, 'focusSupplierForStockItem'),
+    'Every selected item keeps its Warehouse confirmation link' =>
+        str_contains($page, 'source_pr_number: pr.validation_number')
+        && str_contains($page, 'source_purchase_request_id: Number(pr.id)')
         && str_contains($page, 'Confirmed shortage: ${escapeHtml(item.source_pr_number)}'),
     'Supplier filtering explains shown, total, omitted, repeated, and source counts' =>
         str_contains($page, 'shown for this supplier')
@@ -58,6 +58,10 @@ $checks = [
         && str_contains($api, 'loadAndValidateSupplierFirstWarehouseItems')
         && str_contains($api, 'insertStockValidationItemPOAllocation')
         && str_contains($api, 'source_stock_validation_ids'),
+    'Relevant supplier lookup covers ingredients and MRO materials' =>
+        str_contains(file_get_contents(__DIR__ . '/../api/purchasing/suppliers.php'), "getParam('mro_ids', '')")
+        && str_contains(file_get_contents(__DIR__ . '/../api/purchasing/suppliers.php'), 'matching_ingredient_ids')
+        && str_contains(file_get_contents(__DIR__ . '/../api/purchasing/suppliers.php'), 'matching_mro_ids'),
     'Consolidated PO keeps one header while updating every stock confirmation' =>
         str_contains($api, "insertPOHeaderFromSplit(\n                    \$db,\n                    \$poNumber,\n                    \$supplierId,\n                    null,")
         && str_contains($api, 'foreach ($sourceValidationIds as $sourceValidationId)')

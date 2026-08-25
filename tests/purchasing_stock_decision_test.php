@@ -29,11 +29,12 @@ $checks = [
     'closed and future-deferred items cannot be forced onto a PO' =>
         str_contains($poApi, "purchasing_decision'] === 'closed_without_order'")
         && str_contains($poApi, "purchasing_decision'] === 'deferred'"),
-    'Purchasing UI offers three plain-language decisions' =>
-        str_contains($poPage, 'Order now')
+    'Purchasing chooses one supplier while keeping exception decisions' =>
+        str_contains($poPage, 'Choose a supplier for the confirmed needs')
         && str_contains($poPage, 'Defer')
         && str_contains($poPage, 'Close without order')
-        && str_contains($poPage, 'decideConfirmedLowStock'),
+        && str_contains($poPage, 'decideConfirmedLowStock')
+        && !str_contains($poPage, '> Order now</button>'),
     'Purchasing can recover a deferred or closed item' =>
         str_contains($validationApi, 'function listPurchasingDecisions')
         && str_contains($poPage, 'Deferred or closed items')
