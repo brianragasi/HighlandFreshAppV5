@@ -353,7 +353,7 @@
                                 <div class="flex items-center gap-2">
                                     <span id="lineSourceBadge" class="badge badge-primary badge-outline">Warehouse needs + extra items</span>
                                     <button type="button" id="addForecastItemButton" class="btn btn-warning btn-sm" onclick="addForecastLineItem()" disabled>
-                                        <i class="fas fa-plus"></i> Add extra item
+                                        <i class="fas fa-chart-line"></i> Add fast-moving item
                                     </button>
                                 </div>
                             </div>
@@ -363,7 +363,7 @@
                             </div>
                             <div class="alert alert-info py-2 mb-3 text-sm">
                                 <i class="fas fa-calculator"></i>
-                                <span>Use <strong>Add extra item</strong> only for a supplier product that is not low yet but is expected to run out soon. You must explain why for GM review.</span>
+                                <span><strong>Add fast-moving item</strong> is for stock that is not low yet but is expected to run out soon. Only items sold by the selected supplier are available, and a reason is required for GM review.</span>
                             </div>
                             <div id="supplierGroupingPreview" class="hidden"></div>
                             <div class="overflow-x-auto">
@@ -400,7 +400,14 @@
                                 </div>
                                 <span id="purchasingDecisionCount" class="badge badge-warning badge-outline"></span>
                             </div>
-                            <div id="purchasingDecisionItems" class="grid grid-cols-1 xl:grid-cols-2 gap-3"></div>
+                            <div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr><th>Material</th><th>On hand</th><th>Still needed</th><th>Why it is here</th><th>Decision</th></tr>
+                                    </thead>
+                                    <tbody id="purchasingDecisionItems"></tbody>
+                                </table>
+                            </div>
                         </section>
 
                         <details id="pausedDecisionPanel" class="hidden rounded-xl border border-base-300 bg-base-200/40 mb-6" aria-labelledby="pausedDecisionTitle">
@@ -578,8 +585,8 @@
     <dialog id="extraItemDialog" class="modal">
         <div class="modal-box max-w-xl">
             <button type="button" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onclick="document.getElementById('extraItemDialog').close()">✕</button>
-            <h3 class="font-bold text-lg"><i class="fas fa-plus-circle text-warning mr-2"></i>Add an item before it becomes low stock</h3>
-            <p class="text-sm text-base-content/65 mt-1">Use this when recent usage, an upcoming event, or the supplier's delivery time means more stock will be needed soon.</p>
+            <h3 class="font-bold text-lg"><i class="fas fa-chart-line text-warning mr-2"></i>Add a fast-moving item</h3>
+            <p class="text-sm text-base-content/65 mt-1">Use this for an item that is not low yet but is expected to run out soon. A reason is required for GM review.</p>
 
             <div class="form-control mt-4">
                 <label class="label"><span class="label-text font-medium">What item do you need? *</span></label>
@@ -1037,7 +1044,7 @@
                 const selected = String(selectedSupplierId) === String(supplier.id);
                 const coversAll = allNeeds.length > 0 && covered.length === allNeeds.length;
                 return `
-                    <button type="button" class="text-left rounded-lg border p-3 transition ${selected ? 'border-primary bg-primary/10 ring-2 ring-primary/20' : 'border-base-300 bg-base-100 hover:border-primary/50'}" onclick="chooseRecommendedSupplier(${Number(supplier.id)})">
+                    <button type="button" data-supplier-card-id="${Number(supplier.id)}" class="text-left rounded-lg border p-3 transition ${selected ? 'border-primary bg-primary/10 ring-2 ring-primary/20' : 'border-base-300 bg-base-100 hover:border-primary/50'}" onclick="chooseRecommendedSupplier(${Number(supplier.id)})">
                         <span class="flex items-start justify-between gap-2">
                             <span class="font-semibold">${escapeHtml(supplier.supplier_name)}</span>
                             ${index === 0 && allNeeds.length ? '<span class="badge badge-primary badge-sm">Best match</span>' : ''}
@@ -1054,6 +1061,42 @@
             select.value = String(supplierId);
             renderSupplierRecommendations();
             await onMainSupplierChange();
+        }
+
+        function matchingSuppliersForConfirmedItem(item) {
+            return availableSuppliers.filter(supplier => {
+                const ingredientIds = new Set((supplier.matching_ingredient_ids || []).map(Number));
+                const mroIds = new Set((supplier.matching_mro_ids || []).map(Number));
+                return (item.ingredient_id && ingredientIds.has(Number(item.ingredient_id)))
+                    || (item.mro_item_id && mroIds.has(Number(item.mro_item_id)));
+            });
+        }
+
+        function focusSuppliersForConfirmedItem(itemId) {
+            const item = getConfirmedDecisionItems().find(candidate => Number(candidate.id) === Number(itemId));
+            if (!item) return;
+            const matches = matchingSuppliersForConfirmedItem(item);
+            if (!matches.length) {
+                showToast('No accredited supplier is linked to this material yet. Ask the GM or Admin to add the supplier link.', 'warning');
+                return;
+            }
+
+            const matchingIds = new Set(matches.map(supplier => String(supplier.id)));
+            document.querySelectorAll('[data-supplier-card-id]').forEach(card => {
+                const isMatch = matchingIds.has(String(card.dataset.supplierCardId));
+                card.classList.toggle('ring-2', isMatch);
+                card.classList.toggle('ring-warning', isMatch);
+                card.classList.toggle('border-warning', isMatch);
+            });
+            const firstCard = document.querySelector(`[data-supplier-card-id="${Number(matches[0].id)}"]`);
+            firstCard?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            showToast(`${matches.length} supplier${matches.length === 1 ? '' : 's'} highlighted for ${item.item_name}.`, 'info');
+            window.setTimeout(() => {
+                document.querySelectorAll('[data-supplier-card-id]').forEach(card => {
+                    card.classList.remove('ring-warning', 'border-warning');
+                });
+                renderSupplierRecommendations();
+            }, 6000);
         }
 
         function renderSelectedSupplierDetails() {
@@ -1410,20 +1453,29 @@
             );
             panel.classList.toggle('hidden', items.length === 0);
             count.textContent = `${items.length} remaining`;
-            help.textContent = 'These confirmed items need another supplier. Defer or close one only when it should not be ordered now.';
+            help.textContent = 'These materials are not supplied by the current supplier. Find another supplier, defer, or close each one.';
             container.innerHTML = items.map(item => {
                 const remaining = Number(item.remaining_quantity ?? item.quantity ?? 0);
+                const physicalStock = Number(item.physical_stock ?? item.system_stock_before ?? 0);
+                const unit = item.unit || 'units';
+                const matchingSuppliers = matchingSuppliersForConfirmedItem(item);
+                const supplierReason = matchingSuppliers.length
+                    ? `${matchingSuppliers.length} other supplier${matchingSuppliers.length === 1 ? '' : 's'} can provide it`
+                    : 'No accredited supplier is linked yet';
                 return `
-                    <article class="rounded-lg border border-base-300 bg-base-100 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                        <div>
-                            <p class="font-semibold">${escapeHtml(item.item_name)}</p>
-                            <p class="text-sm text-base-content/65">Warehouse confirmed ${plainNumber(item.physical_stock)} ${escapeHtml(item.unit || 'units')} on hand; ${plainNumber(remaining)} ${escapeHtml(item.unit || 'units')} remains to cover.</p>
-                        </div>
-                        <div class="flex flex-wrap gap-2 shrink-0">
-                            <button type="button" class="btn btn-outline btn-warning btn-xs" onclick="openStockDecision(${Number(item.id)}, 'defer')"><i class="fas fa-calendar-day"></i> Defer</button>
-                            <button type="button" class="btn btn-outline btn-error btn-xs" onclick="openStockDecision(${Number(item.id)}, 'close')"><i class="fas fa-circle-xmark"></i> Close without order</button>
-                        </div>
-                    </article>`;
+                    <tr>
+                        <td><span class="font-semibold">${escapeHtml(item.item_name)}</span><span class="block text-xs text-base-content/55">Confirmed by Warehouse</span></td>
+                        <td class="whitespace-nowrap">${plainNumber(physicalStock)} ${escapeHtml(unit)}</td>
+                        <td class="font-semibold text-warning whitespace-nowrap">${plainNumber(remaining)} ${escapeHtml(unit)}</td>
+                        <td><span class="text-sm">Current supplier does not sell this material.</span><span class="block text-xs text-base-content/55">${escapeHtml(supplierReason)}</span></td>
+                        <td>
+                            <div class="flex flex-wrap gap-1.5 min-w-72">
+                                <button type="button" class="btn btn-outline btn-primary btn-xs" ${matchingSuppliers.length ? '' : 'disabled'} onclick="focusSuppliersForConfirmedItem(${Number(item.id)})"><i class="fas fa-magnifying-glass"></i> Find supplier</button>
+                                <button type="button" class="btn btn-outline btn-warning btn-xs" onclick="openStockDecision(${Number(item.id)}, 'defer')"><i class="fas fa-calendar-day"></i> Defer</button>
+                                <button type="button" class="btn btn-outline btn-error btn-xs" onclick="openStockDecision(${Number(item.id)}, 'close')"><i class="fas fa-circle-xmark"></i> Close</button>
+                            </div>
+                        </td>
+                    </tr>`;
             }).join('');
         }
 

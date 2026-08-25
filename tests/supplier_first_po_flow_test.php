@@ -35,6 +35,12 @@ $checks = [
         && str_contains($page, 'covers ${Number(supplier.confirmed_coverage_count || 0)} of ${needCount}')
         && str_contains($page, 'checked aria-label="Include')
         && !str_contains($page, 'focusSupplierForStockItem'),
+    'Uncovered materials use a compact decision table with supplier help' =>
+        str_contains($page, '<th>Still needed</th>')
+        && str_contains($page, '<th>Why it is here</th>')
+        && str_contains($page, 'focusSuppliersForConfirmedItem')
+        && str_contains($page, 'Find supplier')
+        && !str_contains($page, '<article class="rounded-lg border border-base-300 bg-base-100 p-3'),
     'Every selected item keeps its Warehouse confirmation link' =>
         str_contains($page, 'source_pr_number: pr.validation_number')
         && str_contains($page, 'source_purchase_request_id: Number(pr.id)')
@@ -71,6 +77,8 @@ $checks = [
         && str_contains($api, 'An identical active Purchase Order already exists'),
     'Purchaser can add a separately controlled fast-moving forecast line' =>
         str_contains($page, 'id="addForecastItemButton"')
+        && str_contains($page, 'Add fast-moving item')
+        && str_contains($page, 'Only items sold by the selected supplier are available, and a reason is required for GM review.')
         && str_contains($page, 'function addForecastLineItem()')
         && str_contains($page, 'forecast_reason: reason')
         && str_contains($api, 'loadAndValidateSupplierForecastItems')
