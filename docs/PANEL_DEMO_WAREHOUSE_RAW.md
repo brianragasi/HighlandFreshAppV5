@@ -131,6 +131,10 @@ After pressing `Ctrl+F5`, work by warning type—not by trying to force every ro
 - Chocolate Milk 500 mL Label: 1,199 pcs usable after the packaging fix
 - Cellophane Wrap: 48.97 rolls usable; it is above its restocking target, which is allowed
 - Food-Grade Alcohol: 100 liters usable
+- Sugar: 101 kg usable with a clearly labelled panel-demo opening lot
+- Salt (ING-006): 100 kg usable with a clearly labelled panel-demo opening lot
+- Rennet: 10 liters usable across two clearly labelled panel-demo lots
+- Vanilla Extract: 16 liters usable across two clearly labelled panel-demo lots
 - Chocolate Powder X: 12 kg usable; the other batches remain held
 - Magic Sarap: 100 kg usable; another 100 kg is already moving through review
 
@@ -155,13 +159,10 @@ Open the item, choose the affected physical batch, and use **Record Waste**. Do 
 - Food Coloring: 0.95 liter and 200 liters on separate item records
 - Magic Sarap: 100 kg; continue its existing request
 - Redhorse: 120 g
-- Rennet: 10 liters
-- Salt: 100 kg and 200 kg on separate item records
-- Sugar: 101 kg
+- Salt (ING-0043): 200 kg
 - Tanduay: 50 kg
 - TanduayV2: 60 kg
 - TanduayV3: 140 g
-- Vanilla Extract: 16 liters
 
 For these rows, open the item and use **Record Lot Details** beside one physical batch at a time. If the package or supplier document cannot prove a real lot, leave it held.
 
