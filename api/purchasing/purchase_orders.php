@@ -241,7 +241,8 @@ function handleGet($db, $action) {
                     ,COALESCE(source_validation.id, source_pr.id) as source_purchase_request_id
                     ,COALESCE(source_validation.validation_number, source_pr.pr_number) as source_pr_number
                     ,CASE
-                        WHEN source_validation_item.recommendation_type = 'early_reorder' THEN 'Early-reorder forecast confirmed by Warehouse'
+                        WHEN source_validation_item.recommendation_type = 'warehouse_early_reorder' THEN 'Early reorder recommended by Warehouse'
+                        WHEN source_validation_item.recommendation_type = 'early_reorder' THEN 'System early-reorder forecast confirmed by Warehouse'
                         WHEN source_validation.id IS NOT NULL THEN 'Physical shelf count confirmed by Warehouse'
                         ELSE source_pr.purpose
                      END as source_pr_purpose
@@ -1733,6 +1734,8 @@ function loadAndValidateSupplierFirstWarehouseItems(PDO $db, array $data, int $s
             svi.stock_variance,
             svi.variance_reason AS audit_reason,
             svi.target_stock_at_validation AS target_stock_at_request,
+            svi.recommendation_type,
+            svi.forecast_reason,
             svi.purchasing_decision,
             svi.deferred_until,
             svi.legacy_purchase_request_item_id,
@@ -4677,7 +4680,7 @@ function insertPOItemFromSplit($db, $poId, $assignment, $prItem) {
         (po_id, purchase_request_item_id, stock_validation_item_id, procurement_source, forecast_reason, ingredient_id, mro_item_id, item_description, quantity, unit,
          supplier_order_quantity, supplier_order_unit, supplier_order_unit_price, stock_quantity_per_supplier_unit,
          unit_price, total_amount, is_vat_item, notes)
-        VALUES (?, ?, ?, 'stock_validation', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, 'stock_validation', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     $supplierOrderQuantity = (float) ($assignment['supplier_order_quantity'] ?? $assignment['quantity']);
     $supplierOrderUnitPrice = (float) ($assignment['supplier_order_unit_price'] ?? $assignment['unit_price']);
@@ -4685,6 +4688,7 @@ function insertPOItemFromSplit($db, $poId, $assignment, $prItem) {
         $poId,
         $prItem['legacy_purchase_request_item_id'] ?? null,
         $assignment['pr_item_id'],
+        $prItem['forecast_reason'] ?? null,
         $prItem['ingredient_id'] ?? null,
         $prItem['mro_item_id'] ?? null,
         $prItem['item_description'],

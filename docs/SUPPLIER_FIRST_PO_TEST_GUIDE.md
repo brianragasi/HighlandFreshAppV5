@@ -3,7 +3,7 @@
 ## The finished flow
 
 1. The system marks a raw material as **Low** when it reaches the reorder point. It can also mark an item **Order Soon** when recorded Production use is projected to bring it to the reorder point before a supplier can deliver.
-2. Warehouse counts the actual quantity on the shelf and confirms it in **Stock Validation**. Warehouse does not guess whether an item is fast-moving.
+2. Warehouse counts the actual quantity on the shelf and confirms it in **Stock Validation**. The system normally detects fast movement from recorded usage. For an unusual upcoming event that history cannot show yet, Warehouse may send a clearly labeled **early-reorder recommendation** with a reason; Purchasing still decides whether to buy.
 3. Purchasing reviews each confirmed shortage and chooses to order it now, defer it to a chosen date, or close it without ordering and record why.
 4. For an item being ordered, Purchasing chooses a supplier first.
 5. The page automatically shows only confirmed shortages linked to that supplier.
@@ -153,7 +153,7 @@ The item becomes **Order Soon** only when its current usable stock is above the 
 4. Select the row and click **Confirm Shelf Counts**.
 5. Enter the real shelf count. Submit the stock check.
 6. Sign in as Purchaser and open **New PO**.
-7. Select a supplier linked to the ingredient. Confirm the PO line says **Early reorder confirmed by Warehouse** and displays daily use, delivery days, and projected stock.
+7. Select a supplier linked to the ingredient. Confirm the PO line says **System early reorder confirmed by Warehouse** and displays daily use, delivery days, and projected stock.
 8. Submit the PO for GM approval.
 9. Sign in as GM. Confirm the line says **System early reorder · Warehouse confirmed** and shows the calculation evidence.
 10. Approve the PO. Return to Warehouse Stock Validation and refresh.
@@ -165,6 +165,31 @@ Expected result:
 - Purchasing still chooses the supplier and order commitment.
 - An active PO balance is included in the calculation, so an adequately covered item no longer produces another early-order warning.
 - If an operational event is not visible in historical usage, Purchasing may still use **Add early-reorder item**, but must write a reason for GM review.
+
+## Test 5B: Warehouse recommends an early reorder manually
+
+Use this exception for a known upcoming event, such as a larger production run tomorrow. It does not recreate the Warehouse PRS.
+
+1. Sign in as Warehouse Raw and open **Stock Validation**.
+2. Click **Find early-reorder item**. This turns on **Show OK items** and filters the table to suitable candidates.
+3. Choose an item that is above its reorder point but below its restocking target and has no open stock confirmation. For the demo, **500 mL Bottle (Mock)** is suitable when it is still marked **OK**.
+4. Click **Recommend early reorder**.
+5. Confirm the usable amount physically on the shelf.
+6. Enter a suggested purchase amount. The screen must not allow current stock + open orders + the recommendation to exceed the restocking target.
+7. Enter a clear reason such as `Large Dutch Milk production run is scheduled for Friday.`
+8. Click **Send recommendation to Purchasing**.
+9. Sign in as Purchasing and open **New PO**.
+10. Choose a supplier linked to the item. Confirm the line says **Early reorder recommended by Warehouse** and shows Warehouse's reason.
+11. Purchasing may include it, move it out of the PO, defer it, or close it without ordering.
+12. Submit the PO and sign in as GM. Confirm the line says **Warehouse early-reorder recommendation** and shows the same reason.
+
+Expected result:
+
+- Warehouse reports a real shelf count and an unusual upcoming need.
+- Warehouse does not choose the supplier and does not create the PO.
+- Purchasing makes the buying decision.
+- GM can distinguish this manual recommendation from the system-generated **Order Soon** calculation.
+- The recommendation is blocked if the item is already low, has no storage room, already has an open confirmation, or has no meaningful reason.
 
 ### Deterministic developer check
 

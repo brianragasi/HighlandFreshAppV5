@@ -51,8 +51,21 @@ try {
     $gmPage = file_get_contents($root . '/html/admin/gm_approvals.html');
     assertEarlyReorder(str_contains($warehouseApi, "recommendationType === 'early_reorder'"), 'Warehouse does not revalidate the forecast after the physical count');
     assertEarlyReorder(str_contains($warehousePage, 'ORDER SOON'), 'Warehouse cannot see the automatic early-order warning');
-    assertEarlyReorder(str_contains($purchasingPage, 'Early reorder confirmed by Warehouse'), 'Purchasing cannot distinguish a forecast confirmation from ordinary low stock');
+    assertEarlyReorder(str_contains($purchasingPage, 'System early reorder confirmed by Warehouse'), 'Purchasing cannot distinguish a forecast confirmation from ordinary low stock');
     assertEarlyReorder(str_contains($gmPage, 'System early reorder · Warehouse confirmed'), 'GM cannot see the early-order evidence source');
+
+    assertEarlyReorder(str_contains($warehouseApi, "recommendationType === 'warehouse_early_reorder'"), 'Warehouse cannot save a manual early-reorder recommendation');
+    assertEarlyReorder(str_contains($warehouseApi, '$availableRoom = max(0, round($target - $physicalStock - $onOrder, 3))'), 'Manual recommendations are not limited by stock, open orders, and the restocking target');
+    assertEarlyReorder(str_contains($warehousePage, 'Recommend an early reorder'), 'Warehouse has no early-reorder recommendation action');
+    assertEarlyReorder(str_contains($warehousePage, "recommendation_type: 'warehouse_early_reorder'"), 'Warehouse recommendation is not identified separately from the automatic forecast');
+    assertEarlyReorder(str_contains($purchasingPage, 'Early reorder recommended by Warehouse'), 'Purchasing cannot identify a Warehouse recommendation');
+    assertEarlyReorder(str_contains($gmPage, 'Warehouse early-reorder recommendation'), 'GM cannot identify a Warehouse recommendation');
+
+    $manualTarget = 5000.0;
+    $manualUsable = 699.0;
+    $manualOnOrder = 0.0;
+    $manualRoom = max(0.0, $manualTarget - $manualUsable - $manualOnOrder);
+    assertEarlyReorder(abs($manualRoom - 4301.0) < 0.0001, 'Manual recommendation storage-room calculation is wrong');
 } catch (Throwable $error) {
     fwrite(STDERR, 'Early reorder flow test failed: ' . $error->getMessage() . PHP_EOL);
     exit(1);

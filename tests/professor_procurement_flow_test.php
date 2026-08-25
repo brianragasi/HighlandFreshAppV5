@@ -37,7 +37,7 @@ $checks = [
     'automatic early reorder uses recorded consumption and supplier delivery time' =>
         str_contains(file_get_contents($root . '/api/helpers/early_reorder.php'), "transaction_type = 'production_issue'")
         && str_contains(file_get_contents($root . '/api/helpers/early_reorder.php'), 'projected_stock_at_delivery')
-        && str_contains($files['po_page'], 'Early reorder confirmed by Warehouse'),
+        && str_contains($files['po_page'], 'System early reorder confirmed by Warehouse'),
     'supplier product links are protected by relational database rules' =>
         str_contains(file_get_contents($root . '/api/helpers/supplier_ingredient_catalog.php'), 'FOREIGN KEY (supplier_id) REFERENCES suppliers(id)')
         && str_contains(file_get_contents($root . '/api/helpers/supplier_ingredient_catalog.php'), 'FOREIGN KEY (ingredient_id) REFERENCES ingredients(id)'),

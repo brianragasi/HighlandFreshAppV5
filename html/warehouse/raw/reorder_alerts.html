@@ -234,6 +234,7 @@
                             <option value="OUT_OF_STOCK">Out of Stock</option>
                             <option value="LOW">Low Stock</option>
                             <option value="ORDER_SOON">Order Soon</option>
+                            <option value="OK">OK / Early-reorder candidates</option>
                         </select>
                         <select class="select select-bordered select-sm w-full md:w-40" id="categoryFilter">
                             <option value="">All Categories</option>
@@ -242,6 +243,9 @@
                             <span class="label-text text-sm">Show OK items</span>
                             <input type="checkbox" id="showOkItems" class="checkbox checkbox-sm checkbox-primary" />
                         </label>
+                        <button type="button" class="btn btn-info btn-sm" onclick="showWarehouseEarlyReorderCandidates()">
+                            <i class="fas fa-forward"></i> Find early-reorder item
+                        </button>
                     </div>
                 </div>
             </div>
@@ -347,6 +351,66 @@
         <form method="dialog" class="modal-backdrop"><button onclick="closeBulkAuditModal()">close</button></form>
     </dialog>
 
+    <!-- Warehouse exception: recommend an early reorder for an unusual upcoming need. -->
+    <dialog id="warehouseEarlyReorderModal" class="modal">
+        <div class="modal-box max-w-xl">
+            <button type="button" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onclick="closeWarehouseEarlyReorderModal()" aria-label="Close">✕</button>
+            <h3 class="font-bold text-lg"><i class="fas fa-forward text-info mr-2"></i>Recommend an early reorder</h3>
+            <p class="text-sm text-base-content/60 mt-1">
+                Use this when Warehouse knows about unusual upcoming demand that the recent usage record cannot show yet. Purchasing will decide whether to order it.
+            </p>
+
+            <div class="alert alert-info py-2 mt-4 text-sm">
+                <i class="fas fa-circle-info"></i>
+                <span>This is a recommendation, not a Purchase Order and not a separate PRS.</span>
+            </div>
+
+            <div class="rounded-lg border border-base-300 bg-base-200/40 p-3 mt-4">
+                <div class="font-semibold" id="warehouseEarlyItemName">—</div>
+                <div class="text-xs text-base-content/60 mt-1" id="warehouseEarlyItemSummary">—</div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                <label class="form-control">
+                    <span class="label-text font-medium mb-1">Usable amount counted *</span>
+                    <div class="join">
+                        <input id="warehouseEarlyCount" type="number" min="0" step="0.001" class="input input-bordered join-item w-full" oninput="updateWarehouseEarlyReorderLimit()">
+                        <span id="warehouseEarlyCountUnit" class="join-item flex items-center px-3 bg-base-200 border border-base-300">units</span>
+                    </div>
+                    <span class="text-xs text-base-content/55 mt-1">Confirm what is physically usable now.</span>
+                </label>
+                <label class="form-control">
+                    <span class="label-text font-medium mb-1">Suggested purchase amount *</span>
+                    <div class="join">
+                        <input id="warehouseEarlyQuantity" type="number" min="0.001" step="0.001" class="input input-bordered join-item w-full">
+                        <span id="warehouseEarlyQuantityUnit" class="join-item flex items-center px-3 bg-base-200 border border-base-300">units</span>
+                    </div>
+                    <span id="warehouseEarlyQuantityHelp" class="text-xs text-base-content/55 mt-1">—</span>
+                </label>
+            </div>
+
+            <label class="form-control mt-4">
+                <span class="label-text font-medium mb-1">Why recommend ordering before it becomes low? *</span>
+                <textarea id="warehouseEarlyReason" class="textarea textarea-bordered h-24" minlength="10" maxlength="500" placeholder="Example: A larger production run is scheduled for Friday."></textarea>
+                <span class="text-xs text-base-content/55 mt-1">Write the real event Warehouse knows about. Minimum 10 characters.</span>
+            </label>
+
+            <label id="warehouseEarlyAuditReasonWrap" class="form-control mt-4 hidden">
+                <span class="label-text font-medium mb-1">Why is the shelf count lower than the system? *</span>
+                <input id="warehouseEarlyAuditReason" type="text" class="input input-bordered" maxlength="255" placeholder="Example: Damaged container set aside">
+            </label>
+
+            <p id="warehouseEarlyError" class="text-sm text-error mt-3 hidden"></p>
+            <div class="modal-action">
+                <button type="button" class="btn btn-ghost" onclick="closeWarehouseEarlyReorderModal()">Cancel</button>
+                <button type="button" id="warehouseEarlySubmitBtn" class="btn btn-info" onclick="submitWarehouseEarlyReorder()">
+                    <i class="fas fa-paper-plane"></i> Send recommendation to Purchasing
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button onclick="closeWarehouseEarlyReorderModal()">close</button></form>
+    </dialog>
+
     <!-- Toast Container -->
     <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
 
@@ -386,6 +450,7 @@
         let createdReorderPRs = new Set();
         let pendingReorderPRs = new Map();
         let bulkAuditAlerts = [];
+        let warehouseEarlyReorderAlert = null;
 
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -431,6 +496,17 @@
             document.getElementById('statusFilter').addEventListener('change', filterAlerts);
             document.getElementById('categoryFilter').addEventListener('change', filterAlerts);
             document.getElementById('showOkItems').addEventListener('change', loadAlerts);
+        }
+
+        async function showWarehouseEarlyReorderCandidates() {
+            const showOk = document.getElementById('showOkItems');
+            const status = document.getElementById('statusFilter');
+            showOk.checked = true;
+            await loadAlerts();
+            status.value = 'OK';
+            filterAlerts();
+            document.getElementById('alertsSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            showToast('Choose an OK item and click Recommend early reorder.', 'info');
         }
 
         async function loadAlerts() {
@@ -1052,6 +1128,152 @@
             }
         }
 
+        function openWarehouseEarlyReorder(itemId) {
+            const alert = allAlerts.find(item => Number(item.item_id) === Number(itemId));
+            if (!alert) {
+                showToast('That stock item could not be found. Refresh and try again.', 'error');
+                return;
+            }
+            if (alert.stock_status !== 'OK') {
+                showToast('This item is already low or has an automatic warning. Use Validate instead.', 'info');
+                return;
+            }
+            if (hasCoveredPR(alert)) {
+                showToast('This item is already waiting for a Purchasing decision.', 'info');
+                return;
+            }
+
+            const current = finiteNumber(alert.current_stock) || 0;
+            const unit = alert.unit_of_measure || 'units';
+            const target = getParLevel(alert);
+            const onOrder = finiteNumber(alert.on_order_quantity) || 0;
+            const availableRoom = Math.max(0, target - current - onOrder);
+            if (availableRoom <= 0.0005) {
+                showToast('This item has no room for an early reorder after current stock and open orders.', 'warning');
+                return;
+            }
+
+            warehouseEarlyReorderAlert = alert;
+            document.getElementById('warehouseEarlyItemName').textContent = `${alert.item_name || 'Stock item'} (${alert.item_code || 'no code'})`;
+            document.getElementById('warehouseEarlyItemSummary').textContent = `${displayAuditNumber(current)} ${unit} usable · restocking target ${displayAuditNumber(target)} ${unit}${onOrder > 0 ? ` · ${displayAuditNumber(onOrder)} ${unit} already ordered` : ''}`;
+            document.getElementById('warehouseEarlyCount').value = String(current);
+            document.getElementById('warehouseEarlyCount').max = String(current);
+            document.getElementById('warehouseEarlyCountUnit').textContent = unit;
+            document.getElementById('warehouseEarlyQuantityUnit').textContent = unit;
+            document.getElementById('warehouseEarlyQuantity').value = displayAuditNumber(availableRoom).replace(/,/g, '');
+            document.getElementById('warehouseEarlyReason').value = '';
+            document.getElementById('warehouseEarlyAuditReason').value = '';
+            document.getElementById('warehouseEarlyError').textContent = '';
+            document.getElementById('warehouseEarlyError').classList.add('hidden');
+            updateWarehouseEarlyReorderLimit();
+            document.getElementById('warehouseEarlyReorderModal').showModal();
+            document.getElementById('warehouseEarlyCount').focus();
+        }
+
+        function updateWarehouseEarlyReorderLimit() {
+            if (!warehouseEarlyReorderAlert) return;
+            const saved = finiteNumber(warehouseEarlyReorderAlert.current_stock) || 0;
+            const counted = finiteNumber(document.getElementById('warehouseEarlyCount').value);
+            const target = getParLevel(warehouseEarlyReorderAlert);
+            const onOrder = finiteNumber(warehouseEarlyReorderAlert.on_order_quantity) || 0;
+            const unit = warehouseEarlyReorderAlert.unit_of_measure || 'units';
+            const usable = counted === null ? saved : counted;
+            const availableRoom = Math.max(0, target - usable - onOrder);
+            const quantity = document.getElementById('warehouseEarlyQuantity');
+            quantity.max = String(availableRoom);
+            document.getElementById('warehouseEarlyQuantityHelp').textContent = `Maximum ${displayAuditNumber(availableRoom)} ${unit}, so current stock and open orders stay within the restocking target.`;
+            document.getElementById('warehouseEarlyAuditReasonWrap').classList.toggle('hidden', !(counted !== null && counted < saved - 0.0005));
+        }
+
+        function closeWarehouseEarlyReorderModal() {
+            const modal = document.getElementById('warehouseEarlyReorderModal');
+            if (modal?.open) modal.close();
+            warehouseEarlyReorderAlert = null;
+        }
+
+        async function submitWarehouseEarlyReorder() {
+            const alert = warehouseEarlyReorderAlert;
+            if (!alert) return;
+            const error = document.getElementById('warehouseEarlyError');
+            const submitBtn = document.getElementById('warehouseEarlySubmitBtn');
+            const saved = finiteNumber(alert.current_stock) || 0;
+            const counted = finiteNumber(document.getElementById('warehouseEarlyCount').value);
+            const quantity = finiteNumber(document.getElementById('warehouseEarlyQuantity').value);
+            const reason = document.getElementById('warehouseEarlyReason').value.trim();
+            const auditReason = document.getElementById('warehouseEarlyAuditReason').value.trim();
+            const target = getParLevel(alert);
+            const reorderAt = Math.max(finiteNumber(alert.reorder_point) || 0, finiteNumber(alert.minimum_stock) || 0);
+            const onOrder = finiteNumber(alert.on_order_quantity) || 0;
+            const availableRoom = counted === null ? 0 : Math.max(0, target - counted - onOrder);
+
+            const fail = message => {
+                error.textContent = message;
+                error.classList.remove('hidden');
+            };
+            if (counted === null || counted < 0 || counted > saved + 0.0005) {
+                fail(`Enter a usable shelf count between 0 and ${displayAuditNumber(saved)} ${alert.unit_of_measure || 'units'}.`);
+                return;
+            }
+            if (counted < saved - 0.0005 && !auditReason) {
+                fail('Explain why the shelf count is lower than the system balance.');
+                return;
+            }
+            if (counted <= reorderAt + 0.0005) {
+                fail('The physical count shows this item is already low. Close this window and use the normal Validate action.');
+                return;
+            }
+            if (quantity === null || quantity <= 0 || quantity > availableRoom + 0.0005) {
+                fail(`Enter a suggested amount from 0.001 to ${displayAuditNumber(availableRoom)} ${alert.unit_of_measure || 'units'}.`);
+                return;
+            }
+            if (reason.length < 10 || reason.length > 500) {
+                fail('Explain the unusual upcoming demand in 10 to 500 characters.');
+                return;
+            }
+
+            error.classList.add('hidden');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Sending…';
+            try {
+                const token = localStorage.getItem('highland_token');
+                const response = await fetch(API_BASE_URL + '/warehouse/raw/stock_validations.php?action=validate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    },
+                    body: JSON.stringify({
+                        notes: 'Warehouse early-reorder recommendation for Purchasing review.',
+                        items: [{
+                            ingredient_id: Number(alert.item_id),
+                            mro_item_id: null,
+                            item_description: alert.item_name || '',
+                            quantity,
+                            unit: alert.unit_of_measure || 'units',
+                            recommendation_type: 'warehouse_early_reorder',
+                            forecast_reason: reason,
+                            audited_stock: counted,
+                            audit_reason: auditReason || null
+                        }]
+                    })
+                });
+                const result = await response.json();
+                if (!response.ok || !result.success) {
+                    fail(result.message || `Could not send the recommendation (HTTP ${response.status}).`);
+                    return;
+                }
+                showToast('Early-reorder recommendation sent to Purchasing.', 'success');
+                closeWarehouseEarlyReorderModal();
+                await loadAlerts();
+            } catch (requestError) {
+                fail(requestError?.message || 'Could not send the recommendation.');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Send recommendation to Purchasing';
+            }
+        }
+
         function renderAlerts() {
             const tbody = document.getElementById('alertsTable');
             if (!tbody) return;
@@ -1177,8 +1399,11 @@
 
                 // PR action. Pending rows should take Warehouse Raw to the PR
                 // they already created instead of becoming a dead-end label.
-                const canCreate = qtyToOrder > 0 && !hasCoveredPRForRow;
-                const actionDisabled = !canCreate && !pendingPR;
+                const canCreate = alert.stock_status !== 'OK' && qtyToOrder > 0 && !hasCoveredPRForRow;
+                const earlyReorderRoom = Math.max(0, parLevel - stock - (finiteNumber(alert.on_order_quantity) || 0));
+                const canRecommendEarly = alert.stock_status === 'OK' && earlyReorderRoom > 0.0005 && !hasCoveredPRForRow;
+                const isAtTarget = alert.stock_status === 'OK' && earlyReorderRoom <= 0.0005 && !hasCoveredPRForRow;
+                const actionDisabled = !canCreate && !pendingPR && !canRecommendEarly;
                 const actionHandler = pendingPR
                     ? `openPendingPR(${JSON.stringify({
                         status: pendingPR.status || 'pending',
@@ -1187,18 +1412,36 @@
                         deferred_until: pendingPR.deferred_until || '',
                         purchasing_decision_reason: pendingPR.purchasing_decision_reason || ''
                     }).replace(/"/g, '&quot;')})`
-                    : `startPurchaseRequest(${alert.item_id}, this)`;
+                    : (canRecommendEarly
+                        ? `openWarehouseEarlyReorder(${alert.item_id})`
+                        : `startPurchaseRequest(${alert.item_id}, this)`);
                 const purchasingDecision = pendingPR?.purchasing_decision || 'pending';
-                const btnClass = purchasingDecision === 'closed_without_order'
+                const btnClass = canRecommendEarly
+                    ? 'btn-outline btn-info'
+                    : isAtTarget
+                    ? 'btn-ghost'
+                    : purchasingDecision === 'closed_without_order'
                     ? 'btn-outline btn-error'
                     : (pendingPR ? 'btn-outline btn-warning' : (hasCreatedPR ? 'btn-success' : 'btn-primary'));
-                const btnIcon = purchasingDecision === 'closed_without_order'
+                const btnIcon = canRecommendEarly
+                    ? 'fa-forward'
+                    : isAtTarget
+                    ? 'fa-check'
+                    : purchasingDecision === 'closed_without_order'
                     ? 'fa-circle-xmark'
                     : (purchasingDecision === 'deferred' ? 'fa-calendar-day' : (pendingPR ? 'fa-hourglass-half' : (hasCreatedPR ? 'fa-check' : 'fa-file-signature')));
-                const btnTitle = pendingPR
+                const btnTitle = canRecommendEarly
+                    ? 'Recommend an early reorder for an unusual upcoming need'
+                    : isAtTarget
+                    ? 'Current stock and open orders already reach the restocking target'
+                    : pendingPR
                     ? `${pendingPR.pr_number || 'This item'} is already confirmed`
                     : (hasCreatedPR ? 'Shelf count confirmed' : 'Confirm shelf count');
-                const btnLabel = purchasingDecision === 'closed_without_order'
+                const btnLabel = canRecommendEarly
+                    ? 'Recommend early reorder'
+                    : isAtTarget
+                    ? 'At target'
+                    : purchasingDecision === 'closed_without_order'
                     ? 'Closed by Purchasing'
                     : (purchasingDecision === 'deferred' ? `Deferred to ${pendingPR.deferred_until || 'later'}` : (pendingPR ? 'Waiting for Purchasing' : (hasCreatedPR ? 'Confirmed' : 'Validate')));
 

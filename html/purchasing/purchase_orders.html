@@ -1322,8 +1322,10 @@
                             ...item,
                             source_purchase_request_id: Number(pr.id),
                             source_pr_number: pr.validation_number || pr.pr_number || `Validation ${pr.id}`,
-                            source_pr_purpose: item.recommendation_type === 'early_reorder'
-                                ? 'Early-reorder forecast confirmed by Warehouse'
+                            source_pr_purpose: item.recommendation_type === 'warehouse_early_reorder'
+                                ? 'Early reorder recommended by Warehouse'
+                                : item.recommendation_type === 'early_reorder'
+                                ? 'System early-reorder forecast confirmed by Warehouse'
                                 : 'Physical shelf count confirmed by Warehouse',
                             supplier_unit_price: Number(supplierItem?.reference_unit_price || 0),
                             supplier_purchase_format: supplierItem?.purchase_format || 'direct_unit',
@@ -1580,11 +1582,16 @@
                 ? supplierPackageName(item.supplier_package_type, recommendedOrder)
                 : warehouseUnit;
             const orderUnitPrice = isPackaged ? Number(item.supplier_quoted_price || 0) : Number(item.supplier_unit_price || 0);
-            const isEarlyReorder = item.recommendation_type === 'early_reorder';
-            const confirmationLabel = isEarlyReorder
-                ? 'Early reorder confirmed by Warehouse'
+            const isWarehouseRecommendation = item.recommendation_type === 'warehouse_early_reorder';
+            const isEarlyReorder = isWarehouseRecommendation || item.recommendation_type === 'early_reorder';
+            const confirmationLabel = isWarehouseRecommendation
+                ? 'Early reorder recommended by Warehouse'
+                : isEarlyReorder
+                ? 'System early reorder confirmed by Warehouse'
                 : 'Physical count confirmed by Warehouse';
-            const forecastEvidence = isEarlyReorder
+            const forecastEvidence = isWarehouseRecommendation
+                ? `<div class="text-xs text-info mt-1"><i class="fas fa-comment-dots mr-1"></i>${escapeHtml(item.forecast_reason || 'Warehouse recorded an unusual upcoming need.')}</div>`
+                : isEarlyReorder
                 ? `<div class="text-xs text-info mt-1"><i class="fas fa-chart-line mr-1"></i>Uses ${plainNumber(item.average_daily_issue_30d || 0)} ${escapeHtml(warehouseUnit)}/day · ${plainNumber(item.supplier_lead_days || 0)}-day delivery · projected ${plainNumber(item.projected_stock_at_delivery || 0)} ${escapeHtml(warehouseUnit)} at delivery</div>`
                 : '';
 

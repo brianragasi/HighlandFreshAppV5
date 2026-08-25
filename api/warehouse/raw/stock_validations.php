@@ -305,7 +305,7 @@ function createStockValidation(PDO $db, array $currentUser): void {
     $data = json_decode(file_get_contents('php://input'), true);
     $items = is_array($data['items'] ?? null) ? $data['items'] : [];
     if (!$items || count($items) > 100) {
-        throw new InvalidArgumentException('Choose between 1 and 100 low-stock items');
+        throw new InvalidArgumentException('Choose between 1 and 100 stock items');
     }
 
     $db->beginTransaction();
@@ -404,6 +404,7 @@ function createStockValidation(PDO $db, array $currentUser): void {
             $target = $maximum > $reorder ? $maximum : ($reorder > 0 ? $reorder * 2 : 0);
             $recommendationType = strtolower(trim((string) ($submitted['recommendation_type'] ?? 'low_stock')));
             $forecast = null;
+            $forecastReason = null;
             if ($recommendationType === 'early_reorder') {
                 if ($type !== 'ingredient') throw new InvalidArgumentException("Line {$line}: early-reorder forecasting is currently available for ingredients only");
                 $evidenceMap = ingredientEarlyReorderEvidence($db, [$itemId]);
@@ -423,6 +424,44 @@ function createStockValidation(PDO $db, array $currentUser): void {
                 }
                 $target = (float) $forecast['forecast_target_stock'];
                 $quantityNeeded = (float) $forecast['suggested_early_order_quantity'];
+                $forecastReason = 'System forecast from 30-day Production issues, confirmed shelf stock, active PO balance, and supplier delivery time.';
+            } elseif ($recommendationType === 'warehouse_early_reorder') {
+                if ($type !== 'ingredient') throw new InvalidArgumentException("Line {$line}: Warehouse early-reorder recommendations are currently available for ingredients only");
+                if ($physicalStock <= $reorder + 0.0005) {
+                    throw new InvalidArgumentException($stock[$nameColumn] . ' is already low. Use the normal shelf-count validation instead.');
+                }
+
+                $manualReason = trim((string) ($submitted['forecast_reason'] ?? ''));
+                if (strlen($manualReason) < 10 || strlen($manualReason) > 500) {
+                    throw new InvalidArgumentException("Line {$line}: explain the unusual demand in 10 to 500 characters");
+                }
+
+                $evidenceMap = ingredientEarlyReorderEvidence($db, [$itemId]);
+                $savedEvidence = $evidenceMap[$itemId] ?? [];
+                $forecast = calculateIngredientEarlyReorder([
+                    'usable_stock' => $physicalStock,
+                    'minimum_stock' => $minimum,
+                    'reorder_point' => $reorder,
+                    'maximum_stock' => $maximum,
+                    'issued_quantity_30d' => $savedEvidence['issued_quantity_30d'] ?? 0,
+                    'best_supplier_lead_days' => $savedEvidence['supplier_lead_days'] ?? ($stock['lead_time_days'] ?? 7),
+                    'active_po_balance' => $savedEvidence['on_order_quantity'] ?? 0,
+                ]);
+                $onOrder = max(0, (float) ($forecast['on_order_quantity'] ?? 0));
+                $availableRoom = max(0, round($target - $physicalStock - $onOrder, 3));
+                $quantityNeeded = isset($submitted['quantity']) && is_numeric($submitted['quantity'])
+                    ? round((float) $submitted['quantity'], 3)
+                    : 0;
+                if (!is_finite($quantityNeeded) || $quantityNeeded <= 0.0005) {
+                    throw new InvalidArgumentException("Line {$line}: enter a suggested purchase quantity greater than zero");
+                }
+                if ($availableRoom <= 0.0005) {
+                    throw new InvalidArgumentException($stock[$nameColumn] . ' has no remaining storage room after current stock and open orders');
+                }
+                if ($quantityNeeded > $availableRoom + 0.0005) {
+                    throw new InvalidArgumentException("Line {$line}: recommend no more than {$availableRoom} {$stock['unit_of_measure']} so current and incoming stock stay within the restocking target");
+                }
+                $forecastReason = 'Warehouse recommendation: ' . $manualReason;
             } else {
                 $recommendationType = 'low_stock';
                 $quantityNeeded = round($target - $physicalStock, 3);
@@ -482,9 +521,7 @@ function createStockValidation(PDO $db, array $currentUser): void {
                 $forecast['supplier_lead_days'] ?? null,
                 $forecast['on_order_quantity'] ?? null,
                 $forecast['projected_stock_at_delivery'] ?? null,
-                $recommendationType === 'early_reorder'
-                    ? 'System forecast from 30-day Production issues, confirmed shelf stock, active PO balance, and supplier delivery time.'
-                    : null,
+                $forecastReason,
             ]);
         }
 
