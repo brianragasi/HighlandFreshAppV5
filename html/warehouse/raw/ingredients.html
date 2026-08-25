@@ -575,6 +575,17 @@
             box-shadow: 0 4px 12px -2px oklch(var(--in) / 0.4);
         }
 
+        .btn-pro--success {
+            background: oklch(var(--su));
+            color: oklch(var(--suc));
+            border-color: oklch(var(--su));
+        }
+
+        .btn-pro--success:hover:not(:disabled) {
+            filter: brightness(0.95);
+            box-shadow: 0 4px 12px -2px oklch(var(--su) / 0.4);
+        }
+
         .btn-pro--ghost {
             background: transparent;
             color: oklch(var(--bc) / 0.7);
@@ -947,6 +958,118 @@
         </div>
     </dialog>
 
+    <!-- Found/unrecorded stock request. The GM must approve before stock changes. -->
+    <dialog id="openingStockModal" class="pro-modal pro-modal--md">
+        <div class="pro-modal-card pro-modal-card--md">
+            <div class="pro-modal-header">
+                <div class="pro-modal-icon" style="background: oklch(var(--su) / 0.12); color: oklch(var(--su));">
+                    <i class="fas fa-box-open"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h3 class="pro-modal-title">Record Stock Missing From the System</h3>
+                    <p class="pro-modal-subtitle" id="openingStockIngredientName">Physical stock intake</p>
+                </div>
+                <button class="pro-close" onclick="document.getElementById('openingStockModal').close()" aria-label="Close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form id="openingStockForm" onsubmit="submitOpeningStock(event)">
+                <input type="hidden" id="openingStockIngredientId">
+                <input type="hidden" id="openingStockIsPerishable">
+                <input type="hidden" id="openingStockHeldBatchId">
+                <input type="hidden" id="openingStockHeldQuantity">
+                <input type="hidden" id="openingStockMaximum">
+                <input type="hidden" id="openingStockUnit">
+                <div class="pro-modal-body space-y-4">
+                    <div class="pro-banner pro-banner--warning">
+                        <i class="fas fa-user-check pro-banner-icon"></i>
+                        <div>
+                            <p class="pro-banner-title">Use this only for stock the system missed</p>
+                            <p class="pro-banner-text"><small>Example: the shelf has 102 kg, but the system shows 101 kg. Report the missing 1 kg here for review.</small></p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div class="pro-field">
+                            <label class="pro-label" id="openingStockCurrentLabel">Stock currently on file</label>
+                            <input class="pro-input" id="openingStockCurrent" readonly>
+                        </div>
+                        <div class="pro-field">
+                            <label class="pro-label">Counted on shelf <span class="text-error">*</span></label>
+                            <div class="pro-input-suffix-wrap">
+                                <input type="number" class="pro-input" id="openingStockCounted" min="0.01" step="0.01" required>
+                                <span class="pro-input-suffix" id="openingStockCountedUnit"></span>
+                            </div>
+                            <p class="text-xs text-success mt-1" id="openingStockDifference"></p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div class="pro-field">
+                            <label class="pro-label">Where did it come from? <span class="text-error">*</span></label>
+                            <select class="pro-select" id="openingStockSourceType" required onchange="syncOpeningStockFields()">
+                                <option value="">Choose source…</option>
+                                <option value="opening_balance">Opening stock / before system use</option>
+                                <option value="unrecorded_delivery">Supplier delivery not recorded</option>
+                            </select>
+                        </div>
+                        <div class="pro-field hidden" id="openingStockSupplierGroup">
+                            <label class="pro-label">Supplier <span class="text-error">*</span></label>
+                            <select class="pro-select" id="openingStockSupplier" onchange="populateOpeningStockDocuments()">
+                                <option value="">Choose supplier…</option>
+                            </select>
+                        </div>
+                    </div>
+                    <input type="hidden" id="openingStockReference">
+                    <div class="pro-banner pro-banner--info" id="openingStockAutomaticReference" hidden>
+                        <i class="fas fa-wand-magic-sparkles pro-banner-icon"></i>
+                        <div>
+                            <p class="pro-banner-title">Reference created automatically</p>
+                            <p class="pro-banner-text"><small>The system will give this opening count its own tracking number.</small></p>
+                        </div>
+                    </div>
+                    <div class="pro-field hidden" id="openingStockDocumentGroup">
+                        <label class="pro-label">Which saved order matches this delivery? <span class="text-error">*</span></label>
+                        <select class="pro-select" id="openingStockDocument" onchange="syncOpeningStockDocument()">
+                            <option value="">Choose a saved order…</option>
+                        </select>
+                        <p class="text-xs text-base-content/60 mt-1">Choosing the saved order fills its reference and price automatically.</p>
+                    </div>
+                    <div class="pro-field hidden" id="openingStockManualReferenceGroup">
+                        <label class="pro-label">Document number <span class="text-error">*</span></label>
+                        <input class="pro-input" id="openingStockManualReference" maxlength="100"
+                            placeholder="Type the delivery receipt or invoice number">
+                        <p class="text-xs text-warning mt-1">Use this only when the delivery document is not in the saved list.</p>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div class="pro-field">
+                            <label class="pro-label">Received date <span class="text-error">*</span></label>
+                            <input type="date" class="pro-input" id="openingStockReceivedDate" required>
+                        </div>
+                        <div class="pro-field" id="openingStockLotGroup">
+                            <label class="pro-label">Lot / batch number <span class="text-error opening-required-mark">*</span></label>
+                            <input class="pro-input" id="openingStockLot" maxlength="50" placeholder="Printed on package">
+                            <p class="text-xs text-base-content/60 mt-1" id="openingStockLotHelp">Copy it from the package or supplier document. Missing or unreadable lots must be held and reported to QC.</p>
+                        </div>
+                        <div class="pro-field" id="openingStockExpiryGroup">
+                            <label class="pro-label">Expiry date <span class="text-error opening-required-mark">*</span></label>
+                            <input type="date" class="pro-input" id="openingStockExpiry">
+                        </div>
+                    </div>
+                    <div class="pro-field">
+                        <label class="pro-label">Why is this stock missing from the system? <span class="text-error">*</span></label>
+                        <textarea class="pro-textarea" id="openingStockReason" maxlength="500" rows="3" required
+                            placeholder="Explain how Warehouse verified the physical stock and why it was not recorded earlier."></textarea>
+                    </div>
+                </div>
+                <div class="pro-modal-footer">
+                    <button type="button" class="btn-pro btn-pro--ghost" onclick="document.getElementById('openingStockModal').close()">Cancel</button>
+                    <button type="submit" class="btn-pro btn-pro--success" id="openingStockSubmitBtn">
+                        <i class="fas fa-paper-plane"></i> Send for Verification
+                    </button>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
     <!-- Adjust Modal -->
     <dialog id="adjustModal" class="pro-modal pro-modal--sm">
         <div class="pro-modal-card pro-modal-card--sm">
@@ -1147,7 +1270,7 @@
     <script src="../../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_raw,general_manager"></script>
     <script src="../../../js/ui/dialogs.js"></script>
-    <script src="../../../js/warehouse/raw.service.js"></script>
+    <script src="../../../js/warehouse/raw.service.js?v=20260825-2"></script>
     <script src="../../../js/warehouse/sidebar.stats.js"></script>
     <script>window.WAREHOUSE_RAW_ACTIVE_PAGE = "ingredients";</script>
     <script src="../../../js/warehouse/raw-sidebar.js?v=20260727a"></script>
@@ -1157,6 +1280,7 @@
         let ingredients = [];
         let categories = [];
         let expiredBatches = [];
+        let openingStockOptions = null;
         let currentFilter = { category: 'all', search: '', stock: '', sort: 'name' };
 
         function toggleSidebar() {
@@ -1183,6 +1307,12 @@
 
             await Promise.all([loadCategories(), loadIngredients()]);
             setupEventListeners();
+
+            const openingIngredientId = parseInt(urlParams.get('record_unlisted') || '0', 10);
+            if (openingIngredientId > 0) {
+                const counted = parseFloat(urlParams.get('counted') || '');
+                await openOpeningStockModal(openingIngredientId, Number.isFinite(counted) ? counted : null);
+            }
         });
 
         // loadSuppliers removed: stock receiving now happens through PO workflow
@@ -1505,7 +1635,8 @@
                 const maxRaw = parseFloat(ing.maximum_stock);
                 const max = (Number.isFinite(maxRaw) && maxRaw > reorder) ? maxRaw : (reorder * 2);
                 const unit = ing.unit_of_measure || 'units';
-                const pct = Math.min(100, (stock / Math.max(max, 1)) * 100);
+                const targetPct = (stock / Math.max(max, 1)) * 100;
+                const barPct = Math.min(100, targetPct);
 
                 // Status row style + label. Par-level denominator for the bar
                 // uses maximum_stock if set, else 2x the reorder threshold
@@ -1529,11 +1660,26 @@
                 const onFile = parseFloat(ing.current_stock_on_file);
                 const needsStockCheck = Boolean(ing.needs_stock_check);
                 const restrictedStock = parseFloat(ing.restricted_stock) || 0;
-                const stockCheckSubLine = needsStockCheck
-                    ? `<div class="text-[10px] text-warning font-semibold mt-1"><i class="fas fa-triangle-exclamation mr-1"></i>On file: ${onFile.toLocaleString()} ${escapeHtml(unit)} - check balance</div>`
-                    : restrictedStock > 0.0005
-                        ? `<div class="text-[10px] text-error font-semibold mt-1"><i class="fas fa-lock mr-1"></i>${restrictedStock.toLocaleString()} ${escapeHtml(unit)} expired or held</div>`
-                        : '';
+                const untraceableStock = parseFloat(ing.untraceable_batch_stock) || 0;
+                const expiredStock = parseFloat(ing.expired_batch_stock) || 0;
+                const otherHeldStock = Math.max(0, restrictedStock - untraceableStock - expiredStock);
+                const stockNotices = [];
+                if (needsStockCheck) {
+                    stockNotices.push(`<div class="text-[10px] text-warning font-semibold mt-1"><i class="fas fa-triangle-exclamation mr-1"></i>On file: ${Number.isFinite(onFile) ? onFile.toLocaleString() : '0'} ${escapeHtml(unit)} - check balance</div>`);
+                }
+                if (untraceableStock > 0.0005) {
+                    stockNotices.push(`<div class="text-[10px] text-error font-semibold mt-1"><i class="fas fa-barcode mr-1"></i>${untraceableStock.toLocaleString()} ${escapeHtml(unit)} held - supplier lot missing</div>`);
+                }
+                if (expiredStock > 0.0005) {
+                    stockNotices.push(`<div class="text-[10px] text-error font-semibold mt-1"><i class="fas fa-calendar-xmark mr-1"></i>${expiredStock.toLocaleString()} ${escapeHtml(unit)} expired or expires today</div>`);
+                }
+                if (otherHeldStock > 0.0005) {
+                    stockNotices.push(`<div class="text-[10px] text-warning font-semibold mt-1"><i class="fas fa-lock mr-1"></i>${otherHeldStock.toLocaleString()} ${escapeHtml(unit)} held for review</div>`);
+                }
+                if (stock > max + 0.0005) {
+                    stockNotices.push(`<div class="text-[10px] text-info font-semibold mt-1"><i class="fas fa-arrow-up mr-1"></i>${(stock - max).toLocaleString()} ${escapeHtml(unit)} above the restocking target</div>`);
+                }
+                const stockCheckSubLine = stockNotices.join('');
 
                 // Expiry cell. Shows "— " if no batches, "12d left" if upcoming,
                 // "expired" if past. Driven by daysUntil() which is defined
@@ -1572,9 +1718,9 @@
                         <td>
                             <div class="font-mono font-bold text-base">${stock.toLocaleString()} <span class="text-xs font-normal text-base-content/60">${escapeHtml(unit)}</span></div>
                             <div class="w-24 h-1 bg-base-200 rounded-full overflow-hidden mt-1">
-                                <div class="h-full ${barColor} rounded-full" style="width: ${pct}%"></div>
+                                <div class="h-full ${barColor} rounded-full" style="width: ${barPct}%"></div>
                             </div>
-                            <div class="text-[10px] text-base-content/50 mt-0.5">${pct.toFixed(0)}% of max (${max.toLocaleString()})</div>
+                            <div class="text-[10px] text-base-content/50 mt-0.5">${targetPct.toFixed(0)}% of restocking target (${max.toLocaleString()})</div>
                             ${stockCheckSubLine}
                             ${packSubLine}
                         </td>
@@ -1639,8 +1785,9 @@
                 : batches.reduce((sum, b) => sum + (parseFloat(b.remaining_quantity || b.quantity_remaining) || 0), 0);
             const accountedStock = parseFloat(ing.accounted_batch_stock) || 0;
             const expiredStock = parseFloat(ing.expired_batch_stock) || 0;
+            const untraceableStock = parseFloat(ing.untraceable_batch_stock) || 0;
             const restrictedStock = parseFloat(ing.restricted_stock) || 0;
-            const heldStock = Math.max(0, restrictedStock - expiredStock);
+            const heldStock = Math.max(0, restrictedStock - expiredStock - untraceableStock);
             const missingBatchStock = parseFloat(ing.missing_batch_stock) || 0;
             const batchStockSurplus = parseFloat(ing.batch_stock_surplus) || 0;
             const hasMissingBatch = missingBatchStock > 0.0005;
@@ -1685,18 +1832,25 @@
                 // doesn't expire. The "expired/today/Nd" labels only apply
                 // to batches that actually have an expiry date.
                 const hasExpiry = days !== null;
-                const expClass  = !hasExpiry ? 'badge-ghost'    : days < 0 ? 'badge-error'   : days <= 7 ? 'badge-warning' : 'badge-ghost';
-                const expLabel  = !hasExpiry ? 'No expiry'      : days < 0 ? 'EXPIRED'        : days === 0 ? 'Today'        : `${days}d`;
+                const expClass  = !hasExpiry ? 'badge-ghost'    : days <= 0 ? 'badge-error'   : days <= 7 ? 'badge-warning' : 'badge-ghost';
+                const expLabel  = !hasExpiry ? 'No expiry'      : days < 0 ? 'EXPIRED'        : days === 0 ? 'EXPIRES TODAY - BLOCKED' : `${days}d`;
                 const remaining = parseFloat(b.remaining_quantity || b.quantity_remaining) || 0;
-                const isExpired = Number(b.is_expired) === 1 || (hasExpiry && days < 0);
+                const isExpired = Number(b.is_expired) === 1 || (hasExpiry && days <= 0);
                 const isUsable = Number(b.is_usable) === 1;
-                const stateLabel = isExpired ? 'Expired - blocked' : isUsable ? 'Usable' : 'Held - blocked';
-                const stateClass = isExpired ? 'text-error' : isUsable ? 'text-success' : 'text-warning';
+                const traceabilityIssue = Number(b.has_traceability_issue) === 1;
+                const stateLabel = isExpired
+                    ? 'Expired - blocked'
+                    : traceabilityIssue
+                        ? 'Held - supplier lot missing'
+                        : isUsable ? 'Usable' : 'Held - blocked';
+                const stateClass = isExpired || traceabilityIssue ? 'text-error' : isUsable ? 'text-success' : 'text-warning';
                 // Expired and near-expiry batches with stock can be closed
                 // through the waste record while their receiving history stays intact.
                 const wasteHref = hasExpiry && remaining > 0
-                    ? `waste.html?item_type=ingredient&item_id=${ing.id}&batch_id=${b.id}&reason_category=${days < 0 ? 'expired' : 'damaged'}`
+                    ? `waste.html?item_type=ingredient&item_id=${ing.id}&batch_id=${b.id}&reason_category=${days <= 0 ? 'expired' : 'damaged'}`
                     : null;
+                const canRecordLot = traceabilityIssue
+                    && ['warehouse_raw', 'general_manager'].includes(AuthService.getCurrentUser()?.role || '');
                 return `
                     <div class="batch-row">
                         <div class="min-w-0 flex-1">
@@ -1711,6 +1865,12 @@
                             <a class="text-xs text-error hover:underline font-semibold inline-flex items-center gap-1 mt-1" href="${wasteHref}">
                                 <i class="fas fa-trash-alt text-[10px]"></i> Record Waste
                             </a>
+                            ` : ''}
+                            ${canRecordLot ? `
+                            <button type="button" class="btn btn-success btn-xs mt-1"
+                                onclick="openOpeningStockModal(${ing.id}, ${batchStock + remaining}, ${b.id}, ${remaining})">
+                                <i class="fas fa-barcode"></i> Record Lot Details
+                            </button>
                             ` : ''}
                         </div>
                     </div>`;
@@ -1742,6 +1902,15 @@
                     <span>${heldStock.toLocaleString()} ${escapeHtml(unit)} is held or under quarantine and cannot be issued until it is cleared.</span>
                 </div>
             ` : '';
+            const traceabilityBanner = untraceableStock > 0.0005 ? `
+                <div class="alert alert-error mb-4 py-3">
+                    <i class="fas fa-barcode"></i>
+                    <span>
+                        ${untraceableStock.toLocaleString()} ${escapeHtml(unit)} is held because its real supplier lot is missing.
+                        It cannot be issued to Production. Use <strong>Record Lot Details</strong> after checking the package or supplier document; Purchasing, QC, and GM will review it.
+                    </span>
+                </div>
+            ` : '';
             const missingBatchBanner = hasMissingBatch ? `
                 <div class="alert alert-warning mb-4 py-2">
                     <i class="fas fa-triangle-exclamation"></i>
@@ -1763,6 +1932,7 @@
                 ${heroHtml}
                 ${thresholdConfigBanner}
                 ${expiredBanner}
+                ${traceabilityBanner}
                 ${heldBanner}
                 ${missingBatchBanner}
                 ${surplusBanner}
@@ -1798,7 +1968,10 @@
 
             // Escape the name for use in onclick
             const escapedName = name.replace(/'/g, "\\'");
-            const canRepairStock = hasMissingBatch && ['warehouse_raw', 'general_manager'].includes(AuthService.getCurrentUser()?.role || '');
+            const canRepairStock = hasMissingBatch
+                && Number(ing.is_perishable) !== 1
+                && ['warehouse_raw', 'general_manager'].includes(AuthService.getCurrentUser()?.role || '');
+            const hasTraceabilityHold = untraceableStock > 0.0005;
 
             document.getElementById('detailModalFooter').innerHTML = `
                 <button class="btn-pro btn-pro--ghost" onclick="document.getElementById('detailModal').close()">
@@ -1812,6 +1985,11 @@
                 <button class="btn-pro btn-pro--primary" onclick="openSettingsModal(${ing.id}, '${escapedName}', ${minStock}, ${ing.lead_time_days || 7}, ${ing.reorder_point || 'null'}, ${ing.maximum_stock || 'null'})">
                     <i class="fas fa-sliders"></i> Settings
                 </button>
+                ${!hasTraceabilityHold ? `
+                <button class="btn-pro btn-pro--success" onclick="openOpeningStockModal(${ing.id})">
+                    <i class="fas fa-box-open"></i> Record Found Stock
+                </button>
+                ` : ''}
                 <button class="btn-pro btn-pro--info" onclick="openAdjustModal(${ing.id}, '${escapedName}', ${stock}, '${unit}')">
                     <i class="fas fa-pen-to-square"></i> Adjust
                 </button>
@@ -1946,6 +2124,16 @@
             if (reason === 'other') reason = document.getElementById('adjustOtherReason').value;
             if (!reason) { showToast('Please provide a reason', 'error'); return; }
 
+            const ingredient = ingredients.find(item => String(item.id) === String(id));
+            const current = parseFloat(ingredient?.current_stock || 0);
+            const counted = parseFloat(qty);
+            if (ingredient && Number(ingredient.is_perishable) === 1 && counted > current + 0.0005) {
+                document.getElementById('adjustModal').close();
+                showToast('Perishable stock needs its source, lot, and expiry before it can be added.', 'info');
+                await openOpeningStockModal(id, counted);
+                return;
+            }
+
             const saveButton = document.getElementById('saveAdjustmentBtn');
             const originalButtonHtml = saveButton.innerHTML;
             saveButton.disabled = true;
@@ -1970,6 +2158,206 @@
             } finally {
                 saveButton.disabled = false;
                 saveButton.innerHTML = originalButtonHtml;
+            }
+        }
+
+        function localDateValue(date = new Date()) {
+            const offset = date.getTimezoneOffset();
+            return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 10);
+        }
+
+        async function loadOpeningStockOptions(ingredientId) {
+            const response = await WarehouseRawService.getOpeningStockOptions(ingredientId);
+            openingStockOptions = response.data || {};
+            const select = document.getElementById('openingStockSupplier');
+            select.innerHTML = '<option value="">Choose supplier…</option>' +
+                (openingStockOptions.suppliers || []).map(s =>
+                    `<option value="${Number(s.id)}">${escapeHtml(s.supplier_name)} (${escapeHtml(s.supplier_code || '')})</option>`
+                ).join('');
+            if (!(openingStockOptions.suppliers || []).length) {
+                select.innerHTML = '<option value="">No approved supplier is linked</option>';
+            }
+            populateOpeningStockDocuments();
+            return openingStockOptions;
+        }
+
+        function openingStockDocumentLabel(document) {
+            const status = String(document.status || '').replaceAll('_', ' ');
+            const price = Number(document.unit_price || 0);
+            const unit = document.unit || document.unit_of_measure || 'unit';
+            const priceText = price > 0 ? ` · ₱${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/${unit}` : '';
+            return `PO ${document.po_number} · ${status}${priceText}`;
+        }
+
+        function populateOpeningStockDocuments() {
+            const supplierId = document.getElementById('openingStockSupplier').value;
+            const select = document.getElementById('openingStockDocument');
+            const documents = (openingStockOptions?.documents || [])
+                .filter(item => String(item.supplier_id) === String(supplierId));
+            select.innerHTML = '<option value="">Choose a saved order…</option>' +
+                documents.map(item => `<option value="${escapeHtml(item.reference)}">${escapeHtml(openingStockDocumentLabel(item))}</option>`).join('') +
+                '<option value="__manual__">Document not listed</option>';
+            select.value = '';
+            syncOpeningStockDocument();
+        }
+
+        function syncOpeningStockDocument() {
+            const sourceType = document.getElementById('openingStockSourceType').value;
+            const documentValue = document.getElementById('openingStockDocument').value;
+            const manual = sourceType === 'unrecorded_delivery' && documentValue === '__manual__';
+            const manualGroup = document.getElementById('openingStockManualReferenceGroup');
+            const manualInput = document.getElementById('openingStockManualReference');
+            manualGroup.classList.toggle('hidden', !manual);
+            manualInput.required = manual;
+            if (!manual) manualInput.value = '';
+            document.getElementById('openingStockReference').value = sourceType === 'opening_balance'
+                ? '__automatic__'
+                : (manual ? '' : documentValue);
+        }
+
+        async function openOpeningStockModal(ingredientId, countedQuantity = null, heldBatchId = null, heldBatchQuantity = null) {
+            const ingredient = ingredients.find(item => String(item.id) === String(ingredientId));
+            if (!ingredient) {
+                showToast('Ingredient was not found. Refresh the page and try again.', 'error');
+                return;
+            }
+            try {
+                const options = await loadOpeningStockOptions(ingredientId);
+                const pending = (options.pending_requests || []).find(r => String(r.ingredient_id) === String(ingredientId));
+                if (pending) {
+                    showToast(`${pending.request_code} is already moving through verification for this ingredient.`, 'warning');
+                    return;
+                }
+            } catch (error) {
+                showToast(error?.message || 'Could not load the stock-intake form', 'error');
+                return;
+            }
+
+            const form = document.getElementById('openingStockForm');
+            form.reset();
+            const usableCurrent = parseFloat(ingredient.current_stock || 0);
+            const onFileCurrent = parseFloat(ingredient.current_stock_on_file);
+            const accountedCurrent = parseFloat(ingredient.accounted_batch_stock);
+            const current = heldBatchId
+                ? usableCurrent
+                : Math.max(
+                    Number.isFinite(onFileCurrent) ? onFileCurrent : 0,
+                    Number.isFinite(accountedCurrent) ? accountedCurrent : 0
+                );
+            const unit = ingredient.unit_of_measure || 'unit';
+            const isPerishable = Number(ingredient.is_perishable) === 1;
+            const selectedHeldQuantity = parseFloat(heldBatchQuantity || 0);
+            document.getElementById('openingStockIngredientId').value = ingredient.id;
+            document.getElementById('openingStockIsPerishable').value = isPerishable ? '1' : '0';
+            document.getElementById('openingStockHeldBatchId').value = heldBatchId || '';
+            document.getElementById('openingStockHeldQuantity').value = selectedHeldQuantity || '';
+            document.getElementById('openingStockMaximum').value = ingredient.maximum_stock || '';
+            document.getElementById('openingStockUnit').value = unit;
+            document.getElementById('openingStockIngredientName').textContent = `${ingredient.ingredient_name} · ${isPerishable ? 'Perishable' : 'Non-perishable'}`;
+            document.getElementById('openingStockCurrentLabel').textContent = heldBatchId ? 'Current usable stock' : 'Stock currently on file';
+            document.getElementById('openingStockCurrent').value = `${current.toLocaleString()} ${unit}`;
+            document.getElementById('openingStockCountedUnit').textContent = unit;
+            document.getElementById('openingStockCounted').value = countedQuantity != null ? countedQuantity : '';
+            document.getElementById('openingStockCounted').readOnly = Boolean(heldBatchId);
+            const today = localDateValue();
+            const tomorrowDate = new Date(`${today}T00:00:00`);
+            tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+            const tomorrow = `${tomorrowDate.getFullYear()}-${String(tomorrowDate.getMonth() + 1).padStart(2, '0')}-${String(tomorrowDate.getDate()).padStart(2, '0')}`;
+            document.getElementById('openingStockReceivedDate').value = today;
+            document.getElementById('openingStockReceivedDate').max = today;
+            document.getElementById('openingStockExpiry').min = tomorrow;
+            document.getElementById('openingStockLot').required = isPerishable;
+            document.getElementById('openingStockExpiry').required = isPerishable;
+            document.getElementById('openingStockLotHelp').classList.toggle('hidden', !isPerishable);
+            document.querySelectorAll('.opening-required-mark').forEach(mark => mark.classList.toggle('hidden', !isPerishable));
+            syncOpeningStockFields();
+            if (heldBatchId && selectedHeldQuantity > 0.0005) {
+                document.getElementById('openingStockIngredientName').textContent = `${ingredient.ingredient_name} · Check the real details for this ${selectedHeldQuantity.toLocaleString()} ${unit} batch`;
+            }
+            updateOpeningStockDifference();
+            document.getElementById('openingStockCounted').oninput = updateOpeningStockDifference;
+            document.getElementById('openingStockModal').showModal();
+        }
+
+        function syncOpeningStockFields() {
+            const sourceType = document.getElementById('openingStockSourceType').value;
+            const isDelivery = sourceType === 'unrecorded_delivery';
+            const isOpening = sourceType === 'opening_balance';
+            document.getElementById('openingStockSupplierGroup').classList.toggle('hidden', !isDelivery);
+            document.getElementById('openingStockSupplier').required = isDelivery;
+            document.getElementById('openingStockDocumentGroup').classList.toggle('hidden', !isDelivery);
+            document.getElementById('openingStockDocument').required = isDelivery;
+            document.getElementById('openingStockAutomaticReference').hidden = !isOpening;
+            if (!isDelivery) {
+                document.getElementById('openingStockSupplier').value = '';
+                document.getElementById('openingStockDocument').value = '';
+            }
+            document.getElementById('openingStockReference').value = isOpening ? '__automatic__' : '';
+            document.getElementById('openingStockManualReference').value = '';
+            populateOpeningStockDocuments();
+        }
+
+        function updateOpeningStockDifference() {
+            const ingredientId = document.getElementById('openingStockIngredientId').value;
+            const ingredient = ingredients.find(item => String(item.id) === String(ingredientId));
+            const heldBatchId = document.getElementById('openingStockHeldBatchId').value;
+            const usableCurrent = parseFloat(ingredient?.current_stock || 0);
+            const onFileCurrent = parseFloat(ingredient?.current_stock_on_file);
+            const accountedCurrent = parseFloat(ingredient?.accounted_batch_stock);
+            const current = heldBatchId
+                ? usableCurrent
+                : Math.max(
+                    Number.isFinite(onFileCurrent) ? onFileCurrent : 0,
+                    Number.isFinite(accountedCurrent) ? accountedCurrent : 0
+                );
+            const counted = parseFloat(document.getElementById('openingStockCounted').value);
+            const unit = document.getElementById('openingStockUnit').value;
+            const output = document.getElementById('openingStockDifference');
+            if (!Number.isFinite(counted) || counted <= current) {
+                output.className = 'text-xs text-error mt-1';
+                output.textContent = `Enter a count higher than ${current.toLocaleString()} ${unit}.`;
+                return;
+            }
+            output.className = 'text-xs text-success mt-1';
+            const held = parseFloat(document.getElementById('openingStockHeldQuantity').value || 0);
+            output.textContent = heldBatchId && held > 0.0005
+                ? `${held.toLocaleString()} ${unit} will stay held until Purchasing, QC, and GM approve these lot details.`
+                : `${(counted - current).toLocaleString()} ${unit} will be added only after GM approval.`;
+        }
+
+        async function submitOpeningStock(event) {
+            event.preventDefault();
+            const button = document.getElementById('openingStockSubmitBtn');
+            const original = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Sending…';
+            try {
+                const response = await WarehouseRawService.requestOpeningStock({
+                    ingredient_id: document.getElementById('openingStockIngredientId').value,
+                    held_batch_id: document.getElementById('openingStockHeldBatchId').value || null,
+                    counted_quantity: document.getElementById('openingStockCounted').value,
+                    source_type: document.getElementById('openingStockSourceType').value,
+                    supplier_id: document.getElementById('openingStockSupplier').value || null,
+                    source_reference: document.getElementById('openingStockDocument').value === '__manual__'
+                        ? document.getElementById('openingStockManualReference').value.trim()
+                        : document.getElementById('openingStockReference').value.trim(),
+                    supplier_batch_no: document.getElementById('openingStockLot').value.trim(),
+                    received_date: document.getElementById('openingStockReceivedDate').value,
+                    expiry_date: document.getElementById('openingStockExpiry').value || null,
+                    reason: document.getElementById('openingStockReason').value.trim(),
+                });
+                showToast(response.message || 'Sent for verification', 'success');
+                openingStockOptions = null;
+                document.getElementById('openingStockModal').close();
+                const url = new URL(window.location.href);
+                url.searchParams.delete('record_unlisted');
+                url.searchParams.delete('counted');
+                history.replaceState({}, '', url);
+            } catch (error) {
+                showToast(error?.message || 'Could not submit found stock', 'error');
+            } finally {
+                button.disabled = false;
+                button.innerHTML = original;
             }
         }
 

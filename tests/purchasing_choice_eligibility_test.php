@@ -25,13 +25,10 @@ $checks = [
     'Orderable supplier query requires an active ingredient link' =>
         str_contains($sources['supplier_api'], 'if ($orderable)')
         && str_contains($sources['supplier_api'], 'JOIN ingredients i ON i.id = si.ingredient_id AND i.is_active = 1'),
-    'Selected PRS filters the supplier field to matching accredited ingredients' =>
+    'Supplier directory can still filter to matching accredited ingredients for other screens' =>
         str_contains($sources['supplier_api'], "getParam('ingredient_ids', '')")
         && str_contains($sources['supplier_api'], 'matching_ingredient_count')
-        && str_contains($sources['supplier_api'], 'si.ingredient_id IN ($matchingPlaceholders)')
-        && str_contains($sources['po_page'], 'refreshEligibleSuppliersForSelectedPRS')
-        && str_contains($sources['po_page'], "ingredient_ids: ingredientIds.join(',')")
-        && str_contains($sources['po_page'], 'No matching accredited supplier'),
+        && str_contains($sources['supplier_api'], 'si.ingredient_id IN ($matchingPlaceholders)'),
     'Canvassing ignores archived suppliers' =>
         str_contains($sources['canvassing_api'], 'JOIN suppliers s ON q.supplier_id = s.id AND s.is_active = 1'),
     'Canvassing ignores removed ingredient links' =>
@@ -44,11 +41,12 @@ $checks = [
     'Catalog returns only active ingredients and suppliers' =>
         str_contains($sources['catalog'], 'JOIN ingredients i ON i.id = si.ingredient_id AND i.is_active = 1')
         && str_contains($sources['catalog'], 's.is_active = 1'),
-    'Purchaser builds one supplier PO manually from PRS items' =>
-        str_contains($sources['po_page'], 'Warehouse requests only')
+    'Purchaser builds one supplier PO from confirmed warehouse shortages' =>
+        str_contains($sources['po_page'], 'Warehouse needs + extra items')
         && str_contains($sources['po_page'], 'appendSupplierRequestedItemRow')
         && str_contains($sources['po_page'], 'toggleSupplierRequestedItem')
         && str_contains($sources['po_page'], 'eligiblePrItems')
+        && str_contains($sources['po_page'], 'stock_validation_item_id')
         && str_contains($sources['po_api'], "case 'create_supplier_po':"),
     'Old automatic canvassing page forwards to supplier-first PO builder' =>
         str_contains($sources['canvassing_page'], 'purchase_orders.html?action=new')
@@ -82,4 +80,4 @@ foreach ($checks as $label => $passed) {
     }
 }
 
-echo "Purchasing supplier-first PRS and eligibility tests passed.\n";
+echo "Purchasing supplier-first confirmation and eligibility tests passed.\n";

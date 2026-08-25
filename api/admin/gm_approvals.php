@@ -12,6 +12,10 @@
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/helpers/plain_text.php';
 require_once dirname(__DIR__) . '/helpers/procurement_notifications.php';
+require_once dirname(__DIR__) . '/helpers/stock_validation_support.php';
+require_once dirname(__DIR__) . '/helpers/supplier_price_list_history.php';
+require_once dirname(__DIR__) . '/warehouse/raw/ingredient_stock_helpers.php';
+require_once dirname(__DIR__) . '/helpers/ingredient_opening_stock.php';
 
 // Require GM role only
 $currentUser = Auth::requireRole(['general_manager']);
@@ -20,6 +24,15 @@ $action = getParam('action', 'dashboard');
 
 try {
     $db = Database::getInstance()->getConnection();
+    ensureStockValidationSupport($db);
+    ensureSupplierPriceListHistory($db);
+    ensureIngredientOpeningStockSupport($db);
+    if (!auditColumnExists($db, 'purchase_order_items', 'procurement_source')) {
+        $db->exec("ALTER TABLE `purchase_order_items` ADD COLUMN `procurement_source` VARCHAR(30) NOT NULL DEFAULT 'warehouse_request' AFTER `purchase_request_item_id`");
+    }
+    if (!auditColumnExists($db, 'purchase_order_items', 'forecast_reason')) {
+        $db->exec("ALTER TABLE `purchase_order_items` ADD COLUMN `forecast_reason` TEXT NULL AFTER `procurement_source`");
+    }
     
     switch ($requestMethod) {
         case 'GET':
@@ -53,6 +66,7 @@ function handleGet($db, $action, $currentUser) {
             $stats['disposals'] = count(array_filter($items, fn($i) => ($i['category'] ?? '') === 'disposal'));
             $stats['procurement'] = count(array_filter($items, fn($i) => ($i['category'] ?? '') === 'procurement'));
             $stats['production_materials'] = count(array_filter($items, fn($i) => ($i['category'] ?? '') === 'production'));
+            $stats['inventory_openings'] = count(array_filter($items, fn($i) => ($i['category'] ?? '') === 'inventory'));
             $stats['all_queues'] = count($items);
             Response::success([
                 'items' => $items,
@@ -80,6 +94,7 @@ function handleGet($db, $action, $currentUser) {
             foreach ($orders as &$order) {
                 $itemsStmt = $db->prepare("
                     SELECT item_description, quantity, unit, unit_price, total_amount,
+                           purchase_request_item_id, stock_validation_item_id, procurement_source, forecast_reason, notes,
                            supplier_order_quantity, supplier_order_unit,
                            supplier_order_unit_price, stock_quantity_per_supplier_unit
                     FROM purchase_order_items WHERE po_id = ?
@@ -175,29 +190,29 @@ function handleGet($db, $action, $currentUser) {
             break;
             
         case 'price_alerts':
-            // Get recent significant price changes
             $stmt = $db->query("
-                SELECT 
-                    'ingredient' as item_type,
-                    ph.id,
-                    i.ingredient_code as item_code,
-                    i.ingredient_name as item_name,
-                    ph.old_price,
-                    ph.new_price,
-                    ph.price_change,
-                    ph.change_percent,
+                SELECT
+                    sph.item_type,
+                    sph.id,
+                    COALESCE(i.ingredient_code, m.item_code) AS item_code,
+                    COALESCE(i.ingredient_name, m.item_name) AS item_name,
+                    sph.old_price,
+                    sph.new_price,
+                    sph.new_price - sph.old_price AS price_change,
+                    CASE WHEN sph.old_price = 0 THEN 0
+                         ELSE ((sph.new_price - sph.old_price) / sph.old_price) * 100 END AS change_percent,
                     s.supplier_name,
-                    po.po_number,
-                    ph.reason,
+                    NULL AS po_number,
+                    CONCAT(sph.price_basis, ': ', sph.reason) AS reason,
                     u.full_name as updated_by,
-                    ph.created_at
-                FROM ingredient_price_history ph
-                JOIN ingredients i ON ph.ingredient_id = i.id
-                LEFT JOIN suppliers s ON ph.supplier_id = s.id
-                LEFT JOIN purchase_orders po ON ph.po_id = po.id
-                LEFT JOIN users u ON ph.updated_by = u.id
-                WHERE ph.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                ORDER BY ABS(ph.change_percent) DESC
+                    sph.created_at
+                FROM supplier_price_list_history sph
+                LEFT JOIN ingredients i ON sph.item_type = 'ingredient' AND i.id = sph.item_id
+                LEFT JOIN mro_items m ON sph.item_type = 'mro' AND m.id = sph.item_id
+                LEFT JOIN suppliers s ON sph.supplier_id = s.id
+                LEFT JOIN users u ON sph.updated_by = u.id
+                WHERE sph.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                ORDER BY ABS(change_percent) DESC
                 LIMIT 20
             ");
             $alerts = $stmt->fetchAll();
@@ -304,6 +319,16 @@ function buildGmApprovalStats(PDO $db): array {
         $stats['production_materials'] = 0;
     }
 
+    try {
+        $stmt = $db->query("SELECT COUNT(*) FROM ingredient_opening_stock_requests
+            WHERE status = 'pending'
+              AND price_status IN ('matched_po', 'verified')
+              AND qc_status IN ('approved', 'not_required')");
+        $stats['inventory_openings'] = (int) $stmt->fetchColumn();
+    } catch (Exception $e) {
+        $stats['inventory_openings'] = 0;
+    }
+
     // Disposals awaiting GM signature
     try {
         $stmt = $db->query("SELECT COUNT(*) as count FROM disposals WHERE status = 'pending'");
@@ -342,7 +367,8 @@ function buildGmApprovalStats(PDO $db): array {
     $stats['all_queues'] = (int)$stats['sales_orders']
         + (int)$stats['disposals']
         + (int)$stats['procurement']
-        + (int)$stats['production_materials'];
+        + (int)$stats['production_materials']
+        + (int)$stats['inventory_openings'];
 
     // Today's approvals
     try {
@@ -551,6 +577,21 @@ function fetchApprovalDetail(PDO $db) {
             }
             break;
 
+        case 'ingredient_opening_stock':
+            $stmt = $db->prepare("
+                SELECT osr.*, i.ingredient_code, i.ingredient_name, i.is_perishable,
+                       i.maximum_stock, i.storage_location,
+                       s.supplier_name, u.full_name AS requested_by_name
+                FROM ingredient_opening_stock_requests osr
+                JOIN ingredients i ON i.id = osr.ingredient_id
+                LEFT JOIN suppliers s ON s.id = osr.supplier_id
+                LEFT JOIN users u ON u.id = osr.requested_by
+                WHERE osr.id = ?
+            ");
+            $stmt->execute([$sourceId]);
+            $detail = $stmt->fetch(PDO::FETCH_ASSOC);
+            break;
+
         default:
             Response::error('Unknown approval type', 400);
     }
@@ -713,6 +754,10 @@ function processApprovalDecision(PDO $db, string $decision, $currentUser) {
                 }
                 break;
 
+            case 'ingredient_opening_stock':
+                decideIngredientOpeningStock($db, $sourceId, $decision, (int) $gmId, $remarks);
+                break;
+
             default:
                 throw new Exception('Unknown approval type: ' . $type);
         }
@@ -724,7 +769,8 @@ function processApprovalDecision(PDO $db, string $decision, $currentUser) {
                 VALUES (?, ?, ?, ?, ?, ?)
             ");
             $tableName = $type === 'credit_override' ? 'sales_orders' :
-                         ($type === 'purchase_order' ? 'purchase_orders' : $type . 's');
+                         ($type === 'purchase_order' ? 'purchase_orders' :
+                         ($type === 'ingredient_opening_stock' ? 'ingredient_opening_stock_requests' : $type . 's'));
             $auditStmt->execute([
                 $gmId,
                 strtoupper($decision),
@@ -792,6 +838,48 @@ function buildGmUnifiedQueue(PDO $db): array {
                 'customer_type' => $row['customer_type'],
                 'requested_at' => $row['created_at'],
                 'href' => '../sales/orders.html?status=pending',
+                'status' => 'pending',
+            ];
+        }
+    } catch (Exception $e) { /* ignore */ }
+
+    // Physical stock found without a recorded PO receipt. The batch is created
+    // only after the GM accepts its source, lot, dates, and value.
+    try {
+        $stmt = $db->query("
+            SELECT osr.id, osr.request_code, osr.quantity_to_add, osr.unit,
+                   osr.request_purpose,
+                   osr.source_type, osr.source_reference, osr.created_at,
+                   i.ingredient_name, i.is_perishable,
+                   s.supplier_name, u.full_name AS requested_by_name
+            FROM ingredient_opening_stock_requests osr
+            JOIN ingredients i ON i.id = osr.ingredient_id
+            LEFT JOIN suppliers s ON s.id = osr.supplier_id
+            LEFT JOIN users u ON u.id = osr.requested_by
+            WHERE osr.status = 'pending'
+              AND osr.price_status IN ('matched_po', 'verified')
+              AND osr.qc_status IN ('approved', 'not_required')
+            ORDER BY osr.created_at ASC
+        ");
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $source = $row['source_type'] === 'unrecorded_delivery'
+                ? ($row['supplier_name'] ?: 'Supplier delivery')
+                : 'Opening balance';
+            $items[] = [
+                'id' => 'open-' . $row['id'],
+                'source_id' => (int) $row['id'],
+                'category' => 'inventory',
+                'type' => 'ingredient_opening_stock',
+                'priority' => $row['is_perishable'] ? 'high' : 'medium',
+                'reference' => $row['request_code'],
+                'title' => $row['ingredient_name'] . (($row['request_purpose'] ?? 'found_stock') === 'traceability_correction'
+                    ? ' - Missing Lot Review'
+                    : ' - Unrecorded Stock Review'),
+                'detail' => $source . ' · ' . $row['source_reference'] . ' · requested by ' . ($row['requested_by_name'] ?: 'Warehouse Raw'),
+                'amount' => null,
+                'meta' => approvalCompactNumber($row['quantity_to_add']) . ' ' . $row['unit'],
+                'requested_at' => $row['created_at'],
+                'href' => 'gm_approvals.html?queue=inventory',
                 'status' => 'pending',
             ];
         }

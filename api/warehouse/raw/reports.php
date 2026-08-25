@@ -10,6 +10,7 @@
  */
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
+require_once __DIR__ . '/ingredient_stock_helpers.php';
 
 $currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'purchaser']);
 $action = getParam('action', 'inventory');
@@ -57,6 +58,7 @@ function handleInventoryReport($db) {
     $rows = [];
 
     if ($hasIngredients && ($type === 'all' || $type === 'ingredient')) {
+        $reportUsableIngredientStockSql = usableIngredientBatchStockSql('i.id', 'report_ib');
         $sql = "SELECT
                     'ingredient' AS item_type,
                     i.id,
@@ -71,12 +73,7 @@ function handleInventoryReport($db) {
                     i.maximum_stock,
                     i.unit_cost,
                     " . ($hasIngredientBatches
-                        ? "COALESCE((SELECT SUM(ib.remaining_quantity)
-                           FROM ingredient_batches ib
-                           WHERE ib.ingredient_id = i.id
-                             AND ib.status IN ('available', 'partially_used')
-                             AND ib.remaining_quantity > 0
-                             AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())), 0)"
+                        ? $reportUsableIngredientStockSql
                         : "i.current_stock") . " AS usable_stock,
                     " . ($hasIngredientBatches
                         ? "COALESCE((SELECT SUM(ib.remaining_quantity)
@@ -92,7 +89,7 @@ function handleInventoryReport($db) {
                              AND ib.status IN ('available', 'partially_used', 'quarantine', 'expired')
                              AND ib.remaining_quantity > 0
                              AND ib.expiry_date IS NOT NULL
-                             AND ib.expiry_date < CURDATE()), 0)"
+                             AND ib.expiry_date <= CURDATE()), 0)"
                         : "0") . " AS expired_stock,
                     " . ($hasMro ? "0" : "0") . " AS is_critical,
                     (SELECT MAX(it.created_at) FROM inventory_transactions it

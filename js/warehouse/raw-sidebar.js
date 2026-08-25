@@ -63,8 +63,7 @@
         {
             title: 'Procurement',
             items: [
-                { id: 'reorder_alerts', label: 'Low Stock Alerts', icon: 'fa-exclamation-triangle', href: 'reorder_alerts.html', badgeId: 'lowStockBadge', badgeClass: 'badge-warning', iconAlwaysWarning: true },
-                { id: 'purchase_requests', label: 'Purchase Requests', icon: 'fa-file-signature', href: 'purchase_requests.html' },
+                { id: 'reorder_alerts', label: 'Stock Validation', icon: 'fa-clipboard-check', href: 'reorder_alerts.html', badgeId: 'lowStockBadge', badgeClass: 'badge-warning', iconAlwaysWarning: true },
             ],
         },
         {
@@ -210,7 +209,7 @@
                     <span class="text-base font-bold leading-none stat-value" id="sidebarStatReq">0</span>
                     <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Req</span>
                 </a>
-                <a href="${resolveHref('reorder_alerts.html')}" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Ingredient and MRO stock alerts">
+                <a href="${resolveHref('reorder_alerts.html')}" class="flex flex-col items-center py-1.5 px-1 rounded-lg hover:bg-base-200" title="Low-stock shelf validation">
                     <span class="text-base font-bold leading-none stat-value" id="sidebarStatLow">0</span>
                     <span class="text-[9px] text-base-content/60 uppercase mt-0.5 tracking-wider">Alerts</span>
                 </a>

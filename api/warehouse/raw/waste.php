@@ -194,7 +194,7 @@ function getWasteBatches($db) {
             SELECT ib.id AS batch_id, ib.batch_code, ib.remaining_quantity, ib.unit_cost,
                    ib.expiry_date, ib.received_date, ib.rr_id, ib.po_id, ib.supplier_id,
                    ib.status, DATEDIFF(ib.expiry_date, CURDATE()) AS days_until_expiry,
-                   CASE WHEN ib.expiry_date IS NOT NULL AND ib.expiry_date < CURDATE() THEN 1 ELSE 0 END AS is_expired,
+                   CASE WHEN ib.expiry_date IS NOT NULL AND ib.expiry_date <= CURDATE() THEN 1 ELSE 0 END AS is_expired,
                    i.unit_of_measure AS unit
             FROM ingredient_batches ib
             JOIN ingredients i ON i.id = ib.ingredient_id
@@ -246,7 +246,7 @@ function getWasteReports($db) {
                ib.remaining_quantity AS quantity, i.unit_of_measure AS unit, ib.expiry_date
         FROM ingredient_batches ib
         JOIN ingredients i ON i.id = ib.ingredient_id
-        WHERE ib.expiry_date IS NOT NULL AND ib.expiry_date < CURDATE()
+        WHERE ib.expiry_date IS NOT NULL AND ib.expiry_date <= CURDATE()
           AND ib.remaining_quantity > 0
         UNION ALL
         SELECT 'mro' AS item_type, m.item_name, mi.batch_code,

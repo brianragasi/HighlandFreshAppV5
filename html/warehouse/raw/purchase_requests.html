@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Purchase Request Slips - Warehouse Raw | Highland Fresh</title>
+    <title>Old PRS History - Warehouse Raw | Highland Fresh</title>
     <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
     <link rel="stylesheet" href="../../../css/tailwind.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -63,9 +63,9 @@
     <div class="lg:ml-72 min-h-screen flex flex-col">
         <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
             <div class="flex-none lg:hidden"><button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button></div>
-            <div class="flex-1"><h1 class="text-lg lg:text-xl font-bold">Purchase Request Slips</h1></div>
+            <div class="flex-1"><h1 class="text-lg lg:text-xl font-bold">Old PRS History</h1></div>
             <div class="flex-none flex items-center gap-2">
-                <button class="btn btn-primary btn-sm gap-2" data-pr-create onclick="openCreateModal()"><i class="fas fa-plus"></i><span class="hidden sm:inline">New PRS</span></button>
+                <a class="btn btn-primary btn-sm gap-2" href="reorder_alerts.html"><i class="fas fa-clipboard-check"></i><span class="hidden sm:inline">Validate Low Stock</span></a>
                 <button class="btn btn-ghost btn-sm" onclick="loadPRs()"><i class="fas fa-sync-alt"></i></button>
             </div>
         </header>
@@ -140,7 +140,7 @@
             </div>
 
             <!-- Reorder tools (collapsed by default — secondary workflow) -->
-            <details class="reorder-panel card bg-base-100 border border-base-300">
+            <details id="reorderWorkbench" class="hidden reorder-panel card bg-base-100 border border-base-300">
                 <summary class="card-body p-3 sm:p-4 flex-row items-center justify-between gap-3">
                     <div class="flex items-center gap-3 min-w-0">
                         <div class="w-9 h-9 rounded-xl bg-warning/10 text-warning flex items-center justify-center shrink-0">
@@ -308,7 +308,7 @@
     <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_raw,general_manager"></script>
     <script src="../../../js/ui/dialogs.js"></script>
     <script src="../../../js/purchasing/purchasing.service.js"></script>
-    <script src="../../../js/warehouse/raw.service.js"></script>
+    <script src="../../../js/warehouse/raw.service.js?v=20260825-2"></script>
     <script src="../../../js/warehouse/sidebar.stats.js"></script>
     <script>window.WAREHOUSE_RAW_ACTIVE_PAGE = "purchase_requests";</script>
     <script src="../../../js/warehouse/raw-sidebar.js?v=20260727a"></script>
@@ -342,6 +342,7 @@
             setupTabs();
             syncStatFilters();
             await loadCatalog();
+            openRequestedReorderWorkbench();
             await loadPRs();
             // Line-item cache for expandable rows (best-effort; table works without it)
             loadRequestedItems().catch(() => {});
@@ -357,6 +358,15 @@
                 currentStatus=status;
             }
             linkedPRId=params.get('pr_id');
+        }
+
+        function openRequestedReorderWorkbench(){
+            const params=new URLSearchParams(window.location.search);
+            if(params.get('panel')!=='reorder')return;
+            const workbench=document.getElementById('reorderWorkbench');
+            if(!workbench)return;
+            workbench.open=true;
+            requestAnimationFrame(()=>workbench.scrollIntoView({behavior:'smooth',block:'start'}));
         }
 
         async function loadCatalog(){
@@ -733,8 +743,6 @@
 
                     <div class="modal-action">
                         <button class="btn btn-ghost" onclick="document.getElementById('detailModal').close()">Close</button>
-                        ${pr.status==='draft'?`<button class="btn btn-warning" onclick="submitDraftPR(${pr.id})"><i class="fas fa-clipboard-check"></i> Count & Submit PRS</button>`:''}
-                        ${pr.status==='converted'&&window.currentUserRole==='general_manager'?`<button class="btn btn-outline" onclick="reopenConvertedPR(${pr.id})"><i class="fas fa-unlock"></i> Reopen</button>`:''}
                         <button class="btn btn-primary" onclick="openPrintablePR(${pr.id})"><i class="fas fa-print"></i> Print</button>
                     </div>
                 `;
@@ -1034,9 +1042,11 @@
 
         function getSuggestedQty(item){
             const reorderPoint=parseFloat(item.reorder_point||0);
+            const minimumStock=parseFloat(item.minimum_stock||0);
             const maxStock=parseFloat(item.maximum_stock||0);
             const current=parseFloat(item.current_stock||0);
-            const target=maxStock>0?maxStock:reorderPoint;
+            const effectiveReorder=Math.max(reorderPoint,minimumStock);
+            const target=maxStock>effectiveReorder?maxStock:effectiveReorder*2;
             if(target<=0)return 0;
             return Math.max(0, target-current);
         }

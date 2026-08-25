@@ -74,7 +74,7 @@ function resolvePackagingSkusForRun(PDO $db, $runId) {
     if ($baseProductId) {
         try {
             $skuStmt = $db->prepare("
-                SELECT id, product_code, product_name, variant, unit_size, unit_measure, is_active
+                SELECT id, product_code, product_name, variant, unit_size, unit_measure, base_unit, is_active
                 FROM products
                 WHERE base_product_id = ? AND is_active = 1
                 ORDER BY unit_size DESC, id ASC
@@ -100,6 +100,7 @@ function resolvePackagingSkusForRun(PDO $db, $runId) {
                     'product_id' => (int) $p['id'],
                     'product_code' => $p['product_code'],
                     'product_name' => $p['product_name'],
+                    'base_unit' => $p['base_unit'] ?? 'piece',
                     'packaging_size_ml' => $ml,
                     'packaging_label' => $label,
                     'priority_order' => $order++,
@@ -131,7 +132,7 @@ function resolvePackagingSkusForRun(PDO $db, $runId) {
         }
         // Single SKU product itself as a size
         if (empty($skus)) {
-            $pStmt = $db->prepare("SELECT id, product_code, product_name, unit_size, unit_measure, variant FROM products WHERE id = ?");
+            $pStmt = $db->prepare("SELECT id, product_code, product_name, unit_size, unit_measure, variant, base_unit FROM products WHERE id = ?");
             $pStmt->execute([$legacyProductId]);
             $p = $pStmt->fetch(PDO::FETCH_ASSOC);
             if ($p) {
@@ -141,6 +142,7 @@ function resolvePackagingSkusForRun(PDO $db, $runId) {
                         'product_id' => (int) $p['id'],
                         'product_code' => $p['product_code'],
                         'product_name' => $p['product_name'],
+                        'base_unit' => $p['base_unit'] ?? 'piece',
                         'packaging_size_ml' => $ml,
                         'packaging_label' => $p['variant'] ?: ($ml . ' ml'),
                         'priority_order' => 1,
@@ -155,7 +157,7 @@ function resolvePackagingSkusForRun(PDO $db, $runId) {
         try {
             $rulesStmt = $db->prepare("
                 SELECT pr.product_id, pr.packaging_size_ml, pr.packaging_label, pr.priority_order,
-                       p.product_code, p.product_name
+                       p.product_code, p.product_name, p.base_unit
                 FROM packaging_rules pr
                 JOIN products p ON p.id = pr.product_id
                 WHERE p.base_product_id = ? AND pr.is_active = 1 AND p.is_active = 1
@@ -167,6 +169,7 @@ function resolvePackagingSkusForRun(PDO $db, $runId) {
                     'product_id' => (int) $rule['product_id'],
                     'product_code' => $rule['product_code'],
                     'product_name' => $rule['product_name'],
+                    'base_unit' => $rule['base_unit'] ?? 'piece',
                     'packaging_size_ml' => (int) $rule['packaging_size_ml'],
                     'packaging_label' => $rule['packaging_label'],
                     'priority_order' => (int) ($rule['priority_order'] ?? 1),
@@ -204,7 +207,12 @@ function resolvePackagingSkusForRun(PDO $db, $runId) {
             $productId = (int) ($s['product_id'] ?? 0);
             $s['packaging_bom'] = $bomMap[$productId] ?? [];
             $s['packaging_bom_count'] = count($s['packaging_bom']);
-            $s['packaging_bom_ready'] = $s['packaging_bom_count'] > 0;
+            $readiness = assessSkuPackagingBomReadiness(
+                $s['base_unit'] ?? '',
+                $s['packaging_bom']
+            );
+            $s['packaging_bom_ready'] = $readiness['ready'];
+            $s['packaging_bom_missing'] = $readiness['missing'];
         }
         unset($s);
     }

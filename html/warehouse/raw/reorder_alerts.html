@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reorder Alerts | Highland Fresh</title>
+    <title>Low Stock Validation | Highland Fresh</title>
     <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
     <link rel="stylesheet" href="../../../css/tailwind.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -71,7 +71,7 @@
             </div>
             <div class="flex-1">
                 <h1 class="text-lg lg:text-xl font-bold"><i
-                        class="fas fa-exclamation-triangle text-warning mr-2"></i>Reorder Alerts</h1>
+                        class="fas fa-clipboard-check text-warning mr-2"></i>Low Stock Validation</h1>
             </div>
             <div class="flex-none flex items-center gap-2">
                 <button class="btn btn-ghost btn-sm" onclick="loadAlerts()">
@@ -94,23 +94,23 @@
                     <div>
                         <div class="flex items-center gap-2 mb-1">
                             <i class="fas fa-exclamation-triangle text-2xl"></i>
-                            <div class="text-xs font-semibold uppercase tracking-wider opacity-80">Reorder Alerts</div>
+                            <div class="text-xs font-semibold uppercase tracking-wider opacity-80">Warehouse shelf check</div>
                         </div>
                         <div class="text-2xl lg:text-3xl font-bold">
-                            <span id="reorderHeroTotal">0</span> ingredients need attention
+                            <span id="reorderHeroTotal">0</span> items need a shelf count
                         </div>
                         <div class="text-sm opacity-90 mt-1" id="reorderHeroBreakdown">
-                            Low-stock items are shown here so Warehouse Raw can generate a Purchase Request Slip (PRS) when needed.
+                            Count one or several items. Purchasing will automatically see only the shortages you confirm.
                         </div>
                     </div>
                     <div class="flex gap-2 flex-shrink-0">
                         <div class="badge badge-lg badge-neutral gap-2 py-3">
                             <i class="fas fa-robot"></i>
-                            Manual PRS workflow
+                            Warehouse validates
                         </div>
                         <button id="reorderHeroCta" class="btn btn-neutral" onclick="bulkCreatePRs()">
                             <i class="fas fa-file-signature"></i>
-                            <span id="reorderHeroCtaLabel">Create Purchase Requisition</span>
+                            <span id="reorderHeroCtaLabel">Confirm Shelf Counts</span>
                         </button>
                     </div>
                 </div>
@@ -148,7 +148,7 @@
                         </div>
                     </div>
                 </div>
-                <button type="button" onclick="focusLowStock()" class="bento-card card bg-warning/10 border border-warning/30 text-left cursor-pointer hover:-translate-y-0.5 hover:shadow-lg transition-all" title="Show low-stock items and generate PRS">
+                <button type="button" onclick="focusLowStock()" class="bento-card card bg-warning/10 border border-warning/30 text-left cursor-pointer hover:-translate-y-0.5 hover:shadow-lg transition-all" title="Show items that need a shelf count">
                     <div class="card-body p-4">
                         <div class="flex items-center gap-3">
                             <div class="w-12 h-12 rounded-xl bg-warning flex items-center justify-center">
@@ -200,7 +200,14 @@
                             <span class="badge badge-warning badge-sm flex-shrink-0">LOW</span>
                             <div>
                                 <p class="font-medium">Low Stock</p>
-                                <p class="text-base-content/60 text-xs">At or below the reorder point. Generate a PRS now to stay ahead of lead time.</p>
+                                <p class="text-base-content/60 text-xs">At or below the reorder point. Confirm the shelf count so Purchasing can act.</p>
+                            </div>
+                        </div>
+                        <div class="md:col-span-2 flex items-start gap-3 rounded-lg bg-info/10 border border-info/20 p-3">
+                            <i class="fas fa-list-check text-info mt-0.5"></i>
+                            <div>
+                                <p class="font-medium">Checking several items</p>
+                                <p class="text-base-content/60 text-xs">Tick the circles beside multiple rows, then choose Confirm Counts. They will be saved together as one Warehouse stock check.</p>
                             </div>
                         </div>
                     </div>
@@ -236,13 +243,13 @@
             <div id="bulkActionBar" class="hidden mb-4 rounded-lg border border-primary/30 bg-primary/10 p-3">
                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div class="text-sm font-medium">
-                        <span id="bulkSelectedCount">0</span> selected for PRS
+                            <span id="bulkSelectedCount">0</span> selected for validation
                     </div>
                     <div class="flex gap-2">
                         <button class="btn btn-ghost btn-sm" onclick="clearSelection()">Clear</button>
                         <button id="bulkCreateBtn" class="btn btn-primary btn-sm" onclick="bulkCreatePRs()">
                             <i class="fas fa-file-signature"></i>
-                            <span id="bulkCreateBtnLabel">Create PR</span>
+                            <span id="bulkCreateBtnLabel">Confirm Counts</span>
                         </button>
                     </div>
                 </div>
@@ -268,7 +275,7 @@
                                 </th>
                                 <th class="text-right">Reorder Point</th>
                                 <th class="cursor-pointer hover:bg-base-300/50 select-none text-right" onclick="setSort('qty')">
-                                    Qty to Order <span class="sort-indicator" data-col="qty"></span>
+                                    Possible Shortage <span class="sort-indicator" data-col="qty"></span>
                                 </th>
                                 <th class="cursor-pointer hover:bg-base-300/50 select-none text-center" onclick="setSort('lead')">
                                     Lead Time <span class="sort-indicator" data-col="lead"></span>
@@ -297,12 +304,12 @@
             <button type="button" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onclick="closeBulkAuditModal()" aria-label="Close">✕</button>
             <h3 class="font-bold text-lg">Confirm what is actually on the shelf</h3>
             <p class="text-sm text-base-content/60 mt-1">
-                Count each selected item before creating the Purchase Request. This prevents ordering from an outdated computer balance.
+                Check the safe, usable quantity of each selected item. Do not include expired or held batches. Purchasing will see the confirmed shortages automatically.
             </p>
 
             <div class="alert alert-info py-2 mt-4 text-sm">
                 <i class="fas fa-clipboard-check"></i>
-                <span>If your count is lower than the saved balance, enter a short reason. A higher count must be recorded through receiving or stock correction first.</span>
+                <span>If your count is lower, explain the difference. If it is higher, use the button beside that item to record the missing stock first.</span>
             </div>
 
             <div class="overflow-x-auto border border-base-300 rounded-lg mt-4" style="max-height:55vh">
@@ -310,10 +317,10 @@
                     <thead class="bg-base-200 sticky top-0 z-10">
                         <tr>
                             <th>Item</th>
-                            <th class="w-32 text-right">Saved balance</th>
-                            <th class="w-40">Counted on shelf</th>
+                            <th class="w-32 text-right">Usable balance</th>
+                            <th class="w-40">Usable amount confirmed</th>
                             <th>Reason if different</th>
-                            <th class="w-32 text-right">Will request</th>
+                            <th class="w-32 text-right">Confirmed shortage</th>
                         </tr>
                     </thead>
                     <tbody id="bulkAuditRows"></tbody>
@@ -325,7 +332,7 @@
                 <button type="button" class="btn btn-ghost" onclick="closeBulkAuditModal()">Cancel</button>
                 <button type="button" id="bulkAuditSubmitBtn" class="btn btn-primary" onclick="submitBulkAuditedPR()">
                     <i class="fas fa-file-signature"></i>
-                    Confirm Counts &amp; Create PR
+                    Confirm Stock Check
                 </button>
             </div>
         </div>
@@ -335,13 +342,30 @@
     <!-- Toast Container -->
     <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
 
+    <dialog id="stockOutcomeDialog" class="modal">
+        <div class="modal-box max-w-md">
+            <button type="button" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onclick="document.getElementById('stockOutcomeDialog').close()">✕</button>
+            <h3 id="stockOutcomeTitle" class="font-bold text-lg">Stock confirmation status</h3>
+            <div id="stockOutcomeState" class="badge badge-outline mt-3"></div>
+            <p id="stockOutcomeReason" class="text-sm text-base-content/70 mt-4"></p>
+            <div class="alert alert-info text-sm mt-4">
+                <i class="fas fa-circle-info"></i>
+                <span>Warehouse confirms stock; Purchasing decides whether to order. If a closed item is needed again, Purchasing can reopen it.</span>
+            </div>
+            <div class="modal-action">
+                <button type="button" class="btn btn-primary" onclick="document.getElementById('stockOutcomeDialog').close()">OK</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
     <!-- Scripts -->
     <script src="../../../js/vendor/axios.min.js"></script>
     <script src="../../../js/config/api.js"></script>
     <script src="../../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_raw,general_manager"></script>
     <script src="../../../js/purchasing/purchasing.service.js"></script>
-    <script src="../../../js/warehouse/raw.service.js"></script>
+    <script src="../../../js/warehouse/raw.service.js?v=20260825-2"></script>
     <script>window.WAREHOUSE_RAW_ACTIVE_PAGE = "reorder_alerts";</script>
     <script src="../../../js/warehouse/raw-sidebar.js?v=20260727a"></script>
     <script src="../../../js/warehouse/sidebar.stats.js?v=20260727a"></script>
@@ -529,18 +553,22 @@
         async function loadPendingReorderPRs() {
             pendingReorderPRs.clear();
             try {
-                const response = await api.get('/purchasing/purchase_requests.php', {
-                    params: { action: 'pending_item_refs' }
+                const response = await api.get('/warehouse/raw/stock_validations.php', {
+                    params: { action: 'open_item_refs' }
                 });
                 (response?.data || []).forEach(ref => {
-                    if (!ref.item_id || ref.item_type !== 'ingredient') return;
+                    if (!ref.item_id) return;
                     const key = pendingPRKey(ref.item_type, ref.item_id);
                     if (!pendingReorderPRs.has(key)) {
-                        pendingReorderPRs.set(key, ref);
+                        pendingReorderPRs.set(key, {
+                            ...ref,
+                            pr_number: ref.validation_number,
+                            pr_id: null
+                        });
                     }
                 });
             } catch (error) {
-                console.warn('Could not load pending PR item references:', error);
+                console.warn('Could not load current stock confirmations:', error);
             }
         }
 
@@ -564,15 +592,25 @@
         }
 
         function openPendingPR(ref) {
-            if (!ref) {
-                window.location.href = 'purchase_requests.html?status=pending';
-                return;
+            const dialog = document.getElementById('stockOutcomeDialog');
+            const title = document.getElementById('stockOutcomeTitle');
+            const state = document.getElementById('stockOutcomeState');
+            const reason = document.getElementById('stockOutcomeReason');
+            title.textContent = ref?.item_name || 'Stock confirmation status';
+            if (ref?.purchasing_decision === 'closed_without_order') {
+                state.textContent = 'Closed without order';
+                state.className = 'badge badge-error badge-outline mt-3';
+                reason.textContent = `Purchasing reason: ${ref.purchasing_decision_reason || 'No reason shown.'}`;
+            } else if (ref?.purchasing_decision === 'deferred') {
+                state.textContent = `Deferred until ${ref.deferred_until || 'the saved date'}`;
+                state.className = 'badge badge-warning badge-outline mt-3';
+                reason.textContent = `Purchasing reason: ${ref.purchasing_decision_reason || 'No reason shown.'}`;
+            } else {
+                state.textContent = 'Waiting for Purchasing';
+                state.className = 'badge badge-warning badge-outline mt-3';
+                reason.textContent = 'Warehouse has finished the physical count. Purchasing has not made a decision yet.';
             }
-            const params = new URLSearchParams({ status: ref.status || 'pending' });
-            if (ref.pr_id) {
-                params.set('pr_id', ref.pr_id);
-            }
-            window.location.href = `purchase_requests.html?${params.toString()}`;
+            if (!dialog.open) dialog.showModal();
         }
 
         // Sort state for click-to-sort column headers. Default is "urgency
@@ -663,7 +701,7 @@
             if (!bar || !countEl || !btn || !labelEl) return;
             const n = selectedItemIds.size;
             countEl.textContent = n;
-            labelEl.textContent = n === 1 ? `Create PR` : `Create PR (${n} items)`;
+            labelEl.textContent = n === 1 ? `Confirm Count` : `Confirm Counts (${n} items)`;
             btn.disabled = n === 0;
             if (n > 0) bar.classList.remove('hidden');
             else bar.classList.add('hidden');
@@ -710,8 +748,8 @@
             }).length;
             if (ctaLabelEl) {
                 ctaLabelEl.textContent = orderableCount === 1
-                    ? `Create Purchase Requisition`
-                    : `Create Purchase Requisition (${orderableCount} items)`;
+                    ? `Confirm Shelf Counts`
+                    : `Confirm Shelf Counts (${orderableCount} items)`;
             }
         }
 
@@ -746,7 +784,7 @@
                 const coveredCount = allAlerts.filter(a => a.stock_status !== 'OK' && getOrderQty(a) > 0 && hasCoveredPR(a)).length;
                 showToast(
                     coveredCount > 0
-                        ? 'All orderable alerts already have pending Purchase Requests.'
+                        ? 'All low-stock items are already confirmed and waiting for Purchasing.'
                         : 'No actionable items to process',
                     'info'
                 );
@@ -846,9 +884,19 @@
                 input.classList.add('input-error');
                 reason.disabled = true;
                 reason.required = false;
-                request.textContent = 'Fix stock first';
+                const isIngredient = (alert.item_type || 'ingredient') === 'ingredient';
+                const restricted = finiteNumber(alert.restricted_stock) || 0;
+                request.innerHTML = isIngredient && restricted > 0.0005
+                    ? '<span class="text-warning font-semibold">Exclude held stock</span>'
+                    : isIngredient
+                        ? `<button type="button" class="btn btn-warning btn-xs whitespace-nowrap" onclick="recordFoundStockFromAudit(${Number(alert.item_id)}, ${counted})"><i class="fas fa-box-open"></i> Record found stock</button>`
+                    : 'Use stock correction';
                 help.className = 'bulk-audit-count-help text-xs text-error mt-1';
-                help.textContent = `Higher than the saved ${displayAuditNumber(saved)} ${unit}. Record the missing receipt or stock correction first.`;
+                help.textContent = restricted > 0.0005
+                    ? `${displayAuditNumber(restricted)} ${unit} is expired or held. Confirm only the safe amount; resolve held batches from Ingredients.`
+                    : Number(alert.is_perishable) === 1
+                    ? `Higher than ${displayAuditNumber(saved)} ${unit}. Record its source, lot, and expiry first.`
+                    : `Higher than ${displayAuditNumber(saved)} ${unit}. Record the missing delivery or stock correction first.`;
                 return;
             }
 
@@ -862,8 +910,15 @@
             request.innerHTML = `<strong class="text-primary">${displayAuditNumber(qty)}</strong> <span class="text-xs text-base-content/55">${escapeHtml(unit)}</span>`;
             help.className = 'bulk-audit-count-help text-xs text-base-content/55 mt-1';
             help.textContent = differs
-                ? `Saved balance is ${displayAuditNumber(saved)} ${unit}; explain the shortage.`
-                : 'Matches the saved balance.';
+                ? `Usable balance is ${displayAuditNumber(saved)} ${unit}; explain the shortage.`
+                : 'Matches the usable balance.';
+        }
+
+        function recordFoundStockFromAudit(itemId, counted) {
+            const url = new URL('ingredients.html', window.location.href);
+            url.searchParams.set('record_unlisted', String(itemId));
+            url.searchParams.set('counted', String(counted));
+            window.location.href = url.toString();
         }
 
         async function submitBulkAuditedPR() {
@@ -891,7 +946,10 @@
                     return;
                 }
                 if (counted > saved + 0.0005) {
-                    fail('the count is higher than the saved balance. Record the missing receipt or stock correction first.');
+                    const restricted = finiteNumber(alert.restricted_stock) || 0;
+                    fail(restricted > 0.0005
+                        ? 'confirm only safe, usable stock. Expired or held batches are handled separately in Ingredients.'
+                        : 'the count is higher than the usable balance. Use Record found stock beside this item first.');
                     return;
                 }
                 if (Math.abs(counted - saved) > 0.0005 && !reason) {
@@ -920,19 +978,14 @@
                     purpose: 'Stock below reorder point',
                     audited_stock: counted,
                     audit_reason: reason || null,
-                    notes: `Shelf count confirmed from Reorder Alerts. Saved balance: ${saved} ${alert.unit_of_measure || ''}. Counted: ${counted} ${alert.unit_of_measure || ''}.`
+                    notes: `Usable stock confirmed from Reorder Alerts. Usable balance: ${saved} ${alert.unit_of_measure || ''}. Confirmed: ${counted} ${alert.unit_of_measure || ''}.`
                 });
             }
 
             error.textContent = '';
             error.classList.add('hidden');
-            const priority = bulkAuditAlerts.some(alert => alert.stock_status === 'OUT_OF_STOCK') ? 'urgent' : 'normal';
             const payload = {
-                status: 'pending',
-                priority,
-                needed_by_date: earliestNeededBy.toISOString().slice(0, 10),
-                purpose: 'Stock below reorder point',
-                notes: `Bulk reorder from Reorder Alerts — ${items.length} item${items.length === 1 ? '' : 's'} with shelf counts confirmed.`,
+                notes: `${items.length} low-stock item${items.length === 1 ? '' : 's'} physically counted by Warehouse.`,
                 items
             };
 
@@ -942,11 +995,11 @@
             if (heroCta) heroCta.disabled = true;
             if (bulkBtn) bulkBtn.disabled = true;
             submitBtn.disabled = true;
-            showToast(`Creating Purchase Requisition with ${items.length} item${items.length === 1 ? '' : 's'}…`, 'info');
+            showToast(`Saving ${items.length} confirmed shelf count${items.length === 1 ? '' : 's'}…`, 'info');
 
             try {
                 const token = localStorage.getItem('highland_token');
-                const response = await fetch(API_BASE_URL + '/purchasing/purchase_requests.php?action=create', {
+                const response = await fetch(API_BASE_URL + '/warehouse/raw/stock_validations.php?action=validate', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -959,19 +1012,13 @@
 
                 if (response.ok && (res.success || res.data?.success)) {
                     bulkAuditAlerts.forEach(alert => createdReorderPRs.add(String(alert.item_id)));
-                    showToast(`Created Purchase Requisition with ${items.length} item${items.length === 1 ? '' : 's'}`, 'success');
+                    showToast(`Stock check confirmed for ${items.length} item${items.length === 1 ? '' : 's'}. Purchasing can now view the shortage${items.length === 1 ? '' : 's'}.`, 'success');
                     selectedItemIds.clear();
                     document.getElementById('bulkAuditModal').close();
                     bulkAuditAlerts = [];
                     updateBulkActionBar();
                     renderAlerts();
-                    setTimeout(() => { window.location.href = 'purchase_requests.html'; }, 800);
-                } else if (response.status === 409 && res?.errors?.duplicate_pr_number) {
-                    showToast(`A pending PR already covers these items (${res.errors.duplicate_pr_number})`, 'info');
-                    bulkAuditAlerts.forEach(alert => rememberPendingPR(alert, res.errors));
-                    document.getElementById('bulkAuditModal').close();
-                    bulkAuditAlerts = [];
-                    renderAlerts();
+                    await loadAlerts();
                 } else {
                     const errMsg = res.message || `HTTP ${response.status}`;
                     error.textContent = errMsg;
@@ -980,7 +1027,7 @@
                 }
             } catch (e) {
                 const msg = e?.message || 'Network error';
-                error.textContent = `Could not create the Purchase Request: ${msg}`;
+                error.textContent = `Could not save the shelf confirmation: ${msg}`;
                 error.classList.remove('hidden');
                 console.error('[bulk] FAILED:', msg, e);
             } finally {
@@ -1109,16 +1156,26 @@
                 const actionDisabled = !canCreate && !pendingPR;
                 const actionHandler = pendingPR
                     ? `openPendingPR(${JSON.stringify({
-                        pr_id: pendingPR.pr_id || '',
-                        status: pendingPR.status || 'pending'
+                        status: pendingPR.status || 'pending',
+                        item_name: alert.item_name || 'Stock item',
+                        purchasing_decision: pendingPR.purchasing_decision || 'pending',
+                        deferred_until: pendingPR.deferred_until || '',
+                        purchasing_decision_reason: pendingPR.purchasing_decision_reason || ''
                     }).replace(/"/g, '&quot;')})`
                     : `startPurchaseRequest(${alert.item_id}, this)`;
-                const btnClass = pendingPR ? 'btn-outline btn-warning' : (hasCreatedPR ? 'btn-success' : 'btn-primary');
-                const btnIcon = pendingPR ? 'fa-hourglass-half' : (hasCreatedPR ? 'fa-check' : 'fa-file-signature');
+                const purchasingDecision = pendingPR?.purchasing_decision || 'pending';
+                const btnClass = purchasingDecision === 'closed_without_order'
+                    ? 'btn-outline btn-error'
+                    : (pendingPR ? 'btn-outline btn-warning' : (hasCreatedPR ? 'btn-success' : 'btn-primary'));
+                const btnIcon = purchasingDecision === 'closed_without_order'
+                    ? 'fa-circle-xmark'
+                    : (purchasingDecision === 'deferred' ? 'fa-calendar-day' : (pendingPR ? 'fa-hourglass-half' : (hasCreatedPR ? 'fa-check' : 'fa-file-signature')));
                 const btnTitle = pendingPR
-                    ? `${pendingPR.pr_number || 'This item'} is already requested`
-                    : (hasCreatedPR ? 'Purchase Request Slip started' : 'Generate PRS');
-                const btnLabel = pendingPR ? 'Pending' : (hasCreatedPR ? 'Created' : 'PRS');
+                    ? `${pendingPR.pr_number || 'This item'} is already confirmed`
+                    : (hasCreatedPR ? 'Shelf count confirmed' : 'Confirm shelf count');
+                const btnLabel = purchasingDecision === 'closed_without_order'
+                    ? 'Closed by Purchasing'
+                    : (purchasingDecision === 'deferred' ? `Deferred to ${pendingPR.deferred_until || 'later'}` : (pendingPR ? 'Waiting for Purchasing' : (hasCreatedPR ? 'Confirmed' : 'Validate')));
 
                 const safeName = escapeHtml(alert.item_name || 'Unnamed');
                 const safeCode = escapeHtml(alert.item_code || '');
@@ -1224,7 +1281,7 @@
             const reorderPoint = parseFloat(alert.reorder_point) || 0;
             const pendingPR = getPendingPR(alert);
             if (pendingPR) {
-                showToast(`${alert.item_name} already has pending ${pendingPR.pr_number}.`, 'info');
+                showToast(`${alert.item_name} is already confirmed under ${pendingPR.pr_number}.`, 'info');
                 return;
             }
             const qty = getOrderQty(alert);
@@ -1233,39 +1290,7 @@
                 return;
             }
 
-            const priority = alert.stock_status === 'OUT_OF_STOCK'
-                ? 'urgent'
-                : 'normal';
-            const neededBy = new Date();
-            neededBy.setDate(neededBy.getDate() + parseInt(alert.lead_time_days || 7, 10));
-
-            const prefill = {
-                source: 'reorder_alert',
-                source_type: 'ingredient',
-                source_id: parseInt(alert.item_id, 10),
-                item_id: parseInt(alert.item_id, 10),
-                item_code: alert.item_code,
-                item_name: alert.item_name,
-                unit: alert.unit_of_measure || 'units',
-                quantity: qty,
-                estimated_unit_price: parseFloat(alert.unit_cost) || 0,
-                priority,
-                needed_by_date: neededBy.toISOString().slice(0, 10),
-                purpose: 'Stock below reorder point',
-                line_purpose: 'Stock below reorder point',
-                notes: `Started from Reorder Alerts. Current stock: ${stock} ${alert.unit_of_measure}. Reorder point: ${reorderPoint} ${alert.unit_of_measure}. Status: ${alert.stock_status}.`,
-                line_notes: `Reorder alert for ${alert.item_code || alert.item_name}.`
-            };
-
-            sessionStorage.setItem('highland_pr_prefill', JSON.stringify(prefill));
-            createdReorderPRs.add(String(alert.item_id));
-            if (button) {
-                button.disabled = true;
-                button.classList.remove('btn-primary');
-                button.classList.add('btn-success');
-                button.innerHTML = '<i class="fas fa-check"></i>';
-            }
-            window.location.href = `purchase_requests.html?prefill=low_stock&item_id=${encodeURIComponent(alert.item_id)}`;
+            openBulkAuditModal([alert]);
         }
 
         function exportReport() {

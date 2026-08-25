@@ -6,10 +6,9 @@
  *
  * Workflow:
  *   1. Production staff creates a requisition     -> status 'pending'
- *   2. Production staff explicitly acknowledges
- *      any stock shortage on submit (audit row in
- *      requisition_stock_warnings)                -> status still 'pending'
- *   3. GM approves the requisition                -> status 'approved'
+ *   2. Server blocks submission when Warehouse
+ *      cannot cover the saved recipe quantities
+ *   3. GM approves a fully available request      -> status 'approved'
  *   4. Warehouse Raw sees approved requests and
  *      fulfills / partially fulfills them         -> status 'fulfilled' / 'partial'
  *
@@ -25,6 +24,7 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/helpers/recipe_production_readiness.php';
+require_once dirname(__DIR__) . '/warehouse/raw/ingredient_stock_helpers.php';
 
 // Require Production, GM, or Warehouse Raw role.
 //   - production_staff: create + cancel own pending
@@ -159,7 +159,7 @@ function ensureStockValidationTables($db) {
     if (!auditColumnExists($db, 'material_requisitions', 'stock_override_acknowledged')) {
         $db->exec("ALTER TABLE material_requisitions
             ADD COLUMN stock_override_acknowledged TINYINT(1) NOT NULL DEFAULT 0
-                COMMENT '1 = requester explicitly acknowledged a stock shortage on submit',
+                COMMENT 'Legacy audit field; new production requests may not override shortages',
             ADD COLUMN stock_override_by INT NULL
                 COMMENT 'FK to users — who acknowledged the shortage',
             ADD COLUMN stock_override_reason VARCHAR(255) NULL
@@ -238,10 +238,9 @@ function ensureStockValidationTables($db) {
  *     ...
  *   ]
  *
- * - For ingredient items we use the same query the warehouse check_stock
- *   endpoint uses: max(SUM(ingredient_batches.remaining_quantity),
- *   ingredients.current_stock). This is the most accurate available figure
- *   given FIFO issuance + reconciliation.
+ * - For ingredient items we use the same usable-batch rule as Warehouse.
+ *   Perishable stock without a supplier lot or printed expiry stays on hold
+ *   and cannot satisfy a Production request.
  * - For raw_milk items we use the same SUM(remaining_liters) from
  *   raw_milk_inventory that the warehouse uses for issuance.
  * - Items without a resolvable item_id (free-text from the legacy form) are
@@ -288,12 +287,10 @@ function checkRequisitionStock($db, $items) {
             // Pull current_stock + batch_stock + pack_size_value in one
             // round-trip so we can both compare against stock AND convert
             // any quantity_in_packs into base units.
+            $usableStockSql = usableIngredientBatchStockSql('i.id', 'prod_req_ib');
             $stmt = $db->prepare("
                 SELECT i.current_stock, i.pack_size_value,
-                       (SELECT COALESCE(SUM(remaining_quantity), 0)
-                          FROM ingredient_batches ib
-                         WHERE ib.ingredient_id = i.id
-                           AND ib.status IN ('available', 'partially_used')) AS batch_stock
+                       {$usableStockSql} AS batch_stock
                 FROM ingredients i
                 WHERE i.id = ?
             ");
@@ -303,7 +300,7 @@ function checkRequisitionStock($db, $items) {
                 $available = 0.0;
                 $verified = false;
             } else {
-                $available = max((float) $row['current_stock'], (float) $row['batch_stock']);
+                $available = (float) $row['batch_stock'];
                 $packSize = $row['pack_size_value'] !== null ? (float) $row['pack_size_value'] : null;
             }
         } elseif ($itemType === 'raw_milk') {
@@ -367,9 +364,9 @@ function checkRequisitionStock($db, $items) {
 }
 
 /**
- * Persist stock-validation decisions to the audit table. Called both when a
- * shortage is blocked (decision = 'blocked') and when the requester
- * acknowledges the override (decision = 'overridden').
+ * Persist historical stock-validation decisions to the audit table.
+ * New production requests stop before creation when a shortage exists;
+ * legacy override rows remain readable for audit purposes.
  */
 function logStockValidationDecisions($db, $requisitionId, $shortages, $decision, $userId, $role, $reason = null) {
     if (empty($shortages)) return;
@@ -518,7 +515,7 @@ function getRequisitionRecipeItemsForPlan($db, $recipeId, $plannedQuantity) {
     $select = "id, recipe_code, product_name, variant, product_type, base_milk_liters, expected_yield, yield_unit";
     try {
         $db->query('SELECT base_product_id, bulk_yield_liters FROM master_recipes LIMIT 0');
-        $select .= ', base_product_id, bulk_yield_liters';
+        $select .= ', base_product_id, bulk_yield_liters, max_batch_liters';
     } catch (Throwable $e) {
         // legacy schema
     }
@@ -549,6 +546,27 @@ function getRequisitionRecipeItemsForPlan($db, $recipeId, $plannedQuantity) {
     // Scale only from a declared liquid standard. Bottle counts and base-milk
     // volume are not interchangeable with finished bulk liters.
     $expectedYield = getStrictRecipeBulkYieldLiters($recipe);
+    $batchPlan = assessRecipeBatchPlan($recipe, $plannedQuantity);
+    if (!$batchPlan['valid']) {
+        Response::validationError([
+            'planned_quantity' => sprintf(
+                'This recipe allows at most %.2f L in one production run. Split %.2f L into separate runs.',
+                $batchPlan['maximum_liters'],
+                $batchPlan['planned_liters']
+            ),
+        ]);
+    }
+    $liquidBalance = assessRecipeLiquidBalance($db, $recipe);
+    if (!$liquidBalance['valid']) {
+        Response::validationError([
+            'recipe_id' => sprintf(
+                'This recipe is blocked for formula review: %.2f L of liquid input is configured for only %.2f L output (%.2f%% retained). Ask the General Manager to correct the recipe before requesting materials.',
+                $liquidBalance['input_liters'],
+                $liquidBalance['yield_liters'],
+                $liquidBalance['retained_percent']
+            ),
+        ]);
+    }
     $scaleFactor = $expectedYield > 0 ? max(0, (float) $plannedQuantity) / $expectedYield : 1;
     $requiredMilk = round(((float) $recipe['base_milk_liters']) * $scaleFactor, 3);
     $items = [];
@@ -584,10 +602,11 @@ function getRequisitionRecipeItemsForPlan($db, $recipeId, $plannedQuantity) {
     $recipe['plan_unit'] = 'liters';
     $recipe['scale_factor'] = $scaleFactor;
 
+    $planUsableStockSql = usableIngredientBatchStockSql('i.id', 'plan_item_ib');
     $ingredientsStmt = $db->prepare("
         SELECT ri.ingredient_id, ri.ingredient_name, ri.quantity, ri.unit, ri.is_optional, ri.notes,
                i.pack_size_value, i.pack_size_unit, i.pack_label,
-               i.enforce_whole_packs, i.current_stock
+               i.enforce_whole_packs, {$planUsableStockSql} AS current_stock
         FROM recipe_ingredients ri
         LEFT JOIN ingredients i ON ri.ingredient_id = i.id
         WHERE ri.recipe_id = ?
@@ -734,10 +753,11 @@ function getRequisitionRecipeItemsForRun($db, $runId) {
     $scaleFactor = $expectedYield > 0 ? max(0, (float) $run['planned_quantity']) / $expectedYield : 1;
     $adjustments = requisitionParseIngredientAdjustments($run['ingredient_adjustments'] ?? null);
 
+    $runUsableStockSql = usableIngredientBatchStockSql('i.id', 'run_item_ib');
     $ingredientsStmt = $db->prepare("
         SELECT ri.ingredient_id, ri.ingredient_name, ri.quantity, ri.unit, ri.is_optional, ri.notes,
                i.pack_size_value, i.pack_size_unit, i.pack_label,
-               i.enforce_whole_packs, i.current_stock
+               i.enforce_whole_packs, {$runUsableStockSql} AS current_stock
         FROM recipe_ingredients ri
         LEFT JOIN ingredients i ON ri.ingredient_id = i.id
         WHERE ri.recipe_id = ?
@@ -847,6 +867,7 @@ function getRequisitionRecipeItemsForRun($db, $runId) {
 
 try {
     $db = Database::getInstance()->getConnection();
+    ensureRecipeBatchCapacityColumn($db);
     ensureProductionRequisitionPlanColumns($db);
     ensureStockValidationTables($db);
     
@@ -1175,6 +1196,21 @@ try {
                 }
             }
 
+            // Planned recipe requests are generated from the saved formula on
+            // the server. Browser-edited, omitted, or duplicated material rows
+            // can never change what the approved recipe requires.
+            if (!$productionRunId
+                && $plannedRecipeId
+                && empty($errors['planned_quantity'])) {
+                $authoritativePlan = getRequisitionRecipeItemsForPlan(
+                    $db,
+                    (int) $plannedRecipeId,
+                    (float) $plannedQuantity
+                );
+                $items = $authoritativePlan['items'];
+                unset($errors['items']);
+            }
+
             if (is_array($items)) {
                 $seenRequestItems = [];
                 foreach ($items as $index => $item) {
@@ -1304,18 +1340,9 @@ try {
             }
 
             // ----------------------------------------------------------------
-            // Stock validation gate (V4.0)
-            //
-            // The prof's review flagged that production could request more
-            // materials than the warehouse had on hand. We now compute the
-            // available stock for every item, and:
-            //   - If every item has enough stock: proceed silently.
-            //   - If any item has a shortage and the client did not send
-            //     stock_override_acknowledged=true: return 422 with the
-            //     shortages[] payload so the UI can show a confirmation modal.
-            //   - If the client acknowledges the override: proceed, mark the
-            //     requisition as overridden, and write audit rows to
-            //     requisition_stock_warnings for accountability.
+            // Stock validation gate. A recipe request represents materials
+            // Warehouse can actually issue, so shortages are blockers rather
+            // than an employee override.
             // ----------------------------------------------------------------
             $stockCheck = checkRequisitionStock($db, $items);
             $hasShortage = false;
@@ -1323,20 +1350,14 @@ try {
                 if (!$s['sufficient']) { $hasShortage = true; break; }
             }
 
-            $overrideAcknowledged = filter_var(
-                getParam('stock_override_acknowledged', false),
-                FILTER_VALIDATE_BOOLEAN
-            );
-            $overrideReason = trim((string) getParam('stock_override_reason', ''));
-
-            if ($hasShortage && !$overrideAcknowledged) {
+            if ($hasShortage) {
                 // Custom error response so we can include the full stock_check
                 // payload (per-item requested/available/shortage) in addition
                 // to the human message. Response::validationError() only
                 // accepts a flat errors array, so we go through error() with
                 // status 422 and pack the structure into the 'errors' field.
                 Response::error(
-                    'Insufficient stock for one or more requested items. Acknowledge the shortage to proceed.',
+                    'This production request cannot be submitted because Warehouse does not have every required material. Replenish the listed shortages first.',
                     422,
                     [
                         'error_code' => 'insufficient_stock',
@@ -1404,7 +1425,7 @@ try {
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
                 ");
 
-                $overrideCols = $hasShortage ? [1, $currentUser['user_id'], $overrideReason ?: null, date('Y-m-d H:i:s')] : [0, null, null, null];
+                $overrideCols = [0, null, null, null];
 
                 $stmt->execute([
                     $requisitionCode,
@@ -1564,25 +1585,7 @@ try {
                 
                 $db->commit();
 
-                // Write the per-item stock-validation audit rows now that the
-                // requisition id is real and committed. Only rows for items
-                // that actually had a shortage (or could not be verified) are
-                // logged; clean rows are skipped to keep the audit table lean.
-                if ($hasShortage) {
-                    logStockValidationDecisions(
-                        $db,
-                        $requisitionId,
-                        $stockCheck['items'],
-                        'overridden',
-                        $currentUser['user_id'],
-                        $currentUser['role'],
-                        $overrideReason ?: null
-                    );
-                }
-
-                $message = $hasShortage
-                    ? "Requisition {$requisitionCode} submitted with acknowledged stock shortage. It is waiting for GM approval."
-                    : "Requisition {$requisitionCode} submitted. It is waiting for GM approval.";
+                $message = "Requisition {$requisitionCode} submitted. It is waiting for GM approval.";
 
                 Response::created([
                     'id' => $requisitionId,

@@ -433,6 +433,7 @@ function getReservedRawMilkLiters($db, $earliestIssuedAt = null) {
 
 try {
     $db = Database::getInstance()->getConnection();
+    ensureRecipeBatchCapacityColumn($db);
     ensureProductionPackagingRequestSchema($db);
     ensureQcCountDiscrepancyTables($db);
     
@@ -951,6 +952,25 @@ try {
                         : 'This base product has no current bulk recipe';
                 }
             }
+            if ($recipe && isBulkProductionRecipe($recipe)) {
+                $batchPlan = assessRecipeBatchPlan($recipe, $plannedQuantity);
+                if (!$batchPlan['valid']) {
+                    $errors['planned_quantity'] = sprintf(
+                        'This recipe allows at most %.2f L in one production run. Split %.2f L into separate runs.',
+                        $batchPlan['maximum_liters'],
+                        $batchPlan['planned_liters']
+                    );
+                }
+                $liquidBalance = assessRecipeLiquidBalance($db, $recipe);
+                if (!$liquidBalance['valid']) {
+                    $errors['recipe_id'] = sprintf(
+                        'Recipe blocked for formula review: %.2f L liquid input for %.2f L output (%.2f%% retained).',
+                        $liquidBalance['input_liters'],
+                        $liquidBalance['yield_liters'],
+                        $liquidBalance['retained_percent']
+                    );
+                }
+            }
             
             // Calculate required milk liters (bulk-batch aware).
             // planned_quantity is liquid volume (L); scale vs bulk_yield_liters
@@ -1390,6 +1410,30 @@ try {
                     }
                     $plannedSkuItems = $packagingPlan['items'];
                     $packagingRequirements = $packagingPlan['requirements'];
+
+                    // Do not allow a packaging request to promise more finished
+                    // volume than the batch actually contains. The browser also
+                    // previews this, but the server remains the final safeguard.
+                    $availablePackagingVolumeMl = (float) ($run['net_yield_ml'] ?? 0);
+                    if ($availablePackagingVolumeMl <= 0) {
+                        $availablePackagingVolumeMl = (float) ($run['initial_volume_ml'] ?? 0);
+                    }
+                    if ($availablePackagingVolumeMl <= 0) {
+                        $availablePackagingVolumeMl = (float) ($run['planned_quantity'] ?? 0) * 1000;
+                    }
+                    $packagingVolumeCheck = validateSkuPackagingPlanVolume(
+                        $plannedSkuItems,
+                        $availablePackagingVolumeMl
+                    );
+                    if (!$packagingVolumeCheck['valid']) {
+                        Response::validationError([
+                            'packaging_items' => sprintf(
+                                'The selected packages need %.3f L, but this batch has only %.3f L available.',
+                                $packagingVolumeCheck['planned_volume_ml'] / 1000,
+                                $packagingVolumeCheck['available_volume_ml'] / 1000
+                            )
+                        ]);
+                    }
 
                     $existingStmt = $db->prepare("
                         SELECT id, requisition_code, status

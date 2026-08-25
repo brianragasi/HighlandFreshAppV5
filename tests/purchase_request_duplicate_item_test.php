@@ -19,9 +19,19 @@ $checks = [
         str_contains($backend, '$seenItems = [];') &&
         str_contains($backend, "'ingredient:' . (int) \$item['ingredient_id']") &&
         str_contains($backend, "'mro:' . (int) \$item['mro_item_id']"),
+    'database triggers protect against concurrent duplicate line inserts and updates' =>
+        str_contains($backend, 'trg_pri_no_duplicate_insert') &&
+        str_contains($backend, 'trg_pri_no_duplicate_update_v2') &&
+        str_contains($backend, "SIGNAL SQLSTATE '45000'") &&
+        str_contains($backend, 'NEW.purchase_request_id <=> OLD.purchase_request_id') &&
+        str_contains($backend, 'while preserving any') &&
+        str_contains($backend, 'historical duplicates for review'),
     'old drafts are rechecked when submitted' =>
         str_contains($backend, "'purpose' => \$current['purpose'] ?? null") &&
         str_contains($backend, '], true);'),
+    'open approved demand also blocks duplicate PRS creation' =>
+        substr_count($backend, "status IN ('pending', 'approved', 'partially_converted')") >= 3 &&
+        str_contains($backend, 'linked_po.status NOT IN (\'cancelled\', \'rejected\')'),
 ];
 
 $failed = [];

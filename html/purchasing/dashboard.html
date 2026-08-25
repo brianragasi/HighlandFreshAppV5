@@ -388,7 +388,7 @@
                     <div class="flex gap-2 flex-wrap">
                         <a href="purchase_orders.html?action=new"
                             class="btn btn-sm bg-white/20 border-white/30 text-white hover:bg-white/30 backdrop-blur-sm">
-                            <i class="fas fa-scale-balanced"></i> Review PRS
+                            <i class="fas fa-scale-balanced"></i> Review Confirmed Stock
                         </a>
                         <a href="suppliers.html"
                             class="btn btn-sm bg-white/20 border-white/30 text-white hover:bg-white/30 backdrop-blur-sm">
@@ -402,7 +402,7 @@
             <div id="approvedPrAlert" class="hidden alert bg-warning/10 border border-warning/30 items-start">
                 <i class="fas fa-bell text-warning mt-1"></i>
                 <div class="flex-1">
-                    <h3 class="font-bold text-base-content" id="approvedPrAlertTitle">Warehouse PRS inbox</h3>
+                    <h3 class="font-bold text-base-content" id="approvedPrAlertTitle">Confirmed Low Stock</h3>
                     <p class="text-sm text-base-content/70" id="approvedPrAlertText"></p>
                     <div id="approvedPrAlertItems" class="flex flex-wrap gap-2 mt-3"></div>
                 </div>
@@ -479,7 +479,7 @@
                         <p class="text-2xl lg:text-3xl font-extrabold stat-value text-base-content" id="statRequisitions">
                             <span class="loading loading-dots loading-sm"></span>
                         </p>
-                        <p class="text-sm text-base-content/60 font-medium">PRS Inbox</p>
+                        <p class="text-sm text-base-content/60 font-medium">Confirmed Stock</p>
                     </div>
                 </a>
 
@@ -500,6 +500,22 @@
                 </a>
             </div>
 
+            <section id="foundStockPriceSection" class="hidden card bg-base-100 border border-info/40">
+                <div class="card-body p-4 lg:p-5">
+                    <div class="flex items-start justify-between gap-3 mb-3">
+                        <div>
+                            <h3 class="card-title text-base lg:text-lg font-bold">
+                                <i class="fas fa-file-invoice-dollar text-info mr-2"></i>
+                                Verify Found-Stock Cost
+                            </h3>
+                            <p class="text-sm text-base-content/60 mt-1">Warehouse confirmed the physical facts. Check the PO, invoice, or approved opening valuation—do not guess.</p>
+                        </div>
+                        <span class="badge badge-info" id="foundStockPriceCount">0</span>
+                    </div>
+                    <div id="foundStockPriceChecks" class="space-y-2"></div>
+                </div>
+            </section>
+
             <!-- Critical stock requiring a warehouse PRS -->
             <section class="card bg-base-100 border border-base-300" id="criticalStocks">
                 <div class="card-body p-4 lg:p-5">
@@ -512,7 +528,7 @@
                             <p class="text-xs text-base-content/60 mt-1">Usable stock at or below the minimum safety level.</p>
                         </div>
                         <a href="purchase_orders.html?action=new" class="btn btn-outline btn-sm">
-                            <i class="fas fa-file-signature"></i> Open PRS Inbox
+                            <i class="fas fa-file-signature"></i> Create Supplier PO
                         </a>
                     </div>
                     <div class="overflow-x-auto">
@@ -592,7 +608,7 @@
                                     <i class="fas fa-plus"></i>
                                 </div>
                                 <div>
-                                    <p class="text-sm font-semibold">Review PRS</p>
+                                    <p class="text-sm font-semibold">Review Confirmed Stock</p>
                                     <p class="text-xs text-base-content/50">Create a new PO</p>
                                 </div>
                             </a>
@@ -696,6 +712,35 @@
         </footer>
     </div>
 
+    <dialog id="foundStockPriceModal" class="modal">
+        <div class="modal-box max-w-2xl">
+            <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-3 top-3">✕</button></form>
+            <h3 class="font-bold text-lg"><i class="fas fa-file-invoice-dollar text-info mr-2"></i>Verify inventory cost</h3>
+            <p class="text-sm text-base-content/60 mt-1" id="foundStockPriceSummary"></p>
+            <input type="hidden" id="foundStockPriceRequestId">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-5">
+                <label class="form-control">
+                    <span class="label-text font-semibold mb-1">Verified cost per warehouse unit (₱)</span>
+                    <input type="number" id="foundStockVerifiedCost" class="input input-bordered" min="0.01" step="0.01" placeholder="From PO or invoice">
+                </label>
+                <label class="form-control">
+                    <span class="label-text font-semibold mb-1">PO / invoice / valuation reference</span>
+                    <input id="foundStockPriceReference" class="input input-bordered" maxlength="100" placeholder="e.g. PO-20260825-001">
+                </label>
+            </div>
+            <label class="form-control mt-3">
+                <span class="label-text font-semibold mb-1">Notes</span>
+                <textarea id="foundStockPriceNotes" class="textarea textarea-bordered" maxlength="500" placeholder="How the cost was verified, or why the request must be rejected"></textarea>
+            </label>
+            <div class="alert alert-info py-2 mt-4 text-sm"><i class="fas fa-circle-info"></i><span>This verifies the money only. GM still gives final approval, and perishable stock also requires QC.</span></div>
+            <div class="modal-action">
+                <button type="button" class="btn btn-outline btn-error" onclick="rejectFoundStockPrice()"><i class="fas fa-times"></i> Reject source</button>
+                <button type="button" class="btn btn-success" onclick="verifyFoundStockPrice()"><i class="fas fa-check"></i> Verify price</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
     <!-- Toast Container -->
     <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
 
@@ -705,7 +750,7 @@
     <script src="../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../js/ui/live-refresh.js?v=20260820-1"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="purchaser,general_manager"></script>
-    <script src="../../js/purchasing/purchasing.service.js"></script>
+    <script src="../../js/purchasing/purchasing.service.js?v=found-stock-1"></script>
 
     <script>
         // ========================================
@@ -791,18 +836,23 @@
                 loadPendingRequisitions().catch(e => console.error('Requisitions error:', e)),
                 loadApprovedPurchaseRequestNotifications().catch(e => console.error('PRS inbox notification error:', e)),
                 loadSpendingSparkline().catch(e => console.error('Sparkline error:', e)),
+                loadFoundStockPriceChecks().catch(e => console.error('Found-stock price checks error:', e)),
             ];
             await Promise.all(loaders);
         }
 
         async function loadApprovedPurchaseRequestNotifications() {
             const [prResponse, notifResponse] = await Promise.all([
-                PurchasingService.getPRSInbox(),
+                PurchasingService.getConfirmedLowStock(),
                 PurchasingService.getNotifications().catch(() => ({ data: [] }))
             ]);
             const prsInbox = prResponse?.data || [];
+            const confirmedItems = prsInbox.flatMap(check => (check.items || []).map(item => ({
+                ...item,
+                item_name: item.ingredient_name || item.mro_item_name || item.item_description || 'Confirmed item'
+            })));
             const procNotifs = notifResponse?.data || [];
-            const count = prsInbox.length;
+            const count = confirmedItems.length;
             const totalNotifs = count + procNotifs.length;
             const notifCount = document.getElementById('notifCount');
             const notificationList = document.getElementById('notificationList');
@@ -814,13 +864,13 @@
             notifCount.textContent = totalNotifs;
             notifCount.className = `indicator-item badge badge-xs ${totalNotifs ? 'border-warning bg-warning/10 text-base-content' : 'badge-primary'}`;
 
-            // Build notification list: submitted PRS records first, then procurement notices.
+            // Build the list from products, not old PRS/validation document codes.
             let listHtml = '';
 
             if (procNotifs.length) {
                 listHtml += procNotifs.map(n => `
                     <li>
-                            <a href="purchase_orders.html?action=new" class="items-start">
+                            <a href="${n.notification_type === 'found_stock_price_check' ? '#foundStockPriceSection' : 'purchase_orders.html?action=new'}" class="items-start">
                             <i class="fas fa-file-signature text-warning mt-1"></i>
                             <div>
                                 <p class="font-medium">${escapeHtml(n.title)}</p>
@@ -839,30 +889,30 @@
             }
 
             if (count) {
-                const noun = count === 1 ? 'PRS' : 'PRS records';
-                title.textContent = `${count} submitted ${noun} have quantities left to order`;
-                text.textContent = 'Choose one Warehouse PRS, then manually build one accredited supplier’s PO from its remaining requested items.';
-                items.innerHTML = prsInbox.slice(0, 4).map(pr => {
-                    const prLink = `purchase_orders.html?action=new&pr_id=${encodeURIComponent(pr.id)}`;
+                const noun = count === 1 ? 'confirmed item needs' : 'confirmed items need';
+                title.textContent = `${count} ${noun} a Purchasing decision`;
+                text.textContent = 'Open the review to order now, defer until a chosen date, or close without ordering and record why.';
+                items.innerHTML = confirmedItems.slice(0, 4).map(item => {
+                    const prLink = 'purchase_orders.html?action=new';
                     return `
                         <a href="${prLink}" class="badge border-warning bg-warning/10 text-base-content gap-1 h-auto py-2">
-                            <i class="fas fa-file-signature"></i>
-                            ${escapeHtml(pr.pr_number)} - ${escapeHtml(getPurchaseRequestItemPreview(pr))}
+                            <i class="fas fa-box"></i>
+                            ${escapeHtml(item.item_name)} — ${formatQuantity(item.remaining_quantity ?? item.quantity)} ${escapeHtml(item.unit || 'units')}
                         </a>
                     `;
                 }).join('');
                 alert.classList.remove('hidden');
 
-                listHtml += prsInbox.map(pr => {
-                    const prLink = `purchase_orders.html?action=new&pr_id=${encodeURIComponent(pr.id)}`;
+                listHtml += confirmedItems.map(item => {
+                    const prLink = 'purchase_orders.html?action=new';
                     return `
                         <li>
                             <a href="${prLink}" class="items-start">
-                                <i class="fas fa-file-signature text-warning mt-1"></i>
+                                <i class="fas fa-box text-warning mt-1"></i>
                                 <div>
-                                    <p class="font-medium">${escapeHtml(pr.pr_number)} has requested quantities left to order</p>
-                                    <p class="text-xs text-base-content/60">${escapeHtml(pr.purpose || 'Purchase request')}</p>
-                                    <p class="text-xs text-base-content/50">${escapeHtml(getPurchaseRequestItemPreview(pr))}</p>
+                                    <p class="font-medium">${escapeHtml(item.item_name)} needs a decision</p>
+                                    <p class="text-xs text-base-content/60">Confirmed shortage: ${formatQuantity(item.remaining_quantity ?? item.quantity)} ${escapeHtml(item.unit || 'units')}</p>
+                                    <p class="text-xs text-base-content/50">Order now, defer, or close without ordering</p>
                                 </div>
                             </a>
                         </li>
@@ -908,6 +958,86 @@
 
             } catch (error) {
                 console.error('Error loading stats:', error);
+            }
+        }
+
+        let foundStockPriceChecks = [];
+
+        async function loadFoundStockPriceChecks() {
+            const response = await PurchasingService.getFoundStockPriceChecks();
+            foundStockPriceChecks = response?.data || [];
+            const section = document.getElementById('foundStockPriceSection');
+            const list = document.getElementById('foundStockPriceChecks');
+            document.getElementById('foundStockPriceCount').textContent = foundStockPriceChecks.length;
+            section.classList.toggle('hidden', foundStockPriceChecks.length === 0);
+            if (!foundStockPriceChecks.length) {
+                list.innerHTML = '';
+                return;
+            }
+            list.innerHTML = foundStockPriceChecks.map(item => `
+                <button type="button" class="w-full text-left border border-base-300 rounded-xl p-3 hover:bg-base-200 transition"
+                    onclick="openFoundStockPrice(${Number(item.id)})">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                            <p class="font-semibold">${escapeHtml(item.ingredient_name)} <span class="badge badge-ghost badge-sm">${escapeHtml(item.request_code)}</span></p>
+                            <p class="text-xs text-base-content/60">${escapeHtml(item.supplier_name || 'Opening inventory')} · ${escapeHtml(item.source_reference)} · ${formatQuantity(item.quantity_to_add)} ${escapeHtml(item.unit)}</p>
+                        </div>
+                        <span class="btn btn-info btn-sm"><i class="fas fa-magnifying-glass-dollar"></i> Check price</span>
+                    </div>
+                </button>`).join('');
+        }
+
+        function openFoundStockPrice(id) {
+            const item = foundStockPriceChecks.find(row => Number(row.id) === Number(id));
+            if (!item) return;
+            document.getElementById('foundStockPriceRequestId').value = item.id;
+            document.getElementById('foundStockPriceSummary').textContent =
+                `${item.ingredient_name}: ${formatQuantity(item.quantity_to_add)} ${item.unit} found by Warehouse. Source: ${item.source_reference}.`;
+            const suggested = Number(item.supplier_reference_price || item.last_inventory_cost || 0);
+            document.getElementById('foundStockVerifiedCost').value = suggested > 0 ? suggested.toFixed(2) : '';
+            document.getElementById('foundStockPriceReference').value = '';
+            document.getElementById('foundStockPriceNotes').value = '';
+            document.getElementById('foundStockPriceModal').showModal();
+        }
+
+        async function verifyFoundStockPrice() {
+            const requestId = Number(document.getElementById('foundStockPriceRequestId').value);
+            const unitCost = document.getElementById('foundStockVerifiedCost').value;
+            const priceReference = document.getElementById('foundStockPriceReference').value.trim();
+            const notes = document.getElementById('foundStockPriceNotes').value.trim();
+            if (!unitCost || Number(unitCost) <= 0 || priceReference.length < 3) {
+                showToast('Enter the verified unit cost and its PO, invoice, or valuation reference.', 'error');
+                return;
+            }
+            try {
+                const response = await PurchasingService.verifyFoundStockPrice({
+                    request_id: requestId,
+                    unit_cost: unitCost,
+                    price_reference: priceReference,
+                    notes,
+                });
+                document.getElementById('foundStockPriceModal').close();
+                showToast(response.message || 'Price verified', 'success');
+                await loadFoundStockPriceChecks();
+            } catch (error) {
+                showToast(error?.message || 'Could not verify the price', 'error');
+            }
+        }
+
+        async function rejectFoundStockPrice() {
+            const requestId = Number(document.getElementById('foundStockPriceRequestId').value);
+            const notes = document.getElementById('foundStockPriceNotes').value.trim();
+            if (notes.length < 5) {
+                showToast('Explain why the source or price cannot be verified.', 'error');
+                return;
+            }
+            try {
+                const response = await PurchasingService.rejectFoundStockPrice({ request_id: requestId, notes });
+                document.getElementById('foundStockPriceModal').close();
+                showToast(response.message || 'Request rejected', 'success');
+                await loadFoundStockPriceChecks();
+            } catch (error) {
+                showToast(error?.message || 'Could not reject the request', 'error');
             }
         }
 
@@ -1192,6 +1322,11 @@
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2
             });
+        }
+
+        function formatQuantity(value) {
+            const number = Number(value || 0);
+            return number.toLocaleString('en-PH', { maximumFractionDigits: 3 });
         }
 
         function formatNumber(value) {

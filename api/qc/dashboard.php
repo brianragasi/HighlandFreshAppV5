@@ -32,16 +32,22 @@ ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/ingredient_opening_stock.php';
+require_once dirname(__DIR__) . '/helpers/procurement_notifications.php';
+require_once dirname(__DIR__) . '/helpers/plain_text.php';
 
 // Require QC role
 $currentUser = Auth::requireRole(['qc_officer', 'general_manager']);
 
-if ($requestMethod !== 'GET') {
-    Response::error('Method not allowed', 405);
-}
-
 try {
     $db = Database::getInstance()->getConnection();
+    ensureIngredientOpeningStockSupport($db);
+
+    if ($requestMethod === 'POST') {
+        handleFoundStockQcDecision($db, $currentUser);
+        exit;
+    }
+    if ($requestMethod !== 'GET') Response::error('Method not allowed', 405);
     
     // Today's date
     $today = date('Y-m-d');
@@ -147,6 +153,22 @@ try {
     ");
     $notificationStmt->execute();
     $notifications = $notificationStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $foundStockStmt = $db->query("
+        SELECT osr.id, osr.request_code, osr.quantity_to_add, osr.unit,
+               osr.source_type, osr.source_reference, osr.supplier_batch_no,
+               osr.received_date, osr.expiry_date, osr.reason, osr.created_at,
+               osr.price_status, i.ingredient_code, i.ingredient_name,
+               s.supplier_name
+        FROM ingredient_opening_stock_requests osr
+        JOIN ingredients i ON i.id = osr.ingredient_id
+        LEFT JOIN suppliers s ON s.id = osr.supplier_id
+        WHERE osr.status = 'pending'
+          AND i.is_perishable = 1
+          AND osr.qc_status = 'pending'
+        ORDER BY osr.created_at ASC
+    ");
+    $foundStockChecks = $foundStockStmt->fetchAll(PDO::FETCH_ASSOC);
     
     Response::success([
         'today' => [
@@ -166,10 +188,86 @@ try {
         ],
         'top_farmers' => $farmerRankings,
         'recent_tests' => $recentTestsList,
-        'notifications' => $notifications
+        'notifications' => $notifications,
+        'found_stock_checks' => $foundStockChecks
     ], 'Dashboard data retrieved successfully');
     
 } catch (Exception $e) {
     error_log("Dashboard API error: " . $e->getMessage());
     Response::error('An error occurred: ' . $e->getMessage(), 500);
+}
+
+function handleFoundStockQcDecision(PDO $db, array $currentUser): void {
+    $action = getParam('action');
+    if (!in_array($action, ['approve_found_stock', 'reject_found_stock'], true)) {
+        Response::error('Invalid QC action', 400);
+    }
+    $requestId = (int) getParam('request_id', 0);
+    $notes = hfPlainText(getParam('notes'), 500, false);
+    if ($requestId <= 0) Response::error('Found-stock request is required', 400);
+    if ($action === 'reject_found_stock' && mb_strlen($notes) < 5) {
+        Response::error('Explain why the stock failed QC', 400);
+    }
+
+    try {
+        $db->beginTransaction();
+        $stmt = $db->prepare("
+            SELECT osr.*, i.ingredient_name, i.is_perishable
+            FROM ingredient_opening_stock_requests osr
+            JOIN ingredients i ON i.id = osr.ingredient_id
+            WHERE osr.id = ? FOR UPDATE
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$request || $request['status'] !== 'pending' || $request['qc_status'] !== 'pending'
+            || (int) $request['is_perishable'] !== 1) {
+            throw new RuntimeException('This QC check was already completed or is no longer available');
+        }
+
+        $supplierLot = trim((string) ($request['supplier_batch_no'] ?? ''));
+        if ($action === 'approve_found_stock'
+            && ($supplierLot === '' || str_starts_with($supplierLot, 'INTERNAL-'))) {
+            throw new RuntimeException('The real supplier lot number is required. Keep this material on hold until Warehouse or Purchasing obtains it.');
+        }
+
+        if ($action === 'reject_found_stock') {
+            $db->prepare("UPDATE ingredient_opening_stock_requests
+                SET qc_status = 'rejected', qc_verified_by = ?, qc_verified_at = NOW(),
+                    qc_notes = ?, status = 'rejected', decided_by = ?, decided_at = NOW(),
+                    decision_notes = ? WHERE id = ? AND status = 'pending'")
+                ->execute([(int) $currentUser['user_id'], $notes, (int) $currentUser['user_id'],
+                    'QC rejected the found stock: ' . $notes, $requestId]);
+            writeProcurementNotification($db, 'warehouse_raw', 'found_stock_rejected',
+                'Found stock failed QC',
+                "{$request['request_code']} failed QC: {$notes}",
+                'ingredient_opening_stock', $requestId);
+            $message = 'Stock rejected by QC and returned to Warehouse';
+        } else {
+            $db->prepare("UPDATE ingredient_opening_stock_requests
+                SET qc_status = 'approved', qc_verified_by = ?, qc_verified_at = NOW(), qc_notes = ?
+                WHERE id = ? AND status = 'pending' AND qc_status = 'pending'")
+                ->execute([(int) $currentUser['user_id'], $notes ?: 'Physical lot and expiry verified by QC', $requestId]);
+            if (in_array((string) $request['price_status'], ['matched_po', 'verified'], true)) {
+                writeProcurementNotification($db, 'general_manager', 'found_stock_ready_for_gm',
+                    'Found stock ready for final review',
+                    "{$request['request_code']}: price and required safety checks are complete.",
+                    'ingredient_opening_stock', $requestId);
+            }
+            $message = 'QC check completed. GM will receive it after the price is verified.';
+        }
+
+        $db->prepare("UPDATE procurement_notifications SET is_read = 1
+            WHERE target_role = 'qc_officer' AND notification_type = 'found_stock_qc_check'
+              AND reference_type = 'ingredient_opening_stock' AND reference_id = ?")
+            ->execute([$requestId]);
+        logAudit($currentUser['user_id'], 'QC_FOUND_STOCK', 'ingredient_opening_stock_requests', $requestId, null, [
+            'action' => $action,
+            'notes' => $notes,
+        ]);
+        $db->commit();
+        Response::success(['id' => $requestId], $message);
+    } catch (Throwable $error) {
+        if ($db->inTransaction()) $db->rollBack();
+        Response::error($error->getMessage(), 400);
+    }
 }

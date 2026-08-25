@@ -407,14 +407,7 @@
         </form>
     </dialog>
 
-    <!-- Stock Shortage Confirmation Modal (V4.0) -->
-    <!--
-        Shown when the server returns 422 with error_code=insufficient_stock.
-        Lists the actual shortages from the stock_check payload, requires the
-        requester to tick an acknowledgement checkbox, and on confirm re-submits
-        the POST with stock_override_acknowledged=true so the audit row is
-        written. Reason is optional but recommended for the audit trail.
-    -->
+    <!-- Stock shortage blocker. Production cannot promise unavailable stock. -->
     <dialog id="stockShortageModal" class="modal">
         <div class="modal-box max-w-2xl">
             <div class="flex items-start gap-3 mb-4">
@@ -423,7 +416,7 @@
                 </div>
                 <div>
                     <h3 class="font-bold text-lg">Stock Shortage Detected</h3>
-                    <p class="text-sm text-base-content/70 mt-1">One or more items exceed the warehouse's current stock. You can still submit — production and warehouse will both see the shortage — but the override will be recorded in the audit log for review.</p>
+                    <p class="text-sm text-base-content/70 mt-1">This batch cannot be submitted yet. Warehouse must replenish and confirm the items below first.</p>
                 </div>
             </div>
 
@@ -441,25 +434,8 @@
                 </table>
             </div>
 
-            <div class="form-control mb-3">
-                <label class="label cursor-pointer justify-start gap-3">
-                    <input type="checkbox" id="stockOverrideAck" class="checkbox checkbox-error checkbox-sm">
-                    <span class="label-text">I understand this request exceeds available stock and want to submit anyway.</span>
-                </label>
-            </div>
-
-            <div class="form-control mb-4">
-                <label class="label py-1">
-                    <span class="label-text text-sm">Reason / context (optional but recommended)</span>
-                </label>
-                <textarea id="stockOverrideReason" class="textarea textarea-bordered" rows="2" placeholder="e.g. PO-2024-001 expected today, partial shipment accepted, etc."></textarea>
-            </div>
-
             <div class="modal-action">
-                <button type="button" class="btn btn-ghost" onclick="closeStockShortageModal()">Cancel</button>
-                <button type="button" id="stockOverrideSubmitBtn" class="btn btn-error" onclick="confirmStockOverride()" disabled>
-                    <i class="fas fa-paper-plane"></i> Submit with override
-                </button>
+                <button type="button" class="btn" onclick="closeStockShortageModal()">Close</button>
             </div>
         </div>
         <form method="dialog" class="modal-backdrop">
@@ -691,8 +667,10 @@
                                 || `${r.recipe_code} — ${r.base_product_name || r.product_name}${bulk}`;
                             const skuCount = Array.isArray(r.packaging_skus) ? r.packaging_skus.length : 0;
                             const readiness = skuCount > 0 ? '' : ' · bulk-only';
-                            html += `<option value="${r.id}"
+                            const formulaBlocked = r.formula_ready === false;
+                            html += `<option value="${r.id}" ${formulaBlocked ? 'disabled' : ''}
                                 data-bulk-yield="${escapeHtml(r.bulk_yield_liters || '')}"
+                                data-max-batch="${escapeHtml(r.max_batch_liters || r.bulk_yield_liters || '')}"
                                 data-plan-unit="liters"
                                 data-base-name="${escapeHtml(r.base_product_name || r.product_name || '')}"
                                 data-sku-count="${skuCount}">
@@ -1561,7 +1539,7 @@
             }
             if (qtyHint) {
                 qtyHint.textContent = recipe?.bulk_yield_liters
-                    ? `Standard recipe produces ${Number(recipe.bulk_yield_liters)} L. Enter how many finished liters you plan to produce.`
+                    ? `Standard recipe produces ${Number(recipe.bulk_yield_liters)} L. Maximum one run: ${Number(recipe.max_batch_liters || recipe.bulk_yield_liters)} L.`
                     : 'Enter how many finished liters you plan to produce.';
             }
 
@@ -2081,6 +2059,15 @@
                 document.getElementById('plannedQuantity')?.focus();
                 return;
             }
+            if (!data.production_run_id) {
+                const selectedRecipe = recipes.find(r => String(r.id) === String(data.planned_recipe_id));
+                const maximum = Number(selectedRecipe?.max_batch_liters || selectedRecipe?.bulk_yield_liters || 0);
+                if (maximum > 0 && Number(data.planned_quantity) > maximum + 0.0001) {
+                    showToast(`One run can produce at most ${maximum} L. Split this plan into separate runs.`, 'error');
+                    document.getElementById('plannedQuantity')?.focus();
+                    return;
+                }
+            }
             const excessiveLine = (data.items || []).find(item => Number(item.quantity) > 1000000 || Number(item.quantity_in_packs || 0) > 1000000);
             if (excessiveLine) {
                 showToast(`${excessiveLine.item_name || 'Material'} cannot exceed 1,000,000 on one request line`, 'error');
@@ -2090,10 +2077,7 @@
             await submitRequisition(data);
         }
 
-        // V4.0 — shared submit pipeline. On 422 + error_code=insufficient_stock
-        // we open the shortage modal with the server's stock_check payload
-        // (which is the authoritative shortage list — fresher than the cached
-        // client preview). On confirm we re-submit with the override flag.
+        // The server owns the final stock check. A shortage blocks submission.
         async function submitRequisition(data) {
             if (!validateProductionRequestItemUniqueness(data?.items || [])) return;
             if (requisitionSubmitInProgress) {
@@ -2115,11 +2099,7 @@
                 const response = await ProductionService.createRequisition(data);
 
                 if (response && response.success) {
-                    const overrideAck = response.data?.stock_override_acknowledged;
-                    const msg = overrideAck
-                        ? 'Request sent with stock shortage noted. It is waiting for GM approval.'
-                        : 'Request submitted. It is waiting for GM approval.';
-                    showToast(msg, 'success');
+                    showToast('Request submitted. It is waiting for GM approval.', 'success');
                     document.getElementById('newRequisitionModal').close();
                     closeStockShortageModal();
                     loadRequisitions();
@@ -2134,7 +2114,7 @@
                 // 422 from the stock-shortage gate. The api interceptor already
                 // shaped this into { type:'validation', errors, message }.
                 if (error && error.type === 'validation' && error.errors?.error_code === 'insufficient_stock') {
-                    openStockShortageModal(error.errors.stock_check, data);
+                    openStockShortageModal(error.errors.stock_check);
                     return;
                 }
                 // 422 from the pack-integrity gate (V4.0 Option B).
@@ -2153,18 +2133,9 @@
             }
         }
 
-        // V4.0 — Render the shortage modal with the server's authoritative
-        // stock_check payload. The data arg is the original POST payload,
-        // stashed on the modal so the confirm step can re-submit it with
-        // stock_override_acknowledged=true.
-        let pendingRequisitionPayload = null;
-
-        function openStockShortageModal(stockCheck, originalPayload) {
+        function openStockShortageModal(stockCheck) {
             const modal = document.getElementById('stockShortageModal');
             const list = document.getElementById('stockShortageList');
-            const ackBox = document.getElementById('stockOverrideAck');
-            const reasonBox = document.getElementById('stockOverrideReason');
-            const submitBtn = document.getElementById('stockOverrideSubmitBtn');
 
             list.innerHTML = '';
             const items = (stockCheck && stockCheck.items) ? stockCheck.items : [];
@@ -2187,31 +2158,12 @@
                 list.appendChild(row);
             });
 
-            ackBox.checked = false;
-            reasonBox.value = '';
-            submitBtn.disabled = true;
-            ackBox.onchange = () => { submitBtn.disabled = !ackBox.checked; };
-
-            pendingRequisitionPayload = originalPayload;
             modal.showModal();
         }
 
         function closeStockShortageModal() {
             const modal = document.getElementById('stockShortageModal');
             if (modal.open) modal.close();
-            pendingRequisitionPayload = null;
-        }
-
-        async function confirmStockOverride() {
-            if (!pendingRequisitionPayload) return;
-            const reason = document.getElementById('stockOverrideReason').value.trim();
-            const updated = Object.assign({}, pendingRequisitionPayload, {
-                stock_override_acknowledged: true,
-                stock_override_reason: reason,
-            });
-            pendingRequisitionPayload = null;
-            document.getElementById('stockShortageModal').close();
-            await submitRequisition(updated);
         }
 
         // V4.0 (Option B) — Pack-integrity modal. Stashes the original

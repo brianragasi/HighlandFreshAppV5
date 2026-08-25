@@ -30,7 +30,7 @@ $checks = [
         str_contains($sources['products_page'], 'function formatProductNumber(')
         && str_contains($sources['products_page'], 'formatProductNumber(item.quantity_per_unit, 6)')
         && str_contains($sources['products_page'], 'formatProductNumber(item.waste_percent ?? 0, 2)')
-        && str_contains($sources['products_page'], 'onblur="formatProductNumberInput(this, 6)"'),
+        && str_contains($sources['products_page'], 'onblur="formatProductNumberInput(this, 6);'),
     'Flavor is modeled on the base formula rather than the packaging SKU' =>
         str_contains($sources['products_page'], 'Base Product / Formula Name')
         && str_contains($sources['products_page'], 'A different flavor must be a new base product with its own recipe')
@@ -73,6 +73,11 @@ $checks = [
         && str_contains($sources['workbench'], 'lossSubmissionInFlight')
         && str_contains($sources['workbench'], 'completionSubmissionInFlight')
         && !str_contains($sources['workbench'], 'Manual entry (no catalog sizes)'),
+    'Production chooses the intended SKU before a multi-size recommendation is applied' =>
+        str_contains($sources['workbench'], 'Choose the intended product size')
+        && str_contains($sources['workbench'], 'getPackagingBasisVolumeMl')
+        && str_contains($sources['workbench'], 'Math.floor(availableMl / sizeMl)')
+        && str_contains($sources['runs_api'], 'validateSkuPackagingPlanVolume'),
 ];
 
 foreach ($checks as $label => $passed) {
@@ -102,6 +107,7 @@ try {
         FROM master_recipes mr
         JOIN products p ON p.base_product_id = mr.base_product_id AND p.is_active = 1
         WHERE mr.is_active = 1 AND mr.base_product_id IS NOT NULL
+          AND LOWER(COALESCE(p.base_unit, '')) NOT IN ('bottle', 'bottles')
         ORDER BY mr.id DESC, p.id ASC LIMIT 1
     ");
     $fixture = $fixtureStmt->fetch(PDO::FETCH_ASSOC);
@@ -141,8 +147,9 @@ try {
     $ingredientInsert = $db->prepare("INSERT INTO ingredients ({$quotedColumns}) VALUES ({$placeholders})");
     $ingredientFixtures = [];
     foreach ([$packaging, $nonPackaging, $rollPackaging] as $ingredientFixture) {
-        $ingredientFixture['current_stock'] = 50;
+        $ingredientFixture['current_stock'] = 200;
         $ingredientFixture['reserved_stock'] = 0;
+        $ingredientFixture['available_stock'] = 200;
         $ingredientFixtures[(int) $ingredientFixture['id']] = $ingredientFixture;
     }
     foreach ($ingredientFixtures as $ingredientFixture) {
@@ -170,10 +177,41 @@ try {
         throw new RuntimeException('Small roll consumption was allowed to disappear below stock precision');
     }
 
+    $fiveLiterTenBottlePlan = validateSkuPackagingPlanVolume([
+        ['size_ml' => 500, 'quantity' => 10],
+    ], 5000);
+    $fiveLiterElevenBottlePlan = validateSkuPackagingPlanVolume([
+        ['size_ml' => 500, 'quantity' => 11],
+    ], 5000);
+    if (!$fiveLiterTenBottlePlan['valid'] || $fiveLiterElevenBottlePlan['valid']) {
+        throw new RuntimeException('Five liters was not limited to ten 500 mL finished units');
+    }
+
+    [, $multiBottleErrors] = normalizeSkuPackagingBomInput($db, [[
+        'ingredient_id' => (int) $packaging['id'],
+        'quantity_per_unit' => 5,
+        'waste_percent' => 0,
+    ]]);
+    if (empty($multiBottleErrors)) {
+        throw new RuntimeException('A bottle/cap/label quantity above one was accepted per finished product');
+    }
+    $incompleteBottleProfile = assessSkuPackagingBomReadiness('bottle', [
+        ['ingredient_name' => '500 mL Bottle'],
+        ['ingredient_name' => '28 mm Cap'],
+    ]);
+    $completeBottleProfile = assessSkuPackagingBomReadiness('bottle', [
+        ['ingredient_name' => '500 mL Bottle'],
+        ['ingredient_name' => '28 mm Cap'],
+        ['ingredient_name' => '500 mL Label'],
+    ]);
+    if ($incompleteBottleProfile['ready'] || !$completeBottleProfile['ready']) {
+        throw new RuntimeException('Bottled SKU readiness did not require bottle, closure, and label');
+    }
+
     $db->prepare("
         INSERT INTO sku_packaging_bom_items
             (id, product_id, ingredient_id, quantity_per_unit, waste_percent, unit, is_active)
-        VALUES (1, ?, ?, 0.010000, 5.00, ?, 1)
+        VALUES (1, ?, ?, 1.000000, 5.00, ?, 1)
     ")->execute([
         (int) $fixture['product_id'],
         (int) $packaging['id'],
@@ -187,13 +225,24 @@ try {
         'quantity' => 100,
     ]]);
     $required = (float) ($calculated['requirements'][0]['quantity_required'] ?? 0);
-    if (!$calculated['success'] || abs($required - 1.05) > 0.0001) {
+    if (!$calculated['success'] || abs($required - 105.0) > 0.0001) {
         throw new RuntimeException('SKU allocation did not calculate quantity × BOM × waste allowance');
     }
     if (($calculated['items'][0]['product_name'] ?? '') === 'Untrusted client name'
         || (float) ($calculated['items'][0]['size_ml'] ?? 0) === 999999.0) {
         throw new RuntimeException('Client product identity was not replaced by product-master data');
     }
+
+    $db->exec('UPDATE sku_packaging_bom_items SET waste_percent = 0 WHERE id = 1');
+    $tenUnitPlan = calculateSkuPackagingRequirements($db, (int) $fixture['recipe_id'], [[
+        'product_id' => (int) $fixture['product_id'],
+        'quantity' => 10,
+    ]]);
+    if (!$tenUnitPlan['success']
+        || abs((float) ($tenUnitPlan['requirements'][0]['quantity_required'] ?? 0) - 10.0) > 0.0001) {
+        throw new RuntimeException('Ten finished units did not request ten one-per-unit packaging pieces');
+    }
+    $db->exec('UPDATE sku_packaging_bom_items SET waste_percent = 5 WHERE id = 1');
 
     $duplicateSku = calculateSkuPackagingRequirements($db, (int) $fixture['recipe_id'], [
         ['product_id' => (int) $fixture['product_id'], 'quantity' => 10],
@@ -222,7 +271,7 @@ try {
     );
     $stockAfter = (float) $db->query('SELECT current_stock FROM ingredients WHERE id = ' . (int) $packaging['id'])->fetchColumn();
     $auditCount = (int) $db->query("SELECT COUNT(*) FROM inventory_transactions WHERE reference_type = 'production_run' AND reference_id = 987654")->fetchColumn();
-    if (count($consumed) !== 1 || abs($stockAfter - 48.95) > 0.0001 || $auditCount !== 1) {
+    if (count($consumed) !== 1 || abs($stockAfter - 95.0) > 0.0001 || $auditCount !== 1) {
         throw new RuntimeException('Packaging stock consumption/audit transaction was not recorded correctly');
     }
     $db->rollBack();

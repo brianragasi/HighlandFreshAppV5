@@ -10,6 +10,9 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/helpers/procurement_notifications.php';
+require_once dirname(__DIR__) . '/helpers/stock_validation_support.php';
+require_once dirname(__DIR__) . '/helpers/ingredient_opening_stock.php';
+require_once dirname(__DIR__) . '/helpers/plain_text.php';
 require_once dirname(__DIR__) . '/warehouse/raw/ingredient_stock_helpers.php';
 
 // Require Purchaser or GM role
@@ -19,10 +22,15 @@ $action = getParam('action', 'stats');
 
 try {
     $db = Database::getInstance()->getConnection();
+    ensureStockValidationSupport($db);
+    ensureIngredientOpeningStockSupport($db);
     
     switch ($requestMethod) {
         case 'GET':
             handleGet($db, $action);
+            break;
+        case 'POST':
+            handlePost($db, $action, $currentUser);
             break;
         default:
             Response::error('Method not allowed', 405);
@@ -52,8 +60,106 @@ function handleGet($db, $action) {
         case 'notifications':
             getPurchaserNotifications($db);
             break;
+        case 'found_stock_price_checks':
+            getFoundStockPriceChecks($db);
+            break;
         default:
             Response::error('Invalid action', 400);
+    }
+}
+
+function getFoundStockPriceChecks(PDO $db): void {
+    $stmt = $db->query("
+        SELECT osr.id, osr.request_code, osr.quantity_to_add, osr.unit,
+               osr.source_type, osr.source_reference, osr.received_date,
+               osr.supplier_batch_no, osr.expiry_date, osr.reason, osr.created_at,
+               i.ingredient_code, i.ingredient_name, i.is_perishable,
+               s.supplier_name, s.supplier_code,
+               si.reference_unit_price AS supplier_reference_price,
+               i.unit_cost AS last_inventory_cost
+        FROM ingredient_opening_stock_requests osr
+        JOIN ingredients i ON i.id = osr.ingredient_id
+        LEFT JOIN suppliers s ON s.id = osr.supplier_id
+        LEFT JOIN supplier_ingredients si
+          ON si.ingredient_id = osr.ingredient_id
+         AND si.supplier_id = osr.supplier_id
+         AND si.is_active = 1
+        WHERE osr.status = 'pending' AND osr.price_status = 'pending'
+        ORDER BY osr.created_at ASC
+    ");
+    Response::success($stmt->fetchAll(PDO::FETCH_ASSOC), 'Found-stock price checks retrieved');
+}
+
+function handlePost(PDO $db, string $action, array $currentUser): void {
+    if (!in_array($action, ['verify_found_stock_price', 'reject_found_stock_price'], true)) {
+        Response::error('Invalid action', 400);
+    }
+
+    $requestId = (int) getParam('request_id', 0);
+    if ($requestId <= 0) Response::error('Found-stock request is required', 400);
+    $notes = hfPlainText(getParam('notes'), 500, false);
+
+    try {
+        $db->beginTransaction();
+        $stmt = $db->prepare("
+            SELECT osr.*, i.ingredient_name
+            FROM ingredient_opening_stock_requests osr
+            JOIN ingredients i ON i.id = osr.ingredient_id
+            WHERE osr.id = ? FOR UPDATE
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$request || $request['status'] !== 'pending' || $request['price_status'] !== 'pending') {
+            throw new RuntimeException('This price check was already completed or is no longer available');
+        }
+
+        if ($action === 'reject_found_stock_price') {
+            if (mb_strlen($notes) < 5) throw new RuntimeException('Explain why the source or price cannot be verified');
+            $update = $db->prepare("UPDATE ingredient_opening_stock_requests
+                SET status = 'rejected', decision_notes = ?, decided_by = ?, decided_at = NOW()
+                WHERE id = ? AND status = 'pending'");
+            $update->execute(['Purchasing rejected the source/price: ' . $notes, (int) $currentUser['user_id'], $requestId]);
+            writeProcurementNotification($db, 'warehouse_raw', 'found_stock_rejected',
+                'Found-stock request returned',
+                "{$request['request_code']} was rejected by Purchasing: {$notes}",
+                'ingredient_opening_stock', $requestId);
+            $message = 'Request rejected and returned to Warehouse';
+        } else {
+            $priceReference = hfPlainText(getParam('price_reference'), 100, false);
+            if (mb_strlen($priceReference) < 3) throw new RuntimeException('Enter the PO, invoice, or approved valuation reference');
+            try {
+                $unitCost = hfParseBusinessDecimal(getParam('unit_cost'), 'Verified unit cost', 0.01, 99999999.99, 2);
+            } catch (InvalidArgumentException $error) {
+                throw new RuntimeException($error->getMessage());
+            }
+            $update = $db->prepare("UPDATE ingredient_opening_stock_requests
+                SET unit_cost = ?, price_status = 'verified', price_verified_by = ?,
+                    price_verified_at = NOW(), price_reference = ?
+                WHERE id = ? AND status = 'pending' AND price_status = 'pending'");
+            $update->execute([$unitCost, (int) $currentUser['user_id'], $priceReference, $requestId]);
+
+            if (in_array((string) $request['qc_status'], ['approved', 'not_required'], true)) {
+                writeProcurementNotification($db, 'general_manager', 'found_stock_ready_for_gm',
+                    'Found stock ready for final review',
+                    "{$request['request_code']}: price and required safety checks are complete.",
+                    'ingredient_opening_stock', $requestId);
+            }
+            $message = 'Price verified. The request will move to GM after all required checks are complete.';
+        }
+
+        $db->prepare("UPDATE procurement_notifications SET is_read = 1
+            WHERE target_role = 'purchaser' AND notification_type = 'found_stock_price_check'
+              AND reference_type = 'ingredient_opening_stock' AND reference_id = ?")
+            ->execute([$requestId]);
+        logAudit($currentUser['user_id'], 'VERIFY_PRICE', 'ingredient_opening_stock_requests', $requestId, null, [
+            'action' => $action,
+            'notes' => $notes,
+        ]);
+        $db->commit();
+        Response::success(['id' => $requestId], $message);
+    } catch (Throwable $error) {
+        if ($db->inTransaction()) $db->rollBack();
+        Response::error($error->getMessage(), 400);
     }
 }
 
@@ -130,17 +236,24 @@ function getDashboardStats($db) {
     ");
     $stats['pending_requisitions'] = (int) $stmt->fetch()['count'];
 
-    // Submitted PRS records routed from Warehouse Raw to Purchasing
+    // Physically confirmed items that need a Purchasing decision now.
     $stmt = $db->query("
-        SELECT COUNT(*) as count
-        FROM purchase_requests
-        WHERE status IN ('pending', 'approved')
-          AND id NOT IN (
-              SELECT COALESCE(purchase_request_id, 0)
-              FROM purchase_orders
-              WHERE status NOT IN ('cancelled', 'rejected')
-                AND purchase_request_id IS NOT NULL
+        SELECT COUNT(*) AS count
+        FROM stock_validation_items svi
+        JOIN stock_validations sv ON sv.id = svi.stock_validation_id
+        WHERE sv.status IN ('open','partially_ordered')
+          AND svi.is_queue_active = 1
+          AND (
+              svi.purchasing_decision = 'pending'
+              OR (svi.purchasing_decision = 'deferred' AND svi.deferred_until <= CURDATE())
           )
+          AND svi.quantity_needed > COALESCE((
+              SELECT SUM(svip.quantity)
+              FROM stock_validation_item_po svip
+              JOIN purchase_orders po ON po.id = svip.po_id
+              WHERE svip.stock_validation_item_id = svi.id
+                AND po.status NOT IN ('cancelled','rejected')
+          ), 0) + 0.0001
     ");
     $stats['prs_inbox'] = (int) $stmt->fetch()['count'];
     

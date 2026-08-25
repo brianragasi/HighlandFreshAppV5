@@ -14,6 +14,7 @@
  */
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
+require_once __DIR__ . '/ingredient_stock_helpers.php';
 
 /**
  * Backfill raw milk inventory rows for accepted QC records that are missing inventory.
@@ -117,19 +118,14 @@ try {
 
     // === INGREDIENTS STATISTICS ===
 
+    $dashboardUsableIngredientStockSql = usableIngredientBatchStockSql('i.id', 'dashboard_ib');
+
     // Low stock ingredients
     $lowStockIngredients = $db->prepare("
         SELECT COUNT(*) as count
         FROM ingredients i
         WHERE i.is_active = 1
-          AND COALESCE((
-                SELECT SUM(ib.remaining_quantity)
-                FROM ingredient_batches ib
-                WHERE ib.ingredient_id = i.id
-                  AND ib.status IN ('available', 'partially_used')
-                  AND ib.remaining_quantity > 0
-                  AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())
-              ), 0) <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . "
+          AND {$dashboardUsableIngredientStockSql} <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . "
     ");
     $lowStockIngredients->execute();
     $lowStockData = $lowStockIngredients->fetch();
@@ -304,32 +300,20 @@ try {
     $pendingDeliveryList->execute();
     $pendingDeliveryListData = $pendingDeliveryList->fetchAll();
 
+    $alertUsableIngredientStockSql = usableIngredientBatchStockSql('i.id', 'alert_ib');
+
     // Low stock alerts (combined)
     $lowStockAlerts = $db->prepare("
         SELECT
             'ingredient' as type,
             ingredient_code as code,
             ingredient_name as name,
-            COALESCE((
-                SELECT SUM(ib.remaining_quantity)
-                FROM ingredient_batches ib
-                WHERE ib.ingredient_id = i.id
-                  AND ib.status IN ('available', 'partially_used')
-                  AND ib.remaining_quantity > 0
-                  AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())
-            ), 0) AS current_stock,
+            {$alertUsableIngredientStockSql} AS current_stock,
             minimum_stock,
             unit_of_measure
         FROM ingredients i
         WHERE i.is_active = 1
-          AND COALESCE((
-                SELECT SUM(ib.remaining_quantity)
-                FROM ingredient_batches ib
-                WHERE ib.ingredient_id = i.id
-                  AND ib.status IN ('available', 'partially_used')
-                  AND ib.remaining_quantity > 0
-                  AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())
-              ), 0) <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . "
+          AND {$alertUsableIngredientStockSql} <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . "
         UNION ALL
         SELECT
             'mro' as type,

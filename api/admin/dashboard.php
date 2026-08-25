@@ -5,6 +5,7 @@
  */
 
 require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../warehouse/raw/ingredient_stock_helpers.php';
 
 // SECURITY: Restrict admin dashboard to GM/Admin roles
 $currentUser = Auth::requireRole(['general_manager', 'admin']);
@@ -131,6 +132,7 @@ try {
       $mroReorderExpr = auditColumnExists($pdo, 'mro_items', 'reorder_point')
          ? 'COALESCE(m.reorder_point, m.minimum_stock * 1.5)'
          : 'm.minimum_stock * 1.5';
+      $adminUsableIngredientStockSql = usableIngredientBatchStockSql('i.id', 'admin_dash_ib');
 
       $lowStockSql = "
          SELECT * FROM (
@@ -138,19 +140,19 @@ try {
                'ingredient' as item_type,
                i.ingredient_code as item_code,
                i.ingredient_name as item_name,
-               i.current_stock,
+               {$adminUsableIngredientStockSql} AS current_stock,
                i.minimum_stock,
                {$ingredientReorderExpr} as reorder_point,
                i.unit_of_measure,
                CASE
-                  WHEN i.current_stock <= 0 THEN 'OUT_OF_STOCK'
-                  WHEN i.current_stock <= {$ingredientReorderExpr} THEN 'LOW'
+                  WHEN {$adminUsableIngredientStockSql} <= 0 THEN 'OUT_OF_STOCK'
+                  WHEN {$adminUsableIngredientStockSql} <= {$ingredientReorderExpr} THEN 'LOW'
                   ELSE 'OK'
                END as stock_status,
-               (i.current_stock / NULLIF({$ingredientReorderExpr}, 0)) as stock_ratio
+               ({$adminUsableIngredientStockSql} / NULLIF({$ingredientReorderExpr}, 0)) as stock_ratio
             FROM ingredients i
             WHERE i.is_active = 1
-              AND i.current_stock <= {$ingredientReorderExpr}
+               AND {$adminUsableIngredientStockSql} <= {$ingredientReorderExpr}
 
             UNION ALL
 

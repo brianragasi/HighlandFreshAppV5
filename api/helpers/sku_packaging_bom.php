@@ -88,6 +88,55 @@ function isRollPackagingUnit($unit)
     return in_array(strtolower(trim((string) $unit)), ['roll', 'rolls'], true);
 }
 
+function isCountedPackagingUnit($unit)
+{
+    return in_array(strtolower(trim((string) $unit)), [
+        'pc', 'pcs', 'piece', 'pieces', 'unit', 'units', 'set', 'sets'
+    ], true);
+}
+
+/**
+ * These components represent one physical part attached to one finished SKU.
+ * Separate front/back labels should be separate inventory materials, each with
+ * a quantity of one, rather than hiding several parts in one BOM number.
+ */
+function packagingMaterialMustBeOnePerFinishedUnit($name, $unit)
+{
+    if (!isCountedPackagingUnit($unit)) {
+        return false;
+    }
+    return preg_match('/\b(bottle|container|jar|cup|cap|lid|closure|label)\b/i', (string) $name) === 1;
+}
+
+function assessSkuPackagingBomReadiness($baseUnit, array $items)
+{
+    if (empty($items)) {
+        return ['ready' => false, 'missing' => ['packaging material']];
+    }
+
+    $base = strtolower(trim((string) $baseUnit));
+    if (!in_array($base, ['bottle', 'bottles'], true)) {
+        return ['ready' => true, 'missing' => []];
+    }
+
+    $names = strtolower(implode(' ', array_map(
+        static fn($item) => (string) ($item['ingredient_name'] ?? ''),
+        $items
+    )));
+    $required = [
+        'bottle/container' => '/\b(bottle|container)\b/i',
+        'cap/closure' => '/\b(cap|lid|closure)\b/i',
+        'label' => '/\blabel\b/i',
+    ];
+    $missing = [];
+    foreach ($required as $label => $pattern) {
+        if (preg_match($pattern, $names) !== 1) {
+            $missing[] = $label;
+        }
+    }
+    return ['ready' => empty($missing), 'missing' => $missing];
+}
+
 function isPlainPackagingNumber($value)
 {
     if (is_int($value) || is_float($value)) {
@@ -249,6 +298,20 @@ function normalizeSkuPackagingBomInput(PDO $db, array $items)
                 $errors["items.$idx.quantity_per_unit"] = 'Quantity per finished unit must be between 0.000001 and 1,000';
                 continue;
             }
+            if (isCountedPackagingUnit($ingredient['unit_of_measure'] ?? '')
+                && abs($quantity - round($quantity)) > 0.000001) {
+                $errors["items.$idx.quantity_per_unit"] = 'Packaging counted by piece must use a whole number';
+                continue;
+            }
+            if (packagingMaterialMustBeOnePerFinishedUnit(
+                $ingredient['ingredient_name'] ?? '',
+                $ingredient['unit_of_measure'] ?? ''
+            ) && abs($quantity - 1.0) > 0.000001) {
+                $errors["items.$idx.quantity_per_unit"] =
+                    ($ingredient['ingredient_name'] ?? 'This packaging material') .
+                    ' must be 1 per finished product. Use the waste allowance for extras.';
+                continue;
+            }
             $coverage = null;
         }
 
@@ -281,6 +344,25 @@ function replaceSkuPackagingBom(PDO $db, $productId, array $items)
     [$normalized, $errors] = normalizeSkuPackagingBomInput($db, $items);
     if (!empty($errors)) {
         return ['success' => false, 'errors' => $errors, 'items' => []];
+    }
+
+    if (!empty($normalized)) {
+        $skuStmt = $db->prepare('SELECT base_unit FROM products WHERE id = ?');
+        $skuStmt->execute([(int) $productId]);
+        $baseUnit = $skuStmt->fetchColumn();
+        if ($baseUnit === false) {
+            return ['success' => false, 'errors' => ['product_id' => 'Packaging SKU was not found'], 'items' => []];
+        }
+        $readiness = assessSkuPackagingBomReadiness($baseUnit, $normalized);
+        if (!$readiness['ready']) {
+            return [
+                'success' => false,
+                'errors' => [
+                    'items' => 'Complete this bottled SKU with: ' . implode(', ', $readiness['missing'])
+                ],
+                'items' => [],
+            ];
+        }
     }
 
     $ownsTransaction = !$db->inTransaction();
@@ -355,7 +437,7 @@ function calculateSkuPackagingRequirements(PDO $db, $recipeId, array $packagingI
     $legacyProductId = !empty($recipe['product_id']) ? (int) $recipe['product_id'] : null;
     $productStmt = $db->prepare("
         SELECT id, base_product_id, product_code, product_name, variant,
-               unit_size, unit_measure, is_active
+               unit_size, unit_measure, base_unit, is_active
         FROM products WHERE id = ?
     ");
 
@@ -391,6 +473,13 @@ function calculateSkuPackagingRequirements(PDO $db, $recipeId, array $packagingI
         if (empty($bom)) {
             $label = $product['product_code'] ?: $product['product_name'];
             $errors["packaging_items.$idx.packaging_bom"] = "$label has no packaging BOM. Configure it in Admin → Products.";
+            continue;
+        }
+        $readiness = assessSkuPackagingBomReadiness($product['base_unit'] ?? '', $bom);
+        if (!$readiness['ready']) {
+            $label = $product['product_code'] ?: $product['product_name'];
+            $errors["packaging_items.$idx.packaging_bom"] =
+                "$label packaging profile is incomplete. Add: " . implode(', ', $readiness['missing']) . '.';
             continue;
         }
 
@@ -435,6 +524,21 @@ function calculateSkuPackagingRequirements(PDO $db, $recipeId, array $packagingI
         'errors' => $errors,
         'items' => $sanitized,
         'requirements' => array_values($requirements),
+    ];
+}
+
+function validateSkuPackagingPlanVolume(array $plannedSkuItems, $availableVolumeMl)
+{
+    $availableVolumeMl = max(0.0, (float) $availableVolumeMl);
+    $plannedVolumeMl = 0.0;
+    foreach ($plannedSkuItems as $item) {
+        $plannedVolumeMl += max(0.0, (float) ($item['size_ml'] ?? 0))
+            * max(0, (int) ($item['quantity'] ?? 0));
+    }
+    return [
+        'valid' => $availableVolumeMl <= 0 || $plannedVolumeMl <= $availableVolumeMl + 0.01,
+        'planned_volume_ml' => $plannedVolumeMl,
+        'available_volume_ml' => $availableVolumeMl,
     ];
 }
 

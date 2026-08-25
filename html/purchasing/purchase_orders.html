@@ -156,7 +156,7 @@
                 <div id="approvedPrListAlert" class="hidden alert bg-warning/10 border border-warning/30 mb-6 items-start">
                     <i class="fas fa-bell text-warning mt-1"></i>
                     <div class="flex-1">
-                        <h3 class="font-bold text-base-content" id="approvedPrListTitle">Warehouse PRS inbox</h3>
+                        <h3 class="font-bold text-base-content" id="approvedPrListTitle">Confirmed Low Stock</h3>
                         <p class="text-sm text-base-content/70" id="approvedPrListText"></p>
                         <div id="approvedPrListItems" class="flex flex-wrap gap-2 mt-3"></div>
                     </div>
@@ -180,7 +180,8 @@
                                 <option value="">All Status</option>
                                 <option value="draft">Draft</option>
                                 <option value="pending">Awaiting GM Approval</option>
-                                <option value="approved">Approved</option>
+                                <option value="approved">Approved - Email Retry Needed</option>
+                                <option value="ordered">Sent to Supplier</option>
                                 <option value="rejected">Rejected</option>
                                 <option value="partial_received">Partially Received</option>
                                 <option value="received">Fully Received</option>
@@ -247,6 +248,28 @@
                             New Purchase Order
                         </h2>
 
+                        <section id="purchasingDecisionPanel" class="hidden rounded-xl border border-warning/30 bg-warning/5 p-4 mb-6" aria-labelledby="purchasingDecisionTitle">
+                            <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-2 mb-3">
+                                <div>
+                                    <h3 id="purchasingDecisionTitle" class="font-bold"><i class="fas fa-scale-balanced text-warning mr-2"></i>Confirmed items needing your decision</h3>
+                                    <p class="text-sm text-base-content/65 mt-1">To order an item, choose its supplier below. If it should not be ordered now, defer it or close it with a reason.</p>
+                                </div>
+                                <span id="purchasingDecisionCount" class="badge badge-warning badge-outline"></span>
+                            </div>
+                            <div id="purchasingDecisionItems" class="grid grid-cols-1 xl:grid-cols-2 gap-3"></div>
+                        </section>
+
+                        <section id="pausedDecisionPanel" class="hidden rounded-xl border border-base-300 bg-base-200/40 p-4 mb-6" aria-labelledby="pausedDecisionTitle">
+                            <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-2 mb-3">
+                                <div>
+                                    <h3 id="pausedDecisionTitle" class="font-bold"><i class="fas fa-clock-rotate-left text-base-content/60 mr-2"></i>Deferred or closed items</h3>
+                                    <p class="text-sm text-base-content/65 mt-1">These are not orderable right now. Reopen one if Purchasing needs to reconsider it.</p>
+                                </div>
+                                <span id="pausedDecisionCount" class="badge badge-outline"></span>
+                            </div>
+                            <div id="pausedDecisionItems" class="grid grid-cols-1 xl:grid-cols-2 gap-3"></div>
+                        </section>
+
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                             <div class="rounded-lg border border-base-300 bg-base-200/50 p-4">
                                 <p class="text-xs uppercase text-base-content/50 font-semibold">PO Number</p>
@@ -254,11 +277,13 @@
                             </div>
                             <div class="form-control">
                                 <label class="label"><span class="label-text">Order Date</span></label>
-                                <input type="date" id="poOrderDate" class="input input-bordered w-full">
+                                <input type="date" id="poOrderDate" class="input input-bordered w-full bg-base-200" readonly aria-readonly="true">
+                                <span class="label-text-alt text-base-content/50 mt-1">Set automatically to today.</span>
                             </div>
                             <div class="form-control">
                                 <label class="label"><span class="label-text">Expected Delivery</span></label>
-                                <input type="date" id="poExpectedDelivery" class="input input-bordered w-full">
+                                <input type="date" id="poExpectedDelivery" class="input input-bordered w-full bg-base-200" readonly aria-readonly="true">
+                                <span class="label-text-alt text-base-content/50 mt-1" id="expectedDeliveryHelp">Choose a supplier to calculate delivery.</span>
                             </div>
                             <div class="form-control">
                                 <label class="label"><span class="label-text">Payment Terms *</span></label>
@@ -287,24 +312,15 @@
                                 </div>
                             </div>
                             <div class="form-control">
-                                <label class="label"><span class="label-text">Warehouse PRS *</span></label>
-                                <select id="poPurchaseRequest" class="select select-bordered w-full" required onchange="onPurchaseRequestForPOChange()">
-                                    <option value="">Select the Warehouse request...</option>
-                                </select>
-                                <input type="hidden" id="poRequisition" value="">
-                                <label class="label">
-                                    <span class="label-text-alt text-base-content/50">If you opened this page from the dashboard, that PRS is selected automatically.</span>
-                                </label>
-                            </div>
-                            <div class="form-control">
                                 <label class="label"><span class="label-text">Supplier *</span></label>
                                 <select id="poSupplier" class="select select-bordered w-full" required onchange="onMainSupplierChange()">
-                                    <option value="">Choose a Warehouse PRS first...</option>
+                                    <option value="">Loading accredited suppliers...</option>
                                 </select>
                                 <label class="label">
-                                    <span class="label-text-alt text-base-content/50">Only suppliers accredited for at least one remaining item in the selected PRS will appear.</span>
+                                    <span class="label-text-alt text-base-content/50">Choose the supplier first. Validated low-stock items it can provide will appear automatically.</span>
                                 </label>
                             </div>
+                            <input type="hidden" id="poRequisition" value="">
                             <div class="form-control md:col-span-2">
                                 <label class="label"><span class="label-text">Delivery Details</span></label>
                                 <textarea id="poDeliveryDetails" class="textarea textarea-bordered w-full" rows="2"
@@ -323,6 +339,7 @@
                                 <div><span class="text-base-content/50">Name:</span> <span class="font-medium" id="supplierDetailName">-</span></div>
                                 <div><span class="text-base-content/50">Contact:</span> <span id="supplierDetailContact">-</span></div>
                                 <div><span class="text-base-content/50">Terms:</span> <span id="supplierDetailTerms">-</span></div>
+                                <div><span class="text-base-content/50">Delivery:</span> <span id="supplierDetailLeadTime">-</span></div>
                                 <div class="md:col-span-2 xl:col-span-1"><span class="text-base-content/50">Address:</span> <span id="supplierDetailAddress">-</span></div>
                             </div>
                         </div>
@@ -338,7 +355,7 @@
                         <div id="selectedPrSummary" class="hidden alert bg-primary/5 border border-primary/20 mb-4">
                             <i class="fas fa-clipboard-list text-primary"></i>
                             <div>
-                                <h4 class="font-semibold" id="selectedPrTitle">Warehouse request selected</h4>
+                                <h4 class="font-semibold" id="selectedPrTitle">Confirmed shortage selected</h4>
                                 <p class="text-sm text-base-content/70" id="selectedPrMeta"></p>
                                 <div class="flex flex-wrap gap-2 mt-2" id="selectedPrItems"></div>
                             </div>
@@ -349,7 +366,10 @@
                             <div class="flex items-center justify-between mb-3">
                                 <h3 class="font-semibold">Line Items</h3>
                                 <div class="flex items-center gap-2">
-                                    <span id="lineSourceBadge" class="badge badge-primary badge-outline">From Warehouse PRS</span>
+                                    <span id="lineSourceBadge" class="badge badge-primary badge-outline">Warehouse needs + extra items</span>
+                                    <button type="button" id="addForecastItemButton" class="btn btn-warning btn-sm" onclick="addForecastLineItem()" disabled>
+                                        <i class="fas fa-plus"></i> Add extra item
+                                    </button>
                                 </div>
                             </div>
                             <div id="supplierCoverageHint" class="hidden alert py-2 mb-3 text-sm" role="status">
@@ -358,7 +378,7 @@
                             </div>
                             <div class="alert alert-info py-2 mb-3 text-sm">
                                 <i class="fas fa-calculator"></i>
-                                <span>The system recommends how much to buy. Tick the items for this PO, then change the recommended number only when you intend to buy less.</span>
+                                <span>Use <strong>Add extra item</strong> only for a supplier product that is not low yet but is expected to run out soon. You must explain why for GM review.</span>
                             </div>
                             <div id="supplierGroupingPreview" class="hidden"></div>
                             <div class="overflow-x-auto">
@@ -366,7 +386,7 @@
                                     <thead>
                                         <tr>
                                             <th>Include</th>
-                                            <th class="w-1/4">Warehouse request</th>
+                                            <th class="w-1/4">Warehouse confirmation</th>
                                             <th>Warehouse needs</th>
                                             <th>Supplier sells</th>
                                             <th>Recommended</th>
@@ -392,6 +412,10 @@
                             <button type="button" id="createPOButton" class="btn btn-primary" onclick="createPurchaseOrder()">
                                 <i class="fas fa-paper-plane"></i> Submit for GM Approval
                             </button>
+                        </div>
+                        <div class="alert bg-info/10 border border-info/30 text-sm mt-4">
+                            <i class="fas fa-cow text-info"></i>
+                            <span>Fresh milk delivered by farmers is not ordered here. QC records it directly under <strong>Milk Receiving</strong>.</span>
                         </div>
                     </div>
                 </div>
@@ -488,12 +512,113 @@
         </div>
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
+
+    <dialog id="supplierPriceDialog" class="modal">
+        <div class="modal-box max-w-lg">
+            <button type="button" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onclick="document.getElementById('supplierPriceDialog').close()">✕</button>
+            <h3 class="font-bold text-lg"><i class="fas fa-tags text-primary mr-2"></i>Update Supplier Price</h3>
+            <p class="text-sm text-base-content/60 mt-1">This changes the saved price list for future orders. The GM can see who changed it and why.</p>
+            <div class="alert alert-info py-2 mt-4 text-sm">
+                <i class="fas fa-box"></i>
+                <span id="supplierPriceItemLabel">Choose an item</span>
+            </div>
+            <div class="form-control mt-4">
+                <label class="label"><span class="label-text" id="supplierPriceFieldLabel">New price *</span></label>
+                <label class="input input-bordered flex items-center gap-2"><span>₱</span><input id="supplierPriceValue" type="text" inputmode="decimal" class="grow" autocomplete="off" placeholder="0.00"></label>
+                <p class="text-xs text-base-content/55 mt-1">Use an ordinary number. Do not use e, E, +, or -.</p>
+            </div>
+            <div class="form-control mt-3">
+                <label class="label"><span class="label-text">Why did the price change? *</span></label>
+                <textarea id="supplierPriceReason" class="textarea textarea-bordered" minlength="10" maxlength="255" rows="2" placeholder="Example: Updated quotation received from supplier on August 25"></textarea>
+            </div>
+            <p id="supplierPriceError" class="text-sm text-error mt-3 hidden"></p>
+            <div class="modal-action">
+                <button type="button" class="btn btn-ghost" onclick="document.getElementById('supplierPriceDialog').close()">Cancel</button>
+                <button type="button" id="saveSupplierPriceButton" class="btn btn-primary" onclick="saveSupplierPrice()"><i class="fas fa-save"></i> Save Price</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <dialog id="stockDecisionDialog" class="modal">
+        <div class="modal-box max-w-lg">
+            <button type="button" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onclick="document.getElementById('stockDecisionDialog').close()">✕</button>
+            <h3 id="stockDecisionTitle" class="font-bold text-lg">Purchasing decision</h3>
+            <p id="stockDecisionItem" class="text-sm text-base-content/65 mt-1"></p>
+            <div id="stockDecisionDateField" class="form-control mt-4 hidden">
+                <label class="label"><span class="label-text">Review again on *</span></label>
+                <input id="stockDecisionDate" type="date" class="input input-bordered w-full">
+            </div>
+            <div class="form-control mt-4">
+                <label class="label"><span class="label-text">Reason *</span></label>
+                <textarea id="stockDecisionReason" class="textarea textarea-bordered" minlength="10" maxlength="500" rows="3" placeholder="Explain the business reason so Warehouse and GM can understand the decision."></textarea>
+                <span class="label-text-alt mt-1">At least 10 characters. The reason is saved in the history.</span>
+            </div>
+            <p id="stockDecisionError" class="text-sm text-error mt-3 hidden"></p>
+            <div class="modal-action">
+                <button type="button" class="btn btn-ghost" onclick="document.getElementById('stockDecisionDialog').close()">Cancel</button>
+                <button type="button" id="saveStockDecisionButton" class="btn btn-warning" onclick="saveStockDecision()"><i class="fas fa-check"></i> Save decision</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <dialog id="orderNowSupplierDialog" class="modal">
+        <div class="modal-box max-w-xl">
+            <button type="button" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onclick="document.getElementById('orderNowSupplierDialog').close()">✕</button>
+            <h3 class="font-bold text-lg"><i class="fas fa-truck-field text-primary mr-2"></i>Choose a supplier</h3>
+            <p id="orderNowSupplierItem" class="text-sm text-base-content/65 mt-1"></p>
+            <div id="orderNowSupplierOptions" class="space-y-2 mt-4"></div>
+            <div class="modal-action">
+                <button type="button" class="btn btn-ghost" onclick="document.getElementById('orderNowSupplierDialog').close()">Cancel</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <dialog id="extraItemDialog" class="modal">
+        <div class="modal-box max-w-xl">
+            <button type="button" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onclick="document.getElementById('extraItemDialog').close()">✕</button>
+            <h3 class="font-bold text-lg"><i class="fas fa-plus-circle text-warning mr-2"></i>Add an item before it becomes low stock</h3>
+            <p class="text-sm text-base-content/65 mt-1">Use this when recent usage, an upcoming event, or the supplier's delivery time means more stock will be needed soon.</p>
+
+            <div class="form-control mt-4">
+                <label class="label"><span class="label-text font-medium">What item do you need? *</span></label>
+                <select id="extraItemSelect" class="select select-bordered w-full" onchange="updateExtraItemSuggestion()"></select>
+                <span class="label-text-alt mt-1">Only products sold by the selected supplier appear here.</span>
+            </div>
+
+            <div id="extraItemOffer" class="hidden alert bg-base-200 border border-base-300 text-sm mt-4"></div>
+
+            <div class="form-control mt-4">
+                <label class="label"><span class="label-text font-medium">How many should be purchased? *</span></label>
+                <label class="input input-bordered flex items-center gap-2">
+                    <input id="extraItemQuantity" type="number" class="grow" min="0.001" step="0.001" value="1">
+                    <span id="extraItemUnit" class="text-base-content/60">units</span>
+                </label>
+                <span id="extraItemSuggestion" class="label-text-alt mt-1"></span>
+            </div>
+
+            <div class="form-control mt-4">
+                <label class="label"><span class="label-text font-medium">Why add it before low stock? *</span></label>
+                <textarea id="extraItemReason" class="textarea textarea-bordered" rows="3" minlength="10" maxlength="500" placeholder="Example: Used quickly in recent production and the supplier needs 7 days to deliver."></textarea>
+                <span class="label-text-alt mt-1">This explanation is shown to the GM.</span>
+            </div>
+            <p id="extraItemError" class="text-sm text-error mt-3 hidden"></p>
+
+            <div class="modal-action">
+                <button type="button" class="btn btn-ghost" onclick="document.getElementById('extraItemDialog').close()">Cancel</button>
+                <button type="button" class="btn btn-warning" onclick="saveExtraItem()"><i class="fas fa-plus"></i> Add to PO</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../js/ui/live-refresh.js?v=20260820-1"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="purchaser,general_manager"></script>
-    <script src="../../js/purchasing/purchasing.service.js"></script>
+    <script src="../../js/purchasing/purchasing.service.js?v=procurement-flow-3"></script>
 
     <script>
         let searchTimeout;
@@ -502,16 +627,23 @@
         let currentUserRole = '';
         let itemOptionsHtml = '';
         let directSupplierIngredients = [];
+        let directSupplierMroItems = [];
         let eligiblePrItems = [];
+        let supplierPriceEditRowId = null;
         let poEntryMode = 'prs';
         let approvedPurchaseRequests = [];
+        let pausedStockDecisions = [];
         let availableSuppliers = [];
-        let preferredPurchaseRequestId = null;
         let supplierEligibilityRequest = 0;
         let createPOInFlight = false;
         let markOrderedInFlight = new Set();
         let currentVerifyPOId = null;
         let currentVerifyRRId = null;
+        let currentStockDecision = null;
+        let pendingAutoIncludeItemId = null;
+        let orderNowSupplierChoices = [];
+        let extraItemEditRowId = null;
+        const supplierCatalogCache = new Map();
 
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -545,15 +677,15 @@
                 document.getElementById('userInitials').textContent = f + l || 'PU';
             }
 
-            // Set default order date
-            document.getElementById('poOrderDate').value = new Date().toISOString().split('T')[0];
+            // PO dates are calculated from today and the selected supplier.
+            applySupplierDeliveryDates();
 
             await loadItemCatalogs();
 
             // Check URL for action
             const params = new URLSearchParams(window.location.search);
             if (params.get('action') === 'new') {
-                await showCreateForm(null, params.get('pr_id'));
+                await showCreateForm();
                 return;
             } else if (params.get('po_id')) {
                 await Promise.all([
@@ -651,12 +783,12 @@
                             <td><span class="badge badge-sm ${pBadge} badge-outline">${PurchasingService.formatStatus(po.payment_status)}</span></td>
                             <td>
                                 <div class="flex items-center justify-end gap-1" onclick="event.stopPropagation()">
-                                    ${showGroupSubmit ? `<button class="btn btn-info btn-xs gap-1 whitespace-nowrap" title="Send every draft PO from ${escapeHtml(po.pr_number || 'this PRS')} to GM" onclick="submitPOGroup(${po.id}, '${escapeHtml(po.pr_number || 'this PRS')}')"><i class="fas fa-paper-plane"></i> Send ${Number(po.draft_group_count || 1)} to GM</button>` : ''}
+                                    ${showGroupSubmit ? `<button class="btn btn-info btn-xs gap-1 whitespace-nowrap" title="Send every related draft PO to GM" onclick="submitPOGroup(${po.id}, '${escapeHtml(po.pr_number || 'this old request')}')"><i class="fas fa-paper-plane"></i> Send ${Number(po.draft_group_count || 1)} to GM</button>` : ''}
                                     <div class="dropdown dropdown-end">
                                         <label tabindex="0" class="btn btn-ghost btn-xs btn-square" title="More actions"><i class="fas fa-ellipsis-v"></i></label>
                                         <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2 z-10">
                                             <li><a onclick="viewPODetail(${po.id})"><i class="fas fa-eye w-4"></i> View Details</a></li>
-                                            ${po.status === 'draft' && currentUserRole === 'purchaser' && po.purchase_request_id ? `<li><a onclick="submitPOGroup(${po.id}, '${escapeHtml(po.pr_number || 'this PRS')}')"><i class="fas fa-paper-plane w-4"></i> Submit PRS POs to GM</a></li>` : ''}
+                                            ${po.status === 'draft' && currentUserRole === 'purchaser' && po.purchase_request_id ? `<li><a onclick="submitPOGroup(${po.id}, '${escapeHtml(po.pr_number || 'this old request')}')"><i class="fas fa-paper-plane w-4"></i> Submit related POs to GM</a></li>` : ''}
                                             ${po.status === 'draft' && currentUserRole === 'purchaser' && !po.purchase_request_id ? `<li><a onclick="submitPO(${po.id})"><i class="fas fa-paper-plane w-4"></i> Submit for GM Approval</a></li>` : ''}
                                             ${po.status === 'approved' && currentUserRole === 'purchaser' && !po.sent_to_supplier_at ? `<li><a onclick="markOrdered(${po.id})"><i class="fas fa-envelope w-4"></i> Email Final PO</a></li>` : ''}
                                             ${['partial_received', 'received'].includes(po.status) && currentUserRole === 'purchaser' ? `<li><a onclick="viewPODetail(${po.id})"><i class="fas fa-clipboard-check w-4"></i> ${po.status === 'partial_received' ? 'Resolve Short RR' : 'Verify RR'}</a></li>` : ''}
@@ -693,11 +825,11 @@
 
         async function loadApprovedPurchaseRequestNotice() {
             try {
-                const response = await PurchasingService.getPRSInbox();
+                const response = await PurchasingService.getConfirmedLowStock();
                 approvedPurchaseRequests = response?.data || [];
                 renderApprovedPurchaseRequestNotice(approvedPurchaseRequests);
             } catch (error) {
-                console.error('Error loading PRS inbox notice:', error);
+                console.error('Error loading confirmed low stock:', error);
                 renderApprovedPurchaseRequestNotice([]);
             }
         }
@@ -721,11 +853,11 @@
                 return;
             }
 
-            const noun = count === 1 ? 'warehouse PRS' : 'warehouse PRS records';
-            title.textContent = `${count} submitted ${noun} have quantities left to order`;
-            text.textContent = 'Open one Warehouse slip, choose one supplier, and manually add that supplier’s eligible requested items to one PO.';
+            const noun = count === 1 ? 'confirmed stock check' : 'confirmed stock checks';
+            title.textContent = `${count} ${noun} ${count === 1 ? 'has' : 'have'} quantities left to order`;
+            text.textContent = 'Choose a supplier. Matching confirmed shortages will appear automatically.';
             items.innerHTML = prs.slice(0, 5).map(pr => {
-                const prLink = `purchase_orders.html?action=new&pr_id=${encodeURIComponent(pr.id)}`;
+                const prLink = 'purchase_orders.html?action=new';
                 return `
                     <a href="${prLink}" class="badge border-warning bg-warning/10 text-base-content gap-1 h-auto py-2">
                         <i class="fas fa-clipboard-check"></i>
@@ -739,20 +871,6 @@
         // ========================================
         // CREATE PO
         // ========================================
-
-        function populateWarehousePrSelect(selectedId = preferredPurchaseRequestId) {
-            const prSelect = document.getElementById('poPurchaseRequest');
-            if (!prSelect) return null;
-
-            prSelect.innerHTML = '<option value="">Select the Warehouse request...</option>' + approvedPurchaseRequests.map(pr => {
-                const remainingCount = Number(pr.remaining_item_count || (pr.items || []).length || 0);
-                return `<option value="${Number(pr.id)}">${escapeHtml(pr.pr_number)} — ${escapeHtml(pr.purpose || 'Warehouse request')} — ${remainingCount} item${remainingCount === 1 ? '' : 's'}</option>`;
-            }).join('');
-
-            const selectedPr = approvedPurchaseRequests.find(pr => String(pr.id) === String(selectedId || '')) || null;
-            prSelect.value = selectedPr ? String(selectedPr.id) : '';
-            return selectedPr;
-        }
 
         function hidePOContinuationNotice() {
             document.getElementById('poContinuationNotice')?.classList.add('hidden');
@@ -777,145 +895,65 @@
             document.getElementById('detailView').classList.add('hidden');
             document.getElementById('createView').classList.remove('hidden');
             document.getElementById('pageTitle').textContent = 'New Purchase Order';
-            const urlParams = new URLSearchParams(window.location.search);
-            const requestedPrId = selectedPurchaseRequestId || urlParams.get('pr_id');
-            preferredPurchaseRequestId = requestedPrId ? String(requestedPrId) : null;
             hidePOContinuationNotice();
 
             const supplierSelect = document.getElementById('poSupplier');
             availableSuppliers = [];
             supplierSelect.disabled = true;
-            supplierSelect.innerHTML = '<option value="">Choose a Warehouse PRS first...</option>';
+            supplierSelect.innerHTML = '<option value="">Loading accredited suppliers...</option>';
+            applySupplierDeliveryDates();
             applySupplierPaymentTerms();
             renderSelectedSupplierDetails();
 
-            // Load all still-open Warehouse requests, then use the selected
-            // request's remaining ingredients to build its supplier choices.
+            // Supplier-first workbench: all still-open validated demand is kept
+            // in the background and filtered only after the supplier is chosen.
             try {
-                const response = await PurchasingService.getPRSInbox();
-                const prs = response?.data || [];
-                approvedPurchaseRequests = prs;
-                if (preferredPurchaseRequestId && !prs.some(pr => String(pr.id) === preferredPurchaseRequestId)) {
-                    preferredPurchaseRequestId = null;
-                }
-                populateWarehousePrSelect();
-                await refreshEligibleSuppliersForSelectedPRS();
+                const [prsResponse, decisionResponse, supplierResponse] = await Promise.all([
+                    PurchasingService.getConfirmedLowStock(),
+                    PurchasingService.getConfirmedStockDecisions(),
+                    PurchasingService.getSuppliers({ status: 'active', orderable: 1 })
+                ]);
+                approvedPurchaseRequests = prsResponse?.data || [];
+                pausedStockDecisions = decisionResponse?.data || [];
+                availableSuppliers = (supplierResponse?.data || []).sort((a, b) =>
+                    String(a.supplier_name || '').localeCompare(String(b.supplier_name || ''))
+                );
+                renderSupplierFirstOptions();
+                renderPurchasingDecisionPanel();
+                renderPausedStockDecisions();
             } catch (e) {
-                console.error('Failed to load purchase requests:', e);
+                console.error('Failed to load supplier-first PO workbench:', e);
                 approvedPurchaseRequests = [];
-                document.getElementById('poPurchaseRequest').innerHTML = '<option value="">Warehouse requests could not be loaded</option>';
+                pausedStockDecisions = [];
+                renderPurchasingDecisionPanel();
+                renderPausedStockDecisions();
                 supplierSelect.innerHTML = '<option value="">Suppliers could not be loaded</option>';
             }
 
-            // One PRS is selected first; only suppliers accredited for at least
-            // one of its remaining ingredients are offered.
             lineItemCounter = 0;
             setPOEntryMode('prs');
-            if (!preferredPurchaseRequestId) {
-                renderDirectEntryPrompt('Choose the Warehouse PRS you want to purchase for.');
-            }
+            renderDirectEntryPrompt('Choose an accredited supplier to see its validated low-stock demand.');
             clearSelectedPurchaseRequestSummary();
         }
 
-        async function onPurchaseRequestForPOChange() {
-            hidePOContinuationNotice();
-            const selectedId = document.getElementById('poPurchaseRequest')?.value || '';
-            preferredPurchaseRequestId = selectedId || null;
-            eligiblePrItems = [];
-            lineItemCounter = 0;
-            clearSelectedPurchaseRequestSummary();
-
-            const url = new URL(window.location.href);
-            if (preferredPurchaseRequestId) url.searchParams.set('pr_id', preferredPurchaseRequestId);
-            else url.searchParams.delete('pr_id');
-            history.replaceState(null, '', url.toString());
-
-            if (!preferredPurchaseRequestId) {
-                renderDirectEntryPrompt('Choose the Warehouse PRS you want to purchase for.');
-                renderSupplierCoverageHint();
-                await refreshEligibleSuppliersForSelectedPRS();
-                return;
-            }
-            await refreshEligibleSuppliersForSelectedPRS();
-        }
-
-        async function refreshEligibleSuppliersForSelectedPRS() {
+        function renderSupplierFirstOptions() {
             const select = document.getElementById('poSupplier');
             if (!select) return;
-
-            const requestNumber = ++supplierEligibilityRequest;
-            const selectedPr = approvedPurchaseRequests.find(pr =>
-                String(pr.id) === String(preferredPurchaseRequestId || '')
-            );
-
-            availableSuppliers = [];
             directSupplierIngredients = [];
+            directSupplierMroItems = [];
             eligiblePrItems = [];
             select.value = '';
-            select.disabled = true;
+            select.disabled = availableSuppliers.length === 0;
+            applySupplierDeliveryDates();
             applySupplierPaymentTerms();
             renderSelectedSupplierDetails();
             clearSelectedPurchaseRequestSummary();
-
-            if (!selectedPr) {
-                select.innerHTML = '<option value="">Choose a Warehouse PRS first...</option>';
-                return;
-            }
-
-            const outstandingItems = (selectedPr.items || []).filter(item =>
-                Number(item.remaining_quantity ?? item.quantity ?? 0) > 0.0001
-            );
-            const ingredientIds = [...new Set(outstandingItems
-                .map(item => Number(item.ingredient_id || 0))
-                .filter(id => id > 0))];
-            const requestedItemTypeCount = new Set(outstandingItems.map(item => {
-                if (Number(item.ingredient_id || 0) > 0) return `ingredient:${Number(item.ingredient_id)}`;
-                if (Number(item.mro_item_id || 0) > 0) return `mro:${Number(item.mro_item_id)}`;
-                return `line:${Number(item.id || 0)}`;
-            })).size;
-
-            if (!ingredientIds.length) {
-                select.innerHTML = '<option value="">No accredited supplier is configured</option>';
-                renderDirectEntryPrompt('No remaining item in this PRS has a supplier accreditation. Ask the General Manager or Admin to complete the supplier setup.');
-                return;
-            }
-
-            select.innerHTML = '<option value="">Loading matching suppliers...</option>';
-            renderDirectEntryPrompt('Finding accredited suppliers for this Warehouse PRS...');
-
-            try {
-                const response = await PurchasingService.getSuppliers({
-                    status: 'active',
-                    orderable: 1,
-                    ingredient_ids: ingredientIds.join(','),
-                });
-                if (requestNumber !== supplierEligibilityRequest) return;
-
-                availableSuppliers = (response?.data || []).sort((a, b) =>
-                    Number(b.matching_ingredient_count || 0) - Number(a.matching_ingredient_count || 0)
-                    || String(a.supplier_name || '').localeCompare(String(b.supplier_name || ''))
-                );
-                if (!availableSuppliers.length) {
-                    select.innerHTML = '<option value="">No matching accredited supplier</option>';
-                    renderDirectEntryPrompt('No active supplier is accredited for the remaining items in this PRS. Ask the General Manager or Admin to complete the supplier setup.');
-                    return;
-                }
-
-                select.innerHTML = '<option value="">Select an accredited supplier...</option>' +
-                    availableSuppliers.map(supplier => {
-                        const matched = Number(supplier.matching_ingredient_count || 0);
-                        const coverage = `${matched} of ${requestedItemTypeCount} PRS item type${requestedItemTypeCount === 1 ? '' : 's'}`;
-                        return `<option value="${supplier.id}">${escapeHtml(supplier.supplier_name)} (${escapeHtml(supplier.supplier_code)}) — ${coverage}</option>`;
-                    }).join('');
-                select.disabled = false;
-                renderDirectEntryPrompt(`${availableSuppliers.length} accredited supplier${availableSuppliers.length === 1 ? '' : 's'} match this PRS. Choose one to see its items.`);
-            } catch (error) {
-                if (requestNumber !== supplierEligibilityRequest) return;
-                console.error('Failed to load PRS suppliers:', error);
-                select.innerHTML = '<option value="">Matching suppliers could not be loaded</option>';
-                renderDirectEntryPrompt('The accredited suppliers for this PRS could not be loaded.');
-                showToast(error?.message || 'Failed to load matching suppliers', 'error');
-            }
+            select.innerHTML = availableSuppliers.length
+                ? '<option value="">Select an accredited supplier...</option>' + availableSuppliers.map(supplier =>
+                    `<option value="${supplier.id}">${escapeHtml(supplier.supplier_name)} (${escapeHtml(supplier.supplier_code)})</option>`
+                ).join('')
+                : '<option value="">No active accredited supplier with orderable items</option>';
+            document.getElementById('addForecastItemButton').disabled = true;
         }
 
         function escapeHtml(value) {
@@ -957,6 +995,7 @@
             document.getElementById('supplierDetailName').textContent = supplier.supplier_name || '-';
             document.getElementById('supplierDetailContact').textContent = contactParts.length ? contactParts.join(' | ') : '-';
             document.getElementById('supplierDetailTerms').textContent = supplier.payment_terms || '-';
+            document.getElementById('supplierDetailLeadTime').textContent = `${Number(supplier.lead_time_days || 3)} day${Number(supplier.lead_time_days || 3) === 1 ? '' : 's'}`;
             document.getElementById('supplierDetailAddress').textContent = supplier.address || '-';
             summary.classList.remove('hidden');
         }
@@ -1039,7 +1078,7 @@
                 <tr id="lineItem-empty">
                     <td colspan="7" class="text-center py-8 text-base-content/60">
                         <i class="fas fa-clipboard-check text-3xl mb-2"></i>
-                        <p class="font-medium">Select a submitted PRS to fill PO items.</p>
+                        <p class="font-medium">Choose a supplier to see confirmed low-stock items.</p>
                     </td>
                 </tr>
             `;
@@ -1062,6 +1101,34 @@
         function getSelectedSupplierForPO() {
             const supplierId = document.getElementById('poSupplier')?.value;
             return availableSuppliers.find(s => String(s.id) === String(supplierId)) || null;
+        }
+
+        function localDateValue(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function applySupplierDeliveryDates() {
+            const orderDate = document.getElementById('poOrderDate');
+            const expectedDelivery = document.getElementById('poExpectedDelivery');
+            const helper = document.getElementById('expectedDeliveryHelp');
+            if (!orderDate || !expectedDelivery) return;
+
+            const today = new Date();
+            orderDate.value = localDateValue(today);
+            const supplier = getSelectedSupplierForPO();
+            if (!supplier) {
+                expectedDelivery.value = '';
+                if (helper) helper.textContent = 'Choose a supplier to calculate delivery.';
+                return;
+            }
+
+            const leadDays = Math.min(60, Math.max(1, Number.parseInt(supplier.lead_time_days || 3, 10) || 3));
+            const deliveryDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + leadDays);
+            expectedDelivery.value = localDateValue(deliveryDate);
+            if (helper) helper.textContent = `Calculated from this supplier's saved ${leadDays}-day delivery lead time.`;
         }
 
         function applySupplierPaymentTerms() {
@@ -1108,9 +1175,9 @@
             const badge = document.getElementById('lineSourceBadge');
 
             if (supplierSelect) {
-                supplierSelect.disabled = !preferredPurchaseRequestId || availableSuppliers.length === 0;
+                supplierSelect.disabled = availableSuppliers.length === 0;
             }
-            if (badge) badge.textContent = 'Warehouse requests only';
+            if (badge) badge.textContent = 'Warehouse needs + extra items';
             renderSupplierCoverageHint();
         }
 
@@ -1139,7 +1206,25 @@
             return options.join('');
         }
 
+        function buildExtraItemOptions(editIngredientId = 0) {
+            const confirmedIds = new Set(eligiblePrItems.filter(item => item.ingredient_id).map(item => Number(item.ingredient_id)));
+            const alreadyAddedIds = new Set(Array.from(document.querySelectorAll('#lineItemsBody tr[data-mode="forecast"]'))
+                .map(row => Number(row.dataset.ingredientId || 0))
+                .filter(id => id > 0 && id !== Number(editIngredientId)));
+            const choices = directSupplierIngredients.filter(item => {
+                const id = Number(item.ingredient_id || item.id || 0);
+                return id > 0 && !confirmedIds.has(id) && !alreadyAddedIds.has(id);
+            });
+            return '<option value="">Choose an item...</option>' + choices.map(item => {
+                const id = Number(item.ingredient_id || item.id || 0);
+                const code = escapeHtml(item.ingredient_code || '');
+                const name = escapeHtml(item.ingredient_name || 'Unnamed item');
+                return `<option value="ing-${id}">${code ? `${code} - ` : ''}${name}</option>`;
+            }).join('');
+        }
+
         async function onMainSupplierChange() {
+            applySupplierDeliveryDates();
             applySupplierPaymentTerms();
             renderSelectedSupplierDetails();
             const supplierId = document.getElementById('poSupplier')?.value;
@@ -1147,38 +1232,41 @@
             eligiblePrItems = [];
             lineItemCounter = 0;
             clearSelectedPurchaseRequestSummary();
-            if (!preferredPurchaseRequestId) {
-                renderDirectEntryPrompt('Choose the Warehouse PRS you want to purchase for.');
-                renderSupplierCoverageHint();
-                return;
-            }
+            document.getElementById('addForecastItemButton').disabled = !supplierId;
             if (!supplierId) {
-                renderDirectEntryPrompt('Warehouse PRS selected. Now choose a supplier.');
+                renderDirectEntryPrompt('Choose an accredited supplier to see its validated low-stock demand.');
                 renderSupplierCoverageHint();
                 return;
             }
 
-            renderDirectEntryPrompt('Loading this supplier’s outstanding Warehouse-requested items...');
+            renderDirectEntryPrompt('Loading confirmed low-stock items for this supplier...');
             try {
                 const response = await PurchasingService.getSupplierDetail(supplierId);
                 directSupplierIngredients = response?.data?.ingredients || [];
+                directSupplierMroItems = response?.data?.mro_items || [];
                 const suppliedByIngredientId = new Map(directSupplierIngredients.map(item => [
                     Number(item.ingredient_id || item.id || 0),
+                    item
+                ]));
+                const suppliedByMroId = new Map(directSupplierMroItems.map(item => [
+                    Number(item.mro_item_id || item.id || 0),
                     item
                 ]));
                 eligiblePrItems = getScopedWarehouseRequests().flatMap(pr =>
                     (pr.items || []).filter(item => {
                         const remaining = Number(item.remaining_quantity ?? item.quantity ?? 0);
                         return remaining > 0.0001
-                            && item.ingredient_id
-                            && suppliedByIngredientId.has(Number(item.ingredient_id));
+                            && ((item.ingredient_id && suppliedByIngredientId.has(Number(item.ingredient_id)))
+                                || (item.mro_item_id && suppliedByMroId.has(Number(item.mro_item_id))));
                     }).map(item => {
-                        const supplierItem = suppliedByIngredientId.get(Number(item.ingredient_id));
+                        const supplierItem = item.ingredient_id
+                            ? suppliedByIngredientId.get(Number(item.ingredient_id))
+                            : suppliedByMroId.get(Number(item.mro_item_id));
                         return {
                             ...item,
                             source_purchase_request_id: Number(pr.id),
-                            source_pr_number: pr.pr_number || `PRS ${pr.id}`,
-                            source_pr_purpose: pr.purpose || 'Warehouse request',
+                            source_pr_number: pr.validation_number || pr.pr_number || `Validation ${pr.id}`,
+                            source_pr_purpose: 'Physical shelf count confirmed by Warehouse',
                             supplier_unit_price: Number(supplierItem?.reference_unit_price || 0),
                             supplier_purchase_format: supplierItem?.purchase_format || 'direct_unit',
                             supplier_offer_label: supplierItem?.offer_label || `Direct per ${item.unit || 'unit'}`,
@@ -1195,12 +1283,14 @@
                 renderWarehouseRequestedItemsSummary();
 
                 if (!eligiblePrItems.length) {
-                    renderDirectEntryPrompt('Warehouse has no still-open requested item accredited to this supplier. Choose another supplier.');
+                    renderDirectEntryPrompt('No confirmed low-stock item is linked to this supplier. You may still add an extra item that is expected to run out soon.');
                     renderSupplierCoverageHint();
                     return;
                 }
                 renderAllSupplierRequestedItems();
+                applyPendingAutoInclude();
             } catch (error) {
+                pendingAutoIncludeItemId = null;
                 renderDirectEntryPrompt('The supplier accreditation list could not be loaded.');
                 renderSupplierCoverageHint();
                 showToast(error?.message || 'Failed to load supplier items', 'error');
@@ -1208,8 +1298,249 @@
         }
 
         function getScopedWarehouseRequests() {
-            if (!preferredPurchaseRequestId) return [];
-            return approvedPurchaseRequests.filter(pr => String(pr.id) === preferredPurchaseRequestId);
+            return approvedPurchaseRequests;
+        }
+
+        function getConfirmedDecisionItems() {
+            return approvedPurchaseRequests.flatMap(check => (check.items || []).map(item => ({
+                ...item,
+                item_name: item.ingredient_name || item.mro_item_name || item.item_description || 'Confirmed item'
+            })));
+        }
+
+        function renderPurchasingDecisionPanel() {
+            const panel = document.getElementById('purchasingDecisionPanel');
+            const container = document.getElementById('purchasingDecisionItems');
+            const count = document.getElementById('purchasingDecisionCount');
+            if (!panel || !container || !count) return;
+            const items = getConfirmedDecisionItems();
+            panel.classList.toggle('hidden', items.length === 0);
+            count.textContent = `${items.length} awaiting decision`;
+            container.innerHTML = items.map(item => {
+                const remaining = Number(item.remaining_quantity ?? item.quantity ?? 0);
+                return `
+                    <article class="rounded-lg border border-base-300 bg-base-100 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div>
+                            <p class="font-semibold">${escapeHtml(item.item_name)}</p>
+                            <p class="text-sm text-base-content/65">Warehouse confirmed ${plainNumber(item.physical_stock)} ${escapeHtml(item.unit || 'units')} on hand; ${plainNumber(remaining)} ${escapeHtml(item.unit || 'units')} remains to cover.</p>
+                        </div>
+                        <div class="flex flex-wrap gap-2 shrink-0">
+                            <button type="button" class="btn btn-primary btn-xs" onclick="focusSupplierForStockItem(${Number(item.id)}, this)"><i class="fas fa-cart-shopping"></i> Order now</button>
+                            <button type="button" class="btn btn-outline btn-warning btn-xs" onclick="openStockDecision(${Number(item.id)}, 'defer')"><i class="fas fa-calendar-day"></i> Defer</button>
+                            <button type="button" class="btn btn-outline btn-error btn-xs" onclick="openStockDecision(${Number(item.id)}, 'close')"><i class="fas fa-circle-xmark"></i> Close without order</button>
+                        </div>
+                    </article>`;
+            }).join('');
+        }
+
+        function renderPausedStockDecisions() {
+            const panel = document.getElementById('pausedDecisionPanel');
+            const container = document.getElementById('pausedDecisionItems');
+            const count = document.getElementById('pausedDecisionCount');
+            if (!panel || !container || !count) return;
+            panel.classList.toggle('hidden', pausedStockDecisions.length === 0);
+            count.textContent = `${pausedStockDecisions.length} saved decision${pausedStockDecisions.length === 1 ? '' : 's'}`;
+            container.innerHTML = pausedStockDecisions.map(item => {
+                const name = item.ingredient_name || item.mro_item_name || item.item_description || 'Confirmed item';
+                const isClosed = item.purchasing_decision === 'closed_without_order';
+                const state = isClosed ? 'Closed without order' : `Deferred until ${item.deferred_until || 'later'}`;
+                return `
+                    <article class="rounded-lg border border-base-300 bg-base-100 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div>
+                            <p class="font-semibold">${escapeHtml(name)}</p>
+                            <p class="text-sm ${isClosed ? 'text-error' : 'text-warning'}">${escapeHtml(state)}</p>
+                            <p class="text-xs text-base-content/60 mt-1">Reason: ${escapeHtml(item.purchasing_decision_reason || 'No reason recorded')}</p>
+                        </div>
+                        <button type="button" class="btn btn-outline btn-primary btn-xs shrink-0" onclick="openReopenStockDecision(${Number(item.id)})"><i class="fas fa-rotate-left"></i> Reopen</button>
+                    </article>`;
+            }).join('');
+        }
+
+        async function focusSupplierForStockItem(itemId, button = null) {
+            const item = getConfirmedDecisionItems().find(row => Number(row.id) === Number(itemId));
+            if (!item) return;
+
+            const alreadyVisible = eligiblePrItems.some(row => Number(row.id) === Number(itemId));
+            if (alreadyVisible && document.getElementById('poSupplier')?.value) {
+                pendingAutoIncludeItemId = Number(itemId);
+                applyPendingAutoInclude();
+                return;
+            }
+
+            if (button) {
+                button.disabled = true;
+                button.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Finding supplier';
+            }
+            try {
+                const details = await Promise.all(availableSuppliers.map(async supplier => {
+                    const key = String(supplier.id);
+                    if (supplierCatalogCache.has(key)) return supplierCatalogCache.get(key);
+                    const response = await PurchasingService.getSupplierDetail(supplier.id);
+                    const detail = response?.data || null;
+                    if (detail) supplierCatalogCache.set(key, detail);
+                    return detail;
+                }));
+                orderNowSupplierChoices = details.filter(detail => {
+                    if (!detail) return false;
+                    if (item.ingredient_id) {
+                        return (detail.ingredients || []).some(row => Number(row.ingredient_id || row.id) === Number(item.ingredient_id));
+                    }
+                    return (detail.mro_items || []).some(row => Number(row.mro_item_id || row.id) === Number(item.mro_item_id));
+                });
+
+                if (orderNowSupplierChoices.length === 0) {
+                    showToast('No accredited supplier is linked to this item. Ask the GM or Admin to connect one first.', 'warning');
+                    return;
+                }
+                if (orderNowSupplierChoices.length === 1) {
+                    await selectSupplierForStockItem(orderNowSupplierChoices[0].id, itemId);
+                    return;
+                }
+                showOrderNowSupplierChoices(item);
+            } catch (error) {
+                showToast(error?.message || 'Could not find the accredited suppliers for this item.', 'error');
+            } finally {
+                if (button) {
+                    button.disabled = false;
+                    button.innerHTML = '<i class="fas fa-cart-shopping"></i> Order now';
+                }
+            }
+        }
+
+        function showOrderNowSupplierChoices(item) {
+            const name = item.ingredient_name || item.mro_item_name || item.item_description || 'this item';
+            document.getElementById('orderNowSupplierItem').textContent = `${orderNowSupplierChoices.length} accredited suppliers can provide ${name}. Choose which one should receive the PO.`;
+            document.getElementById('orderNowSupplierOptions').innerHTML = orderNowSupplierChoices.map(supplier => {
+                const catalogItem = item.ingredient_id
+                    ? (supplier.ingredients || []).find(row => Number(row.ingredient_id || row.id) === Number(item.ingredient_id))
+                    : (supplier.mro_items || []).find(row => Number(row.mro_item_id || row.id) === Number(item.mro_item_id));
+                const price = Number(catalogItem?.reference_unit_price || catalogItem?.quoted_price || 0);
+                return `
+                    <button type="button" class="btn btn-outline w-full h-auto py-3 justify-between" onclick="selectSupplierForStockItem(${Number(supplier.id)}, ${Number(item.id)})">
+                        <span class="text-left"><span class="block font-semibold">${escapeHtml(supplier.supplier_name)}</span><span class="block text-xs font-normal text-base-content/60">${escapeHtml(supplier.supplier_code || '')} · ${Number(supplier.lead_time_days || 3)}-day delivery</span></span>
+                        <span class="font-semibold">${price > 0 ? formatCurrency(price) : 'Price not set'}</span>
+                    </button>`;
+            }).join('');
+            document.getElementById('orderNowSupplierDialog').showModal();
+        }
+
+        async function selectSupplierForStockItem(supplierId, itemId) {
+            const dialog = document.getElementById('orderNowSupplierDialog');
+            if (dialog.open) dialog.close();
+            const supplierSelect = document.getElementById('poSupplier');
+            supplierSelect.value = String(supplierId);
+            pendingAutoIncludeItemId = Number(itemId);
+            await onMainSupplierChange();
+        }
+
+        function applyPendingAutoInclude() {
+            if (!pendingAutoIncludeItemId) return;
+            const row = Array.from(document.querySelectorAll('#lineItemsBody tr')).find(candidate =>
+                Number(candidate.dataset.prItemId || 0) === Number(pendingAutoIncludeItemId)
+            );
+            if (!row) {
+                pendingAutoIncludeItemId = null;
+                showToast('The selected supplier is no longer linked to this confirmed item.', 'warning');
+                return;
+            }
+            const rowId = Number(String(row.id || '').replace('lineItem-', ''));
+            const checkbox = row.querySelector('.checkbox');
+            if (checkbox && !checkbox.checked) {
+                checkbox.checked = true;
+                toggleSupplierRequestedItem(rowId);
+            }
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            row.classList.add('bg-primary/5');
+            pendingAutoIncludeItemId = null;
+            showToast('Supplier selected and the confirmed item was added to the PO.', 'success');
+        }
+
+        function openStockDecision(itemId, decision) {
+            const item = getConfirmedDecisionItems().find(row => Number(row.id) === Number(itemId));
+            if (!item || !['defer', 'close'].includes(decision)) return;
+            currentStockDecision = { itemId: Number(itemId), decision };
+            const isDefer = decision === 'defer';
+            document.getElementById('stockDecisionTitle').textContent = isDefer ? 'Defer this item' : 'Close without ordering';
+            document.getElementById('stockDecisionItem').textContent = `${item.item_name} — ${plainNumber(item.remaining_quantity ?? item.quantity)} ${item.unit || 'units'} remains to cover.`;
+            document.getElementById('stockDecisionDateField').classList.toggle('hidden', !isDefer);
+            const dateInput = document.getElementById('stockDecisionDate');
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const latest = new Date();
+            latest.setDate(latest.getDate() + 365);
+            dateInput.min = localDateValue(tomorrow);
+            dateInput.max = localDateValue(latest);
+            dateInput.value = isDefer ? localDateValue(tomorrow) : '';
+            const reasonInput = document.getElementById('stockDecisionReason');
+            reasonInput.value = '';
+            reasonInput.placeholder = 'Explain the business reason so Warehouse and GM can understand the decision.';
+            document.getElementById('stockDecisionError').classList.add('hidden');
+            const saveButton = document.getElementById('saveStockDecisionButton');
+            saveButton.className = `btn ${isDefer ? 'btn-warning' : 'btn-error'}`;
+            saveButton.innerHTML = '<i class="fas fa-check"></i> Save decision';
+            document.getElementById('stockDecisionDialog').showModal();
+        }
+
+        function openReopenStockDecision(itemId) {
+            const item = pausedStockDecisions.find(row => Number(row.id) === Number(itemId));
+            if (!item) return;
+            const name = item.ingredient_name || item.mro_item_name || item.item_description || 'Confirmed item';
+            currentStockDecision = { itemId: Number(itemId), decision: 'reopen' };
+            document.getElementById('stockDecisionTitle').textContent = 'Reopen for Purchasing review';
+            document.getElementById('stockDecisionItem').textContent = `${name} will return to the active decision and supplier-ordering list.`;
+            document.getElementById('stockDecisionDateField').classList.add('hidden');
+            document.getElementById('stockDecisionDate').value = '';
+            document.getElementById('stockDecisionReason').value = '';
+            document.getElementById('stockDecisionReason').placeholder = 'Explain why Purchasing is reconsidering this item.';
+            document.getElementById('stockDecisionError').classList.add('hidden');
+            const button = document.getElementById('saveStockDecisionButton');
+            button.className = 'btn btn-primary';
+            button.innerHTML = '<i class="fas fa-rotate-left"></i> Reopen item';
+            document.getElementById('stockDecisionDialog').showModal();
+        }
+
+        async function saveStockDecision() {
+            if (!currentStockDecision) return;
+            const reason = document.getElementById('stockDecisionReason').value.trim();
+            const date = document.getElementById('stockDecisionDate').value;
+            const error = document.getElementById('stockDecisionError');
+            if (reason.length < 10) {
+                error.textContent = 'Please enter a clear reason of at least 10 characters.';
+                error.classList.remove('hidden');
+                return;
+            }
+            if (currentStockDecision.decision === 'defer' && !date) {
+                error.textContent = 'Choose when Purchasing should review this item again.';
+                error.classList.remove('hidden');
+                return;
+            }
+
+            const button = document.getElementById('saveStockDecisionButton');
+            button.disabled = true;
+            try {
+                const response = await PurchasingService.decideConfirmedLowStock({
+                    item_id: currentStockDecision.itemId,
+                    decision: currentStockDecision.decision,
+                    deferred_until: currentStockDecision.decision === 'defer' ? date : null,
+                    reason
+                });
+                document.getElementById('stockDecisionDialog').close();
+                const [refresh, decisions] = await Promise.all([
+                    PurchasingService.getConfirmedLowStock(),
+                    PurchasingService.getConfirmedStockDecisions()
+                ]);
+                approvedPurchaseRequests = refresh?.data || [];
+                pausedStockDecisions = decisions?.data || [];
+                renderPurchasingDecisionPanel();
+                renderPausedStockDecisions();
+                if (document.getElementById('poSupplier')?.value) await onMainSupplierChange();
+                showToast(response?.message || 'Purchasing decision saved', 'success');
+            } catch (requestError) {
+                error.textContent = requestError?.message || 'The decision could not be saved.';
+                error.classList.remove('hidden');
+            } finally {
+                button.disabled = false;
+            }
         }
 
         function renderWarehouseRequestedItemsSummary() {
@@ -1219,16 +1550,29 @@
             const itemContainer = document.getElementById('selectedPrItems');
             const supplierId = document.getElementById('poSupplier')?.value;
             const supplier = availableSuppliers.find(item => String(item.id) === String(supplierId));
-            if (!summary || !supplier || !eligiblePrItems.length) {
+            if (!summary || !supplier) {
                 clearSelectedPurchaseRequestSummary();
                 return;
             }
 
-            const sourceCount = new Set(eligiblePrItems.map(item => item.source_purchase_request_id)).size;
-            title.textContent = `${eligiblePrItems.length} Warehouse-requested item${eligiblePrItems.length === 1 ? '' : 's'} available from ${supplier.supplier_name}`;
-            meta.textContent = `Tick the items to include, then confirm or change the recommended order amount · ${sourceCount} Warehouse request${sourceCount === 1 ? '' : 's'} linked for tracking`;
-            itemContainer.innerHTML = '';
-            itemContainer.classList.add('hidden');
+            const allOpenItems = approvedPurchaseRequests.flatMap(request => (request.items || []).filter(item =>
+                Number(item.remaining_quantity ?? item.quantity ?? 0) > 0.0001
+            ));
+            const productCounts = new Map();
+            allOpenItems.forEach(item => {
+                const key = item.ingredient_id ? `ingredient:${item.ingredient_id}` : item.mro_item_id ? `mro:${item.mro_item_id}` : `line:${item.id}`;
+                productCounts.set(key, (productCounts.get(key) || 0) + 1);
+            });
+            const repeatedProductCount = Array.from(productCounts.values()).filter(count => count > 1).length;
+            const otherSupplierCount = Math.max(0, allOpenItems.length - eligiblePrItems.length);
+            title.textContent = `${eligiblePrItems.length} confirmed low-stock item${eligiblePrItems.length === 1 ? '' : 's'} available from ${supplier.supplier_name}`;
+            meta.textContent = `The supplier filter is applied across every confirmed shortage. Tick the lines to order; every shelf check remains linked for review.`;
+            itemContainer.innerHTML = `
+                <span class="badge badge-primary badge-outline">${eligiblePrItems.length} shown for this supplier</span>
+                <span class="badge badge-outline">${allOpenItems.length} total open</span>
+                <span class="badge badge-outline">${otherSupplierCount} not shown (other supplier or unlinked)</span>
+                <span class="badge ${repeatedProductCount ? 'badge-warning' : 'badge-success'} badge-outline">${repeatedProductCount} repeated product record${repeatedProductCount === 1 ? '' : 's'}</span>`;
+            itemContainer.classList.remove('hidden');
             summary.classList.remove('hidden');
         }
 
@@ -1272,8 +1616,7 @@
                 </td>
                 <td>
                     <div class="font-semibold">${escapeHtml(item.ingredient_name || item.item_description || 'Requested item')}</div>
-                    <div class="text-xs text-primary mt-1"><i class="fas fa-clipboard-list mr-1"></i>${escapeHtml(item.source_pr_number)}</div>
-                    <div class="text-xs text-base-content/50">${escapeHtml(item.source_pr_purpose)}</div>
+                    <div class="text-xs text-primary mt-1"><i class="fas fa-clipboard-check mr-1"></i>Physical count confirmed by Warehouse</div>
                 </td>
                 <td>
                     <div class="font-semibold">${plainNumber(remaining)} ${escapeHtml(warehouseUnit)}</div>
@@ -1282,6 +1625,7 @@
                 <td>
                     <div class="text-sm">${escapeHtml(supplierOffer)}</div>
                     ${isPackaged ? `<div class="text-xs text-base-content/55 mt-1">1 ${escapeHtml(item.supplier_package_type || 'package')} = ${plainNumber(stockPerPackage)} ${escapeHtml(warehouseUnit)}</div>` : ''}
+                    <button type="button" class="btn btn-link btn-xs px-0 mt-1" onclick="openSupplierPriceDialog(${rowId})"><i class="fas fa-pen"></i> Update saved price</button>
                 </td>
                 <td>
                     <div class="font-semibold text-success">${plainNumber(recommendedOrder)} ${escapeHtml(orderUnit)}</div>
@@ -1310,6 +1654,66 @@
             row?.classList.toggle('opacity-70', !included);
             calcLineTotal(rowId);
             renderSupplierCoverageHint();
+        }
+
+        function openSupplierPriceDialog(rowId) {
+            const row = document.getElementById(`lineItem-${rowId}`);
+            const item = eligiblePrItems.find(candidate => Number(candidate.id) === Number(row?.dataset.prItemId));
+            if (!item) return;
+            supplierPriceEditRowId = rowId;
+            const packaged = item.supplier_purchase_format === 'packaged';
+            const price = packaged ? Number(item.supplier_quoted_price || 0) : Number(item.supplier_unit_price || 0);
+            const priceUnit = packaged ? (item.supplier_package_type || 'package') : (item.unit || 'unit');
+            document.getElementById('supplierPriceItemLabel').textContent = `${item.ingredient_name || item.mro_item_name || item.item_description} — current price ${formatCurrency(price)} per ${priceUnit}`;
+            document.getElementById('supplierPriceFieldLabel').textContent = `New price for one ${priceUnit} *`;
+            document.getElementById('supplierPriceValue').value = price > 0 ? String(price) : '';
+            document.getElementById('supplierPriceReason').value = '';
+            const error = document.getElementById('supplierPriceError');
+            error.textContent = '';
+            error.classList.add('hidden');
+            document.getElementById('supplierPriceDialog').showModal();
+            document.getElementById('supplierPriceValue').focus();
+        }
+
+        async function saveSupplierPrice() {
+            const row = document.getElementById(`lineItem-${supplierPriceEditRowId}`);
+            const item = eligiblePrItems.find(candidate => Number(candidate.id) === Number(row?.dataset.prItemId));
+            if (!item) return;
+            const rawPrice = document.getElementById('supplierPriceValue').value.trim();
+            const reason = document.getElementById('supplierPriceReason').value.trim();
+            const packaged = item.supplier_purchase_format === 'packaged';
+            const maximumDecimals = packaged ? 2 : 6;
+            const pattern = new RegExp(`^\\d+(?:\\.\\d{1,${maximumDecimals}})?$`);
+            const error = document.getElementById('supplierPriceError');
+            if (!pattern.test(rawPrice) || Number(rawPrice) <= 0) {
+                error.textContent = `Enter an ordinary positive number with no more than ${maximumDecimals} decimal places.`;
+                error.classList.remove('hidden');
+                return;
+            }
+            if (reason.length < 10 || reason.length > 255) {
+                error.textContent = 'Explain the price change in 10 to 255 characters.';
+                error.classList.remove('hidden');
+                return;
+            }
+            const button = document.getElementById('saveSupplierPriceButton');
+            button.disabled = true;
+            try {
+                await PurchasingService.updateSupplierItemPrice({
+                    supplier_id: Number(document.getElementById('poSupplier').value),
+                    item_type: item.ingredient_id ? 'ingredient' : 'mro',
+                    item_id: Number(item.ingredient_id || item.mro_item_id),
+                    price: rawPrice,
+                    reason
+                });
+                document.getElementById('supplierPriceDialog').close();
+                showToast('Supplier price list updated. The PO lines were refreshed.', 'success');
+                await onMainSupplierChange();
+            } catch (priceError) {
+                error.textContent = priceError?.message || 'Could not update the supplier price.';
+                error.classList.remove('hidden');
+            } finally {
+                button.disabled = false;
+            }
         }
 
         function handleSupplierOrderInput(rowId) {
@@ -1354,7 +1758,7 @@
 
             const supplierId = document.getElementById('poSupplier')?.value;
             const supplier = availableSuppliers.find(item => String(item.id) === String(supplierId));
-            if (!preferredPurchaseRequestId || !supplierId) {
+            if (!supplierId) {
                 hint.classList.add('hidden');
                 text.textContent = '';
                 return;
@@ -1377,7 +1781,233 @@
                 .filter(row => document.getElementById(`include-${row.id.split('-')[1]}`)?.checked === true)
                 .length;
             hint.classList.add(selectedCount > 0 ? 'alert-success' : 'alert-info');
-            text.textContent = `${eligibleCount} outstanding Warehouse-requested item${eligibleCount === 1 ? '' : 's'} ${eligibleCount === 1 ? 'is' : 'are'} shown for ${supplierName}. ${selectedCount} selected for this PO. Tick an item, then confirm or change its recommended order number.`;
+            text.textContent = `${eligibleCount} confirmed low-stock item${eligibleCount === 1 ? '' : 's'} ${eligibleCount === 1 ? 'is' : 'are'} shown for ${supplierName}. ${selectedCount} selected for this PO. Tick an item, then confirm or change its recommended order number.`;
+        }
+
+        function addForecastLineItem() {
+            const supplierId = document.getElementById('poSupplier')?.value;
+            if (!supplierId || !directSupplierIngredients.length) {
+                showToast('Choose an accredited supplier with active items first.', 'error');
+                return;
+            }
+            extraItemEditRowId = null;
+            const select = document.getElementById('extraItemSelect');
+            select.innerHTML = buildExtraItemOptions();
+            if (select.options.length <= 1) {
+                showToast('Every item from this supplier is already listed on the PO or confirmed as low stock.', 'info');
+                return;
+            }
+            select.value = '';
+            document.getElementById('extraItemQuantity').value = '1';
+            document.getElementById('extraItemReason').value = '';
+            document.getElementById('extraItemOffer').classList.add('hidden');
+            document.getElementById('extraItemSuggestion').textContent = 'Choose an item to see a suggested amount from recent usage.';
+            document.getElementById('extraItemError').classList.add('hidden');
+            document.getElementById('extraItemDialog').showModal();
+            select.focus();
+        }
+
+        function getExtraItemConfiguration(item) {
+            const isPackaged = item.purchase_format === 'packaged'
+                && Number(item.package_quantity_in_stock_unit || 0) > 0;
+            const stockPerSupplierUnit = isPackaged ? Number(item.package_quantity_in_stock_unit) : 1;
+            const supplierUnit = isPackaged ? (item.package_type || 'package') : (item.unit_of_measure || 'units');
+            const supplierPrice = isPackaged ? Number(item.quoted_price || 0) : Number(item.reference_unit_price || 0);
+            const requiresWholePackages = isPackaged && Number(item.enforce_whole_packages || 0) === 1;
+            const suggestedStockBuffer = Math.max(0, Number(item.suggested_lead_time_buffer || 0));
+            const suggestedSupplierQuantity = suggestedStockBuffer > 0 && stockPerSupplierUnit > 0
+                ? (requiresWholePackages
+                    ? Math.ceil(suggestedStockBuffer / stockPerSupplierUnit)
+                    : Math.ceil((suggestedStockBuffer / stockPerSupplierUnit) * 1000) / 1000)
+                : 0;
+            return { isPackaged, stockPerSupplierUnit, supplierUnit, supplierPrice, requiresWholePackages, suggestedStockBuffer, suggestedSupplierQuantity };
+        }
+
+        function updateExtraItemSuggestion() {
+            const ingredientId = Number(String(document.getElementById('extraItemSelect')?.value || '').replace('ing-', ''));
+            const item = directSupplierIngredients.find(candidate => Number(candidate.ingredient_id || candidate.id || 0) === ingredientId);
+            if (!item) return;
+            const config = getExtraItemConfiguration(item);
+            const quantity = document.getElementById('extraItemQuantity');
+            quantity.step = config.requiresWholePackages ? '1' : '0.001';
+            quantity.min = config.requiresWholePackages ? '1' : '0.001';
+            if (config.suggestedSupplierQuantity > 0) quantity.value = String(config.suggestedSupplierQuantity);
+            document.getElementById('extraItemUnit').textContent = config.supplierUnit;
+            const offer = document.getElementById('extraItemOffer');
+            offer.innerHTML = `<i class="fas fa-tag"></i><span><strong>Supplier offer:</strong> ${escapeHtml(item.offer_label || `Per ${config.supplierUnit}`)} at ${formatCurrency(config.supplierPrice)} each.</span>`;
+            offer.classList.remove('hidden');
+
+            const issued30 = Math.max(0, Number(item.issued_quantity_30d || 0));
+            const issueCount = Math.max(0, Number(item.issue_transaction_count_30d || 0));
+            const leadDays = Math.max(0, Number(item.lead_time_days || 0));
+            const suggestion = document.getElementById('extraItemSuggestion');
+            if (config.suggestedSupplierQuantity > 0) {
+                suggestion.textContent = `Suggested: ${plainNumber(config.suggestedSupplierQuantity)} ${config.supplierUnit}${config.suggestedSupplierQuantity === 1 ? '' : 's'}, based on recent usage and the ${leadDays}-day delivery time.`;
+                const reason = `Recent usage: ${plainNumber(issued30)} ${item.unit_of_measure || 'units'} in ${issueCount} stock issue${issueCount === 1 ? '' : 's'} over the last 30 days; supplier delivery time: ${leadDays} day${leadDays === 1 ? '' : 's'}.`;
+                if (!document.getElementById('extraItemReason').value.trim()) {
+                    document.getElementById('extraItemReason').value = reason.slice(0, 500);
+                }
+            } else {
+                suggestion.textContent = 'No automatic suggestion is available. Enter the amount needed and explain your estimate.';
+            }
+        }
+
+        function saveExtraItem() {
+            const ingredientId = Number(String(document.getElementById('extraItemSelect')?.value || '').replace('ing-', ''));
+            const item = directSupplierIngredients.find(candidate => Number(candidate.ingredient_id || candidate.id || 0) === ingredientId);
+            const supplierQuantity = Number(document.getElementById('extraItemQuantity').value || 0);
+            const reason = document.getElementById('extraItemReason').value.trim();
+            const error = document.getElementById('extraItemError');
+            if (!item) {
+                error.textContent = 'Choose an item from this supplier.';
+                error.classList.remove('hidden');
+                return;
+            }
+            const config = getExtraItemConfiguration(item);
+            if (supplierQuantity <= 0 || (config.requiresWholePackages && Math.abs(supplierQuantity - Math.round(supplierQuantity)) > 0.000001)) {
+                error.textContent = config.requiresWholePackages ? 'Enter a whole number of packages.' : 'Enter a quantity greater than zero.';
+                error.classList.remove('hidden');
+                return;
+            }
+            if (reason.length < 10) {
+                error.textContent = 'Explain in at least 10 characters why this item is needed early.';
+                error.classList.remove('hidden');
+                return;
+            }
+
+            document.getElementById('lineItem-empty')?.remove();
+            const rowId = extraItemEditRowId || ++lineItemCounter;
+            let row = document.getElementById(`lineItem-${rowId}`);
+            if (!row) {
+                row = document.createElement('tr');
+                row.id = `lineItem-${rowId}`;
+                document.getElementById('lineItemsBody').appendChild(row);
+            }
+            row.dataset.mode = 'forecast';
+            row.dataset.ingredientId = String(ingredientId);
+            row.dataset.stockPerSupplierUnit = String(config.stockPerSupplierUnit);
+            row.dataset.supplierUnitPrice = String(config.supplierPrice);
+            row.dataset.stockUnit = item.unit_of_measure || 'units';
+            row.dataset.wholePackages = String(config.requiresWholePackages);
+            row.dataset.forecastEvidenceText = config.suggestedSupplierQuantity > 0
+                ? `Suggested from recent usage and the supplier's ${Number(item.lead_time_days || 0)}-day delivery time.`
+                : 'Amount entered manually by Purchasing.';
+            row.className = 'bg-warning/5';
+            row.innerHTML = `
+                <td><button type="button" class="btn btn-ghost btn-xs btn-square text-error" title="Remove extra item" onclick="removeLineItem(${rowId})"><i class="fas fa-trash"></i></button></td>
+                <td>
+                    <div class="font-semibold">${escapeHtml(item.ingredient_name || 'Extra item')}</div>
+                    <div class="badge badge-warning badge-sm mt-1">Added early by Purchasing</div>
+                    <button type="button" class="btn btn-link btn-xs px-0 mt-1" onclick="editExtraItem(${rowId})">Edit details</button>
+                    <select id="forecast-item-${rowId}" class="hidden"><option value="ing-${ingredientId}" selected></option></select>
+                    <textarea id="forecast-reason-${rowId}" class="hidden">${escapeHtml(reason)}</textarea>
+                </td>
+                <td><div class="text-sm">Not currently low stock</div><div class="text-xs text-base-content/60 mt-1" id="forecast-reason-display-${rowId}">${escapeHtml(reason)}</div></td>
+                <td id="forecast-offer-${rowId}" class="text-sm">${escapeHtml(item.offer_label || `Per ${config.supplierUnit}`)}<div class="text-xs text-base-content/55 mt-1">${formatCurrency(config.supplierPrice)} per ${escapeHtml(config.supplierUnit)}</div></td>
+                <td><div class="text-sm">${config.suggestedSupplierQuantity > 0 ? `${plainNumber(config.suggestedSupplierQuantity)} ${escapeHtml(config.supplierUnit)}${config.suggestedSupplierQuantity === 1 ? '' : 's'}` : 'No automatic amount'}</div><div class="text-xs text-base-content/55">${config.suggestedSupplierQuantity > 0 ? 'from recent usage' : 'Purchasing estimate'}</div></td>
+                <td>
+                    <div class="join"><input type="number" id="order-${rowId}" class="input input-bordered input-sm w-24 join-item" value="${supplierQuantity}" min="${config.requiresWholePackages ? '1' : '0.001'}" step="${config.requiresWholePackages ? '1' : '0.001'}" oninput="handleForecastOrderInput(${rowId})"><span id="order-unit-${rowId}" class="join-item px-3 flex items-center bg-base-200 border border-base-300 text-xs">${escapeHtml(config.supplierUnit)}</span></div>
+                    <input type="hidden" id="qty-${rowId}" value="0"><input type="hidden" id="price-${rowId}" value="0">
+                    <div id="coverage-${rowId}" class="text-xs text-base-content/55 mt-1"></div>
+                </td>
+                <td class="font-semibold" id="total-${rowId}">${formatCurrency(0)}</td>`;
+            document.getElementById('extraItemDialog').close();
+            extraItemEditRowId = null;
+            handleForecastOrderInput(rowId);
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function editExtraItem(rowId) {
+            const row = document.getElementById(`lineItem-${rowId}`);
+            if (!row) return;
+            extraItemEditRowId = rowId;
+            const select = document.getElementById('extraItemSelect');
+            select.innerHTML = buildExtraItemOptions(Number(row.dataset.ingredientId || 0));
+            select.value = `ing-${row.dataset.ingredientId}`;
+            updateExtraItemSuggestion();
+            document.getElementById('extraItemQuantity').value = document.getElementById(`order-${rowId}`).value;
+            document.getElementById('extraItemReason').value = document.getElementById(`forecast-reason-${rowId}`).value;
+            document.getElementById('extraItemError').classList.add('hidden');
+            document.getElementById('extraItemDialog').showModal();
+        }
+
+        function handleForecastItemSelection(rowId) {
+            const select = document.getElementById(`forecast-item-${rowId}`);
+            const ingredientId = Number(String(select?.value || '').replace('ing-', ''));
+            const item = directSupplierIngredients.find(candidate =>
+                Number(candidate.ingredient_id || candidate.id || 0) === ingredientId
+            );
+            const row = document.getElementById(`lineItem-${rowId}`);
+            if (!row || !item) return;
+
+            row.dataset.ingredientId = String(ingredientId);
+            const isPackaged = item.purchase_format === 'packaged'
+                && Number(item.package_quantity_in_stock_unit || 0) > 0;
+            const stockPerSupplierUnit = isPackaged ? Number(item.package_quantity_in_stock_unit) : 1;
+            const supplierUnit = isPackaged ? (item.package_type || 'package') : (item.unit_of_measure || 'units');
+            const supplierPrice = isPackaged
+                ? Number(item.quoted_price || 0)
+                : Number(item.reference_unit_price || 0);
+            const orderInput = document.getElementById(`order-${rowId}`);
+            orderInput.step = isPackaged && Number(item.enforce_whole_packages || 0) === 1 ? '1' : '0.001';
+            orderInput.min = isPackaged && Number(item.enforce_whole_packages || 0) === 1 ? '1' : '0.001';
+            document.getElementById(`order-unit-${rowId}`).textContent = supplierUnit;
+            document.getElementById(`forecast-offer-${rowId}`).innerHTML = `${escapeHtml(item.offer_label || `Per ${supplierUnit}`)}<div class="text-xs text-base-content/55 mt-1">${formatCurrency(supplierPrice)} per ${escapeHtml(supplierUnit)}</div>`;
+            row.dataset.stockPerSupplierUnit = String(stockPerSupplierUnit);
+            row.dataset.supplierUnitPrice = String(supplierPrice);
+            row.dataset.stockUnit = item.unit_of_measure || 'units';
+            row.dataset.wholePackages = String(Number(item.enforce_whole_packages || 0) === 1 && isPackaged);
+            applyForecastEvidence(rowId, item, stockPerSupplierUnit, isPackaged && Number(item.enforce_whole_packages || 0) === 1);
+            handleForecastOrderInput(rowId);
+        }
+
+        function applyForecastEvidence(rowId, item, stockPerSupplierUnit, requiresWholePackages) {
+            const row = document.getElementById(`lineItem-${rowId}`);
+            const issued30 = Math.max(0, Number(item.issued_quantity_30d || 0));
+            const issueCount = Math.max(0, Number(item.issue_transaction_count_30d || 0));
+            const activeDays = Math.max(0, Number(item.issue_active_days_30d || 0));
+            const leadDays = Math.max(0, Number(item.lead_time_days || 0));
+            const suggestedStockBuffer = Math.max(0, Number(item.suggested_lead_time_buffer || 0));
+            const orderInput = document.getElementById(`order-${rowId}`);
+            const reasonInput = document.getElementById(`forecast-reason-${rowId}`);
+            const coverage = document.getElementById(`coverage-${rowId}`);
+            const stockUnit = item.unit_of_measure || 'units';
+
+            if (!row || !coverage || !orderInput || !reasonInput) return;
+            if (issued30 <= 0 || issueCount <= 0 || leadDays <= 0 || suggestedStockBuffer <= 0 || stockPerSupplierUnit <= 0) {
+                row.dataset.forecastEvidenceText = 'No automatic buffer is available: record production issues and a supplier lead time, or enter a documented manual forecast.';
+                return;
+            }
+
+            const rawSupplierQuantity = suggestedStockBuffer / stockPerSupplierUnit;
+            const suggestedSupplierQuantity = requiresWholePackages
+                ? Math.ceil(rawSupplierQuantity)
+                : Math.ceil(rawSupplierQuantity * 1000) / 1000;
+            orderInput.value = String(suggestedSupplierQuantity);
+
+            const reason = `30-day issue history: ${plainNumber(issued30)} ${stockUnit} in ${issueCount} transaction${issueCount === 1 ? '' : 's'} across ${activeDays} active day${activeDays === 1 ? '' : 's'}; saved lead time: ${leadDays} day${leadDays === 1 ? '' : 's'}; calculated lead-time buffer: ${plainNumber(suggestedStockBuffer)} ${stockUnit}.`;
+            reasonInput.value = reason.slice(0, 500);
+            row.dataset.forecastEvidenceText = `Suggested from recorded usage: ${plainNumber(issued30)} ${stockUnit} ÷ 30 days × ${leadDays} lead-time days = ${plainNumber(suggestedStockBuffer)} ${stockUnit}.`;
+        }
+
+        function handleForecastOrderInput(rowId) {
+            const row = document.getElementById(`lineItem-${rowId}`);
+            if (!row) return;
+            const supplierQuantity = Math.max(0, Number(document.getElementById(`order-${rowId}`)?.value || 0));
+            const stockPerSupplierUnit = Number(row.dataset.stockPerSupplierUnit || 0);
+            const supplierUnitPrice = Number(row.dataset.supplierUnitPrice || 0);
+            const stockQuantity = supplierQuantity * stockPerSupplierUnit;
+            const stockUnitPrice = stockPerSupplierUnit > 0 ? supplierUnitPrice / stockPerSupplierUnit : 0;
+            document.getElementById(`qty-${rowId}`).value = String(stockQuantity);
+            document.getElementById(`price-${rowId}`).value = String(stockUnitPrice);
+            const coverage = document.getElementById(`coverage-${rowId}`);
+            if (coverage) {
+                const actualText = stockPerSupplierUnit > 0
+                    ? `Current line adds ${plainNumber(stockQuantity)} ${row.dataset.stockUnit || 'units'} beyond validated shortage.`
+                    : '';
+                coverage.textContent = [row.dataset.forecastEvidenceText || '', actualText].filter(Boolean).join(' ');
+            }
+            calcLineTotal(rowId);
         }
 
         function addDirectLineItem() {
@@ -1645,88 +2275,56 @@
         function resetSupplierSpecificPOFields() {
             const supplierSelect = document.getElementById('poSupplier');
             if (supplierSelect) supplierSelect.value = '';
-            document.getElementById('poExpectedDelivery').value = '';
+            applySupplierDeliveryDates();
             document.getElementById('poDeliveryDetails').value = '';
             document.getElementById('poNotes').value = '';
             applySupplierPaymentTerms();
             directSupplierIngredients = [];
+            directSupplierMroItems = [];
             eligiblePrItems = [];
             lineItemCounter = 0;
+            document.getElementById('addForecastItemButton').disabled = true;
             renderSelectedSupplierDetails();
             clearSelectedPurchaseRequestSummary();
             renderSupplierCoverageHint();
         }
 
-        async function continueCurrentPrsAfterSupplierPO(po, purchaseRequestId) {
+        async function continueSupplierFirstAfterPO(po) {
             const poNumber = po?.po_number || 'The PO';
-            const previousRequest = approvedPurchaseRequests.find(pr => String(pr.id) === String(purchaseRequestId));
-            const fallbackPrNumber = previousRequest?.pr_number || `PRS ${purchaseRequestId}`;
-
             resetSupplierSpecificPOFields();
 
             try {
-                const response = await PurchasingService.getPRSInbox();
-                approvedPurchaseRequests = response?.data || [];
-                const remainingRequest = approvedPurchaseRequests.find(pr => String(pr.id) === String(purchaseRequestId)) || null;
-
-                if (remainingRequest) {
-                    preferredPurchaseRequestId = String(purchaseRequestId);
-                    populateWarehousePrSelect(preferredPurchaseRequestId);
-                    await refreshEligibleSuppliersForSelectedPRS();
-                    const remainingCount = Number(remainingRequest.remaining_item_count || (remainingRequest.items || []).length || 0);
-                    const prNumber = remainingRequest.pr_number || fallbackPrNumber;
-                    if (availableSuppliers.length) {
-                        renderDirectEntryPrompt(`${prNumber} is still open. Choose the next matching supplier for its remaining items.`);
-                        showPOContinuationNotice(
-                            `${poNumber} submitted to the GM`,
-                            `${prNumber} still has ${remainingCount} item${remainingCount === 1 ? '' : 's'} to order. The submitted items were removed. Choose another accredited supplier to continue.`
-                        );
-                    } else {
-                        showPOContinuationNotice(
-                            `${poNumber} submitted — supplier setup is required`,
-                            `${prNumber} still has ${remainingCount} item${remainingCount === 1 ? '' : 's'} to order, but no active accredited supplier matches them. Ask the General Manager or Admin to complete the supplier setup.`,
-                            'warning'
-                        );
-                    }
-
-                    const url = new URL(window.location.href);
-                    url.searchParams.set('action', 'new');
-                    url.searchParams.set('pr_id', preferredPurchaseRequestId);
-                    history.replaceState(null, '', url.toString());
-                    showToast(
-                        availableSuppliers.length
-                            ? `${poNumber} submitted. Continue with the next supplier for ${prNumber}.`
-                            : `${poNumber} submitted. The remaining ${prNumber} items need supplier setup.`,
-                        'success'
-                    );
-                    if (availableSuppliers.length) document.getElementById('poSupplier')?.focus();
-                    return;
-                }
-
-                preferredPurchaseRequestId = null;
-                populateWarehousePrSelect(null);
-                await refreshEligibleSuppliersForSelectedPRS();
-                renderDirectEntryPrompt(`${fallbackPrNumber} is fully covered. Choose another Warehouse PRS when you are ready.`);
-                showPOContinuationNotice(
-                    `${poNumber} submitted — ${fallbackPrNumber} is fully covered`,
-                    'There are no remaining items in this Warehouse request. You can start another PRS here or open Purchase Orders to view the submitted POs.'
+                const [prsResponse, supplierResponse] = await Promise.all([
+                    PurchasingService.getConfirmedLowStock(),
+                    PurchasingService.getSuppliers({ status: 'active', orderable: 1 })
+                ]);
+                approvedPurchaseRequests = prsResponse?.data || [];
+                availableSuppliers = supplierResponse?.data || [];
+                renderSupplierFirstOptions();
+                const remainingCount = approvedPurchaseRequests.reduce((count, request) =>
+                    count + (request.items || []).filter(item => Number(item.remaining_quantity || 0) > 0.0001).length, 0
                 );
-
+                renderDirectEntryPrompt('Choose the next supplier to continue purchasing validated low-stock demand.');
+                showPOContinuationNotice(
+                    `${poNumber} submitted to the GM`,
+                    remainingCount > 0
+                        ? `${remainingCount} confirmed shortage line${remainingCount === 1 ? '' : 's'} remain across Warehouse stock checks. Choose the next supplier to continue.`
+                        : 'All confirmed shortages are covered. You may still add an extra item that is expected to run out soon.'
+                );
                 const url = new URL(window.location.href);
                 url.searchParams.set('action', 'new');
                 url.searchParams.delete('pr_id');
                 history.replaceState(null, '', url.toString());
-                showToast(`${poNumber} submitted. ${fallbackPrNumber} is fully covered.`, 'success');
+                showToast(`${poNumber} submitted to the GM.`, 'success');
+                document.getElementById('poSupplier')?.focus();
             } catch (error) {
-                preferredPurchaseRequestId = String(purchaseRequestId);
-                populateWarehousePrSelect(preferredPurchaseRequestId);
                 renderDirectEntryPrompt(`${poNumber} was submitted, but the remaining Warehouse items could not be refreshed. Reload this page to continue.`);
                 showPOContinuationNotice(
                     `${poNumber} submitted to the GM`,
-                    'The submission succeeded, but the remaining PRS items could not be refreshed. Reload this page before creating the next supplier PO.',
+                    'The order was saved, but the confirmed shortage list could not be refreshed. Reload this page before creating the next supplier PO.',
                     'warning'
                 );
-                showToast(`${poNumber} submitted, but the remaining PRS items could not be refreshed.`, 'warning');
+                showToast(`${poNumber} was submitted, but the confirmed shortage list could not be refreshed.`, 'warning');
             }
         }
 
@@ -1737,11 +2335,6 @@
             }
 
             const supplierId = document.getElementById('poSupplier').value;
-            const purchaseRequestId = document.getElementById('poPurchaseRequest').value;
-            if (!purchaseRequestId) {
-                showToast('Choose the Warehouse PRS for this Purchase Order.', 'error');
-                return;
-            }
             if (!supplierId) {
                 showToast('Choose one accredited supplier for this Purchase Order.', 'error');
                 return;
@@ -1749,11 +2342,30 @@
 
             // Build one supplier-specific PO from the lines the Purchaser added.
             const lines = [];
+            const forecastLines = [];
             let hasInvalidPrice = false;
             let hasInvalidQuantity = false;
+            let hasInvalidForecast = false;
             document.querySelectorAll('#lineItemsBody tr').forEach(row => {
                 const id = row.id.split('-')[1];
                 if (!id) return;
+                if (row.dataset.mode === 'forecast') {
+                    const ingredientId = Number(row.dataset.ingredientId || 0);
+                    const supplierQuantity = Number(document.getElementById(`order-${id}`)?.value || 0);
+                    const reason = document.getElementById(`forecast-reason-${id}`)?.value.trim() || '';
+                    const requiresWholePackages = row.dataset.wholePackages === 'true';
+                    if (!ingredientId || supplierQuantity <= 0 || reason.length < 10
+                        || (requiresWholePackages && Math.abs(supplierQuantity - Math.round(supplierQuantity)) > 0.000001)) {
+                        hasInvalidForecast = true;
+                        return;
+                    }
+                    forecastLines.push({
+                        ingredient_id: ingredientId,
+                        supplier_order_quantity: supplierQuantity,
+                        forecast_reason: reason,
+                    });
+                    return;
+                }
                 if (row.dataset.mode === 'supplier_request'
                     && document.getElementById(`include-${id}`)?.checked !== true) return;
                 const prItemId = parseInt(row.dataset.prItemId || '0', 10);
@@ -1773,7 +2385,7 @@
                 if (price <= 0) hasInvalidPrice = true;
                 if (qty <= 0 || (maxQty > 0 && qty > maxQty + 0.0001)) hasInvalidQuantity = true;
                 lines.push({
-                    purchase_request_item_id: prItemId,
+                    stock_validation_item_id: prItemId,
                     supplier_id: parseInt(supplierId, 10),
                     unit_price: price,
                     quantity: prAllocationQuantity,
@@ -1781,8 +2393,8 @@
                 });
             });
 
-            if (lines.length === 0) {
-                showToast('Add at least one item that Warehouse still needs.', 'error');
+            if (lines.length === 0 && forecastLines.length === 0) {
+                showToast('Select a confirmed shortage or add one extra item.', 'error');
                 return;
             }
             if (hasInvalidQuantity) {
@@ -1791,6 +2403,10 @@
             }
             if (hasInvalidPrice) {
                 showToast('Complete the accepted supplier price for every PO item before creating the PO.', 'error');
+                return;
+            }
+            if (hasInvalidForecast) {
+                showToast('Complete each extra item and explain in at least 10 characters why it is needed early.', 'error');
                 return;
             }
 
@@ -1831,15 +2447,16 @@
                     supplier_id: parseInt(supplierId, 10),
                     submit_for_approval: true,
                     items: lines.map(l => ({
-                        purchase_request_item_id: l.purchase_request_item_id,
+                        stock_validation_item_id: l.stock_validation_item_id,
                         unit_price: l.unit_price,
                         quantity: l.quantity,
                         supplier_order_quantity: l.supplier_order_quantity,
                     })),
+                    forecast_items: forecastLines,
                 };
                 const response = await PurchasingService.createSupplierPurchaseOrder(data);
                 const po = response?.data?.purchase_order || {};
-                await continueCurrentPrsAfterSupplierPO(po, purchaseRequestId);
+                await continueSupplierFirstAfterPO(po);
                 await loadPurchaseOrders();
                 await loadApprovedPurchaseRequestNotice();
             } catch (error) {
@@ -1909,7 +2526,7 @@
 
                 let actionsHTML = '';
                 if (po.status === 'draft' && currentUserRole === 'purchaser' && po.purchase_request_id) {
-                    actionsHTML += `<button class="btn btn-info btn-sm" onclick="submitPOGroup(${po.id}, '${escapeHtml(po.pr_number || 'this PRS')}')"><i class="fas fa-paper-plane"></i> Submit All POs from this PRS</button>`;
+                    actionsHTML += `<button class="btn btn-info btn-sm" onclick="submitPOGroup(${po.id}, '${escapeHtml(po.pr_number || 'this old request')}')"><i class="fas fa-paper-plane"></i> Submit related POs to GM</button>`;
                 } else if (po.status === 'draft' && currentUserRole === 'purchaser') {
                     actionsHTML += `<button class="btn btn-info btn-sm" onclick="submitPO(${po.id})"><i class="fas fa-paper-plane"></i> Submit for GM Approval</button>`;
                 }
@@ -2011,7 +2628,7 @@
                                 ` : ''}
                                 ${po.pr_number ? `
                                 <div class="bg-base-200 rounded-xl p-3">
-                                    <p class="text-xs text-base-content/60 mb-1">Linked PRS</p>
+                                    <p class="text-xs text-base-content/60 mb-1">Old request record</p>
                                     <p class="font-semibold font-mono text-primary">${escapeHtml(po.pr_number)}</p>
                                 </div>
                                 ` : ''}
@@ -2065,7 +2682,8 @@
                                             <tr>
                                                 <td>${i + 1}</td>
                                                 <td class="font-medium">${escapeHtml(item.item_description)}
-                                                    ${item.source_pr_number ? `<div class="text-xs text-primary"><i class="fas fa-clipboard-list mr-1"></i>Warehouse request: ${escapeHtml(item.source_pr_number)}</div>` : ''}
+                                                    ${item.source_pr_number ? `<div class="text-xs text-primary"><i class="fas fa-clipboard-list mr-1"></i>Confirmed shortage: ${escapeHtml(item.source_pr_number)}</div>` : ''}
+                                                    ${item.procurement_source === 'purchaser_forecast' ? `<div class="badge badge-warning badge-sm mt-1">Added early by Purchasing</div><div class="text-xs text-base-content/60 mt-1">${escapeHtml(item.forecast_reason || item.notes || '')}</div>` : ''}
                                                     ${item.ingredient_name ? `<div class="text-xs text-base-content/50">Ingredient: ${escapeHtml(item.ingredient_name)}</div>` : ''}
                                                     ${item.mro_item_name ? `<div class="text-xs text-base-content/50">MRO: ${escapeHtml(item.mro_item_name)}</div>` : ''}
                                                 </td>
@@ -2379,7 +2997,7 @@
 
         async function submitPOGroup(id, prNumber) {
             const confirmed = await AuthService.confirmAction({
-                title: 'Send PRS Purchase Orders to GM',
+                title: 'Send Related Purchase Orders to GM',
                 message: `Send every draft PO created from ${prNumber} to the General Manager in one action? Each supplier PO will remain separate for review and approval.`,
                 confirmText: 'Send All to GM',
                 icon: 'fa-paper-plane',
@@ -2394,7 +3012,7 @@
                 cancelCreate();
                 await loadPurchaseOrders();
             } catch (e) {
-                showToast(e?.message || 'Could not submit the PRS purchase orders', 'error');
+                showToast(e?.message || 'Could not submit the related purchase orders', 'error');
             }
         }
 

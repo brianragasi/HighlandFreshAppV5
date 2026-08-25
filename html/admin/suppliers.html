@@ -418,7 +418,7 @@
             <h3 class="font-bold text-lg mb-1" id="modalTitle">Register Supplier</h3>
             <p class="text-sm text-base-content/60 mb-4">Enter the supplier details first. Linking items and standard prices is optional, but Purchasing will only see this supplier for items connected below or from the Items page.</p>
             
-            <form id="dataForm" class="space-y-4">
+            <form id="dataForm" class="space-y-4" novalidate>
                 <input type="hidden" id="recordId">
 
                 <section class="border border-base-300 rounded-lg p-4 space-y-4" aria-labelledby="supplierDetailsHeading">
@@ -474,6 +474,14 @@
                             <span class="label-text-alt text-base-content/60 mt-1" id="paymentTermsHelp">Choose the term agreed with the supplier.</span>
                         </div>
                         <div class="form-control">
+                            <label class="label" for="lead_time_days"><span class="label-text">Expected Delivery Lead Time *</span></label>
+                            <div class="join w-full">
+                                <input id="lead_time_days" type="number" min="1" max="60" step="1" inputmode="numeric" value="3" class="input input-bordered join-item w-full" required onkeydown="blockInvalidNumberCharacters(event)">
+                                <span class="btn join-item pointer-events-none">days</span>
+                            </div>
+                            <span class="label-text-alt text-base-content/60 mt-1">Example: local supplier = 3 days; regional supplier = 7 days.</span>
+                        </div>
+                        <div class="form-control">
                             <label class="label" for="is_active"><span class="label-text">Approval & Purchasing Status *</span></label>
                             <select id="is_active" class="select select-bordered" required>
                                 <option value="" disabled selected>Confirm the supplier status...</option>
@@ -511,6 +519,20 @@
                     <p id="ingredientFilterEmpty" class="hidden text-sm text-center text-base-content/60 p-5">No items match this filter.</p>
                 </section>
 
+                <section class="border border-base-300 rounded-lg overflow-hidden" aria-labelledby="supplierMroHeading">
+                    <div class="bg-base-200 px-4 py-3 flex items-start gap-3">
+                        <i class="fas fa-screwdriver-wrench text-primary mt-1"></i>
+                        <div>
+                            <h4 class="font-semibold" id="supplierMroHeading">4. MRO Items Supplied & Pricing <span class="font-normal text-base-content/55">(optional)</span></h4>
+                            <p class="text-sm text-base-content/60">Link maintenance, repair, and operating supplies to this supplier so validated MRO demand can appear on a supplier-first PO.</p>
+                        </div>
+                    </div>
+                    <div id="mroErrorSummary" class="hidden alert alert-error rounded-none text-sm" role="alert"></div>
+                    <div id="mroCatalog" class="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 max-h-80 overflow-y-auto">
+                        <p class="text-sm text-base-content/60 p-2">Loading MRO items...</p>
+                    </div>
+                </section>
+
                 <div class="form-control">
                     <label class="label" for="notes"><span class="label-text">Internal Supplier Notes <span class="text-base-content/50">(optional)</span></span></label>
                     <textarea id="notes" class="textarea textarea-bordered" rows="2" maxlength="1000" placeholder="Notes for internal staff; not printed as supplier instructions."></textarea>
@@ -540,6 +562,7 @@
         let currentPage = 1;
         let searchTimeout = null;
         let availableIngredients = [];
+        let availableMroItems = [];
 
         function escapeHtml(value) {
             const div = document.createElement('div');
@@ -685,10 +708,16 @@
                         <span class="text-xs text-base-content/55 block truncate" title="${escapeHtml(s.phone || '')}">${escapeHtml(s.phone || 'No phone saved')}</span>
                     </td>
                     <td>
-                        <span class="badge badge-outline badge-sm">${Number(s.ingredient_count || 0)} item(s)</span>
-                        <div class="text-xs text-base-content/50 mt-1 truncate" title="${escapeHtml(s.supplied_ingredients || '')}">${escapeHtml(s.supplied_ingredients || 'No items linked')}</div>
+                        <div class="flex flex-wrap gap-1">
+                            <span class="badge badge-outline badge-sm">${Number(s.ingredient_count || 0)} raw material(s)</span>
+                            <span class="badge badge-outline badge-sm">${Number(s.mro_item_count || 0)} MRO item(s)</span>
+                        </div>
+                        <div class="text-xs text-base-content/50 mt-1 truncate" title="${escapeHtml([s.supplied_ingredients, s.supplied_mro_items].filter(Boolean).join(', '))}">${escapeHtml([s.supplied_ingredients, s.supplied_mro_items].filter(Boolean).join(', ') || 'No items linked')}</div>
                     </td>
-                    <td class="whitespace-nowrap">${escapeHtml(s.payment_terms || '30 days')}</td>
+                    <td class="whitespace-nowrap">
+                        <span class="block">${escapeHtml(s.payment_terms || '30 days')}</span>
+                        <span class="text-xs text-base-content/55">${Number(s.lead_time_days || 3)}-day delivery</span>
+                    </td>
                     <td class="whitespace-nowrap">
                         <span class="badge ${s.is_active == 1 ? 'badge-success' : 'badge-warning'} badge-sm">
                             ${s.is_active == 1 ? 'Active' : 'Archived'}
@@ -771,7 +800,7 @@
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
                                 <div class="form-control">
                                     <label class="label py-1" for="offer-format-${item.id}"><span class="label-text text-xs">Supplier price is quoted *</span></label>
-                                    <select id="offer-format-${item.id}" class="select select-bordered select-sm" onchange="updateSupplierOffer(${item.id})" required ${checked ? '' : 'disabled'}>
+                                    <select id="offer-format-${item.id}" class="select select-bordered select-sm" onchange="updateSupplierOffer(${item.id})" ${checked ? '' : 'disabled'}>
                                         <option value="" disabled ${format ? '' : 'selected'}>Choose how the price is quoted...</option>
                                         <option value="direct_unit" ${format === 'direct_unit' ? 'selected' : ''}>Per warehouse unit (for example, per kg)</option>
                                         <option value="packaged" ${format === 'packaged' ? 'selected' : ''}>Per whole package (for example, per sack)</option>
@@ -798,7 +827,7 @@
                                     <label class="label py-1" for="offer-price-${item.id}"><span class="label-text text-xs" id="offer-price-label-${item.id}">Standard supplier price (₱) *</span></label>
                                     <div class="join">
                                         <span class="btn btn-ghost btn-sm join-item no-animation">₱</span>
-                                        <input id="offer-price-${item.id}" type="number" min="${format === 'packaged' ? '0.01' : '0.000001'}" max="999999.99" step="${format === 'packaged' ? '0.01' : '0.000001'}" inputmode="decimal" class="input input-bordered input-sm join-item w-full" placeholder="0.00" value="${escapeHtml(formatSupplierInputNumber(link.quoted_price ?? link.reference_unit_price ?? '', format === 'packaged' ? 2 : 6, 2))}" onkeydown="blockInvalidNumberCharacters(event)" oninput="updateSupplierOffer(${item.id})" onblur="formatSupplierOfferFieldOnBlur(${item.id}, 'price')" ${checked ? 'required' : 'disabled'}>
+                                        <input id="offer-price-${item.id}" type="number" min="${format === 'packaged' ? '0.01' : '0.000001'}" max="999999.99" step="${format === 'packaged' ? '0.01' : '0.000001'}" inputmode="decimal" class="input input-bordered input-sm join-item w-full" placeholder="0.00" value="${escapeHtml(formatSupplierInputNumber(link.quoted_price ?? link.reference_unit_price ?? '', format === 'packaged' ? 2 : 6, 2))}" onkeydown="blockInvalidNumberCharacters(event)" oninput="updateSupplierOffer(${item.id})" onblur="formatSupplierOfferFieldOnBlur(${item.id}, 'price')" ${checked ? '' : 'disabled'}>
                                     </div>
                                 </div>
                             </div>
@@ -809,6 +838,69 @@
             availableIngredients.forEach(item => updateSupplierOffer(item.id));
             updateSelectedIngredientCount();
             filterSupplierOffers();
+        }
+
+        async function loadMroOptions() {
+            try {
+                const response = await AdminService.getSupplierMroCatalog();
+                availableMroItems = response?.data?.mro_items || [];
+                renderMroCatalog([]);
+            } catch (error) {
+                availableMroItems = [];
+                document.getElementById('mroCatalog').innerHTML = '<p class="text-sm text-error p-2">MRO items could not be loaded.</p>';
+            }
+        }
+
+        function renderMroCatalog(selectedLinks = []) {
+            const selected = new Map((selectedLinks || []).map(link => [String(link.mro_item_id), link]));
+            const container = document.getElementById('mroCatalog');
+            if (!availableMroItems.length) {
+                container.innerHTML = '<p class="text-sm text-base-content/60 p-2">No active MRO items are available.</p>';
+                return;
+            }
+            container.innerHTML = [...availableMroItems].sort((a, b) => String(a.item_name).localeCompare(String(b.item_name))).map(item => {
+                const link = selected.get(String(item.id)) || {};
+                const checked = selected.has(String(item.id));
+                return `<div class="border border-base-300 rounded-lg p-3 mro-offer-card">
+                    <label class="flex gap-3 items-start cursor-pointer">
+                        <input type="checkbox" class="checkbox checkbox-primary checkbox-sm mt-1 mro-link" value="${item.id}" ${checked ? 'checked' : ''} onchange="toggleMroOffer(${item.id}, this.checked)">
+                        <span class="min-w-0 flex-1"><span class="font-semibold block">${escapeHtml(item.item_name)}</span><span class="text-xs text-base-content/55">${escapeHtml(item.item_code)} · Warehouse unit: <strong>${escapeHtml(item.unit_of_measure)}</strong></span></span>
+                    </label>
+                    <div id="mro-offer-${item.id}" class="form-control mt-3 pl-8 ${checked ? '' : 'hidden'}">
+                        <label class="label py-1"><span class="label-text text-xs">Price per ${escapeHtml(item.unit_of_measure)} *</span></label>
+                        <div class="join"><span class="btn btn-ghost btn-sm join-item no-animation">₱</span><input id="mro-price-${item.id}" type="number" min="0.000001" max="999999.999999" step="0.000001" inputmode="decimal" class="input input-bordered input-sm join-item w-full" value="${escapeHtml(formatSupplierInputNumber(link.reference_unit_price ?? '', 6, 2))}" onkeydown="blockInvalidNumberCharacters(event)" ${checked ? '' : 'disabled'}></div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function toggleMroOffer(id, checked) {
+            document.getElementById(`mro-offer-${id}`)?.classList.toggle('hidden', !checked);
+            const price = document.getElementById(`mro-price-${id}`);
+            if (price) { price.disabled = !checked; price.required = false; }
+        }
+
+        function getSelectedMroLinks() {
+            return Array.from(document.querySelectorAll('.mro-link:checked')).map(checkbox => ({
+                mro_item_id: Number(checkbox.value),
+                reference_unit_price: document.getElementById(`mro-price-${checkbox.value}`)?.value.trim() || null,
+            }));
+        }
+
+        function validateMroOffers() {
+            const errors = [];
+            document.querySelectorAll('.mro-link:checked').forEach(checkbox => {
+                const price = document.getElementById(`mro-price-${checkbox.value}`);
+                const raw = price?.value.trim() || '';
+                if (!isPlainDecimal(raw, 6) || !(Number(raw) > 0) || Number(raw) > 999999.999999) {
+                    markSupplierFieldError(price, 'Enter an ordinary positive price with no more than 6 decimal places.');
+                    errors.push(raw);
+                }
+            });
+            const summary = document.getElementById('mroErrorSummary');
+            summary.classList.toggle('hidden', errors.length === 0);
+            summary.textContent = errors.length ? `${errors.length} MRO price field${errors.length === 1 ? '' : 's'} need attention.` : '';
+            return errors.length === 0;
         }
 
         function supplierOfferCompatibleUnits(stockUnit) {
@@ -857,7 +949,9 @@
             format.disabled = !checked;
             const price = document.getElementById(`offer-price-${id}`);
             price.disabled = !checked;
-            price.required = checked;
+            // Dynamic catalog fields use the clear validation summary below.
+            // Native `required` cannot focus a field hidden by search/filtering.
+            price.required = false;
             updateSupplierOffer(id);
             updateSelectedIngredientCount();
             filterSupplierOffers();
@@ -898,7 +992,7 @@
             [packageType, packageSize, packageUnit].forEach(field => {
                 if (!field) return;
                 field.disabled = !checkbox.checked || !packaged;
-                field.required = checkbox.checked && packaged;
+                field.required = false;
             });
 
             const price = Number(document.getElementById(`offer-price-${id}`)?.value || 0);
@@ -982,6 +1076,11 @@
                 summary.textContent = '';
                 summary.classList.add('hidden');
             }
+            const mroSummary = document.getElementById('mroErrorSummary');
+            if (mroSummary) {
+                mroSummary.textContent = '';
+                mroSummary.classList.add('hidden');
+            }
         }
 
         function markSupplierFieldError(field, message) {
@@ -1008,7 +1107,6 @@
         }
 
         function validateSupplierOffers() {
-            clearSupplierFormErrors();
             const errors = [];
             let firstInvalid = null;
             document.querySelectorAll('.ingredient-link:checked').forEach(checkbox => {
@@ -1059,6 +1157,31 @@
             return false;
         }
 
+        function validateSupplierDetails() {
+            const checks = [
+                ['supplier_name', value => value.length > 0, 'Enter the supplier name.'],
+                ['contact_person', value => value.length > 0, 'Enter the supplier contact person.'],
+                ['phone', value => /^09\d{9}$/.test(value), 'Enter an 11-digit Philippine mobile number starting with 09.'],
+                ['email', value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value), 'Enter a valid supplier email address.'],
+                ['address', value => value.length > 0, 'Enter the delivery or business address.'],
+                ['payment_terms', value => value.length > 0, 'Choose the agreed payment term.'],
+                ['lead_time_days', value => Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 60, 'Enter a delivery lead time from 1 to 60 days.'],
+                ['is_active', value => value === '0' || value === '1', 'Confirm whether this supplier is accredited and active.'],
+            ];
+            let firstInvalid = null;
+            checks.forEach(([id, isValid, message]) => {
+                const field = document.getElementById(id);
+                const value = String(field?.value || '').trim();
+                if (!field || isValid(value)) return;
+                markSupplierFieldError(field, message);
+                if (!firstInvalid) firstInvalid = field;
+            });
+            if (!firstInvalid) return true;
+            firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            firstInvalid.focus({ preventScroll: true });
+            return false;
+        }
+
         function showServerValidationErrors(error) {
             const errors = error?.errors;
             if (!errors || typeof errors !== 'object') return false;
@@ -1066,6 +1189,13 @@
             Object.entries(errors).forEach(([fieldName, message]) => {
                 if (fieldName === 'ingredients') {
                     const summary = document.getElementById('ingredientErrorSummary');
+                    summary.textContent = String(message);
+                    summary.classList.remove('hidden');
+                    if (!firstInvalid) firstInvalid = summary;
+                    return;
+                }
+                if (fieldName === 'mro_items') {
+                    const summary = document.getElementById('mroErrorSummary');
                     summary.textContent = String(message);
                     summary.classList.remove('hidden');
                     if (!firstInvalid) firstInvalid = summary;
@@ -1091,6 +1221,7 @@
             document.getElementById('selectedIngredientsOnly').checked = false;
             clearSupplierFormErrors();
             renderIngredientCatalog([]);
+            renderMroCatalog([]);
             updatePaymentTermsHelp();
             document.getElementById('formModal').showModal();
         }
@@ -1115,10 +1246,12 @@
                     document.getElementById('phone').value = s.phone || '';
                     document.getElementById('email').value = s.email || '';
                     document.getElementById('payment_terms').value = s.payment_terms || '30 days';
+                    document.getElementById('lead_time_days').value = Number(s.lead_time_days || 3);
                     document.getElementById('address').value = s.address || '';
                     document.getElementById('is_active').value = s.is_active;
                     document.getElementById('notes').value = s.notes || '';
                     renderIngredientCatalog(s.ingredients || []);
+                    renderMroCatalog(s.mro_items || []);
                     
                     document.getElementById('modalTitle').textContent = 'Edit Supplier';
                     document.getElementById('saveBtnText').textContent = 'Save Changes';
@@ -1157,20 +1290,27 @@
         
         document.getElementById('dataForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (!validateSupplierOffers()) return;
+            clearSupplierFormErrors();
+            const detailsValid = validateSupplierDetails();
+            const ingredientsValid = validateSupplierOffers();
+            const mroValid = validateMroOffers();
+            if (!detailsValid || !ingredientsValid || !mroValid) return;
             
             const recordId = document.getElementById('recordId').value;
             const ingredientLinks = getSelectedIngredientLinks();
+            const mroLinks = getSelectedMroLinks();
             const formData = {
                 supplier_name: document.getElementById('supplier_name').value.trim(),
                 contact_person: document.getElementById('contact_person').value.trim(),
                 phone: document.getElementById('phone').value.trim(),
                 email: document.getElementById('email').value.trim(),
                 payment_terms: document.getElementById('payment_terms').value,
+                lead_time_days: document.getElementById('lead_time_days').value,
                 address: document.getElementById('address').value.trim(),
                 is_active: document.getElementById('is_active').value,
                 notes: document.getElementById('notes').value.trim(),
-                ingredients: ingredientLinks
+                ingredients: ingredientLinks,
+                mro_items: mroLinks
             };
             
             try {
@@ -1224,7 +1364,7 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
-            await loadIngredientOptions();
+            await Promise.all([loadIngredientOptions(), loadMroOptions()]);
             loadData();
         });
     </script>

@@ -1,0 +1,100 @@
+<?php
+
+$page = file_get_contents(__DIR__ . '/../html/purchasing/purchase_orders.html');
+$service = file_get_contents(__DIR__ . '/../js/purchasing/purchasing.service.js');
+$api = file_get_contents(__DIR__ . '/../api/purchasing/purchase_orders.php');
+$pdf = file_get_contents(__DIR__ . '/../api/helpers/purchase_order_pdf.php');
+$dashboard = file_get_contents(__DIR__ . '/../html/purchasing/dashboard.html');
+$gmApi = file_get_contents(__DIR__ . '/../api/admin/gm_approvals.php');
+$gmPage = file_get_contents(__DIR__ . '/../html/admin/gm_approvals.html');
+
+if ($page === false || $service === false || $api === false || $pdf === false || $dashboard === false || $gmApi === false || $gmPage === false) {
+    fwrite(STDERR, "Unable to load supplier-first PO implementation files.\n");
+    exit(1);
+}
+
+$checks = [
+    'Purchaser starts from a clearly named New PO button' =>
+        str_contains($page, '<span class="hidden md:inline">New PO</span>')
+        && str_contains($page, '<i class="fas fa-file-circle-plus"></i> New PO'),
+    'Visible form starts with supplier and removes the Warehouse PRS field' =>
+        str_contains($page, '<span class="label-text">Supplier *</span>')
+        && str_contains($page, 'Choose the supplier first. Validated low-stock items it can provide will appear automatically.')
+        && !str_contains($page, '<span class="label-text">Warehouse PRS *</span>')
+        && !str_contains($page, 'id="poPurchaseRequest"'),
+    'Dashboard opens the supplier-first workbench without a PRS query field' =>
+        substr_count($dashboard, "const prLink = 'purchase_orders.html?action=new';") >= 2
+        && !str_contains($dashboard, 'purchase_orders.html?action=new&pr_id='),
+    'Supplier selection filters outstanding lines across Warehouse requests' =>
+        str_contains($page, 'getScopedWarehouseRequests().flatMap(pr =>')
+        && str_contains($page, 'source_purchase_request_id: Number(pr.id)')
+        && str_contains($page, 'suppliedByIngredientId.has(Number(item.ingredient_id))'),
+    'Order now automatically resolves the accredited supplier and selects the item' =>
+        str_contains($page, 'async function focusSupplierForStockItem')
+        && str_contains($page, 'orderNowSupplierChoices.length === 1')
+        && str_contains($page, 'showOrderNowSupplierChoices(item)')
+        && str_contains($page, 'await onMainSupplierChange()')
+        && str_contains($page, 'function applyPendingAutoInclude()')
+        && str_contains($page, 'checkbox.checked = true'),
+    'Every displayed item includes its Warehouse request number' =>
+        str_contains($page, '${escapeHtml(item.source_pr_number)}</div>')
+        && str_contains($page, 'Confirmed shortage: ${escapeHtml(item.source_pr_number)}'),
+    'Supplier filtering explains shown, total, omitted, repeated, and source counts' =>
+        str_contains($page, 'shown for this supplier')
+        && str_contains($page, 'total open')
+        && str_contains($page, 'not shown (other supplier or unlinked)')
+        && str_contains($page, 'repeated product record')
+        && !str_contains($page, 'if (!summary || !supplier || !eligiblePrItems.length)'),
+    'Browser saves through the consolidated supplier-first endpoint' =>
+        str_contains($page, 'createSupplierPurchaseOrder(data)')
+        && str_contains($service, 'action=create_supplier_po'),
+    'Successful supplier PO refreshes all remaining validated demand' =>
+        str_contains($page, 'async function continueSupplierFirstAfterPO(po)')
+        && str_contains($page, "supplierSelect.value = ''")
+        && str_contains($page, 'Choose the next supplier to continue purchasing validated low-stock demand.')
+        && str_contains($page, 'await continueSupplierFirstAfterPO(po);'),
+    'Server accepts one supplier PO with line-level stock-confirmation links' =>
+        str_contains($api, "case 'create_supplier_po':")
+        && str_contains($api, 'loadAndValidateSupplierFirstWarehouseItems')
+        && str_contains($api, 'insertStockValidationItemPOAllocation')
+        && str_contains($api, 'source_stock_validation_ids'),
+    'Consolidated PO keeps one header while updating every stock confirmation' =>
+        str_contains($api, "insertPOHeaderFromSplit(\n                    \$db,\n                    \$poNumber,\n                    \$supplierId,\n                    null,")
+        && str_contains($api, 'foreach ($sourceValidationIds as $sourceValidationId)')
+        && str_contains($api, 'recomputeStockValidationState'),
+    'Duplicate supplier commitments are rejected' =>
+        str_contains($api, 'findExactActiveSupplierFirstPO')
+        && str_contains($api, 'An identical active Purchase Order already exists'),
+    'Purchaser can add a separately controlled fast-moving forecast line' =>
+        str_contains($page, 'id="addForecastItemButton"')
+        && str_contains($page, 'function addForecastLineItem()')
+        && str_contains($page, 'forecast_reason: reason')
+        && str_contains($api, 'loadAndValidateSupplierForecastItems')
+        && str_contains($api, "'procurement_source' => 'purchaser_forecast'")
+        && str_contains($api, 'explain the buffer in 10 to 500 characters'),
+    'Forecast lines are clearly visible to the GM' =>
+        str_contains($gmApi, 'procurement_source, forecast_reason, notes')
+        && str_contains($gmPage, 'Fast-moving forecast')
+        && str_contains($gmPage, 'Confirmed Warehouse shortage'),
+    'PO saves both supplier packages and the converted Warehouse quantity' =>
+        str_contains($api, "'supplier_order_quantity' => \"ALTER TABLE `purchase_order_items`")
+        && str_contains($api, 'function applySupplierOrderTerms')
+        && str_contains($api, 'stock_quantity_per_supplier_unit')
+        && str_contains($api, 'supplier_order_unit_price'),
+    'Computed stock-unit prices retain package-conversion precision' =>
+        str_contains($api, "\$prItem['item_description'] . ' unit price',\n                0.000001,\n                999999.999999,\n                6")
+        && !str_contains($api, 'if ($rowQty * $unitPrice > 9999999999.99)'),
+    'Formal supplier PDF uses the supplier-facing quantity and price' =>
+        str_contains($pdf, "\$item['supplier_order_quantity']")
+        && str_contains($pdf, "\$item['supplier_order_unit']")
+        && str_contains($pdf, "\$item['supplier_order_unit_price']"),
+];
+
+foreach ($checks as $label => $passed) {
+    if (!$passed) {
+        fwrite(STDERR, "Failed: {$label}.\n");
+        exit(1);
+    }
+}
+
+echo "Supplier-first Purchase Order flow tests passed.\n";

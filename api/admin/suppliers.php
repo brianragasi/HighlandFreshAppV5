@@ -6,6 +6,8 @@
 
 require_once __DIR__ . '/../bootstrap.php';
 require_once __DIR__ . '/../helpers/supplier_ingredient_catalog.php';
+require_once __DIR__ . '/../helpers/supplier_mro_catalog.php';
+require_once __DIR__ . '/../helpers/supplier_delivery_terms.php';
 require_once __DIR__ . '/../helpers/plain_text.php';
 
 // Require GM/Admin role
@@ -14,6 +16,8 @@ $currentUser = Auth::requireRole(['general_manager', 'admin']);
 // Get database connection
 $conn = Database::getInstance()->getConnection();
 ensureSupplierIngredientCatalog($conn);
+ensureSupplierMroCatalog($conn);
+ensureSupplierDeliveryTerms($conn);
 
 // Get request method and handle routing
 $method = $requestMethod;
@@ -27,6 +31,8 @@ try {
                 getSupplier($conn, $id);
             } elseif ($action === 'statistics') {
                 getSupplierStatistics($conn);
+            } elseif ($action === 'mro_catalog') {
+                sendSuccess(['mro_items' => supplierMroGetCatalog($conn)]);
             } else {
                 getSuppliers($conn);
             }
@@ -95,10 +101,14 @@ function getSuppliers($conn) {
     // Get suppliers
     $sql = "SELECT s.*,
                    COUNT(DISTINCT CASE WHEN si.is_active = 1 AND i.is_active = 1 THEN si.ingredient_id END) AS ingredient_count,
-                   GROUP_CONCAT(DISTINCT CASE WHEN si.is_active = 1 AND i.is_active = 1 THEN i.ingredient_name END ORDER BY i.ingredient_name SEPARATOR ', ') AS supplied_ingredients
+                   COUNT(DISTINCT CASE WHEN smi.is_active = 1 AND m.is_active = 1 THEN smi.mro_item_id END) AS mro_item_count,
+                   GROUP_CONCAT(DISTINCT CASE WHEN si.is_active = 1 AND i.is_active = 1 THEN i.ingredient_name END ORDER BY i.ingredient_name SEPARATOR ', ') AS supplied_ingredients,
+                   GROUP_CONCAT(DISTINCT CASE WHEN smi.is_active = 1 AND m.is_active = 1 THEN m.item_name END ORDER BY m.item_name SEPARATOR ', ') AS supplied_mro_items
             FROM suppliers s
             LEFT JOIN supplier_ingredients si ON si.supplier_id = s.id
             LEFT JOIN ingredients i ON i.id = si.ingredient_id
+            LEFT JOIN supplier_mro_items smi ON smi.supplier_id = s.id
+            LEFT JOIN mro_items m ON m.id = smi.mro_item_id
             $whereClause
             GROUP BY s.id
             ORDER BY s.id DESC
@@ -131,6 +141,7 @@ function getSupplier($conn, $id) {
     }
 
     $supplier['ingredients'] = supplierCatalogGetSupplierIngredients($conn, (int) $id);
+    $supplier['mro_items'] = supplierMroGetSupplierItems($conn, (int) $id);
     
     sendSuccess(['supplier' => $supplier]);
 }
@@ -167,6 +178,7 @@ function validateSupplierProfile(array $data) {
         'email' => 'Email address',
         'address' => 'Address',
         'payment_terms' => 'Payment terms',
+        'lead_time_days' => 'Delivery lead time',
     ];
     $errors = [];
 
@@ -182,6 +194,11 @@ function validateSupplierProfile(array $data) {
     $allowedPaymentTerms = ['7 days', '15 days', '30 days', '45 days', '60 days', 'COD'];
     if (!empty($data['payment_terms']) && !in_array($data['payment_terms'], $allowedPaymentTerms, true)) {
         $errors['payment_terms'] = 'Select a valid payment term';
+    }
+    try {
+        hfNormalizeSupplierLeadTimeDays($data['lead_time_days'] ?? '');
+    } catch (InvalidArgumentException $e) {
+        $errors['lead_time_days'] = $e->getMessage();
     }
     if (!array_key_exists('is_active', $data) || !in_array((string) $data['is_active'], ['0', '1'], true)) {
         $errors['is_active'] = 'Confirm whether this supplier is accredited and active or archived';
@@ -205,6 +222,7 @@ function createSupplier($conn, $currentUser) {
     ]);
     $isActive = isset($data['is_active']) ? intval($data['is_active']) : 0;
     $ingredientLinks = supplierCatalogNormalizeIngredientLinks($data['ingredients'] ?? []);
+    $mroLinks = supplierMroNormalizeLinks($data['mro_items'] ?? []);
     
     // Validation
     $contactCheck = hfValidateContactPayload($data, ['phone'], 'email');
@@ -217,6 +235,7 @@ function createSupplier($conn, $currentUser) {
     // A supplier can be accredited before its first ingredient is registered.
     // Purchasing only sees this supplier after an ingredient link is added.
     supplierCatalogValidateIngredientLinks($conn, $ingredientLinks, false, true);
+    supplierMroValidateLinks($conn, $mroLinks, true);
     
     // Generate supplier code if not provided
     if (empty($data['supplier_code'])) {
@@ -238,8 +257,9 @@ function createSupplier($conn, $currentUser) {
         sendValidationError(['supplier_name' => 'A supplier with this name already exists']);
     }
     
-    $sql = "INSERT INTO suppliers (supplier_code, supplier_name, contact_person, phone, email, address, payment_terms, is_active, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    $leadTimeDays = hfNormalizeSupplierLeadTimeDays($data['lead_time_days']);
+    $sql = "INSERT INTO suppliers (supplier_code, supplier_name, contact_person, phone, email, address, lead_time_days, payment_terms, is_active, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
     $conn->beginTransaction();
     try {
@@ -251,6 +271,7 @@ function createSupplier($conn, $currentUser) {
             $data['phone'] ?? null,
             $data['email'] ?? null,
             $data['address'] ?? null,
+            $leadTimeDays,
             $data['payment_terms'] ?? '30 days',
             $isActive,
             $data['notes'] ?? null
@@ -258,6 +279,7 @@ function createSupplier($conn, $currentUser) {
 
         $newId = (int) $conn->lastInsertId();
         supplierCatalogSyncSupplier($conn, $newId, $ingredientLinks, (int) $currentUser['user_id']);
+        supplierMroSyncSupplier($conn, $newId, $mroLinks, (int) $currentUser['user_id']);
         $conn->commit();
     } catch (Exception $e) {
         if ($conn->inTransaction()) {
@@ -271,6 +293,7 @@ function createSupplier($conn, $currentUser) {
     $stmt->execute([$newId]);
     $supplier = $stmt->fetch(PDO::FETCH_ASSOC);
     $supplier['ingredients'] = supplierCatalogGetSupplierIngredients($conn, $newId);
+    $supplier['mro_items'] = supplierMroGetSupplierItems($conn, $newId);
 
     logAudit($currentUser['user_id'], 'CREATE', 'suppliers', $newId, null, $supplier);
     
@@ -290,6 +313,7 @@ function updateSupplier($conn, $id, $currentUser) {
         'notes' => [1000, true],
     ]);
     $hasIngredientLinks = array_key_exists('ingredients', $data);
+    $hasMroLinks = array_key_exists('mro_items', $data);
     
     // Check if supplier exists
     $stmt = $conn->prepare("SELECT * FROM suppliers WHERE id = ?");
@@ -314,8 +338,12 @@ function updateSupplier($conn, $id, $currentUser) {
     $ingredientLinks = $hasIngredientLinks
         ? supplierCatalogNormalizeIngredientLinks($data['ingredients'])
         : supplierCatalogNormalizeIngredientLinks(supplierCatalogGetSupplierIngredients($conn, (int) $id));
+    $mroLinks = $hasMroLinks
+        ? supplierMroNormalizeLinks($data['mro_items'])
+        : supplierMroNormalizeLinks(supplierMroGetSupplierItems($conn, (int) $id));
     $nextIsActive = isset($data['is_active']) ? intval($data['is_active']) : intval($currentSupplier['is_active']);
     supplierCatalogValidateIngredientLinks($conn, $ingredientLinks, false, $hasIngredientLinks);
+    supplierMroValidateLinks($conn, $mroLinks, $hasMroLinks);
     supplierCatalogValidateSupplierCoverageAfterChange(
         $conn,
         (int) $id,
@@ -335,16 +363,20 @@ function updateSupplier($conn, $id, $currentUser) {
     $fields = [];
     $params = [];
     
-    $allowedFields = ['supplier_name', 'contact_person', 'phone', 'email', 'address', 'payment_terms', 'is_active', 'notes'];
+    if (array_key_exists('lead_time_days', $data)) {
+        $data['lead_time_days'] = hfNormalizeSupplierLeadTimeDays($data['lead_time_days']);
+    }
+
+    $allowedFields = ['supplier_name', 'contact_person', 'phone', 'email', 'address', 'lead_time_days', 'payment_terms', 'is_active', 'notes'];
     
     foreach ($allowedFields as $field) {
         if (isset($data[$field])) {
             $fields[] = "$field = ?";
-            $params[] = $field === 'is_active' ? intval($data[$field]) : $data[$field];
+            $params[] = in_array($field, ['is_active', 'lead_time_days'], true) ? intval($data[$field]) : $data[$field];
         }
     }
     
-    if (empty($fields) && !$hasIngredientLinks) {
+    if (empty($fields) && !$hasIngredientLinks && !$hasMroLinks) {
         sendError('No fields to update', 400);
     }
 
@@ -359,6 +391,9 @@ function updateSupplier($conn, $id, $currentUser) {
         if ($hasIngredientLinks) {
             supplierCatalogSyncSupplier($conn, (int) $id, $ingredientLinks, (int) $currentUser['user_id']);
         }
+        if ($hasMroLinks) {
+            supplierMroSyncSupplier($conn, (int) $id, $mroLinks, (int) $currentUser['user_id']);
+        }
         $conn->commit();
     } catch (Exception $e) {
         if ($conn->inTransaction()) {
@@ -372,6 +407,7 @@ function updateSupplier($conn, $id, $currentUser) {
     $stmt->execute([$id]);
     $supplier = $stmt->fetch(PDO::FETCH_ASSOC);
     $supplier['ingredients'] = supplierCatalogGetSupplierIngredients($conn, (int) $id);
+    $supplier['mro_items'] = supplierMroGetSupplierItems($conn, (int) $id);
 
     logAudit($currentUser['user_id'], 'UPDATE', 'suppliers', $id, $currentSupplier, $supplier);
     

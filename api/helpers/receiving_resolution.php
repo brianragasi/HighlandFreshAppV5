@@ -30,6 +30,9 @@ if (!function_exists('buildReceivingResolutionPlan')) {
                 'purchase_request_item_id' => isset($item['purchase_request_item_id'])
                     ? (int) $item['purchase_request_item_id']
                     : null,
+                'stock_validation_item_id' => isset($item['stock_validation_item_id'])
+                    ? (int) $item['stock_validation_item_id']
+                    : null,
                 'item_description' => (string) ($item['item_description'] ?? 'PO item'),
                 'unit' => (string) ($item['unit'] ?? $item['po_unit'] ?? ''),
                 'ordered' => $ordered,

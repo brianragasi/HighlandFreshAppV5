@@ -11,6 +11,7 @@ require_once __DIR__ . '/../helpers/recipe_production_readiness.php';
 Auth::requireRole(['general_manager', 'admin']);
 
 $conn = Database::getInstance()->getConnection();
+ensureRecipeBatchCapacityColumn($conn);
 
 $method = $_SERVER['REQUEST_METHOD'];
 $id = isset($_GET['id']) ? intval($_GET['id']) : null;
@@ -368,9 +369,9 @@ function validateRecipeMassBalance($baseMilkLiters, $expectedYield, $yieldUnit, 
 
     // The inverse catches silent, implausible losses such as 100 L milk being
     // saved as a 50 L pasteurized-liquid standard batch.
-    $minRetainedRatio = 0.80;
+    $minRetainedRatio = 0.90;
     if ($isLiquidYield && $yield + 1e-9 < $liquidInput * $minRetainedRatio) {
-        $errors['expected_yield'] = 'Configuration Error: Expected liquid yield is below 80% of liquid input. '
+        $errors['expected_yield'] = 'Configuration Error: Expected liquid yield is below 90% of liquid input. '
             . "Liquid input is {$liquidInput} L but expected yield is {$yield} L. "
             . 'Record an approved process-loss rule before saving a loss this large.';
     }
@@ -587,6 +588,7 @@ function validateRecipeNumericPayload(array &$data): void {
     $errors = [];
     foreach ([
         'base_milk_liters' => ['Base milk liters', 1.00, 99999999.99, 2],
+        'max_batch_liters' => ['Maximum batch liters', 1.00, 99999999.99, 2],
         'pasteurization_temp' => ['Pasteurization temperature', 0.00, 150.00, 2],
         'cooling_temp' => ['Cooling temperature', -20.00, 50.00, 2],
     ] as $field => [$label, $minimum, $maximum, $scale]) {
@@ -639,6 +641,12 @@ function createRecipe($conn) {
     if (!isset($data['expected_yield']) || $data['expected_yield'] === '' || (float) $data['expected_yield'] < 1) {
         $errors['expected_yield'] = 'Expected yield must be at least 1';
     }
+    if (!isset($data['max_batch_liters']) || $data['max_batch_liters'] === '') {
+        $data['max_batch_liters'] = $data['expected_yield'] ?? null;
+    }
+    if ((float) ($data['max_batch_liters'] ?? 0) + 0.0001 < (float) ($data['expected_yield'] ?? 0)) {
+        $errors['max_batch_liters'] = 'Maximum batch must be at least the standard yield. Use the verified usable capacity of the production vessel.';
+    }
 
     $yieldUnit = $data['yield_unit'] ?? 'liters';
     $allowedYieldUnits = ['liters', 'kg', 'units'];
@@ -684,10 +692,10 @@ function createRecipe($conn) {
 
         $sql = "INSERT INTO master_recipes (
                     recipe_code, product_id, base_product_id, product_name, product_type,
-                    milk_type_id, description, base_milk_liters, expected_yield, yield_unit,
+                    milk_type_id, description, base_milk_liters, expected_yield, bulk_yield_liters, max_batch_liters, yield_unit,
                     pasteurization_temp, pasteurization_time_mins, cooling_temp, special_instructions,
                     is_active, created_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         $stmt = $conn->prepare($sql);
         $stmt->execute([
@@ -700,6 +708,8 @@ function createRecipe($conn) {
             $data['description'] ?? null,
             (float) $data['base_milk_liters'],
             (float) $data['expected_yield'],
+            isLiquidRecipeYieldUnit($yieldUnit) ? (float) $data['expected_yield'] : null,
+            (float) $data['max_batch_liters'],
             $yieldUnit,
             isset($data['pasteurization_temp']) ? (float) $data['pasteurization_temp'] : 81.00,
             isset($data['pasteurization_time_mins']) ? (int) $data['pasteurization_time_mins'] : 15,
@@ -786,6 +796,18 @@ function updateRecipe($conn, $id) {
     if (isset($data['expected_yield']) && (float) $data['expected_yield'] < 1) {
         $errors['expected_yield'] = 'Expected yield must be at least 1';
     }
+    $yieldForCapacity = isset($data['expected_yield'])
+        ? (float) $data['expected_yield']
+        : (float) $existing['expected_yield'];
+    $maxBatchForSave = isset($data['max_batch_liters']) && $data['max_batch_liters'] !== ''
+        ? (float) $data['max_batch_liters']
+        : (float) ($existing['max_batch_liters'] ?? 0);
+    if ($maxBatchForSave <= 0) {
+        $maxBatchForSave = $yieldForCapacity;
+    }
+    if ($maxBatchForSave + 0.0001 < $yieldForCapacity) {
+        $errors['max_batch_liters'] = 'Maximum batch must be at least the standard yield. Use the verified usable capacity of the production vessel.';
+    }
 
     $ingredients = null;
     if (isset($data['ingredients']) && is_array($data['ingredients'])) {
@@ -837,6 +859,8 @@ function updateRecipe($conn, $id) {
                     description = ?,
                     base_milk_liters = ?,
                     expected_yield = ?,
+                    bulk_yield_liters = ?,
+                    max_batch_liters = ?,
                     yield_unit = ?,
                     pasteurization_temp = ?,
                     pasteurization_time_mins = ?,
@@ -855,6 +879,8 @@ function updateRecipe($conn, $id) {
             array_key_exists('description', $data) ? $data['description'] : $existing['description'],
             isset($data['base_milk_liters']) ? (float) $data['base_milk_liters'] : (float) $existing['base_milk_liters'],
             isset($data['expected_yield']) ? (float) $data['expected_yield'] : (float) $existing['expected_yield'],
+            isLiquidRecipeYieldUnit($yieldUnit) ? $yieldForCapacity : null,
+            $maxBatchForSave,
             $yieldUnit,
             isset($data['pasteurization_temp']) ? (float) $data['pasteurization_temp'] : $existing['pasteurization_temp'],
             isset($data['pasteurization_time_mins']) ? (int) $data['pasteurization_time_mins'] : $existing['pasteurization_time_mins'],

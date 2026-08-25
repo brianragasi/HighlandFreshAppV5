@@ -7,6 +7,7 @@
 require_once __DIR__ . '/../bootstrap.php';
 require_once __DIR__ . '/../helpers/supplier_ingredient_catalog.php';
 require_once __DIR__ . '/../helpers/plain_text.php';
+require_once __DIR__ . '/../warehouse/raw/ingredient_stock_helpers.php';
 
 // Require GM/Admin role
 $currentUser = Auth::requireRole(['general_manager', 'admin']);
@@ -152,6 +153,18 @@ function ensureIngredientMasterSettings($conn) {
         ");
     }
 
+    // Packaging materials are counted supplies, not food batches. Keep this
+    // rule active on every run so an old or imported packaging record cannot
+    // accidentally be held for a food-style supplier lot and expiry date.
+    $conn->exec("
+        UPDATE ingredients i
+        JOIN ingredient_categories c ON c.id = i.category_id
+        SET i.is_perishable = 0,
+            i.shelf_life_days = NULL
+        WHERE LOWER(TRIM(COALESCE(c.category_name, ''))) LIKE '%packaging%'
+          AND (COALESCE(i.is_perishable, 1) <> 0 OR i.shelf_life_days IS NOT NULL)
+    ");
+
     if (!auditColumnExists($conn, 'ingredients', 'maximum_stock')) {
         $conn->exec("ALTER TABLE `ingredients` ADD COLUMN `maximum_stock` DECIMAL(10,2) DEFAULT NULL COMMENT 'Par level / order-up-to stock' AFTER `reorder_point`");
     }
@@ -207,6 +220,13 @@ function ensureIngredientMasterSettings($conn) {
         WHERE purchase_format NOT IN ('direct_unit', 'packaged')
            OR (container_type IS NOT NULL AND purchase_format = 'direct_unit')
     ");
+}
+
+function ingredientCategoryIsPackaging($conn, $categoryId) {
+    $stmt = $conn->prepare("SELECT category_name FROM ingredient_categories WHERE id = ?");
+    $stmt->execute([(int) $categoryId]);
+    $name = strtolower(trim((string) $stmt->fetchColumn()));
+    return $name !== '' && strpos($name, 'packaging') !== false;
 }
 
 function ingredientUnitKey($unit) {
@@ -592,12 +612,13 @@ function getCategories($conn) {
  * Get low stock ingredients
  */
 function getLowStockIngredients($conn) {
+    $usableStockSql = usableIngredientBatchStockSql('i.id', 'admin_low_ib');
     $stmt = $conn->query("
-        SELECT i.*, c.category_name
+        SELECT i.*, {$usableStockSql} AS current_stock, i.current_stock AS current_stock_on_file, c.category_name
         FROM ingredients i
         LEFT JOIN ingredient_categories c ON i.category_id = c.id
-        WHERE i.current_stock <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . " AND i.is_active = 1
-        ORDER BY (i.current_stock / NULLIF(" . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . ", 0)) ASC
+        WHERE {$usableStockSql} <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . " AND i.is_active = 1
+        ORDER BY ({$usableStockSql} / NULLIF(" . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . ", 0)) ASC
     ");
     $ingredients = $stmt->fetchAll(PDO::FETCH_ASSOC);
     sendSuccess(['ingredients' => $ingredients]);
@@ -608,6 +629,7 @@ function getLowStockIngredients($conn) {
  */
 function getIngredientStatistics($conn) {
     $stats = [];
+    $usableStockSql = usableIngredientBatchStockSql('i.id', 'admin_stats_ib');
     
     // Total ingredients
     $stmt = $conn->query("SELECT COUNT(*) as count FROM ingredients");
@@ -618,7 +640,7 @@ function getIngredientStatistics($conn) {
     $stats['active'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
     
     // Low stock count
-    $stmt = $conn->query("SELECT COUNT(*) as count FROM ingredients WHERE current_stock <= " . StockRule::lowThresholdSql('reorder_point', 'minimum_stock') . " AND is_active = 1");
+    $stmt = $conn->query("SELECT COUNT(*) as count FROM ingredients i WHERE {$usableStockSql} <= " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . " AND i.is_active = 1");
     $stats['low_stock'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
     
     // By category
@@ -631,7 +653,7 @@ function getIngredientStatistics($conn) {
     $stats['by_category'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     // Total inventory value
-    $stmt = $conn->query("SELECT SUM(current_stock * unit_cost) as total_value FROM ingredients WHERE is_active = 1");
+    $stmt = $conn->query("SELECT SUM(({$usableStockSql}) * i.unit_cost) as total_value FROM ingredients i WHERE i.is_active = 1");
     $stats['total_value'] = $stmt->fetch(PDO::FETCH_ASSOC)['total_value'] ?? 0;
     
     sendSuccess($stats);
@@ -727,6 +749,10 @@ function createIngredient($conn, $currentUser) {
     $data['physical_state'] = normalizeIngredientPhysicalState($data['physical_state'], $data['unit_of_measure']);
     validateIngredientPhysicalStateUnit($data['physical_state'], $data['unit_of_measure']);
     validateIngredientCategoryUnit($conn, $data['category_id'], $data['unit_of_measure']);
+    if (ingredientCategoryIsPackaging($conn, $data['category_id'])) {
+        $data['is_perishable'] = 0;
+        $data['shelf_life_days'] = null;
+    }
     // Supplier accreditation is managed after the ingredient exists, from the Supplier page.
     supplierCatalogValidateSupplierIds($conn, $supplierIds, false);
     
@@ -837,6 +863,12 @@ function updateIngredient($conn, $id, $currentUser) {
         }
         $data['unit_of_measure'] = $nextUnit;
         $data['physical_state'] = $nextPhysicalState;
+    }
+
+    $effectiveCategoryId = $data['category_id'] ?? $currentIngredient['category_id'];
+    if (ingredientCategoryIsPackaging($conn, $effectiveCategoryId)) {
+        $data['is_perishable'] = 0;
+        $data['shelf_life_days'] = null;
     }
 
     $supplierIds = $hasSupplierIds

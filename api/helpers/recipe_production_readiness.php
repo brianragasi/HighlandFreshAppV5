@@ -29,6 +29,83 @@ function getStrictRecipeBulkYieldLiters(array $recipe) {
     return null;
 }
 
+/** Add the per-run vessel limit used by Production planning. */
+function ensureRecipeBatchCapacityColumn(PDO $db) {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+
+    $column = $db->query("SHOW COLUMNS FROM master_recipes LIKE 'max_batch_liters'")->fetch(PDO::FETCH_ASSOC);
+    if (!$column) {
+        $db->exec("
+            ALTER TABLE master_recipes
+            ADD COLUMN max_batch_liters DECIMAL(10,2) NULL AFTER bulk_yield_liters
+        ");
+    }
+    $ensured = true;
+}
+
+/**
+ * Safe fallback for older recipes: one run may not exceed one standard batch.
+ * Admin can record a larger verified vessel limit explicitly.
+ */
+function getRecipeMaximumBatchLiters(array $recipe) {
+    $configured = (float) ($recipe['max_batch_liters'] ?? 0);
+    if ($configured > 0) {
+        return $configured;
+    }
+    return getStrictRecipeBulkYieldLiters($recipe);
+}
+
+function assessRecipeBatchPlan(array $recipe, $plannedLiters) {
+    $planned = max(0.0, (float) $plannedLiters);
+    $maximum = (float) (getRecipeMaximumBatchLiters($recipe) ?? 0);
+    return [
+        'valid' => $planned > 0 && $maximum > 0 && $planned <= $maximum + 0.0001,
+        'planned_liters' => $planned,
+        'maximum_liters' => $maximum,
+    ];
+}
+
+function recipeReadinessUnitToLiters($quantity, $unit) {
+    $quantity = max(0.0, (float) $quantity);
+    $unit = strtolower(trim((string) $unit));
+    if (in_array($unit, ['l', 'lt', 'liter', 'liters', 'litre', 'litres'], true)) {
+        return $quantity;
+    }
+    if (in_array($unit, ['ml', 'milliliter', 'milliliters', 'millilitre', 'millilitres'], true)) {
+        return $quantity / 1000;
+    }
+    return 0.0;
+}
+
+/** Block legacy recipes whose liquid inputs and declared output do not agree. */
+function assessRecipeLiquidBalance(PDO $db, array $recipe) {
+    $yield = (float) (getStrictRecipeBulkYieldLiters($recipe) ?? 0);
+    $milk = max(0.0, (float) ($recipe['base_milk_liters'] ?? 0));
+    $stmt = $db->prepare('SELECT quantity, unit FROM recipe_ingredients WHERE recipe_id = ?');
+    $stmt->execute([(int) ($recipe['id'] ?? 0)]);
+    $addedLiquid = 0.0;
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $line) {
+        $addedLiquid += recipeReadinessUnitToLiters($line['quantity'] ?? 0, $line['unit'] ?? '');
+    }
+    $input = $milk + $addedLiquid;
+    $minimumRetention = 0.90;
+    $valid = $yield > 0
+        && $input > 0
+        && $input + 0.0001 >= $yield * 0.90
+        && $yield + 0.0001 >= $input * $minimumRetention;
+
+    return [
+        'valid' => $valid,
+        'input_liters' => round($input, 3),
+        'yield_liters' => round($yield, 3),
+        'retained_percent' => $input > 0 ? round(($yield / $input) * 100, 2) : 0.0,
+        'minimum_retained_percent' => $minimumRetention * 100,
+    ];
+}
+
 function isBulkProductionRecipe(array $recipe) {
     return (int) ($recipe['base_product_id'] ?? 0) > 0
         && getStrictRecipeBulkYieldLiters($recipe) !== null;

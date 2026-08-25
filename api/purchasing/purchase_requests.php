@@ -158,7 +158,103 @@ function ensurePRTables($db) {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     ");
 
+    ensurePurchaseRequestItemUniquenessGuards($db);
     ensureProcurementNotificationSupport($db);
+}
+
+/**
+ * Block new duplicate inventory lines inside one PRS while preserving any
+ * historical duplicates for review. Application validation provides the
+ * friendly message; these triggers are the final concurrency safeguard.
+ */
+function ensurePurchaseRequestItemUniquenessGuards($db) {
+    $databaseName = $db->query('SELECT DATABASE()')->fetchColumn();
+    if (!$databaseName) {
+        return;
+    }
+
+    $definitions = [
+        'trg_pri_no_duplicate_insert' => "
+            CREATE TRIGGER `trg_pri_no_duplicate_insert`
+            BEFORE INSERT ON `purchase_request_items`
+            FOR EACH ROW
+            BEGIN
+                IF NEW.ingredient_id IS NOT NULL AND EXISTS (
+                    SELECT 1 FROM purchase_request_items existing
+                    WHERE existing.purchase_request_id = NEW.purchase_request_id
+                      AND existing.ingredient_id = NEW.ingredient_id
+                ) THEN
+                    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Duplicate ingredient in this purchase request';
+                END IF;
+                IF NEW.mro_item_id IS NOT NULL AND EXISTS (
+                    SELECT 1 FROM purchase_request_items existing
+                    WHERE existing.purchase_request_id = NEW.purchase_request_id
+                      AND existing.mro_item_id = NEW.mro_item_id
+                ) THEN
+                    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Duplicate MRO item in this purchase request';
+                END IF;
+            END
+        ",
+        'trg_pri_no_duplicate_update_v2' => "
+            CREATE TRIGGER `trg_pri_no_duplicate_update_v2`
+            BEFORE UPDATE ON `purchase_request_items`
+            FOR EACH ROW
+            BEGIN
+                IF NEW.ingredient_id IS NOT NULL
+                   AND (NOT (NEW.purchase_request_id <=> OLD.purchase_request_id)
+                        OR NOT (NEW.ingredient_id <=> OLD.ingredient_id))
+                   AND EXISTS (
+                    SELECT 1 FROM purchase_request_items existing
+                    WHERE existing.purchase_request_id = NEW.purchase_request_id
+                      AND existing.ingredient_id = NEW.ingredient_id
+                      AND existing.id <> OLD.id
+                ) THEN
+                    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Duplicate ingredient in this purchase request';
+                END IF;
+                IF NEW.mro_item_id IS NOT NULL
+                   AND (NOT (NEW.purchase_request_id <=> OLD.purchase_request_id)
+                        OR NOT (NEW.mro_item_id <=> OLD.mro_item_id))
+                   AND EXISTS (
+                    SELECT 1 FROM purchase_request_items existing
+                    WHERE existing.purchase_request_id = NEW.purchase_request_id
+                      AND existing.mro_item_id = NEW.mro_item_id
+                      AND existing.id <> OLD.id
+                ) THEN
+                    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Duplicate MRO item in this purchase request';
+                END IF;
+            END
+        ",
+    ];
+
+    $existsStmt = $db->prepare("
+        SELECT COUNT(*)
+        FROM information_schema.TRIGGERS
+        WHERE TRIGGER_SCHEMA = ? AND TRIGGER_NAME = ?
+    ");
+
+    // Replace the first trigger version, which also blocked harmless quantity
+    // or note edits on a historical duplicate row.
+    $existsStmt->execute([$databaseName, 'trg_pri_no_duplicate_update']);
+    if ((int) $existsStmt->fetchColumn()) {
+        try {
+            $db->exec('DROP TRIGGER `trg_pri_no_duplicate_update`');
+        } catch (PDOException $e) {
+            error_log('Could not replace legacy PRS duplicate update trigger: ' . $e->getMessage());
+        }
+    }
+
+    foreach ($definitions as $triggerName => $sql) {
+        $existsStmt->execute([$databaseName, $triggerName]);
+        if (!(int) $existsStmt->fetchColumn()) {
+            try {
+                $db->exec($sql);
+            } catch (PDOException $e) {
+                // Some hosted databases deny TRIGGER privilege. Keep the
+                // existing transaction-level duplicate checks operational.
+                error_log("Could not install {$triggerName}: " . $e->getMessage());
+            }
+        }
+    }
 }
 
 function ensureProcurementNotificationSupport($db) {
@@ -501,8 +597,15 @@ function handleGet($db, $action, $currentUser) {
                     pr.created_at
                 FROM purchase_requests pr
                 JOIN purchase_request_items pri ON pri.purchase_request_id = pr.id
-                WHERE pr.status = 'pending'
+                WHERE pr.status IN ('pending', 'approved', 'partially_converted')
                   AND (pri.ingredient_id IS NOT NULL OR pri.mro_item_id IS NOT NULL)
+                  AND pri.quantity > COALESCE((
+                      SELECT SUM(prip.quantity)
+                      FROM purchase_request_item_po prip
+                      JOIN purchase_orders linked_po ON linked_po.id = prip.po_id
+                      WHERE prip.purchase_request_item_id = pri.id
+                        AND linked_po.status NOT IN ('cancelled', 'rejected')
+                  ), 0) + 0.0001
                 ORDER BY pr.created_at DESC, pr.id DESC
             ");
 
@@ -728,7 +831,7 @@ function applyPRPhysicalAudit($db, &$items, $currentUser) {
         $savedLabel = rtrim(rtrim(number_format($systemStock, 3, '.', ','), '0'), '.');
 
         if ($variance > 0.0005) {
-            throw new InvalidArgumentException("Line {$lineNo}: counted {$countedLabel} {$unit}, but the saved balance is {$savedLabel} {$unit}. Record the missing receipt or use the stock correction screen before submitting this PRS.");
+            throw new InvalidArgumentException("Line {$lineNo}: counted {$countedLabel} {$unit}, but the saved balance is {$savedLabel} {$unit}. Record the missing stock and its batch details before continuing.");
         }
         if (abs($variance) > 0.0005 && $reason === '') {
             throw new InvalidArgumentException("Line {$lineNo}: explain why the shelf count differs from the saved balance of {$savedLabel} {$unit}");
@@ -738,7 +841,10 @@ function applyPRPhysicalAudit($db, &$items, $currentUser) {
         $maximumStock = (float) ($stockItem['maximum_stock'] ?? 0);
         $reorderPoint = (float) ($stockItem['reorder_point'] ?? 0);
         $minimumStock = (float) ($stockItem['minimum_stock'] ?? 0);
-        $targetStock = $maximumStock > 0 ? $maximumStock : ($reorderPoint > 0 ? $reorderPoint : $minimumStock);
+        $effectiveReorder = max($reorderPoint, $minimumStock);
+        $targetStock = $maximumStock > $effectiveReorder
+            ? $maximumStock
+            : ($effectiveReorder > 0 ? $effectiveReorder * 2 : 0);
         if (in_array((string) ($item['purpose'] ?? ''), $stockBasedPurposes, true)) {
             $adjustedRequest = $targetStock - $auditedStock;
             if ($adjustedRequest <= 0.0005) {
@@ -860,7 +966,7 @@ function findDuplicatePendingPR($db, $department, $fingerprint, $excludeId = nul
         return null;
     }
 
-    $sql = "SELECT id, pr_number FROM purchase_requests WHERE department = ? AND status = 'pending' AND request_fingerprint = ?";
+    $sql = "SELECT id, pr_number FROM purchase_requests WHERE department = ? AND status IN ('pending', 'approved', 'partially_converted') AND request_fingerprint = ?";
     $params = [$department, $fingerprint];
     if ($excludeId) {
         $sql .= " AND id != ?";
@@ -920,8 +1026,15 @@ function findPendingPRWithOverlappingItems($db, $department, $items, $excludeId 
         FROM purchase_requests pr
         JOIN purchase_request_items pri ON pri.purchase_request_id = pr.id
         WHERE pr.department = ?
-          AND pr.status = 'pending'
+          AND pr.status IN ('pending', 'approved', 'partially_converted')
           AND (" . implode(' OR ', $conditions) . ")
+          AND pri.quantity > COALESCE((
+              SELECT SUM(prip.quantity)
+              FROM purchase_request_item_po prip
+              JOIN purchase_orders linked_po ON linked_po.id = prip.po_id
+              WHERE prip.purchase_request_item_id = pri.id
+                AND linked_po.status NOT IN ('cancelled', 'rejected')
+          ), 0) + 0.0001
     ";
 
     if ($excludeId) {
@@ -1009,9 +1122,8 @@ function replacePRItems($db, $prId, $items, $defaultPurpose = null) {
 function handlePost($db, $action, $currentUser) {
     switch ($action) {
         case 'create':
-            // Warehouse Raw creates PRS records manually; low-stock screens only
-            // help the custodian decide what to request.
             requireActionRole($currentUser, ['warehouse_raw', 'general_manager'], 'Only Warehouse Raw can create Purchase Request Slips');
+            Response::error('New Purchase Request Slips are retired. Use Low Stock Validation to confirm the shelf count and send the shortage directly to Purchasing.', 410);
 
             $data = getRequestBody();
 
@@ -1163,6 +1275,9 @@ function rejectSupplierFieldsInPR($data) {
  * Handle PUT requests - Update / Approve / Reject PR
  */
 function handlePut($db, $action, $currentUser) {
+    if (in_array($action, ['update', 'submit', 'reopen'], true)) {
+        Response::error('Old Purchase Request Slips are read-only history. Confirm current shortages through Low Stock Validation.', 410);
+    }
     $data = getRequestBody();
     $id = getParam('id') ?? ($data['id'] ?? null);
 

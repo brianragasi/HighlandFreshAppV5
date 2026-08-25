@@ -21,6 +21,8 @@
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
 require_once dirname(dirname(__DIR__)) . '/helpers/plain_text.php';
 require_once __DIR__ . '/ingredient_stock_helpers.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/ingredient_opening_stock.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/procurement_notifications.php';
 
 // Require Warehouse Raw role
 $currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'production_staff', 'purchaser']);
@@ -28,6 +30,7 @@ $currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'productio
 try {
     $db = Database::getInstance()->getConnection();
     ensureIngredientPerishabilitySupport($db);
+    ensureIngredientOpeningStockSupport($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -55,6 +58,15 @@ function ensureIngredientPerishabilitySupport($db) {
     if (!auditColumnExists($db, 'ingredients', 'maximum_stock')) {
         $db->exec("ALTER TABLE `ingredients` ADD COLUMN `maximum_stock` DECIMAL(10,2) DEFAULT NULL COMMENT 'Par level / order-up-to stock' AFTER `reorder_point`");
     }
+
+    $db->exec("
+        UPDATE ingredients i
+        JOIN ingredient_categories c ON c.id = i.category_id
+        SET i.is_perishable = 0,
+            i.shelf_life_days = NULL
+        WHERE LOWER(TRIM(COALESCE(c.category_name, ''))) LIKE '%packaging%'
+          AND (COALESCE(i.is_perishable, 1) <> 0 OR i.shelf_life_days IS NOT NULL)
+    ");
 }
 
 /**
@@ -85,12 +97,17 @@ function handleGet($db, $currentUser) {
                      WHERE ib.ingredient_id = i.id
                      AND ib.status IN ('available', 'partially_used')
                      AND ib.remaining_quantity > 0
-                     AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())) as batch_count,
+                     AND (COALESCE(i.is_perishable, 1) = 0 OR ib.expiry_date > CURDATE())
+                     AND (COALESCE(i.is_perishable, 1) = 0 OR
+                          (NULLIF(TRIM(ib.supplier_batch_no), '') IS NOT NULL AND ib.expiry_date IS NOT NULL))) as batch_count,
+                    {$usableStockSql} as batch_stock,
                     (SELECT COALESCE(SUM(ib.remaining_quantity), 0) FROM ingredient_batches ib
                      WHERE ib.ingredient_id = i.id
                      AND ib.status IN ('available', 'partially_used')
                      AND ib.remaining_quantity > 0
-                     AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())) as batch_stock,
+                     AND (ib.expiry_date IS NULL OR ib.expiry_date > CURDATE())
+                     AND COALESCE(i.is_perishable, 1) = 1
+                     AND NULLIF(TRIM(ib.supplier_batch_no), '') IS NULL) as untraceable_batch_stock,
                     (SELECT COALESCE(SUM(ib.remaining_quantity), 0) FROM ingredient_batches ib
                      WHERE ib.ingredient_id = i.id
                      AND ib.status IN ('available', 'partially_used', 'quarantine', 'expired')
@@ -100,13 +117,15 @@ function handleGet($db, $currentUser) {
                      AND ib.status IN ('available', 'partially_used', 'quarantine', 'expired')
                      AND ib.remaining_quantity > 0
                      AND ib.expiry_date IS NOT NULL
-                     AND ib.expiry_date < CURDATE()) as expired_batch_stock,
+                     AND COALESCE(i.is_perishable, 1) = 1
+                     AND ib.expiry_date <= CURDATE()) as expired_batch_stock,
                     (SELECT MIN(expiry_date) FROM ingredient_batches ib
                      WHERE ib.ingredient_id = i.id
                      AND ib.status IN ('available', 'partially_used')
                      AND ib.remaining_quantity > 0
                      AND ib.expiry_date IS NOT NULL
-                     AND ib.expiry_date >= CURDATE()) as nearest_expiry
+                     AND ib.expiry_date > CURDATE()
+                     AND (COALESCE(i.is_perishable, 1) = 0 OR NULLIF(TRIM(ib.supplier_batch_no), '') IS NOT NULL)) as nearest_expiry
                 FROM ingredients i
                 LEFT JOIN ingredient_categories ic ON i.category_id = ic.id
                 WHERE i.is_active = 1
@@ -139,6 +158,7 @@ function handleGet($db, $currentUser) {
                 $usableStock = (float) ($ingredient['batch_stock'] ?? 0);
                 $accountedStock = (float) ($ingredient['accounted_batch_stock'] ?? 0);
                 $expiredStock = (float) ($ingredient['expired_batch_stock'] ?? 0);
+                $untraceableStock = (float) ($ingredient['untraceable_batch_stock'] ?? 0);
                 $ingredient['current_stock_on_file'] = $onFileStock;
                 $ingredient['current_stock'] = $usableStock;
                 $ingredient['stock_variance'] = round($onFileStock - $usableStock, 3);
@@ -146,6 +166,7 @@ function handleGet($db, $currentUser) {
                 $ingredient['batch_stock_surplus'] = max(0, round($accountedStock - $onFileStock, 3));
                 $ingredient['restricted_stock'] = max(0, round($accountedStock - $usableStock, 3));
                 $ingredient['expired_batch_stock'] = $expiredStock;
+                $ingredient['untraceable_batch_stock'] = $untraceableStock;
                 $ingredient['needs_stock_check'] = $ingredient['missing_batch_stock'] > 0.0005
                     || $ingredient['batch_stock_surplus'] > 0.0005;
             }
@@ -184,20 +205,30 @@ function handleGet($db, $currentUser) {
                     DATEDIFF(ib.expiry_date, CURDATE()) as days_until_expiry,
                     CASE
                         WHEN ib.status IN ('available', 'partially_used')
-                         AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())
+                         AND (COALESCE(i.is_perishable, 1) = 0 OR ib.expiry_date > CURDATE())
+                         AND (COALESCE(i.is_perishable, 1) = 0 OR
+                              (NULLIF(TRIM(ib.supplier_batch_no), '') IS NOT NULL AND ib.expiry_date IS NOT NULL))
                         THEN 1 ELSE 0
                     END AS is_usable,
                     CASE
-                        WHEN ib.expiry_date IS NOT NULL AND ib.expiry_date < CURDATE()
+                        WHEN COALESCE(i.is_perishable, 1) = 1
+                         AND NULLIF(TRIM(ib.supplier_batch_no), '') IS NULL
+                         AND (ib.expiry_date IS NULL OR ib.expiry_date > CURDATE())
+                        THEN 1 ELSE 0
+                    END AS has_traceability_issue,
+                    CASE
+                        WHEN COALESCE(i.is_perishable, 1) = 1
+                         AND ib.expiry_date IS NOT NULL AND ib.expiry_date <= CURDATE()
                         THEN 1 ELSE 0
                     END AS is_expired
                 FROM ingredient_batches ib
+                JOIN ingredients i ON i.id = ib.ingredient_id
                 LEFT JOIN users u ON ib.received_by = u.id
                 WHERE ib.ingredient_id = ?
                 AND ib.status IN ('available', 'partially_used', 'quarantine', 'expired')
                 AND ib.remaining_quantity > 0
                 ORDER BY
-                    CASE WHEN ib.expiry_date IS NOT NULL AND ib.expiry_date < CURDATE() THEN 0 ELSE 1 END,
+                    CASE WHEN COALESCE(i.is_perishable, 1) = 1 AND ib.expiry_date IS NOT NULL AND ib.expiry_date <= CURDATE() THEN 0 ELSE 1 END,
                     ib.expiry_date ASC,
                     ib.received_date ASC,
                     ib.id ASC
@@ -217,10 +248,16 @@ function handleGet($db, $currentUser) {
                     ? (float) ($batch['remaining_quantity'] ?? 0)
                     : 0);
             }, 0.0);
+            $untraceableBatchStock = array_reduce($batchList, function ($sum, $batch) {
+                return $sum + ((int) ($batch['has_traceability_issue'] ?? 0) === 1
+                    ? (float) ($batch['remaining_quantity'] ?? 0)
+                    : 0);
+            }, 0.0);
             $onFileStock = (float) ($ingredientData['current_stock'] ?? 0);
             $ingredientData['batch_stock'] = $usableBatchStock;
             $ingredientData['accounted_batch_stock'] = $accountedBatchStock;
             $ingredientData['expired_batch_stock'] = $expiredBatchStock;
+            $ingredientData['untraceable_batch_stock'] = $untraceableBatchStock;
             $ingredientData['restricted_stock'] = max(0, round($accountedBatchStock - $usableBatchStock, 3));
             $ingredientData['stock_variance'] = round($onFileStock - $usableBatchStock, 3);
             $ingredientData['missing_batch_stock'] = max(0, round($onFileStock - $accountedBatchStock, 3));
@@ -262,6 +299,64 @@ function handleGet($db, $currentUser) {
             $categories = $stmt->fetchAll();
             
             Response::success(['categories' => $categories], 'Categories retrieved successfully');
+            break;
+
+        case 'opening_stock_options':
+            if (!in_array($currentUser['role'], ['warehouse_raw', 'general_manager'], true)) {
+                Response::error('Only Warehouse Raw or GM can record unlisted stock', 403);
+            }
+            $ingredientId = (int) getParam('ingredient_id', 0);
+            if ($ingredientId <= 0) {
+                Response::error('Choose an ingredient first', 400);
+            }
+            $supplierStmt = $db->prepare("
+                SELECT s.id, s.supplier_code, s.supplier_name
+                FROM supplier_ingredients si
+                JOIN suppliers s ON s.id = si.supplier_id
+                WHERE si.ingredient_id = ?
+                  AND si.is_active = 1
+                  AND s.is_active = 1
+                ORDER BY s.supplier_name
+            ");
+            $supplierStmt->execute([$ingredientId]);
+            $documentStmt = $db->prepare("
+                SELECT po.id AS po_id, po.po_number, po.supplier_id, po.order_date,
+                       po.status, MAX(poi.unit_price) AS unit_price,
+                       MAX(poi.unit) AS unit
+                FROM purchase_orders po
+                JOIN purchase_order_items poi ON poi.po_id = po.id
+                JOIN suppliers s ON s.id = po.supplier_id AND s.is_active = 1
+                JOIN supplier_ingredients si
+                  ON si.supplier_id = po.supplier_id
+                 AND si.ingredient_id = poi.ingredient_id
+                 AND si.is_active = 1
+                WHERE poi.ingredient_id = ?
+                  AND po.status IN ('approved', 'ordered', 'partial_received', 'received', 'closed')
+                GROUP BY po.id, po.po_number, po.supplier_id, po.order_date, po.status
+                ORDER BY po.order_date DESC, po.id DESC
+                LIMIT 100
+            ");
+            $documentStmt->execute([$ingredientId]);
+            $documents = array_map(static function (array $row): array {
+                $row['reference'] = (string) $row['po_number'];
+                return $row;
+            }, $documentStmt->fetchAll(PDO::FETCH_ASSOC));
+            $pendingStmt = $db->prepare("
+                SELECT osr.id, osr.request_code, osr.ingredient_id, osr.counted_quantity,
+                       osr.quantity_to_add, osr.unit, osr.status, osr.created_at,
+                       i.ingredient_name
+                FROM ingredient_opening_stock_requests osr
+                JOIN ingredients i ON i.id = osr.ingredient_id
+                WHERE osr.status = 'pending'
+                  AND (? = 'general_manager' OR osr.requested_by = ?)
+                ORDER BY osr.created_at DESC
+            ");
+            $pendingStmt->execute([$currentUser['role'], (int) $currentUser['user_id']]);
+            Response::success([
+                'suppliers' => $supplierStmt->fetchAll(PDO::FETCH_ASSOC),
+                'documents' => $documents,
+                'pending_requests' => $pendingStmt->fetchAll(PDO::FETCH_ASSOC),
+            ], 'Opening-stock options retrieved');
             break;
             
         case 'expiring':
@@ -313,7 +408,7 @@ function handleGet($db, $currentUser) {
                 JOIN ingredients i ON ib.ingredient_id = i.id
                 LEFT JOIN ingredient_categories ic ON i.category_id = ic.id
                 WHERE ib.expiry_date IS NOT NULL
-                AND ib.expiry_date < CURDATE()
+                AND ib.expiry_date <= CURDATE()
                 AND ib.remaining_quantity > 0
                 AND ib.status IN ('available', 'partially_used', 'quarantine')
                 ORDER BY ib.expiry_date ASC, ib.received_date ASC, ib.id ASC
@@ -334,16 +429,11 @@ function handleGet($db, $currentUser) {
             
             $stockCheck = [];
             $allAvailable = true;
+            $checkUsableStockSql = usableIngredientBatchStockSql('i.id', 'check_ib');
             
             foreach ($items as $item) {
                 $stmt = $db->prepare("
-                    SELECT i.*, 
-                        (SELECT COALESCE(SUM(remaining_quantity), 0) 
-                         FROM ingredient_batches ib 
-                         WHERE ib.ingredient_id = i.id 
-                         AND ib.status IN ('available', 'partially_used')
-                         AND ib.remaining_quantity > 0
-                         AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())) as available_quantity
+                    SELECT i.*, {$checkUsableStockSql} AS available_quantity
                     FROM ingredients i
                     WHERE i.id = ?
                 ");
@@ -390,8 +480,14 @@ function handleGet($db, $currentUser) {
                     i.minimum_stock,
                     " . StockRule::lowThresholdSql('i.reorder_point', 'i.minimum_stock') . " AS reorder_point,
                     i.maximum_stock,
+                    i.is_perishable,
                     COALESCE(i.lead_time_days, 7) AS lead_time_days,
                     i.unit_cost,
+                    GREATEST(0, (SELECT COALESCE(SUM(restricted_ib.remaining_quantity), 0)
+                        FROM ingredient_batches restricted_ib
+                        WHERE restricted_ib.ingredient_id = i.id
+                          AND restricted_ib.status IN ('available', 'partially_used', 'quarantine', 'expired')
+                          AND restricted_ib.remaining_quantity > 0) - {$usableStockSql}) AS restricted_stock,
                     " . StockRule::statusCaseSql($usableStockSql, 'i.reorder_point', 'i.minimum_stock') . " AS stock_status,
                     CASE
                         WHEN {$usableStockSql} <= 0 THEN 0
@@ -462,6 +558,245 @@ function handlePost($db, $currentUser) {
     $action = getParam('action', 'receive');
     
     switch ($action) {
+        case 'request_opening_stock':
+            if (!in_array($currentUser['role'], ['warehouse_raw', 'general_manager'], true)) {
+                Response::error('Only Warehouse Raw or GM can record unlisted stock', 403);
+            }
+
+            $ingredientId = (int) getParam('ingredient_id', 0);
+            $sourceType = hfPlainText(getParam('source_type'), 30, false);
+            $sourceReference = hfPlainText(getParam('source_reference'), 100, false);
+            $supplierBatchNo = hfPlainText(getParam('supplier_batch_no'), 50, false);
+            $receivedDate = hfPlainText(getParam('received_date'), 10, false);
+            $expiryDate = hfPlainText(getParam('expiry_date'), 10, false);
+            $reason = hfPlainText(getParam('reason'), 500, false);
+            $supplierId = (int) getParam('supplier_id', 0);
+            $requestedHeldBatchId = (int) getParam('held_batch_id', 0);
+            try {
+                $countedQuantity = hfParseBusinessDecimal(getParam('counted_quantity'), 'Counted quantity', 0.01, 99999999.99, 2);
+            } catch (InvalidArgumentException $error) {
+                Response::error($error->getMessage(), 400);
+            }
+
+            if ($ingredientId <= 0 || !in_array($sourceType, ['opening_balance', 'unrecorded_delivery'], true)) {
+                Response::error('Choose the ingredient and where the unrecorded stock came from', 400);
+            }
+            if ($reason === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $receivedDate)) {
+                Response::error('Received date and explanation are required', 400);
+            }
+            if ($receivedDate > date('Y-m-d')) {
+                Response::error('Received date cannot be in the future', 400);
+            }
+            if ($sourceType === 'unrecorded_delivery' && $supplierId <= 0) {
+                Response::error('Choose the supplier for an unrecorded delivery', 400);
+            }
+            if ($sourceType === 'unrecorded_delivery' && $sourceReference === '') {
+                Response::error('Choose the saved order or enter the delivery document number', 400);
+            }
+
+            try {
+                $db->beginTransaction();
+                $ingredientStmt = $db->prepare('SELECT * FROM ingredients WHERE id = ? AND is_active = 1 FOR UPDATE');
+                $ingredientStmt->execute([$ingredientId]);
+                $ingredient = $ingredientStmt->fetch(PDO::FETCH_ASSOC);
+                if (!$ingredient) throw new RuntimeException('Ingredient not found');
+
+                $isPerishable = (int) ($ingredient['is_perishable'] ?? 1) === 1;
+                if ($isPerishable && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $expiryDate)) {
+                    throw new RuntimeException('Perishable stock requires an expiry date');
+                }
+                if ($expiryDate !== '' && ($expiryDate <= date('Y-m-d') || $expiryDate < $receivedDate)) {
+                    throw new RuntimeException('Expiry date must be after today and cannot be before the received date');
+                }
+
+                $heldBatchId = null;
+                $requestPurpose = 'found_stock';
+                $systemQuantity = max(
+                    (float) ($ingredient['current_stock'] ?? 0),
+                    getAccountedIngredientBatchStock($db, $ingredientId)
+                );
+                $quantityToAdd = round($countedQuantity - $systemQuantity, 3);
+
+                if ($requestedHeldBatchId > 0) {
+                    if (!$isPerishable) {
+                        throw new RuntimeException('This item does not need a perishable lot correction');
+                    }
+                    $heldStmt = $db->prepare("SELECT id, remaining_quantity
+                        FROM ingredient_batches
+                        WHERE id = ? AND ingredient_id = ?
+                          AND status IN ('available', 'partially_used')
+                          AND remaining_quantity > 0
+                          AND NULLIF(TRIM(supplier_batch_no), '') IS NULL
+                        FOR UPDATE");
+                    $heldStmt->execute([$requestedHeldBatchId, $ingredientId]);
+                    $selectedHeldBatch = $heldStmt->fetch(PDO::FETCH_ASSOC);
+                    if (!$selectedHeldBatch) {
+                        throw new RuntimeException('That held batch is no longer waiting for lot details. Refresh and try again.');
+                    }
+                    $systemQuantity = getUsableIngredientBatchStock($db, $ingredientId);
+                    $quantityToAdd = (float) $selectedHeldBatch['remaining_quantity'];
+                    $expectedCount = round($systemQuantity + $quantityToAdd, 3);
+                    if (abs($countedQuantity - $expectedCount) > 0.0005) {
+                        throw new RuntimeException("This batch contains {$quantityToAdd} {$ingredient['unit_of_measure']}. The checked total must be {$expectedCount} {$ingredient['unit_of_measure']}.");
+                    }
+                    $heldBatchId = (int) $selectedHeldBatch['id'];
+                    $requestPurpose = 'traceability_correction';
+                } elseif ($isPerishable) {
+                    $heldStmt = $db->prepare("SELECT id, remaining_quantity
+                        FROM ingredient_batches
+                        WHERE ingredient_id = ?
+                          AND status IN ('available', 'partially_used')
+                          AND remaining_quantity > 0
+                          AND NULLIF(TRIM(supplier_batch_no), '') IS NULL
+                        ORDER BY id");
+                    $heldStmt->execute([$ingredientId]);
+                    $heldBatches = $heldStmt->fetchAll(PDO::FETCH_ASSOC);
+                    if (count($heldBatches) > 1) {
+                        throw new RuntimeException('More than one batch is missing its lot details. Open the item and choose Record Lot Details beside one batch at a time.');
+                    }
+                    if (count($heldBatches) === 1) {
+                        $systemQuantity = getUsableIngredientBatchStock($db, $ingredientId);
+                        $heldQuantity = (float) $heldBatches[0]['remaining_quantity'];
+                        $quantityToAdd = $heldQuantity;
+                        if (abs($countedQuantity - ($systemQuantity + $heldQuantity)) > 0.0005) {
+                            throw new RuntimeException("This item already has {$heldQuantity} {$ingredient['unit_of_measure']} on hold. Enter the full shelf count of " . ($systemQuantity + $heldQuantity) . " {$ingredient['unit_of_measure']} to correct that held batch first.");
+                        }
+                        $heldBatchId = (int) $heldBatches[0]['id'];
+                        $requestPurpose = 'traceability_correction';
+                    }
+                }
+
+                if ($quantityToAdd <= 0.0005) {
+                    throw new RuntimeException($requestPurpose === 'traceability_correction'
+                        ? 'This held batch no longer has stock to correct'
+                        : 'The counted quantity must be higher than the stock currently on file');
+                }
+
+                $pendingStmt = $db->prepare("SELECT request_code FROM ingredient_opening_stock_requests WHERE ingredient_id = ? AND status = 'pending' LIMIT 1 FOR UPDATE");
+                $pendingStmt->execute([$ingredientId]);
+                $pendingCode = $pendingStmt->fetchColumn();
+                if ($pendingCode) throw new RuntimeException("{$pendingCode} is already moving through price, QC, or GM review for this ingredient");
+
+                if ($supplierId > 0) {
+                    $supplierStmt = $db->prepare("
+                        SELECT s.id
+                        FROM supplier_ingredients si
+                        JOIN suppliers s ON s.id = si.supplier_id
+                        WHERE si.ingredient_id = ? AND si.supplier_id = ?
+                          AND si.is_active = 1 AND s.is_active = 1
+                    ");
+                    $supplierStmt->execute([$ingredientId, $supplierId]);
+                    if (!$supplierStmt->fetchColumn()) {
+                        throw new RuntimeException('That supplier is not approved to provide this ingredient');
+                    }
+                }
+
+                $requestCode = ingredientOpeningStockCode($db);
+                if ($sourceType === 'opening_balance') {
+                    $sourceReference = 'Opening count ' . $requestCode;
+                }
+                if ($isPerishable && $supplierBatchNo === '') {
+                    throw new RuntimeException('Perishable stock needs the real lot number from the package or supplier document. Hold it and contact QC if the lot is missing or unreadable.');
+                }
+
+                $priceMatch = $sourceType === 'unrecorded_delivery'
+                    ? findIngredientOpeningStockPrice($db, $ingredientId, $supplierId, $sourceReference)
+                    : null;
+                $unitCost = $priceMatch['unit_cost'] ?? null;
+                $priceStatus = $priceMatch ? 'matched_po' : 'pending';
+                $priceReference = $priceMatch['price_reference'] ?? null;
+                $matchedPoId = $priceMatch['po_id'] ?? null;
+                $qcStatus = $isPerishable ? 'pending' : 'not_required';
+
+                $insert = $db->prepare("INSERT INTO ingredient_opening_stock_requests
+                    (request_code, ingredient_id, system_quantity, counted_quantity, quantity_to_add,
+                     unit, source_type, supplier_id, source_reference, supplier_batch_no,
+                     received_date, expiry_date, unit_cost, price_status, price_reference,
+                      matched_po_id, qc_status, reason, requested_by, request_purpose, held_batch_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $insert->execute([
+                    $requestCode,
+                    $ingredientId,
+                    $systemQuantity,
+                    $countedQuantity,
+                    $quantityToAdd,
+                    $ingredient['unit_of_measure'],
+                    $sourceType,
+                    $supplierId ?: null,
+                    $sourceReference,
+                    $supplierBatchNo ?: null,
+                    $receivedDate,
+                    $expiryDate ?: null,
+                    $unitCost,
+                    $priceStatus,
+                    $priceReference,
+                    $matchedPoId,
+                    $qcStatus,
+                    $reason,
+                    (int) $currentUser['user_id'],
+                    $requestPurpose,
+                    $heldBatchId,
+                ]);
+                $requestId = (int) $db->lastInsertId();
+                logAudit($currentUser['user_id'], 'REQUEST_OPENING_STOCK', 'ingredient_opening_stock_requests', $requestId, null, [
+                    'request_code' => $requestCode,
+                    'ingredient_id' => $ingredientId,
+                    'quantity_to_add' => $quantityToAdd,
+                    'request_purpose' => $requestPurpose,
+                    'status' => 'pending',
+                ]);
+                if ($priceStatus === 'pending') {
+                    writeProcurementNotification(
+                        $db,
+                        'purchaser',
+                        'found_stock_price_check',
+                        'Found stock needs a price check',
+                        "{$requestCode}: {$ingredient['ingredient_name']} needs its PO/invoice cost verified.",
+                        'ingredient_opening_stock',
+                        $requestId
+                    );
+                }
+                if ($isPerishable) {
+                    writeProcurementNotification(
+                        $db,
+                        'qc_officer',
+                        'found_stock_qc_check',
+                        'Found perishable stock needs QC',
+                        "{$requestCode}: inspect {$ingredient['ingredient_name']} before it can become usable.",
+                        'ingredient_opening_stock',
+                        $requestId
+                    );
+                }
+                if ($priceStatus === 'matched_po' && !$isPerishable) {
+                    writeProcurementNotification(
+                        $db,
+                        'general_manager',
+                        'found_stock_ready_for_gm',
+                        'Found stock ready for final review',
+                        "{$requestCode}: the PO price was matched and no QC check is required.",
+                        'ingredient_opening_stock',
+                        $requestId
+                    );
+                }
+                $db->commit();
+                Response::success([
+                    'id' => $requestId,
+                    'request_code' => $requestCode,
+                    'quantity_to_add' => $quantityToAdd,
+                    'status' => 'pending',
+                    'price_status' => $priceStatus,
+                    'qc_status' => $qcStatus,
+                ], $requestPurpose === 'traceability_correction'
+                    ? "{$requestCode} sent for review. The held batch will become usable only after Purchasing, QC, and GM finish their checks."
+                    : ($priceMatch
+                        ? "{$requestCode} matched to {$priceMatch['po_number']}. Required checks will continue before GM approval."
+                        : "{$requestCode} sent for price and safety checks. Stock will change only after GM approval."));
+            } catch (Throwable $error) {
+                if ($db->inTransaction()) $db->rollBack();
+                Response::error($error->getMessage(), 400);
+            }
+            break;
+
         case 'receive':
             Response::error('Manual receiving is disabled. Use the PO receiving workflow.', 403);
             break;
@@ -485,6 +820,16 @@ function handlePost($db, $currentUser) {
             $packSizeValue = getParam('pack_size_value');
             $packSizeUnit = hfPlainText(getParam('pack_size_unit'), 40, false);
             $packLabel = hfPlainText(getParam('pack_label'), 50, false);
+
+            if ($categoryId) {
+                $categoryStmt = $db->prepare('SELECT category_name FROM ingredient_categories WHERE id = ?');
+                $categoryStmt->execute([(int) $categoryId]);
+                $categoryName = strtolower(trim((string) $categoryStmt->fetchColumn()));
+                if ($categoryName !== '' && strpos($categoryName, 'packaging') !== false) {
+                    $isPerishable = 0;
+                    $shelfLifeDays = null;
+                }
+            }
 
             if (!$ingredientCode || !$ingredientName || !$unitOfMeasure) {
                 Response::error('Ingredient code, name, and unit of measure are required', 400);
@@ -673,6 +1018,12 @@ function handlePut($db, $currentUser) {
 
                 if (!$ingredientData) {
                     throw new Exception('Ingredient not found');
+                }
+
+                if ((int) ($ingredientData['is_perishable'] ?? 1) === 1) {
+                    throw new Exception(
+                        'Perishable stock cannot be repaired automatically. Use Record Found Stock and provide the real supplier lot and printed expiry for review.'
+                    );
                 }
 
                 $repair = reconcileIngredientSummaryToBatches(

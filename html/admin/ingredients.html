@@ -451,7 +451,7 @@
                                 <input type="number" id="minimum_stock" class="input input-bordered join-item w-full" step="0.001" min="0" value="0">
                                 <span class="btn btn-ghost join-item no-animation text-xs ingredient-unit-badge">units</span>
                             </div>
-                            <label class="label py-0.5"><span class="label-text-alt text-error/80 text-xs">Critical low — immediate alert</span></label>
+                            <label class="label py-0.5"><span class="label-text-alt text-error/80 text-xs">Emergency floor. Reorder Point must be this number or higher.</span></label>
                         </div>
                         <div class="form-control">
                             <label class="label py-1"><span class="label-text font-medium">Reorder Point</span></label>
@@ -459,7 +459,7 @@
                                 <input type="number" id="reorder_point" class="input input-bordered join-item w-full" step="0.001" min="0" value="0">
                                 <span class="btn btn-ghost join-item no-animation text-xs ingredient-unit-badge">units</span>
                             </div>
-                            <label class="label py-0.5"><span class="label-text-alt text-warning/80 text-xs">Time to create a purchase request</span></label>
+                            <label class="label py-0.5"><span class="label-text-alt text-warning/80 text-xs">Triggers Stock Validation. Must be at least Minimum Stock.</span></label>
                         </div>
                         <div class="form-control">
                             <label class="label py-1"><span class="label-text font-medium">Par Level (Max)</span></label>
@@ -467,7 +467,7 @@
                                 <input type="number" id="maximum_stock" class="input input-bordered join-item w-full" step="0.001" min="0" value="0">
                                 <span class="btn btn-ghost join-item no-animation text-xs ingredient-unit-badge">units</span>
                             </div>
-                            <label class="label py-0.5"><span class="label-text-alt text-base-content/50 text-xs">Target quantity after restocking</span></label>
+                            <label class="label py-0.5"><span class="label-text-alt text-base-content/50 text-xs">Target after restocking. Must be greater than Reorder Point.</span></label>
                         </div>
                         <div class="form-control">
                             <label class="label py-1"><span class="label-text font-medium">Lead Time</span></label>
@@ -709,6 +709,24 @@
             return opt?.getAttribute('data-category-name') || opt?.textContent || '';
         }
 
+        function syncExpiryHandlingForCategory() {
+            const isPackaging = getUnitGroupForCategoryName(getSelectedCategoryName()) === 'packaging';
+            const expiryHandling = document.getElementById('is_perishable');
+            const shelfLife = document.getElementById('shelf_life_days');
+            if (!expiryHandling || !shelfLife) return;
+            if (isPackaging) {
+                expiryHandling.value = '0';
+                expiryHandling.disabled = true;
+                shelfLife.value = '';
+                shelfLife.disabled = true;
+                expiryHandling.title = 'Packaging materials do not require food-batch expiry tracking.';
+            } else {
+                expiryHandling.disabled = false;
+                shelfLife.disabled = false;
+                expiryHandling.title = '';
+            }
+        }
+
         /**
          * Rebuild Unit of Measure options for the current category.
          * @param {string|null} preferredUnit - keep this if still allowed (edit load)
@@ -800,6 +818,7 @@
                     if (physicalState.value === 'count') physicalState.value = '';
                 }
             }
+            syncExpiryHandlingForCategory();
             populateUnitOfMeasureOptions(null, true);
         }
 
@@ -1142,6 +1161,7 @@
             document.getElementById('dataForm').reset();
             document.getElementById('recordId').value = '';
             document.getElementById('physical_state').disabled = false;
+            syncExpiryHandlingForCategory();
             // Reset UOM to placeholder until category is chosen
             populateUnitOfMeasureOptions(null, true);
             updateUnitBadges();
@@ -1185,6 +1205,7 @@
                     document.getElementById('lead_time_days').value = i.lead_time_days || 7;
                     document.getElementById('shelf_life_days').value = i.shelf_life_days || '';
                     document.getElementById('is_perishable').value = String(i.is_perishable ?? 1);
+                    syncExpiryHandlingForCategory();
                     const storageSelect = document.getElementById('storage_location');
                     const storageVal = i.storage_location || '';
                     if (storageVal && !Array.from(storageSelect.options).some(o => o.value === storageVal)) {
@@ -1229,8 +1250,50 @@
             }
         }
 
+        function validateIngredientStockLevels() {
+            const minimumInput = document.getElementById('minimum_stock');
+            const reorderInput = document.getElementById('reorder_point');
+            const maximumInput = document.getElementById('maximum_stock');
+            [minimumInput, reorderInput, maximumInput].forEach(input => input?.setCustomValidity(''));
+
+            const minimum = Number(minimumInput.value);
+            const reorder = Number(reorderInput.value);
+            const maximum = Number(maximumInput.value);
+
+            if (reorder <= 0) {
+                const message = 'Reorder Point must be greater than zero.';
+                reorderInput.setCustomValidity(message);
+                reorderInput.reportValidity();
+                showToast(message, 'error');
+                return false;
+            }
+            if (reorder < minimum) {
+                const message = `Reorder Point must be at least the Minimum Stock (${minimum}).`;
+                reorderInput.setCustomValidity(message);
+                reorderInput.reportValidity();
+                showToast(message, 'error');
+                return false;
+            }
+            if (maximum <= reorder) {
+                const message = `Par Level must be greater than the Reorder Point (${reorder}).`;
+                maximumInput.setCustomValidity(message);
+                maximumInput.reportValidity();
+                showToast(message, 'error');
+                return false;
+            }
+            return true;
+        }
+
+        document.getElementById('dataForm').addEventListener('input', (event) => {
+            if (typeof event.target?.setCustomValidity === 'function') {
+                event.target.setCustomValidity('');
+            }
+        });
+
         document.getElementById('dataForm').addEventListener('submit', async (e) => {
             e.preventDefault();
+
+            if (!validateIngredientStockLevels()) return;
 
             const recordId = document.getElementById('recordId').value;
             const categoryId = document.getElementById('category_id').value || null;
@@ -1301,7 +1364,17 @@
                 }
             } catch (error) {
                 console.error('Error saving:', error);
-                showToast(error.message || 'Error saving ingredient', 'error');
+                const validationEntries = Object.entries(error?.errors || {});
+                const [field, validationMessage] = validationEntries[0] || [];
+                const message = validationMessage || error.message || 'Error saving ingredient';
+                const targetId = field === 'stock_levels' ? 'reorder_point' : field;
+                const target = targetId ? document.getElementById(targetId) : null;
+                if (target && typeof target.setCustomValidity === 'function') {
+                    target.setCustomValidity(String(message));
+                    target.reportValidity();
+                    target.focus();
+                }
+                showToast(String(message), 'error');
             } finally {
                 const saveBtn = document.getElementById('saveBtn');
                 saveBtn.classList.remove('loading');

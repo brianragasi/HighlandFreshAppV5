@@ -34,8 +34,21 @@ $checks = [
         str_contains($sources['admin_page'], 'Bulk cooking is allowed without a packaging SKU')
         && str_contains($sources['requisitions_page'], 'Packaging and finished-goods receiving require an active size'),
     'Large unexplained liquid loss is rejected in browser and API' =>
-        str_contains($sources['admin_api'], 'Expected liquid yield is below 80% of liquid input')
-        && str_contains($sources['admin_page'], 'Expected liquid yield is below 80% of liquid input'),
+        str_contains($sources['admin_api'], 'Expected liquid yield is below 90% of liquid input')
+        && str_contains($sources['admin_page'], 'Expected liquid yield is below 90% of liquid input'),
+    'Every production recipe has a server-enforced maximum one-run volume' =>
+        str_contains($sources['admin_api'], 'max_batch_liters')
+        && str_contains($sources['admin_api'], 'bulk_yield_liters = ?')
+        && str_contains($sources['admin_page'], 'Maximum one run (L)')
+        && str_contains($sources['requisitions_api'], 'assessRecipeBatchPlan')
+        && str_contains($sources['runs_api'], 'assessRecipeBatchPlan'),
+    'Production cannot override unavailable Warehouse stock' =>
+        str_contains($sources['requisitions_api'], 'This production request cannot be submitted because Warehouse does not have every required material')
+        && !str_contains($sources['requisitions_page'], 'Submit with override')
+        && !str_contains($sources['requisitions_page'], 'confirmStockOverride'),
+    'Planned recipe materials are regenerated from the saved formula on the server' =>
+        str_contains($sources['requisitions_api'], '$authoritativePlan')
+        && str_contains($sources['requisitions_api'], '$items = $authoritativePlan[\'items\']'),
     'Likely solid-component unit mistakes require formula review' =>
         str_contains($sources['admin_api'], 'function validateRecipeDoseGuardrails')
         && str_contains($sources['admin_api'], 'single solid component above 25%')
@@ -72,6 +85,19 @@ if (count($filtered) !== 1 || (int) $filtered[0]['id'] !== 21) {
     exit(1);
 }
 
+$oneBatch = assessRecipeBatchPlan([
+    'bulk_yield_liters' => 47,
+    'max_batch_liters' => 60,
+], 47);
+$tooLargeBatch = assessRecipeBatchPlan([
+    'bulk_yield_liters' => 47,
+    'max_batch_liters' => 60,
+], 61);
+if (!$oneBatch['valid'] || $tooLargeBatch['valid']) {
+    fwrite(STDERR, "Failed: production batch capacity guard did not enforce the one-run maximum.\n");
+    exit(1);
+}
+
 // Isolated workflow simulation. Connection-local temporary tables shadow the
 // live tables, so no business rows or auto-increment counters are touched.
 define('HIGHLAND_FRESH', true);
@@ -87,13 +113,34 @@ $reqId = $seed * 10 + 2;
 $code = "SIM-BP-{$seed}";
 $creatorId = 1;
 $milkTypeId = 1;
-$shadowTables = ['base_products', 'products', 'master_recipes', 'material_requisitions'];
+$shadowTables = ['base_products', 'products', 'master_recipes', 'recipe_ingredients', 'material_requisitions'];
 $schema = str_replace('`', '``', DB_NAME);
 
 try {
     foreach ($shadowTables as $table) {
         $safeTable = str_replace('`', '``', $table);
         $db->exec("CREATE TEMPORARY TABLE `{$safeTable}` AS SELECT source_row.* FROM `{$schema}`.`{$safeTable}` AS source_row WHERE 1 = 0");
+    }
+
+    $insertBalanceLine = $db->prepare("
+        INSERT INTO recipe_ingredients
+            (recipe_id, ingredient_name, ingredient_category, quantity, unit, is_optional)
+        VALUES (?, ?, 'flavoring', ?, 'liter', 0)
+    ");
+    $insertBalanceLine->execute([$recipe1Id, 'Reasonable liquid addition', 2]);
+    $insertBalanceLine->execute([$recipe2Id, 'Excess liquid addition', 5]);
+    $reasonableBalance = assessRecipeLiquidBalance($db, [
+        'id' => $recipe1Id,
+        'base_milk_liters' => 50,
+        'bulk_yield_liters' => 47,
+    ]);
+    $dutchLikeBalance = assessRecipeLiquidBalance($db, [
+        'id' => $recipe2Id,
+        'base_milk_liters' => 50,
+        'bulk_yield_liters' => 47,
+    ]);
+    if (!$reasonableBalance['valid'] || $dutchLikeBalance['valid']) {
+        throw new RuntimeException('Liquid formula review did not block an unexplained Dutch-like loss');
     }
 
     $stmt = $db->prepare("\n        INSERT INTO base_products

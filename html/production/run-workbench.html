@@ -1857,8 +1857,35 @@
             line.querySelector('[data-pkg="size_ml"]').value = sku.packaging_size_ml || '';
             line.querySelector('[data-pkg="product_variant"]').value = sku.packaging_label || '';
             line.querySelector('[data-pkg="unit_measure"]').value = 'ml';
+            const quantityInput = line.querySelector('[data-pkg="quantity"]');
+            if (quantityInput && !quantityInput.value) {
+                const basisMl = getPackagingBasisVolumeMl();
+                const usedByOtherLines = Array.from(document.querySelectorAll('#packagingLines [id^="pkgLine_"]'))
+                    .filter(otherLine => otherLine !== line)
+                    .reduce((total, otherLine) => {
+                        const otherSize = Number(otherLine.querySelector('[data-pkg="size_ml"]')?.value || 0);
+                        const otherQty = Number(otherLine.querySelector('[data-pkg="quantity"]')?.value || 0);
+                        return total + (otherSize > 0 && otherQty > 0 ? otherSize * otherQty : 0);
+                    }, 0);
+                const availableMl = Math.max(0, basisMl - usedByOtherLines);
+                const sizeMl = Number(sku.packaging_size_ml || 0);
+                const suggestedUnits = sizeMl > 0 ? Math.floor(availableMl / sizeMl) : 0;
+                if (suggestedUnits > 0) quantityInput.value = String(suggestedUnits);
+            }
             refreshPackagingSkuChoices();
             updatePkgTotals();
+        }
+
+        function getPackagingBasisVolumeMl() {
+            const est = wb?.estimates;
+            const estimateBasis = est?.has_revision
+                ? Number(est?.revised_estimate?.basis_volume_ml || 0)
+                : Number(est?.initial_estimate?.basis_volume_ml || 0);
+            if (estimateBasis > 0) return estimateBasis;
+            const net = Number(wb?.yieldData?.net_yield_ml ?? wb?.run?.net_yield_ml ?? 0);
+            if (net > 0) return net;
+            const initial = Number(wb?.yieldData?.initial_volume_ml ?? wb?.run?.initial_volume_ml ?? 0);
+            return Math.max(0, initial);
         }
 
         function refreshPackagingSkuChoices() {
@@ -2046,6 +2073,18 @@
                 return;
             }
             if (!validatePackagingSkuUniqueness(packagingItems, true)) return;
+            const plannedVolumeMl = packagingItems.reduce(
+                (total, item) => total + Number(item.size_ml || 0) * Number(item.quantity || 0),
+                0
+            );
+            const basisVolumeMl = getPackagingBasisVolumeMl();
+            if (basisVolumeMl > 0 && plannedVolumeMl > basisVolumeMl + 0.01) {
+                showToast(
+                    `The selected packages need ${(plannedVolumeMl / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 })} L, but only ${(basisVolumeMl / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 })} L is available.`,
+                    'error'
+                );
+                return;
+            }
             const materialPlan = calculatePackagingMaterialRequirements(packagingItems);
             if (!materialPlan.ready) {
                 showToast(`Packaging BOM missing for ${materialPlan.missing.join(', ')}`, 'error');
@@ -2169,12 +2208,13 @@
                 }
 
             const savedRequestPlan = wb?.run?.packaging_request?.packaging_plan || [];
+            const availableSkus = getAvailableSkus().filter(sku => sku.packaging_bom_ready);
             const rec = savedRequestPlan.length ? savedRequestPlan.map(item => ({
                 packaging_size_ml: item.size_ml,
                 estimated_units: item.quantity,
                 packaging_label: item.product_variant || item.product_name,
                 product_id: item.product_id,
-            })) : getRecommendedPackaging();
+            })) : (availableSkus.length === 1 ? getRecommendedPackaging() : []);
             const banner = document.getElementById('pkgRecommendBox');
             const bannerText = document.getElementById('pkgRecommendText');
             const resetBtn = document.getElementById('pkgResetRecommendBtn');
@@ -2203,8 +2243,14 @@
                     applyRecommendedPackaging();
                 }
             } else {
-                // No estimate available — start with one empty line
+                // With several valid SKUs, Production must first choose the
+                // intended package size. Selecting it calculates the whole-unit
+                // quantity from the remaining batch volume.
                 addPackagingLine();
+                if (banner && bannerText && availableSkus.length > 1) {
+                    bannerText.textContent = `Choose the intended product size for ${fmtLitersFromMl(getPackagingBasisVolumeMl())} L remaining milk. The quantity will be calculated automatically.`;
+                    banner.classList.remove('hidden');
+                }
             }
                 renderPackagingRequestState();
             } finally {

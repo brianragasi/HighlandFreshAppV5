@@ -221,6 +221,11 @@ function handleGet($db, $currentUser) {
                 Response::error('Requisition not found', 404);
             }
 
+            // Show only stock that Warehouse can actually issue. A perishable
+            // batch with no supplier lot is physically present but remains on
+            // hold, so it must not appear as available here.
+            $usableIngredientStockSql = usableIngredientBatchStockSql('i.id', 'req_detail_ib');
+
             // Get requisition items
             $items = $db->prepare("
                 SELECT
@@ -233,16 +238,7 @@ function handleGet($db, $currentUser) {
                             OR (LOWER(ri.item_name) LIKE '%milk%' AND LOWER(ri.item_name) NOT LIKE '%powder%' AND LOWER(ri.item_name) NOT LIKE '%chocolate%')
                         THEN (SELECT COALESCE(SUM(remaining_liters), 0) FROM raw_milk_inventory WHERE status IN ('available', 'reserved') AND remaining_liters > 0 AND expiry_date >= CURDATE())
                         WHEN ri.item_type IN ('ingredient', 'packaging') THEN (
-                            SELECT GREATEST(
-                                COALESCE(i.current_stock, 0),
-                                COALESCE((
-                                    SELECT SUM(ib.remaining_quantity)
-                                    FROM ingredient_batches ib
-                                    WHERE ib.ingredient_id = i.id
-                                      AND ib.status IN ('available', 'partially_used')
-                                      AND ib.remaining_quantity > 0
-                                ), 0)
-                            )
+                            SELECT {$usableIngredientStockSql}
                             FROM ingredients i
                             WHERE i.id = ri.item_id
                         )

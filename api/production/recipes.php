@@ -17,6 +17,7 @@ $currentUser = Auth::requireRole(['production_staff', 'general_manager', 'qc_off
 
 try {
     $db = Database::getInstance()->getConnection();
+    ensureRecipeBatchCapacityColumn($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -122,6 +123,7 @@ try {
                            mr.description, mr.base_milk_liters, mr.expected_yield,
                            mr.yield_unit, mr.shelf_life_days, mr.is_active, mr.created_at,
                            mr.pasteurization_temp, mr.pasteurization_time_mins, mr.cooling_temp,
+                           mr.max_batch_liters,
                            (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = mr.id) as ingredient_count
                            {$baseSelect}
                            {$bulkSelect}
@@ -137,6 +139,7 @@ try {
                            mr.description, mr.base_milk_liters, mr.expected_yield,
                            mr.yield_unit, mr.shelf_life_days, mr.is_active, mr.created_at,
                            mr.pasteurization_temp, mr.pasteurization_time_mins, mr.cooling_temp,
+                           mr.max_batch_liters,
                            (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = mr.id) as ingredient_count,
                            mr.product_id AS legacy_sku_product_id,
                            NULL AS bulk_yield_liters
@@ -173,6 +176,7 @@ try {
                 // Canonical bulk scale for requisitions / runs
                 $bulk = getStrictRecipeBulkYieldLiters($recipe);
                 $recipe['bulk_yield_liters'] = $bulk;
+                $recipe['max_batch_liters'] = getRecipeMaximumBatchLiters($recipe);
                 $recipe['plan_unit'] = 'liters'; // requisitions plan by bulk liquid
                 $recipe['display_name'] = $recipe['base_product_name']
                     ?: $recipe['product_name'];
@@ -180,8 +184,15 @@ try {
                 $recipe['label'] = trim(
                     ($recipe['recipe_code'] ?? '') . ' — ' .
                     ($recipe['display_name'] ?? 'Recipe') .
-                    ($recipe['bulk_yield_liters'] ? (' · Standard yield: ' . rtrim(rtrim(number_format((float) $recipe['bulk_yield_liters'], 2, '.', ''), '0'), '.') . ' L') : '')
+                    ($recipe['bulk_yield_liters'] ? (' · Standard yield: ' . rtrim(rtrim(number_format((float) $recipe['bulk_yield_liters'], 2, '.', ''), '0'), '.') . ' L') : '') .
+                    ($recipe['max_batch_liters'] ? (' · Max one run: ' . rtrim(rtrim(number_format((float) $recipe['max_batch_liters'], 2, '.', ''), '0'), '.') . ' L') : '')
                 );
+
+                $recipe['liquid_balance'] = assessRecipeLiquidBalance($db, $recipe);
+                $recipe['formula_ready'] = $recipe['liquid_balance']['valid'];
+                if (!$recipe['formula_ready']) {
+                    $recipe['label'] .= ' · BLOCKED: formula review required';
+                }
 
                 $recipe['packaging_skus'] = [];
                 if ($skuStmt && !empty($recipe['base_product_id'])) {

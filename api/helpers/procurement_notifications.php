@@ -10,6 +10,7 @@ if (!function_exists('procurementNotificationRecipients')) {
     function procurementNotificationRecipients() {
         return [
             'prs_submitted_for_supplier_review' => ['purchaser'],
+            'stock_validated' => ['purchaser'],
             'po_pending_approval' => ['general_manager'],
             'po_approved_pending_delivery' => ['warehouse_raw'],
             'po_approved_prepare_funds' => ['finance_officer'],
@@ -17,6 +18,10 @@ if (!function_exists('procurementNotificationRecipients')) {
             'po_partially_received' => ['purchaser'],
             'rr_verified_transaction_closed' => ['finance_officer'],
             'fg_disposal_review' => ['qc_officer'],
+            'found_stock_price_check' => ['purchaser'],
+            'found_stock_qc_check' => ['qc_officer'],
+            'found_stock_ready_for_gm' => ['general_manager'],
+            'found_stock_rejected' => ['warehouse_raw'],
         ];
     }
 }

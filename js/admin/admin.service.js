@@ -884,6 +884,13 @@ const AdminService = {
         }
     },
 
+    async getSupplierMroCatalog() {
+        const response = await fetch(`${ApiConfig.baseUrl}/admin/suppliers.php?action=mro_catalog`, {
+            headers: ApiConfig.getHeaders()
+        });
+        return await this._handleResponse(response);
+    },
+
     async createSupplier(supplierData) {
         try {
             const response = await fetch(`${ApiConfig.baseUrl}/admin/suppliers.php`, {

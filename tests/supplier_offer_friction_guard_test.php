@@ -34,6 +34,9 @@ $assert($page !== false && str_contains($page, 'min="${format === \'packaged\' ?
 $assert($page !== false && str_contains($page, "priceInput.min = packaged ? '0.01' : '0.000001';"), 'Changing the quote format does not realign the price minimum.');
 $assert($helper !== false && str_contains($helper, '$maximumPriceDecimals = $format === \'packaged\' ? 2 : 6;'), 'The server does not enforce two-decimal whole-package prices.');
 $assert($page !== false && str_contains($page, 'selectedIngredientsOnly'), 'Selected-item filtering is missing.');
+$assert($page !== false && str_contains($page, '<form id="dataForm" class="space-y-4" novalidate>'), 'Dynamic supplier fields can still trigger an unreachable native browser error.');
+$assert($page !== false && str_contains($page, 'function validateSupplierDetails()'), 'Visible supplier details do not have a clear manual validation path.');
+$assert($page !== false && str_contains($page, 'price.required = false;'), 'Filtered catalog prices can still remain hidden native-required fields.');
 $assert($page !== false && str_contains($page, "'Liquid containers': ['bottle', 'jug', 'drum', 'pail', 'tank', 'container']"), 'Grouped package choices or Container compatibility is missing.');
 $assert($helper !== false && str_contains($helper, "'container'"), 'The server does not accept the Container package type.');
 $assert($supplierApi !== false && str_contains($supplierApi, "intval(\$data['is_active']) : 0"), 'New suppliers still silently default to active.');

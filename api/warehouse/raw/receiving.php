@@ -547,9 +547,9 @@ function createReceivingReport($db, $currentUser) {
             $itemStmt = $db->prepare("
                 INSERT INTO receiving_report_items 
                 (rr_id, po_item_id, ingredient_id, mro_item_id, item_description, 
-                 quantity_ordered, quantity_received, quantity_rejected, unit, unit_price,
-                 rejection_reason, rejection_notes, batch_code, expiry_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                quantity_ordered, quantity_received, quantity_rejected, unit, unit_price,
+                 rejection_reason, rejection_notes, batch_code, supplier_lot_number, expiry_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
             $itemStmt->execute([
                 $rrId,
@@ -565,6 +565,7 @@ function createReceivingReport($db, $currentUser) {
                 $qtyRejected > 0 ? ($item['rejection_reason'] ?? 'other') : null,
                 $qtyRejected > 0 ? ($item['rejection_notes'] ?? null) : null,
                 $item['batch_code'] ?? null,
+                $item['supplier_lot_number'] ?? $item['lot_number'] ?? null,
                 $item['expiry_date'] ?? null
             ]);
             $rrItemId = $db->lastInsertId();
@@ -658,6 +659,12 @@ function stockInItem($db, $item, $quantity, $poId, $rrId, $currentUser) {
         // Use the date physically printed on the supplier's goods. A configured
         // shelf life is planning data and must never replace the delivered lot's date.
         $isPerishable = (int) ($ing['is_perishable'] ?? 1) === 1;
+        $supplierLot = trim((string) ($item['supplier_lot_number'] ?? $item['lot_number'] ?? ''));
+        if ($isPerishable && $supplierLot === '') {
+            throw new ReceivingValidationException(
+                ($ing['ingredient_name'] ?? $item['item_description'] ?? 'Ingredient') . ': supplier lot number is required before stock can be received.'
+            );
+        }
         $expiryDate = $isPerishable
             ? requireFutureReceivingExpiry(
                 (string) ($ing['ingredient_name'] ?? $item['item_description'] ?? 'Ingredient'),
@@ -669,8 +676,8 @@ function stockInItem($db, $item, $quantity, $poId, $rrId, $currentUser) {
         $db->prepare("
             INSERT INTO ingredient_batches
             (batch_code, ingredient_id, po_id, rr_id, quantity, remaining_quantity, unit_cost,
-             supplier_id, received_date, expiry_date, qc_status, status, received_by, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, 'approved', 'available', ?, ?)
+             supplier_id, supplier_batch_no, received_date, expiry_date, qc_status, status, received_by, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, 'approved', 'available', ?, ?)
         ")->execute([
             $batchCode,
             $ingredientId,
@@ -680,6 +687,7 @@ function stockInItem($db, $item, $quantity, $poId, $rrId, $currentUser) {
             $quantity,
             $unitPrice,
             $item['supplier_id'] ?? null,
+            $supplierLot !== '' ? $supplierLot : null,
             $expiryDate,
             $currentUser['user_id'],
             'Received via RR#' . $batchCode
@@ -722,6 +730,20 @@ function stockInItem($db, $item, $quantity, $poId, $rrId, $currentUser) {
         $mro = $mroStmt->fetch();
         
         if (!$mro) return;
+
+        $isPerishable = (int) ($mro['is_perishable'] ?? 0) === 1;
+        $supplierLot = trim((string) ($item['supplier_lot_number'] ?? $item['lot_number'] ?? ''));
+        if ($isPerishable && $supplierLot === '') {
+            throw new ReceivingValidationException(
+                ($mro['item_name'] ?? $item['item_description'] ?? 'MRO item') . ': supplier lot number is required before stock can be received.'
+            );
+        }
+        $expiryDate = $isPerishable
+            ? requireFutureReceivingExpiry(
+                (string) ($mro['item_name'] ?? $item['item_description'] ?? 'MRO item'),
+                $item['expiry_date'] ?? null
+            )
+            : null;
         
         // Generate batch code
         $batchCode = 'MRO-RR' . $rrId . '-' . date('Ymd') . '-' . str_pad(rand(1, 999), 3, '0', STR_PAD_LEFT);
@@ -730,8 +752,8 @@ function stockInItem($db, $item, $quantity, $poId, $rrId, $currentUser) {
         $db->prepare("
             INSERT INTO mro_inventory
             (batch_code, mro_item_id, po_id, quantity, remaining_quantity, unit_cost,
-             supplier_id, received_date, received_by, status, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, 'available', ?)
+             supplier_id, supplier_batch_no, received_date, expiry_date, received_by, status, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, 'available', ?)
         ")->execute([
             $batchCode,
             $mroItemId,
@@ -740,6 +762,8 @@ function stockInItem($db, $item, $quantity, $poId, $rrId, $currentUser) {
             $quantity,
             $unitPrice,
             $item['supplier_id'] ?? null,
+            $supplierLot !== '' ? $supplierLot : null,
+            $expiryDate,
             $currentUser['user_id'],
             'Received via RR'
         ]);

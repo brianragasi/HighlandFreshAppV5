@@ -42,6 +42,10 @@ $checks = [
     'Create and update both save physical state' =>
         str_contains($sources['api'], 'unit_of_measure, physical_state')
         && str_contains($sources['api'], "'unit_of_measure', 'physical_state', 'minimum_stock'"),
+    'Packaging is always non-perishable in both the form and server' =>
+        str_contains($sources['page'], 'function syncExpiryHandlingForCategory()')
+        && str_contains($sources['api'], 'function ingredientCategoryIsPackaging')
+        && str_contains($sources['api'], 'SET i.is_perishable = 0'),
     'Database update classifies existing measurement units' =>
         str_contains($sources['migration'], 'ADD COLUMN IF NOT EXISTS physical_state')
         && str_contains($sources['migration'], "THEN 'liquid'")

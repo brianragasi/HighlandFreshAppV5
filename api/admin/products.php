@@ -208,7 +208,12 @@ function getBaseProducts($conn) {
                 $skuId = (int) $sku['id'];
                 $sku['packaging_bom'] = $bomMap[$skuId] ?? [];
                 $sku['packaging_bom_count'] = count($sku['packaging_bom']);
-                $sku['packaging_bom_ready'] = $sku['packaging_bom_count'] > 0;
+                $readiness = assessSkuPackagingBomReadiness(
+                    $sku['base_unit'] ?? '',
+                    $sku['packaging_bom']
+                );
+                $sku['packaging_bom_ready'] = $readiness['ready'];
+                $sku['packaging_bom_missing'] = $readiness['missing'];
             }
             unset($sku);
             $bp['recipes'] = [];
@@ -508,7 +513,12 @@ function getProduct($conn, $id) {
     $product['inventory_summary'] = $summaryStmt->fetch(PDO::FETCH_ASSOC);
     $product['packaging_bom'] = getSkuPackagingBom($conn, $id);
     $product['packaging_bom_count'] = count($product['packaging_bom']);
-    $product['packaging_bom_ready'] = $product['packaging_bom_count'] > 0;
+    $readiness = assessSkuPackagingBomReadiness(
+        $product['base_unit'] ?? '',
+        $product['packaging_bom']
+    );
+    $product['packaging_bom_ready'] = $readiness['ready'];
+    $product['packaging_bom_missing'] = $readiness['missing'];
     
     sendSuccess(['product' => $product]);
 }
@@ -519,7 +529,7 @@ function getProduct($conn, $id) {
 function getProductPackagingBom(PDO $conn, $id) {
     $stmt = $conn->prepare("
         SELECT p.id, p.product_code, p.product_name, p.variant,
-               p.unit_size, p.unit_measure, p.base_product_id, p.is_active,
+               p.unit_size, p.unit_measure, p.base_unit, p.base_product_id, p.is_active,
                bp.name AS base_product_name
         FROM products p
         LEFT JOIN base_products bp ON bp.id = p.base_product_id
@@ -537,11 +547,13 @@ function getProductPackagingBom(PDO $conn, $id) {
     }
 
     $items = getSkuPackagingBom($conn, $id);
+    $readiness = assessSkuPackagingBomReadiness($sku['base_unit'] ?? '', $items);
     sendSuccess([
         'sku' => $sku,
         'items' => $items,
         'available_materials' => getAvailablePackagingMaterials($conn),
-        'ready' => count($items) > 0,
+        'ready' => $readiness['ready'],
+        'missing_components' => $readiness['missing'],
     ]);
 }
 
@@ -633,6 +645,19 @@ function createProduct($conn) {
         sendError('Invalid category', 400);
         return;
     }
+
+    // Product codes are generated from the latest number in a category. Hold
+    // a short category lock through the insert so simultaneous browser tabs or
+    // older clients cannot receive the same generated code.
+    $productCodeLock = 'hf_product_code_' . $data['category'];
+    $lockStmt = $conn->prepare('SELECT GET_LOCK(?, 10)');
+    $lockStmt->execute([$productCodeLock]);
+    if ((int) $lockStmt->fetchColumn() !== 1) {
+        sendError('Another product is being saved. Please try again.', 409);
+        return;
+    }
+
+    try {
 
     // Generate product code if not provided
     if (empty($data['product_code'])) {
@@ -800,7 +825,11 @@ function createProduct($conn) {
         ]);
     }
     
-    $productId = $conn->lastInsertId();
+        $productId = $conn->lastInsertId();
+    } finally {
+        $releaseStmt = $conn->prepare('SELECT RELEASE_LOCK(?)');
+        $releaseStmt->execute([$productCodeLock]);
+    }
     
     sendSuccess([
         'message' => 'Product created successfully',

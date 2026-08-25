@@ -646,12 +646,15 @@
                     <button type="button" class="queue-chip" data-queue="production" onclick="setQueueFilter('production')" role="tab" aria-selected="false">
                         <i class="fas fa-clipboard-list text-primary"></i> Production Materials <span class="chip-count" id="chipCountProduction">0</span>
                     </button>
+                    <button type="button" class="queue-chip" data-queue="inventory" onclick="setQueueFilter('inventory')" role="tab" aria-selected="false">
+                        <i class="fas fa-box-open text-success"></i> Found Stock <span class="chip-count" id="chipCountInventory">0</span>
+                    </button>
                 </div>
                 <p class="text-xs text-base-content/50" id="queueFilterHint">Showing all approval queues</p>
             </div>
 
             <!-- Category stat cards -->
-            <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+            <div class="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
                 <div class="bento-card card bg-base-100 border border-base-300 stat-filter-card is-active" data-stat-filter="all"
                     role="button" tabindex="0" onclick="setQueueFilter('all')">
                     <div class="card-body p-4">
@@ -805,6 +808,19 @@
                         <div class="text-center py-6 text-base-content/50">Loading decision history…</div>
                     </div>
                 </div>
+                <div class="bento-card card bg-base-100 border border-base-300 stat-filter-card" data-stat-filter="inventory"
+                    role="button" tabindex="0" onclick="setQueueFilter('inventory')">
+                    <div class="card-body p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center">
+                                <i class="fas fa-box-open text-success"></i>
+                            </div>
+                            <span class="badge badge-warning badge-sm">Verify</span>
+                        </div>
+                        <p class="text-2xl lg:text-3xl font-bold stat-value" id="statInventoryOpenings">0</p>
+                        <p class="text-sm text-base-content/60">Found Stock</p>
+                    </div>
+                </div>
             </div>
 
         </main>
@@ -942,6 +958,7 @@
             disposal: 'Disposals — inventory write-offs awaiting GM signature',
             procurement: 'Procurement - purchase orders awaiting GM approval',
             production: 'Production Materials - requisitions waiting for GM approval before Warehouse Raw release',
+            inventory: 'Found Stock - physical stock missing from the system, awaiting batch review',
             // legacy keys (unused UI)
             po: 'Procurement',
             pr: 'Purchase requests',
@@ -969,10 +986,10 @@
         }
 
         /**
-         * Domain filter: all | credit | disposal | procurement | production
+         * Domain filter: all | credit | disposal | procurement | production | inventory
          */
         function setQueueFilter(filter, options = {}) {
-            const allowed = ['all', 'credit', 'disposal', 'procurement', 'production'];
+            const allowed = ['all', 'credit', 'disposal', 'procurement', 'production', 'inventory'];
             // Map legacy deep-links
             if (filter === 'po') filter = 'procurement';
             if (filter === 'pr' || filter === 'items' || filter === 'alerts') filter = 'all';
@@ -1121,7 +1138,7 @@
                 console.error('Error loading unified queue:', error);
                 unifiedQueueItems = [];
                 applyQueueStats({
-                    all_queues: 0, sales_orders: 0, credit_overrides: 0, disposals: 0, procurement: 0, production_materials: 0
+                    all_queues: 0, sales_orders: 0, credit_overrides: 0, disposals: 0, procurement: 0, production_materials: 0, inventory_openings: 0
                 }, unifiedQueueItems);
                 renderUnifiedQueue();
             }
@@ -1193,20 +1210,25 @@
             const production = stats.production_materials != null
                 ? Number(stats.production_materials)
                 : items.filter(i => i.category === 'production').length;
+            const inventory = stats.inventory_openings != null
+                ? Number(stats.inventory_openings)
+                : items.filter(i => i.category === 'inventory').length;
             const all = stats.all_queues != null
                 ? Number(stats.all_queues)
-                : (credit + disposal + procurement + production);
+                : (credit + disposal + procurement + production + inventory);
 
             setElText('statAllQueues', all);
             setElText('statCreditOverrides', credit);
             setElText('statDisposals', disposal);
             setElText('statProcurement', procurement);
             setElText('statProductionMaterials', production);
+            setElText('statInventoryOpenings', inventory);
             setElText('chipCountAll', all);
             setElText('chipCountCredit', credit);
             setElText('chipCountDisposal', disposal);
             setElText('chipCountProcurement', procurement);
             setElText('chipCountProduction', production);
+            setElText('chipCountInventory', inventory);
             setElText('totalPendingBadge', all);
             setElText('pendingApprovalsBadge', all);
             setElText('unifiedQueueCount', `${all} open`);
@@ -1263,6 +1285,7 @@
             if (cat === 'disposal') return 'Disposal';
             if (cat === 'procurement') return 'Procurement';
             if (cat === 'production') return 'Production Materials';
+            if (cat === 'inventory') return 'Found Stock';
             return cat || 'Action';
         }
 
@@ -1275,8 +1298,8 @@
             if (type === 'purchase_order') {
                 return `<button class="btn btn-primary btn-xs" onclick="viewPODetail(${numericId})"><i class="fas fa-file-invoice mr-1"></i>Review</button>`;
             }
-            const allowedCategories = ['credit', 'disposal', 'procurement', 'production'];
-            const allowedTypes = ['credit', 'credit_override', 'sales_order', 'disposal', 'requisition'];
+            const allowedCategories = ['credit', 'disposal', 'procurement', 'production', 'inventory'];
+            const allowedTypes = ['credit', 'credit_override', 'sales_order', 'disposal', 'requisition', 'ingredient_opening_stock'];
             const safeCategory = allowedCategories.includes(item.category) ? item.category : '';
             const safeType = allowedTypes.includes(type) ? type : '';
             return `<button class="btn btn-primary btn-xs" onclick='openApprovalModal(${numericId}, ${JSON.stringify(safeCategory)}, ${JSON.stringify(safeType)})'>Review</button>`;
@@ -1294,6 +1317,7 @@
             if (t.includes('credit')) return 'fa-hand-holding-usd text-info';
             if (t.includes('disposal')) return 'fa-trash-alt text-error';
             if (t.includes('purchase') || t.includes('procurement')) return 'fa-file-invoice-dollar text-warning';
+            if (t.includes('opening_stock')) return 'fa-box-open text-success';
             return 'fa-clipboard-check text-primary';
         }
 
@@ -1382,7 +1406,12 @@
                                         <tbody>
                                             ${po.items.map(item => `
                                                 <tr>
-                                                    <td>${escapeHtml(item.item_description)}</td>
+                                                    <td>
+                                                        <div>${escapeHtml(item.item_description)}</div>
+                                                        ${item.procurement_source === 'purchaser_forecast'
+                                                            ? `<div class="badge badge-warning badge-sm mt-1">Fast-moving forecast</div><div class="text-xs text-base-content/60 mt-1">${escapeHtml(item.forecast_reason || item.notes || '')}</div>`
+                                                            : ((item.stock_validation_item_id || item.purchase_request_item_id) ? '<div class="badge badge-info badge-sm mt-1">Confirmed Warehouse shortage</div>' : '<div class="badge badge-ghost badge-sm mt-1">Legacy PO item</div>')}
+                                                    </td>
                                                     <td class="text-right" colspan="2">${escapeHtml(item.quantity_display || `${parseFloat(item.quantity).toFixed(2)} ${item.unit}`)}</td>
                                                     <td class="text-right">${escapeHtml(item.price_display || formatCurrency(item.unit_price))}</td>
                                                     <td class="text-right font-semibold">${formatCurrency(item.total_amount)}</td>
@@ -1696,7 +1725,12 @@
                             <tbody>
                                 ${items.length ? items.map(item => `
                                     <tr>
-                                        <td>${escapeHtml(item.item_description || '-')}</td>
+                                        <td>
+                                            <div>${escapeHtml(item.item_description || '-')}</div>
+                                            ${item.procurement_source === 'purchaser_forecast'
+                                                ? `<div class="badge badge-warning badge-sm mt-1">Fast-moving forecast</div><div class="text-xs text-base-content/60 mt-1">${escapeHtml(item.forecast_reason || item.notes || '')}</div>`
+                                                : ((item.stock_validation_item_id || item.purchase_request_item_id) ? '<div class="badge badge-info badge-sm mt-1">Confirmed Warehouse shortage</div>' : '<div class="badge badge-ghost badge-sm mt-1">Legacy PO item</div>')}
+                                        </td>
                                         <td class="text-right">${parseFloat(item.quantity || 0).toFixed(2)}</td>
                                         <td>${escapeHtml(item.unit || '-')}</td>
                                         <td class="text-right">${formatCurrency(item.unit_price)}</td>
@@ -1992,25 +2026,47 @@
             document.getElementById('modalLoading').classList.add('hidden');
             document.getElementById('modalContent').classList.remove('hidden');
 
-            const ref = detail.order_number || detail.disposal_code || detail.po_number || detail.requisition_code || detail.pr_number || `#${currentApproval.sourceId}`;
+            const ref = detail.order_number || detail.disposal_code || detail.po_number || detail.requisition_code || detail.pr_number || detail.request_code || `#${currentApproval.sourceId}`;
             document.getElementById('modalRef').textContent = ref;
 
-            const typeLabels = { credit: 'Credit Override', credit_override: 'Credit Override', sales_order: 'Sales Order', disposal: 'Disposal', purchase_order: 'Purchase Order', purchase_request: 'Purchase Request', requisition: 'Requisition' };
+            const isTraceabilityCorrection = type === 'ingredient_opening_stock' && detail.request_purpose === 'traceability_correction';
+            const typeLabels = { credit: 'Credit Override', credit_override: 'Credit Override', sales_order: 'Sales Order', disposal: 'Disposal', purchase_order: 'Purchase Order', purchase_request: 'Purchase Request', requisition: 'Requisition', ingredient_opening_stock: isTraceabilityCorrection ? 'Held Stock Lot Review' : 'Found Stock' };
             document.getElementById('modalType').textContent = typeLabels[type] || category;
 
-            const customer = detail.customer_name || detail.supplier_name || detail.product_name || detail.department || detail.requested_by_name || '—';
+            const customer = detail.customer_name || detail.ingredient_name || detail.supplier_name || detail.product_name || detail.department || detail.requested_by_name || '—';
             document.getElementById('modalCustomer').textContent = customer;
 
             const amount = detail.total_amount ?? detail.total_value ?? detail.estimated_total;
             const amountNumber = parseFloat(amount || 0);
-            document.getElementById('modalAmountLabel').textContent = type === 'disposal' ? 'Estimated inventory loss' : 'Amount';
+            document.getElementById('modalAmountLabel').textContent = type === 'disposal' ? 'Estimated inventory loss' : (type === 'ingredient_opening_stock' ? (isTraceabilityCorrection ? 'Stock to make usable' : 'Stock to add') : 'Amount');
             document.getElementById('modalAmount').textContent = amountNumber > 0
                 ? `${detail.value_is_estimate == 1 ? 'Est. ' : ''}${formatCurrency(amountNumber)}`
-                : (type === 'disposal' ? 'Cost not recorded' : '—');
+                : (type === 'disposal' ? 'Cost not recorded' : (type === 'ingredient_opening_stock' ? `${detail.quantity_to_add || 0} ${escapeHtml(detail.unit || '')}` : '—'));
 
             const detailSection = document.getElementById('modalDetailSection');
             const detailBody = document.getElementById('modalDetailBody');
-            if (type === 'disposal') {
+            if (type === 'ingredient_opening_stock') {
+                detailSection.classList.remove('hidden');
+                detailBody.innerHTML = `
+                    <div class="p-4 space-y-3">
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div><span class="text-xs text-base-content/50 block">System showed</span><strong>${escapeHtml(String(detail.system_quantity))} ${escapeHtml(detail.unit || '')}</strong></div>
+                            <div><span class="text-xs text-base-content/50 block">Warehouse counted</span><strong>${escapeHtml(String(detail.counted_quantity))} ${escapeHtml(detail.unit || '')}</strong></div>
+                            <div><span class="text-xs text-base-content/50 block">${isTraceabilityCorrection ? 'Make usable after approval' : 'Add after approval'}</span><strong class="text-success">${escapeHtml(String(detail.quantity_to_add))} ${escapeHtml(detail.unit || '')}</strong></div>
+                            <div><span class="text-xs text-base-content/50 block">Verified unit cost</span><strong>${formatCurrency(detail.unit_cost || 0)}</strong><p class="text-xs text-success">${escapeHtml(detail.price_reference || 'Verified by Purchasing')}</p></div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div><span class="text-xs text-base-content/50 block">Source</span><p>${escapeHtml(detail.source_type === 'unrecorded_delivery' ? (detail.supplier_name || 'Supplier delivery') : 'Opening balance')} · ${escapeHtml(detail.source_reference || '')}</p></div>
+                            <div><span class="text-xs text-base-content/50 block">Lot and dates</span><p>Lot: ${escapeHtml(detail.supplier_batch_no || 'Not required')} · Received: ${escapeHtml(detail.received_date || '—')} · Expires: ${escapeHtml(detail.expiry_date || 'Not applicable')}</p></div>
+                        </div>
+                        <div><span class="text-xs text-base-content/50 block">Warehouse explanation</span><p>${escapeHtml(detail.reason || 'No explanation')}</p></div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div class="alert alert-success py-2 text-xs"><i class="fas fa-file-invoice-dollar"></i><span>Price check: ${escapeHtml(detail.price_status === 'matched_po' ? 'Matched to PO' : 'Verified by Purchasing')}</span></div>
+                            <div class="alert ${detail.qc_status === 'approved' ? 'alert-success' : 'alert-info'} py-2 text-xs"><i class="fas fa-shield-heart"></i><span>QC: ${escapeHtml(detail.qc_status === 'not_required' ? 'Not required' : 'Passed')}</span></div>
+                        </div>
+                        <div class="alert alert-warning py-2 text-xs"><i class="fas fa-triangle-exclamation"></i><span>GM gives final authorization. Price and required safety checks are already complete.</span></div>
+                    </div>`;
+            } else if (type === 'disposal') {
                 detailSection.classList.remove('hidden');
                 const quantity = parseFloat(detail.quantity || 0);
                 const unitCost = parseFloat(detail.unit_cost || 0);
@@ -2095,7 +2151,10 @@
                     : 'Disposal rejected. The requesting team can review the reason.',
                 requisition: approved
                     ? 'Material request approved. Warehouse Raw can now release the requested materials.'
-                    : 'Material request rejected. Production can review the reason and revise it.'
+                    : 'Material request rejected. Production can review the reason and revise it.',
+                ingredient_opening_stock: approved
+                    ? 'Found stock approved. Its batch is now recorded and usable.'
+                    : 'Found stock rejected. Warehouse must recount or correct the source details.'
             };
             return messages[type] || (approved
                 ? 'Request approved. The next responsible team can now continue.'

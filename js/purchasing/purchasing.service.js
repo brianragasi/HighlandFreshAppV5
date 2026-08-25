@@ -45,6 +45,18 @@ const PurchasingService = {
         return await api.get('/purchasing/dashboard.php?action=notifications');
     },
 
+    async getFoundStockPriceChecks() {
+        return await api.get('/purchasing/dashboard.php?action=found_stock_price_checks');
+    },
+
+    async verifyFoundStockPrice(data) {
+        return await api.post('/purchasing/dashboard.php?action=verify_found_stock_price', data);
+    },
+
+    async rejectFoundStockPrice(data) {
+        return await api.post('/purchasing/dashboard.php?action=reject_found_stock_price', data);
+    },
+
     // ========================================
     // SUPPLIERS
     // ========================================
@@ -60,6 +72,10 @@ const PurchasingService = {
 
     async searchSuppliers(query) {
         return await api.get(`/purchasing/suppliers.php?action=search&q=${encodeURIComponent(query)}`);
+    },
+
+    async updateSupplierItemPrice(data) {
+        return await api.put('/purchasing/suppliers.php?action=update_item_price', data);
     },
 
     // ========================================
@@ -225,6 +241,26 @@ const PurchasingService = {
         return await api.get('/purchasing/purchase_requests.php?action=prs_inbox');
     },
 
+    async getConfirmedLowStock() {
+        return await api.get('/warehouse/raw/stock_validations.php?action=inbox');
+    },
+
+    async decideConfirmedLowStock(data) {
+        return await api.put('/warehouse/raw/stock_validations.php?action=decide', data);
+    },
+
+    async getConfirmedStockDecisions() {
+        return await api.get('/warehouse/raw/stock_validations.php?action=decisions');
+    },
+
+    async getStockValidations() {
+        return await api.get('/warehouse/raw/stock_validations.php?action=list');
+    },
+
+    async confirmLowStock(data) {
+        return await api.post('/warehouse/raw/stock_validations.php?action=validate', data);
+    },
+
     // ========================================
     // REGISTERED SUPPLIER REVIEW
     // ========================================
@@ -378,12 +414,12 @@ const PurchasingService = {
         const labels = {
             'draft': 'Draft',
             'pending': 'Pending GM Approval',
-            'approved': 'Approved',
+            'approved': 'Approved - Email Retry Needed',
             'rejected': 'Rejected',
             'partial_received': 'Partially Received',
             'received': 'Fully Received',
             'closed': 'Completed',
-            'ordered': 'Approved / Sent',
+            'ordered': 'Approved / Sent to Supplier',
             'cancelled': 'Cancelled'
         };
         if (labels[status]) return labels[status];

@@ -9,19 +9,25 @@ if (!defined('HIGHLAND_FRESH')) {
 }
 
 function getUsableIngredientBatches($db, $ingredientId, $forUpdate = false) {
-    // V4.0 — also require expiry_date >= CURDATE() (or NULL for non-
-    // perishables). Previously the function returned expired batches,
-    // which meant warehouse_raw could issue rotten ingredients to
-    // production. Mirror of the issueMilk() fix in requisitions.php.
+    // Perishable stock must have at least one full day left. A batch whose
+    // printed expiry is today is held so it cannot be issued mid-process.
     $lockSql = $forUpdate ? ' FOR UPDATE' : '';
     $stmt = $db->prepare("
-        SELECT *
-        FROM ingredient_batches
-        WHERE ingredient_id = ?
-          AND status IN ('available', 'partially_used')
-          AND remaining_quantity > 0
-          AND (expiry_date IS NULL OR expiry_date >= CURDATE())
-        ORDER BY expiry_date ASC, received_date ASC, id ASC
+        SELECT ib.*
+        FROM ingredient_batches ib
+        JOIN ingredients trace_i ON trace_i.id = ib.ingredient_id
+        WHERE ib.ingredient_id = ?
+          AND ib.status IN ('available', 'partially_used')
+          AND ib.remaining_quantity > 0
+          AND (COALESCE(trace_i.is_perishable, 1) = 0 OR ib.expiry_date > CURDATE())
+          AND (
+              COALESCE(trace_i.is_perishable, 1) = 0
+              OR (
+                  NULLIF(TRIM(ib.supplier_batch_no), '') IS NOT NULL
+                  AND ib.expiry_date IS NOT NULL
+              )
+          )
+        ORDER BY ib.expiry_date ASC, ib.received_date ASC, ib.id ASC
         {$lockSql}
     ");
     $stmt->execute([$ingredientId]);
@@ -29,16 +35,24 @@ function getUsableIngredientBatches($db, $ingredientId, $forUpdate = false) {
 }
 
 function getUsableIngredientBatchStock($db, $ingredientId) {
-    // V4.0 — same expiry filter as getUsableIngredientBatches(). Without
+    // Same expiry filter as getUsableIngredientBatches(). Without
     // this, `current_stock` calculations on the ingredient summary would
     // count expired batches, leading the page to show phantom stock.
     $stmt = $db->prepare("
         SELECT COALESCE(SUM(remaining_quantity), 0) AS available_quantity
-        FROM ingredient_batches
-        WHERE ingredient_id = ?
-          AND status IN ('available', 'partially_used')
-          AND remaining_quantity > 0
-          AND (expiry_date IS NULL OR expiry_date >= CURDATE())
+        FROM ingredient_batches ib
+        JOIN ingredients trace_i ON trace_i.id = ib.ingredient_id
+        WHERE ib.ingredient_id = ?
+          AND ib.status IN ('available', 'partially_used')
+          AND ib.remaining_quantity > 0
+          AND (COALESCE(trace_i.is_perishable, 1) = 0 OR ib.expiry_date > CURDATE())
+          AND (
+              COALESCE(trace_i.is_perishable, 1) = 0
+              OR (
+                  NULLIF(TRIM(ib.supplier_batch_no), '') IS NOT NULL
+                  AND ib.expiry_date IS NOT NULL
+              )
+          )
     ");
     $stmt->execute([$ingredientId]);
     return (float) ($stmt->fetch()['available_quantity'] ?? 0);
@@ -55,7 +69,17 @@ function usableIngredientBatchStockSql($ingredientIdSql = 'i.id', $batchAlias = 
         WHERE {$batchAlias}.ingredient_id = {$ingredientIdSql}
           AND {$batchAlias}.status IN ('available', 'partially_used')
           AND {$batchAlias}.remaining_quantity > 0
-          AND ({$batchAlias}.expiry_date IS NULL OR {$batchAlias}.expiry_date >= CURDATE())
+          AND (
+              COALESCE((SELECT expiry_i.is_perishable FROM ingredients expiry_i WHERE expiry_i.id = {$ingredientIdSql}), 1) = 0
+              OR {$batchAlias}.expiry_date > CURDATE()
+          )
+          AND (
+              COALESCE((SELECT trace_i.is_perishable FROM ingredients trace_i WHERE trace_i.id = {$ingredientIdSql}), 1) = 0
+              OR (
+                  NULLIF(TRIM({$batchAlias}.supplier_batch_no), '') IS NOT NULL
+                  AND {$batchAlias}.expiry_date IS NOT NULL
+              )
+          )
     ), 0)";
 }
 
@@ -88,7 +112,7 @@ function getExpiredIngredientBatchStock($db, $ingredientId) {
           AND status IN ('available', 'partially_used', 'quarantine', 'expired')
           AND remaining_quantity > 0
           AND expiry_date IS NOT NULL
-          AND expiry_date < CURDATE()
+          AND expiry_date <= CURDATE()
     ");
     $stmt->execute([$ingredientId]);
     return (float) ($stmt->fetch()['expired_quantity'] ?? 0);
@@ -128,6 +152,12 @@ function reconcileIngredientSummaryToBatches($db, $ingredientData, $currentUser,
 
     if ($missingQuantity <= 0.0005) {
         return null;
+    }
+
+    if ((int) ($ingredientData['is_perishable'] ?? 1) === 1) {
+        throw new RuntimeException(
+            'Perishable stock cannot be repaired automatically. Record the physical source, supplier lot, and printed expiry for review.'
+        );
     }
 
     $batchCode = generateIngredientBatchCode($db);

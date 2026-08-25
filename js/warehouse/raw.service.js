@@ -295,6 +295,19 @@ const WarehouseRawService = {
         });
     },
 
+    async getOpeningStockOptions(ingredientId) {
+        return await api.get(`${this.baseUrl}/ingredients.php`, {
+            params: { action: 'opening_stock_options', ingredient_id: ingredientId }
+        });
+    },
+
+    async requestOpeningStock(data) {
+        return await api.post(`${this.baseUrl}/ingredients.php`, {
+            action: 'request_opening_stock',
+            ...data
+        });
+    },
+
     /**
      * Dispose ingredient batch
      * @param {number} batchId - Batch ID
