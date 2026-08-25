@@ -75,10 +75,10 @@ $checks = [
     'Duplicate supplier commitments are rejected' =>
         str_contains($api, 'findExactActiveSupplierFirstPO')
         && str_contains($api, 'An identical active Purchase Order already exists'),
-    'Purchaser can add a separately controlled fast-moving forecast line' =>
+    'Purchaser can add a separately controlled early-reorder line' =>
         str_contains($page, 'id="addForecastItemButton"')
-        && str_contains($page, 'Add fast-moving item')
-        && str_contains($page, 'Only items sold by the selected supplier are available, and a reason is required for GM review.')
+        && str_contains($page, 'Add early-reorder item')
+        && str_contains($page, 'Only products sold by the selected supplier appear here.')
         && str_contains($page, 'function addForecastLineItem()')
         && str_contains($page, 'forecast_reason: reason')
         && str_contains($api, 'loadAndValidateSupplierForecastItems')
@@ -86,9 +86,21 @@ $checks = [
         && str_contains($api, 'explain the buffer in 10 to 500 characters'),
     'Forecast lines are clearly visible to the GM' =>
         str_contains($gmApi, 'poi.procurement_source, poi.forecast_reason, poi.notes')
-        && str_contains($gmPage, 'Fast-moving forecast')
+        && str_contains($gmPage, 'Purchasing early-reorder exception')
         && str_contains($gmPage, 'Confirmed Warehouse shortage')
         && str_contains($gmPage, 'System early reorder · Warehouse confirmed'),
+    'Purchasing decisions are visually outside the PO document' =>
+        str_contains($page, 'id="purchasingWorkspaceTitle"')
+        && str_contains($page, 'id="purchaseOrderDocument"')
+        && str_contains($page, 'Remaining materials need another decision')
+        && strpos($page, 'id="purchasingDecisionPanel"') < strpos($page, 'id="purchaseOrderDocument"')
+        && strpos($page, 'id="addForecastItemButton"') < strpos($page, 'id="purchaseOrderDocument"'),
+    'PO document uses a formal compact business layout' =>
+        str_contains($page, '>PURCHASE ORDER</h2>')
+        && str_contains($page, '<th class="min-w-64">Item</th><th>Order Quantity</th><th>Unit</th><th class="text-right">Unit Price</th><th class="text-right">Amount</th>')
+        && str_contains($page, 'id="poSubtotal"')
+        && str_contains($page, 'Move out of this PO')
+        && str_contains($page, 'function renderExcludedSupplierItems'),
     'PO saves both supplier packages and the converted Warehouse quantity' =>
         str_contains($api, "'supplier_order_quantity' => \"ALTER TABLE `purchase_order_items`")
         && str_contains($api, 'function applySupplierOrderTerms')

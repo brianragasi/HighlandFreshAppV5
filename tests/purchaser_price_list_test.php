@@ -28,7 +28,7 @@ $checks = [
         && str_contains($gmApi, 'FROM supplier_price_list_history sph')
         && str_contains($api, 'UPDATE_SUPPLIER_PRICE'),
     'Purchaser can update the selected line and refresh the PO' =>
-        str_contains($page, 'Update saved price')
+        str_contains($page, 'Update price')
         && str_contains($page, 'function openSupplierPriceDialog')
         && str_contains($page, 'function saveSupplierPrice')
         && str_contains($page, 'await onMainSupplierChange()'),

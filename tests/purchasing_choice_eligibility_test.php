@@ -42,7 +42,7 @@ $checks = [
         str_contains($sources['catalog'], 'JOIN ingredients i ON i.id = si.ingredient_id AND i.is_active = 1')
         && str_contains($sources['catalog'], 's.is_active = 1'),
     'Purchaser builds one supplier PO from confirmed warehouse shortages' =>
-        str_contains($sources['po_page'], 'Warehouse needs + extra items')
+        str_contains($sources['po_page'], 'Selected supplier items')
         && str_contains($sources['po_page'], 'appendSupplierRequestedItemRow')
         && str_contains($sources['po_page'], 'toggleSupplierRequestedItem')
         && str_contains($sources['po_page'], 'eligiblePrItems')

@@ -123,7 +123,7 @@ try {
         || !str_contains($pageSource, 'What item do you need?')
         || !str_contains($pageSource, 'How many should be purchased?')
         || !str_contains($pageSource, 'Why add it before low stock?')
-        || !str_contains($pageSource, 'Added early by Purchasing')) {
+        || !str_contains($pageSource, 'Purchasing early-reorder exception')) {
         throw new RuntimeException('Extra-item entry is not presented as a clear guided form');
     }
 } catch (Throwable $error) {

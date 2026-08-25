@@ -240,15 +240,20 @@
             </div>
 
             <!-- CREATE PO VIEW -->
-            <div id="createView" class="hidden">
-                <div class="card bg-base-100 border border-base-300">
-                    <div class="card-body">
-                        <h2 class="card-title text-lg mb-4">
-                            <i class="fas fa-file-invoice-dollar text-primary mr-1"></i>
-                            New Purchase Order
-                        </h2>
+            <div id="createView" class="hidden max-w-[1500px] mx-auto space-y-5">
+                <!-- Purchasing decisions stay outside the supplier-facing PO document. -->
+                <section class="card bg-base-100 border border-base-300" aria-labelledby="purchasingWorkspaceTitle">
+                    <div class="card-body p-4 lg:p-5">
+                        <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-4">
+                            <div>
+                                <p class="text-xs font-bold uppercase tracking-[0.18em] text-primary">Purchasing workspace</p>
+                                <h2 id="purchasingWorkspaceTitle" class="text-xl font-bold mt-1">Choose and resolve materials</h2>
+                                <p class="text-sm text-base-content/60 mt-1">Supplier matching, uncovered materials, and early-order exceptions are handled here—not inside the Purchase Order.</p>
+                            </div>
+                            <span class="badge badge-outline gap-2"><i class="fas fa-scale-balanced"></i> Internal planning</span>
+                        </div>
 
-                        <section class="rounded-xl border border-primary/30 bg-primary/5 p-4 mb-5" aria-labelledby="supplierFirstTitle">
+                        <section class="rounded-xl border border-primary/30 bg-primary/5 p-4" aria-labelledby="supplierFirstTitle">
                             <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,32rem)] gap-4 items-end">
                                 <div>
                                     <h3 id="supplierFirstTitle" class="font-bold"><span class="badge badge-primary mr-2">Step 1</span>Choose a supplier for the confirmed needs</h3>
@@ -264,180 +269,105 @@
                             <div id="supplierRecommendationList" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 mt-4"></div>
                         </section>
 
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                            <div class="rounded-lg border border-base-300 bg-base-200/50 p-4">
-                                <p class="text-xs uppercase text-base-content/50 font-semibold">PO Number</p>
-                                <p class="font-mono font-bold mt-1">Assigned when submitted</p>
-                            </div>
-                            <div class="form-control">
-                                <label class="label"><span class="label-text">Order Date</span></label>
-                                <input type="date" id="poOrderDate" class="input input-bordered w-full bg-base-200" readonly aria-readonly="true">
-                                <span class="label-text-alt text-base-content/50 mt-1">Set automatically to today.</span>
-                            </div>
-                            <div class="form-control">
-                                <label class="label"><span class="label-text">Expected Delivery</span></label>
-                                <input type="date" id="poExpectedDelivery" class="input input-bordered w-full bg-base-200" readonly aria-readonly="true">
-                                <span class="label-text-alt text-base-content/50 mt-1" id="expectedDeliveryHelp">Choose a supplier to calculate delivery.</span>
-                            </div>
-                            <div class="form-control">
-                                <label class="label"><span class="label-text">Payment Terms *</span></label>
-                                <select id="poPaymentTerms" class="select select-bordered w-full" required disabled onchange="handlePaymentTermsChange()">
-                                    <option value="" disabled selected>Select a supplier first...</option>
-                                    <option value="cash">Cash (COD)</option>
-                                    <option value="credit_7">Credit - 7 Days</option>
-                                    <option value="credit_15">Credit - 15 Days</option>
-                                    <option value="credit_30">Credit - 30 Days</option>
-                                    <option value="credit_45">Credit - 45 Days</option>
-                                    <option value="credit_60">Credit - 60 Days</option>
-                                </select>
-                                <label class="label"><span class="label-text-alt text-base-content/50">Tells Finance when payment is due</span></label>
-                            </div>
-                            <div id="paymentTermsOverrideNotice" class="hidden md:col-span-3 alert alert-warning items-start" role="alert">
-                                <i class="fas fa-triangle-exclamation mt-1"></i>
-                                <div class="w-full">
-                                    <p class="font-semibold">This is different from the supplier's usual payment term.</p>
-                                    <p id="paymentTermsOverrideMessage" class="text-sm mb-2"></p>
-                                    <label class="form-control w-full">
-                                        <span class="label-text text-sm mb-1">Why did the supplier agree to different terms? *</span>
-                                        <textarea id="paymentTermsOverrideReason" class="textarea textarea-bordered w-full" rows="2" maxlength="500"
-                                            placeholder="Example: Supplier approved 30 days for this order by email."></textarea>
-                                        <span class="label-text-alt mt-1">At least 10 characters. This explanation is saved with the Purchase Order.</span>
-                                    </label>
-                                </div>
-                            </div>
-                            <input type="hidden" id="poRequisition" value="">
-                            <div class="form-control md:col-span-2">
-                                <label class="label"><span class="label-text">Delivery Details</span></label>
-                                <textarea id="poDeliveryDetails" class="textarea textarea-bordered w-full" rows="2"
-                                    placeholder="Delivery address, contact instructions, vehicle/loading notes"></textarea>
-                            </div>
-                            <div class="form-control md:col-span-2">
-                                <label class="label"><span class="label-text">Notes</span></label>
-                                <input type="text" id="poNotes" class="input input-bordered w-full"
-                                    placeholder="Additional notes">
-                            </div>
-                        </div>
-
-                        <div id="selectedSupplierSummary" class="hidden bg-base-200 rounded-lg p-4 mb-4">
-                            <h4 class="font-semibold text-sm mb-2"><i class="fas fa-truck-field mr-2"></i>Supplier Details</h4>
-                            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
-                                <div><span class="text-base-content/50">Name:</span> <span class="font-medium" id="supplierDetailName">-</span></div>
-                                <div><span class="text-base-content/50">Contact:</span> <span id="supplierDetailContact">-</span></div>
-                                <div><span class="text-base-content/50">Terms:</span> <span id="supplierDetailTerms">-</span></div>
-                                <div><span class="text-base-content/50">Delivery:</span> <span id="supplierDetailLeadTime">-</span></div>
-                                <div class="md:col-span-2 xl:col-span-1"><span class="text-base-content/50">Address:</span> <span id="supplierDetailAddress">-</span></div>
-                            </div>
-                        </div>
-
-                        <div id="poContinuationNotice" class="hidden alert alert-success mb-4" role="status">
+                        <div id="poContinuationNotice" class="hidden alert alert-success mt-4" role="status">
                             <i id="poContinuationIcon" class="fas fa-circle-check"></i>
-                            <div>
-                                <h4 class="font-semibold" id="poContinuationTitle">Purchase Order submitted</h4>
-                                <p class="text-sm" id="poContinuationText"></p>
-                            </div>
+                            <div><h4 class="font-semibold" id="poContinuationTitle">Purchase Order submitted</h4><p class="text-sm" id="poContinuationText"></p></div>
                         </div>
 
-                        <div id="selectedPrSummary" class="hidden alert bg-primary/5 border border-primary/20 mb-4">
+                        <div id="selectedPrSummary" class="hidden alert bg-primary/5 border border-primary/20 mt-4">
                             <i class="fas fa-clipboard-list text-primary"></i>
+                            <div><h4 class="font-semibold" id="selectedPrTitle">Confirmed stock needs selected</h4><p class="text-sm text-base-content/70" id="selectedPrMeta"></p><div class="flex flex-wrap gap-2 mt-2" id="selectedPrItems"></div></div>
+                        </div>
+
+                        <div id="supplierCoverageHint" class="hidden alert py-2 mt-4 text-sm" role="status">
+                            <i class="fas fa-truck-field"></i><span id="supplierCoverageText"></span>
+                        </div>
+
+                        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 rounded-xl border border-info/25 bg-info/5 p-4 mt-4">
                             <div>
-                                <h4 class="font-semibold" id="selectedPrTitle">Confirmed shortage selected</h4>
-                                <p class="text-sm text-base-content/70" id="selectedPrMeta"></p>
-                                <div class="flex flex-wrap gap-2 mt-2" id="selectedPrItems"></div>
+                                <h3 class="font-semibold"><i class="fas fa-chart-line text-info mr-2"></i>Early-reorder exception</h3>
+                                <p class="text-sm text-base-content/60 mt-1">Add a selected supplier's item before normal low stock only when the system recommends it or Purchasing can document the operational reason.</p>
+                            </div>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <span id="lineSourceBadge" class="badge badge-primary badge-outline">Selected supplier items</span>
+                                <button type="button" id="addForecastItemButton" class="btn btn-outline btn-info btn-sm" onclick="addForecastLineItem()" disabled>
+                                    <i class="fas fa-plus"></i> Add early-reorder item
+                                </button>
                             </div>
                         </div>
 
-                        <!-- Line Items -->
-                        <div class="mb-4">
-                            <div class="flex items-center justify-between mb-3">
-                                <h3 class="font-semibold">Line Items</h3>
-                                <div class="flex items-center gap-2">
-                                    <span id="lineSourceBadge" class="badge badge-primary badge-outline">Warehouse needs + extra items</span>
-                                    <button type="button" id="addForecastItemButton" class="btn btn-warning btn-sm" onclick="addForecastLineItem()" disabled>
-                                        <i class="fas fa-chart-line"></i> Add fast-moving item
-                                    </button>
-                                </div>
-                            </div>
-                            <div id="supplierCoverageHint" class="hidden alert py-2 mb-3 text-sm" role="status">
-                                <i class="fas fa-truck-field"></i>
-                                <span id="supplierCoverageText"></span>
-                            </div>
-                            <div class="alert alert-info py-2 mb-3 text-sm">
-                                <i class="fas fa-calculator"></i>
-                                <span><strong>Add fast-moving item</strong> is for stock that is not low yet but is expected to run out soon. Only items sold by the selected supplier are available, and a reason is required for GM review.</span>
-                            </div>
-                            <div id="supplierGroupingPreview" class="hidden"></div>
-                            <div class="overflow-x-auto">
-                                <table class="table table-sm">
-                                    <thead>
-                                        <tr>
-                                            <th>Include</th>
-                                            <th class="w-1/4">Warehouse confirmation</th>
-                                            <th>Warehouse needs</th>
-                                            <th>Supplier sells</th>
-                                            <th>Recommended</th>
-                                            <th>You order</th>
-                                            <th>Line Total</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="lineItemsBody">
-                                        <!-- Items added here -->
-                                    </tbody>
-                                    <tfoot>
-                                        <tr>
-                                            <td colspan="6" class="text-right font-semibold">Total:</td>
-                                            <td class="font-bold text-lg" id="poTotal">₱0.00</td>
-                                        </tr>
-                                    </tfoot>
-                                </table>
-                            </div>
+                        <div id="excludedCurrentSupplierPanel" class="hidden rounded-xl border border-base-300 bg-base-200/40 p-4 mt-4">
+                            <div class="flex items-center justify-between gap-3"><div><h3 class="font-semibold">Excluded from this PO</h3><p class="text-sm text-base-content/60">These confirmed items remain open and can be restored to the document.</p></div><span id="excludedCurrentSupplierCount" class="badge badge-outline"></span></div>
+                            <div id="excludedCurrentSupplierItems" class="flex flex-wrap gap-2 mt-3"></div>
                         </div>
 
-                        <section id="purchasingDecisionPanel" class="hidden rounded-xl border border-warning/30 bg-warning/5 p-4 mb-4" aria-labelledby="purchasingDecisionTitle">
-                            <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-2 mb-3">
-                                <div>
-                                    <h3 id="purchasingDecisionTitle" class="font-bold"><i class="fas fa-scale-balanced text-warning mr-2"></i>Items not covered by this PO</h3>
-                                    <p id="purchasingDecisionHelp" class="text-sm text-base-content/65 mt-1">Choose a supplier above to build its PO. Use these actions only when an item should wait or should not be ordered.</p>
-                                </div>
-                                <span id="purchasingDecisionCount" class="badge badge-warning badge-outline"></span>
-                            </div>
-                            <div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
-                                <table class="table table-sm">
-                                    <thead>
-                                        <tr><th>Material</th><th>On hand</th><th>Still needed</th><th>Why it is here</th><th>Decision</th></tr>
-                                    </thead>
-                                    <tbody id="purchasingDecisionItems"></tbody>
-                                </table>
-                            </div>
-                        </section>
-
-                        <details id="pausedDecisionPanel" class="hidden rounded-xl border border-base-300 bg-base-200/40 mb-6" aria-labelledby="pausedDecisionTitle">
+                        <details id="purchasingDecisionPanel" class="hidden rounded-xl border border-warning/30 bg-warning/5 mt-4" aria-labelledby="purchasingDecisionTitle">
                             <summary class="cursor-pointer list-none p-4 flex items-center justify-between gap-3">
-                                <span id="pausedDecisionTitle" class="font-bold"><i class="fas fa-clock-rotate-left text-base-content/60 mr-2"></i>Deferred or closed items</span>
-                                <span id="pausedDecisionCount" class="badge badge-outline"></span>
+                                <span><span id="purchasingDecisionTitle" class="font-bold"><i class="fas fa-scale-balanced text-warning mr-2"></i>Remaining materials need another decision</span><span id="purchasingDecisionHelp" class="block text-sm text-base-content/65 mt-1">Find another supplier, defer, or close without ordering.</span></span>
+                                <span id="purchasingDecisionCount" class="badge badge-warning badge-outline"></span>
                             </summary>
-                            <div class="border-t border-base-300 p-4 pt-3">
-                                <p class="text-sm text-base-content/65 mb-3">These are not orderable right now. Reopen one only when Purchasing needs to reconsider it.</p>
-                                <div class="overflow-x-auto">
-                                    <table class="table table-sm bg-base-100">
-                                        <thead><tr><th>Material</th><th>Decision</th><th>Reason</th><th></th></tr></thead>
-                                        <tbody id="pausedDecisionItems"></tbody>
-                                    </table>
-                                </div>
-                            </div>
+                            <div class="border-t border-warning/20 p-4 pt-3 overflow-x-auto"><table class="table table-sm bg-base-100"><thead><tr><th>Material</th><th>On hand</th><th>Still needed</th><th>Why it is here</th><th>Decision</th></tr></thead><tbody id="purchasingDecisionItems"></tbody></table></div>
                         </details>
 
-                        <div class="flex justify-end gap-2">
-                            <button class="btn btn-ghost" onclick="cancelCreate()">Cancel</button>
-                            <button type="button" id="createPOButton" class="btn btn-primary" onclick="createPurchaseOrder()">
-                                <i class="fas fa-paper-plane"></i> Submit for GM Approval
-                            </button>
-                        </div>
-                        <div class="alert bg-info/10 border border-info/30 text-sm mt-4">
-                            <i class="fas fa-cow text-info"></i>
-                            <span>Fresh milk delivered by farmers is not ordered here. QC records it directly under <strong>Milk Receiving</strong>.</span>
-                        </div>
+                        <details id="pausedDecisionPanel" class="hidden rounded-xl border border-base-300 bg-base-200/40 mt-4" aria-labelledby="pausedDecisionTitle">
+                            <summary class="cursor-pointer list-none p-4 flex items-center justify-between gap-3"><span id="pausedDecisionTitle" class="font-bold"><i class="fas fa-clock-rotate-left text-base-content/60 mr-2"></i>Deferred or closed items</span><span id="pausedDecisionCount" class="badge badge-outline"></span></summary>
+                            <div class="border-t border-base-300 p-4 pt-3"><p class="text-sm text-base-content/65 mb-3">These are not orderable right now. Reopen one only when Purchasing needs to reconsider it.</p><div class="overflow-x-auto"><table class="table table-sm bg-base-100"><thead><tr><th>Material</th><th>Decision</th><th>Reason</th><th></th></tr></thead><tbody id="pausedDecisionItems"></tbody></table></div></div>
+                        </details>
                     </div>
-                </div>
+                </section>
+
+                <!-- Only the selected supplier and committed lines appear inside this document. -->
+                <section id="purchaseOrderDocument" class="card bg-base-100 border border-base-300 shadow-sm overflow-hidden" aria-labelledby="purchaseOrderDocumentTitle">
+                    <div class="h-2 bg-primary"></div>
+                    <div class="card-body p-5 lg:p-8">
+                        <header class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 pb-5 border-b border-base-300">
+                            <div class="flex items-center gap-3">
+                                <img src="../images/logo.jpg" alt="Highland Fresh" class="w-12 h-12 rounded-lg object-cover">
+                                <div><p class="font-bold text-lg">Highland Fresh Dairy</p><p class="text-sm text-base-content/55">Purchasing Department</p></div>
+                            </div>
+                            <div class="md:text-right"><p class="text-xs font-bold uppercase tracking-[0.22em] text-primary">Official document</p><h2 id="purchaseOrderDocumentTitle" class="text-2xl lg:text-3xl font-extrabold mt-1">PURCHASE ORDER</h2><p class="text-sm text-base-content/55 mt-1">Draft for General Manager approval</p></div>
+                        </header>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mt-5">
+                            <div class="rounded-lg border border-base-300 p-3"><p class="text-[11px] uppercase tracking-wider text-base-content/50 font-bold">PO Number</p><p class="font-mono font-bold mt-1">Assigned when submitted</p></div>
+                            <div class="form-control"><label class="label py-1"><span class="label-text font-semibold">Order Date</span></label><input type="date" id="poOrderDate" class="input input-bordered w-full bg-base-200" readonly aria-readonly="true"><span class="label-text-alt text-base-content/50 mt-1">Set automatically today.</span></div>
+                            <div class="form-control"><label class="label py-1"><span class="label-text font-semibold">Expected Delivery</span></label><input type="date" id="poExpectedDelivery" class="input input-bordered w-full bg-base-200" readonly aria-readonly="true"><span class="label-text-alt text-base-content/50 mt-1" id="expectedDeliveryHelp">Choose a supplier to calculate delivery.</span></div>
+                            <div class="form-control"><label class="label py-1"><span class="label-text font-semibold">Payment Terms *</span></label><select id="poPaymentTerms" class="select select-bordered w-full" required disabled onchange="handlePaymentTermsChange()"><option value="" disabled selected>Select a supplier first...</option><option value="cash">Cash (COD)</option><option value="credit_7">Credit - 7 Days</option><option value="credit_15">Credit - 15 Days</option><option value="credit_30">Credit - 30 Days</option><option value="credit_45">Credit - 45 Days</option><option value="credit_60">Credit - 60 Days</option></select><span class="label-text-alt text-base-content/50 mt-1">Controls Finance due date.</span></div>
+                        </div>
+
+                        <div id="selectedSupplierSummary" class="hidden rounded-lg border border-base-300 bg-base-200/40 p-4 mt-5">
+                            <h3 class="font-bold text-sm uppercase tracking-wider text-base-content/55 mb-3"><i class="fas fa-building mr-2"></i>Supplier</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-sm"><div><span class="text-base-content/50">Name:</span> <span class="font-semibold" id="supplierDetailName">-</span></div><div><span class="text-base-content/50">Contact:</span> <span id="supplierDetailContact">-</span></div><div><span class="text-base-content/50">Terms:</span> <span id="supplierDetailTerms">-</span></div><div><span class="text-base-content/50">Delivery:</span> <span id="supplierDetailLeadTime">-</span></div><div class="md:col-span-2 xl:col-span-4"><span class="text-base-content/50">Address:</span> <span id="supplierDetailAddress">-</span></div></div>
+                        </div>
+
+                        <div id="paymentTermsOverrideNotice" class="hidden alert alert-warning items-start mt-4" role="alert"><i class="fas fa-triangle-exclamation mt-1"></i><div class="w-full"><p class="font-semibold">This differs from the supplier's usual payment term.</p><p id="paymentTermsOverrideMessage" class="text-sm mb-2"></p><label class="form-control w-full"><span class="label-text text-sm mb-1">Why did the supplier agree to different terms? *</span><textarea id="paymentTermsOverrideReason" class="textarea textarea-bordered w-full" rows="2" maxlength="500" placeholder="Example: Supplier approved 30 days for this order by email."></textarea><span class="label-text-alt mt-1">At least 10 characters; saved with this PO.</span></label></div></div>
+                        <input type="hidden" id="poRequisition" value="">
+
+                        <div class="mt-7">
+                            <div class="flex items-center justify-between gap-3 mb-3"><h3 class="text-lg font-bold">Order Items</h3><span class="text-xs text-base-content/50">Only lines included in this supplier PO</span></div>
+                            <div id="supplierGroupingPreview" class="hidden"></div>
+                            <div class="overflow-x-auto border border-base-300 rounded-lg">
+                                <table class="table table-sm">
+                                    <thead class="bg-base-200"><tr><th class="min-w-64">Item</th><th>Order Quantity</th><th>Unit</th><th class="text-right">Unit Price</th><th class="text-right">Amount</th></tr></thead>
+                                    <tbody id="lineItemsBody"></tbody>
+                                </table>
+                            </div>
+                            <div class="ml-auto w-full sm:w-80 mt-4 space-y-2">
+                                <div class="flex items-center justify-between text-sm"><span class="text-base-content/60">Subtotal</span><span id="poSubtotal" class="font-semibold">₱0.00</span></div>
+                                <div class="flex items-center justify-between border-t-2 border-base-content/20 pt-3"><span class="font-bold text-lg">TOTAL</span><span class="font-extrabold text-2xl text-primary" id="poTotal">₱0.00</span></div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-7 pt-5 border-t border-base-300">
+                            <div class="form-control"><label class="label py-1"><span class="label-text font-semibold">Delivery Details</span></label><textarea id="poDeliveryDetails" class="textarea textarea-bordered w-full" rows="3" placeholder="Delivery address, receiving contact, loading or vehicle instructions"></textarea></div>
+                            <div class="form-control"><label class="label py-1"><span class="label-text font-semibold">Notes</span></label><textarea id="poNotes" class="textarea textarea-bordered w-full" rows="3" placeholder="Terms, quotation reference, or other supplier instructions"></textarea></div>
+                        </div>
+
+                        <div class="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 mt-6"><button class="btn btn-ghost" onclick="cancelCreate()">Cancel</button><button type="button" id="createPOButton" class="btn btn-primary min-w-52" onclick="createPurchaseOrder()"><i class="fas fa-paper-plane"></i> Submit for GM Approval</button></div>
+                    </div>
+                </section>
+
+                <div class="alert bg-info/10 border border-info/30 text-sm"><i class="fas fa-cow text-info"></i><span>Fresh milk delivered by farmers is not ordered here. QC records it directly under <strong>Milk Receiving</strong>.</span></div>
             </div>
 
             <!-- DETAIL VIEW -->
@@ -585,8 +515,8 @@
     <dialog id="extraItemDialog" class="modal">
         <div class="modal-box max-w-xl">
             <button type="button" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onclick="document.getElementById('extraItemDialog').close()">✕</button>
-            <h3 class="font-bold text-lg"><i class="fas fa-chart-line text-warning mr-2"></i>Add a fast-moving item</h3>
-            <p class="text-sm text-base-content/65 mt-1">Use this for an item that is not low yet but is expected to run out soon. A reason is required for GM review.</p>
+            <h3 class="font-bold text-lg"><i class="fas fa-chart-line text-info mr-2"></i>Add an early-reorder item</h3>
+            <p class="text-sm text-base-content/65 mt-1">Use this for a selected supplier's item that should be ordered before normal low stock. The system may suggest it; otherwise a documented reason is required for GM review.</p>
 
             <div class="form-control mt-4">
                 <label class="label"><span class="label-text font-medium">What item do you need? *</span></label>
@@ -1029,7 +959,7 @@
             const needNames = [...new Set(allNeeds.map(item => item.ingredient_name || item.mro_item_name || item.item_description || 'Material'))];
             summary.textContent = allNeeds.length
                 ? `${allNeeds.length} confirmed material${allNeeds.length === 1 ? '' : 's'} still need purchasing: ${needNames.slice(0, 5).join(' • ')}${needNames.length > 5 ? ` • +${needNames.length - 5} more` : ''}. Best supplier coverage is shown first.`
-                : 'There are no confirmed shortages waiting. Use an extra item only when there is a documented forecast.';
+                : 'There are no confirmed shortages waiting. Add an early-reorder item only when there is documented evidence.';
 
             if (!availableSuppliers.length) {
                 container.innerHTML = allNeeds.length
@@ -1199,7 +1129,7 @@
         function renderNoPurchaseRequestLineItems() {
             document.getElementById('lineItemsBody').innerHTML = `
                 <tr id="lineItem-empty">
-                    <td colspan="7" class="text-center py-8 text-base-content/60">
+                    <td colspan="5" class="text-center py-8 text-base-content/60">
                         <i class="fas fa-clipboard-check text-3xl mb-2"></i>
                         <p class="font-medium">Choose a supplier to see confirmed low-stock items.</p>
                     </td>
@@ -1300,19 +1230,20 @@
             if (supplierSelect) {
                 supplierSelect.disabled = availableSuppliers.length === 0;
             }
-            if (badge) badge.textContent = 'Warehouse needs + extra items';
+            if (badge) badge.textContent = 'Selected supplier items';
             renderSupplierCoverageHint();
         }
 
         function renderDirectEntryPrompt(message = 'Choose an accredited supplier to see the items it can provide.') {
             document.getElementById('lineItemsBody').innerHTML = `
                 <tr id="lineItem-empty">
-                    <td colspan="7" class="text-center py-8 text-base-content/60">
+                    <td colspan="5" class="text-center py-8 text-base-content/60">
                         <i class="fas fa-truck-field text-3xl mb-2"></i>
                         <p class="font-medium">${escapeHtml(message)}</p>
                     </td>
                 </tr>
             `;
+            renderExcludedSupplierItems();
             calcGrandTotal();
         }
 
@@ -1410,7 +1341,7 @@
                 renderWarehouseRequestedItemsSummary();
 
                 if (!eligiblePrItems.length) {
-                    renderDirectEntryPrompt('No confirmed low-stock item is linked to this supplier. You may still add an extra item that is expected to run out soon.');
+                    renderDirectEntryPrompt('No confirmed stock need is linked to this supplier. You may still add a documented early-reorder item.');
                     renderSupplierCoverageHint();
                     renderPurchasingDecisionPanel();
                     return;
@@ -1628,6 +1559,7 @@
             body.innerHTML = '';
             lineItemCounter = 0;
             eligiblePrItems.forEach(item => appendSupplierRequestedItemRow(item));
+            renderExcludedSupplierItems();
             renderSupplierCoverageHint();
             calcGrandTotal();
         }
@@ -1647,9 +1579,7 @@
             const orderUnit = isPackaged
                 ? supplierPackageName(item.supplier_package_type, recommendedOrder)
                 : warehouseUnit;
-            const supplierOffer = isPackaged
-                ? `${item.supplier_offer_label} at ${formatCurrency(item.supplier_quoted_price)} each`
-                : `${formatCurrency(item.supplier_unit_price)} per ${warehouseUnit}`;
+            const orderUnitPrice = isPackaged ? Number(item.supplier_quoted_price || 0) : Number(item.supplier_unit_price || 0);
             const isEarlyReorder = item.recommendation_type === 'early_reorder';
             const confirmationLabel = isEarlyReorder
                 ? 'Early reorder confirmed by Warehouse'
@@ -1663,40 +1593,26 @@
             row.dataset.mode = 'supplier_request';
             row.dataset.prItemId = Number(item.id);
             row.dataset.purchaseRequestId = Number(item.source_purchase_request_id);
-            row.className = 'bg-primary/5';
+            row.className = 'align-top';
             row.innerHTML = `
                 <td>
-                    <input type="checkbox" id="include-${rowId}" class="checkbox checkbox-primary checkbox-sm" checked aria-label="Include ${escapeHtml(item.ingredient_name || item.item_description || 'item')} in this PO" onchange="toggleSupplierRequestedItem(${rowId})">
-                </td>
-                <td>
+                    <input type="checkbox" id="include-${rowId}" class="hidden" checked aria-label="Include ${escapeHtml(item.ingredient_name || item.item_description || 'item')} in this PO" onchange="toggleSupplierRequestedItem(${rowId})">
                     <div class="font-semibold">${escapeHtml(item.ingredient_name || item.item_description || 'Requested item')}</div>
+                    <div class="text-xs text-base-content/55 mt-1">Confirmed need: ${plainNumber(remaining)} ${escapeHtml(warehouseUnit)}</div>
                     <div class="text-xs ${isEarlyReorder ? 'text-info' : 'text-primary'} mt-1"><i class="fas ${isEarlyReorder ? 'fa-chart-line' : 'fa-clipboard-check'} mr-1"></i>${confirmationLabel}</div>
                     ${forecastEvidence}
+                    <button type="button" class="btn btn-ghost btn-xs text-error px-0 mt-2" onclick="excludeSupplierRequestedItem(${rowId})"><i class="fas fa-arrow-up-right-from-square"></i> Move out of this PO</button>
                 </td>
                 <td>
-                    <div class="font-semibold">${plainNumber(remaining)} ${escapeHtml(warehouseUnit)}</div>
-                    <div class="text-xs text-base-content/55">still needed</div>
-                </td>
-                <td>
-                    <div class="text-sm">${escapeHtml(supplierOffer)}</div>
-                    ${isPackaged ? `<div class="text-xs text-base-content/55 mt-1">1 ${escapeHtml(item.supplier_package_type || 'package')} = ${plainNumber(stockPerPackage)} ${escapeHtml(warehouseUnit)}</div>` : ''}
-                    <button type="button" class="btn btn-link btn-xs px-0 mt-1" onclick="openSupplierPriceDialog(${rowId})"><i class="fas fa-pen"></i> Update saved price</button>
-                </td>
-                <td>
-                    <div class="font-semibold text-success">${plainNumber(recommendedOrder)} ${escapeHtml(orderUnit)}</div>
-                    <div class="text-xs text-base-content/55">covers ${plainNumber(isPackaged ? recommendedOrder * stockPerPackage : recommendedOrder)} ${escapeHtml(warehouseUnit)}</div>
-                </td>
-                <td>
-                    <div class="join">
-                        <input type="number" id="order-${rowId}" class="input input-bordered input-sm w-24 join-item" value="${recommendedOrder}" min="${isPackaged ? 1 : 0.01}" step="${isPackaged && item.supplier_enforce_whole_packages ? 1 : 0.01}" oninput="handleSupplierOrderInput(${rowId})">
-                        <span class="join-item px-3 flex items-center bg-base-200 border border-base-300 text-xs" id="order-unit-${rowId}">${escapeHtml(orderUnit)}</span>
-                    </div>
+                    <input type="number" id="order-${rowId}" class="input input-bordered input-sm w-28" value="${recommendedOrder}" min="${isPackaged ? 1 : 0.01}" step="${isPackaged && item.supplier_enforce_whole_packages ? 1 : 0.01}" oninput="handleSupplierOrderInput(${rowId})">
                     <input type="hidden" id="qty-${rowId}" value="${isPackaged ? recommendedOrder * stockPerPackage : recommendedOrder}" max="${isPackaged && item.supplier_enforce_whole_packages ? recommendedOrder * stockPerPackage : remaining}">
                     <input type="hidden" id="unit-${rowId}" value="${escapeHtml(warehouseUnit)}">
                     <input type="hidden" id="price-${rowId}" value="${Number(item.supplier_unit_price || 0)}">
                     <p class="text-xs text-base-content/55 mt-1" id="coverage-${rowId}"></p>
                 </td>
-                <td class="font-semibold" id="total-${rowId}">₱0.00</td>`;
+                <td><div class="font-medium" id="order-unit-${rowId}">${escapeHtml(orderUnit)}</div>${isPackaged ? `<div class="text-xs text-base-content/55 mt-1">1 ${escapeHtml(item.supplier_package_type || 'package')} = ${plainNumber(stockPerPackage)} ${escapeHtml(warehouseUnit)}</div>` : ''}</td>
+                <td class="text-right"><div class="font-medium">${formatCurrency(orderUnitPrice)}</div><div class="text-xs text-base-content/55">per ${escapeHtml(orderUnit)}</div><button type="button" class="btn btn-link btn-xs px-0 mt-1" onclick="openSupplierPriceDialog(${rowId})"><i class="fas fa-pen"></i> Update price</button></td>
+                <td class="font-bold text-right whitespace-nowrap" id="total-${rowId}">₱0.00</td>`;
             document.getElementById('lineItemsBody').appendChild(row);
             handleSupplierOrderInput(rowId);
         }
@@ -1706,9 +1622,44 @@
             const included = document.getElementById(`include-${rowId}`)?.checked === true;
             const orderInput = document.getElementById(`order-${rowId}`);
             if (orderInput) orderInput.disabled = !included;
-            row?.classList.toggle('opacity-70', !included);
+            row?.classList.toggle('hidden', !included);
             calcLineTotal(rowId);
             renderSupplierCoverageHint();
+            renderExcludedSupplierItems();
+        }
+
+        function excludeSupplierRequestedItem(rowId) {
+            const checkbox = document.getElementById(`include-${rowId}`);
+            if (!checkbox) return;
+            checkbox.checked = false;
+            toggleSupplierRequestedItem(rowId);
+        }
+
+        function includeSupplierRequestedItem(rowId) {
+            const checkbox = document.getElementById(`include-${rowId}`);
+            if (!checkbox) return;
+            checkbox.checked = true;
+            toggleSupplierRequestedItem(rowId);
+            document.getElementById(`lineItem-${rowId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function renderExcludedSupplierItems() {
+            const panel = document.getElementById('excludedCurrentSupplierPanel');
+            const container = document.getElementById('excludedCurrentSupplierItems');
+            const count = document.getElementById('excludedCurrentSupplierCount');
+            if (!panel || !container || !count) return;
+            const excludedRows = Array.from(document.querySelectorAll('#lineItemsBody tr[data-mode="supplier_request"]')).filter(row => {
+                const rowId = row.id.split('-')[1];
+                return document.getElementById(`include-${rowId}`)?.checked !== true;
+            });
+            panel.classList.toggle('hidden', excludedRows.length === 0);
+            count.textContent = `${excludedRows.length} excluded`;
+            container.innerHTML = excludedRows.map(row => {
+                const rowId = row.id.split('-')[1];
+                const item = eligiblePrItems.find(candidate => Number(candidate.id) === Number(row.dataset.prItemId));
+                const name = item?.ingredient_name || item?.mro_item_name || item?.item_description || 'Confirmed item';
+                return `<button type="button" class="btn btn-sm btn-outline" onclick="includeSupplierRequestedItem(${Number(rowId)})"><i class="fas fa-rotate-left"></i> Restore ${escapeHtml(name)}</button>`;
+            }).join('');
         }
 
         function openSupplierPriceDialog(rowId) {
@@ -1836,7 +1787,7 @@
                 .filter(row => document.getElementById(`include-${row.id.split('-')[1]}`)?.checked === true)
                 .length;
             hint.classList.add(selectedCount > 0 ? 'alert-success' : 'alert-info');
-            text.textContent = `${eligibleCount} confirmed low-stock item${eligibleCount === 1 ? '' : 's'} ${eligibleCount === 1 ? 'is' : 'are'} shown for ${supplierName}. All ${selectedCount} ${selectedCount === 1 ? 'item is' : 'items are'} selected for this PO. Untick only what should not be included, then confirm or change the recommended order amounts.`;
+            text.textContent = `${eligibleCount} confirmed stock need${eligibleCount === 1 ? '' : 's'} ${eligibleCount === 1 ? 'is' : 'are'} available from ${supplierName}. ${selectedCount} ${selectedCount === 1 ? 'item is' : 'items are'} currently inside this PO document. Move out only a line that should remain open for a later decision.`;
         }
 
         function addForecastLineItem() {
@@ -1953,25 +1904,24 @@
             row.dataset.forecastEvidenceText = config.suggestedSupplierQuantity > 0
                 ? `Suggested from recent usage and the supplier's ${Number(item.lead_time_days || 0)}-day delivery time.`
                 : 'Amount entered manually by Purchasing.';
-            row.className = 'bg-warning/5';
+            row.className = 'align-top';
             row.innerHTML = `
-                <td><button type="button" class="btn btn-ghost btn-xs btn-square text-error" title="Remove extra item" onclick="removeLineItem(${rowId})"><i class="fas fa-trash"></i></button></td>
                 <td>
-                    <div class="font-semibold">${escapeHtml(item.ingredient_name || 'Extra item')}</div>
-                    <div class="badge badge-warning badge-sm mt-1">Added early by Purchasing</div>
-                    <button type="button" class="btn btn-link btn-xs px-0 mt-1" onclick="editExtraItem(${rowId})">Edit details</button>
+                    <div class="font-semibold">${escapeHtml(item.ingredient_name || 'Early-reorder item')}</div>
+                    <div class="badge badge-info badge-outline badge-sm mt-1">Early-reorder item</div>
+                    <div class="text-xs text-base-content/60 mt-1" id="forecast-reason-display-${rowId}">${escapeHtml(reason)}</div>
+                    <div class="flex items-center gap-2 mt-2"><button type="button" class="btn btn-link btn-xs px-0" onclick="editExtraItem(${rowId})">Edit reason</button><button type="button" class="btn btn-ghost btn-xs text-error px-0" title="Remove early-reorder item" onclick="removeLineItem(${rowId})"><i class="fas fa-trash"></i> Remove</button></div>
                     <select id="forecast-item-${rowId}" class="hidden"><option value="ing-${ingredientId}" selected></option></select>
                     <textarea id="forecast-reason-${rowId}" class="hidden">${escapeHtml(reason)}</textarea>
                 </td>
-                <td><div class="text-sm">Not currently low stock</div><div class="text-xs text-base-content/60 mt-1" id="forecast-reason-display-${rowId}">${escapeHtml(reason)}</div></td>
-                <td id="forecast-offer-${rowId}" class="text-sm">${escapeHtml(item.offer_label || `Per ${config.supplierUnit}`)}<div class="text-xs text-base-content/55 mt-1">${formatCurrency(config.supplierPrice)} per ${escapeHtml(config.supplierUnit)}</div></td>
-                <td><div class="text-sm">${config.suggestedSupplierQuantity > 0 ? `${plainNumber(config.suggestedSupplierQuantity)} ${escapeHtml(config.supplierUnit)}${config.suggestedSupplierQuantity === 1 ? '' : 's'}` : 'No automatic amount'}</div><div class="text-xs text-base-content/55">${config.suggestedSupplierQuantity > 0 ? 'from recent usage' : 'Purchasing estimate'}</div></td>
                 <td>
-                    <div class="join"><input type="number" id="order-${rowId}" class="input input-bordered input-sm w-24 join-item" value="${supplierQuantity}" min="${config.requiresWholePackages ? '1' : '0.001'}" step="${config.requiresWholePackages ? '1' : '0.001'}" oninput="handleForecastOrderInput(${rowId})"><span id="order-unit-${rowId}" class="join-item px-3 flex items-center bg-base-200 border border-base-300 text-xs">${escapeHtml(config.supplierUnit)}</span></div>
+                    <input type="number" id="order-${rowId}" class="input input-bordered input-sm w-28" value="${supplierQuantity}" min="${config.requiresWholePackages ? '1' : '0.001'}" step="${config.requiresWholePackages ? '1' : '0.001'}" oninput="handleForecastOrderInput(${rowId})">
                     <input type="hidden" id="qty-${rowId}" value="0"><input type="hidden" id="price-${rowId}" value="0">
                     <div id="coverage-${rowId}" class="text-xs text-base-content/55 mt-1"></div>
                 </td>
-                <td class="font-semibold" id="total-${rowId}">${formatCurrency(0)}</td>`;
+                <td><div class="font-medium" id="order-unit-${rowId}">${escapeHtml(config.supplierUnit)}</div><div class="text-xs text-base-content/55 mt-1">Supplier order unit</div></td>
+                <td id="forecast-offer-${rowId}" class="text-right"><div class="font-medium">${formatCurrency(config.supplierPrice)}</div><div class="text-xs text-base-content/55">per ${escapeHtml(config.supplierUnit)}</div></td>
+                <td class="font-bold text-right whitespace-nowrap" id="total-${rowId}">${formatCurrency(0)}</td>`;
             document.getElementById('extraItemDialog').close();
             extraItemEditRowId = null;
             handleForecastOrderInput(rowId);
@@ -2013,7 +1963,7 @@
             orderInput.step = isPackaged && Number(item.enforce_whole_packages || 0) === 1 ? '1' : '0.001';
             orderInput.min = isPackaged && Number(item.enforce_whole_packages || 0) === 1 ? '1' : '0.001';
             document.getElementById(`order-unit-${rowId}`).textContent = supplierUnit;
-            document.getElementById(`forecast-offer-${rowId}`).innerHTML = `${escapeHtml(item.offer_label || `Per ${supplierUnit}`)}<div class="text-xs text-base-content/55 mt-1">${formatCurrency(supplierPrice)} per ${escapeHtml(supplierUnit)}</div>`;
+            document.getElementById(`forecast-offer-${rowId}`).innerHTML = `<div class="font-medium">${formatCurrency(supplierPrice)}</div><div class="text-xs text-base-content/55">per ${escapeHtml(supplierUnit)}</div>`;
             row.dataset.stockPerSupplierUnit = String(stockPerSupplierUnit);
             row.dataset.supplierUnitPrice = String(supplierPrice);
             row.dataset.stockUnit = item.unit_of_measure || 'units';
@@ -2323,7 +2273,10 @@
                 const price = parseFloat(document.getElementById(`price-${id}`)?.value) || 0;
                 total += qty * price;
             });
-            document.getElementById('poTotal').textContent = formatCurrency(total);
+            const formatted = formatCurrency(total);
+            document.getElementById('poTotal').textContent = formatted;
+            const subtotal = document.getElementById('poSubtotal');
+            if (subtotal) subtotal.textContent = formatted;
         }
 
         function cancelCreate() {
@@ -2373,7 +2326,7 @@
                     `${poNumber} submitted to the GM`,
                     remainingCount > 0
                         ? `${remainingCount} confirmed shortage line${remainingCount === 1 ? '' : 's'} remain across Warehouse stock checks. Choose the next supplier to continue.`
-                        : 'All confirmed shortages are covered. You may still add an extra item that is expected to run out soon.'
+                        : 'All confirmed stock needs are covered. You may still add a documented early-reorder item.'
                 );
                 const url = new URL(window.location.href);
                 url.searchParams.set('action', 'new');
@@ -2458,7 +2411,7 @@
             });
 
             if (lines.length === 0 && forecastLines.length === 0) {
-                showToast('Select a confirmed shortage or add one extra item.', 'error');
+                showToast('Include a confirmed stock need or add an early-reorder item.', 'error');
                 return;
             }
             if (hasInvalidQuantity) {
@@ -2470,7 +2423,7 @@
                 return;
             }
             if (hasInvalidForecast) {
-                showToast('Complete each extra item and explain in at least 10 characters why it is needed early.', 'error');
+                showToast('Complete each early-reorder item and explain in at least 10 characters why it is needed early.', 'error');
                 return;
             }
 
@@ -2747,7 +2700,7 @@
                                                 <td>${i + 1}</td>
                                                 <td class="font-medium">${escapeHtml(item.item_description)}
                                                     ${item.source_pr_number ? `<div class="text-xs text-primary"><i class="fas fa-clipboard-list mr-1"></i>Confirmed shortage: ${escapeHtml(item.source_pr_number)}</div>` : ''}
-                                                    ${item.procurement_source === 'purchaser_forecast' ? `<div class="badge badge-warning badge-sm mt-1">Added early by Purchasing</div><div class="text-xs text-base-content/60 mt-1">${escapeHtml(item.forecast_reason || item.notes || '')}</div>` : ''}
+                                                    ${item.procurement_source === 'purchaser_forecast' ? `<div class="badge badge-warning badge-sm mt-1">Purchasing early-reorder exception</div><div class="text-xs text-base-content/60 mt-1">${escapeHtml(item.forecast_reason || item.notes || '')}</div>` : ''}
                                                     ${item.ingredient_name ? `<div class="text-xs text-base-content/50">Ingredient: ${escapeHtml(item.ingredient_name)}</div>` : ''}
                                                     ${item.mro_item_name ? `<div class="text-xs text-base-content/50">MRO: ${escapeHtml(item.mro_item_name)}</div>` : ''}
                                                 </td>

@@ -7,7 +7,7 @@
 3. Purchasing reviews each confirmed shortage and chooses to order it now, defer it to a chosen date, or close it without ordering and record why.
 4. For an item being ordered, Purchasing chooses a supplier first.
 5. The page automatically shows only confirmed shortages linked to that supplier.
-6. **Add fast-moving item** also shows only items linked to the chosen supplier.
+6. **Add early-reorder item** also shows only items linked to the chosen supplier.
 7. The order date is today and cannot be changed. Expected delivery is calculated from the supplier's saved delivery lead time.
 8. Purchasing may update the saved supplier price, but must write a reason.
 9. Purchasing submits the PO directly to the General Manager.
@@ -27,6 +27,19 @@ Use two active suppliers and two raw materials so the filtering is easy to see.
 3. Edit Supplier B. Set its lead time to `7` days and connect Raw Material B.
 4. Do not connect Raw Material B to Supplier A.
 5. Make sure both suppliers have valid email addresses if you want to test automatic PO email delivery.
+
+## Test 0: Purchasing workspace versus Purchase Order
+
+1. Sign in as Purchaser and open **New PO**.
+2. Confirm the first card is labeled **Purchasing workspace**. Supplier recommendations, remaining-material decisions, deferred items, and **Add early-reorder item** must be inside this card.
+3. Confirm the next white document is headed **PURCHASE ORDER**.
+4. Confirm **Find supplier**, **Defer**, **Close**, and deferred-item history do not appear inside the PO document.
+5. Select a supplier. Confirm its details and matching confirmed lines appear inside the PO.
+6. On a confirmed line, click **Move out of this PO**.
+7. Confirm the line disappears from the PO document and appears in **Excluded from this PO** in the workspace.
+8. Click **Restore** and confirm the line returns to the PO.
+
+Expected result: the workspace contains unfinished procurement decisions, while the Purchase Order contains only the selected supplier, dates, terms, included order lines, totals, delivery details, notes, and GM submission button.
 
 ## Test 1: Warehouse confirms actual stock
 
@@ -90,28 +103,28 @@ Expected result: **Order now** performs the supplier lookup. One valid supplier 
 
 Expected result: Purchasing cannot type arbitrary dates. The saved supplier lead time controls delivery.
 
-## Test 5: Add an extra item before it becomes low
+## Test 5: Add an early-reorder item before it becomes low
 
 1. Select Supplier A.
-2. Click **Add extra item**.
+2. Click **Add early-reorder item** in the Purchasing workspace above the PO document.
 3. Confirm a simple window opens asking for the item, quantity, and reason.
 4. Confirm it contains only raw materials connected to Supplier A. Raw Material B must not appear.
 5. Choose an item. If recent usage exists, confirm the page suggests an amount and explains that the supplier delivery time was considered.
 6. Enter or adjust the quantity, write a reason of at least 10 characters, and click **Add to PO**.
-7. Confirm the item appears as a clean row labeled **Added early by Purchasing**.
+7. Confirm the item appears as a normal PO row labeled **Early-reorder item**.
 8. Submit the PO.
 
 Expected result:
 
 - The form is separate from the main table, so the item, reason, and quantity are not mixed across columns.
-- The extra line is labeled **Added early by Purchasing**.
+- The line is labeled **Early-reorder item** inside the PO.
 - The reason is saved for GM review.
 - The extra quantity does not change the Warehouse-confirmed shortage.
 - A short or missing reason is blocked.
 
 ## Test 5A: Automatic Order Soon warning
 
-This is the evidence-based path. It is separate from the purchaser's manual **Add extra item** exception.
+This is the evidence-based path. It is separate from the purchaser's manual **Add early-reorder item** exception.
 
 ### Required data
 
@@ -151,7 +164,7 @@ Expected result:
 - Warehouse only validates the physical stock.
 - Purchasing still chooses the supplier and order commitment.
 - An active PO balance is included in the calculation, so an adequately covered item no longer produces another early-order warning.
-- If an operational event is not visible in historical usage, Purchasing may still use **Add extra item**, but must write a reason for GM review.
+- If an operational event is not visible in historical usage, Purchasing may still use **Add early-reorder item**, but must write a reason for GM review.
 
 ### Deterministic developer check
 
