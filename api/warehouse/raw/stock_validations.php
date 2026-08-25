@@ -402,6 +402,21 @@ function createStockValidation(PDO $db, array $currentUser): void {
             $reorder = max((float) ($stock['reorder_point'] ?? 0), $minimum);
             $maximum = (float) ($stock['maximum_stock'] ?? 0);
             $target = $maximum > $reorder ? $maximum : ($reorder > 0 ? $reorder * 2 : 0);
+            $activePoStmt = $db->prepare("
+                SELECT COALESCE(SUM(GREATEST(
+                    poi.quantity
+                    - COALESCE(poi.quantity_received, 0)
+                    - COALESCE(poi.quantity_rejected, 0)
+                    - COALESCE(poi.quantity_short_closed, 0),
+                    0
+                )), 0)
+                FROM purchase_order_items poi
+                JOIN purchase_orders po ON po.id = poi.po_id
+                WHERE " . ($type === 'ingredient' ? 'poi.ingredient_id' : 'poi.mro_item_id') . " = ?
+                  AND po.status IN ('pending','approved','ordered','partial_received')
+            ");
+            $activePoStmt->execute([$itemId]);
+            $activePoBalance = max(0, (float) $activePoStmt->fetchColumn());
             $recommendationType = strtolower(trim((string) ($submitted['recommendation_type'] ?? 'low_stock')));
             $forecast = null;
             $forecastReason = null;
@@ -417,7 +432,7 @@ function createStockValidation(PDO $db, array $currentUser): void {
                     'maximum_stock' => $maximum,
                     'issued_quantity_30d' => $savedEvidence['issued_quantity_30d'],
                     'best_supplier_lead_days' => $savedEvidence['supplier_lead_days'],
-                    'active_po_balance' => $savedEvidence['on_order_quantity'],
+                    'active_po_balance' => $activePoBalance,
                 ]);
                 if (empty($forecast['early_reorder_recommended'])) {
                     throw new InvalidArgumentException($stock[$nameColumn] . ' is no longer projected to reach its reorder point before delivery');
@@ -445,7 +460,7 @@ function createStockValidation(PDO $db, array $currentUser): void {
                     'maximum_stock' => $maximum,
                     'issued_quantity_30d' => $savedEvidence['issued_quantity_30d'] ?? 0,
                     'best_supplier_lead_days' => $savedEvidence['supplier_lead_days'] ?? ($stock['lead_time_days'] ?? 7),
-                    'active_po_balance' => $savedEvidence['on_order_quantity'] ?? 0,
+                    'active_po_balance' => $activePoBalance,
                 ]);
                 $onOrder = max(0, (float) ($forecast['on_order_quantity'] ?? 0));
                 $availableRoom = max(0, round($target - $physicalStock - $onOrder, 3));
@@ -464,10 +479,15 @@ function createStockValidation(PDO $db, array $currentUser): void {
                 $forecastReason = 'Warehouse recommendation: ' . $manualReason;
             } else {
                 $recommendationType = 'low_stock';
-                $quantityNeeded = round($target - $physicalStock, 3);
+                $quantityNeeded = round(max(0, $target - $physicalStock - $activePoBalance), 3);
+                $forecast = ['on_order_quantity' => round($activePoBalance, 3)];
             }
             if ($quantityNeeded <= 0.0005) {
-                throw new InvalidArgumentException($stock[$nameColumn] . ' is already at or above its replenishment target');
+                throw new InvalidArgumentException(
+                    $activePoBalance > 0.0005
+                        ? $stock[$nameColumn] . ' is already covered by an active Purchase Order. Wait for receiving before confirming another need.'
+                        : $stock[$nameColumn] . ' is already at or above its replenishment target'
+                );
             }
 
             if ($variance < -0.0005) {

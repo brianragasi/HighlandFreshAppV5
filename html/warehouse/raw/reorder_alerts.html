@@ -1334,6 +1334,8 @@
                 const pendingPR = getPendingPR(alert);
                 const hasCreatedPR = createdReorderPRs.has(String(alert.item_id));
                 const hasCoveredPRForRow = hasCreatedPR || Boolean(pendingPR);
+                const incomingCoversNeed = alert.incoming_covers_need === true
+                    || Number(alert.incoming_covers_need || 0) === 1;
                 const itemIdStr = String(alert.item_id);
                 const isChecked = selectedItemIds.has(itemIdStr);
 
@@ -1403,6 +1405,7 @@
                 const earlyReorderRoom = Math.max(0, parLevel - stock - (finiteNumber(alert.on_order_quantity) || 0));
                 const canRecommendEarly = alert.stock_status === 'OK' && earlyReorderRoom > 0.0005 && !hasCoveredPRForRow;
                 const isAtTarget = alert.stock_status === 'OK' && earlyReorderRoom <= 0.0005 && !hasCoveredPRForRow;
+                const isWaitingDelivery = incomingCoversNeed && !hasCoveredPRForRow;
                 const actionDisabled = !canCreate && !pendingPR && !canRecommendEarly;
                 const actionHandler = pendingPR
                     ? `openPendingPR(${JSON.stringify({
@@ -1418,6 +1421,8 @@
                 const purchasingDecision = pendingPR?.purchasing_decision || 'pending';
                 const btnClass = canRecommendEarly
                     ? 'btn-outline btn-info'
+                    : isWaitingDelivery
+                    ? 'btn-outline btn-success'
                     : isAtTarget
                     ? 'btn-ghost'
                     : purchasingDecision === 'closed_without_order'
@@ -1425,6 +1430,8 @@
                     : (pendingPR ? 'btn-outline btn-warning' : (hasCreatedPR ? 'btn-success' : 'btn-primary'));
                 const btnIcon = canRecommendEarly
                     ? 'fa-forward'
+                    : isWaitingDelivery
+                    ? 'fa-truck'
                     : isAtTarget
                     ? 'fa-check'
                     : purchasingDecision === 'closed_without_order'
@@ -1432,6 +1439,8 @@
                     : (purchasingDecision === 'deferred' ? 'fa-calendar-day' : (pendingPR ? 'fa-hourglass-half' : (hasCreatedPR ? 'fa-check' : 'fa-file-signature')));
                 const btnTitle = canRecommendEarly
                     ? 'Recommend an early reorder for an unusual upcoming need'
+                    : isWaitingDelivery
+                    ? 'An active Purchase Order already covers this refill. Wait for delivery.'
                     : isAtTarget
                     ? 'Current stock and open orders already reach the restocking target'
                     : pendingPR
@@ -1439,6 +1448,8 @@
                     : (hasCreatedPR ? 'Shelf count confirmed' : 'Confirm shelf count');
                 const btnLabel = canRecommendEarly
                     ? 'Recommend early reorder'
+                    : isWaitingDelivery
+                    ? 'On order'
                     : isAtTarget
                     ? 'At target'
                     : purchasingDecision === 'closed_without_order'
@@ -1479,7 +1490,9 @@
                         </td>
                         <td class="text-right text-sm text-base-content/70">${reorderPt.toLocaleString()} <span class="text-xs text-base-content/50">${safeUnit}</span></td>
                         <td class="text-right">
-                            ${qtyToOrder > 0
+                            ${isWaitingDelivery
+                                ? '<span class="badge badge-success badge-outline badge-sm whitespace-nowrap"><i class="fas fa-truck mr-1"></i>Covered by PO</span>'
+                                : qtyToOrder > 0
                                 ? `<span class="font-mono font-bold text-primary">${qtyToOrder.toLocaleString()}</span> <span class="text-xs text-base-content/50">${safeUnit}</span>`
                                 : '<span class="text-base-content/40">—</span>'}
                         </td>

@@ -1763,11 +1763,25 @@ function loadAndValidateSupplierFirstWarehouseItems(PDO $db, array $data, int $s
 
     $assignments = [];
     $sourcePrIds = [];
+    $selectedMaterialKeys = [];
     foreach ($submittedById as $prItemId => $submitted) {
         $prItem = $rowsById[$prItemId] ?? null;
         if (!$prItem) {
             Response::error('A selected stock confirmation no longer exists', 404);
         }
+
+        $materialKey = !empty($prItem['ingredient_id'])
+            ? 'ingredient:' . (int) $prItem['ingredient_id']
+            : 'mro:' . (int) $prItem['mro_item_id'];
+        if (isset($selectedMaterialKeys[$materialKey])) {
+            Response::error(
+                $prItem['item_description'] . ' appears more than once in the confirmed-needs queue. '
+                . 'Keep one request and close the duplicate before creating this PO.',
+                409
+            );
+        }
+        $selectedMaterialKeys[$materialKey] = $prItemId;
+
         if (!in_array($prItem['source_pr_status'], ['open', 'partially_ordered'], true)) {
             Response::error($prItem['item_description'] . ' is no longer open for purchasing', 409);
         }

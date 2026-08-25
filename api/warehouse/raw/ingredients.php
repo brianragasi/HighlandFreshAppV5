@@ -528,6 +528,20 @@ function handleGet($db, $currentUser) {
                 if (($alert['stock_status'] ?? '') === 'OK' && !empty($forecast['early_reorder_recommended'])) {
                     $alert['stock_status'] = 'ORDER_SOON';
                     $alert['qty_to_reorder'] = $forecast['suggested_early_order_quantity'];
+                    $alert['incoming_covers_need'] = false;
+                } elseif (($alert['stock_status'] ?? '') !== 'OK') {
+                    // A low shelf balance is still important, but an active PO
+                    // may already be bringing some or all of the refill. Show
+                    // only the uncovered amount so Warehouse cannot create the
+                    // same need again while waiting for delivery.
+                    $rawNeed = max(0, (float) ($alert['qty_to_reorder'] ?? 0));
+                    $onOrder = max(0, (float) ($forecast['on_order_quantity'] ?? 0));
+                    $alert['qty_to_reorder'] = round(max(0, $rawNeed - $onOrder), 3);
+                    $alert['incoming_covers_need'] = $rawNeed > 0.0005
+                        && $alert['qty_to_reorder'] <= 0.0005
+                        && $onOrder > 0.0005;
+                } else {
+                    $alert['incoming_covers_need'] = false;
                 }
             }
             unset($alert);

@@ -35,6 +35,7 @@ $frontend = file_get_contents(__DIR__ . '/../html/purchasing/purchase_orders.htm
 $service = file_get_contents(__DIR__ . '/../js/purchasing/purchasing.service.js');
 $finance = file_get_contents(__DIR__ . '/../api/finance/payables.php');
 $legacyReceiving = file_get_contents(__DIR__ . '/../api/warehouse/raw/receiving.php');
+$receivingPage = file_get_contents(__DIR__ . '/../html/warehouse/raw/receive_deliveries.html');
 
 foreach ([
     "'close_short'",
@@ -49,6 +50,7 @@ foreach ([
 }
 assertResolution(strpos($backend, "UPDATE purchase_request_item_po SET quantity = ?") !== false, 'Short close must release only its allocation balance');
 assertResolution(strpos($backend, 'has rejected quantity. Resolve the discrepancy before closing') === false, 'Historical rejection must not be a permanent exact-verification blocker');
+assertResolution(strpos($backend, 'appears more than once in the confirmed-needs queue') !== false, 'PO creation must stop duplicate material requirements from becoming repeated receiving lines');
 assertResolution(strpos($frontend, 'Close Short &amp; Verify') === false, 'Button text should be normal HTML, not double encoded');
 assertResolution(strpos($frontend, 'Close Short & Verify') !== false, 'Purchaser needs a distinct short-close action');
 assertResolution(strpos($frontend, 'remaining PR balance will reopen') !== false, 'UI must explain the allocation effect');
@@ -56,5 +58,9 @@ assertResolution(strpos($frontend, "!['partial_received', 'received', 'closed', 
 assertResolution(strpos($service, "resolution = 'exact_match'") !== false, 'Client must send an explicit resolution mode');
 assertResolution(strpos($finance, 'quantity_received') !== false, 'Finance must continue deriving payment from accepted quantity');
 assertResolution(strpos($legacyReceiving, 'verification has moved to Purchasing > Purchase Orders') !== false, 'Legacy endpoint must not bypass the canonical audited verification flow');
+assertResolution(strpos($receivingPage, 'Repeated PO material') !== false, 'Receiving must identify repeated material lines instead of rendering indistinguishable cards');
+assertResolution(strpos($receivingPage, 'copyReceivingTraceabilityToMatchingLines') !== false, 'Receiving must provide a safe lot-copy action for legacy repeated PO lines');
+assertResolution(strpos($receivingPage, 'receivingLineLabel(item, idx)') !== false, 'Receiving validation must identify the exact repeated PO line with missing traceability');
+assertResolution(strpos($receivingPage, 'receiveItemCard-${idx}') !== false, 'Receiving validation must be able to reveal the exact invalid line');
 
 echo "Receiving resolution tests passed.\n";

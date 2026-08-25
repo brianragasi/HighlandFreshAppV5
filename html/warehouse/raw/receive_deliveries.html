@@ -782,13 +782,20 @@
                         const packageSummary = hasSupplierPackage
                             ? `${formatCompactReceivingNumber(supplierQty)} ${escapeHtml(supplierUnit)} = ${formatCompactReceivingNumber(ordered)} ${escapeHtml(item.unit)}`
                             : `${formatCompactReceivingNumber(ordered)} ${escapeHtml(item.unit)}`;
+                        const duplicateKey = receivingMaterialKey(item);
+                        const matchingIndexes = currentReceiveItems
+                            .map((candidate, candidateIndex) => receivingMaterialKey(candidate) === duplicateKey ? candidateIndex : -1)
+                            .filter(candidateIndex => candidateIndex >= 0);
+                        const duplicatePosition = matchingIndexes.indexOf(idx) + 1;
+                        const duplicateCount = matchingIndexes.length;
 
                         return `
-                            <div class="border rounded-lg ${alreadyDone ? 'border-success/30 bg-success/5 opacity-70' : 'border-base-300 bg-base-100'}">
+                            <div id="receiveItemCard-${idx}" class="border rounded-lg ${alreadyDone ? 'border-success/30 bg-success/5 opacity-70' : 'border-base-300 bg-base-100'}">
                                 <div class="p-4">
                                     <div class="flex items-start justify-between gap-3 mb-3">
                                         <div class="flex-1">
                                             <p class="font-semibold">${escapeHtml(item.item_description)}</p>
+                                            ${duplicateCount > 1 ? `<div class="badge badge-warning badge-sm mt-1">Repeated PO material · line ${duplicatePosition} of ${duplicateCount}</div>` : ''}
                                             <p class="text-xs text-base-content/60">System lot: ${itemCode}-Lot-###${isPerishable ? ' - Expiry required' : ' - Non-perishable'}</p>
                                             <p class="text-sm text-base-content/70 font-medium">Supplier delivery: ${packageSummary}</p>
                                             ${hasSupplierPackage ? `<p class="text-xs text-base-content/55">Each ${escapeHtml(supplierUnit)} adds ${formatCompactReceivingNumber(stockPerSupplierUnit)} ${escapeHtml(item.unit)} to inventory.${packageExtra > 0.0005 ? ` Warehouse requested ${formatCompactReceivingNumber(sourceRequested)} ${escapeHtml(item.unit)}; ${formatCompactReceivingNumber(packageExtra)} extra is from ordering full packages.` : ''}</p>` : ''}
@@ -921,14 +928,14 @@
                                             <div class="form-control">
                                                 <label class="label py-0"><span class="label-text-alt font-semibold">Supplier Lot Number${isPerishable ? ' *' : ' (optional)'}</span></label>
                                                 <input type="text" class="input input-bordered input-sm w-full"
-                                                       id="recvLot-${idx}" placeholder="Copy from package or supplier document">
+                                                       id="recvLot-${idx}" placeholder="Copy from package or supplier document" oninput="this.classList.remove('input-error')">
                                                 ${isPerishable ? '<span class="text-[10px] text-base-content/55 mt-1">Missing or unreadable? Do not accept it as usable stock; contact QC.</span>' : ''}
                                             </div>
                                             ${isPerishable ? `
                                             <div class="form-control">
                                                 <label class="label py-0"><span class="label-text-alt font-semibold">Printed Expiry Date *</span></label>
                                                 <input type="date" class="input input-bordered input-sm w-full"
-                                                       id="recvExpiry-${idx}">
+                                                       id="recvExpiry-${idx}" oninput="this.classList.remove('input-error')">
                                             </div>
                                             ` : `
                                             <div class="form-control">
@@ -951,6 +958,13 @@
                                                 <input type="text" class="input input-bordered input-sm w-full"
                                                        id="recvLineNotes-${idx}" placeholder="Optional inspection note">
                                             </div>
+                                            ${duplicateCount > 1 ? `
+                                            <div class="md:col-span-6 rounded-lg border border-warning/30 bg-warning/5 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                                <span class="text-xs text-base-content/70">This PO contains ${duplicateCount} lines for ${escapeHtml(item.item_description)}. Complete every delivered line.</span>
+                                                <button type="button" class="btn btn-warning btn-xs" onclick="copyReceivingTraceabilityToMatchingLines(${idx})">
+                                                    <i class="fas fa-copy"></i> Copy this lot and expiry to matching lines
+                                                </button>
+                                            </div>` : ''}
                                         </div>
                                     </div>
                                     ` : ''}
@@ -997,6 +1011,60 @@
         function formatCompactReceivingNumber(value, decimals = 3) {
             const number = Number(value) || 0;
             return number.toLocaleString('en-PH', {maximumFractionDigits: decimals});
+        }
+
+        function receivingMaterialKey(item) {
+            if (item?.ingredient_id) return `ingredient:${Number(item.ingredient_id)}`;
+            if (item?.mro_item_id) return `mro:${Number(item.mro_item_id)}`;
+            return `description:${String(item?.item_description || '').trim().toLowerCase()}`;
+        }
+
+        function receivingMatchingIndexes(item) {
+            const key = receivingMaterialKey(item);
+            return currentReceiveItems
+                .map((candidate, index) => receivingMaterialKey(candidate) === key ? index : -1)
+                .filter(index => index >= 0);
+        }
+
+        function receivingLineLabel(item, index) {
+            const matching = receivingMatchingIndexes(item);
+            if (matching.length <= 1) return item?.item_description || 'Item';
+            return `${item?.item_description || 'Item'} (PO line ${matching.indexOf(index) + 1} of ${matching.length})`;
+        }
+
+        function copyReceivingTraceabilityToMatchingLines(sourceIndex) {
+            const sourceItem = currentReceiveItems[sourceIndex];
+            if (!sourceItem) return;
+            const lot = document.getElementById(`recvLot-${sourceIndex}`)?.value?.trim() || '';
+            const expiry = document.getElementById(`recvExpiry-${sourceIndex}`)?.value || '';
+            if (!lot) {
+                showToast('Enter the supplier lot number on this line first.', 'warning');
+                document.getElementById(`recvLot-${sourceIndex}`)?.focus();
+                return;
+            }
+
+            let copied = 0;
+            receivingMatchingIndexes(sourceItem).forEach(index => {
+                if (index === sourceIndex) return;
+                const lotInput = document.getElementById(`recvLot-${index}`);
+                const expiryInput = document.getElementById(`recvExpiry-${index}`);
+                if (lotInput && !lotInput.value.trim()) {
+                    lotInput.value = lot;
+                    lotInput.classList.remove('input-error');
+                    if (expiryInput && expiry && !expiryInput.value) {
+                        expiryInput.value = expiry;
+                        expiryInput.classList.remove('input-error');
+                    }
+                    copied++;
+                }
+            });
+
+            showToast(
+                copied > 0
+                    ? `Lot details copied to ${copied} matching PO line${copied === 1 ? '' : 's'}.`
+                    : 'Every matching line already has its own lot details.',
+                copied > 0 ? 'success' : 'info'
+            );
         }
 
         function syncReceivingPackageToStock(idx, input) {
@@ -1209,13 +1277,21 @@
                     : String(item.mro_is_perishable ?? '0') === '1';
                 const lotNumber = document.getElementById(`recvLot-${idx}`)?.value?.trim() || '';
                 if (accepted > 0 && isPerishable && !lotNumber) {
-                    showToast(`${item.item_description}: Supplier lot number is required. Hold the item and contact QC if it is missing or unreadable.`, 'error');
+                    const lotInput = document.getElementById(`recvLot-${idx}`);
+                    lotInput?.classList.add('input-error');
+                    document.getElementById(`receiveItemCard-${idx}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    lotInput?.focus();
+                    showToast(`${receivingLineLabel(item, idx)}: Supplier lot number is required on this line. Hold the item and contact QC if it is missing or unreadable.`, 'error');
                     hasError = true;
                     return;
                 }
                 const expiryDate = isPerishable ? (document.getElementById(`recvExpiry-${idx}`)?.value || null) : null;
                 if (accepted > 0 && isPerishable && !expiryDate) {
-                    showToast(`${item.item_description}: Expiry date is required because this item is marked perishable`, 'error');
+                    const expiryInput = document.getElementById(`recvExpiry-${idx}`);
+                    expiryInput?.classList.add('input-error');
+                    document.getElementById(`receiveItemCard-${idx}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    expiryInput?.focus();
+                    showToast(`${receivingLineLabel(item, idx)}: Expiry date is required because this item is marked perishable`, 'error');
                     hasError = true;
                     return;
                 }
