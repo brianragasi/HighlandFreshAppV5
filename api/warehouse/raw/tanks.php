@@ -19,23 +19,7 @@
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
 require_once dirname(dirname(__DIR__)) . '/helpers/storage_tank_inventory.php';
-
-/**
- * Raw milk business rule: 3-hour use window from gate arrival.
- * Gate arrival = receiving_date + receiving_time (fallback: receiving created_at / received_date start).
- */
-function sqlRawMilkGateArrivalExpr($rmiAlias = 'rmi', $mrAlias = 'mr') {
-    // Prefer receiving timestamp; fall back to inventory received_date at 00:00
-    return "COALESCE(
-        TIMESTAMP({$mrAlias}.receiving_date, COALESCE(NULLIF({$mrAlias}.receiving_time, ''), TIME({$mrAlias}.created_at), '00:00:00')),
-        TIMESTAMP({$rmiAlias}.received_date, '00:00:00'),
-        {$mrAlias}.created_at
-    )";
-}
-
-function sqlRawMilkExpiresAtExpr($rmiAlias = 'rmi', $mrAlias = 'mr') {
-    return 'DATE_ADD(' . sqlRawMilkGateArrivalExpr($rmiAlias, $mrAlias) . ', INTERVAL 3 HOUR)';
-}
+require_once dirname(dirname(__DIR__)) . '/helpers/raw_milk_gate.php';
 
 /**
  * Backfill raw milk inventory rows for accepted QC records that are missing inventory.
@@ -77,6 +61,7 @@ function syncAcceptedMilkInventory($db) {
         WHERE mr.status = 'accepted'
           AND COALESCE(NULLIF(mr.accepted_liters, 0), mr.volume_liters) > 0
           AND rmi.id IS NULL
+          AND " . sqlRawMilkExpiresAtExpr('rmi', 'mr') . " > NOW()
     ");
     $stmt->execute();
 }
@@ -396,6 +381,7 @@ function handleGet($db, $currentUser) {
             // Get all available milk for production (FIFO order)
             $milkTypeId = getParam('milk_type_id');
 
+            $expiresAt = sqlRawMilkExpiresAtExpr('rmi', 'mr');
             $sql = "
                 SELECT
                     rmi.id,
@@ -414,9 +400,11 @@ function handleGet($db, $currentUser) {
                 FROM raw_milk_inventory rmi
                 LEFT JOIN storage_tanks st ON rmi.tank_id = st.id
                 LEFT JOIN milk_types mt ON rmi.milk_type_id = mt.id
+                LEFT JOIN milk_receiving mr ON rmi.receiving_id = mr.id
                 WHERE rmi.status IN ('available', 'reserved')
                 AND rmi.remaining_liters > 0
                 AND rmi.expiry_date >= CURDATE()
+                AND {$expiresAt} > NOW()
             ";
             $params = [];
 
@@ -459,6 +447,7 @@ function handleGet($db, $currentUser) {
 
         case 'pending_storage':
             // Get QC-approved milk not yet assigned to storage tanks
+            $expiresAt = sqlRawMilkExpiresAtExpr('rmi', 'mr');
             $stmt = $db->prepare("
                 SELECT
                     rmi.id,
@@ -474,6 +463,8 @@ function handleGet($db, $currentUser) {
                     mt.type_name as milk_type_name,
                     mr.receiving_code,
                     mr.rmr_number,
+                    {$expiresAt} AS gate_expires_at,
+                    TIMESTAMPDIFF(SECOND, NOW(), {$expiresAt}) AS gate_seconds_remaining,
                     f.farmer_code,
                     CONCAT(COALESCE(f.first_name, ''), ' ', COALESCE(f.last_name, '')) as farmer_name
                 FROM raw_milk_inventory rmi
@@ -483,6 +474,7 @@ function handleGet($db, $currentUser) {
                 WHERE rmi.status = 'available'
                 AND rmi.tank_id IS NULL
                 AND rmi.expiry_date >= CURDATE()
+                AND {$expiresAt} > NOW()
                 ORDER BY rmi.received_date ASC
             ");
             $stmt->execute();
@@ -540,10 +532,14 @@ function handlePost($db, $currentUser) {
                 }
 
                 // Verify raw milk inventory record exists first, then validate assignment eligibility.
+                $expiresAt = sqlRawMilkExpiresAtExpr('rmi', 'mr');
                 $rawMilk = $db->prepare("
-                    SELECT rmi.*, mt.type_code as milk_type_code
+                    SELECT rmi.*, mt.type_code as milk_type_code,
+                           {$expiresAt} AS gate_expires_at,
+                           CASE WHEN {$expiresAt} <= NOW() THEN 1 ELSE 0 END AS is_gate_expired
                     FROM raw_milk_inventory rmi
                     LEFT JOIN milk_types mt ON rmi.milk_type_id = mt.id
+                    LEFT JOIN milk_receiving mr ON rmi.receiving_id = mr.id
                     WHERE rmi.id = ?
                 ");
                 $rawMilk->execute([$rawMilkInventoryId]);
@@ -563,6 +559,10 @@ function handlePost($db, $currentUser) {
 
                 if (!empty($rawMilkData['expiry_date']) && $rawMilkData['expiry_date'] < date('Y-m-d')) {
                     throw new Exception('Raw milk inventory has expired and cannot be assigned to a tank');
+                }
+
+                if ((int) ($rawMilkData['is_gate_expired'] ?? 0) === 1) {
+                    throw new Exception('This milk is past the 3-hour receiving window and cannot be placed in a tank');
                 }
 
                 if (isset($rawMilkData['qc_status']) && $rawMilkData['qc_status'] !== 'approved') {

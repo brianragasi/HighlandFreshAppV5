@@ -24,6 +24,7 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/helpers/recipe_production_readiness.php';
+require_once dirname(__DIR__) . '/helpers/raw_milk_gate.php';
 require_once dirname(__DIR__) . '/warehouse/raw/ingredient_stock_helpers.php';
 
 // Require Production, GM, or Warehouse Raw role.
@@ -305,11 +306,15 @@ function checkRequisitionStock($db, $items) {
                 $packSize = $row['pack_size_value'] !== null ? (float) $row['pack_size_value'] : null;
             }
         } elseif ($itemType === 'raw_milk') {
+            $gateDeadline = sqlRawMilkExpiresAtExpr('rmi', 'mr');
             $stmt = $db->prepare("
-                SELECT COALESCE(SUM(remaining_liters), 0) AS available_liters
-                FROM raw_milk_inventory
-                WHERE status IN ('available', 'reserved')
-                  AND remaining_liters > 0
+                SELECT COALESCE(SUM(rmi.remaining_liters), 0) AS available_liters
+                FROM raw_milk_inventory rmi
+                LEFT JOIN milk_receiving mr ON rmi.receiving_id = mr.id
+                WHERE rmi.status IN ('available', 'reserved')
+                  AND rmi.remaining_liters > 0
+                  AND rmi.expiry_date >= CURDATE()
+                  AND {$gateDeadline} > NOW()
             ");
             $stmt->execute();
             $available = (float) ($stmt->fetch()['available_liters'] ?? 0);

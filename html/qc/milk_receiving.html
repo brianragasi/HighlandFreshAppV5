@@ -383,6 +383,11 @@
                         </div>
                     </div>
 
+                    <div class="alert alert-info py-3">
+                        <i class="fas fa-clock"></i>
+                        <p class="text-sm"><strong>Use the actual gate arrival time.</strong> The three-hour handling window starts here, and this form now defaults to the local Philippine date and time.</p>
+                    </div>
+
                     <div class="form-control">
                         <label class="label">
                             <span class="label-text">Volume (Liters) <span class="text-error">*</span></span>
@@ -761,6 +766,14 @@
         const limit = 20;
         let farmers = [];
         let currentDeliveries = [];
+        let currentDeliveryGateExpired = false;
+
+        function localDateValue(date = new Date()) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
 
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
@@ -789,10 +802,11 @@
             }
 
             // Set default dates
-            const today = new Date().toISOString().split('T')[0];
+            const today = localDateValue();
             const now = new Date().toTimeString().slice(0, 5);
             document.getElementById('filterDate').value = today;
             document.getElementById('deliveryDate').value = today;
+            document.getElementById('deliveryDate').max = today;
             document.getElementById('deliveryTime').value = now;
 
             // Load data
@@ -908,7 +922,7 @@
         function goToPage(page) { currentPage = page; loadDeliveries(); }
 
         function resetFilters() {
-            document.getElementById('filterDate').value = new Date().toISOString().split('T')[0];
+            document.getElementById('filterDate').value = localDateValue();
             document.getElementById('filterStatus').value = '';
             document.getElementById('filterSearch').value = '';
             currentPage = 1;
@@ -966,7 +980,8 @@
         // Modal functions
         function openNewDeliveryModal() {
             document.getElementById('newDeliveryForm').reset();
-            document.getElementById('deliveryDate').value = new Date().toISOString().split('T')[0];
+            document.getElementById('deliveryDate').value = localDateValue();
+            document.getElementById('deliveryDate').max = localDateValue();
             document.getElementById('deliveryTime').value = new Date().toTimeString().slice(0, 5);
             document.getElementById('farmerPreview').classList.add('hidden');
             document.getElementById('newDeliveryModal').showModal();
@@ -994,6 +1009,33 @@
 
             if (!validateQcDecimalFields(document.getElementById('newDeliveryForm'))) return;
 
+            const arrivalDate = document.getElementById('deliveryDate').value;
+            const arrivalTime = document.getElementById('deliveryTime').value;
+            const arrival = new Date(`${arrivalDate}T${arrivalTime}:00`);
+            const ageMilliseconds = Date.now() - arrival.getTime();
+            if (!Number.isFinite(arrival.getTime())) {
+                showToast('Enter a valid gate arrival date and time.', 'error');
+                return;
+            }
+            if (ageMilliseconds < -5 * 60 * 1000) {
+                showToast('Gate arrival time cannot be in the future.', 'error');
+                return;
+            }
+            if (ageMilliseconds >= 3 * 60 * 60 * 1000) {
+                const recordRejected = await AuthService.confirmAction({
+                    title: 'Three-hour window has passed',
+                    message: 'Check the arrival date and time. If they are correct, this delivery is too old to use and will be recorded as rejected.',
+                    highlight: `${arrivalDate} ${arrivalTime}`,
+                    highlightLabel: 'Recorded gate arrival',
+                    callout: 'It will not go to QC, Warehouse storage, or Production.',
+                    calloutTone: 'error',
+                    confirmText: 'Record as rejected',
+                    confirmIcon: 'fa-ban',
+                    tone: 'error'
+                });
+                if (!recordRejected) return;
+            }
+
             const btn = document.getElementById('submitDeliveryBtn');
             btn.disabled = true;
             btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Saving...';
@@ -1009,7 +1051,11 @@
                 });
 
                 if (response.success) {
-                    showToast('Delivery recorded successfully', 'success');
+                    const wasRejectedByTime = response.data?.status === 'rejected';
+                    showToast(
+                        wasRejectedByTime ? 'Delivery recorded as rejected — the three-hour window had passed.' : 'Delivery recorded successfully',
+                        wasRejectedByTime ? 'warning' : 'success'
+                    );
                     document.getElementById('newDeliveryModal').close();
                     loadDeliveries();
                 }
@@ -1037,12 +1083,14 @@
                 [delivery.farmer_first_name, delivery.farmer_last_name].filter(Boolean).join(' ') || 'Unknown',
                 Number(delivery.volume_liters) || 0,
                 delivery.membership_type === 'member' ? 40 : 38,
-                delivery.apt_result === 'positive' ? 'positive' : 'negative'
+                delivery.apt_result === 'positive' ? 'positive' : 'negative',
+                Number(delivery.is_gate_expired) === 1,
+                String(delivery.gate_expires_at || '')
             );
         }
 
         // Open grade modal
-        function openGradeModal(deliveryId, deliveryCode, farmerName, volume, basePrice, aptResult = 'negative') {
+        function openGradeModal(deliveryId, deliveryCode, farmerName, volume, basePrice, aptResult = 'negative', gateExpired = false, gateExpiresAt = '') {
             document.getElementById('gradeMilkForm').reset();
             document.getElementById('gradeDeliveryId').value = deliveryId;
             document.getElementById('gradeDeliveryCode').textContent = deliveryCode;
@@ -1052,6 +1100,7 @@
 
             // Store APT result for preview calculation
             currentDeliveryApt = aptResult;
+            currentDeliveryGateExpired = gateExpired;
 
             // Show/hide APT warning
             const aptWarning = document.getElementById('aptWarning');
@@ -1078,6 +1127,29 @@
                 document.getElementById('previewGrade').className = 'badge badge-lg badge-ghost';
             }
 
+
+            let gateWarning = document.getElementById('milkGateWarning');
+            if (gateExpired) {
+                const deadline = gateExpiresAt ? new Date(gateExpiresAt.replace(' ', 'T')).toLocaleString() : 'the recorded deadline';
+                if (!gateWarning) {
+                    document.getElementById('gradeMilkForm').insertAdjacentHTML('afterbegin', `
+                        <div id="milkGateWarning" class="alert alert-error mb-4">
+                            <i class="fas fa-clock"></i>
+                            <div>
+                                <h4 class="font-bold">Three-hour receiving window has passed</h4>
+                                <p class="text-sm">Recorded deadline: <span id="milkGateDeadline"></span>. Test results may be recorded, but this delivery will be rejected and will not enter a tank.</p>
+                            </div>
+                        </div>`);
+                    gateWarning = document.getElementById('milkGateWarning');
+                }
+                gateWarning.classList.remove('hidden');
+                document.getElementById('milkGateDeadline').textContent = deadline;
+                document.getElementById('previewGrade').textContent = 'REJECTED (TIME)';
+                document.getElementById('previewGrade').className = 'badge badge-lg badge-error';
+            } else if (gateWarning) {
+                gateWarning.classList.add('hidden');
+            }
+
             document.getElementById('previewTotal').textContent = '₱0.00';
             document.getElementById('priceBreakdown').classList.add('hidden');
             document.getElementById('gradeMilkModal').showModal();
@@ -1100,6 +1172,14 @@
 
             // Check rejection conditions - INCLUDING APT RESULT
             // APT positive = automatic rejection regardless of other test values
+            if (currentDeliveryGateExpired) {
+                badge.textContent = 'REJECTED (TIME)';
+                badge.className = 'badge badge-lg badge-error';
+                document.getElementById('previewTotal').textContent = '₱0.00';
+                breakdown.classList.add('hidden');
+                return;
+            }
+
             if (currentDeliveryApt === 'positive') {
                 badge.textContent = 'REJECTED (APT+)';
                 badge.className = 'badge badge-lg badge-error';
@@ -1199,7 +1279,10 @@
 
                 if (response.success) {
                     const test = response.data;
-                    showToast(`${test.is_accepted ? 'Milk Accepted' : 'Milk Rejected'} - Grade: ${test.grade} | Total: ${formatCurrency(test.total_amount)}`, test.is_accepted ? 'success' : 'warning');
+                    const resultMessage = Number(test.is_accepted) === 1
+                        ? `Milk accepted — Grade ${test.grade} — ${formatCurrency(test.total_amount)}`
+                        : `Milk rejected — ${test.rejection_reason || 'It did not pass the required checks'}`;
+                    showToast(resultMessage, Number(test.is_accepted) === 1 ? 'success' : 'warning');
                     document.getElementById('gradeMilkModal').close();
                     loadDeliveries();
                 }

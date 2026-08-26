@@ -14,6 +14,7 @@
  */
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/raw_milk_gate.php';
 require_once __DIR__ . '/ingredient_stock_helpers.php';
 
 /**
@@ -56,6 +57,7 @@ function syncAcceptedMilkInventory($db) {
         WHERE mr.status = 'accepted'
           AND COALESCE(NULLIF(mr.accepted_liters, 0), mr.volume_liters) > 0
           AND rmi.id IS NULL
+          AND " . sqlRawMilkExpiresAtExpr('rmi', 'mr') . " > NOW()
     ");
     $stmt->execute();
 }
@@ -78,15 +80,18 @@ try {
     // === RAW MILK STATISTICS ===
 
     // Total milk in storage (from raw_milk_inventory - revised schema)
+    $dashboardGateDeadline = sqlRawMilkExpiresAtExpr('rmi', 'mr');
     $milkStats = $db->prepare("
         SELECT
             COALESCE(SUM(remaining_liters), 0) as total_liters,
             COUNT(DISTINCT tank_id) as tanks_with_milk,
             COUNT(*) as batch_count
-        FROM raw_milk_inventory
-        WHERE status IN ('available', 'reserved')
-        AND qc_status = 'approved'
-        AND expiry_date >= CURDATE()
+        FROM raw_milk_inventory rmi
+        LEFT JOIN milk_receiving mr ON rmi.receiving_id = mr.id
+        WHERE rmi.status IN ('available', 'reserved')
+        AND rmi.qc_status = 'approved'
+        AND rmi.expiry_date >= CURDATE()
+        AND {$dashboardGateDeadline} > NOW()
     ");
     $milkStats->execute();
     $milkData = $milkStats->fetch();
@@ -366,6 +371,7 @@ try {
         WHERE rmi.status = 'available'
         AND rmi.tank_id IS NULL
         AND rmi.expiry_date >= CURDATE()
+        AND {$dashboardGateDeadline} > NOW()
         ORDER BY rmi.received_date ASC
         LIMIT 10
     ");
@@ -394,6 +400,12 @@ try {
         LEFT JOIN raw_milk_inventory rmi ON mt.id = rmi.milk_type_id
             AND rmi.status IN ('available', 'reserved')
             AND rmi.expiry_date >= CURDATE()
+            AND EXISTS (
+                SELECT 1
+                FROM milk_receiving type_mr
+                WHERE type_mr.id = rmi.receiving_id
+                  AND " . sqlRawMilkExpiresAtExpr('rmi', 'type_mr') . " > NOW()
+            )
         GROUP BY mt.id, mt.type_code, mt.type_name
     ");
     $milkByType->execute();

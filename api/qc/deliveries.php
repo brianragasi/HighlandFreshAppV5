@@ -14,6 +14,7 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/helpers/plain_text.php';
+require_once dirname(__DIR__) . '/helpers/raw_milk_gate.php';
 
 // Require QC or Warehouse Raw role
 $currentUser = Auth::requireRole(['qc_officer', 'general_manager', 'warehouse_raw']);
@@ -102,7 +103,11 @@ try {
                        mt.type_code as milk_type_code, mt.type_name as milk_type_name,
                        u.first_name as receiver_first_name, u.last_name as receiver_last_name,
                        qmt.test_code, qmt.grade, qmt.fat_percentage, qmt.titratable_acidity,
-                       qmt.final_price_per_liter, qmt.total_amount
+                       qmt.final_price_per_liter, qmt.total_amount,
+                       TIMESTAMP(mr.receiving_date, COALESCE(NULLIF(mr.receiving_time, ''), TIME(mr.created_at))) AS gate_arrival_at,
+                       DATE_ADD(TIMESTAMP(mr.receiving_date, COALESCE(NULLIF(mr.receiving_time, ''), TIME(mr.created_at))), INTERVAL 3 HOUR) AS gate_expires_at,
+                       TIMESTAMPDIFF(SECOND, NOW(), DATE_ADD(TIMESTAMP(mr.receiving_date, COALESCE(NULLIF(mr.receiving_time, ''), TIME(mr.created_at))), INTERVAL 3 HOUR)) AS gate_seconds_remaining,
+                       CASE WHEN DATE_ADD(TIMESTAMP(mr.receiving_date, COALESCE(NULLIF(mr.receiving_time, ''), TIME(mr.created_at))), INTERVAL 3 HOUR) <= NOW() THEN 1 ELSE 0 END AS is_gate_expired
                 FROM milk_receiving mr
                 LEFT JOIN farmers f ON mr.farmer_id = f.id
                 LEFT JOIN milk_types mt ON mr.milk_type_id = mt.id
@@ -149,6 +154,18 @@ try {
             if (!empty($visualInspection) && !in_array($visualInspection, ['pass', 'fail', 'pending'])) {
                 $errors['visual_inspection'] = 'Visual inspection must be pass, fail, or pending';
             }
+
+            $gateExpiredOnArrival = false;
+            $gate = rawMilkGateStatus($receivingDate, $receivingTime);
+            if (!$gate['valid']) {
+                $errors['receiving_time'] = $gate['message'];
+            } elseif ($gate['is_future']) {
+                $errors['receiving_time'] = 'Arrival time cannot be in the future';
+            } elseif ($gate['is_expired']) {
+                // Keep the physical receiving record for traceability, but do
+                // not send stale milk to QC or storage as usable stock.
+                $gateExpiredOnArrival = true;
+            }
             
             // Check if farmer exists and is active
             $farmer = null;
@@ -194,20 +211,27 @@ try {
             $maxRmr = $rmrStmt->fetch()['max_rmr'] ?? 66172;
             $rmrNumber = $maxRmr + 1;
             
+            $receivingStatus = $gateExpiredOnArrival ? 'rejected' : 'pending_qc';
+            $rejectedLiters = $gateExpiredOnArrival ? $volumeLiters : 0;
+            if ($gateExpiredOnArrival) {
+                $gateNote = 'Automatically rejected: recorded gate arrival is beyond the 3-hour handling window.';
+                $notes = trim($notes) !== '' ? $notes . "\n" . $gateNote : $gateNote;
+            }
+
             // Insert receiving record
             $stmt = $db->prepare("
                 INSERT INTO milk_receiving (
                     receiving_code, rmr_number, farmer_id, milk_type_id, 
-                    receiving_date, receiving_time, volume_liters,
+                    receiving_date, receiving_time, volume_liters, accepted_liters, rejected_liters,
                     temperature_celsius, transport_container,
                     visual_inspection, visual_notes, apt_result, status, received_by, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_qc', ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
             $stmt->execute([
                 $receivingCode, $rmrNumber, $farmerId, $milkTypeId,
-                $receivingDate, $receivingTime, $volumeLiters,
+                $receivingDate, $receivingTime, $volumeLiters, $rejectedLiters,
                 $temperatureCelsius ?: null, $transportContainer ?: null,
-                $visualInspection, $visualNotes, $aptResult ?: 'negative', $currentUser['user_id'], $notes
+                $visualInspection, $visualNotes, $aptResult ?: 'negative', $receivingStatus, $currentUser['user_id'], $notes
             ]);
             
             $receivingId = $db->lastInsertId();
@@ -234,7 +258,10 @@ try {
             $stmt->execute([$receivingId]);
             $record = $stmt->fetch();
             
-            Response::success($record, 'Milk receiving recorded successfully', 201);
+            $message = $gateExpiredOnArrival
+                ? 'Delivery recorded as rejected because its three-hour handling window had already passed'
+                : 'Milk receiving recorded successfully';
+            Response::success($record, $message, 201);
             break;
             
         default:

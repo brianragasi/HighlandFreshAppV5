@@ -25,6 +25,7 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/raw_milk_gate.php';
 require_once dirname(__DIR__) . '/helpers/plain_text.php';
 
 // Require QC role
@@ -347,6 +348,18 @@ try {
             // Check rejection criteria (ANNEX B)
             $isAccepted = true;
             $rejectionReasons = [];
+
+            // Milk freshness starts at physical gate arrival, not when QC happens.
+            // A delayed test must never reset the clock or create usable inventory.
+            $gate = rawMilkGateStatus(
+                $receiving['receiving_date'] ?? '',
+                $receiving['receiving_time'] ?? '',
+                $receiving['created_at'] ?? null
+            );
+            if (!$gate['valid'] || $gate['is_expired']) {
+                $isAccepted = false;
+                $rejectionReasons[] = 'Milk exceeded the 3-hour receiving-to-storage window';
+            }
             
             // 1. Visual inspection failed = Reject
             if (isset($receiving['visual_inspection']) && $receiving['visual_inspection'] === 'fail') {

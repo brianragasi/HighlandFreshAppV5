@@ -10,6 +10,7 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/helpers/sales_production_demand.php';
+require_once dirname(__DIR__) . '/helpers/raw_milk_gate.php';
 
 // Require Production role
 $currentUser = Auth::requireRole(['production_staff', 'general_manager', 'qc_officer']);
@@ -113,50 +114,25 @@ try {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
     
-    // Available milk for production (ACTUAL QC-approved milk from recent receivings minus allocated)
-    // REVISED: Uses milk_receiving instead of milk_deliveries
+    // One authoritative view of usable milk. The three-hour gate is based on
+    // physical arrival, so stale milk cannot appear available to Production.
+    $gateDeadline = sqlRawMilkExpiresAtExpr('rmi', 'mr');
     $availableMilk = $db->prepare("
-        SELECT 
-            COALESCE(SUM(remaining_liters), 0) as total_liters,
-            COUNT(*) as source_count
-        FROM (
-            SELECT 
-                mr.id,
-                COALESCE(
-                    CASE 
-                        WHEN mr.accepted_liters > 0 THEN mr.accepted_liters 
-                        ELSE mr.volume_liters 
-                    END - (
-                        SELECT COALESCE(SUM(pru.milk_liters_allocated), 0)
-                        FROM production_run_milk_usage pru
-                        WHERE pru.receiving_id = mr.id
-                    ), 
-                    CASE 
-                        WHEN mr.accepted_liters > 0 THEN mr.accepted_liters 
-                        ELSE mr.volume_liters 
-                    END
-                ) as remaining_liters
-            FROM milk_receiving mr
-            JOIN qc_milk_tests qmt ON qmt.receiving_id = mr.id
-            WHERE mr.status = 'accepted'
-              AND DATE(mr.receiving_date) >= DATE_SUB(CURDATE(), INTERVAL 2 DAY)
-            HAVING remaining_liters > 0
-        ) as available
+        SELECT COALESCE(SUM(rmi.remaining_liters), 0) AS total_liters,
+               COUNT(*) AS source_count
+        FROM raw_milk_inventory rmi
+        LEFT JOIN milk_receiving mr ON rmi.receiving_id = mr.id
+        WHERE rmi.status IN ('available', 'reserved')
+          AND rmi.qc_status = 'approved'
+          AND rmi.remaining_liters > 0
+          AND rmi.expiry_date >= CURDATE()
+          AND {$gateDeadline} > NOW()
     ");
     $availableMilk->execute();
     $milkStats = $availableMilk->fetch();
     
     // Also get usable raw_milk_inventory for total stored milk (for informational purposes)
-    $storedMilk = $db->prepare("
-        SELECT COALESCE(SUM(remaining_liters), 0) as total_liters
-        FROM raw_milk_inventory
-        WHERE status IN ('available', 'reserved')
-          AND qc_status = 'approved'
-          AND expiry_date >= CURDATE()
-          AND remaining_liters > 0
-    ");
-    $storedMilk->execute();
-    $storedStats = $storedMilk->fetch();
+    $storedStats = ['total_liters' => (float) ($milkStats['total_liters'] ?? 0)];
     
     // Get milk issued to Production through fulfilled requisitions.
     // This is not a Production tank; it is Warehouse Raw-issued milk already transferred to production.

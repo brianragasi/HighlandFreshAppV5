@@ -18,6 +18,7 @@
  */
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/raw_milk_gate.php';
 require_once __DIR__ . '/ingredient_stock_helpers.php';
 require_once __DIR__ . '/mro_stock_helpers.php';
 
@@ -225,6 +226,7 @@ function handleGet($db, $currentUser) {
             // batch with no supplier lot is physically present but remains on
             // hold, so it must not appear as available here.
             $usableIngredientStockSql = usableIngredientBatchStockSql('i.id', 'req_detail_ib');
+            $usableRawMilkDeadlineSql = sqlRawMilkExpiresAtExpr('req_milk', 'req_mr');
 
             // Get requisition items
             $items = $db->prepare("
@@ -236,7 +238,15 @@ function handleGet($db, $currentUser) {
                         -- Explicit raw_milk type OR item_name matches raw milk patterns
                         WHEN ri.item_type = 'raw_milk' OR LOWER(ri.item_name) IN ('raw', 'raw milk', 'fresh milk', 'carabao', 'cow milk', 'goat milk', 'whole milk')
                             OR (LOWER(ri.item_name) LIKE '%milk%' AND LOWER(ri.item_name) NOT LIKE '%powder%' AND LOWER(ri.item_name) NOT LIKE '%chocolate%')
-                        THEN (SELECT COALESCE(SUM(remaining_liters), 0) FROM raw_milk_inventory WHERE status IN ('available', 'reserved') AND remaining_liters > 0 AND expiry_date >= CURDATE())
+                        THEN (
+                            SELECT COALESCE(SUM(req_milk.remaining_liters), 0)
+                            FROM raw_milk_inventory req_milk
+                            LEFT JOIN milk_receiving req_mr ON req_milk.receiving_id = req_mr.id
+                            WHERE req_milk.status IN ('available', 'reserved')
+                              AND req_milk.remaining_liters > 0
+                              AND req_milk.expiry_date >= CURDATE()
+                              AND {$usableRawMilkDeadlineSql} > NOW()
+                        )
                         WHEN ri.item_type IN ('ingredient', 'packaging') THEN (
                             SELECT {$usableIngredientStockSql}
                             FROM ingredients i
@@ -758,13 +768,16 @@ function issueMilk($db, $liters, $requisitionId, $currentUser) {
     // requisition REQ-20260614-031 be fulfilled from batch RAW-RCV-000012
     // whose expiry was 2025-10-23 (8 months ago), leaving production with
     // an "issued" record but 0L of usable milk.
+    $gateDeadline = sqlRawMilkExpiresAtExpr('rmi', 'mr');
     $batches = $db->prepare("
         SELECT rmi.*, st.tank_code
         FROM raw_milk_inventory rmi
         LEFT JOIN storage_tanks st ON rmi.tank_id = st.id
+        LEFT JOIN milk_receiving mr ON rmi.receiving_id = mr.id
         WHERE rmi.status IN ('available', 'reserved')
         AND rmi.remaining_liters > 0
         AND rmi.expiry_date >= CURDATE()
+        AND {$gateDeadline} > NOW()
         ORDER BY rmi.expiry_date ASC, rmi.received_date ASC, rmi.id ASC
     ");
     $batches->execute();
