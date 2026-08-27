@@ -15,7 +15,7 @@ function ensureIngredientOpeningStockSupport(PDO $db): void {
             counted_quantity DECIMAL(12,3) NOT NULL,
             quantity_to_add DECIMAL(12,3) NOT NULL,
             unit VARCHAR(20) NOT NULL,
-            source_type ENUM('opening_balance','unrecorded_delivery') NOT NULL,
+            source_type ENUM('opening_balance','unrecorded_delivery','internal_adjustment') NOT NULL,
             supplier_id INT NULL,
             source_reference VARCHAR(100) NOT NULL,
             supplier_batch_no VARCHAR(50) NULL,
@@ -40,6 +40,7 @@ function ensureIngredientOpeningStockSupport(PDO $db): void {
             created_batch_id INT NULL,
             request_purpose VARCHAR(30) NOT NULL DEFAULT 'found_stock',
             held_batch_id INT NULL,
+            source_batch_id INT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             INDEX idx_opening_stock_status (status, created_at),
@@ -64,6 +65,7 @@ function ensureIngredientOpeningStockSupport(PDO $db): void {
         'qc_notes' => "ALTER TABLE ingredient_opening_stock_requests ADD COLUMN qc_notes VARCHAR(500) NULL AFTER qc_verified_at",
         'request_purpose' => "ALTER TABLE ingredient_opening_stock_requests ADD COLUMN request_purpose VARCHAR(30) NOT NULL DEFAULT 'found_stock' AFTER created_batch_id",
         'held_batch_id' => "ALTER TABLE ingredient_opening_stock_requests ADD COLUMN held_batch_id INT NULL AFTER request_purpose",
+        'source_batch_id' => "ALTER TABLE ingredient_opening_stock_requests ADD COLUMN source_batch_id INT NULL AFTER held_batch_id",
     ];
     foreach ($columns as $column => $sql) {
         $columnStmt = $db->query("SHOW COLUMNS FROM ingredient_opening_stock_requests LIKE " . $db->quote($column));
@@ -75,6 +77,12 @@ function ensureIngredientOpeningStockSupport(PDO $db): void {
     $unitCostColumn = $db->query("SHOW COLUMNS FROM ingredient_opening_stock_requests LIKE 'unit_cost'")->fetch(PDO::FETCH_ASSOC);
     if ($unitCostColumn && strtoupper((string) ($unitCostColumn['Null'] ?? 'NO')) !== 'YES') {
         $db->exec('ALTER TABLE ingredient_opening_stock_requests MODIFY unit_cost DECIMAL(10,2) NULL');
+    }
+
+    $sourceTypeColumn = $db->query("SHOW COLUMNS FROM ingredient_opening_stock_requests LIKE 'source_type'")->fetch(PDO::FETCH_ASSOC);
+    if ($sourceTypeColumn && !str_contains((string) ($sourceTypeColumn['Type'] ?? ''), 'internal_adjustment')) {
+        $db->exec("ALTER TABLE ingredient_opening_stock_requests
+            MODIFY source_type ENUM('opening_balance','unrecorded_delivery','internal_adjustment') NOT NULL");
     }
 }
 
@@ -148,6 +156,108 @@ function decideIngredientOpeningStock(PDO $db, int $requestId, string $decision,
             WHERE id = ? AND status = 'pending'");
         $update->execute([$gmId, $remarks ?: 'Rejected by General Manager', $requestId]);
         return ['status' => 'rejected', 'request' => $request];
+    }
+
+    $isStockAdjustment = ($request['request_purpose'] ?? '') === 'stock_adjustment';
+
+    // An internal variance is existing company stock, not a new supplier
+    // receipt. Warehouse records the physical facts and the GM is the only
+    // approver. Purchasing price verification and a new QC intake would add
+    // steps without adding evidence.
+    if ($isStockAdjustment) {
+        $ingredientStmt = $db->prepare('SELECT * FROM ingredients WHERE id = ? AND is_active = 1 FOR UPDATE');
+        $ingredientStmt->execute([(int) $request['ingredient_id']]);
+        $ingredient = $ingredientStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$ingredient) throw new RuntimeException('Ingredient is no longer active');
+
+        $recordedAtRequest = (float) $request['system_quantity'];
+        $currentStock = (float) ($ingredient['current_stock'] ?? 0);
+        if (abs($currentStock - $recordedAtRequest) > 0.0005) {
+            throw new RuntimeException('Stock changed after Warehouse counted it. Reject this request and ask Warehouse to recount.');
+        }
+
+        $target = (float) $request['counted_quantity'];
+        $difference = round($target - $currentStock, 3);
+        if (abs($difference) <= 0.0005) {
+            throw new RuntimeException('The physical count now matches the saved stock; no adjustment remains.');
+        }
+
+        $requester = ['user_id' => (int) $request['requested_by']];
+        $reason = "GM-approved stock count {$request['request_code']}: {$request['reason']}";
+        $batchId = null;
+        $batchCode = null;
+        $unitCost = (float) ($request['unit_cost'] ?? $ingredient['unit_cost'] ?? 0);
+
+        if ($difference > 0.0005 && (int) ($ingredient['is_perishable'] ?? 1) === 1) {
+            // Returned or recovered perishables must go back to the same
+            // known, usable lot. This preserves its original QC and expiry.
+            $sourceBatchId = (int) ($request['source_batch_id'] ?? 0);
+            $batchStmt = $db->prepare("SELECT * FROM ingredient_batches
+                WHERE id = ? AND ingredient_id = ? FOR UPDATE");
+            $batchStmt->execute([$sourceBatchId, (int) $ingredient['id']]);
+            $batch = $batchStmt->fetch(PDO::FETCH_ASSOC);
+            if (!$batch
+                || !in_array((string) ($batch['status'] ?? ''), ['available', 'partially_used'], true)
+                || ($batch['expiry_date'] ?? null) === null
+                || (string) $batch['expiry_date'] <= date('Y-m-d')
+                || trim((string) ($batch['supplier_batch_no'] ?? '')) === ''
+                || (string) ($batch['qc_status'] ?? '') !== 'approved') {
+                throw new RuntimeException('The original usable lot is no longer available. Reject this request and ask Warehouse to recount.');
+            }
+
+            $batchId = (int) $batch['id'];
+            $batchCode = (string) $batch['batch_code'];
+            $unitCost = (float) ($batch['unit_cost'] ?? $unitCost);
+            $newRemaining = round((float) $batch['remaining_quantity'] + $difference, 3);
+            $newOriginalQuantity = max((float) $batch['quantity'], $newRemaining);
+            $db->prepare("UPDATE ingredient_batches
+                SET quantity = ?, remaining_quantity = ?, status = 'available',
+                    notes = CONCAT(COALESCE(notes, ''), CASE WHEN COALESCE(notes, '') = '' THEN '' ELSE '\n' END, ?),
+                    updated_at = NOW()
+                WHERE id = ?")
+                ->execute([$newOriginalQuantity, $newRemaining, $reason, $batchId]);
+        } elseif ($difference > 0.0005) {
+            $adjusted = increaseIngredientBatchesToQuantity($db, $ingredient, $target, $requester, $reason);
+            if ($adjusted) {
+                $batchId = (int) ($adjusted[0]['batch_id'] ?? 0) ?: null;
+                $batchCode = $adjusted[0]['batch_code'] ?? null;
+            }
+        } else {
+            reduceIngredientBatchesToQuantity($db, $ingredient, $target, $requester, $reason);
+        }
+
+        $db->prepare('UPDATE ingredients SET current_stock = ?, updated_at = NOW() WHERE id = ?')
+            ->execute([$target, (int) $ingredient['id']]);
+
+        $txStmt = $db->prepare("INSERT INTO inventory_transactions
+            (transaction_code, transaction_type, item_type, item_id, batch_id, quantity,
+             unit_of_measure, quantity_before, quantity_after, reference_type, reference_id,
+             to_location, unit_cost, total_cost, performed_by, approved_by, reason)
+            VALUES (?, 'physical_adjust', 'ingredient', ?, ?, ?, ?, ?, ?,
+                    'ingredient_opening_stock', ?, ?, ?, ?, ?, ?, ?)");
+        $txStmt->execute([
+            ingredientOpeningStockTransactionCode($db),
+            (int) $ingredient['id'],
+            $batchId,
+            $difference,
+            $ingredient['unit_of_measure'],
+            $currentStock,
+            $target,
+            $requestId,
+            $ingredient['storage_location'] ?: null,
+            $unitCost > 0 ? $unitCost : null,
+            $unitCost > 0 ? round(abs($difference) * $unitCost, 2) : null,
+            (int) $request['requested_by'],
+            $gmId,
+            $reason,
+        ]);
+
+        $update = $db->prepare("UPDATE ingredient_opening_stock_requests
+            SET status = 'approved', decided_by = ?, decided_at = NOW(), decision_notes = ?, created_batch_id = ?
+            WHERE id = ? AND status = 'pending'");
+        $update->execute([$gmId, $remarks ?: 'Approved by General Manager', $batchId, $requestId]);
+
+        return ['status' => 'approved', 'request' => $request, 'batch_id' => $batchId, 'batch_code' => $batchCode];
     }
 
     if (!in_array((string) ($request['price_status'] ?? ''), ['matched_po', 'verified'], true)

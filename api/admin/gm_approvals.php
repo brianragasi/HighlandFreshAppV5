@@ -327,7 +327,7 @@ function buildGmApprovalStats(PDO $db): array {
     try {
         $stmt = $db->query("SELECT COUNT(*) FROM ingredient_opening_stock_requests
             WHERE status = 'pending'
-              AND price_status IN ('matched_po', 'verified')
+              AND price_status IN ('matched_po', 'verified', 'not_required')
               AND qc_status IN ('approved', 'not_required')");
         $stats['inventory_openings'] = (int) $stmt->fetchColumn();
     } catch (Exception $e) {
@@ -760,7 +760,22 @@ function processApprovalDecision(PDO $db, string $decision, $currentUser) {
                 break;
 
             case 'ingredient_opening_stock':
+                $requestInfoStmt = $db->prepare("SELECT request_code, request_purpose, ingredient_id
+                    FROM ingredient_opening_stock_requests WHERE id = ?");
+                $requestInfoStmt->execute([$sourceId]);
+                $requestInfo = $requestInfoStmt->fetch(PDO::FETCH_ASSOC);
                 decideIngredientOpeningStock($db, $sourceId, $decision, (int) $gmId, $remarks);
+                if (($requestInfo['request_purpose'] ?? '') === 'stock_adjustment') {
+                    writeProcurementNotification(
+                        $db,
+                        'warehouse_raw',
+                        'stock_adjustment_decided',
+                        'Stock count ' . ($decision === 'approve' ? 'approved' : 'rejected'),
+                        ($requestInfo['request_code'] ?? ('Request #' . $sourceId)) . ' was ' . ($decision === 'approve' ? 'approved' : 'rejected') . ' by the GM' . ($remarks ? ': ' . $remarks : '.'),
+                        'ingredient_opening_stock',
+                        $sourceId
+                    );
+                }
                 break;
 
             default:
@@ -862,14 +877,17 @@ function buildGmUnifiedQueue(PDO $db): array {
             LEFT JOIN suppliers s ON s.id = osr.supplier_id
             LEFT JOIN users u ON u.id = osr.requested_by
             WHERE osr.status = 'pending'
-              AND osr.price_status IN ('matched_po', 'verified')
+              AND osr.price_status IN ('matched_po', 'verified', 'not_required')
               AND osr.qc_status IN ('approved', 'not_required')
             ORDER BY osr.created_at ASC
         ");
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            $source = $row['source_type'] === 'unrecorded_delivery'
+            $isStockAdjustment = ($row['request_purpose'] ?? '') === 'stock_adjustment';
+            $source = $isStockAdjustment
+                ? 'Warehouse physical count'
+                : ($row['source_type'] === 'unrecorded_delivery'
                 ? ($row['supplier_name'] ?: 'Supplier delivery')
-                : 'Opening balance';
+                : 'Opening balance');
             $items[] = [
                 'id' => 'open-' . $row['id'],
                 'source_id' => (int) $row['id'],
@@ -877,9 +895,11 @@ function buildGmUnifiedQueue(PDO $db): array {
                 'type' => 'ingredient_opening_stock',
                 'priority' => $row['is_perishable'] ? 'high' : 'medium',
                 'reference' => $row['request_code'],
-                'title' => $row['ingredient_name'] . (($row['request_purpose'] ?? 'found_stock') === 'traceability_correction'
-                    ? ' - Missing Lot Review'
-                    : ' - Unrecorded Stock Review'),
+                'title' => $row['ingredient_name'] . ($isStockAdjustment
+                    ? ' - Stock Count Review'
+                    : (($row['request_purpose'] ?? 'found_stock') === 'traceability_correction'
+                        ? ' - Missing Lot Review'
+                        : ' - Unrecorded Stock Review')),
                 'detail' => $source . ' · ' . $row['source_reference'] . ' · requested by ' . ($row['requested_by_name'] ?: 'Warehouse Raw'),
                 'amount' => null,
                 'meta' => approvalCompactNumber($row['quantity_to_add']) . ' ' . $row['unit'],

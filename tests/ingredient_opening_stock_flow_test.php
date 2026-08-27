@@ -41,7 +41,7 @@ $checks = [
         && str_contains($gmPage, 'Found Stock'),
     'GM dashboard cannot falsely look clear while found stock awaits approval' =>
         str_contains($gmDashboardApi, "'type' => 'ingredient_opening_stock'")
-        && str_contains($gmDashboardApi, "price_status IN ('matched_po', 'verified')")
+        && str_contains($gmDashboardApi, "price_status IN ('matched_po', 'verified', 'not_required')")
         && str_contains($gmDashboardApi, "qc_status IN ('approved', 'not_required')")
         && str_contains($gmDashboardPage, "gm_approvals.html?queue=inventory"),
     'Warehouse shows the exact reviewer currently holding the request' =>
@@ -56,8 +56,14 @@ $checks = [
         && str_contains($ingredientsApi, 'FROM supplier_ingredients si')
         && str_contains($ingredientsApi, 'That supplier is not approved to provide this ingredient'),
     'Price and QC checks happen before final GM approval' =>
-        str_contains($gmApi, "price_status IN ('matched_po', 'verified')")
+        str_contains(file_get_contents($root . '/api/helpers/ingredient_opening_stock.php'), 'Purchasing must verify the unit cost before GM approval')
         && str_contains($gmApi, "qc_status IN ('approved', 'not_required')"),
+    'Internal stock-count corrections go directly from Warehouse to GM' =>
+        str_contains($ingredientsApi, "'stock_adjustment'")
+        && str_contains($ingredientsApi, "'not_required', 'not_required'")
+        && str_contains($ingredientsPage, 'Send to GM')
+        && str_contains($gmPage, 'Warehouse → GM only.')
+        && str_contains($gmApi, "price_status IN ('matched_po', 'verified', 'not_required')"),
     'Purchasing has a reachable price verification queue' =>
         str_contains($purchasingApi, "case 'found_stock_price_checks'")
         && str_contains($purchasingApi, "verify_found_stock_price")
@@ -86,6 +92,11 @@ foreach ($checks as $label => $passed) {
 }
 
 define('HIGHLAND_FRESH', true);
+if (!function_exists('logAudit')) {
+    function logAudit($userId, $action, $tableName, $recordId, $oldValues = null, $newValues = null) {
+        // Integration assertions below inspect the durable inventory movement.
+    }
+}
 require_once $root . '/api/config/config.php';
 require_once $root . '/api/config/database.php';
 require_once $root . '/api/warehouse/raw/ingredient_stock_helpers.php';
@@ -256,4 +267,89 @@ if (abs($usableAfterBoth - 8) > 0.0005 || $approvedBoth !== 2) {
 }
 $db->rollBack();
 
-echo "Ingredient opening-stock flow tests passed (Warehouse -> price/QC checks -> GM -> traceable batch; isolated temporary tables).\n";
+// Professor-recommended internal variance: Warehouse records 15 -> 16, no
+// stock changes while pending, and one GM approval changes both summary and
+// batch ledger. Purchasing and QC are deliberately not part of this route.
+$adjustIngredientId = $seed + 20;
+$adjustRequestId = $seed + 21;
+$db->prepare("INSERT INTO ingredients
+    (id, ingredient_code, ingredient_name, unit_of_measure, minimum_stock,
+     current_stock, unit_cost, maximum_stock, storage_location, shelf_life_days,
+     is_perishable, is_active)
+    VALUES (?, ?, 'Internal Count Test', 'pcs', 1, 15, 2, 100, 'Dry Storage', NULL, 0, 1)")
+    ->execute([$adjustIngredientId, "ADJUST-{$seed}"]);
+$db->prepare("INSERT INTO ingredient_batches
+    (batch_code, ingredient_id, quantity, remaining_quantity, unit_cost, received_date,
+     expiry_date, qc_status, received_by, status, notes)
+    VALUES (?, ?, 15, 15, 2, CURDATE(), NULL, 'approved', ?, 'available', 'Existing stock')")
+    ->execute(["ADJUST-BATCH-{$seed}", $adjustIngredientId, $requester]);
+$db->prepare("INSERT INTO ingredient_opening_stock_requests
+    (id, request_code, ingredient_id, system_quantity, counted_quantity, quantity_to_add,
+     unit, source_type, source_reference, received_date, unit_cost, price_status, qc_status,
+     reason, status, requested_by, request_purpose)
+    VALUES (?, ?, ?, 15, 16, 1, 'pcs', 'internal_adjustment', 'Warehouse physical count',
+            CURDATE(), 2, 'not_required', 'not_required', 'Misplaced stock recovered',
+            'pending', ?, 'stock_adjustment')")
+    ->execute([$adjustRequestId, "REQ-ADJUST-{$seed}", $adjustIngredientId, $requester]);
+
+$stockBeforeDecision = (float) $db->query("SELECT current_stock FROM ingredients WHERE id = {$adjustIngredientId}")->fetchColumn();
+if (abs($stockBeforeDecision - 15) > 0.0005) {
+    throw new RuntimeException('Warehouse submission changed stock before the GM decision');
+}
+
+$db->beginTransaction();
+$adjustResult = decideIngredientOpeningStock($db, $adjustRequestId, 'approve', $gm, 'Count and reason accepted');
+$adjustedStock = (float) $db->query("SELECT current_stock FROM ingredients WHERE id = {$adjustIngredientId}")->fetchColumn();
+$adjustedBatchStock = getUsableIngredientBatchStock($db, $adjustIngredientId);
+$adjustedTx = $db->query("SELECT quantity, quantity_before, quantity_after, performed_by, approved_by
+    FROM inventory_transactions WHERE reference_type = 'ingredient_opening_stock' AND reference_id = {$adjustRequestId}")
+    ->fetch(PDO::FETCH_ASSOC);
+if (($adjustResult['status'] ?? '') !== 'approved'
+    || abs($adjustedStock - 16) > 0.0005
+    || abs($adjustedBatchStock - 16) > 0.0005
+    || !$adjustedTx
+    || abs((float) $adjustedTx['quantity'] - 1) > 0.0005
+    || (int) $adjustedTx['performed_by'] !== $requester
+    || (int) $adjustedTx['approved_by'] !== $gm) {
+    throw new RuntimeException('The Warehouse -> GM adjustment did not update stock and its audit trail correctly');
+}
+$db->rollBack();
+
+// A perishable return stays in its original QC-approved supplier lot; it does
+// not create a new anonymous lot or require QC to repeat the intake test.
+$returnIngredientId = $seed + 30;
+$returnBatchId = $seed + 31;
+$returnRequestId = $seed + 32;
+$db->prepare("INSERT INTO ingredients
+    (id, ingredient_code, ingredient_name, unit_of_measure, minimum_stock,
+     current_stock, unit_cost, maximum_stock, storage_location, shelf_life_days,
+     is_perishable, is_active)
+    VALUES (?, ?, 'Returned Perishable Test', 'kg', 1, 5, 20, 100, 'Cold Storage', 30, 1, 1)")
+    ->execute([$returnIngredientId, "RETURN-{$seed}"]);
+$db->prepare("INSERT INTO ingredient_batches
+    (id, batch_code, ingredient_id, quantity, remaining_quantity, unit_cost, received_date,
+     expiry_date, supplier_batch_no, qc_status, received_by, status, notes)
+    VALUES (?, ?, ?, 10, 5, 20, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 10 DAY), ?,
+            'approved', ?, 'partially_used', 'Original approved lot')")
+    ->execute([$returnBatchId, "RETURN-BATCH-{$seed}", $returnIngredientId, "SUP-LOT-{$seed}", $requester]);
+$db->prepare("INSERT INTO ingredient_opening_stock_requests
+    (id, request_code, ingredient_id, system_quantity, counted_quantity, quantity_to_add,
+     unit, source_type, source_reference, supplier_batch_no, received_date, expiry_date,
+     unit_cost, price_status, qc_status, reason, status, requested_by, request_purpose, source_batch_id)
+    VALUES (?, ?, ?, 5, 6, 1, 'kg', 'internal_adjustment', 'Warehouse physical count', ?,
+            CURDATE(), DATE_ADD(CURDATE(), INTERVAL 10 DAY), 20, 'not_required', 'not_required',
+            'Unused material returned by Production', 'pending', ?, 'stock_adjustment', ?)")
+    ->execute([$returnRequestId, "REQ-RETURN-{$seed}", $returnIngredientId, "SUP-LOT-{$seed}", $requester, $returnBatchId]);
+$db->beginTransaction();
+decideIngredientOpeningStock($db, $returnRequestId, 'approve', $gm, 'Return matched to original lot');
+$returnBatch = $db->query("SELECT quantity, remaining_quantity, supplier_batch_no FROM ingredient_batches WHERE id = {$returnBatchId}")
+    ->fetch(PDO::FETCH_ASSOC);
+if (!$returnBatch
+    || abs((float) $returnBatch['quantity'] - 10) > 0.0005
+    || abs((float) $returnBatch['remaining_quantity'] - 6) > 0.0005
+    || $returnBatch['supplier_batch_no'] !== "SUP-LOT-{$seed}") {
+    throw new RuntimeException('A returned perishable item did not remain in its original approved lot');
+}
+$db->rollBack();
+
+echo "Ingredient stock-review tests passed (supplier stock keeps price/QC checks; internal count goes Warehouse -> GM; isolated temporary tables).\n";

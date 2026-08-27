@@ -1093,8 +1093,8 @@
                     <div class="pro-banner pro-banner--warning">
                         <i class="fas fa-triangle-exclamation pro-banner-icon"></i>
                         <div>
-                            <p class="pro-banner-title">Use only after a physical count</p>
-                            <p class="pro-banner-text"><small>Adjustments are logged with your name, timestamp, and the reason you provide.</small></p>
+                            <p class="pro-banner-title">Count first, then send it to the GM</p>
+                            <p class="pro-banner-text"><small>Stock will not change yet. The GM will approve or reject this count directly.</small></p>
                         </div>
                     </div>
 
@@ -1129,11 +1129,21 @@
                         <label class="pro-label"><span>Reason <span class="text-error">*</span></span></label>
                         <select class="pro-select" id="adjustReason" required>
                             <option value="">Select reason…</option>
+                            <option value="Misplaced stock recovered">Misplaced stock recovered</option>
+                            <option value="Unused material returned by Production">Unused material returned by Production</option>
                             <option value="Physical count correction">Physical count correction</option>
-                            <option value="Damage/spoilage">Damage / spoilage</option>
-                            <option value="System error correction">System error correction</option>
+                            <option value="System record correction">System record correction</option>
                             <option value="other">Other (specify)</option>
                         </select>
+                        <p class="pro-help">For damaged or spoiled stock, use Spoilage &amp; Waste instead.</p>
+                    </div>
+
+                    <div class="pro-field hidden" id="adjustSourceBatchGroup">
+                        <label class="pro-label"><span>Original lot <span class="text-error">*</span></span></label>
+                        <select class="pro-select" id="adjustSourceBatch">
+                            <option value="">Choose the lot it came from…</option>
+                        </select>
+                        <p class="pro-help" id="adjustSourceBatchHelp">Recovered or returned perishable stock must return to its original approved lot.</p>
                     </div>
 
                     <div class="pro-field hidden" id="adjustOtherReasonGroup">
@@ -1147,7 +1157,7 @@
                     <button type="button" class="btn-pro btn-pro--ghost"
                         onclick="document.getElementById('adjustModal').close()">Cancel</button>
                     <button type="submit" class="btn-pro btn-pro--info" id="saveAdjustmentBtn">
-                        <i class="fas fa-check"></i> Save Adjustment
+                        <i class="fas fa-paper-plane"></i> Send to GM
                     </button>
                 </div>
             </form>
@@ -1278,6 +1288,7 @@
 
     <script>
         let ingredients = [];
+        let adjustIngredientContext = null;
         let categories = [];
         let expiredBatches = [];
         let openingStockOptions = null;
@@ -2111,15 +2122,47 @@
             } catch (e) { showToast('Failed to issue', 'error'); }
         }
 
-        function openAdjustModal(id, name, current, unit) {
+        async function openAdjustModal(id, name, current, unit) {
+            document.getElementById('adjustForm').reset();
             document.getElementById('adjustIngredientId').value = id;
             document.getElementById('adjustCurrentStock').value = `${current.toLocaleString()} ${unit}`;
             document.getElementById('adjustUnitSuffix').textContent = unit;
             document.getElementById('adjustNewDisplay').textContent = `— ${unit}`;
             document.getElementById('adjustDiff').textContent = `— ${unit}`;
-            document.getElementById('adjustForm').reset();
-            document.getElementById('adjustCurrentStock').value = `${current.toLocaleString()} ${unit}`;
             document.getElementById('adjustOtherReasonGroup').classList.add('hidden');
+            document.getElementById('adjustSourceBatchGroup').classList.add('hidden');
+            document.getElementById('adjustSourceBatch').required = false;
+            document.getElementById('adjustSourceBatchHelp').textContent = 'Recovered or returned perishable stock must return to its original approved lot.';
+            adjustIngredientContext = { id, current, unit, isPerishable: false, batches: [] };
+
+            document.getElementById('detailModal').close();
+            document.getElementById('adjustModal').showModal();
+
+            try {
+                const detailResponse = await WarehouseRawService.getIngredient(id);
+                const detail = detailResponse?.data || {};
+                const ingredient = detail.ingredient || {};
+                const actualCurrent = parseFloat(ingredient.current_stock ?? current);
+                const usableBatches = (detail.batches || []).filter(batch =>
+                    Number(batch.is_usable) === 1 && String(batch.qc_status || '') === 'approved'
+                );
+                adjustIngredientContext = {
+                    id,
+                    current: actualCurrent,
+                    unit,
+                    isPerishable: Number(ingredient.is_perishable) === 1,
+                    batches: usableBatches
+                };
+                current = actualCurrent;
+                document.getElementById('adjustCurrentStock').value = `${actualCurrent.toLocaleString()} ${unit}`;
+                const batchSelect = document.getElementById('adjustSourceBatch');
+                batchSelect.innerHTML = '<option value="">Choose the lot it came from…</option>' + usableBatches.map(batch =>
+                    `<option value="${Number(batch.id)}">${escapeHtml(batch.supplier_batch_no || batch.batch_code)} · ${Number(batch.remaining_quantity).toLocaleString()} ${escapeHtml(unit)} · expires ${escapeHtml(batch.expiry_date || '—')}</option>`
+                ).join('');
+            } catch (error) {
+                console.error('Could not load adjustment lots:', error);
+                showToast('Could not load the latest stock details. Close and try again.', 'error');
+            }
 
             // Live diff preview
             const newInput = document.getElementById('adjustNewQuantity');
@@ -2141,10 +2184,15 @@
                 diffDisplay.classList.remove('text-base-content/40');
                 diffDisplay.classList.toggle('text-success', diff > 0);
                 diffDisplay.classList.toggle('text-error', diff < 0);
+                const needsOriginalLot = Boolean(adjustIngredientContext?.isPerishable && diff > 0.0005);
+                document.getElementById('adjustSourceBatchGroup').classList.toggle('hidden', !needsOriginalLot);
+                document.getElementById('adjustSourceBatch').required = needsOriginalLot;
+                if (needsOriginalLot && !(adjustIngredientContext?.batches || []).length) {
+                    document.getElementById('adjustSourceBatchHelp').textContent = 'No usable original lot is available. Use Record Found Stock if this came from an unrecorded supplier delivery.';
+                } else {
+                    document.getElementById('adjustSourceBatchHelp').textContent = 'Recovered or returned perishable stock must return to its original approved lot.';
+                }
             };
-
-            document.getElementById('detailModal').close();
-            document.getElementById('adjustModal').showModal();
         }
 
         async function submitAdjust(e) {
@@ -2154,38 +2202,36 @@
             let reason = document.getElementById('adjustReason').value;
             if (reason === 'other') reason = document.getElementById('adjustOtherReason').value;
             if (!reason) { showToast('Please provide a reason', 'error'); return; }
-
-            const ingredient = ingredients.find(item => String(item.id) === String(id));
-            const current = parseFloat(ingredient?.current_stock || 0);
+            const sourceBatchId = document.getElementById('adjustSourceBatch').value;
             const counted = parseFloat(qty);
-            if (ingredient && Number(ingredient.is_perishable) === 1 && counted > current + 0.0005) {
-                document.getElementById('adjustModal').close();
-                showToast('Perishable stock needs its source, lot, and expiry before it can be added.', 'info');
-                await openOpeningStockModal(id, counted);
+            if (adjustIngredientContext?.isPerishable
+                && counted > Number(adjustIngredientContext.current) + 0.0005
+                && !sourceBatchId) {
+                showToast('Choose the original lot for the recovered or returned stock.', 'error');
                 return;
             }
 
             const saveButton = document.getElementById('saveAdjustmentBtn');
             const originalButtonHtml = saveButton.innerHTML;
             saveButton.disabled = true;
-            saveButton.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Saving…';
+            saveButton.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Sending…';
 
             try {
-                const response = await WarehouseRawService.adjustIngredientStock(id, qty, reason);
+                const response = await WarehouseRawService.adjustIngredientStock(id, qty, reason, sourceBatchId || null);
                 if (response.success) {
-                    showToast(response.message || 'Stock adjusted', 'success');
+                    showToast(response.message || 'Count sent to the GM', 'success');
                     document.getElementById('adjustModal').close();
                     try {
                         await loadIngredients();
                     } catch (e) {
-                        showToast('Adjusted, but failed to refresh list', 'warning');
+                        showToast('Sent, but failed to refresh list', 'warning');
                     }
                 } else {
                     showToast(response.message || response.error || 'Failed to adjust stock', 'error');
                 }
             } catch (e) {
-                console.error('Stock adjustment failed:', e);
-                showToast(e?.message || 'Failed to adjust stock', 'error');
+                console.error('Stock adjustment request failed:', e);
+                showToast(e?.message || 'Failed to send the count', 'error');
             } finally {
                 saveButton.disabled = false;
                 saveButton.innerHTML = originalButtonHtml;

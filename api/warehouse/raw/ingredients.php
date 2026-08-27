@@ -1107,14 +1107,15 @@ function handlePut($db, $currentUser) {
             break;
             
         case 'adjust':
-            // Adjust stock (physical count correction)
-            if (!in_array($currentUser['role'], ['warehouse_raw', 'general_manager'])) {
-                Response::error('Only Warehouse Raw or GM can adjust stock', 403);
+            // Warehouse records a physical variance; only the GM may apply it.
+            if ($currentUser['role'] !== 'warehouse_raw') {
+                Response::error('Warehouse Raw records stock counts; the GM approves them', 403);
             }
             
             $ingredientId = (int) getParam('ingredient_id', 0);
             $newQuantity = getParam('new_quantity');
             $reason = hfPlainText(getParam('reason'), 500, true);
+            $sourceBatchId = (int) getParam('source_batch_id', 0);
             
             if ($ingredientId <= 0 || $newQuantity === null || $reason === '') {
                 Response::error('Ingredient ID, new quantity, and reason are required', 400);
@@ -1125,7 +1126,7 @@ function handlePut($db, $currentUser) {
                     'New physical stock quantity',
                     0.00,
                     99999999.99,
-                    2
+                    3
                 );
             } catch (InvalidArgumentException $error) {
                 Response::error($error->getMessage(), 400);
@@ -1133,8 +1134,7 @@ function handlePut($db, $currentUser) {
             
             try {
                 $db->beginTransaction();
-                // Get current stock
-                $ingredient = $db->prepare("SELECT * FROM ingredients WHERE id = ? AND is_active = 1");
+                $ingredient = $db->prepare("SELECT * FROM ingredients WHERE id = ? AND is_active = 1 FOR UPDATE");
                 $ingredient->execute([$ingredientId]);
                 $ingredientData = $ingredient->fetch();
                 
@@ -1153,6 +1153,20 @@ function handlePut($db, $currentUser) {
                     throw new Exception('The new physical count is the same as the current stock on file.');
                 }
 
+                if (stripos($reason, 'damage') !== false || stripos($reason, 'spoil') !== false) {
+                    throw new Exception('Damaged or spoiled stock must be recorded through Spoilage & Waste.');
+                }
+
+                $pendingStmt = $db->prepare("SELECT request_code
+                    FROM ingredient_opening_stock_requests
+                    WHERE ingredient_id = ? AND status = 'pending' AND request_purpose = 'stock_adjustment'
+                    LIMIT 1 FOR UPDATE");
+                $pendingStmt->execute([$ingredientId]);
+                $pendingCode = $pendingStmt->fetchColumn();
+                if ($pendingCode) {
+                    throw new Exception("{$pendingCode} is already waiting for the GM. Ask the GM to decide it before recording another count for this item.");
+                }
+
                 $accountedStock = getAccountedIngredientBatchStock($db, $ingredientId);
                 $usableStock = getUsableIngredientBatchStock($db, $ingredientId);
                 $restrictedStock = max(0, round($accountedStock - $usableStock, 3));
@@ -1163,68 +1177,80 @@ function handlePut($db, $currentUser) {
                     );
                 }
 
-                if ($difference > 0.0005) {
-                    if (stripos($reason, 'damage') !== false || stripos($reason, 'spoil') !== false) {
-                        throw new Exception('Damage or spoilage cannot increase stock. Enter the physical count or choose the correct reason.');
+                $isPerishable = (int) ($ingredientData['is_perishable'] ?? 1) === 1;
+                $sourceBatch = null;
+                if ($difference > 0.0005 && $isPerishable) {
+                    if ($sourceBatchId <= 0) {
+                        throw new Exception('Choose the original lot for the recovered or returned stock.');
                     }
-                    $adjustedBatches = increaseIngredientBatchesToQuantity(
-                        $db,
-                        $ingredientData,
-                        $newQuantity,
-                        $currentUser,
-                        $reason
-                    );
-                } else {
-                    $adjustedBatches = reduceIngredientBatchesToQuantity(
-                        $db,
-                        $ingredientData,
-                        $newQuantity,
-                        $currentUser,
-                        $reason
-                    );
+                    $batchStmt = $db->prepare("SELECT * FROM ingredient_batches
+                        WHERE id = ? AND ingredient_id = ?
+                          AND status IN ('available', 'partially_used')
+                          AND remaining_quantity > 0
+                          AND supplier_batch_no IS NOT NULL AND TRIM(supplier_batch_no) <> ''
+                          AND expiry_date IS NOT NULL AND expiry_date > CURDATE()
+                          AND qc_status = 'approved'
+                        FOR UPDATE");
+                    $batchStmt->execute([$sourceBatchId, $ingredientId]);
+                    $sourceBatch = $batchStmt->fetch(PDO::FETCH_ASSOC);
+                    if (!$sourceBatch) {
+                        throw new Exception('That lot is no longer usable. Choose a current approved lot, or use Record Found Stock for a separate supplier delivery.');
+                    }
                 }
-                
-                // Update ingredient stock
-                $stmt = $db->prepare("
-                    UPDATE ingredients SET current_stock = ?, updated_at = NOW() WHERE id = ?
-                ");
-                $stmt->execute([$newQuantity, $ingredientId]);
-                
-                // Create adjustment transaction
-                $txCode = generateCode('TX');
-                $stmt = $db->prepare("
-                    INSERT INTO inventory_transactions 
-                    (transaction_code, transaction_type, item_type, item_id,
-                     quantity, unit_of_measure, quantity_before, quantity_after,
-                     performed_by, reason)
-                    VALUES (?, 'physical_adjust', 'ingredient', ?, ?, ?, ?, ?, ?, ?)
-                ");
-                $stmt->execute([
-                    $txCode,
+
+                $requestCode = ingredientOpeningStockCode($db);
+                $unitCost = $sourceBatch
+                    ? (float) ($sourceBatch['unit_cost'] ?? 0)
+                    : (isset($ingredientData['unit_cost']) ? (float) $ingredientData['unit_cost'] : null);
+                $insert = $db->prepare("INSERT INTO ingredient_opening_stock_requests
+                    (request_code, ingredient_id, system_quantity, counted_quantity, quantity_to_add,
+                     unit, source_type, source_reference, supplier_batch_no, received_date, expiry_date,
+                     unit_cost, price_status, qc_status, reason, status, requested_by,
+                     request_purpose, source_batch_id)
+                    VALUES (?, ?, ?, ?, ?, ?, 'internal_adjustment', 'Warehouse physical count', ?, CURDATE(), ?,
+                            ?, 'not_required', 'not_required', ?, 'pending', ?, 'stock_adjustment', ?)");
+                $insert->execute([
+                    $requestCode,
                     $ingredientId,
-                    $difference,
-                    $ingredientData['unit_of_measure'],
                     $oldQuantity,
                     $newQuantity,
-                    $currentUser['user_id'],
-                    "Stock adjustment: $reason (Old: $oldQuantity, New: $newQuantity)"
+                    $difference,
+                    $ingredientData['unit_of_measure'],
+                    $sourceBatch['supplier_batch_no'] ?? null,
+                    $sourceBatch['expiry_date'] ?? null,
+                    $unitCost && $unitCost > 0 ? $unitCost : null,
+                    $reason,
+                    (int) $currentUser['user_id'],
+                    $sourceBatchId > 0 ? $sourceBatchId : null,
                 ]);
-                
-                // Log audit
-                logAudit($currentUser['user_id'], 'adjust_stock', 'ingredients', $ingredientId, 
-                    ['current_stock' => $oldQuantity], 
-                    ['current_stock' => $newQuantity, 'reason' => $reason]
+                $requestId = (int) $db->lastInsertId();
+
+                writeProcurementNotification(
+                    $db,
+                    'general_manager',
+                    'stock_adjustment_ready_for_gm',
+                    'Stock count needs your decision',
+                    "{$ingredientData['ingredient_name']}: Warehouse counted {$newQuantity} {$ingredientData['unit_of_measure']} (system: {$oldQuantity}).",
+                    'ingredient_opening_stock',
+                    $requestId
+                );
+
+                logAudit($currentUser['user_id'], 'request_stock_adjustment', 'ingredient_opening_stock_requests', $requestId,
+                    null,
+                    ['request_code' => $requestCode, 'ingredient_id' => $ingredientId, 'current_stock' => $oldQuantity,
+                     'counted_stock' => $newQuantity, 'difference' => $difference, 'reason' => $reason]
                 );
                 
                 $db->commit();
 
                 Response::success([
+                    'request_id' => $requestId,
+                    'request_code' => $requestCode,
                     'old_quantity' => $oldQuantity,
                     'new_quantity' => $newQuantity,
                     'difference' => $difference,
-                    'adjusted_batches' => $adjustedBatches,
-                    'transaction_code' => $txCode
-                ], 'Stock adjusted successfully');
+                    'stock_changed' => false,
+                ], "{$requestCode} was sent directly to the GM. Stock stays unchanged until the GM decides.");
                 
             } catch (Throwable $e) {
                 if ($db->inTransaction()) {

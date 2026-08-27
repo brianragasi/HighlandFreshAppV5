@@ -227,23 +227,26 @@ function fetchGmPendingActions(PDO $pdo): array {
             FROM ingredient_opening_stock_requests osr
             JOIN ingredients i ON i.id = osr.ingredient_id
             WHERE osr.status = 'pending'
-              AND osr.price_status IN ('matched_po', 'verified')
+              AND osr.price_status IN ('matched_po', 'verified', 'not_required')
               AND osr.qc_status IN ('approved', 'not_required')
             ORDER BY osr.created_at ASC
             LIMIT 5
         ");
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $isLotCorrection = ($row['request_purpose'] ?? 'found_stock') === 'traceability_correction';
+            $isStockAdjustment = ($row['request_purpose'] ?? '') === 'stock_adjustment';
             $actions[] = [
                 'id' => 'open-' . $row['id'],
                 'source_id' => (int) $row['id'],
                 'type' => 'ingredient_opening_stock',
                 'category' => 'inventory',
                 'priority' => $row['is_perishable'] ? 'high' : 'medium',
-                'title' => $row['ingredient_name'] . ($isLotCorrection
-                    ? ' - Missing Lot Review'
-                    : ' - Unrecorded Stock Review'),
-                'detail' => $row['request_code'] . ' · Purchasing and QC checks complete',
+                'title' => $row['ingredient_name'] . ($isStockAdjustment
+                    ? ' - Stock Count Review'
+                    : ($isLotCorrection ? ' - Missing Lot Review' : ' - Unrecorded Stock Review')),
+                'detail' => $row['request_code'] . ($isStockAdjustment
+                    ? ' · Warehouse → GM only'
+                    : ' · Purchasing and QC checks complete'),
                 'meta' => rtrim(rtrim(number_format((float) $row['quantity_to_add'], 3, '.', ','), '0'), '.') . ' ' . $row['unit'],
                 'href' => 'gm_approvals.html?queue=inventory',
                 'requested_at' => $row['created_at'],

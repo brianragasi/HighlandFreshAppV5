@@ -22,6 +22,8 @@ if (!function_exists('procurementNotificationRecipients')) {
             'found_stock_qc_check' => ['qc_officer'],
             'found_stock_ready_for_gm' => ['general_manager'],
             'found_stock_rejected' => ['warehouse_raw'],
+            'stock_adjustment_ready_for_gm' => ['general_manager'],
+            'stock_adjustment_decided' => ['warehouse_raw'],
         ];
     }
 }

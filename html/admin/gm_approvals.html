@@ -647,7 +647,7 @@
                         <i class="fas fa-clipboard-list text-primary"></i> Production Materials <span class="chip-count" id="chipCountProduction">0</span>
                     </button>
                     <button type="button" class="queue-chip" data-queue="inventory" onclick="setQueueFilter('inventory')" role="tab" aria-selected="false">
-                        <i class="fas fa-box-open text-success"></i> Found Stock <span class="chip-count" id="chipCountInventory">0</span>
+                        <i class="fas fa-box-open text-success"></i> Stock Reviews <span class="chip-count" id="chipCountInventory">0</span>
                     </button>
                 </div>
                 <p class="text-xs text-base-content/50" id="queueFilterHint">Showing all approval queues</p>
@@ -818,7 +818,7 @@
                             <span class="badge badge-warning badge-sm">Verify</span>
                         </div>
                         <p class="text-2xl lg:text-3xl font-bold stat-value" id="statInventoryOpenings">0</p>
-                        <p class="text-sm text-base-content/60">Found Stock</p>
+                        <p class="text-sm text-base-content/60">Stock Reviews</p>
                     </div>
                 </div>
             </div>
@@ -958,7 +958,7 @@
             disposal: 'Disposals — inventory write-offs awaiting GM signature',
             procurement: 'Procurement - purchase orders awaiting GM approval',
             production: 'Production Materials - requisitions waiting for GM approval before Warehouse Raw release',
-            inventory: 'Found Stock - physical stock missing from the system, awaiting batch review',
+            inventory: 'Stock Reviews - warehouse counts and unrecorded stock awaiting a decision',
             // legacy keys (unused UI)
             po: 'Procurement',
             pr: 'Purchase requests',
@@ -1285,7 +1285,7 @@
             if (cat === 'disposal') return 'Disposal';
             if (cat === 'procurement') return 'Procurement';
             if (cat === 'production') return 'Production Materials';
-            if (cat === 'inventory') return 'Found Stock';
+            if (cat === 'inventory') return 'Stock Reviews';
             return cat || 'Action';
         }
 
@@ -2038,7 +2038,8 @@
             document.getElementById('modalRef').textContent = ref;
 
             const isTraceabilityCorrection = type === 'ingredient_opening_stock' && detail.request_purpose === 'traceability_correction';
-            const typeLabels = { credit: 'Credit Override', credit_override: 'Credit Override', sales_order: 'Sales Order', disposal: 'Disposal', purchase_order: 'Purchase Order', purchase_request: 'Purchase Request', requisition: 'Requisition', ingredient_opening_stock: isTraceabilityCorrection ? 'Held Stock Lot Review' : 'Found Stock' };
+            const isStockAdjustment = type === 'ingredient_opening_stock' && detail.request_purpose === 'stock_adjustment';
+            const typeLabels = { credit: 'Credit Override', credit_override: 'Credit Override', sales_order: 'Sales Order', disposal: 'Disposal', purchase_order: 'Purchase Order', purchase_request: 'Purchase Request', requisition: 'Requisition', ingredient_opening_stock: isStockAdjustment ? 'Stock Count Adjustment' : (isTraceabilityCorrection ? 'Held Stock Lot Review' : 'Found Stock') };
             document.getElementById('modalType').textContent = typeLabels[type] || category;
 
             const customer = detail.customer_name || detail.ingredient_name || detail.supplier_name || detail.product_name || detail.department || detail.requested_by_name || '—';
@@ -2046,7 +2047,7 @@
 
             const amount = detail.total_amount ?? detail.total_value ?? detail.estimated_total;
             const amountNumber = parseFloat(amount || 0);
-            document.getElementById('modalAmountLabel').textContent = type === 'disposal' ? 'Estimated inventory loss' : (type === 'ingredient_opening_stock' ? (isTraceabilityCorrection ? 'Stock to make usable' : 'Stock to add') : 'Amount');
+            document.getElementById('modalAmountLabel').textContent = type === 'disposal' ? 'Estimated inventory loss' : (type === 'ingredient_opening_stock' ? (isStockAdjustment ? 'Stock change' : (isTraceabilityCorrection ? 'Stock to make usable' : 'Stock to add')) : 'Amount');
             document.getElementById('modalAmount').textContent = amountNumber > 0
                 ? `${detail.value_is_estimate == 1 ? 'Est. ' : ''}${formatCurrency(amountNumber)}`
                 : (type === 'disposal' ? 'Cost not recorded' : (type === 'ingredient_opening_stock' ? `${detail.quantity_to_add || 0} ${escapeHtml(detail.unit || '')}` : '—'));
@@ -2055,6 +2056,24 @@
             const detailBody = document.getElementById('modalDetailBody');
             if (type === 'ingredient_opening_stock') {
                 detailSection.classList.remove('hidden');
+                const adjustmentQuantity = parseFloat(detail.quantity_to_add || 0);
+                const adjustmentClass = adjustmentQuantity < 0 ? 'text-error' : 'text-success';
+                const adjustmentLabel = adjustmentQuantity > 0 ? 'Add after approval' : 'Remove after approval';
+                if (isStockAdjustment) {
+                    detailBody.innerHTML = `
+                        <div class="p-4 space-y-3">
+                            <div class="alert alert-info py-2 text-sm"><i class="fas fa-route"></i><span><strong>Warehouse → GM only.</strong> No Purchasing or QC step is required for this internal count correction.</span></div>
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                <div><span class="text-xs text-base-content/50 block">System stock</span><strong>${escapeHtml(String(detail.system_quantity))} ${escapeHtml(detail.unit || '')}</strong></div>
+                                <div><span class="text-xs text-base-content/50 block">Warehouse counted</span><strong>${escapeHtml(String(detail.counted_quantity))} ${escapeHtml(detail.unit || '')}</strong></div>
+                                <div><span class="text-xs text-base-content/50 block">${adjustmentLabel}</span><strong class="${adjustmentClass}">${adjustmentQuantity > 0 ? '+' : ''}${escapeHtml(String(detail.quantity_to_add))} ${escapeHtml(detail.unit || '')}</strong></div>
+                            </div>
+                            ${detail.source_batch_id ? `<div><span class="text-xs text-base-content/50 block">Original lot for returned/recovered stock</span><p>${escapeHtml(detail.supplier_batch_no || 'Recorded lot')} · expires ${escapeHtml(detail.expiry_date || '—')}</p></div>` : ''}
+                            <div><span class="text-xs text-base-content/50 block">Warehouse reason</span><p>${escapeHtml(detail.reason || 'No explanation')}</p></div>
+                            <div class="alert alert-warning py-2 text-xs"><i class="fas fa-triangle-exclamation"></i><span>Approve only if the physical count and explanation are believable. Approval changes stock immediately.</span></div>
+                        </div>`;
+                    return;
+                }
                 detailBody.innerHTML = `
                     <div class="p-4 space-y-3">
                         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -2161,8 +2180,8 @@
                     ? 'Material request approved. Warehouse Raw can now release the requested materials.'
                     : 'Material request rejected. Production can review the reason and revise it.',
                 ingredient_opening_stock: approved
-                    ? 'Found stock approved. Its batch is now recorded and usable.'
-                    : 'Found stock rejected. Warehouse must recount or correct the source details.'
+                    ? 'Stock review approved. The approved inventory change is now recorded.'
+                    : 'Stock review rejected. Warehouse can recount and submit a corrected explanation.'
             };
             return messages[type] || (approved
                 ? 'Request approved. The next responsible team can now continue.'

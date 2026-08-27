@@ -286,12 +286,13 @@ const WarehouseRawService = {
      * @param {number} newQuantity - New stock quantity
      * @param {string} reason - Reason for adjustment
      */
-    async adjustIngredientStock(ingredientId, newQuantity, reason) {
+    async adjustIngredientStock(ingredientId, newQuantity, reason, sourceBatchId = null) {
         return await api.put(`${this.baseUrl}/ingredients.php`, {
             action: 'adjust',
             ingredient_id: ingredientId,
             new_quantity: newQuantity,
-            reason
+            reason,
+            source_batch_id: sourceBatchId
         });
     },
 
