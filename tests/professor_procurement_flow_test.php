@@ -10,6 +10,7 @@ $files = [
     'purchasing_supplier_api' => file_get_contents($root . '/api/purchasing/suppliers.php'),
     'po_api' => file_get_contents($root . '/api/purchasing/purchase_orders.php'),
     'po_page' => file_get_contents($root . '/html/purchasing/purchase_orders.html'),
+    'sidebar_nav' => file_get_contents($root . '/js/ui/sidebar-nav.js'),
     'farmer_receiving_api' => file_get_contents($root . '/api/qc/deliveries.php'),
 ];
 
@@ -59,6 +60,12 @@ $checks = [
         && str_contains($files['po_api'], 'sendApprovedPurchaseOrderToSupplier')
         && str_contains($files['po_api'], "SET status = 'ordered'")
         && str_contains($files['po_api'], "'Purchase order approved and emailed to the supplier'"),
+    'New PO and Purchase Orders show the correct active navigation state' =>
+        str_contains($files['po_page'], 'id="navNewPo"')
+        && str_contains($files['po_page'], 'id="navPurchaseOrders"')
+        && str_contains($files['po_page'], "setPurchaseOrderNavigationState(params.get('action') === 'new' ? 'new' : 'list')")
+        && str_contains($files['po_page'], "setPurchaseOrderNavigationState('list')")
+        && str_contains($files['sidebar_nav'], 'currentUrl.searchParams.get(key) === value'),
 ];
 
 $failed = [];

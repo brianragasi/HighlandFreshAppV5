@@ -45,6 +45,16 @@
         }
     }
 
+    function linkUrl(a) {
+        try {
+            const raw = a.getAttribute('href') || '';
+            if (!raw || SKIP_HREF.test(raw.trim())) return null;
+            return new URL(raw, window.location.href);
+        } catch (e) {
+            return null;
+        }
+    }
+
     function isNavLink(a) {
         if (!a || a.tagName !== 'A') return false;
         const href = a.getAttribute('href') || '';
@@ -67,9 +77,32 @@
         const nav = sidebar.querySelector('nav');
         if (!nav) return;
 
-        const current = pathOnly(window.location.pathname);
+        const currentUrl = new URL(window.location.href);
+        const current = pathOnly(currentUrl.pathname);
         const links = Array.prototype.slice.call(nav.querySelectorAll('a[href]')).filter(isNavLink);
         let activeLinks = [];
+
+        // Two sidebar entries may point to one HTML file but represent
+        // different screens, such as Purchase Orders and ?action=new. Prefer
+        // the link whose query parameters match the current screen. A plain
+        // same-path link remains the fallback for detail pages such as ?po_id=.
+        let bestLink = null;
+        let bestScore = 0;
+        links.forEach((a) => {
+            const url = linkUrl(a);
+            if (!url || pathOnly(url.pathname) !== current) return;
+            let score = url.searchParams.size === 0 ? 1 : 0;
+            if (url.searchParams.size > 0) {
+                const allMatch = Array.from(url.searchParams.entries()).every(([key, value]) =>
+                    currentUrl.searchParams.get(key) === value
+                );
+                if (allMatch) score = 100 + url.searchParams.size;
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                bestLink = a;
+            }
+        });
 
         links.forEach((a) => {
             const abs = absolutizeHref(a.getAttribute('href'));
@@ -77,14 +110,12 @@
                 a.setAttribute('href', abs);
             }
 
-            const lp = linkPathname(a);
-            const matches = lp && lp === current;
+            const matches = a === bestLink;
             if (matches) {
                 activeLinks.push(a);
                 a.setAttribute('aria-current', 'page');
-            } else if (a.getAttribute('aria-current') === 'page') {
-                // Only strip if we successfully matched something else, or link clearly wrong
-                // Keep page-authored aria-current if no path match yet
+            } else {
+                a.removeAttribute('aria-current');
             }
         });
 
