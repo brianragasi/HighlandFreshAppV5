@@ -466,7 +466,7 @@
         <div class="modal-box max-w-lg">
             <button type="button" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onclick="document.getElementById('supplierPriceDialog').close()">✕</button>
             <h3 class="font-bold text-lg"><i class="fas fa-tags text-primary mr-2"></i>Update Supplier Price</h3>
-            <p class="text-sm text-base-content/60 mt-1">This changes the saved price list for future orders. The GM can see who changed it and why.</p>
+            <p class="text-sm text-base-content/60 mt-1">This updates this PO line and the saved supplier price for future orders. The GM can see who changed it and why.</p>
             <div class="alert alert-info py-2 mt-4 text-sm">
                 <i class="fas fa-box"></i>
                 <span id="supplierPriceItemLabel">Choose an item</span>
@@ -1641,7 +1641,7 @@
                     <p class="text-xs text-base-content/55 mt-1" id="coverage-${rowId}"></p>
                 </td>
                 <td><div class="font-medium" id="order-unit-${rowId}">${escapeHtml(orderUnit)}</div>${isPackaged ? `<div class="text-xs text-base-content/55 mt-1">1 ${escapeHtml(item.supplier_package_type || 'package')} = ${plainNumber(stockPerPackage)} ${escapeHtml(warehouseUnit)}</div>` : ''}</td>
-                <td class="text-right"><div class="font-medium">${formatCurrency(orderUnitPrice)}</div><div class="text-xs text-base-content/55">per ${escapeHtml(orderUnit)}</div><button type="button" class="btn btn-link btn-xs px-0 mt-1" onclick="openSupplierPriceDialog(${rowId})"><i class="fas fa-pen"></i> Update price</button></td>
+                <td class="text-right" id="supplier-offer-${rowId}"><div class="font-medium">${formatCurrency(orderUnitPrice)}</div><div class="text-xs text-base-content/55">per ${escapeHtml(orderUnit)}</div><button type="button" class="btn btn-link btn-xs px-0 mt-1" onclick="openSupplierPriceDialog(${rowId})"><i class="fas fa-pen"></i> Update price</button></td>
                 <td class="font-bold text-right whitespace-nowrap" id="total-${rowId}">₱0.00</td>`;
             document.getElementById('lineItemsBody').appendChild(row);
             handleSupplierOrderInput(rowId);
@@ -1692,17 +1692,53 @@
             }).join('');
         }
 
-        function openSupplierPriceDialog(rowId) {
+        function getSupplierPriceEditContext(rowId) {
             const row = document.getElementById(`lineItem-${rowId}`);
-            const item = eligiblePrItems.find(candidate => Number(candidate.id) === Number(row?.dataset.prItemId));
-            if (!item) return;
-            supplierPriceEditRowId = rowId;
+            if (!row) return null;
+            if (row.dataset.mode === 'forecast') {
+                const item = directSupplierIngredients.find(candidate =>
+                    Number(candidate.ingredient_id || candidate.id || 0) === Number(row.dataset.ingredientId || 0)
+                );
+                if (!item) return null;
+                const packaged = item.purchase_format === 'packaged';
+                return {
+                    rowId,
+                    row,
+                    item,
+                    mode: 'forecast',
+                    itemType: 'ingredient',
+                    itemId: Number(item.ingredient_id || item.id),
+                    packaged,
+                    price: packaged ? Number(item.quoted_price || 0) : Number(item.reference_unit_price || 0),
+                    priceUnit: packaged ? (item.package_type || 'package') : (item.unit_of_measure || 'unit'),
+                    itemName: item.ingredient_name || 'Early-reorder item'
+                };
+            }
+
+            const item = eligiblePrItems.find(candidate => Number(candidate.id) === Number(row.dataset.prItemId));
+            if (!item) return null;
             const packaged = item.supplier_purchase_format === 'packaged';
-            const price = packaged ? Number(item.supplier_quoted_price || 0) : Number(item.supplier_unit_price || 0);
-            const priceUnit = packaged ? (item.supplier_package_type || 'package') : (item.unit || 'unit');
-            document.getElementById('supplierPriceItemLabel').textContent = `${item.ingredient_name || item.mro_item_name || item.item_description} — current price ${formatCurrency(price)} per ${priceUnit}`;
-            document.getElementById('supplierPriceFieldLabel').textContent = `New price for one ${priceUnit} *`;
-            document.getElementById('supplierPriceValue').value = price > 0 ? String(price) : '';
+            return {
+                rowId,
+                row,
+                item,
+                mode: 'supplier_request',
+                itemType: item.ingredient_id ? 'ingredient' : 'mro',
+                itemId: Number(item.ingredient_id || item.mro_item_id),
+                packaged,
+                price: packaged ? Number(item.supplier_quoted_price || 0) : Number(item.supplier_unit_price || 0),
+                priceUnit: packaged ? (item.supplier_package_type || 'package') : (item.unit || 'unit'),
+                itemName: item.ingredient_name || item.mro_item_name || item.item_description || 'Supplier item'
+            };
+        }
+
+        function openSupplierPriceDialog(rowId) {
+            const context = getSupplierPriceEditContext(rowId);
+            if (!context) return;
+            supplierPriceEditRowId = rowId;
+            document.getElementById('supplierPriceItemLabel').textContent = `${context.itemName} — current price ${formatCurrency(context.price)} per ${context.priceUnit}`;
+            document.getElementById('supplierPriceFieldLabel').textContent = `New price for one ${context.priceUnit} *`;
+            document.getElementById('supplierPriceValue').value = context.price > 0 ? String(context.price) : '';
             document.getElementById('supplierPriceReason').value = '';
             const error = document.getElementById('supplierPriceError');
             error.textContent = '';
@@ -1712,13 +1748,11 @@
         }
 
         async function saveSupplierPrice() {
-            const row = document.getElementById(`lineItem-${supplierPriceEditRowId}`);
-            const item = eligiblePrItems.find(candidate => Number(candidate.id) === Number(row?.dataset.prItemId));
-            if (!item) return;
+            const context = getSupplierPriceEditContext(supplierPriceEditRowId);
+            if (!context) return;
             const rawPrice = document.getElementById('supplierPriceValue').value.trim();
             const reason = document.getElementById('supplierPriceReason').value.trim();
-            const packaged = item.supplier_purchase_format === 'packaged';
-            const maximumDecimals = packaged ? 2 : 6;
+            const maximumDecimals = context.packaged ? 2 : 6;
             const pattern = new RegExp(`^\\d+(?:\\.\\d{1,${maximumDecimals}})?$`);
             const error = document.getElementById('supplierPriceError');
             if (!pattern.test(rawPrice) || Number(rawPrice) <= 0) {
@@ -1734,22 +1768,55 @@
             const button = document.getElementById('saveSupplierPriceButton');
             button.disabled = true;
             try {
-                await PurchasingService.updateSupplierItemPrice({
+                const response = await PurchasingService.updateSupplierItemPrice({
                     supplier_id: Number(document.getElementById('poSupplier').value),
-                    item_type: item.ingredient_id ? 'ingredient' : 'mro',
-                    item_id: Number(item.ingredient_id || item.mro_item_id),
+                    item_type: context.itemType,
+                    item_id: context.itemId,
                     price: rawPrice,
                     reason
                 });
+                applySavedSupplierPriceToPOLine(context, response?.data || {});
                 document.getElementById('supplierPriceDialog').close();
-                showToast('Supplier price list updated. The PO lines were refreshed.', 'success');
-                await onMainSupplierChange();
+                showToast('Supplier price updated on this PO line and saved for future orders.', 'success');
             } catch (priceError) {
                 error.textContent = priceError?.message || 'Could not update the supplier price.';
                 error.classList.remove('hidden');
             } finally {
                 button.disabled = false;
             }
+        }
+
+        function applySavedSupplierPriceToPOLine(context, result) {
+            const quotedPrice = Number(result.quoted_price || 0);
+            const referenceUnitPrice = Number(result.reference_unit_price || quotedPrice || 0);
+            const displayedPrice = context.packaged ? quotedPrice : referenceUnitPrice;
+
+            if (context.mode === 'forecast') {
+                context.item.quoted_price = quotedPrice;
+                context.item.reference_unit_price = referenceUnitPrice;
+                const config = getExtraItemConfiguration(context.item);
+                context.row.dataset.supplierUnitPrice = String(config.supplierPrice);
+                const offer = document.getElementById(`forecast-offer-${context.rowId}`);
+                if (offer) offer.innerHTML = `<div class="font-medium">${formatCurrency(config.supplierPrice)}</div><div class="text-xs text-base-content/55">per ${escapeHtml(config.supplierUnit)}</div><button type="button" class="btn btn-link btn-xs px-0 mt-1" onclick="openSupplierPriceDialog(${context.rowId})"><i class="fas fa-pen"></i> Update price</button>`;
+                handleForecastOrderInput(context.rowId);
+                return;
+            }
+
+            context.item.supplier_quoted_price = quotedPrice;
+            context.item.supplier_unit_price = referenceUnitPrice;
+            const hiddenPrice = document.getElementById(`price-${context.rowId}`);
+            if (hiddenPrice) hiddenPrice.value = String(referenceUnitPrice);
+            const offer = document.getElementById(`supplier-offer-${context.rowId}`);
+            if (offer) offer.innerHTML = `<div class="font-medium">${formatCurrency(displayedPrice)}</div><div class="text-xs text-base-content/55">per ${escapeHtml(context.priceUnit)}</div><button type="button" class="btn btn-link btn-xs px-0 mt-1" onclick="openSupplierPriceDialog(${context.rowId})"><i class="fas fa-pen"></i> Update price</button>`;
+
+            const catalogItem = context.itemType === 'ingredient'
+                ? directSupplierIngredients.find(item => Number(item.ingredient_id || item.id || 0) === context.itemId)
+                : directSupplierMroItems.find(item => Number(item.mro_item_id || item.id || 0) === context.itemId);
+            if (catalogItem) {
+                catalogItem.quoted_price = quotedPrice;
+                catalogItem.reference_unit_price = referenceUnitPrice;
+            }
+            handleSupplierOrderInput(context.rowId);
         }
 
         function handleSupplierOrderInput(rowId) {
@@ -1950,7 +2017,7 @@
                     <div id="coverage-${rowId}" class="text-xs text-base-content/55 mt-1"></div>
                 </td>
                 <td><div class="font-medium" id="order-unit-${rowId}">${escapeHtml(config.supplierUnit)}</div><div class="text-xs text-base-content/55 mt-1">Supplier order unit</div></td>
-                <td id="forecast-offer-${rowId}" class="text-right"><div class="font-medium">${formatCurrency(config.supplierPrice)}</div><div class="text-xs text-base-content/55">per ${escapeHtml(config.supplierUnit)}</div></td>
+                <td id="forecast-offer-${rowId}" class="text-right"><div class="font-medium">${formatCurrency(config.supplierPrice)}</div><div class="text-xs text-base-content/55">per ${escapeHtml(config.supplierUnit)}</div><button type="button" class="btn btn-link btn-xs px-0 mt-1" onclick="openSupplierPriceDialog(${rowId})"><i class="fas fa-pen"></i> Update price</button></td>
                 <td class="font-bold text-right whitespace-nowrap" id="total-${rowId}">${formatCurrency(0)}</td>`;
             document.getElementById('extraItemDialog').close();
             extraItemEditRowId = null;
