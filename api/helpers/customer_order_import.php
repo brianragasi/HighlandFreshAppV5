@@ -9,16 +9,28 @@ function hfEnsureManualCustomerOrderSchema(PDO $db): void
         return;
     }
 
-    $db->exec("ALTER TABLE customer_order_imports
-        MODIFY COLUMN status ENUM(
-            'received', 'for_encoding', 'draft_order', 'needs_customer_confirmation',
-            'customer_confirmed', 'ready_to_create', 'order_created', 'needs_review',
-            'ready', 'converted', 'duplicate', 'rejected', 'archived'
-        ) NOT NULL DEFAULT 'received'");
-
     $importColumns = [];
     foreach ($db->query('SHOW COLUMNS FROM customer_order_imports')->fetchAll(PDO::FETCH_ASSOC) as $column) {
-        $importColumns[$column['Field']] = true;
+        $importColumns[$column['Field']] = $column;
+    }
+
+    $requiredStatuses = [
+        'received', 'for_encoding', 'draft_order', 'needs_customer_confirmation',
+        'customer_confirmed', 'ready_to_create', 'order_created', 'needs_review',
+        'ready', 'converted', 'duplicate', 'rejected', 'archived',
+    ];
+    $statusType = strtolower((string)($importColumns['status']['Type'] ?? ''));
+    $missingStatuses = array_filter(
+        $requiredStatuses,
+        static fn(string $status): bool => !str_contains($statusType, "'{$status}'")
+    );
+    if ($statusType === '' || $missingStatuses) {
+        $db->exec("ALTER TABLE customer_order_imports
+            MODIFY COLUMN status ENUM(
+                'received', 'for_encoding', 'draft_order', 'needs_customer_confirmation',
+                'customer_confirmed', 'ready_to_create', 'order_created', 'needs_review',
+                'ready', 'converted', 'duplicate', 'rejected', 'archived'
+            ) NOT NULL DEFAULT 'received'");
     }
     foreach ([
         'email_body' => 'MEDIUMTEXT NULL',
@@ -28,7 +40,7 @@ function hfEnsureManualCustomerOrderSchema(PDO $db): void
         'source_verified_by' => 'INT NULL',
         'source_verified_at' => 'DATETIME NULL',
     ] as $column => $definition) {
-        if (!isset($importColumns[$column])) {
+        if (!array_key_exists($column, $importColumns)) {
             $db->exec("ALTER TABLE customer_order_imports ADD COLUMN {$column} {$definition}");
         }
     }
@@ -36,7 +48,9 @@ function hfEnsureManualCustomerOrderSchema(PDO $db): void
     // Some local/demo databases were created before the Customer PO line
     // migration was applied. Ensure the dependency exists before inspecting
     // or extending its columns so inbox list/config requests do not fail.
-    $db->exec("CREATE TABLE IF NOT EXISTS customer_order_import_lines (
+    $lineTableExists = (bool)$db->query("SHOW TABLES LIKE 'customer_order_import_lines'")->fetchColumn();
+    if (!$lineTableExists) {
+        $db->exec("CREATE TABLE customer_order_import_lines (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         import_id BIGINT UNSIGNED NOT NULL,
         row_number INT UNSIGNED NOT NULL,
@@ -67,7 +81,8 @@ function hfEnsureManualCustomerOrderSchema(PDO $db): void
             FOREIGN KEY (import_id) REFERENCES customer_order_imports(id) ON DELETE CASCADE,
         CONSTRAINT fk_customer_order_line_product
             FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    }
 
     $lineColumns = [];
     foreach ($db->query('SHOW COLUMNS FROM customer_order_import_lines')->fetchAll(PDO::FETCH_ASSOC) as $column) {
@@ -86,11 +101,19 @@ function hfEnsureManualCustomerOrderSchema(PDO $db): void
         }
     }
 
-    $db->exec("UPDATE customer_order_imports
-        SET status = 'received'
-        WHERE customer_id IS NULL AND status = 'for_encoding'");
+    $legacyUnmatchedOrder = $db->query("SELECT 1
+        FROM customer_order_imports
+        WHERE customer_id IS NULL AND status = 'for_encoding'
+        LIMIT 1")->fetchColumn();
+    if ($legacyUnmatchedOrder) {
+        $db->exec("UPDATE customer_order_imports
+            SET status = 'received'
+            WHERE customer_id IS NULL AND status = 'for_encoding'");
+    }
 
-    $db->exec("CREATE TABLE IF NOT EXISTS customer_order_call_confirmations (
+    $confirmationTableExists = (bool)$db->query("SHOW TABLES LIKE 'customer_order_call_confirmations'")->fetchColumn();
+    if (!$confirmationTableExists) {
+        $db->exec("CREATE TABLE customer_order_call_confirmations (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         import_id BIGINT UNSIGNED NOT NULL,
         change_summary TEXT NOT NULL,
@@ -104,7 +127,8 @@ function hfEnsureManualCustomerOrderSchema(PDO $db): void
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
         KEY idx_customer_order_calls_import (import_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    }
 
     $ready = true;
 }

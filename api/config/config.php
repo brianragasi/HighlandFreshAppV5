@@ -28,6 +28,23 @@ function loadLocalEnvFiles() {
     }
     $loaded = true;
 
+    // Values injected by the operating system/hosting panel must win over a
+    // file. Within the selected .env file, however, use normal dotenv
+    // semantics: a later duplicate replaces an earlier line. This prevents an
+    // obsolete hosting block near the top of a copied .env from silently
+    // overriding the current deployment values appended below it.
+    $initialEnvironmentNames = [];
+    $processEnvironment = getenv();
+    if (is_array($processEnvironment)) {
+        $initialEnvironmentNames += array_fill_keys(array_keys($processEnvironment), true);
+    }
+    if (is_array($_ENV)) {
+        $initialEnvironmentNames += array_fill_keys(array_keys($_ENV), true);
+    }
+    if (is_array($_SERVER)) {
+        $initialEnvironmentNames += array_fill_keys(array_keys($_SERVER), true);
+    }
+
     // Search several candidate locations because some hosts (notably
     // InfinityFree) map the document root in a way that makes
     // dirname(__DIR__, 2) land one level above the actual project root.
@@ -65,7 +82,7 @@ function loadLocalEnvFiles() {
             $name = trim(substr($line, 0, $separatorPos));
             $value = trim(substr($line, $separatorPos + 1));
 
-            if ($name === '' || getenv($name) !== false) {
+            if ($name === '' || isset($initialEnvironmentNames[$name])) {
                 continue;
             }
 

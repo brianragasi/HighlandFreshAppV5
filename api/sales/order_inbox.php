@@ -5,11 +5,26 @@ require_once dirname(__DIR__) . '/helpers/customer_order_import.php';
 require_once dirname(__DIR__) . '/helpers/pop3_mailbox.php';
 
 $currentUser = Auth::requireRole(['sales_custodian', 'general_manager']);
-$db = Database::getInstance()->getConnection();
-hfEnsureManualCustomerOrderSchema($db);
 $action = getParam('action', 'list');
 
 try {
+    // Mailbox readiness is configuration-only. Do not acquire a database
+    // connection or run inbox schema checks for this lightweight request.
+    // The page requests config and list in parallel, and previously both
+    // requests attempted the same ALTER TABLE at the same time.
+    if ($requestMethod === 'GET' && $action === 'config') {
+        Response::success([
+            'mailbox_enabled' => defined('ORDER_MAILBOX_ENABLED') && ORDER_MAILBOX_ENABLED,
+            'mailbox_address' => defined('ORDER_MAILBOX_USERNAME')
+                ? ORDER_MAILBOX_USERNAME
+                : '',
+            'supported_format' => 'Order details written in the email or supplied in an attached document',
+        ], 'Customer order inbox configuration');
+    }
+
+    $db = Database::getInstance()->getConnection();
+    hfEnsureManualCustomerOrderSchema($db);
+
     if ($requestMethod === 'GET') {
         handleCustomerOrderInboxGet($db, $action);
     } elseif ($requestMethod === 'POST') {
@@ -158,16 +173,6 @@ function handleCustomerOrderInboxGet(PDO $db, string $action): void
             'suggested_po_number' => null,
             'suggested_delivery_date' => null,
         ], 'Attachment preview information retrieved.');
-    }
-
-    if ($action === 'config') {
-        Response::success([
-            'mailbox_enabled' => defined('ORDER_MAILBOX_ENABLED') && ORDER_MAILBOX_ENABLED,
-            'mailbox_address' => defined('ORDER_MAILBOX_USERNAME')
-                ? ORDER_MAILBOX_USERNAME
-                : '',
-            'supported_format' => 'Order details written in the email or supplied in an attached document',
-        ], 'Customer order inbox configuration');
     }
 
     if ($action === 'summary') {
