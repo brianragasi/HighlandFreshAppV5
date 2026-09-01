@@ -23,6 +23,8 @@ jobs:
           fetch-depth: 1
 
       - name: FTP deploy to GoogieHost
+        id: deploy_primary
+        continue-on-error: true
         uses: SamKirkland/ftp-deploy-action@v4.4.0
         with:
           server: ${{ secrets.FTP_SERVER }}
@@ -63,6 +65,58 @@ jobs:
             highland_fresh_azure.sql
             package.json
             package-lock.json
+            tailwind.config.js
+            tailwind.config.json
+            web.config
+            .gitignore
+            .env*
+            css/input.css
+            temp_schema.txt
+            api/config/DigiCertGlobalRootCA.crt.pem
+
+      - name: Wait before retrying a busy shared FTP host
+        if: steps.deploy_primary.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+
+      - name: Retry FTP deploy to GoogieHost
+        if: steps.deploy_primary.outcome == 'failure'
+        uses: SamKirkland/ftp-deploy-action@v4.4.0
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftp
+          port: 21
+          local-dir: ./
+          server-dir: ./
+          dangerous-clean-slate: false
+          exclude: |
+            .git/**
+            .github/**
+            .claude/**
+            .vscode/**
+            tests/**
+            docs/**
+            cron/**
+            config/**
+            backups/**
+            tmp/**
+            storage/logs/**
+            uploads/**
+            .playwright-mcp/**
+            system_context/**
+            **/node_modules/**
+            /vendor/**
+            **/*.sql
+            **/*.log
+            **/.DS_Store
+            **/Thumbs.db
+            .idea/**
+            package.json
+            package-lock.json
+            composer.json
+            composer.lock
             tailwind.config.js
             tailwind.config.json
             web.config
