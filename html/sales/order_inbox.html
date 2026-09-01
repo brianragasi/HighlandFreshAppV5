@@ -10,7 +10,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         body { font-family: Inter, sans-serif; letter-spacing: 0; }
-        .sidebar-transition { transition: transform .25s ease; }
         .source-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
         #reviewModal .modal-box { width: min(96vw, 1800px); max-width: min(96vw, 1800px); height: 92vh; display: flex; flex-direction: column; }
         #reviewContent { flex: 1; min-height: 0; overflow: hidden; }
@@ -25,7 +24,6 @@
         .po-email-message { max-height: 8rem; }
         .review-stage { border: 1px solid hsl(var(--bc) / .14); border-radius: .75rem; background: hsl(var(--b1)); }
         .review-stage__heading { display: flex; align-items: flex-start; gap: .75rem; padding: .9rem 1rem; border-bottom: 1px solid hsl(var(--bc) / .1); }
-        .review-stage__number { width: 1.75rem; height: 1.75rem; flex: none; display: grid; place-items: center; border-radius: 999px; background: hsl(var(--p)); color: hsl(var(--pc)); font-size: .75rem; font-weight: 800; }
         .order-entry-card { border: 1px solid hsl(var(--bc) / .14); border-radius: .65rem; padding: .9rem; background: hsl(var(--b1)); }
         .order-entry-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(90px, .55fr) minmax(105px, .65fr) minmax(120px, .7fr) minmax(105px, .65fr); gap: .75rem; }
         .review-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .65rem; }
@@ -90,22 +88,7 @@
     </style>
 </head>
 <body class="bg-base-200 min-h-screen">
-    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-40 lg:hidden hidden" onclick="toggleSidebar()"></div>
-    <aside id="sidebar" class="fixed left-0 top-0 h-full w-72 bg-base-100 border-r border-base-300 z-50 transform -translate-x-full lg:translate-x-0 sidebar-transition flex flex-col">
-        <div class="p-5 border-b border-base-300">
-            <div class="flex items-center gap-3">
-                <img src="../../highland_fresh_logo.png" alt="Highland Fresh" class="w-10 h-10 object-contain">
-                <div><p class="font-bold">Highland Fresh</p><p class="text-xs text-base-content/55">Sales & Receivables</p></div>
-            </div>
-        </div>
-        <nav class="flex-1 p-4 space-y-5 overflow-y-auto">
-            <div><p class="text-xs font-semibold text-base-content/40 uppercase mb-2 px-3">Main Menu</p><ul class="menu menu-sm p-0 gap-1"><li><a href="dashboard.html"><i class="fas fa-table-columns w-5"></i>Dashboard</a></li></ul></div>
-            <div><p class="text-xs font-semibold text-base-content/40 uppercase mb-2 px-3">Customers</p><ul class="menu menu-sm p-0 gap-1"><li><a href="customers.html"><i class="fas fa-users w-5"></i>Customer List</a></li><li><a href="wholesalers.html"><i class="fas fa-truck w-5"></i>Wholesalers</a></li></ul></div>
-            <div><p class="text-xs font-semibold text-base-content/40 uppercase mb-2 px-3">Orders</p><ul class="menu menu-sm p-0 gap-1"><li><a href="orders.html?action=direct"><i class="fas fa-user-tag w-5"></i>Direct Order</a></li><li><a href="order_inbox.html" class="bg-primary text-primary-content"><i class="fas fa-inbox w-5"></i>Customer PO Inbox</a></li><li><a href="orders.html?status=pending"><i class="fas fa-clock w-5"></i>Pending Orders</a></li><li><a href="orders.html"><i class="fas fa-history w-5"></i>Order History</a></li></ul></div>
-            <div><p class="text-xs font-semibold text-base-content/40 uppercase mb-2 px-3">Receivables</p><ul class="menu menu-sm p-0 gap-1"><li><a href="aging.html"><i class="fas fa-chart-pie w-5"></i>Aging Report</a></li><li><a href="collections.html"><i class="fas fa-money-check-alt w-5"></i>Collections Due</a></li></ul></div>
-        </nav>
-        <div class="p-4 border-t border-base-300 flex items-center gap-3"><div class="w-10 h-10 bg-primary text-primary-content rounded-lg flex items-center justify-center font-bold" id="userInitials">SC</div><div class="min-w-0 flex-1"><p class="font-semibold text-sm truncate" id="sidebarUserName">Sales Custodian</p><p class="text-xs text-base-content/55">Institutional orders</p></div><button class="btn btn-ghost btn-sm btn-square" title="Log out" onclick="AuthService.logout()"><i class="fas fa-right-from-bracket"></i></button></div>
-    </aside>
+    <!-- Canonical Sales navigation is mounted by js/sales/sidebar.js. -->
 
     <div class="lg:ml-72 min-h-screen flex flex-col">
         <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
@@ -116,7 +99,7 @@
 
         <main class="inbox-page flex-1 p-4 lg:p-6">
             <section class="bg-base-100 border border-base-300 rounded-lg mb-5"><div class="p-4 flex flex-col lg:flex-row lg:items-center gap-4"><div class="w-10 h-10 rounded-lg bg-success/15 text-success flex items-center justify-center"><i class="fas fa-envelope-open-text"></i></div><div class="flex-1"><p class="font-semibold">Emailed Customer Purchase Orders</p><p class="text-sm text-base-content/60" id="mailboxMessage">Checking the Highland Fresh order mailbox...</p></div><button class="btn btn-outline btn-sm" onclick="syncMailbox()"><i class="fas fa-rotate"></i>Check Email</button></div></section>
-            <section class="inbox-summary bg-base-100 border border-base-300 rounded-lg mb-5 overflow-hidden"><div class="queue-metric"><span class="queue-metric-icon bg-info/15 text-info"><i class="fas fa-keyboard"></i></span><div><p class="text-xs text-base-content/55">For encoding</p><p class="text-2xl font-bold text-info" id="encodingCount">0</p></div></div><div class="queue-metric"><span class="queue-metric-icon bg-warning/15 text-warning"><i class="fas fa-phone-volume"></i></span><div><p class="text-xs text-base-content/55">Needs confirmation</p><p class="text-2xl font-bold text-warning" id="confirmationCount">0</p></div></div><div class="queue-metric"><span class="queue-metric-icon bg-success/15 text-success"><i class="fas fa-file-circle-check"></i></span><div><p class="text-xs text-base-content/55">Ready to create</p><p class="text-2xl font-bold text-success" id="readyCount">0</p></div></div><div class="queue-metric"><span class="queue-metric-icon bg-error/15 text-error"><i class="fas fa-ban"></i></span><div><p class="text-xs text-base-content/55">Rejected emails</p><p class="text-2xl font-bold text-error" id="rejectedCount">0</p></div></div></section>
+            <section class="inbox-summary bg-base-100 border border-base-300 rounded-lg mb-5 overflow-hidden"><div class="queue-metric"><span class="queue-metric-icon bg-info/15 text-info"><i class="fas fa-clipboard-check"></i></span><div><p class="text-xs text-base-content/55">Needs review</p><p class="text-2xl font-bold text-info" id="encodingCount">0</p></div></div><div class="queue-metric"><span class="queue-metric-icon bg-warning/15 text-warning"><i class="fas fa-phone-volume"></i></span><div><p class="text-xs text-base-content/55">Waiting for customer</p><p class="text-2xl font-bold text-warning" id="confirmationCount">0</p></div></div><div class="queue-metric"><span class="queue-metric-icon bg-success/15 text-success"><i class="fas fa-file-circle-check"></i></span><div><p class="text-xs text-base-content/55">Ready to create</p><p class="text-2xl font-bold text-success" id="readyCount">0</p></div></div><div class="queue-metric"><span class="queue-metric-icon bg-error/15 text-error"><i class="fas fa-box-archive"></i></span><div><p class="text-xs text-base-content/55">Closed requests</p><p class="text-2xl font-bold text-error" id="rejectedCount">0</p></div></div></section>
             <section class="bg-base-100 border border-base-300 rounded-lg overflow-hidden">
                 <div class="p-4 border-b border-base-300 flex flex-col xl:flex-row xl:items-center gap-3">
                     <div class="join" role="tablist" aria-label="Inbox view">
@@ -125,7 +108,7 @@
                         <button class="btn btn-sm btn-outline join-item inbox-view-tab" data-inbox-view="all" onclick="setInboxView('all')">All</button>
                     </div>
                     <label class="input input-bordered input-sm flex items-center gap-2 flex-1"><i class="fas fa-search text-base-content/40"></i><input id="searchInput" class="grow" placeholder="Search PO number, customer, or sender" oninput="scheduleLoad()"></label>
-                    <select id="statusFilter" class="select select-bordered select-sm xl:w-56" onchange="handleStatusFilter()"><option value="">All statuses</option><option value="received">New email</option><option value="for_encoding">For encoding</option><option value="draft_order">Draft order</option><option value="needs_customer_confirmation">Needs customer confirmation</option><option value="customer_confirmed">Customer confirmed</option><option value="ready_to_create">Ready to create</option><option value="order_created">Order created</option><option value="rejected">Rejected</option></select>
+                    <select id="statusFilter" class="select select-bordered select-sm xl:w-56" onchange="handleStatusFilter()"><option value="">All statuses</option><option value="received">New request</option><option value="for_encoding">Needs review</option><option value="draft_order">Needs correction</option><option value="needs_customer_confirmation">Waiting for customer</option><option value="customer_confirmed">Ready to create</option><option value="ready_to_create">Ready to create</option><option value="order_created">Sent for approval</option><option value="rejected">Closed</option></select>
                 </div>
                 <div class="inbox-list-context"><div class="flex flex-wrap items-center justify-between gap-2"><div><p class="font-semibold text-sm" id="inboxViewTitle">Orders needing attention</p><p class="text-xs text-base-content/55" id="inboxViewDescription">Newest first. Complete these before checking finished records.</p></div><span class="text-xs text-base-content/55" id="visibleCount">0 records</span></div></div>
                 <div class="inbox-list-header"><span>Order</span><span>Customer</span><span>Received</span><span>Progress</span><span class="text-right">Action</span></div><div id="inboxList"><div class="inbox-empty"><span class="loading loading-spinner loading-md"></span></div></div>
@@ -133,19 +116,20 @@
         </main>
     </div>
 
-    <dialog id="reviewModal" class="modal"><div class="modal-box p-0 overflow-hidden"><div class="p-4 border-b border-base-300 flex items-start gap-3"><div class="w-10 h-10 rounded-lg bg-info/15 text-info flex items-center justify-center"><i class="fas fa-file-pen"></i></div><div class="flex-1"><h2 class="font-bold text-lg">Review Customer Request</h2><p class="text-sm text-base-content/55">Follow the numbered steps, then create a draft for approval.</p></div><button class="btn btn-ghost btn-sm btn-square" onclick="closeReviewModal()" title="Close"><i class="fas fa-times"></i></button></div><div id="reviewContent" class="p-4"></div><div class="p-3 border-t border-base-300 bg-base-100"><div id="reviewSaveError" class="alert alert-error py-3 mb-3 hidden" role="alert"><i class="fas fa-circle-exclamation"></i><div><p class="font-semibold">Order details were not saved</p><p id="reviewSaveErrorText" class="text-sm"></p></div></div><div class="flex flex-col xl:flex-row xl:items-center gap-3"><label id="warningApprovalWrap" class="label cursor-pointer justify-start gap-2 flex-1 hidden"><input id="warningApproval" type="checkbox" class="checkbox checkbox-warning checkbox-sm"><span class="label-text text-sm">I reviewed the warning.</span></label><div class="flex flex-wrap justify-end gap-2 ml-auto"><button class="btn btn-ghost btn-sm" onclick="closeReviewModal()">Close</button><button class="btn btn-outline btn-sm" id="viewAttachmentButton" onclick="viewAttachment()"><i class="fas fa-up-right-from-square"></i>View Original</button><div id="moreReviewActions" class="dropdown dropdown-top dropdown-end"><button class="btn btn-outline btn-sm" tabindex="0"><i class="fas fa-ellipsis"></i>More</button><ul class="dropdown-content menu bg-base-100 border border-base-300 rounded-lg shadow-xl z-50 w-60 p-2 mb-2" tabindex="0"><li id="recordCallAction"><button id="recordCallButton" onclick="openCallModal()"><i class="fas fa-phone-volume"></i><span>Record customer call</span></button></li><li id="correctEncodingAction"><button id="correctEncodingButton" onclick="openEncodingCorrectionModal()"><i class="fas fa-pen-to-square"></i>Fix my typing mistake</button></li><li id="rejectEmailAction"><button id="rejectEmailButton" class="text-error" onclick="openRejectModal()"><i class="fas fa-ban"></i>Close without an order</button></li></ul></div><button class="btn btn-info btn-sm" id="saveDetailsButton" onclick="saveOrderDetails()"><i class="fas fa-save"></i>Save and Review</button><button class="btn btn-primary btn-sm" id="createOrderButton" onclick="confirmImport()"><i class="fas fa-file-circle-check"></i>Create Draft &amp; Continue</button></div></div></div></div></dialog>
+    <dialog id="reviewModal" class="modal"><div class="modal-box p-0 overflow-hidden"><div class="p-4 border-b border-base-300 flex items-start gap-3"><div class="w-10 h-10 rounded-lg bg-info/15 text-info flex items-center justify-center"><i class="fas fa-file-pen"></i></div><div class="flex-1"><h2 class="font-bold text-lg">Review Customer Request</h2><p class="text-sm text-base-content/55">Check the prepared order against the original customer PO.</p></div><button class="btn btn-ghost btn-sm btn-square" onclick="closeReviewModal()" title="Close" aria-label="Close review"><i class="fas fa-times"></i></button></div><div id="reviewContent" class="p-4"></div><div class="p-3 border-t border-base-300 bg-base-100"><div id="reviewSaveError" class="alert alert-error py-3 mb-3 hidden" role="alert"><i class="fas fa-circle-exclamation"></i><div><p class="font-semibold">Order details were not saved</p><p id="reviewSaveErrorText" class="text-sm"></p></div></div><div class="flex flex-col xl:flex-row xl:items-center gap-3"><label id="warningApprovalWrap" class="label cursor-pointer justify-start gap-2 flex-1 hidden"><input id="warningApproval" type="checkbox" class="checkbox checkbox-warning checkbox-sm"><span class="label-text text-sm">I reviewed the warning.</span></label><div class="flex flex-wrap justify-end gap-2 ml-auto"><button class="btn btn-ghost btn-sm" onclick="closeReviewModal()">Close</button><div id="moreReviewActions" class="dropdown dropdown-top dropdown-end"><button class="btn btn-outline btn-sm" tabindex="0"><i class="fas fa-ellipsis"></i>Exceptions</button><ul class="dropdown-content menu bg-base-100 border border-base-300 rounded-lg shadow-xl z-50 w-64 p-2 mb-2" tabindex="0"><li id="recordCallAction"><button id="recordCallButton" onclick="openCallModal()"><i class="fas fa-phone-volume"></i><span>Record customer call</span></button></li><li id="correctEncodingAction"><button id="correctEncodingButton" onclick="openEncodingCorrectionModal()"><i class="fas fa-pen-to-square"></i>Fix my typing mistake</button></li><li id="rejectEmailAction"><button id="rejectEmailButton" class="text-error" onclick="openRejectModal()"><i class="fas fa-ban"></i>Reject request</button></li></ul></div><button class="btn btn-warning btn-sm hidden" id="recordCallPrimaryButton" onclick="openCallModal()"><i class="fas fa-phone-volume"></i>Record Customer Decision</button><button class="btn btn-info btn-sm" id="saveDetailsButton" onclick="saveOrderDetails()"><i class="fas fa-clipboard-check"></i>Verify &amp; Save</button><button class="btn btn-primary btn-sm" id="createOrderButton" onclick="confirmImport()"><i class="fas fa-paper-plane"></i>Create Order &amp; Send to GM</button></div></div></div></div></dialog>
 
     <dialog id="callModal" class="modal"><div class="modal-box max-w-2xl p-0 overflow-hidden"><div class="p-5 border-b border-base-300 flex items-start gap-3"><div class="w-10 h-10 rounded-lg bg-warning/15 text-warning flex items-center justify-center"><i class="fas fa-phone-volume"></i></div><div class="flex-1"><h2 id="callModalTitle" class="font-bold text-lg">Record Customer Call</h2><p id="callModalSubtitle" class="text-sm text-base-content/55">Keep a clear record of what the customer said.</p></div><button class="btn btn-ghost btn-sm btn-square" onclick="callModal.close()"><i class="fas fa-times"></i></button></div><form id="callForm" class="p-5 space-y-4" onsubmit="saveCustomerCall(event)"><div class="alert alert-info py-3 text-sm"><i class="fas fa-circle-info"></i><span id="callGuidance">This call will be attached to the request.</span></div><div class="grid gap-4 sm:grid-cols-2"><label class="form-control sm:col-span-2"><span id="callSummaryLabel" class="label-text font-medium">What did the customer confirm?</span><textarea id="callChangeSummary" class="textarea textarea-bordered" maxlength="5000" rows="2" placeholder="Customer confirmed 6 boxes instead of 10." required></textarea></label><label class="form-control sm:col-span-2"><span class="label-text font-medium">Why was the call needed?</span><input id="callReason" class="input input-bordered" maxlength="500" placeholder="The emailed request was incomplete or needed a change" required></label><label class="form-control"><span class="label-text font-medium">Customer representative</span><input id="callContact" class="input input-bordered" maxlength="150" placeholder="Name of person contacted" required></label><label class="form-control"><span class="label-text font-medium">Confirmation method</span><input class="input input-bordered" value="Phone call" readonly></label><label class="form-control"><span class="label-text font-medium">Date and time</span><input id="callDate" class="input input-bordered" type="datetime-local" required></label><label class="form-control sm:col-span-2"><span class="label-text font-medium">Optional notes</span><textarea id="callNote" class="textarea textarea-bordered" maxlength="5000" rows="2" placeholder="Additional details about the call"></textarea></label></div><div class="flex justify-end gap-2 pt-2"><button class="btn btn-ghost" type="button" onclick="callModal.close()">Cancel</button><button id="saveCallButton" class="btn btn-warning" type="submit"><i class="fas fa-phone-volume"></i><span>Save Call Record</span></button></div></form></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
 
     <dialog id="encodingCorrectionModal" class="modal"><div class="modal-box max-w-lg"><h2 class="font-bold text-lg">Fix My Typing Mistake</h2><p class="text-sm text-base-content/60 mt-1">Use this only when Sales typed something differently from the unchanged customer request.</p><form class="mt-5 space-y-4" onsubmit="correctEncoding(event)"><div class="alert alert-warning py-3 text-sm"><i class="fas fa-triangle-exclamation"></i><span>If the customer changed the request, cancel and use <strong>Record Customer Approval</strong>.</span></div><label class="form-control"><span class="label-text font-medium">What did Sales type incorrectly?</span><textarea id="encodingCorrectionReason" class="textarea textarea-bordered" minlength="10" maxlength="1000" rows="3" placeholder="I typed 20 blocks, but the customer request shows 2 blocks." required></textarea></label><label class="label cursor-pointer justify-start gap-3"><input id="encodingCorrectionConfirmed" class="checkbox checkbox-warning" type="checkbox" required><span class="label-text">I checked the original request and the current entries now match it.</span></label><div class="flex justify-end gap-2"><button class="btn btn-ghost" type="button" onclick="encodingCorrectionModal.close()">Cancel</button><button id="saveEncodingCorrectionButton" class="btn btn-warning" type="submit"><i class="fas fa-pen-to-square"></i>Save Typing Correction</button></div></form></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
 
-    <dialog id="rejectModal" class="modal"><div class="modal-box max-w-lg"><h2 class="font-bold text-lg">Close Without Creating an Order</h2><p class="text-sm text-base-content/60 mt-1">The original email and attachment will remain saved for reference.</p><form class="mt-5 space-y-4" onsubmit="rejectEmail(event)"><label class="form-control"><span class="label-text font-medium">Why will no order be created?</span><textarea id="rejectReason" class="textarea textarea-bordered" maxlength="2000" rows="3" placeholder="Duplicate request, unreadable document, wrong recipient, or another reason" required></textarea></label><div class="flex justify-end gap-2"><button class="btn btn-ghost" type="button" onclick="rejectModal.close()">Cancel</button><button class="btn btn-error" type="submit"><i class="fas fa-ban"></i>Close Without Order</button></div></form></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
+    <dialog id="rejectModal" class="modal"><div class="modal-box max-w-lg"><h2 class="font-bold text-lg">Reject Customer Request</h2><p class="text-sm text-base-content/60 mt-1">No Sales Order will be created. The original email and attachment will remain saved for reference.</p><form class="mt-5 space-y-4" onsubmit="rejectEmail(event)"><label class="form-control"><span class="label-text font-medium">Why will no order be created?</span><textarea id="rejectReason" class="textarea textarea-bordered" maxlength="2000" rows="3" placeholder="Duplicate request, unreadable document, wrong recipient, or another reason" required></textarea></label><div class="flex justify-end gap-2"><button class="btn btn-ghost" type="button" onclick="rejectModal.close()">Cancel</button><button class="btn btn-error" type="submit"><i class="fas fa-ban"></i>Reject Request</button></div></form></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
 
     <div id="toastContainer" class="toast toast-end toast-top z-[100]"></div>
     <script src="../../js/vendor/axios.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="sales_custodian,general_manager"></script>
+    <script src="../../js/sales/sidebar.js?v=20260828-salesnav1"></script>
     <script src="../../js/sales/sales.service.js"></script>
     <script>
         let inboxRows = [];
@@ -178,7 +162,6 @@
         const localDateTime = (date = new Date()) => { const pad = value => String(value).padStart(2, '0'); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`; };
         const money = value => value === '' || value === null || value === undefined ? '-' : new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value || 0));
 
-        function toggleSidebar() { $('sidebar').classList.toggle('-translate-x-full'); $('sidebarBackdrop').classList.toggle('hidden'); }
         function toast(message, type = 'info') { const node = document.createElement('div'); node.className = `alert alert-${type} shadow-lg max-w-md`; node.innerHTML = `<span>${esc(message)}</span>`; $('toastContainer').appendChild(node); setTimeout(() => node.remove(), 4500); }
         function showReviewSaveError(message = '') {
             const panel = $('reviewSaveError');
@@ -214,7 +197,7 @@
             return `<button class="inbox-source link link-info" onclick="openReview(${Number(row.id)})"><i class="fas fa-envelope-open-text"></i><span>Order written in email</span></button>`;
         }
         function statusBadge(status) {
-            const map = { received: ['info', 'New email'], for_encoding: ['info', 'Enter request'], needs_comparison: ['warning', 'Needs comparison'], draft_order: ['warning', 'Fix order details'], needs_customer_confirmation: ['warning', 'Needs customer approval'], customer_confirmed: ['success', 'Customer approved'], ready_to_create: ['success', 'Ready to create draft'], draft_created: ['info', 'Draft created — submit next'], order_created: ['primary', 'Order created'], converted: ['primary', 'Order created'], cancelled: ['error', 'Order cancelled'], needs_review: ['warning', 'Needs review'], ready: ['success', 'Ready to create draft'], rejected: ['error', 'Closed without order'], duplicate: ['neutral', 'Duplicate'] };
+            const map = { received: ['info', 'Needs review'], for_encoding: ['info', 'Needs review'], needs_comparison: ['warning', 'Needs review'], draft_order: ['warning', 'Needs correction'], needs_customer_confirmation: ['warning', 'Waiting for customer'], customer_confirmed: ['success', 'Ready to create'], ready_to_create: ['success', 'Ready to create'], draft_created: ['info', 'Draft needs submission'], order_created: ['primary', 'Sent for approval'], converted: ['primary', 'Completed'], cancelled: ['error', 'Order cancelled'], needs_review: ['warning', 'Needs review'], ready: ['success', 'Ready to create'], rejected: ['error', 'Closed'], duplicate: ['neutral', 'Duplicate'] };
             const item = map[status] || ['ghost', status || 'Unknown'];
             return `<span class="badge badge-${item[0]} badge-sm whitespace-nowrap">${esc(item[1])}</span>`;
         }
@@ -227,17 +210,17 @@
 
         function nextStepText(status) {
             const steps = {
-                received: 'Check the sender before entering the order.',
-                for_encoding: 'Enter the order shown in the customer request.',
-                needs_comparison: 'Compare the saved details with the original customer request.',
-                draft_order: 'Continue checking the saved order details.',
-                needs_customer_confirmation: 'Call the customer and record the agreement.',
-                customer_confirmed: 'Customer change has been recorded.',
-                ready_to_create: 'Reviewed and ready to become a draft Sales Order.',
-                ready: 'Reviewed and ready to become a draft Sales Order.',
+                received: 'Open and check this customer request.',
+                for_encoding: 'Open and check this customer request.',
+                needs_comparison: 'Check the saved details against the original request.',
+                draft_order: 'Correct the highlighted order details.',
+                needs_customer_confirmation: 'Record the customer’s clarification or approval.',
+                customer_confirmed: 'Verified and ready to send for approval.',
+                ready_to_create: 'Verified and ready to send for approval.',
+                ready: 'Verified and ready to send for approval.',
                 draft_created: 'Open the draft and submit it for General Manager approval.',
-                order_created: 'Sales Order already created.',
-                converted: 'Sales Order already created.',
+                order_created: 'Sales Order sent for General Manager approval.',
+                converted: 'Sales Order completed.',
                 cancelled: 'The linked Sales Order was cancelled.',
                 rejected: 'Kept for reference; no order will be created.',
                 duplicate: 'Already received earlier; no second order is needed.'
@@ -252,7 +235,7 @@
                 if (config.mailbox_enabled) {
                     configuredMailbox = config.mailbox_address || configuredMailbox;
                     $('mailboxMessage').classList.remove('text-error');
-                    $('mailboxMessage').textContent = `Watching ${configuredMailbox}. Emails are saved here for manual order entry.`;
+                    $('mailboxMessage').textContent = `Watching ${configuredMailbox}. Customer requests are saved here for Sales review.`;
                     $('syncButton').disabled = false;
                     return true;
                 }
@@ -476,21 +459,24 @@
             const overCredit = hasCreditWarning();
             const paymentLabel = paymentType === 'credit' ? `Credit${terms > 0 ? ` — ${terms} days` : ''}` : 'Cash';
             const cashConflict = paymentType === 'cash' && terms > 0;
-            panel.innerHTML = `<div class="review-summary-grid"><div class="bg-base-200 rounded-lg p-3"><p class="text-xs text-base-content/55">Individual items</p><p class="font-bold text-lg">${Number(totals.totalQuantity).toLocaleString('en-PH')}</p></div><div class="bg-base-200 rounded-lg p-3"><p class="text-xs text-base-content/55">Estimated total</p><p class="font-bold text-lg">${money(totals.totalAmount)}</p></div><div class="bg-base-200 rounded-lg p-3"><p class="text-xs text-base-content/55">Payment</p><p class="font-semibold">${esc(paymentLabel)}</p>${paymentType === 'credit' && remaining !== null ? `<p class="text-xs ${overCredit ? 'text-error' : 'text-base-content/55'}">Available before this order: ${money(remaining)}</p>` : ''}</div><div class="bg-base-200 rounded-lg p-3"><p class="text-xs text-base-content/55">Delivery address</p><p class="font-semibold text-sm">${esc(activeImport.customer_address || 'No address saved')}</p></div></div>${totals.hasStockShortage ? '<div class="alert alert-warning py-2 mt-3 text-sm"><i class="fas fa-box-open"></i><span>Some requested items are not ready in stock. Confirm whether the customer will wait or accept a changed quantity.</span></div>' : ''}${overCredit ? '<div class="alert alert-error py-2 mt-3 text-sm"><i class="fas fa-credit-card"></i><span>This draft would exceed the customer credit limit and will be clearly flagged for the General Manager.</span></div>' : ''}${cashConflict ? `<div class="alert alert-warning py-2 mt-3 text-sm"><i class="fas fa-triangle-exclamation"></i><span>This customer is marked Cash but also has ${terms}-day terms. Cash will be used; ask an administrator to correct the customer account.</span></div>` : ''}<div class="alert alert-info py-2 mt-3 text-sm"><i class="fas fa-arrow-right"></i><span>Creating this makes a draft only. The next screen will ask Sales to submit it for General Manager approval.</span></div>`;
+            panel.innerHTML = `<div class="review-summary-grid"><div class="bg-base-200 rounded-lg p-3"><p class="text-xs text-base-content/55">Individual items</p><p class="font-bold text-lg">${Number(totals.totalQuantity).toLocaleString('en-PH')}</p></div><div class="bg-base-200 rounded-lg p-3"><p class="text-xs text-base-content/55">Estimated total</p><p class="font-bold text-lg">${money(totals.totalAmount)}</p></div><div class="bg-base-200 rounded-lg p-3"><p class="text-xs text-base-content/55">Payment</p><p class="font-semibold">${esc(paymentLabel)}</p>${paymentType === 'credit' && remaining !== null ? `<p class="text-xs ${overCredit ? 'text-error' : 'text-base-content/55'}">Available before this order: ${money(remaining)}</p>` : ''}</div><div class="bg-base-200 rounded-lg p-3"><p class="text-xs text-base-content/55">Delivery address</p><p class="font-semibold text-sm">${esc(activeImport.customer_address || 'No address saved')}</p></div></div>${totals.hasStockShortage ? '<div class="alert alert-warning py-2 mt-3 text-sm"><i class="fas fa-box-open"></i><span>Some requested items are not ready in stock. Confirm whether the customer will wait or accept a changed quantity.</span></div>' : ''}${overCredit ? '<div class="alert alert-error py-2 mt-3 text-sm"><i class="fas fa-credit-card"></i><span>This order would exceed the customer credit limit and will be clearly flagged for the General Manager.</span></div>' : ''}${cashConflict ? `<div class="alert alert-warning py-2 mt-3 text-sm"><i class="fas fa-triangle-exclamation"></i><span>This customer is marked Cash but also has ${terms}-day terms. Cash will be used; ask an administrator to correct the customer account.</span></div>` : ''}<div class="alert alert-info py-2 mt-3 text-sm"><i class="fas fa-paper-plane"></i><span>After verification, creating the order sends it directly to the General Manager for approval.</span></div>`;
             refreshWarningApproval();
         }
         function markEntryChanged() {
             if (isReadOnly()) return;
             entryDirty = true;
-            const check = $('sourceVerified');
-            if (check) { check.disabled = false; check.checked = false; }
             updateSourceVerification();
+        }
+        function wholeQuantityInputValue(value) {
+            if (value === null || value === undefined || String(value).trim() === '') return '';
+            const text = String(value).trim();
+            return /^\d+(?:\.0+)?$/.test(text) ? String(Math.trunc(Number(text))) : text;
         }
         function lineRemarks(line) { try { return JSON.parse(line.raw_data || '{}').remarks || ''; } catch (error) { return ''; } }
         function lineRawData(line) { try { const raw = JSON.parse(line.raw_data || '{}'); return raw && typeof raw === 'object' ? raw : {}; } catch (error) { return {}; } }
         function isRemovedTypingLine(line) { return Number(line?.quantity_entered || 0) === 0 && String(line?.issue_text || '') === 'Removed from the saved order during manual entry.'; }
         function makeManualRows() {
-            return (activeImport.lines || []).filter(line => !isRemovedTypingLine(line)).map(line => {
+            const savedRows = (activeImport.lines || []).filter(line => !isRemovedTypingLine(line)).map(line => {
                 const raw = lineRawData(line);
                 const enteredCode = firstValue(line.customer_product_code, line.product_code, raw.product_code, raw.sku, raw.productCode);
                 const description = String(firstValue(line.description, line.product_name, raw.description, raw.product_name)).trim().toLowerCase();
@@ -499,7 +485,7 @@
                     line_id: Number(line.id),
                     row_number: Number(line.row_number || raw.row_number || 1),
                     product_code: matched ? matched.product_code : enteredCode,
-                    quantity: line.quantity_entered ?? raw.quantity ?? '',
+                    quantity: wholeQuantityInputValue(line.quantity_entered ?? raw.quantity ?? ''),
                     unit: line.unit_entered || line.unit || raw.unit || '',
                     unit_price: raw.entered_unit_price ?? raw.unit_price ?? raw.price ?? line.po_unit_price ?? '',
                     price_unit: raw.price_unit || line.unit_entered || line.unit || raw.unit || '',
@@ -507,9 +493,32 @@
                     line
                 };
             });
+            if (savedRows.length) return savedRows;
+            return (activeImport.trusted_reference?.lines || []).map((line, index) => {
+                const enteredCode = firstValue(line.product_code, line.customer_product_code);
+                const description = String(firstValue(line.description, line.product_name)).trim().toLowerCase();
+                const matched = productByCode(enteredCode) || (description ? orderProducts.find(product => String(product.product_name).trim().toLowerCase() === description) : null);
+                return {
+                    line_id: 0,
+                    row_number: Number(line.row_number || index + 1),
+                    product_code: matched ? matched.product_code : enteredCode,
+                    quantity: wholeQuantityInputValue(line.quantity ?? ''),
+                    unit: String(line.unit || '').toLowerCase(),
+                    unit_price: '',
+                    price_unit: String(line.unit || '').toLowerCase(),
+                    remarks: '',
+                    line: null
+                };
+            });
         }
-        function originalText(line) { if (!line || line.original_quantity_entered === null || line.original_quantity_entered === undefined) return 'Not saved yet'; return `${line.original_quantity_entered} ${line.original_unit_entered || ''} ${line.original_customer_product_code || ''}`.trim(); }
+        function originalText(line) { if (!line || line.original_quantity_entered === null || line.original_quantity_entered === undefined) return 'Not saved yet'; return `${wholeQuantityInputValue(line.original_quantity_entered)} ${line.original_unit_entered || ''} ${line.original_customer_product_code || ''}`.trim(); }
         function issueText(line) { if (!line || !line.line_status) return '<span class="text-base-content/45">Not checked yet</span>'; if (line.line_status === 'matched') return activeImport?.source_verified_at ? '<span class="badge badge-success badge-sm">Checked</span>' : '<span class="badge badge-warning badge-sm">Not verified</span><p class="text-xs text-warning mt-1">This older entry was not recorded as compared with the original PO.</p>'; if (line.line_status === 'warning') return `<span class="badge badge-warning badge-sm">Review</span><p class="text-xs text-warning mt-1">${esc(line.issue_text || 'Review this line')}</p>`; return `<span class="badge badge-error badge-sm">Blocked</span><p class="text-xs text-error mt-1">${esc(line.issue_text || 'Fix this line')}</p>`; }
+        function lineHasSavedDifference(line) {
+            if (!line || line.original_quantity_entered === null || line.original_quantity_entered === undefined) return false;
+            return String(line.customer_product_code || '').trim().toUpperCase() !== String(line.original_customer_product_code || '').trim().toUpperCase()
+                || Number(line.quantity_entered || 0) !== Number(line.original_quantity_entered || 0)
+                || String(line.unit_entered || '').trim().toLowerCase() !== String(line.original_unit_entered || '').trim().toLowerCase();
+        }
 
         function renderManualRows(readOnly) {
             if (!manualRows.length) manualRows.push({ line_id: 0, row_number: 1, product_code: '', quantity: '', unit: '', unit_price: '', price_unit: '', remarks: '', line: null });
@@ -517,7 +526,9 @@
                 const line = row.line || {};
                 const original = originalText(line);
                 const calculation = rowCalculation(row);
-                return `<div data-manual-row="${index}" class="order-entry-card"><div class="flex items-center justify-between gap-3 mb-3"><div><p class="font-semibold">Item ${index + 1}</p><p class="text-xs text-base-content/55">${esc(calculation.breakdown)}</p></div>${!readOnly ? `<button class="btn btn-ghost btn-xs text-error" onclick="removeManualLine(${index})" title="Remove item"><i class="fas fa-trash"></i>Remove</button>` : ''}</div><div class="order-entry-grid"><label class="form-control"><span class="label-text text-xs font-medium">Product</span><select class="select select-bordered select-sm w-full" data-field="product_code" onchange="changeProduct(${index}, this.value)" ${readOnly ? 'disabled' : ''}>${productOptions(row.product_code)}</select></label><label class="form-control"><span class="label-text text-xs font-medium">Quantity</span><input class="input input-bordered input-sm w-full" data-field="quantity" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="7" placeholder="e.g., 1" value="${esc(row.quantity)}" oninput="markEntryChanged(); updateOrderSummary()" ${readOnly ? 'disabled' : ''}></label><label class="form-control"><span class="label-text text-xs font-medium">Ordered as</span><select class="select select-bordered select-sm w-full" data-field="unit" onchange="changeOrderUnit(${index}, this.value)" ${readOnly ? 'disabled' : ''}>${unitOptions(row.product_code, row.unit)}</select></label><label class="form-control"><span class="label-text text-xs font-medium">Customer price</span><input class="input input-bordered input-sm w-full" data-field="unit_price" type="text" inputmode="decimal" maxlength="11" placeholder="Leave blank if absent" value="${esc(row.unit_price)}" oninput="markEntryChanged(); updateOrderSummary()" ${readOnly ? 'disabled' : ''}></label><label class="form-control"><span class="label-text text-xs font-medium">Price is per</span><select class="select select-bordered select-sm w-full" data-field="price_unit" onchange="markEntryChanged(); updateOrderSummary()" ${readOnly ? 'disabled' : ''}>${priceUnitOptions(row.product_code, row.price_unit || row.unit)}</select></label></div><label class="form-control mt-3"><span class="label-text text-xs font-medium">Customer instructions or remarks</span><input class="input input-bordered input-sm w-full" data-field="remarks" maxlength="500" placeholder="Optional" value="${esc(row.remarks)}" oninput="markEntryChanged()" ${readOnly ? 'disabled' : ''}></label><div class="grid gap-3 md:grid-cols-2 mt-3 pt-3 border-t border-base-300"><div><p class="text-xs font-medium mb-1">Current check</p>${issueText(line)}</div><div><p class="text-xs font-medium mb-1">First version saved by Sales</p><p class="text-xs text-base-content/60">${esc(original)}</p></div></div></div>`;
+                const needsAttention = line.line_status && line.line_status !== 'matched';
+                const showHistory = lineHasSavedDifference(line) || needsAttention;
+                return `<div data-manual-row="${index}" class="order-entry-card"><div class="flex items-center justify-between gap-3 mb-3"><div><div class="flex flex-wrap items-center gap-2"><p class="font-semibold">Item ${index + 1}</p>${line.line_status ? issueText(line) : ''}</div><p class="text-xs text-base-content/55 mt-1">${esc(calculation.breakdown)}</p></div>${!readOnly ? `<button class="btn btn-ghost btn-xs text-error" onclick="removeManualLine(${index})" title="Remove item"><i class="fas fa-trash"></i>Remove</button>` : ''}</div><div class="order-entry-grid"><label class="form-control"><span class="label-text text-xs font-medium">Product</span><select class="select select-bordered select-sm w-full" data-field="product_code" onchange="changeProduct(${index}, this.value)" ${readOnly ? 'disabled' : ''}>${productOptions(row.product_code)}</select></label><label class="form-control"><span class="label-text text-xs font-medium">Quantity</span><input class="input input-bordered input-sm w-full" data-field="quantity" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="7" placeholder="e.g., 1" value="${esc(row.quantity)}" oninput="markEntryChanged(); updateOrderSummary()" ${readOnly ? 'disabled' : ''}></label><label class="form-control"><span class="label-text text-xs font-medium">Ordered as</span><select class="select select-bordered select-sm w-full" data-field="unit" onchange="changeOrderUnit(${index}, this.value)" ${readOnly ? 'disabled' : ''}>${unitOptions(row.product_code, row.unit)}</select></label><label class="form-control"><span class="label-text text-xs font-medium">Customer price</span><input class="input input-bordered input-sm w-full" data-field="unit_price" type="text" inputmode="decimal" maxlength="11" placeholder="Leave blank if absent" value="${esc(row.unit_price)}" oninput="markEntryChanged(); updateOrderSummary()" ${readOnly ? 'disabled' : ''}></label><label class="form-control"><span class="label-text text-xs font-medium">Price is per</span><select class="select select-bordered select-sm w-full" data-field="price_unit" onchange="markEntryChanged(); updateOrderSummary()" ${readOnly ? 'disabled' : ''}>${priceUnitOptions(row.product_code, row.price_unit || row.unit)}</select></label></div><label class="form-control mt-3"><span class="label-text text-xs font-medium">Customer instructions or remarks</span><input class="input input-bordered input-sm w-full" data-field="remarks" maxlength="500" placeholder="Optional" value="${esc(row.remarks)}" oninput="markEntryChanged()" ${readOnly ? 'disabled' : ''}></label>${showHistory ? `<details class="mt-3 pt-3 border-t border-base-300"><summary class="cursor-pointer text-xs font-medium">View comparison details</summary><div class="grid gap-3 md:grid-cols-2 mt-3"><div><p class="text-xs font-medium mb-1">Current result</p>${issueText(line)}</div><div><p class="text-xs font-medium mb-1">Originally entered by Sales</p><p class="text-xs text-base-content/60">${esc(original)}</p></div></div></details>` : ''}</div>`;
             }).join('');
             installNumericEntryGuards();
             updateOrderSummary();
@@ -658,7 +669,7 @@
         function renderReview() {
             const readOnly = isReadOnly();
             const saved = Boolean(activeImport.entry_saved_at);
-            entryDirty = !saved;
+            entryDirty = !saved || !activeImport.source_verified_at;
             const blocked = (activeImport.lines || []).filter(line => Number(line.quantity_base || 0) > 0 && line.line_status === 'blocked').length;
             const warnings = (activeImport.lines || []).filter(line => Number(line.quantity_base || 0) > 0 && line.line_status === 'warning').length;
             const creditWarning = hasCreditWarning();
@@ -692,31 +703,24 @@
             const headerGrid = $('entryCustomer').closest('.grid');
             const requestStage = document.createElement('section');
             requestStage.className = 'review-stage mb-4';
-            requestStage.innerHTML = '<div class="review-stage__heading"><span class="review-stage__number">1</span><div><h3 class="font-semibold">Identify the request</h3><p class="text-xs text-base-content/55">Confirm the customer reference and requested delivery date.</p></div></div><div class="p-4" data-stage-body></div>';
+            requestStage.innerHTML = '<div class="review-stage__heading"><div><h3 class="font-semibold">Order to create</h3><p class="text-xs text-base-content/55">Check the customer, PO details, and requested items against the original shown on the left.</p></div></div><div class="p-4 space-y-4" data-stage-body></div>';
             headerGrid.before(requestStage);
-            requestStage.querySelector('[data-stage-body]').appendChild(headerGrid);
-
-            const itemsStage = document.createElement('section');
-            itemsStage.className = 'review-stage mb-4';
-            itemsStage.innerHTML = '<div class="review-stage__heading"><span class="review-stage__number">2</span><div class="flex-1"><h3 class="font-semibold">Enter the requested items</h3><p class="text-xs text-base-content/55">For every price, choose whether it is per box or per individual item.</p></div></div><div class="p-4 space-y-3" data-stage-body></div>';
-            orderHeader.before(itemsStage);
-            const itemsBody = itemsStage.querySelector('[data-stage-body]');
-            itemsBody.append(orderHeader, itemCards);
+            const requestBody = requestStage.querySelector('[data-stage-body]');
+            requestBody.append(headerGrid, orderHeader, itemCards);
             orderHeader.className = 'flex items-center justify-between gap-3';
             const orderHeaderText = orderHeader.querySelector('div');
-            if (orderHeaderText) orderHeaderText.innerHTML = '<p class="text-sm text-base-content/60">Boxes are automatically converted to individual items for stock and totals.</p>';
+            if (orderHeaderText) orderHeaderText.innerHTML = '<h4 class="font-semibold">Requested items</h4><p class="text-sm text-base-content/60">Boxes are automatically converted to individual items for stock and totals.</p>';
 
             $('entryPoNumber')?.addEventListener('input', markEntryChanged);
             $('entryDeliveryDate')?.addEventListener('change', markEntryChanged);
             const verificationPanel = document.createElement('div');
             verificationPanel.className = 'review-stage mb-4';
             const alreadyCompared = Boolean(activeImport.source_verified_at);
-            verificationPanel.innerHTML = `<div class="review-stage__heading"><span class="review-stage__number">3</span><div><h3 class="font-semibold">Compare with the customer request</h3><p class="text-xs text-base-content/55">Check every entry against the original shown on the left.</p></div></div><div class="p-4 space-y-3">${trustedLines.length ? `<div class="alert alert-success py-3 items-start"><i class="fas fa-shield-check mt-1"></i><div><p class="font-semibold text-sm">The system can compare this request</p><p class="text-xs mt-1">${trustedSummary}</p><p class="text-xs mt-1">A different product, quantity, unit, PO number, or delivery date will be stopped on the first save.</p></div></div>` : `<div class="alert alert-warning py-3 items-start"><i class="fas fa-eye mt-1"></i><div><p class="font-semibold text-sm">Sales must compare this manually</p><p class="text-xs mt-1">The system cannot reliably read every customer document, so compare every field yourself.</p></div></div>`}${!readOnly ? `${alreadyCompared ? `<div class="text-sm text-success"><i class="fas fa-check-circle mr-1"></i>Compared and saved on ${esc(dateTime(activeImport.source_verified_at))}. Editing anything will require another comparison.</div>` : ''}<label class="border border-base-300 rounded-lg p-3 flex items-start gap-3 cursor-pointer bg-base-100"><input id="sourceVerified" class="checkbox checkbox-primary mt-1" type="checkbox" ${alreadyCompared ? 'checked' : ''} onchange="updateSourceVerification()"><span><strong class="text-sm">I compared these exact details with the original customer request.</strong><span class="block text-xs text-base-content/55 mt-1">Product, quantity, unit, price basis, PO number, and delivery date are correct.</span></span></label>` : (alreadyCompared ? `<div class="text-xs text-success"><i class="fas fa-check-circle mr-1"></i>Compared with the original customer request on ${esc(dateTime(activeImport.source_verified_at))}</div>` : `<div class="alert alert-warning py-3 text-sm"><i class="fas fa-triangle-exclamation"></i><span>This older order was not recorded as checked against the original customer request.</span></div>`)}</div>`;
-            itemsStage.after(verificationPanel);
-            if (alreadyCompared && $('sourceVerified')) $('sourceVerified').disabled = true;
+            verificationPanel.innerHTML = `<div class="review-stage__heading"><div><h3 class="font-semibold">Verification</h3><p class="text-xs text-base-content/55">The original request remains unchanged and the system records who verified this order.</p></div></div><div class="p-4 space-y-3">${trustedLines.length ? `<div class="alert alert-success py-3 items-start"><i class="fas fa-shield-check mt-1"></i><div><p class="font-semibold text-sm">Automatic comparison available</p><p class="text-xs mt-1">${trustedSummary}</p><p class="text-xs mt-1">The system will stop a different product, quantity, unit, PO number, or delivery date.</p></div></div>` : `<div class="alert alert-info py-3 items-start"><i class="fas fa-eye mt-1"></i><div><p class="font-semibold text-sm">Check the document on the left</p><p class="text-xs mt-1">This customer document cannot be compared automatically. Clicking <strong>Verify &amp; Save</strong> records that you checked it.</p></div></div>`}${alreadyCompared ? `<div class="text-sm text-success"><i class="fas fa-check-circle mr-1"></i>Verified and saved on ${esc(dateTime(activeImport.source_verified_at))}.${!readOnly ? ' Editing any value requires verification again.' : ''}</div>` : (!readOnly ? '<p class="text-sm text-base-content/65">After checking every value, click <strong>Verify &amp; Save</strong>.</p>' : `<div class="alert alert-warning py-3 text-sm"><i class="fas fa-triangle-exclamation"></i><span>This older order has no recorded source verification.</span></div>`)}</div>`;
+            requestStage.after(verificationPanel);
             const summaryStage = document.createElement('section');
             summaryStage.className = 'review-stage mb-4';
-            summaryStage.innerHTML = '<div class="review-stage__heading"><span class="review-stage__number">4</span><div><h3 class="font-semibold">Review what will be created</h3><p class="text-xs text-base-content/55">Check totals, delivery, payment, stock, and the next approval step.</p></div></div><div id="orderSummaryPanel" class="p-4"></div>';
+            summaryStage.innerHTML = '<div class="review-stage__heading"><div><h3 class="font-semibold">Order summary</h3><p class="text-xs text-base-content/55">Totals, payment, delivery, stock, and approval information.</p></div></div><div id="orderSummaryPanel" class="p-4"></div>';
             verificationPanel.after(summaryStage);
             if (orderCancelled) {
                 const orderLink = $('reviewContent').querySelector(`a[href="orders.html?id=${Number(activeImport.sales_order_id)}"]`);
@@ -735,7 +739,6 @@
             loadAttachmentPreview(sourceAvailable);
             $('warningApproval').checked = false;
             refreshWarningApproval();
-            $('viewAttachmentButton').disabled = !sourceAvailable;
             updateAttachmentDisplay();
             $('rejectEmailAction').classList.toggle('hidden', readOnly);
             const showCallAction = !readOnly && (!saved || ['needs_customer_confirmation', 'draft_order'].includes(activeImport.status));
@@ -746,13 +749,17 @@
             $('moreReviewActions').classList.toggle('hidden', readOnly);
             $('saveDetailsButton').classList.toggle('hidden', readOnly);
             $('createOrderButton').classList.toggle('hidden', readOnly);
-            $('saveDetailsButton').disabled = readOnly || !entryDirty || !$('sourceVerified')?.checked;
+            $('recordCallPrimaryButton').classList.toggle('hidden', readOnly || activeImport.status !== 'needs_customer_confirmation');
+            $('saveDetailsButton').disabled = readOnly || !entryDirty;
+            $('saveDetailsButton').innerHTML = saved && !entryDirty
+                ? '<i class="fas fa-check"></i>Saved'
+                : '<i class="fas fa-clipboard-check"></i>Verify &amp; Save';
             $('createOrderButton').disabled = !saved || entryDirty || !activeImport.source_verified_at || blocked > 0 || activeImport.status === 'needs_customer_confirmation';
         }
 
         function updateSourceVerification() {
             if (!$('saveDetailsButton') || isReadOnly()) return;
-            $('saveDetailsButton').disabled = !entryDirty || !$('sourceVerified')?.checked;
+            $('saveDetailsButton').disabled = !entryDirty;
             if ($('createOrderButton')) $('createOrderButton').disabled = entryDirty || !activeImport?.entry_saved_at || !activeImport?.source_verified_at;
         }
 
@@ -764,10 +771,9 @@
             if (validationError) { showReviewSaveError(validationError); return; }
             if (!$('entryPoNumber').value.trim()) { showReviewSaveError('Enter the customer PO number, or keep the prepared email reference when the customer did not provide one.'); return; }
             if (!$('entryDeliveryDate').value) { showReviewSaveError('Enter the delivery date confirmed by the customer. If it was missing, record a clarifying call first.'); return; }
-            if (!$('sourceVerified')?.checked) { showReviewSaveError('Compare the entry with the original customer request first.'); return; }
             const data = { customer_id: Number($('entryCustomer').value), customer_po_number: $('entryPoNumber').value.trim(), delivery_date: $('entryDeliveryDate').value, source_verified: true, lines: manualRows };
             $('saveDetailsButton').disabled = true; $('saveDetailsButton').classList.add('loading');
-            try { await SalesService.saveCustomerOrderDetails(activeImport.id, data); toast('Order details saved and checked.', 'success'); await openReview(activeImport.id); } catch (error) { const message = error.message || 'Could not save the order details.'; showReviewSaveError(message); toast(message, 'error'); } finally { const button = $('saveDetailsButton'); if (button) { button.disabled = false; button.classList.remove('loading'); } }
+            try { await SalesService.saveCustomerOrderDetails(activeImport.id, data); toast('Order verified and saved.', 'success'); await openReview(activeImport.id); } catch (error) { const message = error.message || 'Could not verify and save the order details.'; showReviewSaveError(message); toast(message, 'error'); } finally { const button = $('saveDetailsButton'); if (button) { button.disabled = false; button.classList.remove('loading'); } }
         }
 
         function openCallModal() { if (!activeImport || isReadOnly()) return; callClarificationOnly = !activeImport.entry_saved_at || activeImport.status !== 'needs_customer_confirmation'; const approval = !callClarificationOnly; $('callModalTitle').textContent = approval ? 'Record Customer Approval' : 'Record Clarifying Call'; $('callModalSubtitle').textContent = approval ? 'Record approval for the exact saved details currently shown.' : 'Use this when the email is missing or unclear information.'; $('callGuidance').textContent = approval ? 'This call approves only the exact saved version currently shown. Any later edit will require a new customer approval.' : 'This records what the customer clarified. It does not approve later changes to a saved order.'; $('callSummaryLabel').textContent = approval ? 'What exact change did the customer approve?' : 'What information did the customer clarify?'; $('callChangeSummary').placeholder = approval ? 'Customer approved 6 boxes instead of 10.' : 'Customer confirmed the PO number and requested delivery date.'; $('callChangeSummary').value = ''; $('callReason').value = ''; $('callContact').value = ''; $('callDate').value = localDateTime(); $('callNote').value = ''; $('saveCallButton').querySelector('span').textContent = approval ? 'Save Customer Approval' : 'Save Clarification'; $('callModal').showModal(); }
@@ -788,11 +794,20 @@
             if (!activeImport.source_verified_at) { toast('Compare the entered order with the original customer PO first.', 'warning'); return; }
             if (blocked > 0) { toast('Fix the blocked product lines first.', 'warning'); return; }
             if (activeImport.status === 'needs_customer_confirmation') { toast('Record the customer phone call before creating the Sales Order.', 'warning'); return; }
-            if ((warnings > 0 || creditWarning) && !$('warningApproval').checked) { toast(creditWarning ? 'Review the credit-limit warning before sending the draft to the General Manager.' : 'Review the price or stock warning and customer decision first.', 'warning'); return; }
+            if ((warnings > 0 || creditWarning) && !$('warningApproval').checked) { toast(creditWarning ? 'Review the credit-limit warning before sending the order to the General Manager.' : 'Review the price or stock warning and customer decision first.', 'warning'); return; }
             const creditReason = $('creditOverrideReason')?.value.trim() || '';
             if (creditWarning && creditReason.length < 10) { toast('Enter a reason for the General Manager credit review.', 'warning'); return; }
+            const confirmed = await AuthService.confirmAction({
+                title: 'Create Order and Send to GM',
+                message: 'This creates the Sales Order and places it in the General Manager approval queue.',
+                highlightLabel: 'Customer PO',
+                highlight: activeImport.customer_po_number || 'Verified customer request',
+                confirmText: 'Create & Send',
+                tone: 'primary'
+            });
+            if (!confirmed) return;
             const button = $('createOrderButton'); button.disabled = true; button.classList.add('loading');
-            try { const response = await SalesService.confirmOrderImport(activeImport.id, $('warningApproval').checked, creditReason); toast(`${response.data.order_number} draft created. Submit it for General Manager approval next.`, 'success'); $('reviewModal').close(); await loadInbox(); window.location.href = `orders.html?id=${Number(response.data.order_id)}`; } catch (error) { toast(error.message || 'Could not create the draft Sales Order.', 'error'); } finally { button.disabled = false; button.classList.remove('loading'); }
+            try { const response = await SalesService.confirmOrderImport(activeImport.id, $('warningApproval').checked, creditReason); toast(`${response.data.order_number} created and sent for General Manager approval.`, 'success'); closeReviewModal(); currentInboxView = 'recent'; $('statusFilter').value = ''; document.querySelectorAll('[data-inbox-view]').forEach(tab => tab.classList.toggle('is-active', tab.dataset.inboxView === 'recent')); await loadInbox(); } catch (error) { toast(error.message || 'Could not create and send the Sales Order.', 'error'); } finally { button.disabled = false; button.classList.remove('loading'); }
         }
 
         async function fetchAttachment(id, view = false) { const token = localStorage.getItem('highland_token'); const response = await fetch(`${API_BASE_URL}/sales/order_inbox.php?action=download&id=${Number(id)}${view ? '&view=1' : ''}`, { headers: { 'Authorization': `Bearer ${token}`, 'X-Auth-Token': token } }); if (!response.ok) throw new Error('The original attachment could not be opened.'); return response.blob(); }

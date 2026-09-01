@@ -39,6 +39,21 @@ class Mailer {
         if (empty($password)) {
             throw new Exception('SMTP password (Gmail App Password) is not configured. Set SMTP_PASSWORD environment variable.');
         }
+        if (!filter_var($username, FILTER_VALIDATE_EMAIL) || preg_match('/[\r\n]/', $username)) {
+            throw new Exception('SMTP username is not a valid email address.');
+        }
+        if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL) || preg_match('/[\r\n]/', $fromEmail)) {
+            throw new Exception('SMTP sender email address is invalid.');
+        }
+        if (!is_string($host) || !preg_match('/^[A-Za-z0-9.-]+$/', $host)) {
+            throw new Exception('SMTP host is invalid.');
+        }
+        if ($port < 1 || $port > 65535) {
+            throw new Exception('SMTP port is invalid.');
+        }
+        if (!in_array(SMTP_ENCRYPTION, ['', 'tls'], true)) {
+            throw new Exception('SMTP encryption must be tls or empty.');
+        }
         if (!filter_var($to, FILTER_VALIDATE_EMAIL) || preg_match('/[\r\n]/', $to)) {
             throw new Exception('Recipient email address is invalid.');
         }
@@ -53,9 +68,11 @@ class Mailer {
         // Configure stream context for SSL/TLS options
         $contextOptions = [
             'ssl' => [
-                'verify_peer' => false,
-                'verify_peer_name' => false,
-                'allow_self_signed' => true,
+                'verify_peer' => SMTP_VERIFY_PEER,
+                'verify_peer_name' => SMTP_VERIFY_PEER,
+                'allow_self_signed' => !SMTP_VERIFY_PEER,
+                'peer_name' => $host,
+                'SNI_enabled' => true,
             ],
         ];
         $context = stream_context_create($contextOptions);

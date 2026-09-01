@@ -429,6 +429,13 @@
             font-size: 0.875rem;
         }
 
+        /* The component's display rule must not override Tailwind's hidden
+           utility or the native hidden attribute. */
+        .pro-banner.hidden,
+        .pro-banner[hidden] {
+            display: none;
+        }
+
         .pro-banner-icon {
             font-size: 1rem;
             margin-top: 0.0625rem;
@@ -870,94 +877,6 @@
         </div>
     </dialog>
 
-    <!-- Issue Modal -->
-    <dialog id="issueModal" class="pro-modal pro-modal--sm">
-        <div class="pro-modal-card pro-modal-card--sm">
-            <div class="pro-modal-header">
-                <div class="pro-modal-icon" style="background: oklch(var(--wa) / 0.12); color: oklch(var(--wa));">
-                    <i class="fas fa-arrow-up"></i>
-                </div>
-                <div class="flex-1 min-w-0">
-                    <h3 class="pro-modal-title">Issue Ingredient</h3>
-                    <p class="pro-modal-subtitle">Release stock from warehouse</p>
-                </div>
-                <button class="pro-close" onclick="document.getElementById('issueModal').close()" aria-label="Close">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-
-            <form id="issueForm" onsubmit="submitIssue(event)">
-                <input type="hidden" id="issueIngredientId">
-
-                <div class="pro-modal-body">
-                    <div class="pro-banner pro-banner--info">
-                        <i class="fas fa-circle-info pro-banner-icon"></i>
-                        <div>
-                            <p class="pro-banner-title" id="issueIngredientName">-</p>
-                            <p class="pro-banner-text"><small>Issuing reduces on-hand stock and is recorded in the ledger.</small></p>
-                        </div>
-                    </div>
-
-                    <div class="stock-summary">
-                        <div class="stock-summary-tile">
-                            <p class="stock-summary-tile-label">Available Stock</p>
-                            <p class="stock-summary-tile-value">
-                                <span id="issueAvailable">0</span>
-                                <span class="text-base-content/60 text-sm font-normal" id="issueUnitLabel"></span>
-                            </p>
-                        </div>
-                        <div class="stock-summary-tile">
-                            <p class="stock-summary-tile-label">After Issue</p>
-                            <p class="stock-summary-tile-value text-base-content/40" id="issueRemaining">—</p>
-                        </div>
-                    </div>
-
-                    <div class="pro-field">
-                        <label class="pro-label">
-                            <span>Quantity to Issue <span class="text-error">*</span></span>
-                            <span class="pro-label-hint" id="issueMaxHint"></span>
-                        </label>
-                        <div class="pro-input-suffix-wrap">
-                            <input type="number" class="pro-input" id="issueQuantity" step="0.01" min="0.01"
-                                required>
-                            <span class="pro-input-suffix" id="issueUnitSuffix"></span>
-                        </div>
-                        <div class="quick-amounts">
-                            <button type="button" class="quick-amount-btn" data-amount="0.25">25%</button>
-                            <button type="button" class="quick-amount-btn" data-amount="0.5">50%</button>
-                            <button type="button" class="quick-amount-btn" data-amount="0.75">75%</button>
-                            <button type="button" class="quick-amount-btn" data-amount="1">All</button>
-                        </div>
-                    </div>
-
-                    <div class="pro-field">
-                        <label class="pro-label">Reason</label>
-                        <select class="pro-select" id="issueReason">
-                            <option value="Issued for production">Issued for production</option>
-                            <option value="Quality testing">Quality testing</option>
-                            <option value="Sample">Sample</option>
-                            <option value="other">Other (specify)</option>
-                        </select>
-                    </div>
-
-                    <div class="pro-field hidden" id="issueOtherReasonGroup">
-                        <label class="pro-label">Specify Reason</label>
-                        <input type="text" class="pro-input" id="issueOtherReason"
-                            placeholder="e.g. Customer demo, R&D trial…">
-                    </div>
-                </div>
-
-                <div class="pro-modal-footer">
-                    <button type="button" class="btn-pro btn-pro--ghost"
-                        onclick="document.getElementById('issueModal').close()">Cancel</button>
-                    <button type="submit" class="btn-pro btn-pro--warning">
-                        <i class="fas fa-arrow-up"></i> Issue Stock
-                    </button>
-                </div>
-            </form>
-        </div>
-    </dialog>
-
     <!-- Found/unrecorded stock request. The GM must approve before stock changes. -->
     <dialog id="openingStockModal" class="pro-modal pro-modal--md">
         <div class="pro-modal-card pro-modal-card--md">
@@ -966,8 +885,8 @@
                     <i class="fas fa-box-open"></i>
                 </div>
                 <div class="flex-1 min-w-0">
-                    <h3 class="pro-modal-title">Record Stock Missing From the System</h3>
-                    <p class="pro-modal-subtitle" id="openingStockIngredientName">Physical stock intake</p>
+                    <h3 class="pro-modal-title" id="openingStockModalTitle">Report Unrecorded Supplier Delivery</h3>
+                    <p class="pro-modal-subtitle" id="openingStockIngredientName">Delivery exception</p>
                 </div>
                 <button class="pro-close" onclick="document.getElementById('openingStockModal').close()" aria-label="Close">
                     <i class="fas fa-times"></i>
@@ -984,8 +903,8 @@
                     <div class="pro-banner pro-banner--warning">
                         <i class="fas fa-user-check pro-banner-icon"></i>
                         <div>
-                            <p class="pro-banner-title">Use this only for stock the system missed</p>
-                            <p class="pro-banner-text"><small>Example: the shelf has 102 kg, but the system shows 101 kg. Report the missing 1 kg here for review.</small></p>
+                            <p class="pro-banner-title" id="openingStockBannerTitle">This is not a normal stock adjustment</p>
+                            <p class="pro-banner-text" id="openingStockBannerText"><small>Use this only when a supplier delivery physically arrived but was never recorded through Receive Deliveries. Purchasing and QC may need to verify the delivery before the GM decides.</small></p>
                         </div>
                     </div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1004,10 +923,9 @@
                     </div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div class="pro-field">
-                            <label class="pro-label">Where did it come from? <span class="text-error">*</span></label>
+                            <label class="pro-label">What happened? <span class="text-error">*</span></label>
                             <select class="pro-select" id="openingStockSourceType" required onchange="syncOpeningStockFields()">
-                                <option value="">Choose source…</option>
-                                <option value="opening_balance">Opening stock / before system use</option>
+                                <option value="">Choose delivery problem…</option>
                                 <option value="unrecorded_delivery">Supplier delivery not recorded</option>
                             </select>
                         </div>
@@ -1055,15 +973,15 @@
                         </div>
                     </div>
                     <div class="pro-field">
-                        <label class="pro-label">Why is this stock missing from the system? <span class="text-error">*</span></label>
+                        <label class="pro-label">Why was this supplier delivery not recorded? <span class="text-error">*</span></label>
                         <textarea class="pro-textarea" id="openingStockReason" maxlength="500" rows="3" required
-                            placeholder="Explain how Warehouse verified the physical stock and why it was not recorded earlier."></textarea>
+                            placeholder="Example: Delivery was unloaded, but its receiving record was not completed."></textarea>
                     </div>
                 </div>
                 <div class="pro-modal-footer">
                     <button type="button" class="btn-pro btn-pro--ghost" onclick="document.getElementById('openingStockModal').close()">Cancel</button>
                     <button type="submit" class="btn-pro btn-pro--success" id="openingStockSubmitBtn">
-                        <i class="fas fa-paper-plane"></i> Send for Verification
+                        <i class="fas fa-paper-plane"></i> Send Delivery for Checks
                     </button>
                 </div>
             </form>
@@ -1078,8 +996,8 @@
                     <i class="fas fa-sliders-h"></i>
                 </div>
                 <div class="flex-1 min-w-0">
-                    <h3 class="pro-modal-title">Adjust Stock</h3>
-                    <p class="pro-modal-subtitle">Reconcile with physical count</p>
+                    <h3 class="pro-modal-title" id="adjustModalTitle">Full Stock Count</h3>
+                    <p class="pro-modal-subtitle" id="adjustModalSubtitle">Count every batch for this ingredient</p>
                 </div>
                 <button class="pro-close" onclick="document.getElementById('adjustModal').close()" aria-label="Close">
                     <i class="fas fa-times"></i>
@@ -1088,18 +1006,28 @@
 
             <form id="adjustForm" onsubmit="submitAdjust(event)">
                 <input type="hidden" id="adjustIngredientId">
+                <input type="hidden" id="adjustScope" value="ingredient">
+                <input type="hidden" id="adjustBatchId">
 
                 <div class="pro-modal-body">
                     <div class="pro-banner pro-banner--warning">
                         <i class="fas fa-triangle-exclamation pro-banner-icon"></i>
                         <div>
                             <p class="pro-banner-title">Count first, then send it to the GM</p>
-                            <p class="pro-banner-text"><small>Stock will not change yet. The GM will approve or reject this count directly.</small></p>
+                            <p class="pro-banner-text"><small>Stock will not change yet. Higher and lower counts both go directly from Warehouse to the GM—no Purchasing or QC step.</small></p>
+                        </div>
+                    </div>
+
+                    <div class="pro-banner pro-banner--info hidden" id="adjustBatchBanner">
+                        <i class="fas fa-layer-group pro-banner-icon"></i>
+                        <div>
+                            <p class="pro-banner-title">Counting one batch</p>
+                            <p class="pro-banner-text" id="adjustBatchBannerText"><small>Only the selected batch will change after GM approval.</small></p>
                         </div>
                     </div>
 
                     <div class="pro-field">
-                        <label class="pro-label">Current Stock on File</label>
+                        <label class="pro-label" id="adjustCurrentLabel">Current Stock on File</label>
                         <div class="pro-input-suffix-wrap">
                             <input type="text" class="pro-input" id="adjustCurrentStock" readonly>
                         </div>
@@ -1107,7 +1035,7 @@
 
                     <div class="stock-summary">
                         <div class="stock-summary-tile">
-                            <p class="stock-summary-tile-label">New Quantity</p>
+                            <p class="stock-summary-tile-label" id="adjustNewLabel">New Quantity</p>
                             <p class="stock-summary-tile-value text-info" id="adjustNewDisplay">—</p>
                         </div>
                         <div class="stock-summary-tile">
@@ -1138,12 +1066,13 @@
                         <p class="pro-help">For damaged or spoiled stock, use Spoilage &amp; Waste instead.</p>
                     </div>
 
-                    <div class="pro-field hidden" id="adjustSourceBatchGroup">
-                        <label class="pro-label"><span>Original lot <span class="text-error">*</span></span></label>
-                        <select class="pro-select" id="adjustSourceBatch">
-                            <option value="">Choose the lot it came from…</option>
-                        </select>
-                        <p class="pro-help" id="adjustSourceBatchHelp">Recovered or returned perishable stock must return to its original approved lot.</p>
+                    <div class="pro-banner pro-banner--warning hidden" id="adjustAllocationPreview">
+                        <i class="fas fa-list-check pro-banner-icon"></i>
+                        <div>
+                            <p class="pro-banner-title">If approved, the oldest usable lot(s) will be reduced</p>
+                            <div class="pro-banner-text mt-1" id="adjustAllocationList"></div>
+                            <p class="pro-banner-text mt-1"><small>If you know the exact affected lot, cancel and use <strong>Count Batch</strong> beside that lot instead.</small></p>
+                        </div>
                     </div>
 
                     <div class="pro-field hidden" id="adjustOtherReasonGroup">
@@ -1172,8 +1101,8 @@
                     <i class="fas fa-sliders"></i>
                 </div>
                 <div class="flex-1 min-w-0">
-                    <h3 class="pro-modal-title">Ingredient Settings</h3>
-                    <p class="pro-modal-subtitle">Reorder alerts, lead time & par levels</p>
+                    <h3 class="pro-modal-title">Stock Settings</h3>
+                    <p class="pro-modal-subtitle">General Manager configuration</p>
                 </div>
                 <button class="pro-close" onclick="document.getElementById('settingsModal').close()" aria-label="Close">
                     <i class="fas fa-times"></i>
@@ -1188,26 +1117,26 @@
                         <i class="fas fa-circle-info pro-banner-icon"></i>
                         <div>
                             <p class="pro-banner-title" id="settingsIngredientName">-</p>
-                            <p class="pro-banner-text"><small>Configure reorder alerts and supplier lead time. Changes apply to this ingredient only.</small></p>
+                            <p class="pro-banner-text"><small><strong>Safety Buffer:</strong> try not to go below it. <strong>Start Buying At:</strong> begin ordering at this level. <strong>Restocking Target:</strong> refill toward this amount.</small></p>
                         </div>
                     </div>
 
                     <h4 class="pro-section-header">
-                        <i class="fas fa-bell"></i> Reorder Thresholds
+                        <i class="fas fa-bell"></i> Stock Levels
                     </h4>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div class="pro-field">
                             <label class="pro-label">
-                                <span>Minimum Stock <span class="text-error">*</span></span>
-                                <span class="pro-label-hint">Safety buffer</span>
+                                <span>Safety Buffer <span class="text-error">*</span></span>
+                                <span class="pro-label-hint">Avoid going below</span>
                             </label>
                             <div class="pro-input-suffix-wrap">
                                 <input type="number" class="pro-input" id="settingsMinStock" step="0.01" min="0"
                                     required>
                                 <span class="pro-input-suffix" id="settingsMinUnit"></span>
                             </div>
-                            <p class="pro-help">Critical alert triggers when usable stock is at or below this level.</p>
+                            <p class="pro-help">Try not to let usable stock fall below this amount.</p>
                         </div>
 
                         <div class="pro-field">
@@ -1222,13 +1151,13 @@
                     </div>
 
                     <h4 class="pro-section-header">
-                        <i class="fas fa-bullseye"></i> Reorder & Par Levels
+                        <i class="fas fa-bullseye"></i> Buying and Restocking
                     </h4>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div class="pro-field">
                             <label class="pro-label">
-                                <span>Reorder Point</span>
+                                <span>Start Buying At</span>
                                 <span class="pro-label-hint">Optional override</span>
                             </label>
                             <div class="pro-input-suffix-wrap">
@@ -1237,7 +1166,7 @@
                                 <span class="pro-input-suffix" id="settingsReorderUnit"></span>
                             </div>
                             <p class="pro-help">
-                                Leave blank to auto-calculate as Min × 1.5
+                                Start purchasing when usable stock reaches this number. Leave blank to use Safety Buffer × 1.5.
                                 <span class="computed-pill" id="settingsReorderAuto" style="display:none">
                                     <i class="fas fa-calculator"></i>
                                     <span>—</span>
@@ -1247,15 +1176,15 @@
 
                         <div class="pro-field">
                             <label class="pro-label">
-                                <span>Par Level (Max)</span>
-                                <span class="pro-label-hint">Order-up-to target</span>
+                                <span>Restocking Target</span>
+                                <span class="pro-label-hint">Refill up to</span>
                             </label>
                             <div class="pro-input-suffix-wrap">
                                 <input type="number" class="pro-input" id="settingsMaxStock" step="0.01" min="0"
                                     placeholder="Optional">
                                 <span class="pro-input-suffix" id="settingsMaxUnit"></span>
                             </div>
-                            <p class="pro-help">Suggested reorder qty = Par Level − Current.</p>
+                            <p class="pro-help">Suggested order = Restocking Target − usable stock already available.</p>
                         </div>
                     </div>
                 </div>
@@ -1280,7 +1209,7 @@
     <script src="../../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_raw,general_manager"></script>
     <script src="../../../js/ui/dialogs.js"></script>
-    <script src="../../../js/warehouse/raw.service.js?v=20260825-2"></script>
+    <script src="../../../js/warehouse/raw.service.js?v=20260827-2"></script>
     <script src="../../../js/warehouse/sidebar.stats.js"></script>
     <script>window.WAREHOUSE_RAW_ACTIVE_PAGE = "ingredients";</script>
     <script src="../../../js/warehouse/raw-sidebar.js?v=20260727a"></script>
@@ -1319,10 +1248,21 @@
             await Promise.all([loadCategories(), loadIngredients()]);
             setupEventListeners();
 
-            const openingIngredientId = parseInt(urlParams.get('record_unlisted') || '0', 10);
-            if (openingIngredientId > 0) {
+            // A higher shelf count is an internal stock variance. Older links used
+            // record_unlisted; keep them working but route them to the direct GM flow.
+            const adjustmentIngredientId = parseInt(urlParams.get('adjust_stock') || urlParams.get('record_unlisted') || '0', 10);
+            if (adjustmentIngredientId > 0) {
                 const counted = parseFloat(urlParams.get('counted') || '');
-                await openOpeningStockModal(openingIngredientId, Number.isFinite(counted) ? counted : null);
+                const ingredient = ingredients.find(item => Number(item.id) === adjustmentIngredientId);
+                if (ingredient) {
+                    await openAdjustModal(
+                        ingredient.id,
+                        ingredient.ingredient_name,
+                        parseFloat(ingredient.current_stock || 0),
+                        ingredient.unit_of_measure || 'unit',
+                        Number.isFinite(counted) ? counted : null
+                    );
+                }
             }
         });
 
@@ -1358,10 +1298,6 @@
             });
 
             // receiveIngredientId listener removed: stock receiving now through PO workflow
-
-            document.getElementById('issueReason').addEventListener('change', (e) => {
-                document.getElementById('issueOtherReasonGroup').classList.toggle('hidden', e.target.value !== 'other');
-            });
 
             document.getElementById('adjustReason').addEventListener('change', (e) => {
                 document.getElementById('adjustOtherReasonGroup').classList.toggle('hidden', e.target.value !== 'other');
@@ -1732,6 +1668,9 @@
                                 <div class="h-full ${barColor} rounded-full" style="width: ${barPct}%"></div>
                             </div>
                             <div class="text-[10px] text-base-content/50 mt-0.5">${targetPct.toFixed(0)}% of restocking target (${max.toLocaleString()})</div>
+                            <div class="text-[10px] text-base-content/60 mt-0.5">
+                                Buy at ${reorder.toLocaleString()} · safety buffer ${min.toLocaleString()} ${escapeHtml(unit)}
+                            </div>
                             ${stockCheckSubLine}
                             ${packSubLine}
                         </td>
@@ -1744,7 +1683,6 @@
                                 </summary>
                                 <ul class="dropdown-content menu menu-sm bg-base-100 rounded-box border border-base-300 z-10 w-44 shadow-lg p-1">
                                     <li><a onclick="openDetailModal(${ing.id})"><i class="fas fa-eye w-4"></i> View Details</a></li>
-                                    <li><a onclick="openIssueModal(${ing.id}, '${escapeHtml(ing.ingredient_name || ing.name || '')}', ${stock}, '${escapeHtml(unit)}')"><i class="fas fa-arrow-right-from-bracket w-4"></i> Issue Stock</a></li>
                                 </ul>
                             </details>
                         </td>
@@ -1836,7 +1774,7 @@
                             <div class="stock-bar-wrap flex-1">
                                 <div class="stock-bar-fill ${stockColor}" style="width: ${stockPct}%"></div>
                             </div>
-                            <span class="text-xs font-semibold text-base-content/60">${stockPct.toFixed(0)}% of par</span>
+                            <span class="text-xs font-semibold text-base-content/60">${stockPct.toFixed(0)}% of restocking target</span>
                         </div>
                     </div>
                 </div>
@@ -1865,8 +1803,8 @@
                 const stateClass = isExpired || traceabilityIssue ? 'text-error' : isUsable ? 'text-success' : 'text-warning';
                 // Expired and near-expiry batches with stock can be closed
                 // through the waste record while their receiving history stays intact.
-                const wasteHref = hasExpiry && remaining > 0 && (isExpired || !traceabilityIssue)
-                    ? `waste.html?item_type=ingredient&item_id=${ing.id}&batch_id=${b.id}&reason_category=${days <= 0 ? 'expired' : 'damaged'}`
+                const wasteHref = remaining > 0 && !traceabilityIssue
+                    ? `waste.html?item_type=ingredient&item_id=${ing.id}&batch_id=${b.id}&reason_category=${hasExpiry && days <= 0 ? 'expired' : 'damaged'}`
                     : null;
                 const canRecordLot = traceabilityIssue
                     && ['warehouse_raw', 'general_manager'].includes(AuthService.getCurrentUser()?.role || '');
@@ -1874,6 +1812,14 @@
                     String(request.held_batch_id || '') === String(b.id)
                 );
                 const batchPendingStep = batchPending ? openingStockReviewStep(batchPending) : null;
+                const batchCountPending = pendingRequests.find(request =>
+                    String(request.request_purpose || '') === 'stock_adjustment'
+                    && String(request.adjustment_scope || 'ingredient') === 'batch'
+                    && String(request.source_batch_id || '') === String(b.id)
+                );
+                const canCountBatch = isUsable
+                    && String(b.qc_status || '') === 'approved'
+                    && (AuthService.getCurrentUser()?.role || '') === 'warehouse_raw';
                 return `
                     <div class="batch-row">
                         <div class="min-w-0 flex-1">
@@ -1888,6 +1834,17 @@
                             <a class="text-xs text-error hover:underline font-semibold inline-flex items-center gap-1 mt-1" href="${wasteHref}">
                                 <i class="fas fa-trash-alt text-[10px]"></i> Record Waste
                             </a>
+                            ` : ''}
+                            ${canCountBatch && !batchCountPending ? `
+                            <button type="button" class="btn btn-info btn-xs mt-1"
+                                onclick="openBatchCountModal(${ing.id}, ${b.id})">
+                                <i class="fas fa-clipboard-check"></i> Count Batch
+                            </button>
+                            ` : ''}
+                            ${canCountBatch && batchCountPending ? `
+                            <span class="badge badge-info badge-sm mt-1">
+                                <i class="fas fa-hourglass-half mr-1"></i>Waiting for GM
+                            </span>
                             ` : ''}
                             ${canRecordLot && !batchPending ? `
                             <button type="button" class="btn btn-success btn-xs mt-1"
@@ -1976,7 +1933,7 @@
                 ${heldBanner}
                 ${missingBatchBanner}
                 ${surplusBanner}
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
                     <div class="detail-stat">
                         <p class="detail-stat-label">Stock on File</p>
                         <p class="detail-stat-value detail-stat-value--xl">${stock.toLocaleString()}</p>
@@ -1988,13 +1945,18 @@
                         <p class="text-xs text-base-content/55 mt-0.5">${unit}</p>
                     </div>
                     <div class="detail-stat">
-                        <p class="detail-stat-label">Reorder At</p>
+                        <p class="detail-stat-label">Start Buying At</p>
                         <p class="detail-stat-value">${parseFloat(reorderPoint).toLocaleString()}</p>
                         <p class="text-xs text-base-content/55 mt-0.5">${unit}</p>
                     </div>
                     <div class="detail-stat">
-                        <p class="detail-stat-label">Min Stock</p>
+                        <p class="detail-stat-label">Safety Buffer</p>
                         <p class="detail-stat-value">${minStock.toLocaleString()}</p>
+                        <p class="text-xs text-base-content/55 mt-0.5">${unit}</p>
+                    </div>
+                    <div class="detail-stat">
+                        <p class="detail-stat-label">Restocking Target</p>
+                        <p class="detail-stat-value">${maxStock.toLocaleString()}</p>
                         <p class="text-xs text-base-content/55 mt-0.5">${unit}</p>
                     </div>
                 </div>
@@ -2012,31 +1974,55 @@
                 && Number(ing.is_perishable) !== 1
                 && ['warehouse_raw', 'general_manager'].includes(AuthService.getCurrentUser()?.role || '');
             const hasTraceabilityHold = untraceableStock > 0.0005;
+            const currentRole = AuthService.getCurrentUser()?.role || '';
+            const canFullCount = currentRole === 'warehouse_raw'
+                && !hasTraceabilityHold
+                && expiredStock <= 0.0005;
+            const canConfigure = currentRole === 'general_manager';
+            const canUseWarehouseActions = ['warehouse_raw', 'general_manager'].includes(currentRole);
+
+            const specialActions = [
+                canFullCount ? `
+                    <button type="button" class="btn-pro btn-pro--success" onclick="openAdjustModal(${ing.id}, '${escapedName}', ${stock}, '${unit}')">
+                        <i class="fas fa-clipboard-check"></i> Full Stock Count
+                    </button>` : '',
+                canUseWarehouseActions && !hasTraceabilityHold ? `
+                    <button type="button" class="btn-pro btn-pro--warning" onclick="openOpeningStockModal(${ing.id})">
+                        <i class="fas fa-truck-ramp-box"></i> Unrecorded Delivery
+                    </button>` : '',
+                canRepairStock ? `
+                    <button type="button" class="btn-pro btn-pro--warning" onclick="repairIngredientStockRecords(${ing.id})">
+                        <i class="fas fa-screwdriver-wrench"></i> Repair Missing Batch
+                    </button>` : '',
+                canConfigure ? `
+                    <button type="button" class="btn-pro btn-pro--primary" onclick="openSettingsModal(${ing.id}, '${escapedName}', ${minStock}, ${ing.lead_time_days || 7}, ${ing.reorder_point || 'null'}, ${ing.maximum_stock || 'null'})">
+                        <i class="fas fa-sliders"></i> Stock Settings
+                    </button>` : ''
+            ].filter(Boolean).join('');
+
+            if (specialActions) {
+                document.getElementById('detailModalBody').insertAdjacentHTML('beforeend', `
+                    <details class="collapse collapse-arrow mt-4 border border-base-300 bg-base-100">
+                        <summary class="collapse-title min-h-0 py-3 text-sm font-bold">
+                            More Actions
+                            <span class="ml-2 text-xs font-normal text-base-content/50">Rare corrections and configuration</span>
+                        </summary>
+                        <div class="collapse-content">
+                            <div class="flex flex-wrap gap-2 pt-1">${specialActions}</div>
+                        </div>
+                    </details>
+                `);
+            }
 
             document.getElementById('detailModalFooter').innerHTML = `
                 <button class="btn-pro btn-pro--ghost" onclick="document.getElementById('detailModal').close()">
                     <i class="fas fa-xmark"></i> Close
                 </button>
-                ${canRepairStock ? `
-                <button class="btn-pro btn-pro--warning" onclick="repairIngredientStockRecords(${ing.id})">
-                    <i class="fas fa-screwdriver-wrench"></i> Repair Missing Batch
+                <button class="btn-pro btn-pro--primary" onclick="window.location.href='requisitions.html'">
+                    <i class="fas fa-box-open"></i> Fulfill Request
                 </button>
-                ` : ''}
-                <button class="btn-pro btn-pro--primary" onclick="openSettingsModal(${ing.id}, '${escapedName}', ${minStock}, ${ing.lead_time_days || 7}, ${ing.reorder_point || 'null'}, ${ing.maximum_stock || 'null'})">
-                    <i class="fas fa-sliders"></i> Settings
-                </button>
-                ${!hasTraceabilityHold ? `
-                <button class="btn-pro btn-pro--success" onclick="openOpeningStockModal(${ing.id})">
-                    <i class="fas fa-box-open"></i> Record Found Stock
-                </button>
-                ` : ''}
-                ${!hasTraceabilityHold && expiredStock <= 0.0005 ? `
-                <button class="btn-pro btn-pro--info" onclick="openAdjustModal(${ing.id}, '${escapedName}', ${stock}, '${unit}')">
-                    <i class="fas fa-pen-to-square"></i> Adjust
-                </button>
-                ` : ''}
-                <button class="btn-pro btn-pro--warning" onclick="openIssueModal(${ing.id}, '${escapedName}', ${batchStock}, '${unit}')" ${batchStock <= 0 ? 'disabled' : ''}>
-                    <i class="fas fa-arrow-up"></i> Issue Stock
+                <button class="btn-pro btn-pro--success" onclick="window.location.href='receive_deliveries.html'">
+                    <i class="fas fa-truck-ramp-box"></i> Receive Delivery
                 </button>
             `;
         }
@@ -2063,79 +2049,98 @@
             }
         }
 
-        function openIssueModal(id, name, available, unit) {
-            document.getElementById('issueIngredientId').value = id;
-            document.getElementById('issueIngredientName').textContent = name;
-            document.getElementById('issueAvailable').textContent = available.toLocaleString();
-            document.getElementById('issueUnitLabel').textContent = unit;
-            document.getElementById('issueUnitSuffix').textContent = unit;
-            document.getElementById('issueMaxHint').textContent = `max ${available.toLocaleString()} ${unit}`;
-            document.getElementById('issueQuantity').max = available;
-            document.getElementById('issueRemaining').textContent = `— ${unit}`;
-            document.getElementById('issueForm').reset();
-            document.getElementById('issueOtherReasonGroup').classList.add('hidden');
-
-            // Wire up live "after issue" preview + quick-amount chips
-            const qtyInput = document.getElementById('issueQuantity');
-            const remainingEl = document.getElementById('issueRemaining');
-            const updateRemaining = () => {
-                const q = parseFloat(qtyInput.value);
-                if (!isNaN(q) && q > 0) {
-                    const rem = Math.max(0, available - q);
-                    remainingEl.textContent = `${rem.toLocaleString()} ${unit}`;
-                    remainingEl.classList.remove('text-base-content/40');
-                    remainingEl.classList.add('text-warning');
-                } else {
-                    remainingEl.textContent = `— ${unit}`;
-                    remainingEl.classList.add('text-base-content/40');
-                    remainingEl.classList.remove('text-warning');
-                }
-            };
-            qtyInput.oninput = updateRemaining;
-
-            document.querySelectorAll('#issueModal .quick-amount-btn').forEach(btn => {
-                btn.onclick = () => {
-                    const pct = parseFloat(btn.dataset.amount);
-                    qtyInput.value = (available * pct).toFixed(2);
-                    updateRemaining();
-                };
-            });
-
-            document.getElementById('detailModal').close();
-            document.getElementById('issueModal').showModal();
-        }
-
-        async function submitIssue(e) {
-            e.preventDefault();
-            const id = document.getElementById('issueIngredientId').value;
-            const qty = document.getElementById('issueQuantity').value;
-            let reason = document.getElementById('issueReason').value;
-            if (reason === 'other') reason = document.getElementById('issueOtherReason').value;
-
+        async function openBatchCountModal(ingredientId, batchId) {
             try {
-                const response = await WarehouseRawService.issueIngredient(id, qty, null, reason);
-                if (response.success) {
-                    showToast('Stock issued', 'success');
-                    document.getElementById('issueModal').close();
-                    loadIngredients();
-                } else showToast(response.error || 'Failed', 'error');
-            } catch (e) { showToast('Failed to issue', 'error'); }
+                const response = await WarehouseRawService.getIngredient(ingredientId);
+                const detail = response?.data || {};
+                const ingredient = detail.ingredient || {};
+                const batch = (detail.batches || []).find(row => Number(row.id) === Number(batchId));
+                if (!batch || Number(batch.is_usable) !== 1 || String(batch.qc_status || '') !== 'approved') {
+                    showToast('That batch is no longer usable. Refresh the item and try again.', 'error');
+                    return;
+                }
+                await openAdjustModal(
+                    Number(ingredient.id),
+                    ingredient.ingredient_name,
+                    parseFloat(ingredient.current_stock || 0),
+                    ingredient.unit_of_measure || 'unit',
+                    null,
+                    {
+                        id: Number(batch.id),
+                        code: batch.batch_code || batch.supplier_batch_no || `Batch #${batch.id}`,
+                        supplierLot: batch.supplier_batch_no || '',
+                        remaining: parseFloat(batch.remaining_quantity || 0),
+                    }
+                );
+            } catch (error) {
+                console.error('Could not open batch count:', error);
+                showToast(error?.message || 'Could not load that batch', 'error');
+            }
         }
 
-        async function openAdjustModal(id, name, current, unit) {
+        function renderOverallAllocationPreview(quantityToRemove, batches, unit) {
+            const box = document.getElementById('adjustAllocationPreview');
+            const list = document.getElementById('adjustAllocationList');
+            let remaining = Math.max(0, Number(quantityToRemove) || 0);
+            if (remaining <= 0.0005) {
+                box.classList.add('hidden');
+                list.innerHTML = '';
+                return;
+            }
+
+            const rows = [];
+            for (const batch of batches || []) {
+                if (remaining <= 0.0005) break;
+                const before = Number(batch.remaining_quantity || 0);
+                const removed = Math.min(before, remaining);
+                if (removed > 0.0005) {
+                    rows.push(`<div><strong>${escapeHtml(batch.batch_code || batch.supplier_batch_no || `Batch #${batch.id}`)}</strong>: ${before.toLocaleString()} → ${(before - removed).toLocaleString()} ${escapeHtml(unit)}</div>`);
+                    remaining = Math.max(0, remaining - removed);
+                }
+            }
+            list.innerHTML = rows.join('') || '<div>No usable lot can cover this reduction. Recheck the stock records.</div>';
+            box.classList.remove('hidden');
+        }
+
+        async function openAdjustModal(id, name, current, unit, countedQuantity = null, batchContext = null) {
             document.getElementById('adjustForm').reset();
             document.getElementById('adjustIngredientId').value = id;
-            document.getElementById('adjustCurrentStock').value = `${current.toLocaleString()} ${unit}`;
+            const adjustmentScope = batchContext ? 'batch' : 'ingredient';
+            let countOnFile = batchContext ? Number(batchContext.remaining) : Number(current);
+            document.getElementById('adjustModalTitle').textContent = batchContext ? 'Count Batch' : 'Full Stock Count';
+            document.getElementById('adjustModalSubtitle').textContent = batchContext
+                ? 'Count only the selected batch'
+                : 'Count every batch for this ingredient';
+            document.getElementById('adjustScope').value = adjustmentScope;
+            document.getElementById('adjustBatchId').value = batchContext?.id || '';
+            document.getElementById('adjustCurrentLabel').textContent = batchContext ? 'Quantity Recorded for This Batch' : 'Current Stock on File';
+            document.getElementById('adjustNewLabel').textContent = batchContext ? 'Counted in This Batch' : 'New Quantity';
+            document.getElementById('adjustCurrentStock').value = `${countOnFile.toLocaleString()} ${unit}`;
             document.getElementById('adjustUnitSuffix').textContent = unit;
             document.getElementById('adjustNewDisplay').textContent = `— ${unit}`;
             document.getElementById('adjustDiff').textContent = `— ${unit}`;
+            document.getElementById('adjustBatchBanner').classList.toggle('hidden', !batchContext);
+            document.getElementById('adjustBatchBannerText').innerHTML = batchContext
+                ? `<small><strong>${escapeHtml(batchContext.code)}</strong>${batchContext.supplierLot ? ` · Supplier lot ${escapeHtml(batchContext.supplierLot)}` : ''}. Only this batch will change after GM approval.</small>`
+                : '<small>Only the selected batch will change after GM approval.</small>';
+            document.getElementById('adjustAllocationPreview').classList.add('hidden');
+            document.getElementById('adjustAllocationList').innerHTML = '';
             document.getElementById('adjustOtherReasonGroup').classList.add('hidden');
-            document.getElementById('adjustSourceBatchGroup').classList.add('hidden');
-            document.getElementById('adjustSourceBatch').required = false;
-            document.getElementById('adjustSourceBatchHelp').textContent = 'Recovered or returned perishable stock must return to its original approved lot.';
-            adjustIngredientContext = { id, current, unit, isPerishable: false, batches: [] };
+            document.getElementById('saveAdjustmentBtn').disabled = false;
+            document.getElementById('saveAdjustmentBtn').removeAttribute('title');
+            adjustIngredientContext = {
+                id,
+                scope: adjustmentScope,
+                current: countOnFile,
+                ingredientCurrent: Number(current),
+                batchId: batchContext?.id || null,
+                unit,
+                isPerishable: false,
+                batches: []
+            };
 
-            document.getElementById('detailModal').close();
+            const detailModal = document.getElementById('detailModal');
+            if (detailModal.open) detailModal.close();
             document.getElementById('adjustModal').showModal();
 
             try {
@@ -2146,19 +2151,28 @@
                 const usableBatches = (detail.batches || []).filter(batch =>
                     Number(batch.is_usable) === 1 && String(batch.qc_status || '') === 'approved'
                 );
+                let latestBatch = null;
+                if (adjustmentScope === 'batch') {
+                    latestBatch = usableBatches.find(batch => Number(batch.id) === Number(batchContext.id));
+                    if (!latestBatch) {
+                        throw new Error('That batch is no longer usable. Refresh the item and choose another batch.');
+                    }
+                    countOnFile = parseFloat(latestBatch.remaining_quantity || 0);
+                } else {
+                    countOnFile = actualCurrent;
+                }
                 adjustIngredientContext = {
                     id,
-                    current: actualCurrent,
+                    scope: adjustmentScope,
+                    current: countOnFile,
+                    ingredientCurrent: actualCurrent,
+                    batchId: latestBatch ? Number(latestBatch.id) : null,
                     unit,
                     isPerishable: Number(ingredient.is_perishable) === 1,
                     batches: usableBatches
                 };
-                current = actualCurrent;
-                document.getElementById('adjustCurrentStock').value = `${actualCurrent.toLocaleString()} ${unit}`;
-                const batchSelect = document.getElementById('adjustSourceBatch');
-                batchSelect.innerHTML = '<option value="">Choose the lot it came from…</option>' + usableBatches.map(batch =>
-                    `<option value="${Number(batch.id)}">${escapeHtml(batch.supplier_batch_no || batch.batch_code)} · ${Number(batch.remaining_quantity).toLocaleString()} ${escapeHtml(unit)} · expires ${escapeHtml(batch.expiry_date || '—')}</option>`
-                ).join('');
+                document.getElementById('adjustBatchId').value = latestBatch?.id || '';
+                document.getElementById('adjustCurrentStock').value = `${countOnFile.toLocaleString()} ${unit}`;
             } catch (error) {
                 console.error('Could not load adjustment lots:', error);
                 showToast('Could not load the latest stock details. Close and try again.', 'error');
@@ -2175,24 +2189,28 @@
                     diffDisplay.textContent = `— ${unit}`;
                     diffDisplay.classList.remove('text-success', 'text-error');
                     diffDisplay.classList.add('text-base-content/40');
+                    renderOverallAllocationPreview(0, [], unit);
+                    document.getElementById('saveAdjustmentBtn').disabled = false;
+                    document.getElementById('saveAdjustmentBtn').removeAttribute('title');
                     return;
                 }
                 newDisplay.textContent = `${v.toLocaleString()} ${unit}`;
-                const diff = v - current;
+                const diff = v - countOnFile;
                 const sign = diff > 0 ? '+' : '';
                 diffDisplay.textContent = `${sign}${diff.toLocaleString()} ${unit}`;
                 diffDisplay.classList.remove('text-base-content/40');
                 diffDisplay.classList.toggle('text-success', diff > 0);
                 diffDisplay.classList.toggle('text-error', diff < 0);
-                const needsOriginalLot = Boolean(adjustIngredientContext?.isPerishable && diff > 0.0005);
-                document.getElementById('adjustSourceBatchGroup').classList.toggle('hidden', !needsOriginalLot);
-                document.getElementById('adjustSourceBatch').required = needsOriginalLot;
-                if (needsOriginalLot && !(adjustIngredientContext?.batches || []).length) {
-                    document.getElementById('adjustSourceBatchHelp').textContent = 'No usable original lot is available. Use Record Found Stock if this came from an unrecorded supplier delivery.';
+                if (adjustIngredientContext?.scope === 'ingredient' && diff < -0.0005) {
+                    renderOverallAllocationPreview(Math.abs(diff), adjustIngredientContext.batches, unit);
                 } else {
-                    document.getElementById('adjustSourceBatchHelp').textContent = 'Recovered or returned perishable stock must return to its original approved lot.';
+                    renderOverallAllocationPreview(0, [], unit);
                 }
             };
+            if (countedQuantity != null && Number.isFinite(Number(countedQuantity))) {
+                newInput.value = String(countedQuantity);
+                newInput.dispatchEvent(new Event('input', { bubbles: true }));
+            }
         }
 
         async function submitAdjust(e) {
@@ -2202,12 +2220,12 @@
             let reason = document.getElementById('adjustReason').value;
             if (reason === 'other') reason = document.getElementById('adjustOtherReason').value;
             if (!reason) { showToast('Please provide a reason', 'error'); return; }
-            const sourceBatchId = document.getElementById('adjustSourceBatch').value;
-            const counted = parseFloat(qty);
-            if (adjustIngredientContext?.isPerishable
-                && counted > Number(adjustIngredientContext.current) + 0.0005
-                && !sourceBatchId) {
-                showToast('Choose the original lot for the recovered or returned stock.', 'error');
+            const adjustmentScope = document.getElementById('adjustScope').value || 'ingredient';
+            const sourceBatchId = adjustmentScope === 'batch'
+                ? document.getElementById('adjustBatchId').value
+                : null;
+            if (adjustmentScope === 'batch' && !sourceBatchId) {
+                showToast('The selected batch is missing. Close this form and choose Count Batch again.', 'error');
                 return;
             }
 
@@ -2217,7 +2235,13 @@
             saveButton.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Sending…';
 
             try {
-                const response = await WarehouseRawService.adjustIngredientStock(id, qty, reason, sourceBatchId || null);
+                const response = await WarehouseRawService.adjustIngredientStock(
+                    id,
+                    qty,
+                    reason,
+                    sourceBatchId || null,
+                    adjustmentScope
+                );
                 if (response.success) {
                     showToast(response.message || 'Count sent to the GM', 'success');
                     document.getElementById('adjustModal').close();
@@ -2226,6 +2250,11 @@
                     } catch (e) {
                         showToast('Sent, but failed to refresh list', 'warning');
                     }
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('adjust_stock');
+                    url.searchParams.delete('record_unlisted');
+                    url.searchParams.delete('counted');
+                    history.replaceState({}, '', url);
                 } else {
                     showToast(response.message || response.error || 'Failed to adjust stock', 'error');
                 }
@@ -2243,8 +2272,8 @@
             return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 10);
         }
 
-        async function loadOpeningStockOptions(ingredientId) {
-            const response = await WarehouseRawService.getOpeningStockOptions(ingredientId);
+        async function loadOpeningStockOptions(ingredientId, heldBatchId = null) {
+            const response = await WarehouseRawService.getOpeningStockOptions(ingredientId, heldBatchId);
             openingStockOptions = response.data || {};
             const select = document.getElementById('openingStockSupplier');
             select.innerHTML = '<option value="">Choose supplier…</option>' +
@@ -2263,7 +2292,11 @@
             const price = Number(document.unit_price || 0);
             const unit = document.unit || document.unit_of_measure || 'unit';
             const priceText = price > 0 ? ` · ₱${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/${unit}` : '';
-            return `PO ${document.po_number} · ${status}${priceText}`;
+            const remaining = Number(document.remaining_quantity || 0);
+            const balanceText = remaining > 0.0005
+                ? ` · ${remaining.toLocaleString()} ${unit} still open`
+                : ' · fully received (lot record only)';
+            return `PO ${document.po_number} · ${status}${balanceText}${priceText}`;
         }
 
         function populateOpeningStockDocuments() {
@@ -2299,7 +2332,7 @@
                 return;
             }
             try {
-                const options = await loadOpeningStockOptions(ingredientId);
+                const options = await loadOpeningStockOptions(ingredientId, heldBatchId);
                 const pending = (options.pending_requests || []).find(request => {
                     if (String(request.ingredient_id) !== String(ingredientId)) return false;
                     if (heldBatchId) return String(request.held_batch_id || '') === String(heldBatchId);
@@ -2336,6 +2369,15 @@
             document.getElementById('openingStockMaximum').value = ingredient.maximum_stock || '';
             document.getElementById('openingStockUnit').value = unit;
             document.getElementById('openingStockIngredientName').textContent = `${ingredient.ingredient_name} · ${isPerishable ? 'Perishable' : 'Non-perishable'}`;
+            document.getElementById('openingStockModalTitle').textContent = heldBatchId
+                ? 'Record Missing Supplier Lot'
+                : 'Report Unrecorded Supplier Delivery';
+            document.getElementById('openingStockBannerTitle').textContent = heldBatchId
+                ? 'Correct one held supplier batch'
+                : 'This is not a normal stock adjustment';
+            document.getElementById('openingStockBannerText').innerHTML = heldBatchId
+                ? '<small>Use the package or supplier document to complete this held batch. Purchasing and QC verify the delivery evidence before the GM decides.</small>'
+                : '<small>Use this only when a supplier delivery physically arrived but was never recorded through Receive Deliveries. For misplaced stock, returned materials, or a count correction, use Full Stock Count instead.</small>';
             document.getElementById('openingStockCurrentLabel').textContent = heldBatchId ? 'Current usable stock' : 'Stock currently on file';
             document.getElementById('openingStockCurrent').value = `${current.toLocaleString()} ${unit}`;
             document.getElementById('openingStockCountedUnit').textContent = unit;
@@ -2352,12 +2394,16 @@
             document.getElementById('openingStockExpiry').required = isPerishable;
             document.getElementById('openingStockLotHelp').classList.toggle('hidden', !isPerishable);
             document.querySelectorAll('.opening-required-mark').forEach(mark => mark.classList.toggle('hidden', !isPerishable));
+            document.getElementById('openingStockSourceType').value = 'unrecorded_delivery';
             syncOpeningStockFields();
             if (heldBatchId && selectedHeldQuantity > 0.0005) {
                 document.getElementById('openingStockIngredientName').textContent = `${ingredient.ingredient_name} · Check the real details for this ${selectedHeldQuantity.toLocaleString()} ${unit} batch`;
             }
             updateOpeningStockDifference();
             document.getElementById('openingStockCounted').oninput = updateOpeningStockDifference;
+            if (document.getElementById('detailModal').open) {
+                document.getElementById('detailModal').close();
+            }
             document.getElementById('openingStockModal').showModal();
         }
 
@@ -2508,7 +2554,7 @@
                 return;
             }
             if (maximum !== null && (!Number.isFinite(maximum) || maximum <= reorder)) {
-                showToast('Par level must be greater than the reorder point.', 'error');
+                showToast('Restocking target must be greater than the reorder point.', 'error');
                 document.getElementById('settingsMaxStock').focus();
                 return;
             }
@@ -2551,6 +2597,15 @@
         }
         function debounce(fn, wait) { let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); }; }
         function openingStockReviewStep(request) {
+            if (String(request?.request_purpose || '') === 'stock_adjustment') {
+                return {
+                    label: 'GM decision',
+                    message: 'Warehouse sent this physical count directly to the GM. No Purchasing or QC step is required.',
+                    alertClass: 'alert-success',
+                    icon: 'fa-user-check',
+                    toastType: 'success'
+                };
+            }
             const price = String(request?.price_status || 'pending');
             const qc = String(request?.qc_status || 'pending');
             if (!['matched_po', 'verified'].includes(price)) {
@@ -2573,7 +2628,7 @@
             }
             return {
                 label: 'Ready for GM',
-                message: 'Purchasing and QC are finished. It is now ready in GM → Pending Approvals → Found Stock.',
+                message: 'Purchasing and QC are finished. It is now ready in GM → Pending Approvals → Unrecorded Delivery.',
                 alertClass: 'alert-success',
                 icon: 'fa-user-check',
                 toastType: 'success'

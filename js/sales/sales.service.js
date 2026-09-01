@@ -530,12 +530,17 @@ const SalesService = {
         });
     },
 
-    /** Record an in-person or phone order for a wholesaler/small business. */
-    async createDirectOrder(data) {
+    /** Record a phone, walk-in, or message order for any active customer. */
+    async createCustomerOrder(data) {
         return await api.post(`${this.baseUrl}/orders.php`, {
-            action: 'create_direct',
+            action: 'create_customer',
             ...data
         });
+    },
+
+    /** Backward-compatible alias for older screens/bookmarks. */
+    async createDirectOrder(data) {
+        return this.createCustomerOrder(data);
     },
 
     /**

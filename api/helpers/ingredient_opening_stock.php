@@ -41,6 +41,9 @@ function ensureIngredientOpeningStockSupport(PDO $db): void {
             request_purpose VARCHAR(30) NOT NULL DEFAULT 'found_stock',
             held_batch_id INT NULL,
             source_batch_id INT NULL,
+            adjustment_scope VARCHAR(20) NOT NULL DEFAULT 'ingredient',
+            ingredient_quantity_at_request DECIMAL(12,3) NULL,
+            batch_allocation_json LONGTEXT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             INDEX idx_opening_stock_status (status, created_at),
@@ -66,6 +69,9 @@ function ensureIngredientOpeningStockSupport(PDO $db): void {
         'request_purpose' => "ALTER TABLE ingredient_opening_stock_requests ADD COLUMN request_purpose VARCHAR(30) NOT NULL DEFAULT 'found_stock' AFTER created_batch_id",
         'held_batch_id' => "ALTER TABLE ingredient_opening_stock_requests ADD COLUMN held_batch_id INT NULL AFTER request_purpose",
         'source_batch_id' => "ALTER TABLE ingredient_opening_stock_requests ADD COLUMN source_batch_id INT NULL AFTER held_batch_id",
+        'adjustment_scope' => "ALTER TABLE ingredient_opening_stock_requests ADD COLUMN adjustment_scope VARCHAR(20) NOT NULL DEFAULT 'ingredient' AFTER source_batch_id",
+        'ingredient_quantity_at_request' => "ALTER TABLE ingredient_opening_stock_requests ADD COLUMN ingredient_quantity_at_request DECIMAL(12,3) NULL AFTER adjustment_scope",
+        'batch_allocation_json' => "ALTER TABLE ingredient_opening_stock_requests ADD COLUMN batch_allocation_json LONGTEXT NULL AFTER ingredient_quantity_at_request",
     ];
     foreach ($columns as $column => $sql) {
         $columnStmt = $db->query("SHOW COLUMNS FROM ingredient_opening_stock_requests LIKE " . $db->quote($column));
@@ -92,7 +98,15 @@ function findIngredientOpeningStockPrice(PDO $db, int $ingredientId, int $suppli
     if ($ingredientId <= 0 || $supplierId <= 0 || $reference === '') return null;
 
     $stmt = $db->prepare("
-        SELECT po.id AS po_id, po.po_number,
+        SELECT po.id AS po_id, po.po_number, po.status AS po_status,
+               poi.quantity AS ordered_quantity,
+               COALESCE(poi.quantity_received, 0) AS received_quantity,
+               GREATEST(poi.quantity - COALESCE(poi.quantity_received, 0), 0) AS remaining_quantity,
+               CASE
+                   WHEN rr.rr_number = ? OR rr.delivery_reference = ? OR rr.invoice_number = ?
+                   THEN 1 ELSE 0
+               END AS matched_receiving_reference,
+               rr.rr_number AS matched_rr_number,
                COALESCE(NULLIF(rri.unit_price, 0), NULLIF(poi.unit_price, 0)) AS unit_cost
         FROM purchase_orders po
         JOIN purchase_order_items poi
@@ -106,19 +120,58 @@ function findIngredientOpeningStockPrice(PDO $db, int $ingredientId, int $suppli
               po.po_number = ? OR rr.rr_number = ? OR
               rr.delivery_reference = ? OR rr.invoice_number = ?
           )
-        ORDER BY rr.received_at DESC, po.id DESC
+        ORDER BY matched_receiving_reference DESC, rr.received_at DESC, po.id DESC
         LIMIT 1
     ");
-    $stmt->execute([$ingredientId, $supplierId, $reference, $reference, $reference, $reference]);
+    $stmt->execute([
+        $reference, $reference, $reference,
+        $ingredientId, $supplierId,
+        $reference, $reference, $reference, $reference,
+    ]);
     $match = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$match || (float) ($match['unit_cost'] ?? 0) <= 0) return null;
 
     return [
         'po_id' => (int) $match['po_id'],
         'po_number' => (string) $match['po_number'],
+        'po_status' => (string) ($match['po_status'] ?? ''),
+        'ordered_quantity' => (float) ($match['ordered_quantity'] ?? 0),
+        'received_quantity' => (float) ($match['received_quantity'] ?? 0),
+        'remaining_quantity' => max(0, (float) ($match['remaining_quantity'] ?? 0)),
+        'matched_receiving_reference' => (int) ($match['matched_receiving_reference'] ?? 0) === 1,
+        'matched_rr_number' => $match['matched_rr_number'] ?? null,
         'unit_cost' => round((float) $match['unit_cost'], 2),
         'price_reference' => 'Matched to ' . $match['po_number'],
     ];
+}
+
+/**
+ * An unrecorded delivery may only use the still-open quantity of its PO.
+ * Lot-detail corrections are exempt because they do not add stock; they only
+ * complete traceability for a batch that is already physically recorded.
+ */
+function validateUnrecordedDeliveryPoMatch(?array $priceMatch, float $quantityToAdd, bool $isTraceabilityCorrection): void {
+    if ($priceMatch === null || $isTraceabilityCorrection) {
+        return;
+    }
+
+    if (!empty($priceMatch['matched_receiving_reference'])) {
+        $rrNumber = trim((string) ($priceMatch['matched_rr_number'] ?? ''));
+        $suffix = $rrNumber !== '' ? " under receiving report {$rrNumber}" : '';
+        throw new RuntimeException("That delivery document was already recorded{$suffix}. Open Receive Deliveries to review it instead of adding the stock again.");
+    }
+
+    $remaining = max(0, (float) ($priceMatch['remaining_quantity'] ?? 0));
+    if ($remaining <= 0.0005) {
+        throw new RuntimeException("PO {$priceMatch['po_number']} is already fully received. It cannot be used to add an unrecorded delivery again.");
+    }
+
+    if ($quantityToAdd > $remaining + 0.0005) {
+        throw new RuntimeException(
+            "PO {$priceMatch['po_number']} has only " . rtrim(rtrim(number_format($remaining, 3, '.', ''), '0'), '.') .
+            ' still open. The unrecorded quantity cannot be greater than the undelivered balance.'
+        );
+    }
 }
 
 function ingredientOpeningStockCode(PDO $db): string {
@@ -170,16 +223,28 @@ function decideIngredientOpeningStock(PDO $db, int $requestId, string $decision,
         $ingredient = $ingredientStmt->fetch(PDO::FETCH_ASSOC);
         if (!$ingredient) throw new RuntimeException('Ingredient is no longer active');
 
+        $adjustmentScope = (string) ($request['adjustment_scope'] ?? 'ingredient');
+        if (!in_array($adjustmentScope, ['ingredient', 'batch'], true)) {
+            throw new RuntimeException('This stock-count request has an invalid adjustment scope');
+        }
+
         $recordedAtRequest = (float) $request['system_quantity'];
         $currentStock = (float) ($ingredient['current_stock'] ?? 0);
-        if (abs($currentStock - $recordedAtRequest) > 0.0005) {
+        if ($adjustmentScope === 'ingredient' && abs($currentStock - $recordedAtRequest) > 0.0005) {
             throw new RuntimeException('Stock changed after Warehouse counted it. Reject this request and ask Warehouse to recount.');
         }
 
-        $target = (float) $request['counted_quantity'];
-        $difference = round($target - $currentStock, 3);
+        $countedTarget = (float) $request['counted_quantity'];
+        $difference = round($countedTarget - $recordedAtRequest, 3);
         if (abs($difference) <= 0.0005) {
             throw new RuntimeException('The physical count now matches the saved stock; no adjustment remains.');
+        }
+
+        $target = $adjustmentScope === 'batch'
+            ? round($currentStock + $difference, 3)
+            : $countedTarget;
+        if ($target < -0.0005) {
+            throw new RuntimeException('This batch correction would make the ingredient total negative. Reject it and ask Warehouse to recount.');
         }
 
         $requester = ['user_id' => (int) $request['requested_by']];
@@ -187,8 +252,53 @@ function decideIngredientOpeningStock(PDO $db, int $requestId, string $decision,
         $batchId = null;
         $batchCode = null;
         $unitCost = (float) ($request['unit_cost'] ?? $ingredient['unit_cost'] ?? 0);
+        $batchAllocation = [];
 
-        if ($difference > 0.0005 && (int) ($ingredient['is_perishable'] ?? 1) === 1) {
+        if ($adjustmentScope === 'batch') {
+            $sourceBatchId = (int) ($request['source_batch_id'] ?? 0);
+            $batchStmt = $db->prepare("SELECT * FROM ingredient_batches
+                WHERE id = ? AND ingredient_id = ? FOR UPDATE");
+            $batchStmt->execute([$sourceBatchId, (int) $ingredient['id']]);
+            $batch = $batchStmt->fetch(PDO::FETCH_ASSOC);
+            if (!$batch
+                || !in_array((string) ($batch['status'] ?? ''), ['available', 'partially_used'], true)
+                || (float) ($batch['remaining_quantity'] ?? 0) <= 0.0005
+                || ((int) ($ingredient['is_perishable'] ?? 1) === 1
+                    && (($batch['expiry_date'] ?? null) === null
+                        || (string) $batch['expiry_date'] <= date('Y-m-d')
+                        || trim((string) ($batch['supplier_batch_no'] ?? '')) === ''))
+                || (string) ($batch['qc_status'] ?? '') !== 'approved') {
+                throw new RuntimeException('The counted batch is no longer usable. Reject this request and ask Warehouse to recount it.');
+            }
+            if (abs((float) $batch['remaining_quantity'] - $recordedAtRequest) > 0.0005) {
+                throw new RuntimeException('That batch changed after Warehouse counted it. Reject this request and ask Warehouse to recount the batch.');
+            }
+
+            $batchId = (int) $batch['id'];
+            $batchCode = (string) $batch['batch_code'];
+            $unitCost = (float) ($batch['unit_cost'] ?? $unitCost);
+            $newBatchRemaining = max(0, $countedTarget);
+            $newOriginalQuantity = max((float) $batch['quantity'], $newBatchRemaining);
+            $newStatus = $newBatchRemaining > 0.0005 ? 'partially_used' : 'consumed';
+            if ($newBatchRemaining >= $newOriginalQuantity - 0.0005 && $newBatchRemaining > 0.0005) {
+                $newStatus = 'available';
+            }
+            $db->prepare("UPDATE ingredient_batches
+                SET quantity = ?, remaining_quantity = ?, status = ?,
+                    notes = CONCAT(COALESCE(notes, ''), CASE WHEN COALESCE(notes, '') = '' THEN '' ELSE '\n' END, ?),
+                    updated_at = NOW()
+                WHERE id = ?")
+                ->execute([$newOriginalQuantity, $newBatchRemaining, $newStatus, $reason, $batchId]);
+            $batchAllocation[] = [
+                'batch_id' => $batchId,
+                'batch_code' => $batchCode,
+                'quantity_before' => $recordedAtRequest,
+                'quantity_after' => $newBatchRemaining,
+                'quantity_changed' => $difference,
+            ];
+        } elseif ($difference > 0.0005
+            && (int) ($ingredient['is_perishable'] ?? 1) === 1
+            && (int) ($request['source_batch_id'] ?? 0) > 0) {
             // Returned or recovered perishables must go back to the same
             // known, usable lot. This preserves its original QC and expiry.
             $sourceBatchId = (int) ($request['source_batch_id'] ?? 0);
@@ -216,14 +326,26 @@ function decideIngredientOpeningStock(PDO $db, int $requestId, string $decision,
                     updated_at = NOW()
                 WHERE id = ?")
                 ->execute([$newOriginalQuantity, $newRemaining, $reason, $batchId]);
+            $batchAllocation[] = [
+                'batch_id' => $batchId,
+                'batch_code' => $batchCode,
+                'quantity_before' => (float) $batch['remaining_quantity'],
+                'quantity_after' => $newRemaining,
+                'quantity_changed' => $difference,
+            ];
         } elseif ($difference > 0.0005) {
             $adjusted = increaseIngredientBatchesToQuantity($db, $ingredient, $target, $requester, $reason);
             if ($adjusted) {
                 $batchId = (int) ($adjusted[0]['batch_id'] ?? 0) ?: null;
                 $batchCode = $adjusted[0]['batch_code'] ?? null;
+                $batchAllocation = $adjusted;
             }
         } else {
-            reduceIngredientBatchesToQuantity($db, $ingredient, $target, $requester, $reason);
+            $batchAllocation = reduceIngredientBatchesToQuantity($db, $ingredient, $target, $requester, $reason);
+            if (count($batchAllocation) === 1) {
+                $batchId = (int) ($batchAllocation[0]['batch_id'] ?? 0) ?: null;
+                $batchCode = $batchAllocation[0]['batch_code'] ?? null;
+            }
         }
 
         $db->prepare('UPDATE ingredients SET current_stock = ?, updated_at = NOW() WHERE id = ?')
@@ -253,11 +375,24 @@ function decideIngredientOpeningStock(PDO $db, int $requestId, string $decision,
         ]);
 
         $update = $db->prepare("UPDATE ingredient_opening_stock_requests
-            SET status = 'approved', decided_by = ?, decided_at = NOW(), decision_notes = ?, created_batch_id = ?
+            SET status = 'approved', decided_by = ?, decided_at = NOW(), decision_notes = ?,
+                created_batch_id = ?, batch_allocation_json = ?
             WHERE id = ? AND status = 'pending'");
-        $update->execute([$gmId, $remarks ?: 'Approved by General Manager', $batchId, $requestId]);
+        $update->execute([
+            $gmId,
+            $remarks ?: 'Approved by General Manager',
+            $batchId,
+            $batchAllocation ? json_encode($batchAllocation, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null,
+            $requestId,
+        ]);
 
-        return ['status' => 'approved', 'request' => $request, 'batch_id' => $batchId, 'batch_code' => $batchCode];
+        return [
+            'status' => 'approved',
+            'request' => $request,
+            'batch_id' => $batchId,
+            'batch_code' => $batchCode,
+            'batch_allocation' => $batchAllocation,
+        ];
     }
 
     if (!in_array((string) ($request['price_status'] ?? ''), ['matched_po', 'verified'], true)

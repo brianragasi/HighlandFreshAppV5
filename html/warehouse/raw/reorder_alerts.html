@@ -217,6 +217,13 @@
                                 <p class="text-base-content/60 text-xs">Tick the circles beside multiple rows, then choose Confirm Counts. They will be saved together as one Warehouse stock check.</p>
                             </div>
                         </div>
+                        <div class="md:col-span-3 flex items-start gap-3 rounded-lg bg-base-200/60 border border-base-300 p-3">
+                            <i class="fas fa-bullseye text-primary mt-0.5"></i>
+                            <div>
+                                <p class="font-medium">What the three stock numbers mean</p>
+                                <p class="text-base-content/60 text-xs"><strong>Reorder point:</strong> start buying here. <strong>Safety buffer:</strong> the minimum you try not to cross. <strong>Restocking target:</strong> the level Purchasing refills toward.</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -285,9 +292,9 @@
                                 <th class="cursor-pointer hover:bg-base-300/50 select-none text-right" onclick="setSort('stock')">
                                     Current Stock <span class="sort-indicator" data-col="stock"></span>
                                 </th>
-                                <th class="text-right">Reorder Point</th>
+                                <th class="text-right">Start Buying At</th>
                                 <th class="cursor-pointer hover:bg-base-300/50 select-none text-right" onclick="setSort('qty')">
-                                    Possible Shortage <span class="sort-indicator" data-col="qty"></span>
+                                    Suggested Refill <span class="sort-indicator" data-col="qty"></span>
                                 </th>
                                 <th class="cursor-pointer hover:bg-base-300/50 select-none text-center" onclick="setSort('lead')">
                                     Lead Time <span class="sort-indicator" data-col="lead"></span>
@@ -979,14 +986,12 @@
                 request.innerHTML = isIngredient && restricted > 0.0005
                     ? '<span class="text-warning font-semibold">Exclude held stock</span>'
                     : isIngredient
-                        ? `<button type="button" class="btn btn-warning btn-xs whitespace-nowrap" onclick="recordFoundStockFromAudit(${Number(alert.item_id)}, ${counted})"><i class="fas fa-box-open"></i> Record found stock</button>`
+                        ? `<button type="button" class="btn btn-warning btn-xs whitespace-nowrap" onclick="recordStockCountFromAudit(${Number(alert.item_id)}, ${counted})"><i class="fas fa-paper-plane"></i> Send count to GM</button>`
                     : 'Use stock correction';
                 help.className = 'bulk-audit-count-help text-xs text-error mt-1';
                 help.textContent = restricted > 0.0005
                     ? `${displayAuditNumber(restricted)} ${unit} is expired or held. Confirm only the safe amount; resolve held batches from Ingredients.`
-                    : Number(alert.is_perishable) === 1
-                    ? `Higher than ${displayAuditNumber(saved)} ${unit}. Record its source, lot, and expiry first.`
-                    : `Higher than ${displayAuditNumber(saved)} ${unit}. Record the missing delivery or stock correction first.`;
+                    : `Higher than ${displayAuditNumber(saved)} ${unit}. Send the physical count directly to the GM.`;
                 return;
             }
 
@@ -1004,9 +1009,9 @@
                 : 'Matches the usable balance.';
         }
 
-        function recordFoundStockFromAudit(itemId, counted) {
+        function recordStockCountFromAudit(itemId, counted) {
             const url = new URL('ingredients.html', window.location.href);
-            url.searchParams.set('record_unlisted', String(itemId));
+            url.searchParams.set('adjust_stock', String(itemId));
             url.searchParams.set('counted', String(counted));
             window.location.href = url.toString();
         }
@@ -1039,7 +1044,7 @@
                     const restricted = finiteNumber(alert.restricted_stock) || 0;
                     fail(restricted > 0.0005
                         ? 'confirm only safe, usable stock. Expired or held batches are handled separately in Ingredients.'
-                        : 'the count is higher than the usable balance. Use Record found stock beside this item first.');
+                        : 'the count is higher than the usable balance. Send the physical count to the GM beside this item first.');
                     return;
                 }
                 if (Math.abs(counted - saved) > 0.0005 && !reason) {
@@ -1486,7 +1491,7 @@
                             <div class="w-20 h-1 bg-base-200 rounded-full overflow-hidden mt-1 ml-auto">
                                 <div class="h-full ${barColor} rounded-full" style="width: ${pct}%"></div>
                             </div>
-                            <div class="text-[10px] text-base-content/50 mt-0.5">${pct.toFixed(0)}% of par</div>
+                            <div class="text-[10px] text-base-content/50 mt-0.5">${pct.toFixed(0)}% of restocking target</div>
                         </td>
                         <td class="text-right text-sm text-base-content/70">${reorderPt.toLocaleString()} <span class="text-xs text-base-content/50">${safeUnit}</span></td>
                         <td class="text-right">
@@ -1578,7 +1583,7 @@
 
         function exportReport() {
             // Simple CSV export
-            const headers = ['Status', 'Item Code', 'Item Name', 'Category', 'Current Stock', 'Reorder Point', 'Par Level', 'Qty to Order', 'Lead Time (days)'];
+            const headers = ['Status', 'Item Code', 'Item Name', 'Category', 'Current Stock', 'Start Buying At', 'Restocking Target', 'Suggested Refill', 'Lead Time (days)'];
             const rows = filteredAlerts.map(a => [
                 a.stock_status,
                 a.item_code,

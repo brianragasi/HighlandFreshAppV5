@@ -853,6 +853,26 @@
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
 
+    <!-- Final, explicit result of GM approval and supplier email dispatch. -->
+    <dialog id="poDispatchResultModal" class="modal">
+        <div class="modal-box max-w-xl">
+            <div class="flex items-start gap-3">
+                <div id="poDispatchResultIcon" class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"></div>
+                <div class="min-w-0">
+                    <p class="text-xs uppercase tracking-wide text-base-content/50 font-bold">Purchase Order result</p>
+                    <h3 id="poDispatchResultTitle" class="font-bold text-xl mt-1"></h3>
+                    <p id="poDispatchResultMessage" class="text-sm text-base-content/70 mt-2"></p>
+                </div>
+            </div>
+            <div id="poDispatchResultDetails" class="rounded-xl border border-base-300 bg-base-200/50 p-4 mt-5 text-sm space-y-2"></div>
+            <div id="poDispatchResultHelp" class="alert mt-4 text-sm"></div>
+            <div class="modal-action">
+                <form method="dialog"><button class="btn btn-primary">Done</button></form>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
     <!-- Approval Decision Modal (shared for Sales Orders, disposals, etc.) -->
     <dialog id="approvalModal" class="modal">
         <div class="modal-box w-11/12 max-w-2xl decision-modal">
@@ -1826,7 +1846,7 @@
                 message: 'Review the final PO details. Your password will be requested next to apply your digital approval.',
                 highlight: approvalSummary,
                 highlightLabel: 'Purchase order for approval',
-                callout: `Expected delivery: ${deliveryText}. After approval, Purchasing can email the final electronic PO to ${supplierDestination}.`,
+                callout: `Expected delivery: ${deliveryText}. When you approve, the system will immediately email the signed PO to ${supplierDestination}. The result will be shown before you continue.`,
                 calloutTone: 'info',
                 label: 'Decision note (optional)',
                 placeholder: 'Example: Approved as reviewed',
@@ -1843,8 +1863,8 @@
             try {
                 const stepUpToken = await AuthService.promptStepUp('po_approval', 'PO approval');
                 if (!stepUpToken) return;
-                await PurchasingService.approvePO(id, stepUpToken, approvalRemarks);
-                showToast('Purchase Order approved and signed. Purchasing can now send it to the supplier.', 'success');
+                const response = await PurchasingService.approvePO(id, stepUpToken, approvalRemarks);
+                showPODispatchResult(response?.data || {}, response?.message || 'Purchase Order approval completed.');
                 await loadAllData();
             } catch (e) {
                 showToast(e?.message || 'Failed to approve', 'error');
@@ -1946,6 +1966,38 @@
             return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
         }
 
+        function showPODispatchResult(result, responseMessage) {
+            const delivery = result?.supplier_delivery || {};
+            const sent = delivery.ok === true;
+            const poNumber = result?.po_number || 'Purchase Order';
+            const recipient = delivery.supplier_email || 'No valid supplier email on file';
+            const sentAt = delivery.sent_at ? formatDateTime(delivery.sent_at) : null;
+            const modal = document.getElementById('poDispatchResultModal');
+            const icon = document.getElementById('poDispatchResultIcon');
+            const title = document.getElementById('poDispatchResultTitle');
+            const message = document.getElementById('poDispatchResultMessage');
+            const details = document.getElementById('poDispatchResultDetails');
+            const help = document.getElementById('poDispatchResultHelp');
+
+            icon.className = `w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${sent ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning'}`;
+            icon.innerHTML = `<i class="fas ${sent ? 'fa-envelope-circle-check' : 'fa-triangle-exclamation'} text-xl"></i>`;
+            title.textContent = sent ? `${poNumber} approved and emailed` : `${poNumber} approved; email needs attention`;
+            message.textContent = sent
+                ? 'The approval is saved and the supplier email service accepted the final PO.'
+                : (delivery.message || responseMessage || 'The approval is saved, but the supplier email was not sent.');
+            details.innerHTML = `
+                <div class="flex justify-between gap-4"><span class="text-base-content/55">GM approval</span><span class="font-semibold text-success">Saved</span></div>
+                <div class="flex justify-between gap-4"><span class="text-base-content/55">Email status</span><span class="font-semibold ${sent ? 'text-success' : 'text-warning'}">${sent ? 'Sent' : 'Not sent'}</span></div>
+                <div class="flex justify-between gap-4"><span class="text-base-content/55">Supplier email</span><span class="font-medium text-right break-all">${escapeHtml(recipient)}</span></div>
+                ${sentAt ? `<div class="flex justify-between gap-4"><span class="text-base-content/55">Sent at</span><span class="font-medium text-right">${escapeHtml(sentAt)}</span></div>` : ''}
+            `;
+            help.className = `alert mt-4 text-sm ${sent ? 'alert-info' : 'alert-warning'}`;
+            help.innerHTML = sent
+                ? '<i class="fas fa-circle-info"></i><span>This confirms the email was accepted for delivery. It does not prove that the supplier opened it.</span>'
+                : '<i class="fas fa-rotate-right"></i><span>Purchasing can correct the supplier email or connection, then use <strong>Email Final PO</strong> from Purchase Orders. The GM does not approve it again.</span>';
+            modal.showModal();
+        }
+
         function formatDateTime(value) {
             if (!value) return 'Decision time not recorded';
             const date = new Date(String(value).replace(' ', 'T'));
@@ -2039,7 +2091,7 @@
 
             const isTraceabilityCorrection = type === 'ingredient_opening_stock' && detail.request_purpose === 'traceability_correction';
             const isStockAdjustment = type === 'ingredient_opening_stock' && detail.request_purpose === 'stock_adjustment';
-            const typeLabels = { credit: 'Credit Override', credit_override: 'Credit Override', sales_order: 'Sales Order', disposal: 'Disposal', purchase_order: 'Purchase Order', purchase_request: 'Purchase Request', requisition: 'Requisition', ingredient_opening_stock: isStockAdjustment ? 'Stock Count Adjustment' : (isTraceabilityCorrection ? 'Held Stock Lot Review' : 'Found Stock') };
+            const typeLabels = { credit: 'Credit Override', credit_override: 'Credit Override', sales_order: 'Sales Order', disposal: 'Disposal', purchase_order: 'Purchase Order', purchase_request: 'Purchase Request', requisition: 'Requisition', ingredient_opening_stock: isStockAdjustment ? 'Stock Count Adjustment' : (isTraceabilityCorrection ? 'Held Stock Lot Review' : 'Unrecorded Delivery Review') };
             document.getElementById('modalType').textContent = typeLabels[type] || category;
 
             const customer = detail.customer_name || detail.ingredient_name || detail.supplier_name || detail.product_name || detail.department || detail.requested_by_name || '—';
@@ -2060,17 +2112,32 @@
                 const adjustmentClass = adjustmentQuantity < 0 ? 'text-error' : 'text-success';
                 const adjustmentLabel = adjustmentQuantity > 0 ? 'Add after approval' : 'Remove after approval';
                 if (isStockAdjustment) {
+                    const isBatchCount = String(detail.adjustment_scope || 'ingredient') === 'batch';
+                    const allocationPreview = Array.isArray(detail.batch_allocation_preview)
+                        ? detail.batch_allocation_preview
+                        : [];
+                    const allocationHtml = !isBatchCount && adjustmentQuantity < 0 && allocationPreview.length
+                        ? `<div class="alert alert-warning py-2 text-xs">
+                            <i class="fas fa-list-check"></i>
+                            <div>
+                                <strong>Proposed lot changes for this overall count</strong>
+                                ${allocationPreview.map(row => `<p>${escapeHtml(row.batch_code || `Batch #${row.batch_id}`)}: ${escapeHtml(String(row.quantity_before))} → ${escapeHtml(String(row.quantity_after))} ${escapeHtml(detail.unit || '')}</p>`).join('')}
+                            </div>
+                           </div>`
+                        : '';
                     detailBody.innerHTML = `
                         <div class="p-4 space-y-3">
                             <div class="alert alert-info py-2 text-sm"><i class="fas fa-route"></i><span><strong>Warehouse → GM only.</strong> No Purchasing or QC step is required for this internal count correction.</span></div>
+                            <div class="badge ${isBatchCount ? 'badge-info' : 'badge-ghost'}">${isBatchCount ? 'Specific batch count' : 'Overall item count'}</div>
                             <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                <div><span class="text-xs text-base-content/50 block">System stock</span><strong>${escapeHtml(String(detail.system_quantity))} ${escapeHtml(detail.unit || '')}</strong></div>
-                                <div><span class="text-xs text-base-content/50 block">Warehouse counted</span><strong>${escapeHtml(String(detail.counted_quantity))} ${escapeHtml(detail.unit || '')}</strong></div>
+                                <div><span class="text-xs text-base-content/50 block">${isBatchCount ? 'Batch record' : 'System stock'}</span><strong>${escapeHtml(String(detail.system_quantity))} ${escapeHtml(detail.unit || '')}</strong></div>
+                                <div><span class="text-xs text-base-content/50 block">${isBatchCount ? 'Counted in batch' : 'Warehouse counted'}</span><strong>${escapeHtml(String(detail.counted_quantity))} ${escapeHtml(detail.unit || '')}</strong></div>
                                 <div><span class="text-xs text-base-content/50 block">${adjustmentLabel}</span><strong class="${adjustmentClass}">${adjustmentQuantity > 0 ? '+' : ''}${escapeHtml(String(detail.quantity_to_add))} ${escapeHtml(detail.unit || '')}</strong></div>
                             </div>
-                            ${detail.source_batch_id ? `<div><span class="text-xs text-base-content/50 block">Original lot for returned/recovered stock</span><p>${escapeHtml(detail.supplier_batch_no || 'Recorded lot')} · expires ${escapeHtml(detail.expiry_date || '—')}</p></div>` : ''}
+                            ${detail.source_batch_id ? `<div><span class="text-xs text-base-content/50 block">${isBatchCount ? 'Batch Warehouse physically counted' : 'Original lot for returned/recovered stock'}</span><p><strong>${escapeHtml(detail.source_batch_code || 'Recorded batch')}</strong>${detail.supplier_batch_no ? ` · Supplier lot ${escapeHtml(detail.supplier_batch_no)}` : ''}${detail.expiry_date ? ` · expires ${escapeHtml(detail.expiry_date)}` : ''}</p></div>` : ''}
+                            ${allocationHtml}
                             <div><span class="text-xs text-base-content/50 block">Warehouse reason</span><p>${escapeHtml(detail.reason || 'No explanation')}</p></div>
-                            <div class="alert alert-warning py-2 text-xs"><i class="fas fa-triangle-exclamation"></i><span>Approve only if the physical count and explanation are believable. Approval changes stock immediately.</span></div>
+                            <div class="alert alert-warning py-2 text-xs"><i class="fas fa-triangle-exclamation"></i><span>Approve only if the physical count and explanation are believable. ${isBatchCount ? 'Only the identified batch and the item total will change.' : 'The displayed lot allocation and item total will change immediately.'}</span></div>
                         </div>`;
                     return;
                 }

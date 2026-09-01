@@ -18,6 +18,8 @@ $httpHost = $_SERVER['HTTP_HOST'] ?? '';
 $isInfinityFree = (strpos($httpHost, 'infinityfree.io') !== false)
     || (strpos($httpHost, 'epizy.com') !== false)
     || (getenv('INFINITYFREE') !== false);
+$isGoogieHost = str_ends_with(strtolower($httpHost), '.whf.bz')
+    || (getenv('GOOGIEHOST') !== false);
 
 function loadLocalEnvFiles() {
     static $loaded = false;
@@ -110,7 +112,17 @@ if ($isAzure) {
     define('DB_HOST', envOrDefault('DB_HOST', 'sql112.infinityfree.com'));
     define('DB_NAME', envOrDefault('DB_NAME', 'if0_42204813_highland_fresh'));
     define('DB_USER', envOrDefault('DB_USERNAME', 'if0_42204813'));
-    define('DB_PASS', envOrDefault('DB_PASSWORD', 'iB1K56dOBOl4Pht'));
+    // Production passwords must exist only in the host's private .env file.
+    define('DB_PASS', envOrDefault('DB_PASSWORD', ''));
+    define('DB_PORT', (int) envOrDefault('DB_PORT', 3306));
+    define('DB_SSL_CERT', null);
+} elseif ($isGoogieHost) {
+    // GoogieHost serves PHP and MySQL from the same hosting account. Keep the
+    // account-specific database name, user, and password in public_html/.env.
+    define('DB_HOST', envOrDefault('DB_HOST', 'localhost'));
+    define('DB_NAME', envOrDefault('DB_NAME', ''));
+    define('DB_USER', envOrDefault('DB_USERNAME', ''));
+    define('DB_PASS', envOrDefault('DB_PASSWORD', ''));
     define('DB_PORT', (int) envOrDefault('DB_PORT', 3306));
     define('DB_SSL_CERT', null);
 } else {
@@ -131,11 +143,26 @@ define('APP_VERSION', '4.0');
 define('APP_TIMEZONE', 'Asia/Manila');
 
 // Security Settings
-define('JWT_SECRET', 'highland_fresh_secret_key_2024_change_in_production');
+$isProductionHost = $isAzure || $isInfinityFree || $isGoogieHost;
+$jwtSecret = envOrDefault(
+    'JWT_SECRET',
+    $isProductionHost ? '' : 'highland_fresh_local_development_secret_only'
+);
+if ($isProductionHost && strlen($jwtSecret) < 32) {
+    throw new RuntimeException('JWT_SECRET must be set to at least 32 characters in the production .env file.');
+}
+define('JWT_SECRET', $jwtSecret);
 define('JWT_EXPIRY', 28800); // 8 hours in seconds
 define('SESSION_IDLE_TIMEOUT', 900); // 15 minutes in seconds
 define('STEP_UP_TOKEN_EXPIRY', 300); // 5 minutes in seconds
-define('AUDIT_LOG_SECRET', envOrDefault('AUDIT_LOG_SECRET', JWT_SECRET));
+$auditLogSecret = envOrDefault('AUDIT_LOG_SECRET', $isProductionHost ? '' : JWT_SECRET);
+if ($isProductionHost && strlen($auditLogSecret) < 32) {
+    throw new RuntimeException('AUDIT_LOG_SECRET must be set to at least 32 characters in the production .env file.');
+}
+if ($isProductionHost && hash_equals(JWT_SECRET, $auditLogSecret)) {
+    throw new RuntimeException('AUDIT_LOG_SECRET must be different from JWT_SECRET in the production .env file.');
+}
+define('AUDIT_LOG_SECRET', $auditLogSecret);
 define('PASSWORD_COST', 12);
 
 // Password Policy
@@ -158,6 +185,10 @@ define('SMTP_PASSWORD', envOrDefault('SMTP_PASSWORD', ''));
 define('SMTP_FROM_EMAIL', envOrDefault('SMTP_FROM_EMAIL', $isInfinityFree ? 'ragasibrian2@gmail.com' : 'highlandfreshdairy@gmail.com'));
 define('SMTP_FROM_NAME', envOrDefault('SMTP_FROM_NAME', 'Highland Fresh Dairy'));
 define('SMTP_ENCRYPTION', envOrDefault('SMTP_ENCRYPTION', 'tls'));
+define('SMTP_VERIFY_PEER', filter_var(
+    envOrDefault('SMTP_VERIFY_PEER', $isProductionHost ? 'true' : 'false'),
+    FILTER_VALIDATE_BOOLEAN
+));
 
 // Institutional customer PO inbox (POP3, read-only; messages are never deleted)
 define('ORDER_MAILBOX_ENABLED', filter_var(
@@ -187,10 +218,13 @@ if ($isAzure) {
     define('APP_URL', envOrDefault('APP_URL', 'https://highlandfresh.codes'));
 } elseif ($isInfinityFree) {
     define('APP_URL', envOrDefault('APP_URL', 'http://highlandfresh.infinityfree.io'));
+} elseif ($isGoogieHost) {
+    define('APP_URL', envOrDefault('APP_URL', 'https://highlandfresh.whf.bz'));
 } else {
     define('APP_URL', envOrDefault('APP_URL', 'http://localhost/HighlandFreshAppV4'));
 }
 define('IS_INFINITYFREE', $isInfinityFree);
+define('IS_GOOGIEHOST', $isGoogieHost);
 
 // Business Rules — HTST pasteurization (production_staff.md / ccp_standards.php)
 // 75°C for 15 seconds, NOT 81°C for 15 minutes

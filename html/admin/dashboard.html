@@ -380,7 +380,11 @@
                     <ul tabindex="0"
                         class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-44 p-2">
                         <li><a><i class="fas fa-user-cog w-4"></i> Profile</a></li>
-                        <li><a><i class="fas fa-cog w-4"></i> Settings</a></li>
+                        <li>
+                            <button type="button" onclick="testEmailService(this)" aria-label="Test live email service">
+                                <i class="fas fa-envelope-circle-check w-4"></i> Test Email Service
+                            </button>
+                        </li>
                         <li class="border-t border-base-300 mt-1 pt-1">
                             <a onclick="AuthService.logout()" class="text-error"><i class="fas fa-sign-out-alt w-4"></i>
                                 Logout</a>
@@ -923,6 +927,36 @@
             renderLowStockAlerts(stats.low_stock_alerts || []);
             renderRecentActivity(stats.recent_activity || []);
             await loadApprovalDecisionHistory();
+        }
+
+        async function testEmailService(button) {
+            const originalHtml = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Checking email';
+
+            try {
+                const check = await api.get('/admin/smtp_diagnostics.php');
+                const readiness = check?.data || {};
+                if (!readiness.configured) {
+                    const issues = Array.isArray(readiness.issues) ? readiness.issues.join(' ') : 'Review the production .env file.';
+                    showToast(`Email service is not ready: ${issues}`, 'error');
+                    return;
+                }
+
+                const confirmed = window.confirm(
+                    'Send one SMTP test message to the email address registered on your GM/Admin account?'
+                );
+                if (!confirmed) return;
+
+                button.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Sending test';
+                const result = await api.post('/admin/smtp_diagnostics.php', {});
+                showToast(result?.message || 'SMTP accepted the test email. Check your inbox and spam folder.', 'success');
+            } catch (error) {
+                showToast(error?.message || 'The live email test failed.', 'error');
+            } finally {
+                button.disabled = false;
+                button.innerHTML = originalHtml;
+            }
         }
 
         function setText(id, value) {

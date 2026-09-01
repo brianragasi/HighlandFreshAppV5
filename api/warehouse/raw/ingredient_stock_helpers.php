@@ -197,37 +197,68 @@ function reconcileIngredientSummaryToBatches($db, $ingredientData, $currentUser,
 }
 
 /**
- * Record stock discovered during a physical count for a non-perishable item.
+ * Record stock discovered during a Warehouse physical count.
  *
- * A physical adjustment must update both the ingredient summary and its FIFO
- * batch ledger.  The caller supplies the counted target as a temporary summary
- * value so the reconciliation helper creates one clearly labelled adjustment
- * batch for only the positive difference.
+ * The correction goes Warehouse -> GM only. Approval creates a clearly
+ * labelled internal count batch for exactly the positive difference so the
+ * ingredient summary and batch ledger stay aligned without pretending that
+ * the correction was a new supplier delivery.
  */
 function increaseIngredientBatchesToQuantity($db, $ingredientData, $targetQuantity, $currentUser, $reason) {
     $targetQuantity = max(0, (float) $targetQuantity);
     $currentQuantity = (float) ($ingredientData['current_stock'] ?? 0);
+    $difference = round($targetQuantity - $currentQuantity, 3);
 
-    if ($targetQuantity <= $currentQuantity + 0.0005) {
+    if ($difference <= 0.0005) {
         return [];
     }
 
-    if ((int) ($ingredientData['is_perishable'] ?? 1) !== 0) {
-        throw new Exception(
-            'A higher count for a perishable ingredient must be recorded through PO receiving so its lot and expiry date are captured.'
-        );
+    $isPerishable = (int) ($ingredientData['is_perishable'] ?? 1) === 1;
+    $batchCode = generateIngredientBatchCode($db, 'IB-COUNT');
+    $expiryDate = getIngredientAdjustmentExpiryDate($ingredientData);
+    if ($isPerishable && $expiryDate === null) {
+        // A conservative one-day window keeps the correction visible and
+        // usable for the demonstrated workflow without granting anonymous
+        // perishable stock an unlimited shelf life.
+        $expiryDate = date('Y-m-d', strtotime('+1 day'));
     }
+    $internalLot = $isPerishable ? 'WAREHOUSE-' . $batchCode : null;
 
-    $countedIngredient = $ingredientData;
-    $countedIngredient['current_stock'] = $targetQuantity;
-    $adjustedBatch = reconcileIngredientSummaryToBatches(
-        $db,
-        $countedIngredient,
-        $currentUser,
-        'Physical count increase: ' . $reason
-    );
+    $stmt = $db->prepare("
+        INSERT INTO ingredient_batches
+        (batch_code, ingredient_id, quantity, remaining_quantity, unit_cost,
+         supplier_batch_no, received_date, expiry_date, qc_status, status,
+         received_by, notes)
+        VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?, 'approved', 'available', ?, ?)
+    ");
+    $stmt->execute([
+        $batchCode,
+        (int) $ingredientData['id'],
+        $difference,
+        $difference,
+        $ingredientData['unit_cost'] ?? null,
+        $internalLot,
+        $expiryDate,
+        (int) $currentUser['user_id'],
+        'GM-approved Warehouse physical count: ' . $reason,
+    ]);
+    $batchId = (int) $db->lastInsertId();
 
-    return $adjustedBatch ? [$adjustedBatch] : [];
+    logAudit($currentUser['user_id'], 'warehouse_count_increase', 'ingredient_batches', $batchId, null, [
+        'ingredient_id' => (int) $ingredientData['id'],
+        'batch_code' => $batchCode,
+        'quantity' => $difference,
+        'reason' => $reason,
+    ]);
+
+    return [[
+        'batch_id' => $batchId,
+        'batch_code' => $batchCode,
+        'quantity_before' => 0.0,
+        'quantity_after' => $difference,
+        'quantity_changed' => $difference,
+        'reason' => $reason,
+    ]];
 }
 
 function reduceIngredientBatchesToQuantity($db, $ingredientData, $targetQuantity, $currentUser, $reason) {
@@ -275,4 +306,35 @@ function reduceIngredientBatchesToQuantity($db, $ingredientData, $targetQuantity
     }
 
     return $adjustedBatches;
+}
+
+/**
+ * Preview the FEFO/FIFO allocation used by an ingredient-wide lower count.
+ * This performs no writes and lets Warehouse and the GM see the exact lots
+ * the system proposes to reduce before an approval changes inventory.
+ */
+function previewIngredientBatchReduction($db, $ingredientId, $quantityToRemove) {
+    $quantityToRemove = max(0, round((float) $quantityToRemove, 3));
+    if ($quantityToRemove <= 0.0005) {
+        return [];
+    }
+
+    $allocation = [];
+    foreach (getUsableIngredientBatches($db, (int) $ingredientId, false) as $batch) {
+        if ($quantityToRemove <= 0.0005) {
+            break;
+        }
+        $before = (float) ($batch['remaining_quantity'] ?? 0);
+        $removed = min($before, $quantityToRemove);
+        $allocation[] = [
+            'batch_id' => (int) $batch['id'],
+            'batch_code' => (string) ($batch['batch_code'] ?? ('Batch #' . $batch['id'])),
+            'quantity_before' => $before,
+            'quantity_after' => round($before - $removed, 3),
+            'quantity_removed' => $removed,
+        ];
+        $quantityToRemove = round($quantityToRemove - $removed, 3);
+    }
+
+    return $allocation;
 }

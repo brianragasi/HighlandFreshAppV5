@@ -12,40 +12,47 @@ $purchasingApi = file_get_contents($root . '/api/purchasing/dashboard.php');
 $purchasingPage = file_get_contents($root . '/html/purchasing/dashboard.html');
 $qcApi = file_get_contents($root . '/api/qc/dashboard.php');
 $qcPage = file_get_contents($root . '/html/qc/dashboard.html');
+$earlyReorderHelper = file_get_contents($root . '/api/helpers/early_reorder.php');
+$rawWarehouseService = file_get_contents($root . '/js/warehouse/raw.service.js');
 
 $checks = [
-    'Warehouse has a dedicated found-stock request instead of a perishable adjustment override' =>
+    'Warehouse has a separate unrecorded-delivery exception instead of mixing it with a stock count' =>
         str_contains($ingredientsApi, "case 'request_opening_stock'")
-        && str_contains($ingredientsPage, 'Record Stock Missing From the System')
-        && str_contains($ingredientsPage, 'Send for Verification'),
+        && str_contains($ingredientsPage, 'Report Unrecorded Supplier Delivery')
+        && str_contains($ingredientsPage, 'Send Delivery for Checks'),
     'Perishable found stock requires traceable lot and expiry data' =>
         str_contains($ingredientsApi, 'Perishable stock requires an expiry date')
         && str_contains($ingredientsPage, 'openingStockLot')
         && str_contains($ingredientsPage, 'openingStockExpiry'),
-    'Saved delivery evidence is selected and its reference is filled automatically' =>
-        str_contains($ingredientsApi, "po.status IN ('approved', 'ordered', 'partial_received', 'received', 'closed')")
+    'Only an open saved order can add an unrecorded delivery again' =>
+        str_contains($ingredientsApi, "po.status IN ('approved', 'ordered', 'partial_received')")
+        && str_contains($ingredientsApi, 'HAVING ? > 0 OR remaining_quantity > 0.0005')
+        && str_contains($ingredientsApi, 'validateUnrecordedDeliveryPoMatch')
         && str_contains($ingredientsPage, 'Which saved order matches this delivery?')
         && str_contains($ingredientsPage, 'Document not listed')
-        && str_contains($ingredientsPage, 'populateOpeningStockDocuments'),
+        && str_contains($ingredientsPage, 'still open'),
     'Opening counts receive automatic references but perishables cannot invent internal supplier lots' =>
         str_contains($ingredientsApi, "'Opening count ' . \$requestCode")
         && !str_contains($ingredientsApi, "'INTERNAL-' . \$requestCode")
         && !str_contains($ingredientsPage, 'No lot number is printed on the package')
         && str_contains($ingredientsPage, 'Missing or unreadable lots must be held and reported to QC.'),
-    'Low-stock validation routes a higher count to the found-stock form' =>
-        str_contains($alertsPage, 'recordFoundStockFromAudit')
-        && str_contains($alertsPage, 'Record found stock'),
-    'GM queue can review and decide found stock' =>
+    'Low-stock validation routes a higher count directly to the GM stock-count flow' =>
+        str_contains($alertsPage, 'recordStockCountFromAudit')
+        && str_contains($alertsPage, 'Send count to GM')
+        && str_contains($alertsPage, "url.searchParams.set('adjust_stock'")
+        && !str_contains($alertsPage, "url.searchParams.set('record_unlisted'"),
+    'GM queue can review and decide an unrecorded supplier delivery' =>
         str_contains($gmApi, "case 'ingredient_opening_stock'")
         && str_contains($gmApi, 'decideIngredientOpeningStock')
-        && str_contains($gmPage, 'Found Stock'),
+        && str_contains($gmPage, 'Unrecorded Delivery Review'),
     'GM dashboard cannot falsely look clear while found stock awaits approval' =>
         str_contains($gmDashboardApi, "'type' => 'ingredient_opening_stock'")
         && str_contains($gmDashboardApi, "price_status IN ('matched_po', 'verified', 'not_required')")
         && str_contains($gmDashboardApi, "qc_status IN ('approved', 'not_required')")
         && str_contains($gmDashboardPage, "gm_approvals.html?queue=inventory"),
     'Warehouse shows the exact reviewer currently holding the request' =>
-        str_contains($ingredientsApi, 'osr.held_batch_id, osr.price_status, osr.qc_status')
+        str_contains($ingredientsApi, 'osr.held_batch_id')
+        && str_contains($ingredientsApi, 'osr.price_status, osr.qc_status')
         && str_contains($ingredientsPage, 'openingStockReviewStep')
         && str_contains($ingredientsPage, 'Ready for GM'),
     'Different held batches of the same ingredient can be reviewed separately' =>
@@ -62,8 +69,55 @@ $checks = [
         str_contains($ingredientsApi, "'stock_adjustment'")
         && str_contains($ingredientsApi, "'not_required', 'not_required'")
         && str_contains($ingredientsPage, 'Send to GM')
+        && str_contains($ingredientsPage, 'Full Stock Count')
+        && str_contains($ingredientsPage, 'No Purchasing or QC step is required.')
         && str_contains($gmPage, 'Warehouse → GM only.')
         && str_contains($gmApi, "price_status IN ('matched_po', 'verified', 'not_required')"),
+    'Warehouse can count one known batch without silently changing another lot' =>
+        str_contains($ingredientsPage, 'Count Batch')
+        && str_contains($ingredientsPage, 'openBatchCountModal')
+        && str_contains($ingredientsApi, "'batch'")
+        && str_contains($ingredientsApi, 'adjustment_scope')
+        && str_contains(file_get_contents($root . '/api/helpers/ingredient_opening_stock.php'), "\$adjustmentScope === 'batch'"),
+    'Stock-count mode banners stay hidden unless their mode is active' =>
+        str_contains($ingredientsPage, '.pro-banner.hidden')
+        && str_contains($ingredientsPage, '.pro-banner[hidden]')
+        && str_contains($ingredientsPage, "classList.toggle('hidden', !batchContext)"),
+    'A higher physical count goes directly from Warehouse to GM even for a perishable item' =>
+        str_contains($ingredientsPage, 'Higher and lower counts both go directly from Warehouse to the GM')
+        && !str_contains($ingredientsPage, 'id="adjustSourceBatch"')
+        && !str_contains($ingredientsPage, 'adjustNoSourceBatch')
+        && !str_contains($ingredientsApi, 'Choose the original lot for the recovered or returned stock.')
+        && str_contains(file_get_contents($root . '/api/warehouse/raw/ingredient_stock_helpers.php'), "generateIngredientBatchCode(\$db, 'IB-COUNT')")
+        && str_contains(file_get_contents($root . '/api/warehouse/raw/ingredient_stock_helpers.php'), 'warehouse_count_increase'),
+    'An overall lower count previews and records its automatic lot allocation' =>
+        str_contains($ingredientsPage, 'adjustAllocationPreview')
+        && str_contains($gmPage, 'batch_allocation_preview')
+        && str_contains(file_get_contents($root . '/api/warehouse/raw/ingredient_stock_helpers.php'), 'previewIngredientBatchReduction')
+        && str_contains(file_get_contents($root . '/api/helpers/ingredient_opening_stock.php'), 'batch_allocation_json'),
+    'Production releases cannot bypass the approved requisition flow' =>
+        str_contains($ingredientsApi, 'Direct ingredient issues are disabled')
+        && str_contains($ingredientsApi, 'Requisitions → Fulfill')
+        && !str_contains($ingredientsPage, 'Manual Issue')
+        && !str_contains($ingredientsPage, 'issueModal')
+        && !str_contains($rawWarehouseService, 'async issueIngredient(')
+        && str_contains($earlyReorderHelper, "COALESCE(it.reference_type, '') <> 'manual_issue'"),
+    'Everyday navigation is separated from rare ingredient actions' =>
+        str_contains($ingredientsPage, 'Fulfill Request')
+        && str_contains($ingredientsPage, 'Receive Delivery')
+        && str_contains($ingredientsPage, 'More Actions')
+        && str_contains($ingredientsPage, 'Rare corrections and configuration')
+        && str_contains($ingredientsPage, 'Full Stock Count'),
+    'Only the GM can change stock settings while Warehouse can still see the levels' =>
+        str_contains($ingredientsApi, 'Only the General Manager can change stock settings')
+        && str_contains($ingredientsPage, "currentRole === 'general_manager'")
+        && str_contains($ingredientsPage, 'Start Buying At')
+        && str_contains($ingredientsPage, 'Safety Buffer')
+        && str_contains($ingredientsPage, 'Restocking Target'),
+    'Count and waste remain attached to individual batches' =>
+        str_contains($ingredientsPage, 'Count Batch')
+        && str_contains($ingredientsPage, 'Record Waste')
+        && str_contains($ingredientsPage, 'remaining > 0 && !traceabilityIssue'),
     'Purchasing has a reachable price verification queue' =>
         str_contains($purchasingApi, "case 'found_stock_price_checks'")
         && str_contains($purchasingApi, "verify_found_stock_price")
@@ -85,7 +139,8 @@ $checks = [
     'A held batch uses lot correction without a duplicate adjustment warning' =>
         str_contains($ingredientsApi, 'unexplained_batch_surplus')
         && str_contains($ingredientsPage, 'batchStockSurplus - restrictedStock')
-        && str_contains($ingredientsPage, 'isExpired || !traceabilityIssue'),
+        && str_contains($ingredientsPage, 'canRecordLot = traceabilityIssue')
+        && str_contains($ingredientsPage, 'Record Lot Details'),
 ];
 foreach ($checks as $label => $passed) {
     if (!$passed) throw new RuntimeException("Failed: {$label}");
@@ -101,6 +156,57 @@ require_once $root . '/api/config/config.php';
 require_once $root . '/api/config/database.php';
 require_once $root . '/api/warehouse/raw/ingredient_stock_helpers.php';
 require_once $root . '/api/helpers/ingredient_opening_stock.php';
+
+$fullyReceivedBlocked = false;
+try {
+    validateUnrecordedDeliveryPoMatch([
+        'po_number' => 'PO-FULL',
+        'remaining_quantity' => 0,
+        'matched_receiving_reference' => false,
+    ], 1, false);
+} catch (RuntimeException $error) {
+    $fullyReceivedBlocked = str_contains($error->getMessage(), 'already fully received');
+}
+if (!$fullyReceivedBlocked) {
+    throw new RuntimeException('A fully received PO could be reused for an unrecorded delivery');
+}
+
+$overDeliveryBlocked = false;
+try {
+    validateUnrecordedDeliveryPoMatch([
+        'po_number' => 'PO-PARTIAL',
+        'remaining_quantity' => 2,
+        'matched_receiving_reference' => false,
+    ], 3, false);
+} catch (RuntimeException $error) {
+    $overDeliveryBlocked = str_contains($error->getMessage(), 'only 2 still open');
+}
+if (!$overDeliveryBlocked) {
+    throw new RuntimeException('An unrecorded delivery could exceed the PO balance');
+}
+
+$recordedDocumentBlocked = false;
+try {
+    validateUnrecordedDeliveryPoMatch([
+        'po_number' => 'PO-PARTIAL',
+        'remaining_quantity' => 2,
+        'matched_receiving_reference' => true,
+        'matched_rr_number' => 'RR-TEST-001',
+    ], 1, false);
+} catch (RuntimeException $error) {
+    $recordedDocumentBlocked = str_contains($error->getMessage(), 'already recorded under receiving report RR-TEST-001');
+}
+if (!$recordedDocumentBlocked) {
+    throw new RuntimeException('A recorded delivery reference could be submitted as unrecorded stock again');
+}
+
+// Completing the lot details of stock already recorded does not add stock,
+// so its historical PO remains valid traceability evidence.
+validateUnrecordedDeliveryPoMatch([
+    'po_number' => 'PO-HISTORICAL',
+    'remaining_quantity' => 0,
+    'matched_receiving_reference' => true,
+], 10, true);
 
 $db = Database::getInstance()->getConnection();
 ensureIngredientOpeningStockSupport($db);
@@ -315,6 +421,49 @@ if (($adjustResult['status'] ?? '') !== 'approved'
 }
 $db->rollBack();
 
+// The same professor-recommended direct-GM path also accepts a higher count
+// for a perishable item with no earlier usable lot. Approval creates an
+// auditable internal Warehouse count batch instead of routing to Purchasing/QC.
+$perishableAdjustIngredientId = $seed + 25;
+$perishableAdjustRequestId = $seed + 26;
+$db->prepare("INSERT INTO ingredients
+    (id, ingredient_code, ingredient_name, unit_of_measure, minimum_stock,
+     current_stock, unit_cost, maximum_stock, storage_location, shelf_life_days,
+     is_perishable, is_active)
+    VALUES (?, ?, 'Perishable Direct Count Test', 'kg', 1, 0, 30, 100, 'Cold Storage', 14, 1, 1)")
+    ->execute([$perishableAdjustIngredientId, "PERISH-ADJUST-{$seed}"]);
+$db->prepare("INSERT INTO ingredient_opening_stock_requests
+    (id, request_code, ingredient_id, system_quantity, counted_quantity, quantity_to_add,
+     unit, source_type, source_reference, received_date, unit_cost, price_status, qc_status,
+     reason, status, requested_by, request_purpose, adjustment_scope)
+    VALUES (?, ?, ?, 0, 5, 5, 'kg', 'internal_adjustment', 'Warehouse physical count',
+            CURDATE(), 30, 'not_required', 'not_required', 'Misplaced stock recovered',
+            'pending', ?, 'stock_adjustment', 'ingredient')")
+    ->execute([$perishableAdjustRequestId, "REQ-PERISH-ADJUST-{$seed}", $perishableAdjustIngredientId, $requester]);
+$db->beginTransaction();
+$perishableAdjustResult = decideIngredientOpeningStock(
+    $db,
+    $perishableAdjustRequestId,
+    'approve',
+    $gm,
+    'Warehouse count accepted directly'
+);
+$perishableAdjustedStock = (float) $db->query("SELECT current_stock FROM ingredients WHERE id = {$perishableAdjustIngredientId}")->fetchColumn();
+$perishableAdjustedUsable = getUsableIngredientBatchStock($db, $perishableAdjustIngredientId);
+$perishableAdjustedBatch = $db->query("SELECT batch_code, supplier_batch_no, remaining_quantity, expiry_date, qc_status
+    FROM ingredient_batches WHERE ingredient_id = {$perishableAdjustIngredientId}")->fetch(PDO::FETCH_ASSOC);
+if (($perishableAdjustResult['status'] ?? '') !== 'approved'
+    || abs($perishableAdjustedStock - 5) > 0.0005
+    || abs($perishableAdjustedUsable - 5) > 0.0005
+    || !$perishableAdjustedBatch
+    || !str_starts_with((string) $perishableAdjustedBatch['batch_code'], 'IB-COUNT-')
+    || !str_starts_with((string) $perishableAdjustedBatch['supplier_batch_no'], 'WAREHOUSE-IB-COUNT-')
+    || (string) $perishableAdjustedBatch['expiry_date'] <= date('Y-m-d')
+    || (string) $perishableAdjustedBatch['qc_status'] !== 'approved') {
+    throw new RuntimeException('A higher perishable count did not complete through the direct Warehouse -> GM path');
+}
+$db->rollBack();
+
 // A perishable return stays in its original QC-approved supplier lot; it does
 // not create a new anonymous lot or require QC to repeat the intake test.
 $returnIngredientId = $seed + 30;
@@ -351,5 +500,67 @@ if (!$returnBatch
     throw new RuntimeException('A returned perishable item did not remain in its original approved lot');
 }
 $db->rollBack();
+
+// When Warehouse identifies the exact batch, GM approval must update only
+// that batch. Another lot for the same ingredient must remain untouched.
+$batchCountIngredientId = $seed + 40;
+$batchCountAId = $seed + 41;
+$batchCountBId = $seed + 42;
+$batchCountRequestId = $seed + 43;
+$db->prepare("INSERT INTO ingredients
+    (id, ingredient_code, ingredient_name, unit_of_measure, minimum_stock,
+     current_stock, unit_cost, maximum_stock, storage_location, shelf_life_days,
+     is_perishable, is_active)
+    VALUES (?, ?, 'Batch Count Test', 'kg', 1, 30, 20, 100, 'Dry Storage', 30, 1, 1)")
+    ->execute([$batchCountIngredientId, "BATCH-COUNT-{$seed}"]);
+$batchInsert = $db->prepare("INSERT INTO ingredient_batches
+    (id, batch_code, ingredient_id, quantity, remaining_quantity, unit_cost, received_date,
+     expiry_date, supplier_batch_no, qc_status, received_by, status, notes)
+    VALUES (?, ?, ?, ?, ?, 20, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 20 DAY), ?,
+            'approved', ?, 'available', 'Batch-specific count test')");
+$batchInsert->execute([$batchCountAId, "COUNT-A-{$seed}", $batchCountIngredientId, 10, 10, "LOT-A-{$seed}", $requester]);
+$batchInsert->execute([$batchCountBId, "COUNT-B-{$seed}", $batchCountIngredientId, 20, 20, "LOT-B-{$seed}", $requester]);
+$db->prepare("INSERT INTO ingredient_opening_stock_requests
+    (id, request_code, ingredient_id, system_quantity, counted_quantity, quantity_to_add,
+     unit, source_type, source_reference, supplier_batch_no, received_date, expiry_date,
+     unit_cost, price_status, qc_status, reason, status, requested_by, request_purpose,
+     source_batch_id, adjustment_scope, ingredient_quantity_at_request)
+    VALUES (?, ?, ?, 20, 17, -3, 'kg', 'internal_adjustment', 'Warehouse physical count', ?,
+            CURDATE(), DATE_ADD(CURDATE(), INTERVAL 20 DAY), 20, 'not_required', 'not_required',
+            'Counting discrepancy on identified lot', 'pending', ?, 'stock_adjustment', ?, 'batch', 30)")
+    ->execute([$batchCountRequestId, "REQ-BATCH-{$seed}", $batchCountIngredientId, "LOT-B-{$seed}", $requester, $batchCountBId]);
+
+$db->beginTransaction();
+$batchCountResult = decideIngredientOpeningStock($db, $batchCountRequestId, 'approve', $gm, 'Exact lot was recounted');
+$batchCountA = (float) $db->query("SELECT remaining_quantity FROM ingredient_batches WHERE id = {$batchCountAId}")->fetchColumn();
+$batchCountB = (float) $db->query("SELECT remaining_quantity FROM ingredient_batches WHERE id = {$batchCountBId}")->fetchColumn();
+$batchCountSummary = (float) $db->query("SELECT current_stock FROM ingredients WHERE id = {$batchCountIngredientId}")->fetchColumn();
+$batchCountTxBatch = (int) $db->query("SELECT batch_id FROM inventory_transactions
+    WHERE reference_type = 'ingredient_opening_stock' AND reference_id = {$batchCountRequestId}")->fetchColumn();
+$storedAllocation = $db->query("SELECT batch_allocation_json FROM ingredient_opening_stock_requests WHERE id = {$batchCountRequestId}")->fetchColumn();
+if (($batchCountResult['status'] ?? '') !== 'approved'
+    || abs($batchCountA - 10) > 0.0005
+    || abs($batchCountB - 17) > 0.0005
+    || abs($batchCountSummary - 27) > 0.0005
+    || $batchCountTxBatch !== $batchCountBId
+    || !str_contains((string) $storedAllocation, "COUNT-B-{$seed}")) {
+    throw new RuntimeException('A batch-specific count changed the wrong lot or lost its audit allocation');
+}
+$db->rollBack();
+
+// If the selected batch changes after Warehouse counted it, the GM cannot
+// approve stale numbers even when the ingredient total still looks plausible.
+$db->beginTransaction();
+$db->prepare('UPDATE ingredient_batches SET remaining_quantity = 19 WHERE id = ?')->execute([$batchCountBId]);
+$batchStaleBlocked = false;
+try {
+    decideIngredientOpeningStock($db, $batchCountRequestId, 'approve', $gm, 'Should be stale');
+} catch (RuntimeException $error) {
+    $batchStaleBlocked = str_contains($error->getMessage(), 'batch changed after Warehouse counted it');
+}
+$db->rollBack();
+if (!$batchStaleBlocked) {
+    throw new RuntimeException('GM could approve a stale batch-specific physical count');
+}
 
 echo "Ingredient stock-review tests passed (supplier stock keeps price/QC checks; internal count goes Warehouse -> GM; isolated temporary tables).\n";

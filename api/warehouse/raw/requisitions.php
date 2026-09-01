@@ -895,9 +895,9 @@ function issueIngredient($db, $ingredientId, $quantity, $requisitionId, $current
         $stmt = $db->prepare("
             INSERT INTO inventory_transactions 
             (transaction_code, transaction_type, item_type, item_id, batch_id,
-             quantity, unit_of_measure, reference_type, reference_id,
+             quantity, unit_of_measure, quantity_before, quantity_after, reference_type, reference_id,
              from_location, performed_by, reason)
-            VALUES (?, 'production_issue', ?, ?, ?, ?, ?, 'requisition', ?, ?, ?, ?)
+            VALUES (?, 'production_issue', ?, ?, ?, ?, ?, ?, ?, 'requisition', ?, ?, ?, ?)
         ");
         $stmt->execute([
             $txCode,
@@ -906,6 +906,8 @@ function issueIngredient($db, $ingredientId, $quantity, $requisitionId, $current
             $batch['id'],
             $issueFromBatch,
             $ingredientData['unit_of_measure'],
+            $batch['remaining_quantity'],
+            $newRemaining,
             $requisitionId,
             $ingredientData['storage_location'],
             $currentUser['user_id'],

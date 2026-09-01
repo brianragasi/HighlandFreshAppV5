@@ -279,6 +279,16 @@ function handleGet($db, $action) {
             $order['items'] = $itemsStmt->fetchAll();
             $order['current_general_manager_name'] = getCurrentGeneralManagerName($db);
 
+            $emailAttemptStmt = $db->prepare("
+                SELECT id, recipient_email, status, attempted_at, sent_at, error_message
+                FROM purchase_order_email_attempts
+                WHERE po_id = ?
+                ORDER BY attempted_at DESC, id DESC
+                LIMIT 10
+            ");
+            $emailAttemptStmt->execute([$id]);
+            $order['email_attempts'] = $emailAttemptStmt->fetchAll(PDO::FETCH_ASSOC);
+
             if (tableExists($db, 'po_receiving_log')) {
                 $receiverStmt = $db->prepare("
                     SELECT

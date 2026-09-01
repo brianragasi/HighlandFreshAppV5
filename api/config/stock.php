@@ -157,7 +157,7 @@ class StockRule
         if ($reorderError !== null) {
             return $reorderError;
         }
-        [$parsedMaximum, $maximumError] = $parseStockLevel($maximum, 'Par level (maximum stock)', true);
+        [$parsedMaximum, $maximumError] = $parseStockLevel($maximum, 'Restocking target', true);
         if ($maximumError !== null) {
             return $maximumError;
         }
@@ -176,7 +176,7 @@ class StockRule
 
         $effectiveReorder = $hasReorder ? (float) $reorder : $minimum * 1.5;
         if ($hasMaximum && (float) $maximum <= $effectiveReorder) {
-            return 'Par level (maximum stock) must be greater than the reorder point.';
+            return 'Restocking target must be greater than the reorder point.';
         }
         return null;
     }

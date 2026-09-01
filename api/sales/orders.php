@@ -5,7 +5,7 @@
  * Sales Order/PO processing for Sales Custodian
  * 
  * GET actions: list, detail, pending, by_customer
- * POST actions: emailed PO intake and limited direct orders for wholesalers/small businesses
+ * POST actions: emailed PO intake and manually recorded customer orders
  * PUT actions: update, approve, cancel, update_status
  * 
  * @package HighlandFresh
@@ -618,17 +618,24 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
     
     switch ($action) {
         case 'create':
-            Response::error('Large customer orders must enter through the Customer PO Inbox. Use Direct Order only for wholesalers and small business customers.', 409);
+            Response::error('Use Record Customer Order for phone, walk-in, or message orders. Use Customer PO Inbox for emailed purchase orders.', 409);
             break;
 
+        case 'create_customer':
         case 'create_direct':
             $customerId = (int) ($data['customer_id'] ?? 0);
             $items = is_array($data['items'] ?? null) ? $data['items'] : [];
             if ($customerId <= 0) {
-                Response::validationError(['customer_id' => 'Choose a wholesaler or small business customer.']);
+                Response::validationError(['customer_id' => 'Choose an active registered customer.']);
             }
             if (empty($items)) {
                 Response::validationError(['items' => 'Add at least one product.']);
+            }
+
+            $orderSource = strtolower(trim((string) ($data['source_type'] ?? 'manual_phone')));
+            $manualSources = ['manual_phone', 'manual_walk_in', 'manual_message'];
+            if (!in_array($orderSource, $manualSources, true)) {
+                Response::validationError(['source_type' => 'Choose Phone, Walk-in, or Message as the order source.']);
             }
 
             $customerStmt = $db->prepare("
@@ -645,14 +652,6 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
             $customer = $customerStmt->fetch(PDO::FETCH_ASSOC);
             if (!$customer) {
                 Response::error('Customer not found or inactive.', 400);
-            }
-
-            $directTypes = ['distributor', 'restaurant'];
-            if (!in_array($customer['customer_type'], $directTypes, true)) {
-                Response::error(
-                    'This customer must use the emailed PO flow. Direct Order is only for wholesalers and small business customers.',
-                    409
-                );
             }
 
             $deliveryDate = trim((string) ($data['delivery_date'] ?? ''));
@@ -759,7 +758,13 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
             if ($deliveryAddress === '') {
                 Response::validationError(['delivery_address' => 'Delivery address is required.']);
             }
-            $controlNotes = ['[DIRECT ORDER] GM approval required before Warehouse FG fulfillment.'];
+            $sourceLabels = [
+                'manual_phone' => 'Phone',
+                'manual_walk_in' => 'Walk-in',
+                'manual_message' => 'Message',
+            ];
+            $sourceLabel = $sourceLabels[$orderSource];
+            $controlNotes = [sprintf('[CUSTOMER ORDER - %s] GM approval required before Warehouse FG fulfillment.', strtoupper($sourceLabel))];
             if ($needsCreditOverride) {
                 $controlNotes[] = sprintf(
                     '[GM-CREDIT-OVERRIDE] Projected balance PHP %.2f exceeds the PHP %.2f credit limit. Reason: %s',
@@ -779,7 +784,7 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
                         contact_person, contact_number, delivery_address, delivery_date,
                         total_items, total_quantity, subtotal, total_amount,
                         balance_due, due_date, status, created_by, notes
-                    ) VALUES (?, ?, ?, ?, ?, 'direct_sales', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
                 ");
                 $orderStmt->execute([
                     $orderNumber,
@@ -787,6 +792,7 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
                     $subAccountId,
                     $customer['name'],
                     $customer['customer_type'],
+                    $orderSource,
                     $paymentType,
                     $termsDays,
                     $customer['contact_person'] ?? null,
@@ -831,13 +837,14 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
 
                 $historyStmt = $db->prepare("
                     INSERT INTO sales_order_status_history (order_id, status, notes, changed_by)
-                    VALUES (?, 'pending', 'Direct Order submitted for GM approval.', ?)
+                    VALUES (?, 'pending', ?, ?)
                 ");
-                $historyStmt->execute([$orderId, $currentUser['user_id']]);
+                $historyStmt->execute([$orderId, "Customer order received by {$sourceLabel} and submitted for GM approval.", $currentUser['user_id']]);
 
-                logAudit($currentUser['user_id'], 'CREATE_DIRECT_ORDER', 'sales_orders', $orderId, null, [
+                logAudit($currentUser['user_id'], 'CREATE_CUSTOMER_ORDER', 'sales_orders', $orderId, null, [
                     'order_number' => $orderNumber,
                     'customer_id' => $customerId,
+                    'source_type' => $orderSource,
                     'total_amount' => $subtotal,
                     'needs_credit_override' => $needsCreditOverride,
                 ]);
@@ -849,7 +856,7 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
                     'status' => 'pending',
                     'total_amount' => round($subtotal, 2),
                     'needs_credit_override' => $needsCreditOverride,
-                ], 'Direct order sent for GM approval.');
+                ], 'Customer order sent for GM approval.');
             } catch (Throwable $error) {
                 if ($db->inTransaction()) {
                     $db->rollBack();
@@ -859,7 +866,7 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
             break;
 
         case 'add_item':
-            Response::error('Add all products while creating the Direct Order.', 409);
+            Response::error('Add all products while recording the customer order.', 409);
             break;
 
         default:

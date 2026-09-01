@@ -37,6 +37,7 @@ error_reporting(E_ALL);
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/helpers/plain_text.php';
+require_once dirname(__DIR__) . '/helpers/finished_goods_disposal.php';
 
 // Require QC, GM/Admin, Finance, or Warehouse role
 $currentUser = Auth::requireRole(['qc_officer', 'general_manager', 'finance_officer', 'warehouse_raw', 'warehouse_fg']);
@@ -259,7 +260,7 @@ function handleGetRequest($db, $currentUser) {
                     fgi.product_id,
                     fgi.product_name,
                     pb.batch_code as reference,
-                    (COALESCE(fgi.boxes_available, 0) * COALESCE(p.pieces_per_box, 1)) + COALESCE(fgi.pieces_available, 0) as available_quantity,
+                    GREATEST(COALESCE(fgi.quantity_available, 0), 0) as available_quantity,
                     'pcs' as unit,
                     COALESCE(
                         NULLIF(p.cost_price, 0),
@@ -284,7 +285,8 @@ function handleGetRequest($db, $currentUser) {
                 FROM finished_goods_inventory fgi
                 LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
                 LEFT JOIN products p ON fgi.product_id = p.id
-                WHERE (fgi.boxes_available > 0 OR fgi.pieces_available > 0)
+                WHERE COALESCE(fgi.quantity_available, 0) > 0
+                  AND fgi.status IN ('available', 'low_stock', 'expired')
                   AND NOT EXISTS (
                       SELECT 1
                       FROM disposals existing_disposal
@@ -927,7 +929,11 @@ function validateSource($db, $sourceType, $sourceId, $quantity) {
                 return ['valid' => false, 'error' => 'Finished goods inventory not found'];
             }
             
-            $available = intval($item['quantity_available'] ?? $item['remaining_quantity'] ?? 0);
+            if (!in_array((string)$item['status'], ['available', 'low_stock', 'expired'], true)) {
+                return ['valid' => false, 'error' => 'This finished-goods batch is no longer available for disposal'];
+            }
+
+            $available = fgDisposalAvailableBaseUnits($item);
             if ($quantity > $available) {
                 return ['valid' => false, 'error' => "Insufficient quantity. Available: $available pieces"];
             }
@@ -1074,16 +1080,14 @@ function executeDisposal($db, $disposal, $currentUser) {
             }
 
             $piecesPerBox = max(1, (int)$source['pieces_per_box']);
-            $available = max(
-                (int)($source['quantity_available'] ?? 0),
-                ((int)($source['boxes_available'] ?? 0) * $piecesPerBox) + (int)($source['pieces_available'] ?? 0)
-            );
+            $available = fgDisposalAvailableBaseUnits($source);
             if ($quantity > $available) {
                 throw new Exception("Only {$available} units remain in Finished Goods inventory");
             }
             $remaining = max(0, $available - (int)$quantity);
-            $remainingBoxes = intdiv($remaining, $piecesPerBox);
-            $remainingPieces = $remaining % $piecesPerBox;
+            $split = fgDisposalSplitBaseUnits($remaining, $piecesPerBox);
+            $remainingBoxes = $split['boxes'];
+            $remainingPieces = $split['pieces'];
 
             $stmt = $db->prepare("
                 UPDATE finished_goods_inventory SET

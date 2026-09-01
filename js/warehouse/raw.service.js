@@ -264,41 +264,29 @@ const WarehouseRawService = {
     },
 
     /**
-     * Issue ingredients
-     * @param {number} ingredientId - Ingredient ID
-     * @param {number} quantity - Quantity to issue
-     * @param {number} requisitionId - Optional requisition ID
-     * @param {string} reason - Reason for issuing
-     */
-    async issueIngredient(ingredientId, quantity, requisitionId = null, reason = 'Issued for production') {
-        return await api.put(`${this.baseUrl}/ingredients.php`, {
-            action: 'issue',
-            ingredient_id: ingredientId,
-            quantity,
-            requisition_id: requisitionId,
-            reason
-        });
-    },
-
-    /**
      * Adjust ingredient stock (physical count)
      * @param {number} ingredientId - Ingredient ID
      * @param {number} newQuantity - New stock quantity
      * @param {string} reason - Reason for adjustment
      */
-    async adjustIngredientStock(ingredientId, newQuantity, reason, sourceBatchId = null) {
+    async adjustIngredientStock(ingredientId, newQuantity, reason, sourceBatchId = null, adjustmentScope = 'ingredient') {
         return await api.put(`${this.baseUrl}/ingredients.php`, {
             action: 'adjust',
             ingredient_id: ingredientId,
             new_quantity: newQuantity,
             reason,
-            source_batch_id: sourceBatchId
+            source_batch_id: sourceBatchId,
+            adjustment_scope: adjustmentScope
         });
     },
 
-    async getOpeningStockOptions(ingredientId) {
+    async getOpeningStockOptions(ingredientId, heldBatchId = null) {
         return await api.get(`${this.baseUrl}/ingredients.php`, {
-            params: { action: 'opening_stock_options', ingredient_id: ingredientId }
+            params: {
+                action: 'opening_stock_options',
+                ingredient_id: ingredientId,
+                held_batch_id: heldBatchId || null
+            }
         });
     },
 

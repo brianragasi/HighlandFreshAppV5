@@ -12,7 +12,7 @@
  *
  * GET    - List ingredients, get details, check stock
  * POST   - Receive new ingredient batch
- * PUT    - Issue ingredients, adjust stock
+ * PUT    - Request stock-count adjustments and maintain ingredient records
  *
  * @package HighlandFresh
  * @version 4.0
@@ -315,6 +315,7 @@ function handleGet($db, $currentUser) {
                 Response::error('Only Warehouse Raw or GM can record unlisted stock', 403);
             }
             $ingredientId = (int) getParam('ingredient_id', 0);
+            $heldBatchId = (int) getParam('held_batch_id', 0);
             if ($ingredientId <= 0) {
                 Response::error('Choose an ingredient first', 400);
             }
@@ -331,7 +332,10 @@ function handleGet($db, $currentUser) {
             $documentStmt = $db->prepare("
                 SELECT po.id AS po_id, po.po_number, po.supplier_id, po.order_date,
                        po.status, MAX(poi.unit_price) AS unit_price,
-                       MAX(poi.unit) AS unit
+                       MAX(poi.unit) AS unit,
+                       SUM(poi.quantity) AS ordered_quantity,
+                       SUM(COALESCE(poi.quantity_received, 0)) AS received_quantity,
+                       SUM(GREATEST(poi.quantity - COALESCE(poi.quantity_received, 0), 0)) AS remaining_quantity
                 FROM purchase_orders po
                 JOIN purchase_order_items poi ON poi.po_id = po.id
                 JOIN suppliers s ON s.id = po.supplier_id AND s.is_active = 1
@@ -340,12 +344,17 @@ function handleGet($db, $currentUser) {
                  AND si.ingredient_id = poi.ingredient_id
                  AND si.is_active = 1
                 WHERE poi.ingredient_id = ?
-                  AND po.status IN ('approved', 'ordered', 'partial_received', 'received', 'closed')
+                  AND (
+                      (? > 0 AND po.status IN ('approved', 'ordered', 'partial_received', 'received', 'closed'))
+                      OR
+                      (? = 0 AND po.status IN ('approved', 'ordered', 'partial_received'))
+                  )
                 GROUP BY po.id, po.po_number, po.supplier_id, po.order_date, po.status
+                HAVING ? > 0 OR remaining_quantity > 0.0005
                 ORDER BY po.order_date DESC, po.id DESC
                 LIMIT 100
             ");
-            $documentStmt->execute([$ingredientId]);
+            $documentStmt->execute([$ingredientId, $heldBatchId, $heldBatchId, $heldBatchId]);
             $documents = array_map(static function (array $row): array {
                 $row['reference'] = (string) $row['po_number'];
                 return $row;
@@ -353,7 +362,8 @@ function handleGet($db, $currentUser) {
             $pendingStmt = $db->prepare("
                 SELECT osr.id, osr.request_code, osr.ingredient_id, osr.counted_quantity,
                        osr.quantity_to_add, osr.unit, osr.status, osr.created_at,
-                       osr.held_batch_id, osr.price_status, osr.qc_status,
+                       osr.held_batch_id, osr.source_batch_id, osr.adjustment_scope,
+                       osr.price_status, osr.qc_status, osr.request_purpose,
                        i.ingredient_name
                 FROM ingredient_opening_stock_requests osr
                 JOIN ingredients i ON i.id = osr.ingredient_id
@@ -750,6 +760,11 @@ function handlePost($db, $currentUser) {
                 $priceMatch = $sourceType === 'unrecorded_delivery'
                     ? findIngredientOpeningStockPrice($db, $ingredientId, $supplierId, $sourceReference)
                     : null;
+                validateUnrecordedDeliveryPoMatch(
+                    $priceMatch,
+                    $quantityToAdd,
+                    $requestPurpose === 'traceability_correction'
+                );
                 $unitCost = $priceMatch['unit_cost'] ?? null;
                 $priceStatus = $priceMatch ? 'matched_po' : 'pending';
                 $priceReference = $priceMatch['price_reference'] ?? null;
@@ -946,105 +961,13 @@ function handlePut($db, $currentUser) {
     
     switch ($action) {
         case 'issue':
-            // Issue ingredients (FIFO)
-            $ingredientId = getParam('ingredient_id');
-            $quantity = getParam('quantity');
-            $requisitionId = getParam('requisition_id');
-            $reason = getParam('reason', 'Issued for production');
-            
-            if (!$ingredientId || !$quantity || $quantity <= 0) {
-                Response::error('Ingredient ID and valid quantity are required', 400);
-            }
-            
-            $db->beginTransaction();
-            
-            try {
-                // Get ingredient info
-                $ingredient = $db->prepare("SELECT * FROM ingredients WHERE id = ? AND is_active = 1 FOR UPDATE");
-                $ingredient->execute([$ingredientId]);
-                $ingredientData = $ingredient->fetch();
-                
-                if (!$ingredientData) {
-                    throw new Exception('Ingredient not found');
-                }
-                
-                $batchList = getUsableIngredientBatches($db, $ingredientId, true);
-                
-                $totalAvailable = array_sum(array_column($batchList, 'remaining_quantity'));
-                
-                if ($totalAvailable < $quantity) {
-                    throw new Exception("Insufficient stock. Available: {$totalAvailable} {$ingredientData['unit_of_measure']}, Needed: {$quantity}");
-                }
-                
-                $remainingToIssue = $quantity;
-                $issuedBatches = [];
-                
-                foreach ($batchList as $batch) {
-                    if ($remainingToIssue <= 0) break;
-                    
-                    $issueFromBatch = min($batch['remaining_quantity'], $remainingToIssue);
-                    $newRemaining = $batch['remaining_quantity'] - $issueFromBatch;
-                    $newStatus = $newRemaining > 0 ? 'partially_used' : 'consumed';
-                    
-                    // Update batch
-                    $stmt = $db->prepare("
-                        UPDATE ingredient_batches 
-                        SET remaining_quantity = ?, status = ?, updated_at = NOW()
-                        WHERE id = ?
-                    ");
-                    $stmt->execute([$newRemaining, $newStatus, $batch['id']]);
-                    
-                    // Create transaction record
-                    $txCode = generateCode('TX');
-                    $stmt = $db->prepare("
-                        INSERT INTO inventory_transactions 
-                        (transaction_code, transaction_type, item_type, item_id, batch_id,
-                         quantity, unit_of_measure, reference_type, reference_id,
-                         from_location, performed_by, reason)
-                        VALUES (?, 'production_issue', 'ingredient', ?, ?, ?, ?, 'requisition', ?, ?, ?, ?)
-                    ");
-                    $stmt->execute([
-                        $txCode,
-                        $ingredientId,
-                        $batch['id'],
-                        $issueFromBatch,
-                        $ingredientData['unit_of_measure'],
-                        $requisitionId,
-                        $ingredientData['storage_location'],
-                        $currentUser['user_id'],
-                        $reason
-                    ]);
-                    
-                    $issuedBatches[] = [
-                        'batch_id' => $batch['id'],
-                        'batch_code' => $batch['batch_code'],
-                        'quantity_issued' => $issueFromBatch,
-                        'transaction_code' => $txCode
-                    ];
-                    
-                    $remainingToIssue -= $issueFromBatch;
-                }
-                
-                // Update ingredient current stock
-                $stmt = $db->prepare("
-                    UPDATE ingredients 
-                    SET current_stock = GREATEST(current_stock - ?, 0), updated_at = NOW()
-                    WHERE id = ?
-                ");
-                $stmt->execute([$quantity, $ingredientId]);
-                
-                $db->commit();
-
-                Response::success([
-                    'ingredient_code' => $ingredientData['ingredient_code'],
-                    'total_issued' => $quantity,
-                    'batches' => $issuedBatches
-                ], 'Ingredients issued successfully');
-                
-            } catch (Exception $e) {
-                $db->rollBack();
-                Response::error($e->getMessage(), 400);
-            }
+            // Keep the retired action as an explicit guard for stale browser tabs
+            // and old clients. Ingredient stock leaves the warehouse only when an
+            // approved Production requisition is fulfilled.
+            Response::error(
+                'Direct ingredient issues are disabled. Release Production materials through Requisitions → Fulfill.',
+                409
+            );
             break;
 
         case 'repair_batches':
@@ -1116,9 +1039,16 @@ function handlePut($db, $currentUser) {
             $newQuantity = getParam('new_quantity');
             $reason = hfPlainText(getParam('reason'), 500, true);
             $sourceBatchId = (int) getParam('source_batch_id', 0);
+            $adjustmentScope = strtolower(trim((string) getParam('adjustment_scope', 'ingredient')));
             
             if ($ingredientId <= 0 || $newQuantity === null || $reason === '') {
                 Response::error('Ingredient ID, new quantity, and reason are required', 400);
+            }
+            if (!in_array($adjustmentScope, ['ingredient', 'batch'], true)) {
+                Response::error('Choose either an overall item count or one specific batch', 400);
+            }
+            if ($adjustmentScope === 'batch' && $sourceBatchId <= 0) {
+                Response::error('Choose the batch that Warehouse physically counted', 400);
             }
             try {
                 $newQuantity = hfParseBusinessDecimal(
@@ -1142,7 +1072,27 @@ function handlePut($db, $currentUser) {
                     throw new Exception('Ingredient not found');
                 }
                 
-                $oldQuantity = (float) $ingredientData['current_stock'];
+                $ingredientQuantityAtRequest = (float) $ingredientData['current_stock'];
+                $oldQuantity = $ingredientQuantityAtRequest;
+                $sourceBatch = null;
+                if ($adjustmentScope === 'batch') {
+                    $batchStmt = $db->prepare("SELECT * FROM ingredient_batches
+                        WHERE id = ? AND ingredient_id = ?
+                          AND status IN ('available', 'partially_used')
+                          AND remaining_quantity > 0
+                        FOR UPDATE");
+                    $batchStmt->execute([$sourceBatchId, $ingredientId]);
+                    $sourceBatch = $batchStmt->fetch(PDO::FETCH_ASSOC);
+                    if (!$sourceBatch
+                        || (string) ($sourceBatch['qc_status'] ?? '') !== 'approved'
+                        || ((int) ($ingredientData['is_perishable'] ?? 1) === 1
+                            && (($sourceBatch['expiry_date'] ?? null) === null
+                                || (string) $sourceBatch['expiry_date'] <= date('Y-m-d')
+                                || trim((string) ($sourceBatch['supplier_batch_no'] ?? '')) === ''))) {
+                        throw new Exception('That batch is no longer usable. Refresh the item and choose a current usable batch.');
+                    }
+                    $oldQuantity = (float) $sourceBatch['remaining_quantity'];
+                }
                 $difference = $newQuantity - $oldQuantity;
 
                 if ($newQuantity < 0) {
@@ -1160,17 +1110,23 @@ function handlePut($db, $currentUser) {
                 $pendingStmt = $db->prepare("SELECT request_code
                     FROM ingredient_opening_stock_requests
                     WHERE ingredient_id = ? AND status = 'pending' AND request_purpose = 'stock_adjustment'
+                      AND (
+                          adjustment_scope = 'ingredient'
+                          OR ? = 'ingredient'
+                          OR (adjustment_scope = 'batch' AND source_batch_id = ?)
+                      )
                     LIMIT 1 FOR UPDATE");
-                $pendingStmt->execute([$ingredientId]);
+                $pendingStmt->execute([$ingredientId, $adjustmentScope, $sourceBatchId]);
                 $pendingCode = $pendingStmt->fetchColumn();
                 if ($pendingCode) {
-                    throw new Exception("{$pendingCode} is already waiting for the GM. Ask the GM to decide it before recording another count for this item.");
+                    $pendingTarget = $adjustmentScope === 'batch' ? 'this batch' : 'this item';
+                    throw new Exception("{$pendingCode} is already waiting for the GM. Ask the GM to decide it before recording another count for {$pendingTarget}.");
                 }
 
                 $accountedStock = getAccountedIngredientBatchStock($db, $ingredientId);
                 $usableStock = getUsableIngredientBatchStock($db, $ingredientId);
                 $restrictedStock = max(0, round($accountedStock - $usableStock, 3));
-                if ($difference < -0.0005 && $restrictedStock > 0.0005) {
+                if ($adjustmentScope === 'ingredient' && $difference < -0.0005 && $restrictedStock > 0.0005) {
                     throw new Exception(
                         "This item has {$restrictedStock} {$ingredientData['unit_of_measure']} of expired or held stock. " .
                         'Record the affected batch through Spoilage & Waste instead of using a general stock adjustment.'
@@ -1178,11 +1134,14 @@ function handlePut($db, $currentUser) {
                 }
 
                 $isPerishable = (int) ($ingredientData['is_perishable'] ?? 1) === 1;
-                $sourceBatch = null;
-                if ($difference > 0.0005 && $isPerishable) {
-                    if ($sourceBatchId <= 0) {
-                        throw new Exception('Choose the original lot for the recovered or returned stock.');
-                    }
+                // A physical count is an internal Warehouse variance and always
+                // goes directly to the GM. If an older client supplies a known
+                // original lot, preserve it; otherwise approval creates a clearly
+                // labelled Warehouse count-adjustment batch.
+                if ($adjustmentScope === 'ingredient'
+                    && $difference > 0.0005
+                    && $isPerishable
+                    && $sourceBatchId > 0) {
                     $batchStmt = $db->prepare("SELECT * FROM ingredient_batches
                         WHERE id = ? AND ingredient_id = ?
                           AND status IN ('available', 'partially_used')
@@ -1194,7 +1153,7 @@ function handlePut($db, $currentUser) {
                     $batchStmt->execute([$sourceBatchId, $ingredientId]);
                     $sourceBatch = $batchStmt->fetch(PDO::FETCH_ASSOC);
                     if (!$sourceBatch) {
-                        throw new Exception('That lot is no longer usable. Choose a current approved lot, or use Record Found Stock for a separate supplier delivery.');
+                        throw new Exception('That original lot is no longer usable. Submit the overall physical count without a lot, or count a current batch directly.');
                     }
                 }
 
@@ -1206,9 +1165,9 @@ function handlePut($db, $currentUser) {
                     (request_code, ingredient_id, system_quantity, counted_quantity, quantity_to_add,
                      unit, source_type, source_reference, supplier_batch_no, received_date, expiry_date,
                      unit_cost, price_status, qc_status, reason, status, requested_by,
-                     request_purpose, source_batch_id)
+                     request_purpose, source_batch_id, adjustment_scope, ingredient_quantity_at_request)
                     VALUES (?, ?, ?, ?, ?, ?, 'internal_adjustment', 'Warehouse physical count', ?, CURDATE(), ?,
-                            ?, 'not_required', 'not_required', ?, 'pending', ?, 'stock_adjustment', ?)");
+                            ?, 'not_required', 'not_required', ?, 'pending', ?, 'stock_adjustment', ?, ?, ?)");
                 $insert->execute([
                     $requestCode,
                     $ingredientId,
@@ -1222,6 +1181,8 @@ function handlePut($db, $currentUser) {
                     $reason,
                     (int) $currentUser['user_id'],
                     $sourceBatchId > 0 ? $sourceBatchId : null,
+                    $adjustmentScope,
+                    $ingredientQuantityAtRequest,
                 ]);
                 $requestId = (int) $db->lastInsertId();
 
@@ -1230,7 +1191,10 @@ function handlePut($db, $currentUser) {
                     'general_manager',
                     'stock_adjustment_ready_for_gm',
                     'Stock count needs your decision',
-                    "{$ingredientData['ingredient_name']}: Warehouse counted {$newQuantity} {$ingredientData['unit_of_measure']} (system: {$oldQuantity}).",
+                    "{$ingredientData['ingredient_name']}: Warehouse counted {$newQuantity} {$ingredientData['unit_of_measure']} " .
+                    ($adjustmentScope === 'batch'
+                        ? "in batch " . ($sourceBatch['batch_code'] ?? ('#' . $sourceBatchId)) . " (batch record: {$oldQuantity})."
+                        : "overall (system: {$oldQuantity})."),
                     'ingredient_opening_stock',
                     $requestId
                 );
@@ -1238,7 +1202,8 @@ function handlePut($db, $currentUser) {
                 logAudit($currentUser['user_id'], 'request_stock_adjustment', 'ingredient_opening_stock_requests', $requestId,
                     null,
                     ['request_code' => $requestCode, 'ingredient_id' => $ingredientId, 'current_stock' => $oldQuantity,
-                     'counted_stock' => $newQuantity, 'difference' => $difference, 'reason' => $reason]
+                     'counted_stock' => $newQuantity, 'difference' => $difference, 'reason' => $reason,
+                     'adjustment_scope' => $adjustmentScope, 'source_batch_id' => $sourceBatchId ?: null]
                 );
                 
                 $db->commit();
@@ -1249,6 +1214,8 @@ function handlePut($db, $currentUser) {
                     'old_quantity' => $oldQuantity,
                     'new_quantity' => $newQuantity,
                     'difference' => $difference,
+                    'adjustment_scope' => $adjustmentScope,
+                    'source_batch_id' => $sourceBatchId ?: null,
                     'stock_changed' => false,
                 ], "{$requestCode} was sent directly to the GM. Stock stays unchanged until the GM decides.");
                 
@@ -1411,6 +1378,9 @@ function handlePut($db, $currentUser) {
             
         case 'update_settings':
             // Update ingredient settings (min stock, lead time, reorder point)
+            if ($currentUser['role'] !== 'general_manager') {
+                Response::error('Only the General Manager can change stock settings', 403);
+            }
             $settingsInput = getRequestBody();
             $ingredientId = getParam('ingredient_id');
             $minimumStock = getParam('minimum_stock');

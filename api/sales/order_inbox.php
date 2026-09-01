@@ -333,7 +333,7 @@ function handleCustomerOrderInboxPost(PDO $db, string $action, array $currentUse
         $acceptWarnings = filter_var(getParam('accept_warnings', false), FILTER_VALIDATE_BOOLEAN);
         $creditOverrideReason = trim((string) getParam('credit_override_reason', ''));
         $order = hfConvertCustomerOrderImport($db, $id, $userId, $acceptWarnings, $creditOverrideReason);
-        Response::success($order, 'Sales Order created from the reviewed customer PO.', 201);
+        Response::success($order, 'Sales Order created and sent for General Manager approval.', 201);
     }
 
     if ($action === 'save_details') {

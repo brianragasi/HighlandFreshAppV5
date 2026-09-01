@@ -33,6 +33,42 @@ function hfEnsureManualCustomerOrderSchema(PDO $db): void
         }
     }
 
+    // Some local/demo databases were created before the Customer PO line
+    // migration was applied. Ensure the dependency exists before inspecting
+    // or extending its columns so inbox list/config requests do not fail.
+    $db->exec("CREATE TABLE IF NOT EXISTS customer_order_import_lines (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        import_id BIGINT UNSIGNED NOT NULL,
+        row_number INT UNSIGNED NOT NULL,
+        customer_product_code VARCHAR(100) NULL,
+        description VARCHAR(255) NULL,
+        product_id INT NULL,
+        quantity_entered DECIMAL(12,3) NULL,
+        unit_entered VARCHAR(40) NULL,
+        quantity_base INT NULL,
+        quantity_boxes INT NOT NULL DEFAULT 0,
+        quantity_pieces INT NOT NULL DEFAULT 0,
+        po_unit_price DECIMAL(12,2) NULL,
+        system_unit_price DECIMAL(12,2) NULL,
+        line_status ENUM('matched', 'warning', 'blocked') NOT NULL DEFAULT 'blocked',
+        issue_text VARCHAR(500) NULL,
+        raw_data JSON NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        original_customer_product_code VARCHAR(100) NULL,
+        original_description VARCHAR(255) NULL,
+        original_product_id INT NULL,
+        original_quantity_entered DECIMAL(12,3) NULL,
+        original_unit_entered VARCHAR(40) NULL,
+        original_po_unit_price DECIMAL(12,2) NULL,
+        PRIMARY KEY (id),
+        UNIQUE KEY uk_customer_order_import_row (import_id, row_number),
+        KEY idx_customer_order_line_product (product_id),
+        CONSTRAINT fk_customer_order_line_import
+            FOREIGN KEY (import_id) REFERENCES customer_order_imports(id) ON DELETE CASCADE,
+        CONSTRAINT fk_customer_order_line_product
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+
     $lineColumns = [];
     foreach ($db->query('SHOW COLUMNS FROM customer_order_import_lines')->fetchAll(PDO::FETCH_ASSOC) as $column) {
         $lineColumns[$column['Field']] = true;
@@ -680,8 +716,8 @@ function hfPreviewCustomerOrderCsv(string $content): array
 }
 
 /**
- * Read a Highland Fresh workbook as a comparison reference only. The returned
- * values never create order lines automatically.
+ * Read a Highland Fresh workbook as a comparison reference. The UI may show
+ * these values as unsaved suggestions, but this function never saves order lines.
  */
 function hfTrustedCustomerOrderReference(array $import): ?array
 {
@@ -2565,7 +2601,7 @@ function hfConvertCustomerOrderImport(
                 balance_due, due_date, status, notes, created_by
             ) VALUES (
                 ?, ?, ?, ?, ?, 'customer_po_email', ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, 'draft', ?, ?
+                ?, ?, ?, ?, ?, ?, 'pending', ?, ?
             )
         ");
 
@@ -2596,7 +2632,7 @@ function hfConvertCustomerOrderImport(
         $notes = 'Entered from customer email by Highland Fresh. Original attachment retained. Source PO: ' . $source['customer_po_number'];
         if ($creditExceeded) {
             $notes .= sprintf(
-                '. GM credit review required: existing unpaid balance %.2f plus this draft %.2f exceeds the %.2f credit limit. Reason: %s',
+                '. GM credit review required: existing unpaid balance %.2f plus this order %.2f exceeds the %.2f credit limit. Reason: %s',
                 $currentBalance,
                 $subtotal,
                 $creditLimit,
@@ -2699,6 +2735,16 @@ function hfConvertCustomerOrderImport(
             ]);
         }
 
+        $historyStmt = $db->prepare("
+            INSERT INTO sales_order_status_history (order_id, status, notes, changed_by)
+            VALUES (?, 'pending', ?, ?)
+        ");
+        $historyStmt->execute([
+            $orderId,
+            'Verified customer PO created by Sales and sent for General Manager approval.',
+            $userId,
+        ]);
+
         $db->prepare("
             UPDATE customer_order_imports
             SET status = 'order_created', sales_order_id = ?, reviewed_by = ?,
@@ -2718,7 +2764,7 @@ function hfConvertCustomerOrderImport(
         return [
             'order_id' => $orderId,
             'order_number' => $orderNumber,
-            'status' => 'draft',
+            'status' => 'pending',
             'stock_warnings' => $stockWarnings,
         ];
     } catch (Throwable $e) {

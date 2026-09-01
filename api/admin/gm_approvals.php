@@ -586,15 +586,28 @@ function fetchApprovalDetail(PDO $db) {
             $stmt = $db->prepare("
                 SELECT osr.*, i.ingredient_code, i.ingredient_name, i.is_perishable,
                        i.maximum_stock, i.storage_location,
-                       s.supplier_name, u.full_name AS requested_by_name
+                       s.supplier_name, u.full_name AS requested_by_name,
+                       source_batch.batch_code AS source_batch_code,
+                       source_batch.remaining_quantity AS source_batch_remaining
                 FROM ingredient_opening_stock_requests osr
                 JOIN ingredients i ON i.id = osr.ingredient_id
                 LEFT JOIN suppliers s ON s.id = osr.supplier_id
                 LEFT JOIN users u ON u.id = osr.requested_by
+                LEFT JOIN ingredient_batches source_batch ON source_batch.id = osr.source_batch_id
                 WHERE osr.id = ?
             ");
             $stmt->execute([$sourceId]);
             $detail = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($detail
+                && ($detail['request_purpose'] ?? '') === 'stock_adjustment'
+                && ($detail['adjustment_scope'] ?? 'ingredient') === 'ingredient'
+                && (float) ($detail['quantity_to_add'] ?? 0) < -0.0005) {
+                $detail['batch_allocation_preview'] = previewIngredientBatchReduction(
+                    $db,
+                    (int) $detail['ingredient_id'],
+                    abs((float) $detail['quantity_to_add'])
+                );
+            }
             break;
 
         default:
@@ -715,36 +728,12 @@ function processApprovalDecision(PDO $db, string $decision, $currentUser) {
                 break;
 
             case 'purchase_order':
-                // V4.1: PO approvals require the digital signature (password re-entry).
-                // Frontends must call /purchasing/purchase_orders.php?action=approve which enforces it.
-                if ($decision === 'approve') {
-                    $poStepUp = $input['step_up_token'] ?? null;
-                    Auth::requireStepUp($currentUser, 'po_approval', $poStepUp);
-                }
-                $stmt = $db->prepare("
-                    UPDATE purchase_orders
-                    SET status = ?, approved_by = ?, approved_at = ?,
-                        notes = CONCAT(COALESCE(notes, ''), '\n[GM ', ?, '] ', ?)
-                    WHERE id = ? AND status = 'pending'
-                ");
-                $stmt->execute([$newStatus, $gmId, $now, ucfirst($decision), $remarks, $sourceId]);
-                if ($stmt->rowCount() === 0) {
-                    throw new Exception('PO not found or already processed');
-                }
-
-                // V4.1: Notify warehouse + finance when GM approves a PO
-                if ($newStatus === 'approved') {
-                    $poStmt = $db->prepare("SELECT po_number, total_amount, payment_terms FROM purchase_orders WHERE id = ?");
-                    $poStmt->execute([$sourceId]);
-                    $poInfo = $poStmt->fetch(PDO::FETCH_ASSOC);
-                    $poNum = $poInfo['po_number'] ?? ('#' . $sourceId);
-                    $poAmt = number_format((float)($poInfo['total_amount'] ?? 0), 2);
-                    $poTerms = $poInfo['payment_terms'] ?? 'N/A';
-
-                    writeProcurementNotification($db, 'warehouse_raw', 'po_approved_pending_delivery', 'Approved PO pending delivery', "PO {$poNum} has been approved by GM and is ready for Warehouse receiving.", 'purchase_order', $sourceId);
-                    writeProcurementNotification($db, 'finance_officer', 'po_approved_prepare_funds', 'PO approved - prepare funds', "PO {$poNum} ({$poAmt}) was approved by GM. Payment terms: {$poTerms}. Please prepare funds.", 'purchase_order', $sourceId);
-                }
-                break;
+                // Never update a PO through this generic decision endpoint. The dedicated
+                // PO endpoint applies the GM digital signature, creates the final PDF,
+                // attempts supplier email delivery, and records the result for retry/audit.
+                // Keeping a second write path here previously allowed an approved PO to
+                // bypass supplier dispatch entirely.
+                throw new Exception('Use the signed Purchase Order review to approve or reject this PO.');
 
             case 'requisition':
                 $stmt = $db->prepare("
@@ -868,7 +857,7 @@ function buildGmUnifiedQueue(PDO $db): array {
     try {
         $stmt = $db->query("
             SELECT osr.id, osr.request_code, osr.quantity_to_add, osr.unit,
-                   osr.request_purpose,
+                   osr.request_purpose, osr.adjustment_scope, osr.source_batch_id,
                    osr.source_type, osr.source_reference, osr.created_at,
                    i.ingredient_name, i.is_perishable,
                    s.supplier_name, u.full_name AS requested_by_name
@@ -896,11 +885,13 @@ function buildGmUnifiedQueue(PDO $db): array {
                 'priority' => $row['is_perishable'] ? 'high' : 'medium',
                 'reference' => $row['request_code'],
                 'title' => $row['ingredient_name'] . ($isStockAdjustment
-                    ? ' - Stock Count Review'
+                    ? (($row['adjustment_scope'] ?? 'ingredient') === 'batch'
+                        ? ' - Batch Count Review'
+                        : ' - Overall Count Review')
                     : (($row['request_purpose'] ?? 'found_stock') === 'traceability_correction'
                         ? ' - Missing Lot Review'
                         : ' - Unrecorded Stock Review')),
-                'detail' => $source . ' · ' . $row['source_reference'] . ' · requested by ' . ($row['requested_by_name'] ?: 'Warehouse Raw'),
+                'detail' => $source . (($row['adjustment_scope'] ?? 'ingredient') === 'batch' ? ' · one identified batch' : ' · overall item count') . ' · requested by ' . ($row['requested_by_name'] ?: 'Warehouse Raw'),
                 'amount' => null,
                 'meta' => approvalCompactNumber($row['quantity_to_add']) . ' ' . $row['unit'],
                 'requested_at' => $row['created_at'],

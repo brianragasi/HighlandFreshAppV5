@@ -667,7 +667,7 @@ function validateIngredientPlanningNumbers(array &$data): void {
     foreach ([
         'minimum_stock' => 'Minimum stock',
         'reorder_point' => 'Reorder point',
-        'maximum_stock' => 'Par level (maximum stock)',
+        'maximum_stock' => 'Restocking target',
     ] as $field => $label) {
         if (!array_key_exists($field, $data) || $data[$field] === '' || $data[$field] === null) {
             continue;

@@ -1,9 +1,16 @@
-name: Deploy to InfinityFree
+name: Deploy Highland Fresh to GoogieHost
 
 on:
   push:
     branches: [main]
   workflow_dispatch:  # allow manual runs from the Actions tab
+
+permissions:
+  contents: read
+
+concurrency:
+  group: highland-fresh-googiehost-production
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -11,32 +18,43 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
-      - name: FTP deploy to InfinityFree Subdomain
-        uses: SamKirkland/ftp-deploy-action@v4.3.5
+      - name: FTP deploy to GoogieHost
+        uses: SamKirkland/ftp-deploy-action@v4.4.0
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftp
+          port: 21
           local-dir: ./
-          server-dir: highlandfresh.infinityfree.io/htdocs/
+          # The deploy-only FTP account is rooted at
+          # /domains/highlandfresh.whf.bz/public_html already.
+          server-dir: ./
           # Do NOT delete server files that aren't in the repo (protects .env, etc.)
           dangerous-clean-slate: false
-          # Same excludes we used for the deploy zip
+          # Never upload development files, database exports, backups, or secrets.
           exclude: |
             .git/**
             .github/**
+            .claude/**
+            .vscode/**
             tests/**
             docs/**
             cron/**
             config/**
+            backups/**
+            tmp/**
+            storage/logs/**
+            uploads/**
             .playwright-mcp/**
             system_context/**
             **/node_modules/**
             /vendor/**
+            **/*.sql
             **/*.log
             **/.DS_Store
             **/Thumbs.db
@@ -49,8 +67,7 @@ jobs:
             tailwind.config.json
             web.config
             .gitignore
-            .env
-            .env.local
+            .env*
             css/input.css
             temp_schema.txt
             api/config/DigiCertGlobalRootCA.crt.pem

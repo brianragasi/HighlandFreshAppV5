@@ -60,10 +60,12 @@ function ingredientEarlyReorderEvidence(PDO $db, array $ingredientIds = []): arr
                          FROM inventory_transactions it
                          WHERE it.item_type = 'ingredient' AND it.item_id = i.id
                            AND it.transaction_type = 'production_issue'
+                           AND COALESCE(it.reference_type, '') <> 'manual_issue'
                            AND it.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)), 0) AS issued_quantity_30d,
                COALESCE((SELECT COUNT(*) FROM inventory_transactions it
                          WHERE it.item_type = 'ingredient' AND it.item_id = i.id
                            AND it.transaction_type = 'production_issue'
+                           AND COALESCE(it.reference_type, '') <> 'manual_issue'
                            AND it.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)), 0) AS issue_transaction_count_30d,
                COALESCE((SELECT SUM(GREATEST(poi.quantity - COALESCE(poi.quantity_received,0)
                                   - COALESCE(poi.quantity_rejected,0) - COALESCE(poi.quantity_short_closed,0), 0))

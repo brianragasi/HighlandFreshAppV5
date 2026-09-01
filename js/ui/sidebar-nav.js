@@ -74,6 +74,10 @@
 
     function enhanceSidebar(sidebar) {
         if (!sidebar) return;
+        // Role-owned sidebar renderers already synchronize visible styling and
+        // aria-current from one route resolver. Do not create a second source
+        // of active-state truth for those components.
+        if (sidebar.dataset.navManaged === 'true') return;
         const nav = sidebar.querySelector('nav');
         if (!nav) return;
 
