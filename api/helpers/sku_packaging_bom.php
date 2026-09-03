@@ -108,7 +108,90 @@ function packagingMaterialMustBeOnePerFinishedUnit($name, $unit)
     return preg_match('/\b(bottle|container|jar|cup|cap|lid|closure|label)\b/i', (string) $name) === 1;
 }
 
-function assessSkuPackagingBomReadiness($baseUnit, array $items)
+function packagingCanonicalSize($size, $measure)
+{
+    $value = (float) $size;
+    $unit = strtolower(trim((string) $measure));
+    if ($value <= 0) {
+        return null;
+    }
+    if (in_array($unit, ['ml', 'milliliter', 'milliliters', 'millilitre', 'millilitres'], true)) {
+        return ['family' => 'volume', 'value' => $value];
+    }
+    if (in_array($unit, ['l', 'lt', 'liter', 'liters', 'litre', 'litres'], true)) {
+        return ['family' => 'volume', 'value' => $value * 1000];
+    }
+    if (in_array($unit, ['g', 'gram', 'grams'], true)) {
+        return ['family' => 'mass', 'value' => $value];
+    }
+    if (in_array($unit, ['kg', 'kilogram', 'kilograms'], true)) {
+        return ['family' => 'mass', 'value' => $value * 1000];
+    }
+    return null;
+}
+
+function packagingSizeFromMaterialName($name)
+{
+    if (preg_match(
+        '/(\d+(?:\.\d+)?)\s*(millilit(?:er|re)s?|ml|lit(?:er|re)s?|lt|l|kilograms?|kg|grams?|g)\b/i',
+        (string) $name,
+        $match
+    ) !== 1) {
+        return null;
+    }
+    return packagingCanonicalSize($match[1], $match[2]);
+}
+
+function formatPackagingCanonicalSize(array $size)
+{
+    $value = (float) ($size['value'] ?? 0);
+    $display = abs($value - round($value)) < 0.001
+        ? (string) (int) round($value)
+        : rtrim(rtrim(number_format($value, 3, '.', ''), '0'), '.');
+    return $display . (($size['family'] ?? '') === 'mass' ? ' g' : ' mL');
+}
+
+/**
+ * Reject a 250 mL SKU wired to a 500 mL bottle or label (and equivalent
+ * mass-size mismatches). Cap dimensions such as "28 mm" are intentionally
+ * ignored because they describe the closure, not the product fill size.
+ */
+function validateSkuPackagingBomSizes($baseUnit, $unitSize, $unitMeasure, array $items)
+{
+    $base = strtolower(trim((string) $baseUnit));
+    if (!in_array($base, ['bottle', 'bottles'], true)) {
+        return [];
+    }
+
+    $expected = packagingCanonicalSize($unitSize, $unitMeasure);
+    if (!$expected) {
+        return [];
+    }
+
+    $errors = [];
+    foreach ($items as $item) {
+        $name = trim((string) ($item['ingredient_name'] ?? ''));
+        if ($name === '' || preg_match('/\b(bottle|container|jar|cup|tub|pouch|carton|label)\b/i', $name) !== 1) {
+            continue;
+        }
+        $actual = packagingSizeFromMaterialName($name);
+        if (!$actual) {
+            continue;
+        }
+        if (($actual['family'] ?? '') !== ($expected['family'] ?? '')
+            || abs((float) $actual['value'] - (float) $expected['value']) > 0.01) {
+            $errors[] = sprintf(
+                '%s is sized for %s; this SKU is %s',
+                $name,
+                formatPackagingCanonicalSize($actual),
+                formatPackagingCanonicalSize($expected)
+            );
+        }
+    }
+    return $errors;
+}
+
+function assessSkuPackagingBomReadiness($baseUnit, array $items, $unitSize = null, $unitMeasure = '')
 {
     if (empty($items)) {
         return ['ready' => false, 'missing' => ['packaging material']];
@@ -134,6 +217,10 @@ function assessSkuPackagingBomReadiness($baseUnit, array $items)
             $missing[] = $label;
         }
     }
+    $missing = array_merge(
+        $missing,
+        validateSkuPackagingBomSizes($baseUnit, $unitSize, $unitMeasure, $items)
+    );
     return ['ready' => empty($missing), 'missing' => $missing];
 }
 
@@ -347,18 +434,23 @@ function replaceSkuPackagingBom(PDO $db, $productId, array $items)
     }
 
     if (!empty($normalized)) {
-        $skuStmt = $db->prepare('SELECT base_unit FROM products WHERE id = ?');
+        $skuStmt = $db->prepare('SELECT base_unit, unit_size, unit_measure FROM products WHERE id = ?');
         $skuStmt->execute([(int) $productId]);
-        $baseUnit = $skuStmt->fetchColumn();
-        if ($baseUnit === false) {
+        $sku = $skuStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$sku) {
             return ['success' => false, 'errors' => ['product_id' => 'Packaging SKU was not found'], 'items' => []];
         }
-        $readiness = assessSkuPackagingBomReadiness($baseUnit, $normalized);
+        $readiness = assessSkuPackagingBomReadiness(
+            $sku['base_unit'] ?? '',
+            $normalized,
+            $sku['unit_size'] ?? null,
+            $sku['unit_measure'] ?? ''
+        );
         if (!$readiness['ready']) {
             return [
                 'success' => false,
                 'errors' => [
-                    'items' => 'Complete this bottled SKU with: ' . implode(', ', $readiness['missing'])
+                    'items' => 'Packaging BOM is not ready: ' . implode('; ', $readiness['missing'])
                 ],
                 'items' => [],
             ];
@@ -475,11 +567,16 @@ function calculateSkuPackagingRequirements(PDO $db, $recipeId, array $packagingI
             $errors["packaging_items.$idx.packaging_bom"] = "$label has no packaging BOM. Configure it in Admin → Products.";
             continue;
         }
-        $readiness = assessSkuPackagingBomReadiness($product['base_unit'] ?? '', $bom);
+        $readiness = assessSkuPackagingBomReadiness(
+            $product['base_unit'] ?? '',
+            $bom,
+            $product['unit_size'] ?? null,
+            $product['unit_measure'] ?? ''
+        );
         if (!$readiness['ready']) {
             $label = $product['product_code'] ?: $product['product_name'];
             $errors["packaging_items.$idx.packaging_bom"] =
-                "$label packaging profile is incomplete. Add: " . implode(', ', $readiness['missing']) . '.';
+                "$label packaging profile is not ready: " . implode('; ', $readiness['missing']) . '.';
             continue;
         }
 

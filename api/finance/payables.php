@@ -10,6 +10,7 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once __DIR__ . '/payment_reference_helpers.php';
 
 $currentUser = Auth::requireRole(['finance_officer', 'general_manager']);
 
@@ -112,7 +113,8 @@ function ensurePayablesTables($db) {
 
     $paymentColumns = [
         'reference_key' => "ALTER TABLE `po_payments` ADD COLUMN `reference_key` VARCHAR(191) NULL AFTER `reference_number`",
-        'invoice_number_snapshot' => "ALTER TABLE `po_payments` ADD COLUMN `invoice_number_snapshot` VARCHAR(100) NULL AFTER `reference_key`",
+        'external_receipt_number' => "ALTER TABLE `po_payments` ADD COLUMN `external_receipt_number` VARCHAR(100) NULL AFTER `reference_key`",
+        'invoice_number_snapshot' => "ALTER TABLE `po_payments` ADD COLUMN `invoice_number_snapshot` VARCHAR(100) NULL AFTER `external_receipt_number`",
         'invoice_date' => "ALTER TABLE `po_payments` ADD COLUMN `invoice_date` DATE NULL AFTER `invoice_number_snapshot`",
         'invoice_total' => "ALTER TABLE `po_payments` ADD COLUMN `invoice_total` DECIMAL(12,2) NULL AFTER `invoice_date`",
         'invoice_path' => "ALTER TABLE `po_payments` ADD COLUMN `invoice_path` VARCHAR(500) NULL AFTER `invoice_total`",
@@ -606,15 +608,25 @@ function recordPayment($db, $user) {
     if (!in_array($paymentMethod, ['cash', 'check', 'bank_transfer'], true)) {
         Response::error('Choose Cash, Check, or Bank Transfer', 400);
     }
-    $referenceNumber = trim((string) ($data['reference_number'] ?? ''));
-    if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9 ._\/-]{3,99}$/', $referenceNumber)) {
-        Response::error('Enter the 4 to 100 character receipt, check, or transfer reference', 400);
-    }
-    $referenceKey = mb_strtolower($paymentMethod . ':' . preg_replace('/\s+/', '', $referenceNumber));
     $paymentDate = normalizeSupplierPaymentDate($data['payment_date'] ?? null, 'Payment date');
     $invoiceDate = normalizeSupplierPaymentDate($data['invoice_date'] ?? null, 'Invoice date');
     if ($paymentDate > date('Y-m-d')) Response::error('Payment date cannot be in the future', 400);
     if ($invoiceDate > $paymentDate) Response::error('Invoice date cannot be after the payment date', 400);
+
+    $externalReceiptNumber = trim((string) ($data['external_receipt_number'] ?? ''));
+    if ($paymentMethod === 'cash') {
+        if (!financeReferenceIsValid($externalReceiptNumber, false)) {
+            Response::error('Official Receipt number must be 3 to 100 valid characters when provided', 400);
+        }
+        $referenceNumber = financeGenerateCashVoucherNumber($paymentDate);
+    } else {
+        $referenceNumber = trim((string) ($data['reference_number'] ?? ''));
+        if (!financeReferenceIsValid($referenceNumber, true)) {
+            Response::error('Enter the 3 to 100 character check or bank-transfer reference', 400);
+        }
+        $externalReceiptNumber = '';
+    }
+    $referenceKey = mb_strtolower($paymentMethod . ':' . preg_replace('/\s+/', '', $referenceNumber));
 
     try {
         $paymentAmount = hfParseBusinessDecimal($data['payment_amount'] ?? null, 'Payment amount', 0.01, 9999999999.99, 2);
@@ -752,15 +764,17 @@ function recordPayment($db, $user) {
             INSERT INTO po_payments
             (
                 po_id, payment_date, amount_paid, payment_method, reference_number, reference_key,
+                external_receipt_number,
                 invoice_number_snapshot, invoice_date, invoice_total,
                 invoice_path, invoice_original_name, invoice_mime,
                 proof_path, proof_original_name, proof_mime,
                 confirmed_release, remarks, created_by
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
         ");
         $insertStmt->execute([
             $poId, $paymentDate, $paymentAmount, $paymentMethod, $referenceNumber, $referenceKey,
+            $externalReceiptNumber ?: null,
             $invoiceNumber, $invoiceDate, $invoiceTotal,
             $invoiceEvidence['path'] ?? $invoiceEvidence['invoice_path'],
             $invoiceEvidence['original_name'] ?? $invoiceEvidence['invoice_original_name'],
@@ -785,6 +799,7 @@ function recordPayment($db, $user) {
             'payment_amount' => $paymentAmount,
             'payment_method' => $paymentMethod,
             'reference_number' => $referenceNumber,
+            'external_receipt_number' => $externalReceiptNumber ?: null,
             'payment_date' => $paymentDate,
             'invoice_number' => $invoiceNumber,
             'invoice_total' => $invoiceTotal,
@@ -808,6 +823,8 @@ function recordPayment($db, $user) {
         'payment_id' => $paymentId,
         'po_id' => $poId,
         'po_number' => $po['po_number'],
+        'payment_reference' => $referenceNumber,
+        'external_receipt_number' => $externalReceiptNumber ?: null,
         'payment_amount' => $paymentAmount,
         'balance_due' => max($balanceDue - $paymentAmount, 0)
     ], 'Payment and supporting evidence recorded successfully');

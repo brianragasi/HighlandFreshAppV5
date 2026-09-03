@@ -83,7 +83,8 @@ function ensureFarmerPaymentTables($db) {
 
     $paymentColumns = [
         'status' => "ALTER TABLE `farmer_payments` ADD COLUMN `status` VARCHAR(30) NOT NULL DEFAULT 'released' AFTER `payment_method`",
-        'payee_name' => "ALTER TABLE `farmer_payments` ADD COLUMN `payee_name` VARCHAR(160) NULL AFTER `reference_number`",
+        'external_receipt_number' => "ALTER TABLE `farmer_payments` ADD COLUMN `external_receipt_number` VARCHAR(100) NULL AFTER `reference_number`",
+        'payee_name' => "ALTER TABLE `farmer_payments` ADD COLUMN `payee_name` VARCHAR(160) NULL AFTER `external_receipt_number`",
         'destination_provider' => "ALTER TABLE `farmer_payments` ADD COLUMN `destination_provider` VARCHAR(100) NULL AFTER `payee_name`",
         'destination_account' => "ALTER TABLE `farmer_payments` ADD COLUMN `destination_account` VARCHAR(100) NULL AFTER `destination_provider`",
         'destination_mobile' => "ALTER TABLE `farmer_payments` ADD COLUMN `destination_mobile` VARCHAR(20) NULL AFTER `destination_account`",

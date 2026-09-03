@@ -11,6 +11,7 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once __DIR__ . '/farmer_payment_helpers.php';
+require_once __DIR__ . '/payment_reference_helpers.php';
 
 $currentUser = Auth::requireRole(['finance_officer', 'general_manager']);
 
@@ -153,9 +154,18 @@ function recordFarmerPayment($db, $user) {
         Response::error('Invalid payment method', 400);
     }
 
-    $referenceNumber = trim((string) ($data['reference_number'] ?? ''));
-    if ($referenceNumber === '' || mb_strlen($referenceNumber) > 100) {
-        Response::error('Enter a payment or acknowledgment reference number (maximum 100 characters)', 400);
+    $externalReceiptNumber = trim((string) ($data['external_receipt_number'] ?? ''));
+    if ($paymentMethod === 'cash') {
+        if (!financeReferenceIsValid($externalReceiptNumber, false)) {
+            Response::error('Official Receipt number must be 3 to 100 valid characters when provided', 400);
+        }
+        $referenceNumber = financeGenerateCashVoucherNumber($paymentDate);
+    } else {
+        $referenceNumber = trim((string) ($data['reference_number'] ?? ''));
+        if (!financeReferenceIsValid($referenceNumber, true)) {
+            Response::error('Enter a valid payment reference number (3 to 100 characters)', 400);
+        }
+        $externalReceiptNumber = '';
     }
 
     $verifyDeliveries = farmerPaymentTruthy($data['verify_deliveries'] ?? null);
@@ -226,6 +236,7 @@ function recordFarmerPayment($db, $user) {
                 payment_method,
                 status,
                 reference_number,
+                external_receipt_number,
                 payee_name,
                 destination_provider,
                 destination_account,
@@ -236,7 +247,7 @@ function recordFarmerPayment($db, $user) {
                 remarks,
                 created_by
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $insertStmt->execute([
             $paymentCode,
@@ -251,6 +262,7 @@ function recordFarmerPayment($db, $user) {
             $paymentMethod,
             $paymentStatus,
             $referenceNumber ?: null,
+            $externalReceiptNumber ?: null,
             $destination['payee_name'],
             $destination['provider'],
             $destination['account'],
@@ -288,6 +300,7 @@ function recordFarmerPayment($db, $user) {
             'amount_paid' => $summary['total_amount'],
             'payment_method' => $paymentMethod,
             'reference_number' => $referenceNumber ?: null,
+            'external_receipt_number' => $externalReceiptNumber ?: null,
             'payment_date' => $paymentDate,
             'status' => $paymentStatus,
             'proof_attached' => true,
@@ -309,6 +322,8 @@ function recordFarmerPayment($db, $user) {
     Response::success([
         'payment_id' => $paymentId,
         'payment_code' => $paymentCode,
+        'payment_reference' => $referenceNumber,
+        'external_receipt_number' => $externalReceiptNumber ?: null,
         'farmer_id' => $farmerId,
         'delivery_count' => $summary['delivery_count'],
         'total_liters' => $summary['total_liters'],

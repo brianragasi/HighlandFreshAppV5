@@ -544,8 +544,9 @@
                         </select>
                     </div>
                     <div class="form-control">
-                        <label class="label"><span class="label-text" id="payReferenceLabel">Cash Acknowledgment Number</span></label>
-                        <input type="text" id="payReference" class="input input-bordered w-full" minlength="4" maxlength="100" required>
+                        <label class="label"><span class="label-text" id="payReferenceLabel">Official Receipt Number (optional)</span></label>
+                        <input type="text" id="payReference" class="input input-bordered w-full" maxlength="100">
+                        <div id="payReferenceHint" class="text-xs text-base-content/60 mt-1">The system generates the Cash Payment Voucher number after saving.</div>
                     </div>
                 </div>
 
@@ -557,7 +558,7 @@
 
                 <label class="flex items-start gap-3 bg-base-200 rounded-xl p-3 mb-3 cursor-pointer">
                     <input type="checkbox" id="confirmRelease" class="checkbox checkbox-sm checkbox-primary mt-0.5">
-                    <span class="text-sm"><strong>I released the funds using the selected method.</strong><br><span class="text-xs text-base-content/60">The reference and attached proof belong to this exact payment.</span></span>
+                    <span class="text-sm"><strong>I released the funds using the selected method.</strong><br><span class="text-xs text-base-content/60" id="payReleaseEvidenceText">The signed acknowledgment belongs to this exact cash payment.</span></span>
                 </label>
 
                 <div class="form-control mb-4">
@@ -959,14 +960,24 @@
         function updatePaymentMethodFields() {
             const method = document.getElementById('payMethod').value;
             const labels = {
-                cash: ['Cash Acknowledgment Number', 'Signed Cash Acknowledgment', 'e.g., CASH-ACK-2026-001'],
+                cash: ['Official Receipt Number (optional)', 'Signed Cash Acknowledgment', 'Enter only if the supplier issued one'],
                 check: ['Check Number', 'Check Image or Deposit Slip', 'e.g., CHK-008412'],
                 bank_transfer: ['Bank Transfer Reference Number', 'Bank Transfer Receipt', 'Enter or paste the exact bank reference']
             };
             const selected = labels[method] || labels.cash;
+            const isCash = method === 'cash';
+            const referenceInput = document.getElementById('payReference');
             document.getElementById('payReferenceLabel').textContent = selected[0];
             document.getElementById('payProofLabel').textContent = selected[1];
-            document.getElementById('payReference').placeholder = selected[2];
+            referenceInput.placeholder = selected[2];
+            referenceInput.required = !isCash;
+            referenceInput.minLength = 3;
+            document.getElementById('payReferenceHint').textContent = isCash
+                ? 'The system generates the Cash Payment Voucher number after saving.'
+                : 'Enter the external reference exactly as shown on the payment evidence.';
+            document.getElementById('payReleaseEvidenceText').textContent = isCash
+                ? 'The signed acknowledgment belongs to this exact cash payment.'
+                : 'The external reference and attached proof belong to this exact payment.';
         }
 
         function updatePaymentDateGuidance() {
@@ -1007,6 +1018,7 @@
                 const paymentDate = document.getElementById('payDate').value;
                 const invoiceTotal = parseFloat(document.getElementById('payInvoiceTotal').value || 0);
                 const invoiceDate = document.getElementById('payInvoiceDate').value;
+                const paymentMethod = document.getElementById('payMethod').value;
                 const reference = document.getElementById('payReference').value.trim();
                 const invoiceFile = document.getElementById('payInvoiceFile').files[0];
                 const proofFile = document.getElementById('payProofFile').files[0];
@@ -1037,8 +1049,13 @@
                     updatePaymentDateGuidance();
                     return;
                 }
-                if (!/^[A-Za-z0-9][A-Za-z0-9 ._\/-]{3,99}$/.test(reference)) {
-                    showToast('Enter a valid 4 to 100 character payment reference', 'error');
+                const validReference = /^[A-Za-z0-9][A-Za-z0-9 ._\/-]{2,99}$/;
+                if (paymentMethod !== 'cash' && !validReference.test(reference)) {
+                    showToast('Enter a valid 3 to 100 character check or bank-transfer reference', 'error');
+                    return;
+                }
+                if (paymentMethod === 'cash' && reference && !validReference.test(reference)) {
+                    showToast('Official Receipt number must be 3 to 100 valid characters when provided', 'error');
                     return;
                 }
                 if (!currentPayable.invoice_evidence && !invoiceFile) {
@@ -1061,8 +1078,9 @@
 
                 const formData = new FormData();
                 formData.append('po_id', document.getElementById('payPoId').value);
-                formData.append('payment_method', document.getElementById('payMethod').value);
-                formData.append('reference_number', reference);
+                formData.append('payment_method', paymentMethod);
+                formData.append('reference_number', paymentMethod === 'cash' ? '' : reference);
+                formData.append('external_receipt_number', paymentMethod === 'cash' ? reference : '');
                 formData.append('notes', document.getElementById('payNotes').value);
                 formData.append('payment_amount', paymentAmount.toFixed(2));
                 formData.append('payment_date', paymentDate);
@@ -1072,9 +1090,12 @@
                 formData.append('step_up_token', stepUpToken);
                 if (invoiceFile) formData.append('invoice_file', invoiceFile);
                 formData.append('proof_file', proofFile);
-                await FinanceService.recordPayment(formData);
+                const response = await FinanceService.recordPayment(formData);
                 document.getElementById('paymentModal').close();
-                showToast('Payment recorded successfully!', 'success');
+                const generatedVoucher = response?.data?.payment_reference;
+                showToast(paymentMethod === 'cash' && generatedVoucher
+                    ? `Cash payment recorded. Voucher ${generatedVoucher}`
+                    : (response?.message || 'Payment recorded successfully!'), 'success');
                 await Promise.all([loadPayablesOverview(), loadPayables()]);
             } catch (error) {
                 showToast(error.message || 'Failed to record payment', 'error');
@@ -1192,7 +1213,7 @@
                         <div class="overflow-x-auto">
                             <table class="table table-xs">
                                 <thead>
-                                    <tr><th>Date</th><th>Amount</th><th>Method</th><th>Reference</th><th>Evidence</th><th>Recorded By</th></tr>
+                                    <tr><th>Date</th><th>Amount</th><th>Method</th><th>Voucher / Reference</th><th>Evidence</th><th>Recorded By</th></tr>
                                 </thead>
                                 <tbody>
                                     ${po.payments.map(pay => `
@@ -1200,7 +1221,7 @@
                                             <td>${formatDate(pay.payment_date)}</td>
                                             <td class="font-semibold">${formatCurrency(pay.amount_paid)}</td>
                                             <td>${formatPaymentMethod(pay.payment_method)}</td>
-                                            <td>${escapeHtml(pay.reference_number || '-')}</td>
+                                            <td><div class="font-mono">${escapeHtml(pay.reference_number || '-')}</div>${pay.external_receipt_number ? `<div class="text-xs text-base-content/60">OR: ${escapeHtml(pay.external_receipt_number)}</div>` : ''}</td>
                                             <td>
                                                 <div class="flex flex-wrap gap-1">
                                                     ${pay.has_invoice_file ? `<button class="btn btn-ghost btn-xs" onclick="viewSupplierPaymentFile(${pay.id}, 'invoice')"><i class="fas fa-file-invoice"></i> Invoice</button>` : '<span class="text-base-content/40">No invoice file</span>'}

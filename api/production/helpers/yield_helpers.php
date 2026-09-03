@@ -101,6 +101,8 @@ function resolvePackagingSkusForRun(PDO $db, $runId) {
                     'product_code' => $p['product_code'],
                     'product_name' => $p['product_name'],
                     'base_unit' => $p['base_unit'] ?? 'piece',
+                    'unit_size' => $p['unit_size'],
+                    'unit_measure' => $p['unit_measure'],
                     'packaging_size_ml' => $ml,
                     'packaging_label' => $label,
                     'priority_order' => $order++,
@@ -125,6 +127,8 @@ function resolvePackagingSkusForRun(PDO $db, $runId) {
                 'product_id' => $legacyProductId,
                 'product_code' => null,
                 'product_name' => $recipe['product_name'],
+                'unit_size' => (int) $rule['packaging_size_ml'],
+                'unit_measure' => 'ml',
                 'packaging_size_ml' => (int) $rule['packaging_size_ml'],
                 'packaging_label' => $rule['packaging_label'],
                 'priority_order' => (int) ($rule['priority_order'] ?? 1),
@@ -143,6 +147,8 @@ function resolvePackagingSkusForRun(PDO $db, $runId) {
                         'product_code' => $p['product_code'],
                         'product_name' => $p['product_name'],
                         'base_unit' => $p['base_unit'] ?? 'piece',
+                        'unit_size' => $p['unit_size'],
+                        'unit_measure' => $p['unit_measure'],
                         'packaging_size_ml' => $ml,
                         'packaging_label' => $p['variant'] ?: ($ml . ' ml'),
                         'priority_order' => 1,
@@ -157,7 +163,8 @@ function resolvePackagingSkusForRun(PDO $db, $runId) {
         try {
             $rulesStmt = $db->prepare("
                 SELECT pr.product_id, pr.packaging_size_ml, pr.packaging_label, pr.priority_order,
-                       p.product_code, p.product_name, p.base_unit
+                       p.product_code, p.product_name, p.base_unit,
+                       p.unit_size, p.unit_measure
                 FROM packaging_rules pr
                 JOIN products p ON p.id = pr.product_id
                 WHERE p.base_product_id = ? AND pr.is_active = 1 AND p.is_active = 1
@@ -170,6 +177,8 @@ function resolvePackagingSkusForRun(PDO $db, $runId) {
                     'product_code' => $rule['product_code'],
                     'product_name' => $rule['product_name'],
                     'base_unit' => $rule['base_unit'] ?? 'piece',
+                    'unit_size' => $rule['unit_size'],
+                    'unit_measure' => $rule['unit_measure'],
                     'packaging_size_ml' => (int) $rule['packaging_size_ml'],
                     'packaging_label' => $rule['packaging_label'],
                     'priority_order' => (int) ($rule['priority_order'] ?? 1),
@@ -209,7 +218,9 @@ function resolvePackagingSkusForRun(PDO $db, $runId) {
             $s['packaging_bom_count'] = count($s['packaging_bom']);
             $readiness = assessSkuPackagingBomReadiness(
                 $s['base_unit'] ?? '',
-                $s['packaging_bom']
+                $s['packaging_bom'],
+                $s['unit_size'] ?? null,
+                $s['unit_measure'] ?? ''
             );
             $s['packaging_bom_ready'] = $readiness['ready'];
             $s['packaging_bom_missing'] = $readiness['missing'];

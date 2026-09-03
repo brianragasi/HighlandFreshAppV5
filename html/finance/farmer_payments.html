@@ -499,6 +499,7 @@
                         <label class="label"><span class="label-text" id="payoutReferenceLabel">Transfer Reference Number</span></label>
                         <input type="text" id="payoutReference" class="input input-bordered w-full"
                             maxlength="100" required placeholder="Enter the payment reference">
+                        <div id="payoutReferenceHint" class="text-xs text-base-content/60 mt-1">Enter the external reference exactly as shown on the payment evidence.</div>
                     </div>
                 </div>
 
@@ -815,8 +816,8 @@
                 releaseText = 'I released the check and attached supporting proof.';
             } else {
                 title = 'Cash Payee'; provider = 'Cash'; account = payee || 'Missing payment payee name';
-                ready = !!payee; message = ready ? 'A signed cash acknowledgment is required.' : 'Cash is blocked until a payment payee name is saved.';
-                referenceLabel = 'Cash Acknowledgment Number'; proofLabel = 'Signed Cash Acknowledgment';
+                ready = !!payee; message = ready ? 'The system will generate a Cash Payment Voucher number. Attach the signed acknowledgment.' : 'Cash is blocked until a payment payee name is saved.';
+                referenceLabel = 'Official Receipt Number (optional)'; proofLabel = 'Signed Cash Acknowledgment';
                 releaseText = 'I released the cash and attached the signed acknowledgment.';
             }
 
@@ -826,6 +827,14 @@
             document.getElementById('payoutBankName').textContent = provider;
             document.getElementById('payoutBankAccount').textContent = account;
             document.getElementById('payoutReferenceLabel').textContent = referenceLabel;
+            const referenceInput = document.getElementById('payoutReference');
+            const isCash = method === 'cash';
+            referenceInput.required = !isCash;
+            referenceInput.minLength = 3;
+            referenceInput.placeholder = isCash ? 'Enter only if the farmer issued one' : 'Enter the external payment reference';
+            document.getElementById('payoutReferenceHint').textContent = isCash
+                ? 'The system generates the Cash Payment Voucher number after saving.'
+                : 'Enter the external reference exactly as shown on the payment evidence.';
             document.getElementById('proofLabel').textContent = proofLabel;
             document.getElementById('verifyReleaseText').textContent = releaseText;
             notice.className = `alert mb-3 text-sm ${ready ? 'alert-success' : 'alert-error'}`;
@@ -947,8 +956,14 @@
                     return;
                 }
 
-                if (!referenceNumber) {
-                    showToast('Enter the payment or acknowledgment reference number', 'error');
+                const validReference = /^[A-Za-z0-9][A-Za-z0-9 ._\/-]{2,99}$/;
+                if (paymentMethod !== 'cash' && !validReference.test(referenceNumber)) {
+                    showToast('Enter a valid 3 to 100 character external payment reference', 'error');
+                    return;
+                }
+
+                if (paymentMethod === 'cash' && referenceNumber && !validReference.test(referenceNumber)) {
+                    showToast('Official Receipt number must be 3 to 100 valid characters when provided', 'error');
                     return;
                 }
 
@@ -976,7 +991,9 @@
                 const fields = {
                     farmer_id: currentFarmer.farmer_id,
                     ...getPayoutFilters(), payment_date: paymentDate, payment_method: paymentMethod,
-                    reference_number: referenceNumber, notes: document.getElementById('payoutNotes').value,
+                    reference_number: paymentMethod === 'cash' ? '' : referenceNumber,
+                    external_receipt_number: paymentMethod === 'cash' ? referenceNumber : '',
+                    notes: document.getElementById('payoutNotes').value,
                     verify_deliveries: verifyDeliveries ? '1' : '0', verify_bank_info: verifyBankInfo ? '1' : '0',
                     verify_transfer: verifyTransfer ? '1' : '0', step_up_token: stepUpToken
                 };
@@ -985,7 +1002,10 @@
                 const response = await FinanceService.recordFarmerPayment(payload);
 
                 document.getElementById('payoutModal').close();
-                showToast(response?.message || 'Farmer payout recorded successfully!', 'success');
+                const generatedVoucher = response?.data?.payment_reference;
+                showToast(paymentMethod === 'cash' && generatedVoucher
+                    ? `Cash payout recorded. Voucher ${generatedVoucher}`
+                    : (response?.message || 'Farmer payout recorded successfully!'), 'success');
                 await Promise.all([loadFarmerPayments(), loadPayoutHistory()]);
             } catch (error) {
                 showToast(error.message || 'Failed to record farmer payout', 'error');
@@ -1020,7 +1040,7 @@
                     if (['pending_review', 'released'].includes(status) && payment.payment_method !== 'cash') actions += `<button class="btn btn-warning btn-outline btn-xs" onclick="changePayoutStatus(${Number(payment.id)}, 'failed')">Mark Failed</button>`;
                     actions += '</div>';
                     return `<tr>
-                        <td><div class="font-mono font-semibold">${escapeHtml(payment.payment_code)}</div><div class="text-xs text-base-content/50">${escapeHtml(payment.reference_number || '-')}</div></td>
+                        <td><div class="font-mono font-semibold">${escapeHtml(payment.payment_code)}</div><div class="text-xs text-base-content/50">${escapeHtml(payment.reference_number || '-')}</div>${payment.external_receipt_number ? `<div class="text-xs text-base-content/50">OR: ${escapeHtml(payment.external_receipt_number)}</div>` : ''}</td>
                         <td>${escapeHtml(payment.farmer_name || '-')}</td><td>${escapeHtml(formatDateValue(payment.payment_date))}</td>
                         <td>${escapeHtml(method)}</td><td class="font-semibold">${formatCurrency(payment.amount_paid)}</td>
                         <td><span class="badge badge-sm ${statusClass}">${escapeHtml(status.replace(/_/g, ' '))}</span>${payment.status_reason ? `<div class="text-xs text-error mt-1 max-w-48">${escapeHtml(payment.status_reason)}</div>` : ''}</td>

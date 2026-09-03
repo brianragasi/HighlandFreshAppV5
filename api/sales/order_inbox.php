@@ -74,6 +74,70 @@ function hfResolveCustomerOrderAttachment(PDO $db, int $id): array
 }
 
 /**
+ * Report whether Sales can actually inspect the immutable customer request.
+ * Attachment metadata alone is not sufficient because a database restore may
+ * reference an upload that was never copied to the current server.
+ */
+function hfCustomerOrderSourceState(array $row): array
+{
+    $attachmentPath = trim((string)($row['attachment_path'] ?? ''));
+    $attachmentName = trim((string)($row['attachment_original_name'] ?? ''));
+    $hasAttachment = $attachmentPath !== ''
+        && !in_array($attachmentName, ['No supported attachment', 'Order written in email'], true);
+
+    if ($hasAttachment) {
+        $uploadRoot = realpath(dirname(__DIR__, 2) . '/uploads/customer_orders');
+        $path = realpath(dirname(__DIR__, 2) . '/' . ltrim(str_replace('\\', '/', $attachmentPath), '/'));
+        $rootPrefix = $uploadRoot === false
+            ? ''
+            : rtrim(str_replace('\\', '/', $uploadRoot), '/') . '/';
+        $normalizedPath = $path === false ? '' : str_replace('\\', '/', $path);
+        $available = $uploadRoot !== false
+            && $path !== false
+            && is_file($path)
+            && str_starts_with($normalizedPath, $rootPrefix);
+
+        return [
+            'source_kind' => $available ? 'attachment' : 'missing_attachment',
+            'source_available' => $available,
+            'source_error' => $available
+                ? null
+                : 'The original customer PO file is missing from this server. Restore the upload or ask the customer to resend it.',
+        ];
+    }
+
+    $hasEmailBody = array_key_exists('has_email_body', $row)
+        ? (bool)$row['has_email_body']
+        : trim((string)($row['email_body'] ?? '')) !== '';
+
+    return [
+        'source_kind' => $hasEmailBody ? 'email' : 'missing_source',
+        'source_available' => $hasEmailBody,
+        'source_error' => $hasEmailBody
+            ? null
+            : 'The original request has no readable attachment or email message. Ask the customer to resend it.',
+    ];
+}
+
+function hfAssertCustomerOrderSourceAvailable(PDO $db, int $id): array
+{
+    if ($id <= 0) {
+        throw new InvalidArgumentException('Choose a customer PO request.');
+    }
+    $stmt = $db->prepare('SELECT id, attachment_original_name, attachment_path, email_body FROM customer_order_imports WHERE id = ?');
+    $stmt->execute([$id]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        throw new RuntimeException('The customer PO request was not found.');
+    }
+    $state = hfCustomerOrderSourceState($row);
+    if (!$state['source_available']) {
+        throw new RuntimeException((string)$state['source_error']);
+    }
+    return $state;
+}
+
+/**
  * Suggest only clear header values. These suggestions never create order lines
  * and Sales must still compare them with the original attachment.
  */
@@ -184,8 +248,9 @@ function handleCustomerOrderInboxGet(PDO $db, string $action): void
                 SUM(status IN ('customer_confirmed', 'ready_to_create', 'ready')
                     AND source_verified_at IS NOT NULL) AS ready_to_create,
                 SUM(status = 'rejected') AS rejected,
-                SUM(status IN ('received', 'for_encoding', 'draft_order', 'needs_customer_confirmation',
-                    'customer_confirmed', 'ready_to_create', 'needs_review', 'ready')) AS needs_action
+                SUM(status IN ('received', 'for_encoding', 'draft_order',
+                    'customer_confirmed', 'ready_to_create', 'needs_review', 'ready')) AS needs_action,
+                SUM(status IN ('order_created', 'converted', 'duplicate', 'rejected')) AS history
             FROM customer_order_imports
             WHERE status <> 'archived'
         ")->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -195,6 +260,7 @@ function handleCustomerOrderInboxGet(PDO $db, string $action): void
             'ready_to_create' => (int)($summary['ready_to_create'] ?? 0),
             'rejected' => (int)($summary['rejected'] ?? 0),
             'needs_action' => (int)($summary['needs_action'] ?? 0),
+            'history' => (int)($summary['history'] ?? 0),
         ], 'Customer order inbox summary retrieved');
     }
 
@@ -269,13 +335,14 @@ function handleCustomerOrderInboxGet(PDO $db, string $action): void
         }
         $import['trusted_reference'] = hfTrustedCustomerOrderReferenceForImport($db, $import);
         $import['header_suggestions'] = hfSuggestCustomerOrderHeaders($import);
+        $import = array_merge($import, hfCustomerOrderSourceState($import));
         Response::success($import, 'Imported customer PO retrieved');
     }
 
     $status = trim((string) getParam('status', ''));
     $search = trim((string) getParam('search', ''));
     $view = trim((string) getParam('view', 'action'));
-    if (!in_array($view, ['action', 'recent', 'all'], true)) {
+    if (!in_array($view, ['action', 'waiting', 'recent', 'all'], true)) {
         $view = 'action';
     }
     $sql = "
@@ -284,8 +351,9 @@ function handleCustomerOrderInboxGet(PDO $db, string $action): void
                coi.attachment_original_name, coi.attachment_path, coi.status,
                coi.issue_count, coi.warning_count, coi.error_message,
                coi.sales_order_id, coi.imported_by, coi.reviewed_by, coi.reviewed_at,
-                coi.created_at, coi.updated_at, coi.entered_delivery_date,
+               coi.created_at, coi.updated_at, coi.entered_delivery_date,
                 coi.entry_saved_by, coi.entry_saved_at, coi.source_verified_at,
+               (TRIM(COALESCE(coi.email_body, '')) <> '') AS has_email_body,
                c.name AS customer_name,
                c.customer_code,
                so.order_number,
@@ -301,8 +369,10 @@ function handleCustomerOrderInboxGet(PDO $db, string $action): void
         $sql .= ' AND coi.status = ?';
         $params[] = $status;
     } elseif ($view === 'action') {
-        $sql .= " AND coi.status IN ('received', 'for_encoding', 'draft_order', 'needs_customer_confirmation',
+        $sql .= " AND coi.status IN ('received', 'for_encoding', 'draft_order',
             'customer_confirmed', 'ready_to_create', 'needs_review', 'ready')";
+    } elseif ($view === 'waiting') {
+        $sql .= " AND coi.status = 'needs_customer_confirmation'";
     } elseif ($view === 'recent') {
         $sql .= " AND coi.status IN ('order_created', 'converted', 'duplicate', 'rejected')";
     }
@@ -322,7 +392,13 @@ function handleCustomerOrderInboxGet(PDO $db, string $action): void
         LIMIT 100";
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
-    Response::success($stmt->fetchAll(PDO::FETCH_ASSOC), 'Customer order inbox retrieved');
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($rows as &$row) {
+        $row = array_merge($row, hfCustomerOrderSourceState($row));
+        unset($row['has_email_body']);
+    }
+    unset($row);
+    Response::success($rows, 'Customer order inbox retrieved');
 }
 
 function handleCustomerOrderInboxPost(PDO $db, string $action, array $currentUser): void
@@ -336,6 +412,7 @@ function handleCustomerOrderInboxPost(PDO $db, string $action, array $currentUse
 
     if ($action === 'confirm') {
         $id = (int) getParam('id', 0);
+        hfAssertCustomerOrderSourceAvailable($db, $id);
         $acceptWarnings = filter_var(getParam('accept_warnings', false), FILTER_VALIDATE_BOOLEAN);
         $creditOverrideReason = trim((string) getParam('credit_override_reason', ''));
         $order = hfConvertCustomerOrderImport($db, $id, $userId, $acceptWarnings, $creditOverrideReason);
@@ -347,6 +424,7 @@ function handleCustomerOrderInboxPost(PDO $db, string $action, array $currentUse
         if ($importId <= 0) {
             Response::validationError(['id' => 'Choose an emailed customer PO.']);
         }
+        hfAssertCustomerOrderSourceAvailable($db, $importId);
         $saved = hfSaveManualCustomerOrder($db, $importId, getParams(), $userId);
         Response::success($saved, 'Customer order details saved.');
     }

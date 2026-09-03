@@ -133,8 +133,8 @@
                         <button class="btn btn-ghost touch-btn" onclick="refreshAll()" title="Refresh">
                             <i class="fas fa-sync-alt"></i> Refresh
                         </button>
-                        <a href="batches.html?action=new" class="btn btn-outline touch-btn gap-2">
-                            <i class="fas fa-plus"></i> New Run
+                        <a href="requisitions.html?action=new" class="btn btn-outline touch-btn gap-2">
+                            <i class="fas fa-clipboard-list"></i> Request Materials
                         </a>
                     </div>
                     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -1784,7 +1784,7 @@
                 skuOptions = '<option value="" disabled>Select a product/size...</option>';
                 skus.forEach((sku, idx) => {
                     const selected = (prefill.size_ml && Number(sku.packaging_size_ml) === Number(prefill.size_ml)) ? 'selected' : '';
-                    const readiness = sku.packaging_bom_ready ? '' : ' · Packaging BOM needed';
+                    const readiness = sku.packaging_bom_ready ? '' : ' · Packaging setup needs attention';
                     skuOptions += `<option value="${idx}" ${selected}>${escapePackagingText(sku.packaging_label || (sku.product_name + ' · ' + sku.packaging_size_ml + 'ml'))}${readiness}</option>`;
                 });
             } else {
@@ -1947,7 +1947,9 @@
                 const sku = skus.find(candidate => Number(candidate.product_id) === Number(item.product_id));
                 const bom = sku?.packaging_bom || [];
                 if (!sku || !sku.packaging_bom_ready || bom.length === 0) {
-                    missing.push(sku?.product_code || sku?.packaging_label || item.product_name || 'Selected SKU');
+                    const skuLabel = sku?.product_code || sku?.packaging_label || item.product_name || 'Selected SKU';
+                    const issues = Array.isArray(sku?.packaging_bom_missing) ? sku.packaging_bom_missing : [];
+                    missing.push(issues.length ? `${skuLabel}: ${issues.join('; ')}` : skuLabel);
                     return;
                 }
                 bom.forEach(component => {
@@ -1985,7 +1987,7 @@
             box.classList.remove('hidden', 'alert-info', 'alert-error', 'alert-warning');
             if (result.missing.length) {
                 box.classList.add('alert-error');
-                text.innerHTML = `Packaging BOM missing for: ${result.missing.map(escapePackagingText).join(', ')}. Configure it in Admin → Products.`;
+                text.innerHTML = `Packaging setup needs attention: ${result.missing.map(escapePackagingText).join(', ')}. Correct it in Admin → Products.`;
                 return;
             }
 
@@ -2087,7 +2089,7 @@
             }
             const materialPlan = calculatePackagingMaterialRequirements(packagingItems);
             if (!materialPlan.ready) {
-                showToast(`Packaging BOM missing for ${materialPlan.missing.join(', ')}`, 'error');
+                showToast(`Packaging setup needs attention: ${materialPlan.missing.join(', ')}`, 'error');
                 return;
             }
 
@@ -2286,7 +2288,7 @@
             }
             const packagingMaterialPlan = calculatePackagingMaterialRequirements(packagingItems);
             if (!packagingMaterialPlan.ready) {
-                showToast(`Cannot complete: Packaging BOM missing for ${packagingMaterialPlan.missing.join(', ')}`, 'error');
+                showToast(`Cannot complete: packaging setup needs attention: ${packagingMaterialPlan.missing.join(', ')}`, 'error');
                 return;
             }
             const processLossMl = parseFloat(document.getElementById('pkgProcessLoss')?.value) || 0;

@@ -189,8 +189,8 @@
                     </div>
                 </div>
                 <div id="startRunFooter" class="px-3 pb-3 hidden">
-                    <a id="startRunBtn" href="batches.html?action=new" class="btn btn-outline btn-sm btn-block gap-2">
-                        <i class="fas fa-play"></i> Start a new production run
+                    <a id="startRunBtn" href="requisitions.html?action=new" class="btn btn-outline btn-sm btn-block gap-2">
+                        <i class="fas fa-clipboard-list"></i> Request materials
                     </a>
                     <p id="startRunGate" class="text-[0.7rem] text-center text-base-content/45 mt-1.5 hidden"></p>
                 </div>
@@ -426,21 +426,11 @@
             if (!footer) return;
             footer.classList.remove('hidden');
 
-            if (availableMilk > 0) {
-                btn.classList.remove('btn-disabled');
-                btn.removeAttribute('aria-disabled');
-                btn.href = 'batches.html?action=new';
-                gate.classList.add('hidden');
-            } else {
-                // Still allow navigation but show gate message; primary path is requisition
-                btn.classList.add('btn-disabled');
-                btn.setAttribute('aria-disabled', 'true');
-                btn.href = 'javascript:void(0)';
-                gate.classList.remove('hidden');
-                gate.textContent = warehouseMilk > 0
-                    ? 'Start is gated until milk is issued. Use Request milk above.'
-                    : 'Start is gated — no usable milk in warehouse or production.';
-            }
+            btn.classList.remove('btn-disabled');
+            btn.removeAttribute('aria-disabled');
+            btn.href = 'requisitions.html?action=new';
+            gate.classList.remove('hidden');
+            gate.textContent = 'Production starts after Warehouse fully issues the requested cooking materials.';
         }
 
         function renderPendingRequisitions(requisitions) {
@@ -534,15 +524,11 @@
                         return;
                     }
 
-                    const canStart = dashState.availableMilk > 0;
                     container.innerHTML = `
                         <div class="text-center py-8 px-2">
                             <p class="font-semibold text-base-content/60">No active runs</p>
-                            <p class="text-xs text-base-content/45 mt-1 mb-4">Finish waiting work or start a new run when milk is issued.</p>
-                            ${canStart
-                                ? `<a href="batches.html?action=new" class="btn btn-primary btn-sm gap-2"><i class="fas fa-play"></i> Start production</a>`
-                                : `<a href="requisitions.html?action=new" class="btn btn-primary btn-sm gap-2"><i class="fas fa-clipboard-list"></i> Request milk first</a>`
-                            }
+                            <p class="text-xs text-base-content/45 mt-1 mb-4">Request the recipe materials, then start from the fulfilled Warehouse handoff.</p>
+                            <a href="requisitions.html?action=new" class="btn btn-primary btn-sm gap-2"><i class="fas fa-clipboard-list"></i> Request materials</a>
                         </div>`;
                     return;
                 }

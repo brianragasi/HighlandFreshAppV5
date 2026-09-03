@@ -32,14 +32,14 @@ if (duplicates.length) {
 for (const expectedText of [
     'Order to create',
     'Requested items',
-    'Verification',
+    'Review the original request',
     'Order summary',
     'Price is per',
-    'Verify &amp; Save',
-    'Create Order &amp; Send to GM',
-    'Record Customer Decision',
-    "activeImport.status !== 'needs_customer_confirmation'",
-    'Record Clarifying Call',
+    'Submit for GM Approval',
+    '<span>Resolve issue</span>',
+    "activeImport.status === 'needs_customer_confirmation'",
+    'sourceDocumentReady',
+    '<span>Source unavailable</span>',
     'activeImport.trusted_reference?.lines',
     'entryDirty = !saved || !activeImport.source_verified_at',
     'installNumericEntryGuards',
@@ -54,8 +54,17 @@ if (!helper.includes("'status' => 'pending'")) {
     throw new Error('Verified Customer PO orders must be returned as pending for GM approval.');
 }
 
-if (html.includes('Create Draft &amp; Continue') || html.includes('Submit it for General Manager approval next')) {
-    throw new Error('Customer PO review still exposes the removed draft-submission dead end.');
+for (const removedText of [
+    'Create Draft &amp; Continue',
+    'Submit it for General Manager approval next',
+    'Verify &amp; Save',
+    'Create Order &amp; Send to GM',
+    'Record Customer Decision',
+    'id="statusFilter"',
+]) {
+    if (html.includes(removedText)) {
+        throw new Error(`Customer PO review still exposes removed workflow text: ${removedText}`);
+    }
 }
 
 console.log(`Customer PO page checks passed (${inlineScripts.length} inline script, ${ids.length} static IDs).`);

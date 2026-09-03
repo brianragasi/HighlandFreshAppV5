@@ -852,9 +852,9 @@ try {
             $skimMilkOutputLiters = getParam('skim_milk_output_liters');
             $cheeseState = getParam('cheese_state');
             $isSalted = getParam('is_salted', 0);
-            // Optional: when this run is being started from a fulfilled pre-run requisition,
-            // the frontend passes the requisition ID. We validate the requisition and link
-            // the new run back to it so the lineage (REQ -> RUN) is preserved.
+            // Every run must start from a fully fulfilled cooking-material requisition.
+            // This preserves the Production -> Warehouse -> Production handoff and keeps
+            // a run from reaching Packaging without materials that Warehouse actually issued.
             $materialRequisitionId = getParam('material_requisition_id');
             $linkedRequisitionCode = null;
             $ingredientValidation = [
@@ -867,6 +867,10 @@ try {
             $errors = [];
             if (!$recipeId) $errors['recipe_id'] = 'Recipe is required';
             if ($plannedQuantity <= 0) $errors['planned_quantity'] = 'Planned finished amount must be greater than 0 L';
+            if (!$materialRequisitionId) {
+                $errors['material_requisition_id'] =
+                    'Start production from a fully fulfilled cooking-material requisition. Request materials and wait for Warehouse to issue them first.';
+            }
 
             // If a source requisition is provided, validate it up front so the rest of
             // the flow can assume the link is legitimate.
@@ -876,8 +880,16 @@ try {
                 // between the run's planned_quantity and the requisition's plan.
                 // See the "planned_quantity must match" check below.
                 $reqStmt = $db->prepare("
-                    SELECT id, requisition_code, status, planned_recipe_id, planned_quantity,
-                           planned_yield_unit, production_run_id
+                    SELECT id, requisition_code, status,
+                           COALESCE(request_type, 'cooking') AS request_type,
+                           planned_recipe_id, planned_quantity,
+                           planned_yield_unit, production_run_id,
+                           (SELECT COUNT(*) FROM requisition_items ri
+                             WHERE ri.requisition_id = material_requisitions.id) AS item_count,
+                           (SELECT COUNT(*) FROM requisition_items ri
+                             WHERE ri.requisition_id = material_requisitions.id
+                               AND (ri.status <> 'fulfilled'
+                                    OR ri.issued_quantity + 0.0005 < ri.requested_quantity)) AS unfulfilled_item_count
                     FROM material_requisitions
                     WHERE id = ?
                 ");
@@ -886,8 +898,13 @@ try {
 
                 if (!$sourceRequisition) {
                     $errors['material_requisition_id'] = 'Source requisition not found';
-                } elseif (!in_array($sourceRequisition['status'], ['fulfilled', 'partial'], true)) {
-                    $errors['material_requisition_id'] = 'Source requisition is not ready for production (status: ' . $sourceRequisition['status'] . ')';
+                } elseif (($sourceRequisition['request_type'] ?? '') !== 'cooking') {
+                    $errors['material_requisition_id'] = 'Only a cooking-material requisition can start a production run';
+                } elseif (($sourceRequisition['status'] ?? '') !== 'fulfilled') {
+                    $errors['material_requisition_id'] = 'Warehouse must fully issue the cooking materials before production can start (status: ' . $sourceRequisition['status'] . ')';
+                } elseif ((int) ($sourceRequisition['item_count'] ?? 0) <= 0
+                    || (int) ($sourceRequisition['unfulfilled_item_count'] ?? 0) > 0) {
+                    $errors['material_requisition_id'] = 'Warehouse handoff is incomplete. Every requested cooking-material line must be fully issued before production can start.';
                 } elseif (!empty($sourceRequisition['production_run_id'])) {
                     $errors['material_requisition_id'] = 'Source requisition is already linked to a production run';
                 } elseif (!empty($sourceRequisition['planned_recipe_id']) && (int)$sourceRequisition['planned_recipe_id'] !== (int)$recipeId) {
@@ -930,11 +947,12 @@ try {
                 }
             }
 
-            // A fulfilled/partial requisition is an approved historical snapshot.
+            // A fulfilled requisition is an approved historical snapshot.
             // Its exact recipe may have been retired after approval, so keep that
             // one path usable while new/direct runs require the current recipe.
             $historicalRecipeAllowed = $sourceRequisition
-                && in_array($sourceRequisition['status'], ['fulfilled', 'partial'], true)
+                && ($sourceRequisition['status'] ?? '') === 'fulfilled'
+                && ($sourceRequisition['request_type'] ?? '') === 'cooking'
                 && empty($sourceRequisition['production_run_id'])
                 && (int) ($sourceRequisition['planned_recipe_id'] ?? 0) === (int) $recipeId;
 
@@ -1473,7 +1491,7 @@ try {
                     $sourceRequest = $sourceStmt->fetch(PDO::FETCH_ASSOC);
                     if (!$sourceRequest) {
                         Response::validationError([
-                            'source_requisition' => 'This run has no fulfilled cooking-material request. Warehouse must issue the approved cooking materials first.'
+                            'source_requisition' => 'This run is not linked to a fulfilled cooking-material request. Cancel this invalid run, request the recipe materials, and start again after Warehouse fully issues them.'
                         ]);
                     }
 

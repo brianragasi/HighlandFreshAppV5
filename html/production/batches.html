@@ -108,10 +108,10 @@
                 </div>
             </div>
             <div class="flex-none flex items-center gap-2">
-                <button class="btn btn-primary btn-sm" onclick="showNewRunModal()">
-                    <i class="fas fa-plus"></i>
-                    <span class="hidden sm:inline">New Run</span>
-                </button>
+                <a class="btn btn-primary btn-sm" href="requisitions.html?action=new">
+                    <i class="fas fa-clipboard-list"></i>
+                    <span class="hidden sm:inline">Request Materials</span>
+                </a>
 
                 <!-- Theme toggle -->
                 <label class="swap swap-rotate btn btn-ghost btn-circle">
@@ -304,10 +304,10 @@
             </form>
             <h3 class="font-bold text-lg flex items-center gap-2 mb-4">
                 <i class="fas fa-plus-circle text-primary"></i>
-                Create New Production Run
+                Start Production Run
             </h3>
 
-            <!-- From Requisition banner. Full width so the "Clear" button isn't truncated. -->
+            <!-- A production run can only be started from this Warehouse handoff. -->
             <div id="fromRequisitionBanner" class="hidden alert alert-success mb-4">
                 <i class="fas fa-link text-lg"></i>
                 <div class="flex-1">
@@ -318,9 +318,6 @@
                         All materials have been issued by Warehouse Raw. Review and confirm to start cooking.
                     </div>
                 </div>
-                <button type="button" class="btn btn-ghost btn-xs" onclick="clearRequisitionPrefill()" title="Start from scratch instead">
-                    <i class="fas fa-xmark"></i> Clear
-                </button>
             </div>
 
             <form id="newRunForm" onsubmit="createRun(event)">
@@ -475,7 +472,7 @@
                 <div class="modal-action bg-base-200 -mx-6 -mb-6 px-6 py-4 border-t border-base-300 mt-5">
                     <button type="button" class="btn btn-ghost" onclick="document.getElementById('newRunModal').close()">Cancel</button>
                     <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-play"></i> Create Run
+                        <i class="fas fa-play"></i> Start Linked Run
                     </button>
                 </div>
             </form>
@@ -1455,8 +1452,7 @@
                 .replace(/'/g, '&#39;');
         }
 
-        // Holds the requisition the modal was opened from (if any). Cleared when the
-        // user dismisses the banner, types a different recipe, or after a successful create.
+        // Holds the fulfilled cooking requisition that authorized this run.
         let activeRequisitionPrefill = null;
         // The planned_quantity from the linked requisition, if any. Used to show a
         // "Requisition planned: X L" hint next to the Planned Volume label and to
@@ -1464,7 +1460,7 @@
         // different value.
         let currentRequisitionPlannedQty = null;
 
-        function clearRequisitionPrefill() {
+        function resetRequisitionPrefill() {
             activeRequisitionPrefill = null;
             currentRequisitionPlannedQty = null;
             const banner = document.getElementById('fromRequisitionBanner');
@@ -1480,8 +1476,7 @@
         // would consume materials from a shared pool that may include other
         // requisitions' allowances). To change the batch size, edit the
         // requisition (which forces re-approval + re-fulfillment with the new
-        // amounts). When the user clears the requisition prefill, this is
-        // called again to re-enable the input.
+        // amounts).
         function updatePlannedVolumeHint() {
             const hint = document.getElementById('requisitionPlannedHint');
             const input = document.getElementById('plannedQuantity');
@@ -1489,7 +1484,7 @@
             if (!input) return;
 
             if (currentRequisitionPlannedQty == null) {
-                // Freeform run — input is editable, no hint, default helper.
+                // No Warehouse handoff is loaded. Submission remains blocked.
                 if (hint) hint.classList.add('hidden');
                 input.classList.remove('input-warning');
                 input.disabled = false;
@@ -1513,16 +1508,22 @@
         }
 
         async function showNewRunModal() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const reqId = urlParams.get('req_id');
+            if (!reqId) {
+                showToast('Request materials first. Production starts only after Warehouse fully issues them.', 'info');
+                window.location.href = 'requisitions.html?action=new';
+                return;
+            }
+
             document.getElementById('newRunForm').reset();
             // Hard reset: clear recipe + show initial readiness state.
             setNewRunMaterialGate(false, { resetForm: true });
             resetStatusCard();
-            clearRequisitionPrefill();
+            resetRequisitionPrefill();
 
             // Read pre-fill params from the URL. Used by the "Start Production" handoff
             // from requisitions.html so the user doesn't re-pick recipe + planned qty.
-            const urlParams = new URLSearchParams(window.location.search);
-            const reqId = urlParams.get('req_id');
             const recipeId = urlParams.get('recipe_id');
             const plannedQty = urlParams.get('planned_quantity');
             const reqCode = urlParams.get('req_code');
@@ -1623,6 +1624,11 @@
         async function createRun(event) {
             event.preventDefault();
 
+            if (!activeRequisitionPrefill?.id) {
+                showToast('This run has no fulfilled Warehouse material handoff. Request materials first.', 'error');
+                return;
+            }
+
             try {
                 // Base data. The backend auto-computes milk_liters_used from the recipe's
                 // base_milk_liters × (planned_quantity / expected_yield) when null is sent,
@@ -1646,16 +1652,8 @@
                     data.milk_source_type = (t === 'yogurt') ? 'pasteurized' : 'raw';
                 }
 
-                // If the modal was opened from a pre-run requisition AND the user
-                // hasn't cleared that link via the banner's Clear button, send the
-                // ID so the backend can link the new run back to the requisition.
-                // We use activeRequisitionPrefill (not URL params) as the source of
-                // truth — the URL is set on first load, but Clear is a user choice
-                // to start from scratch and should not be silently overridden by
-                // stale URL state.
-                if (activeRequisitionPrefill) {
-                    data.material_requisition_id = activeRequisitionPrefill.id;
-                }
+                // The linked fulfilled requisition is mandatory and is validated again server-side.
+                data.material_requisition_id = activeRequisitionPrefill.id;
 
                 // Butter-specific: Separation outputs
                 if (selectedRecipeData && selectedRecipeData.product_type === 'butter') {
@@ -1674,9 +1672,7 @@
                 if (response.success) {
                     const newRunId = response.data?.id;
                     const linkedReqCode = response.data?.linked_requisition_code;
-                    const isFromRequisition = !!data.material_requisition_id;
-
-                    if (isFromRequisition && newRunId) {
+                    if (newRunId) {
                         // Strip URL params so a page refresh doesn't reopen the modal.
                         if (window.history && window.history.replaceState) {
                             const cleanUrl = window.location.pathname + '?id=' + newRunId;
@@ -1692,11 +1688,6 @@
                         // Redirect to the new run's detail view so the production
                         // staff lands on the page they actually need next.
                         viewRunDetails(newRunId);
-                    } else {
-                        showToast('Production run created successfully!', 'success');
-                        document.getElementById('newRunModal').close();
-                        loadRuns();
-                        loadStats();
                     }
                 } else {
                     // The backend returns 422 validation errors as a JSON object

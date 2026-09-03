@@ -208,6 +208,23 @@ try {
         throw new RuntimeException('Bottled SKU readiness did not require bottle, closure, and label');
     }
 
+    $wrongSizeBottleProfile = assessSkuPackagingBomReadiness('bottle', [
+        ['ingredient_name' => '500 mL Bottle'],
+        ['ingredient_name' => '28 mm Cap'],
+        ['ingredient_name' => 'Chocolate Milk 500 mL Label'],
+    ], 250, 'mL');
+    $correctSizeBottleProfile = assessSkuPackagingBomReadiness('bottle', [
+        ['ingredient_name' => '250 mL Bottle'],
+        ['ingredient_name' => '28 mm Cap'],
+        ['ingredient_name' => 'Chocolate Milk 250 mL Label'],
+    ], 250, 'mL');
+    if ($wrongSizeBottleProfile['ready'] || !$correctSizeBottleProfile['ready']) {
+        throw new RuntimeException('Packaging BOM size validation did not distinguish 250 mL from 500 mL materials');
+    }
+    if (!str_contains(implode(' ', $wrongSizeBottleProfile['missing']), 'this SKU is 250 mL')) {
+        throw new RuntimeException('Packaging BOM size mismatch did not provide an actionable correction');
+    }
+
     $db->prepare("
         INSERT INTO sku_packaging_bom_items
             (id, product_id, ingredient_id, quantity_per_unit, waste_percent, unit, is_active)

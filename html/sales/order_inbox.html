@@ -25,7 +25,7 @@
         .review-stage { border: 1px solid hsl(var(--bc) / .14); border-radius: .75rem; background: hsl(var(--b1)); }
         .review-stage__heading { display: flex; align-items: flex-start; gap: .75rem; padding: .9rem 1rem; border-bottom: 1px solid hsl(var(--bc) / .1); }
         .order-entry-card { border: 1px solid hsl(var(--bc) / .14); border-radius: .65rem; padding: .9rem; background: hsl(var(--b1)); }
-        .order-entry-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(90px, .55fr) minmax(105px, .65fr) minmax(120px, .7fr) minmax(105px, .65fr); gap: .75rem; }
+        .order-entry-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(100px, .55fr) minmax(120px, .7fr); gap: .75rem; }
         .review-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .65rem; }
         @media (max-width: 1500px) { .order-entry-grid { grid-template-columns: minmax(0, 1fr) repeat(2, minmax(110px, .45fr)); } }
         @media (max-width: 760px) { .order-entry-grid, .review-summary-grid { grid-template-columns: 1fr; } }
@@ -34,10 +34,6 @@
         .po-sheet-table th { position: sticky; top: 0; z-index: 1; background: #eef1ef; }
         .po-sheet-table .row-number { position: sticky; left: 0; background: #eef1ef; color: #66706a; text-align: right; }
         .inbox-page { width: 100%; max-width: 1540px; margin-inline: auto; }
-        .inbox-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-        .queue-metric { min-height: 88px; padding: 1rem 1.25rem; display: flex; align-items: center; gap: .9rem; }
-        .queue-metric + .queue-metric { border-left: 1px solid hsl(var(--bc) / .12); }
-        .queue-metric-icon { width: 2.5rem; height: 2.5rem; border-radius: .5rem; display: grid; place-items: center; flex: none; }
         .inbox-list-header,
         .inbox-row { display: grid; grid-template-columns: minmax(190px, 1.3fr) minmax(170px, 1fr) minmax(145px, .75fr) minmax(220px, 1.25fr) 160px; gap: 1rem; }
         .inbox-list-header { padding: .75rem 1rem; border-bottom: 1px solid hsl(var(--bc) / .12); background: hsl(var(--b2)); color: hsl(var(--bc) / .55); font-size: .72rem; font-weight: 700; text-transform: uppercase; }
@@ -68,10 +64,6 @@
         }
         @media (max-width: 768px) { .source-grid { grid-template-columns: 1fr 1fr; } }
         @media (max-width: 720px) {
-            .inbox-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-            .queue-metric { min-height: 78px; padding: .85rem; }
-            .queue-metric:nth-child(3) { border-left: 0; border-top: 1px solid hsl(var(--bc) / .12); }
-            .queue-metric:nth-child(4) { border-top: 1px solid hsl(var(--bc) / .12); }
             .inbox-row { grid-template-columns: 1fr; }
             .inbox-progress, .inbox-actions { grid-column: auto; }
             .inbox-actions { flex-wrap: wrap; }
@@ -93,22 +85,19 @@
     <div class="lg:ml-72 min-h-screen flex flex-col">
         <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6">
             <button class="btn btn-ghost btn-square lg:hidden" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
-            <div class="flex-1 min-w-0 flex flex-col justify-center"><h1 class="font-bold text-lg">Customer PO Inbox</h1><p class="text-xs text-base-content/55 hidden sm:block">Receive customer purchase orders by email, enter their details, and review them before creating an order.</p></div>
-            <button class="hidden" id="syncButton" type="button" aria-hidden="true" tabindex="-1"></button>
+            <div class="flex-1 min-w-0 flex flex-col justify-center"><h1 class="font-bold text-lg">Customer PO Inbox</h1><p class="text-xs text-base-content/55 hidden sm:block">Review customer purchase orders and submit complete orders for approval.</p></div>
         </header>
 
         <main class="inbox-page flex-1 p-4 lg:p-6">
-            <section class="bg-base-100 border border-base-300 rounded-lg mb-5"><div class="p-4 flex flex-col lg:flex-row lg:items-center gap-4"><div class="w-10 h-10 rounded-lg bg-success/15 text-success flex items-center justify-center"><i class="fas fa-envelope-open-text"></i></div><div class="flex-1"><p class="font-semibold">Emailed Customer Purchase Orders</p><p class="text-sm text-base-content/60" id="mailboxMessage">Checking the Highland Fresh order mailbox...</p></div><button class="btn btn-outline btn-sm" onclick="syncMailbox()"><i class="fas fa-rotate"></i>Check Email</button></div></section>
-            <section class="inbox-summary bg-base-100 border border-base-300 rounded-lg mb-5 overflow-hidden"><div class="queue-metric"><span class="queue-metric-icon bg-info/15 text-info"><i class="fas fa-clipboard-check"></i></span><div><p class="text-xs text-base-content/55">Needs review</p><p class="text-2xl font-bold text-info" id="encodingCount">0</p></div></div><div class="queue-metric"><span class="queue-metric-icon bg-warning/15 text-warning"><i class="fas fa-phone-volume"></i></span><div><p class="text-xs text-base-content/55">Waiting for customer</p><p class="text-2xl font-bold text-warning" id="confirmationCount">0</p></div></div><div class="queue-metric"><span class="queue-metric-icon bg-success/15 text-success"><i class="fas fa-file-circle-check"></i></span><div><p class="text-xs text-base-content/55">Ready to create</p><p class="text-2xl font-bold text-success" id="readyCount">0</p></div></div><div class="queue-metric"><span class="queue-metric-icon bg-error/15 text-error"><i class="fas fa-box-archive"></i></span><div><p class="text-xs text-base-content/55">Closed requests</p><p class="text-2xl font-bold text-error" id="rejectedCount">0</p></div></div></section>
+            <section class="bg-base-100 border border-base-300 rounded-lg mb-5"><div class="p-4 flex flex-col lg:flex-row lg:items-center gap-4"><div class="w-10 h-10 rounded-lg bg-success/15 text-success flex items-center justify-center"><i class="fas fa-envelope-open-text"></i></div><div class="flex-1"><p class="font-semibold">Emailed Customer Purchase Orders</p><p class="text-sm text-base-content/60" id="mailboxMessage">Checking the Highland Fresh order mailbox...</p></div><button id="syncButton" class="btn btn-outline btn-sm" onclick="syncMailbox()"><i class="fas fa-rotate"></i>Refresh</button></div></section>
             <section class="bg-base-100 border border-base-300 rounded-lg overflow-hidden">
                 <div class="p-4 border-b border-base-300 flex flex-col xl:flex-row xl:items-center gap-3">
                     <div class="join" role="tablist" aria-label="Inbox view">
-                        <button class="btn btn-sm btn-outline join-item inbox-view-tab is-active" data-inbox-view="action" onclick="setInboxView('action')"><i class="fas fa-list-check"></i>Needs action <span class="badge badge-sm ml-1" id="actionTabCount">0</span></button>
-                        <button class="btn btn-sm btn-outline join-item inbox-view-tab" data-inbox-view="recent" onclick="setInboxView('recent')"><i class="fas fa-clock-rotate-left"></i>Recent history</button>
-                        <button class="btn btn-sm btn-outline join-item inbox-view-tab" data-inbox-view="all" onclick="setInboxView('all')">All</button>
+                        <button class="btn btn-sm btn-outline join-item inbox-view-tab is-active" data-inbox-view="action" onclick="setInboxView('action')"><i class="fas fa-list-check"></i>Needs attention <span class="badge badge-sm ml-1" id="actionTabCount">0</span></button>
+                        <button class="btn btn-sm btn-outline join-item inbox-view-tab" data-inbox-view="waiting" onclick="setInboxView('waiting')"><i class="fas fa-phone-volume"></i>Waiting for customer <span class="badge badge-sm ml-1" id="waitingTabCount">0</span></button>
+                        <button class="btn btn-sm btn-outline join-item inbox-view-tab" data-inbox-view="recent" onclick="setInboxView('recent')"><i class="fas fa-clock-rotate-left"></i>History <span class="badge badge-sm ml-1" id="historyTabCount">0</span></button>
                     </div>
                     <label class="input input-bordered input-sm flex items-center gap-2 flex-1"><i class="fas fa-search text-base-content/40"></i><input id="searchInput" class="grow" placeholder="Search PO number, customer, or sender" oninput="scheduleLoad()"></label>
-                    <select id="statusFilter" class="select select-bordered select-sm xl:w-56" onchange="handleStatusFilter()"><option value="">All statuses</option><option value="received">New request</option><option value="for_encoding">Needs review</option><option value="draft_order">Needs correction</option><option value="needs_customer_confirmation">Waiting for customer</option><option value="customer_confirmed">Ready to create</option><option value="ready_to_create">Ready to create</option><option value="order_created">Sent for approval</option><option value="rejected">Closed</option></select>
                 </div>
                 <div class="inbox-list-context"><div class="flex flex-wrap items-center justify-between gap-2"><div><p class="font-semibold text-sm" id="inboxViewTitle">Orders needing attention</p><p class="text-xs text-base-content/55" id="inboxViewDescription">Newest first. Complete these before checking finished records.</p></div><span class="text-xs text-base-content/55" id="visibleCount">0 records</span></div></div>
                 <div class="inbox-list-header"><span>Order</span><span>Customer</span><span>Received</span><span>Progress</span><span class="text-right">Action</span></div><div id="inboxList"><div class="inbox-empty"><span class="loading loading-spinner loading-md"></span></div></div>
@@ -116,13 +105,13 @@
         </main>
     </div>
 
-    <dialog id="reviewModal" class="modal"><div class="modal-box p-0 overflow-hidden"><div class="p-4 border-b border-base-300 flex items-start gap-3"><div class="w-10 h-10 rounded-lg bg-info/15 text-info flex items-center justify-center"><i class="fas fa-file-pen"></i></div><div class="flex-1"><h2 class="font-bold text-lg">Review Customer Request</h2><p class="text-sm text-base-content/55">Check the prepared order against the original customer PO.</p></div><button class="btn btn-ghost btn-sm btn-square" onclick="closeReviewModal()" title="Close" aria-label="Close review"><i class="fas fa-times"></i></button></div><div id="reviewContent" class="p-4"></div><div class="p-3 border-t border-base-300 bg-base-100"><div id="reviewSaveError" class="alert alert-error py-3 mb-3 hidden" role="alert"><i class="fas fa-circle-exclamation"></i><div><p class="font-semibold">Order details were not saved</p><p id="reviewSaveErrorText" class="text-sm"></p></div></div><div class="flex flex-col xl:flex-row xl:items-center gap-3"><label id="warningApprovalWrap" class="label cursor-pointer justify-start gap-2 flex-1 hidden"><input id="warningApproval" type="checkbox" class="checkbox checkbox-warning checkbox-sm"><span class="label-text text-sm">I reviewed the warning.</span></label><div class="flex flex-wrap justify-end gap-2 ml-auto"><button class="btn btn-ghost btn-sm" onclick="closeReviewModal()">Close</button><div id="moreReviewActions" class="dropdown dropdown-top dropdown-end"><button class="btn btn-outline btn-sm" tabindex="0"><i class="fas fa-ellipsis"></i>Exceptions</button><ul class="dropdown-content menu bg-base-100 border border-base-300 rounded-lg shadow-xl z-50 w-64 p-2 mb-2" tabindex="0"><li id="recordCallAction"><button id="recordCallButton" onclick="openCallModal()"><i class="fas fa-phone-volume"></i><span>Record customer call</span></button></li><li id="correctEncodingAction"><button id="correctEncodingButton" onclick="openEncodingCorrectionModal()"><i class="fas fa-pen-to-square"></i>Fix my typing mistake</button></li><li id="rejectEmailAction"><button id="rejectEmailButton" class="text-error" onclick="openRejectModal()"><i class="fas fa-ban"></i>Reject request</button></li></ul></div><button class="btn btn-warning btn-sm hidden" id="recordCallPrimaryButton" onclick="openCallModal()"><i class="fas fa-phone-volume"></i>Record Customer Decision</button><button class="btn btn-info btn-sm" id="saveDetailsButton" onclick="saveOrderDetails()"><i class="fas fa-clipboard-check"></i>Verify &amp; Save</button><button class="btn btn-primary btn-sm" id="createOrderButton" onclick="confirmImport()"><i class="fas fa-paper-plane"></i>Create Order &amp; Send to GM</button></div></div></div></div></dialog>
+    <dialog id="reviewModal" class="modal"><div class="modal-box p-0 overflow-hidden"><div class="p-4 border-b border-base-300 flex items-start gap-3"><div class="w-10 h-10 rounded-lg bg-info/15 text-info flex items-center justify-center"><i class="fas fa-file-pen"></i></div><div class="flex-1"><h2 class="font-bold text-lg">Review Customer Request</h2><p class="text-sm text-base-content/55">Check the customer request and submit one accurate Sales Order.</p></div><button class="btn btn-ghost btn-sm btn-square" onclick="closeReviewModal()" title="Close" aria-label="Close review"><i class="fas fa-times"></i></button></div><div id="reviewContent" class="p-4"></div><div class="p-3 border-t border-base-300 bg-base-100"><div id="reviewSaveError" class="alert alert-error py-3 mb-3 hidden" role="alert"><i class="fas fa-circle-exclamation"></i><div><p class="font-semibold">Request could not be submitted</p><p id="reviewSaveErrorText" class="text-sm"></p></div></div><div class="flex flex-col xl:flex-row xl:items-center gap-3"><label id="warningApprovalWrap" class="label cursor-pointer justify-start gap-2 flex-1 hidden"><input id="warningApproval" type="checkbox" class="checkbox checkbox-warning checkbox-sm"><span class="label-text text-sm">I reviewed the warning.</span></label><div class="flex flex-wrap justify-end gap-2 ml-auto"><button class="btn btn-ghost btn-sm" onclick="closeReviewModal()">Back</button><div id="moreReviewActions" class="dropdown dropdown-top dropdown-end"><button class="btn btn-outline btn-sm" tabindex="0"><i class="fas fa-ellipsis"></i>More</button><ul class="dropdown-content menu bg-base-100 border border-base-300 rounded-lg shadow-xl z-50 w-64 p-2 mb-2" tabindex="0"><li id="correctEncodingAction" class="hidden"><button id="correctEncodingButton" onclick="openEncodingCorrectionModal()"><i class="fas fa-pen-to-square"></i>Mark corrected from source</button></li><li id="rejectEmailAction"><button id="rejectEmailButton" class="text-error" onclick="openRejectModal()"><i class="fas fa-ban"></i>Close without an order</button></li></ul></div><button class="btn btn-primary btn-sm" id="primaryReviewButton" onclick="handlePrimaryReviewAction()"><i class="fas fa-paper-plane"></i><span>Submit for GM Approval</span></button></div></div></div></div></dialog>
 
     <dialog id="callModal" class="modal"><div class="modal-box max-w-2xl p-0 overflow-hidden"><div class="p-5 border-b border-base-300 flex items-start gap-3"><div class="w-10 h-10 rounded-lg bg-warning/15 text-warning flex items-center justify-center"><i class="fas fa-phone-volume"></i></div><div class="flex-1"><h2 id="callModalTitle" class="font-bold text-lg">Record Customer Call</h2><p id="callModalSubtitle" class="text-sm text-base-content/55">Keep a clear record of what the customer said.</p></div><button class="btn btn-ghost btn-sm btn-square" onclick="callModal.close()"><i class="fas fa-times"></i></button></div><form id="callForm" class="p-5 space-y-4" onsubmit="saveCustomerCall(event)"><div class="alert alert-info py-3 text-sm"><i class="fas fa-circle-info"></i><span id="callGuidance">This call will be attached to the request.</span></div><div class="grid gap-4 sm:grid-cols-2"><label class="form-control sm:col-span-2"><span id="callSummaryLabel" class="label-text font-medium">What did the customer confirm?</span><textarea id="callChangeSummary" class="textarea textarea-bordered" maxlength="5000" rows="2" placeholder="Customer confirmed 6 boxes instead of 10." required></textarea></label><label class="form-control sm:col-span-2"><span class="label-text font-medium">Why was the call needed?</span><input id="callReason" class="input input-bordered" maxlength="500" placeholder="The emailed request was incomplete or needed a change" required></label><label class="form-control"><span class="label-text font-medium">Customer representative</span><input id="callContact" class="input input-bordered" maxlength="150" placeholder="Name of person contacted" required></label><label class="form-control"><span class="label-text font-medium">Confirmation method</span><input class="input input-bordered" value="Phone call" readonly></label><label class="form-control"><span class="label-text font-medium">Date and time</span><input id="callDate" class="input input-bordered" type="datetime-local" required></label><label class="form-control sm:col-span-2"><span class="label-text font-medium">Optional notes</span><textarea id="callNote" class="textarea textarea-bordered" maxlength="5000" rows="2" placeholder="Additional details about the call"></textarea></label></div><div class="flex justify-end gap-2 pt-2"><button class="btn btn-ghost" type="button" onclick="callModal.close()">Cancel</button><button id="saveCallButton" class="btn btn-warning" type="submit"><i class="fas fa-phone-volume"></i><span>Save Call Record</span></button></div></form></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
 
-    <dialog id="encodingCorrectionModal" class="modal"><div class="modal-box max-w-lg"><h2 class="font-bold text-lg">Fix My Typing Mistake</h2><p class="text-sm text-base-content/60 mt-1">Use this only when Sales typed something differently from the unchanged customer request.</p><form class="mt-5 space-y-4" onsubmit="correctEncoding(event)"><div class="alert alert-warning py-3 text-sm"><i class="fas fa-triangle-exclamation"></i><span>If the customer changed the request, cancel and use <strong>Record Customer Approval</strong>.</span></div><label class="form-control"><span class="label-text font-medium">What did Sales type incorrectly?</span><textarea id="encodingCorrectionReason" class="textarea textarea-bordered" minlength="10" maxlength="1000" rows="3" placeholder="I typed 20 blocks, but the customer request shows 2 blocks." required></textarea></label><label class="label cursor-pointer justify-start gap-3"><input id="encodingCorrectionConfirmed" class="checkbox checkbox-warning" type="checkbox" required><span class="label-text">I checked the original request and the current entries now match it.</span></label><div class="flex justify-end gap-2"><button class="btn btn-ghost" type="button" onclick="encodingCorrectionModal.close()">Cancel</button><button id="saveEncodingCorrectionButton" class="btn btn-warning" type="submit"><i class="fas fa-pen-to-square"></i>Save Typing Correction</button></div></form></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
+    <dialog id="encodingCorrectionModal" class="modal"><div class="modal-box max-w-lg"><h2 class="font-bold text-lg">Confirm Source Correction</h2><p class="text-sm text-base-content/60 mt-1">Use this only when the current fields now match the unchanged customer request.</p><form class="mt-5 space-y-4" onsubmit="correctEncoding(event)"><div class="alert alert-warning py-3 text-sm"><i class="fas fa-triangle-exclamation"></i><span>If the customer changed the request, cancel and use <strong>Resolve issue</strong> instead.</span></div><label class="form-control"><span class="label-text font-medium">What was corrected?</span><textarea id="encodingCorrectionReason" class="textarea textarea-bordered" minlength="10" maxlength="1000" rows="3" placeholder="Corrected the quantity to match the original customer PO." required></textarea></label><label class="label cursor-pointer justify-start gap-3"><input id="encodingCorrectionConfirmed" class="checkbox checkbox-warning" type="checkbox" required><span class="label-text">I checked the original request and the current entries now match it.</span></label><div class="flex justify-end gap-2"><button class="btn btn-ghost" type="button" onclick="encodingCorrectionModal.close()">Cancel</button><button id="saveEncodingCorrectionButton" class="btn btn-warning" type="submit"><i class="fas fa-pen-to-square"></i>Confirm Correction</button></div></form></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
 
-    <dialog id="rejectModal" class="modal"><div class="modal-box max-w-lg"><h2 class="font-bold text-lg">Reject Customer Request</h2><p class="text-sm text-base-content/60 mt-1">No Sales Order will be created. The original email and attachment will remain saved for reference.</p><form class="mt-5 space-y-4" onsubmit="rejectEmail(event)"><label class="form-control"><span class="label-text font-medium">Why will no order be created?</span><textarea id="rejectReason" class="textarea textarea-bordered" maxlength="2000" rows="3" placeholder="Duplicate request, unreadable document, wrong recipient, or another reason" required></textarea></label><div class="flex justify-end gap-2"><button class="btn btn-ghost" type="button" onclick="rejectModal.close()">Cancel</button><button class="btn btn-error" type="submit"><i class="fas fa-ban"></i>Reject Request</button></div></form></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
+    <dialog id="rejectModal" class="modal"><div class="modal-box max-w-lg"><h2 class="font-bold text-lg">Close Without an Order</h2><p class="text-sm text-base-content/60 mt-1">No Sales Order will be created. The original email and attachment will remain saved for reference.</p><form class="mt-5 space-y-4" onsubmit="rejectEmail(event)"><label class="form-control"><span class="label-text font-medium">Why will no order be created?</span><textarea id="rejectReason" class="textarea textarea-bordered" maxlength="2000" rows="3" placeholder="Duplicate request, unreadable document, wrong recipient, or another reason" required></textarea></label><div class="flex justify-end gap-2"><button class="btn btn-ghost" type="button" onclick="rejectModal.close()">Cancel</button><button class="btn btn-error" type="submit"><i class="fas fa-ban"></i>Close Request</button></div></form></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
 
     <div id="toastContainer" class="toast toast-end toast-top z-[100]"></div>
     <script src="../../js/vendor/axios.min.js"></script>
@@ -144,6 +133,7 @@
         let currentInboxView = 'action';
         let entryDirty = false;
         let callClarificationOnly = false;
+        let sourceDocumentReady = false;
 
         const $ = id => document.getElementById(id);
         const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
@@ -173,16 +163,8 @@
         }
         function scheduleLoad() { clearTimeout(loadTimer); loadTimer = setTimeout(loadInbox, 300); }
         function setInboxView(view) {
-            currentInboxView = ['action', 'recent', 'all'].includes(view) ? view : 'action';
-            $('statusFilter').value = '';
+            currentInboxView = ['action', 'waiting', 'recent'].includes(view) ? view : 'action';
             document.querySelectorAll('[data-inbox-view]').forEach(button => button.classList.toggle('is-active', button.dataset.inboxView === currentInboxView));
-            loadInbox();
-        }
-        function handleStatusFilter() {
-            if ($('statusFilter').value) {
-                currentInboxView = 'all';
-                document.querySelectorAll('[data-inbox-view]').forEach(button => button.classList.toggle('is-active', button.dataset.inboxView === 'all'));
-            }
             loadInbox();
         }
         function hasAttachment(row) {
@@ -191,6 +173,9 @@
                 && row.attachment_original_name !== 'Order written in email';
         }
         function sourceCell(row) {
+            if (row?.source_available === false || Number(row?.source_available) === 0) {
+                return `<span class="inbox-source text-error"><i class="fas fa-triangle-exclamation"></i><span>Original source unavailable</span></span>`;
+            }
             if (hasAttachment(row)) {
                 const name = row.attachment_original_name || 'View attachment';
                 return `<button class="inbox-source link link-primary" onclick="viewAttachmentFor(${Number(row.id)})" title="${esc(name)}"><i class="fas fa-paperclip"></i><span>${esc(name)}</span></button>`;
@@ -198,15 +183,29 @@
             return `<button class="inbox-source link link-info" onclick="openReview(${Number(row.id)})"><i class="fas fa-envelope-open-text"></i><span>Order written in email</span></button>`;
         }
         function statusBadge(status) {
-            const map = { received: ['info', 'Needs review'], for_encoding: ['info', 'Needs review'], needs_comparison: ['warning', 'Needs review'], draft_order: ['warning', 'Needs correction'], needs_customer_confirmation: ['warning', 'Waiting for customer'], customer_confirmed: ['success', 'Ready to create'], ready_to_create: ['success', 'Ready to create'], draft_created: ['info', 'Draft needs submission'], order_created: ['primary', 'Sent for approval'], converted: ['primary', 'Completed'], cancelled: ['error', 'Order cancelled'], needs_review: ['warning', 'Needs review'], ready: ['success', 'Ready to create'], rejected: ['error', 'Closed'], duplicate: ['neutral', 'Duplicate'] };
+            const map = { received: ['info', 'Needs review'], for_encoding: ['info', 'Needs review'], needs_comparison: ['info', 'Needs review'], draft_order: ['warning', 'Needs attention'], missing_source: ['error', 'Source unavailable'], needs_customer_confirmation: ['warning', 'Waiting for customer'], customer_confirmed: ['info', 'Needs review'], ready_to_create: ['info', 'Needs review'], draft_created: ['info', 'Draft order'], order_created: ['primary', 'Sent for approval'], sales_approved: ['success', 'Approved'], sales_preparing: ['info', 'Preparing'], sales_ready: ['success', 'Ready for dispatch'], sales_dispatched: ['info', 'Dispatched'], sales_delivered: ['success', 'Delivered'], sales_partial: ['warning', 'Partially fulfilled'], sales_completed: ['success', 'Completed'], converted: ['success', 'Completed'], cancelled: ['error', 'Closed'], needs_review: ['info', 'Needs review'], ready: ['info', 'Needs review'], rejected: ['error', 'Closed'], duplicate: ['neutral', 'Closed'] };
             const item = map[status] || ['ghost', status || 'Unknown'];
             return `<span class="badge badge-${item[0]} badge-sm whitespace-nowrap">${esc(item[1])}</span>`;
         }
 
         function effectiveInboxStatus(row) {
+            if (row?.source_available === false || Number(row?.source_available) === 0) return 'missing_source';
             const status = String(row?.status || '');
             if (['customer_confirmed', 'ready_to_create', 'ready'].includes(status) && !row?.source_verified_at) return 'needs_comparison';
             return status;
+        }
+
+        function visibleOrderStatus(row) {
+            if (!row?.sales_order_id) return effectiveInboxStatus(row);
+            const status = String(row.sales_order_status || '');
+            const map = {
+                draft: 'draft_created', pending: 'order_created', approved: 'sales_approved',
+                picking: 'sales_preparing', preparing: 'sales_preparing', ready: 'sales_ready',
+                dispatched: 'sales_dispatched', delivered: 'sales_delivered',
+                partially_accepted: 'sales_partial', partially_fulfilled: 'sales_partial',
+                accepted: 'sales_completed', fulfilled: 'sales_completed', rejected: 'rejected', cancelled: 'cancelled'
+            };
+            return map[status] || 'order_created';
         }
 
         function nextStepText(status) {
@@ -215,12 +214,20 @@
                 for_encoding: 'Open and check this customer request.',
                 needs_comparison: 'Check the saved details against the original request.',
                 draft_order: 'Correct the highlighted order details.',
+                missing_source: 'Restore the original file or ask the customer to resend it.',
                 needs_customer_confirmation: 'Record the customer’s clarification or approval.',
-                customer_confirmed: 'Verified and ready to send for approval.',
-                ready_to_create: 'Verified and ready to send for approval.',
-                ready: 'Verified and ready to send for approval.',
+                customer_confirmed: 'Review and submit this request for approval.',
+                ready_to_create: 'Review and submit this request for approval.',
+                ready: 'Review and submit this request for approval.',
                 draft_created: 'Open the draft and submit it for General Manager approval.',
                 order_created: 'Sales Order sent for General Manager approval.',
+                sales_approved: 'General Manager approved the order; Warehouse can prepare it.',
+                sales_preparing: 'Warehouse is preparing the order.',
+                sales_ready: 'The order is ready for dispatch.',
+                sales_dispatched: 'The order has left the warehouse.',
+                sales_delivered: 'The order was delivered.',
+                sales_partial: 'Part of the order has been fulfilled.',
+                sales_completed: 'The order is complete.',
                 converted: 'Sales Order completed.',
                 cancelled: 'The linked Sales Order was cancelled.',
                 rejected: 'Kept for reference; no order will be created.',
@@ -249,22 +256,17 @@
         async function loadInbox() {
             $('inboxList').innerHTML = '<div class="inbox-empty"><span class="loading loading-spinner loading-md"></span></div>';
             try {
-                const response = await SalesService.getOrderInbox({ view: currentInboxView, status: $('statusFilter').value, search: $('searchInput').value.trim() });
+                const response = await SalesService.getOrderInbox({ view: currentInboxView, search: $('searchInput').value.trim() });
                 inboxRows = response.data || [];
                 updateViewContext();
                 await loadSummary();
-                if (!inboxRows.length) { $('inboxList').innerHTML = `<div class="inbox-empty"><i class="fas fa-inbox text-3xl mb-3 block"></i><p class="font-medium">${currentInboxView === 'action' ? 'No orders need attention' : 'No customer PO emails found'}</p><p class="text-sm mt-1">${currentInboxView === 'action' ? 'You are caught up. Open Recent history to review finished records.' : 'Try another search or status.'}</p></div>`; return; }
+                if (!inboxRows.length) { $('inboxList').innerHTML = `<div class="inbox-empty"><i class="fas fa-inbox text-3xl mb-3 block"></i><p class="font-medium">${currentInboxView === 'action' ? 'No orders need attention' : (currentInboxView === 'waiting' ? 'No orders are waiting for a customer' : 'No completed requests found')}</p><p class="text-sm mt-1">${currentInboxView === 'action' ? 'You are caught up.' : 'Try another search.'}</p></div>`; return; }
                 $('inboxList').innerHTML = inboxRows.map(row => {
                     const created = ['order_created', 'converted'].includes(row.status);
                     const rejected = row.status === 'rejected';
-                    const visibleStatus = created && row.sales_order_status === 'cancelled' ? 'cancelled' : (created && row.sales_order_status === 'draft' ? 'draft_created' : effectiveInboxStatus(row));
-                    const primaryLabel = created ? 'View Order' : (rejected ? 'View Email' : (visibleStatus === 'needs_comparison' ? 'Compare Details' : (row.status === 'received' ? 'Review Sender' : (row.status === 'for_encoding' ? 'Enter Order' : 'Continue Order'))));
-                    const sourceAction = hasAttachment(row)
-                        ? `<li><button onclick="viewAttachmentFor(${Number(row.id)})"><i class="fas fa-paperclip"></i>Open attached PO</button></li>`
-                        : `<li><button onclick="openReview(${Number(row.id)})"><i class="fas fa-envelope-open-text"></i>Read original email</button></li>`;
-                    const canRecordCall = ['received', 'for_encoding', 'draft_order', 'needs_customer_confirmation'].includes(row.status);
-                    const callAction = canRecordCall ? `<li><button onclick="openCallFromInbox(${Number(row.id)})"><i class="fas fa-phone-volume"></i>${row.status === 'needs_customer_confirmation' ? 'Record customer approval' : 'Record clarifying call'}</button></li>` : '';
-                    const moreActions = !created && !rejected ? `<div class="dropdown dropdown-end"><button class="btn btn-ghost btn-xs btn-square" tabindex="0" title="More actions"><i class="fas fa-ellipsis-vertical"></i></button><ul class="dropdown-content menu bg-base-100 border border-base-300 rounded-lg shadow-lg z-20 w-56 p-2" tabindex="0">${sourceAction}${callAction}<li><button class="text-error" onclick="openRejectFromInbox(${Number(row.id)})"><i class="fas fa-ban"></i>Close without an order</button></li></ul></div>` : '';
+                    const visibleStatus = created ? visibleOrderStatus(row) : effectiveInboxStatus(row);
+                    const primaryLabel = created ? 'View order' : (rejected ? 'View request' : 'Review order');
+                    const moreActions = !created && !rejected ? `<div class="dropdown dropdown-end"><button class="btn btn-ghost btn-xs btn-square" tabindex="0" title="More actions"><i class="fas fa-ellipsis-vertical"></i></button><ul class="dropdown-content menu bg-base-100 border border-base-300 rounded-lg shadow-lg z-20 w-56 p-2" tabindex="0"><li><button class="text-error" onclick="openRejectFromInbox(${Number(row.id)})"><i class="fas fa-ban"></i>Close without an order</button></li></ul></div>` : '';
                     const received = row.received_at || row.created_at;
                     return `<article class="inbox-row"><div class="inbox-cell"><span class="inbox-label">Order</span><p class="inbox-primary font-mono">${esc(row.customer_po_number || 'PO number not entered')}</p><p class="inbox-secondary inbox-subject" title="${esc(row.subject || 'No subject')}">${esc(row.subject || 'No subject')}</p>${sourceCell(row)}</div><div class="inbox-cell"><span class="inbox-label">Customer</span>${row.customer_name ? `<p class="inbox-primary">${esc(row.customer_name)}</p><p class="inbox-secondary">${esc(row.customer_code || '')}</p>` : '<p class="inbox-primary text-warning">Customer not matched</p>'}<p class="inbox-secondary">${esc(row.sender_email)}</p></div><div class="inbox-cell"><span class="inbox-label">Received</span><p class="inbox-primary font-normal">${esc(receivedLabel(received))}</p></div><div class="inbox-cell inbox-progress"><span class="inbox-label">Progress</span>${statusBadge(visibleStatus)}${row.error_message ? `<p class="inbox-status-message">${esc(row.error_message)}</p>` : `<p class="inbox-secondary">${esc(nextStepText(visibleStatus))}</p>`}</div><div class="inbox-cell inbox-actions"><span class="inbox-label">Action</span><button class="btn btn-info btn-sm whitespace-nowrap" onclick="openReview(${Number(row.id)})"><i class="fas fa-file-pen"></i>${primaryLabel}</button>${moreActions}</div></article>`;
                 }).join('');
@@ -275,11 +277,9 @@
             try {
                 const response = await SalesService.getOrderInboxSummary();
                 const summary = response.data || {};
-                $('encodingCount').textContent = Number(summary.for_encoding || 0);
-                $('confirmationCount').textContent = Number(summary.needs_confirmation || 0);
-                $('readyCount').textContent = Number(summary.ready_to_create || 0);
-                $('rejectedCount').textContent = Number(summary.rejected || 0);
                 $('actionTabCount').textContent = Number(summary.needs_action || 0);
+                $('waitingTabCount').textContent = Number(summary.needs_confirmation || 0);
+                $('historyTabCount').textContent = Number(summary.history || 0);
             } catch (error) {
                 console.warn('Could not refresh inbox totals.', error);
             }
@@ -287,12 +287,12 @@
 
         function updateViewContext() {
             const contexts = {
-                action: ['Orders needing attention', 'Newest first. Complete these before checking finished records.'],
-                recent: ['Recent history', 'Created, cancelled, duplicate, and rejected emails, newest first.'],
-                all: ['All customer PO emails', 'Every saved email, newest first.']
+                action: ['Orders needing attention', 'Review each request and submit one accurate Sales Order.'],
+                waiting: ['Waiting for customer', 'These requests need customer clarification or approval before submission.'],
+                recent: ['History', 'Submitted, completed, duplicate, and closed requests, newest first.']
             };
             const context = contexts[currentInboxView] || contexts.action;
-            $('inboxViewTitle').textContent = $('statusFilter').value ? $('statusFilter').selectedOptions[0].textContent : context[0];
+            $('inboxViewTitle').textContent = context[0];
             $('inboxViewDescription').textContent = context[1];
             $('visibleCount').textContent = `${inboxRows.length} ${inboxRows.length === 1 ? 'record' : 'records'}`;
         }
@@ -307,7 +307,7 @@
                 await loadInbox();
             } catch (error) {
                 const raw = error.message || 'Could not check the customer order mailbox.';
-                const message = /not enabled for POP access/i.test(raw) ? `Gmail mailbox access is off for ${configuredMailbox}. Enable POP in Gmail Settings, then click Check Email.` : raw;
+                const message = /not enabled for POP access/i.test(raw) ? `Gmail mailbox access is off for ${configuredMailbox}. Enable POP in Gmail Settings, then click Refresh.` : raw;
                 $('mailboxMessage').textContent = message; $('mailboxMessage').classList.add('text-error'); toast(message, 'error');
             } finally { $('syncButton').disabled = false; $('syncButton').classList.remove('loading'); }
         }
@@ -456,7 +456,16 @@
             const overCredit = hasCreditWarning();
             const paymentLabel = paymentType === 'credit' ? `Credit${terms > 0 ? ` — ${terms} days` : ''}` : 'Cash';
             const cashConflict = paymentType === 'cash' && terms > 0;
-            panel.innerHTML = `<div class="review-summary-grid"><div class="bg-base-200 rounded-lg p-3"><p class="text-xs text-base-content/55">Individual items</p><p class="font-bold text-lg">${Number(totals.totalQuantity).toLocaleString('en-PH')}</p></div><div class="bg-base-200 rounded-lg p-3"><p class="text-xs text-base-content/55">Estimated total</p><p class="font-bold text-lg">${money(totals.totalAmount)}</p></div><div class="bg-base-200 rounded-lg p-3"><p class="text-xs text-base-content/55">Payment</p><p class="font-semibold">${esc(paymentLabel)}</p>${paymentType === 'credit' && remaining !== null ? `<p class="text-xs ${overCredit ? 'text-error' : 'text-base-content/55'}">Available before this order: ${money(remaining)}</p>` : ''}</div><div class="bg-base-200 rounded-lg p-3"><p class="text-xs text-base-content/55">Delivery address</p><p class="font-semibold text-sm">${esc(activeImport.customer_address || 'No address saved')}</p></div></div>${totals.hasStockShortage ? '<div class="alert alert-warning py-2 mt-3 text-sm"><i class="fas fa-box-open"></i><span>Some requested items are not ready in stock. Confirm whether the customer will wait or accept a changed quantity.</span></div>' : ''}${overCredit ? '<div class="alert alert-error py-2 mt-3 text-sm"><i class="fas fa-credit-card"></i><span>This order would exceed the customer credit limit and will be clearly flagged for the General Manager.</span></div>' : ''}${cashConflict ? `<div class="alert alert-warning py-2 mt-3 text-sm"><i class="fas fa-triangle-exclamation"></i><span>This customer is marked Cash but also has ${terms}-day terms. Cash will be used; ask an administrator to correct the customer account.</span></div>` : ''}<div class="alert alert-info py-2 mt-3 text-sm"><i class="fas fa-paper-plane"></i><span>After verification, creating the order sends it directly to the General Manager for approval.</span></div>`;
+            panel.innerHTML = `
+                <div class="review-summary-grid">
+                    <div class="bg-base-200 rounded-lg p-3"><p class="text-xs text-base-content/55">Individual items</p><p class="font-bold text-lg">${Number(totals.totalQuantity).toLocaleString('en-PH')}</p></div>
+                    <div class="bg-base-200 rounded-lg p-3"><p class="text-xs text-base-content/55">Estimated total</p><p class="font-bold text-lg">${money(totals.totalAmount)}</p></div>
+                    <div class="bg-base-200 rounded-lg p-3"><p class="text-xs text-base-content/55">Payment</p><p class="font-semibold">${esc(paymentLabel)}</p>${paymentType === 'credit' && remaining !== null ? `<p class="text-xs ${overCredit ? 'text-error' : 'text-base-content/55'}">Available before this order: ${money(remaining)}</p>` : ''}</div>
+                    <div class="bg-base-200 rounded-lg p-3"><p class="text-xs text-base-content/55">Delivery address</p><p class="font-semibold text-sm">${esc(activeImport.customer_address || 'No address saved')}</p></div>
+                </div>
+                ${totals.hasStockShortage ? '<div class="alert alert-warning py-2 mt-3 text-sm"><i class="fas fa-box-open"></i><span>Some requested items are not ready in stock. Confirm whether the customer will wait or accept a changed quantity.</span></div>' : ''}
+                ${overCredit ? '<div class="alert alert-error py-2 mt-3 text-sm"><i class="fas fa-credit-card"></i><span>This order would exceed the customer credit limit and will be clearly flagged for the General Manager.</span></div>' : ''}
+                ${cashConflict ? `<div class="alert alert-warning py-2 mt-3 text-sm"><i class="fas fa-triangle-exclamation"></i><span>This customer is marked Cash but also has ${terms}-day terms. Cash will be used; ask an administrator to correct the customer account.</span></div>` : ''}`;
             refreshWarningApproval();
         }
         function markEntryChanged() {
@@ -525,7 +534,7 @@
                 const calculation = rowCalculation(row);
                 const needsAttention = line.line_status && line.line_status !== 'matched';
                 const showHistory = lineHasSavedDifference(line) || needsAttention;
-                return `<div data-manual-row="${index}" class="order-entry-card"><div class="flex items-center justify-between gap-3 mb-3"><div><div class="flex flex-wrap items-center gap-2"><p class="font-semibold">Item ${index + 1}</p>${line.line_status ? issueText(line) : ''}</div><p class="text-xs text-base-content/55 mt-1">${esc(calculation.breakdown)}</p></div>${!readOnly ? `<button class="btn btn-ghost btn-xs text-error" onclick="removeManualLine(${index})" title="Remove item"><i class="fas fa-trash"></i>Remove</button>` : ''}</div><div class="order-entry-grid"><label class="form-control"><span class="label-text text-xs font-medium">Product</span><select class="select select-bordered select-sm w-full" data-field="product_code" onchange="changeProduct(${index}, this.value)" ${readOnly ? 'disabled' : ''}>${productOptions(row.product_code)}</select></label><label class="form-control"><span class="label-text text-xs font-medium">Quantity</span><input class="input input-bordered input-sm w-full" data-field="quantity" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="7" placeholder="e.g., 1" value="${esc(row.quantity)}" oninput="markEntryChanged(); updateOrderSummary()" ${readOnly ? 'disabled' : ''}></label><label class="form-control"><span class="label-text text-xs font-medium">Ordered as</span><select class="select select-bordered select-sm w-full" data-field="unit" onchange="changeOrderUnit(${index}, this.value)" ${readOnly ? 'disabled' : ''}>${unitOptions(row.product_code, row.unit)}</select></label><label class="form-control"><span class="label-text text-xs font-medium">Customer price</span><input class="input input-bordered input-sm w-full" data-field="unit_price" type="text" inputmode="decimal" maxlength="11" placeholder="Leave blank if absent" value="${esc(row.unit_price)}" oninput="markEntryChanged(); updateOrderSummary()" ${readOnly ? 'disabled' : ''}></label><label class="form-control"><span class="label-text text-xs font-medium">Price is per</span><select class="select select-bordered select-sm w-full" data-field="price_unit" onchange="markEntryChanged(); updateOrderSummary()" ${readOnly ? 'disabled' : ''}>${priceUnitOptions(row.product_code, row.price_unit || row.unit)}</select></label></div><label class="form-control mt-3"><span class="label-text text-xs font-medium">Customer instructions or remarks</span><input class="input input-bordered input-sm w-full" data-field="remarks" maxlength="500" placeholder="Optional" value="${esc(row.remarks)}" oninput="markEntryChanged()" ${readOnly ? 'disabled' : ''}></label>${showHistory ? `<details class="mt-3 pt-3 border-t border-base-300"><summary class="cursor-pointer text-xs font-medium">View comparison details</summary><div class="grid gap-3 md:grid-cols-2 mt-3"><div><p class="text-xs font-medium mb-1">Current result</p>${issueText(line)}</div><div><p class="text-xs font-medium mb-1">Originally entered by Sales</p><p class="text-xs text-base-content/60">${esc(original)}</p></div></div></details>` : ''}</div>`;
+                return `<div data-manual-row="${index}" class="order-entry-card"><div class="flex items-center justify-between gap-3 mb-3"><div><div class="flex flex-wrap items-center gap-2"><p class="font-semibold">Item ${index + 1}</p>${line.line_status ? issueText(line) : ''}</div><p class="text-xs text-base-content/55 mt-1">${esc(calculation.breakdown)}</p></div>${!readOnly ? `<button class="btn btn-ghost btn-xs text-error" onclick="removeManualLine(${index})" title="Remove item"><i class="fas fa-trash"></i>Remove</button>` : ''}</div><div class="order-entry-grid"><label class="form-control"><span class="label-text text-xs font-medium">Product</span><select class="select select-bordered select-sm w-full" data-field="product_code" onchange="changeProduct(${index}, this.value)" ${readOnly ? 'disabled' : ''}>${productOptions(row.product_code)}</select></label><label class="form-control"><span class="label-text text-xs font-medium">Quantity</span><input class="input input-bordered input-sm w-full" data-field="quantity" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="7" placeholder="e.g., 1" value="${esc(row.quantity)}" oninput="markEntryChanged(); updateOrderSummary()" ${readOnly ? 'disabled' : ''}></label><label class="form-control"><span class="label-text text-xs font-medium">Order unit</span><select class="select select-bordered select-sm w-full" data-field="unit" onchange="changeOrderUnit(${index}, this.value)" ${readOnly ? 'disabled' : ''}>${unitOptions(row.product_code, row.unit)}</select></label></div><label class="form-control mt-3"><span class="label-text text-xs font-medium">Customer instructions or remarks</span><input class="input input-bordered input-sm w-full" data-field="remarks" maxlength="500" placeholder="Optional" value="${esc(row.remarks)}" oninput="markEntryChanged()" ${readOnly ? 'disabled' : ''}></label><details class="mt-3 pt-3 border-t border-base-300" ${String(row.unit_price || '').trim() ? 'open' : ''}><summary class="cursor-pointer text-xs font-medium">Customer price from PO (optional)</summary><p class="text-xs text-base-content/55 mt-1">Leave this blank to use the official system price.</p><div class="grid gap-3 sm:grid-cols-2 mt-3"><label class="form-control"><span class="label-text text-xs font-medium">Price written by customer</span><input class="input input-bordered input-sm w-full" data-field="unit_price" type="text" inputmode="decimal" maxlength="11" placeholder="Leave blank if absent" value="${esc(row.unit_price)}" oninput="markEntryChanged(); updateOrderSummary()" ${readOnly ? 'disabled' : ''}></label><label class="form-control"><span class="label-text text-xs font-medium">Price is per</span><select class="select select-bordered select-sm w-full" data-field="price_unit" onchange="markEntryChanged(); updateOrderSummary()" ${readOnly ? 'disabled' : ''}>${priceUnitOptions(row.product_code, row.price_unit || row.unit)}</select></label></div></details>${showHistory ? `<details class="mt-3 pt-3 border-t border-base-300"><summary class="cursor-pointer text-xs font-medium">View comparison details</summary><div class="grid gap-3 md:grid-cols-2 mt-3"><div><p class="text-xs font-medium mb-1">Current result</p>${issueText(line)}</div><div><p class="text-xs font-medium mb-1">Originally entered by Sales</p><p class="text-xs text-base-content/60">${esc(original)}</p></div></div></details>` : ''}</div>`;
             }).join('');
             installNumericEntryGuards();
             updateOrderSummary();
@@ -588,6 +597,7 @@
         function clearAttachmentPreview() {
             if (attachmentPreviewUrl) URL.revokeObjectURL(attachmentPreviewUrl);
             attachmentPreviewUrl = null;
+            sourceDocumentReady = false;
         }
         function closeReviewModal() { clearAttachmentPreview(); $('reviewModal').close(); }
         function applyHeaderSuggestions(suggestions = {}, source = 'email') {
@@ -622,8 +632,17 @@
             const target = $('attachmentPreviewBody');
             if (!target) return;
             clearAttachmentPreview();
+            if (!activeImport.source_available) {
+                target.innerHTML = `<div class="h-full flex flex-col items-center justify-center p-8 text-center text-error"><i class="fas fa-triangle-exclamation text-3xl mb-3"></i><p class="font-semibold">Original request unavailable</p><p class="text-sm mt-2">${esc(activeImport.source_error || 'Ask the customer to resend the request.')}</p></div>`;
+                updateSourceNotice();
+                updatePrimaryReviewAction();
+                return;
+            }
             if (!sourceAvailable) {
                 target.innerHTML = `<div class="h-full overflow-y-auto p-5"><div class="flex items-center gap-2 text-info mb-3"><i class="fas fa-envelope-open-text"></i><strong>Order written in the email</strong></div><pre class="po-email-message whitespace-pre-wrap break-words text-sm font-sans">${esc(activeImport.email_body || 'No readable order message was saved.')}</pre></div>`;
+                sourceDocumentReady = Boolean(activeImport.source_available);
+                updateSourceNotice();
+                updatePrimaryReviewAction();
                 return;
             }
             target.innerHTML = '<div class="h-full flex items-center justify-center"><span class="loading loading-spinner loading-lg"></span></div>';
@@ -636,6 +655,9 @@
                     target.innerHTML = extension === 'pdf'
                         ? `<iframe src="${attachmentPreviewUrl}" title="Original customer purchase order"></iframe>`
                         : `<div class="p-3"><img src="${attachmentPreviewUrl}" alt="Original customer purchase order"></div>`;
+                    sourceDocumentReady = true;
+                    updateSourceNotice();
+                    updatePrimaryReviewAction();
                     return;
                 }
                 if (extension === 'xlsx' || extension === 'csv') {
@@ -643,11 +665,22 @@
                     const preview = response.data || {};
                     target.innerHTML = renderSpreadsheetPreview(preview);
                     applyHeaderSuggestions({ po_number: preview.suggested_po_number, delivery_date: preview.suggested_delivery_date }, 'spreadsheet');
+                    sourceDocumentReady = true;
+                    updateSourceNotice();
+                    updatePrimaryReviewAction();
                     return;
                 }
                 target.innerHTML = '<div class="h-full flex flex-col items-center justify-center p-8 text-center"><i class="fas fa-file-lines text-3xl text-base-content/35 mb-3"></i><p class="font-medium">Preview is not available for this file.</p><p class="text-sm text-base-content/55 mt-1">Open it full screen, or ask the customer to send a PDF.</p></div>';
+                sourceDocumentReady = Boolean(activeImport.source_available);
+                updateSourceNotice();
+                updatePrimaryReviewAction();
             } catch (error) {
+                sourceDocumentReady = false;
+                activeImport.source_available = false;
+                activeImport.source_error = error.message || 'The original attachment could not be loaded.';
                 target.innerHTML = `<div class="h-full flex flex-col items-center justify-center p-8 text-center text-error"><i class="fas fa-circle-exclamation text-3xl mb-3"></i><p>${esc(error.message || 'The attachment preview could not be loaded.')}</p><button class="btn btn-outline btn-sm mt-4" onclick="viewAttachment()"><i class="fas fa-up-right-from-square"></i>Open Full Screen</button></div>`;
+                updateSourceNotice();
+                updatePrimaryReviewAction();
             }
         }
 
@@ -671,6 +704,7 @@
             const warnings = (activeImport.lines || []).filter(line => Number(line.quantity_base || 0) > 0 && line.line_status === 'warning').length;
             const creditWarning = hasCreditWarning();
             const sourceAvailable = hasAttachment(activeImport);
+            sourceDocumentReady = Boolean(activeImport.source_available);
             const sourceTitle = sourceAvailable ? 'Attached purchase order' : 'Order written in email';
             const sourceName = sourceAvailable
                 ? (activeImport.attachment_original_name || 'Customer attachment')
@@ -686,9 +720,10 @@
             const callHistory = (activeImport.call_confirmations || []).map(call => `<div class="border-t border-base-300 pt-3 mt-3"><p class="font-medium">${call.confirmation_method === 'phone_clarification' ? '<span class="badge badge-info badge-sm mr-2">Clarification</span>' : '<span class="badge badge-warning badge-sm mr-2">Customer approval</span>'}${esc(call.change_summary)}</p><p class="text-xs text-base-content/60">Phone call with ${esc(call.contact_name)} on ${esc(dateTime(call.confirmed_at))}. ${esc(call.reason)}</p>${call.note ? `<p class="text-sm mt-1">${esc(call.note)}</p>` : ''}</div>`).join('');
             const trustedLines = activeImport.trusted_reference?.lines || [];
             const trustedSummary = trustedLines.map(line => `${esc(line.description || line.product_code)}: ${Number(line.quantity)} ${esc(line.unit)}`).join(' &bull; ');
-            const orderCancelled = Boolean(activeImport.sales_order_id) && activeImport.sales_order_status === 'cancelled';
-            const visibleStatus = orderCancelled ? 'cancelled' : (activeImport.sales_order_id && activeImport.sales_order_status === 'draft' ? 'draft_created' : effectiveInboxStatus(activeImport));
-            $('reviewContent').innerHTML = `<div class="po-review-layout"><section class="po-source-panel border border-base-300 rounded-lg bg-base-100"><div class="p-3 border-b border-base-300 flex items-start gap-3"><div class="min-w-0 flex-1"><p class="font-semibold">${sourceTitle}</p><p class="text-xs text-base-content/55 break-all mt-1">${esc(sourceName)}</p></div>${sourceAvailable ? '<button class="btn btn-outline btn-xs" onclick="viewAttachment()"><i class="fas fa-up-right-from-square attachment-open-icon"></i>Open</button>' : ''}</div><div class="po-meta-grid grid grid-cols-2 bg-base-300 border-b border-base-300"><div class="bg-base-100 p-3"><p class="text-xs text-base-content/45 uppercase">Sender</p><p class="text-sm font-medium break-all">${esc(activeImport.sender_email)}</p></div><div class="bg-base-100 p-3"><p class="text-xs text-base-content/45 uppercase">Received</p><p class="text-sm font-medium">${esc(dateTime(activeImport.received_at || activeImport.created_at))}</p></div><div class="bg-base-100 p-3 col-span-2"><p class="text-xs text-base-content/45 uppercase">Subject</p><p class="text-sm font-medium break-words">${esc(activeImport.subject || 'No subject')}</p></div></div><div id="attachmentPreviewBody" class="po-preview-body"><div class="h-full flex items-center justify-center"><span class="loading loading-spinner loading-lg"></span></div></div>${emailMessageDetails}</section><section class="po-entry-panel"><div class="alert alert-info py-3 mb-4"><i class="fas fa-lock"></i><span class="text-sm">The original customer request stays unchanged. Enter the Highland Fresh order here.</span><span class="ml-auto">${statusBadge(visibleStatus)}</span></div>${activeImport.error_message ? `<div class="alert alert-error py-3 mb-4"><i class="fas fa-circle-exclamation"></i><span class="text-sm">${esc(activeImport.error_message)}</span></div>` : ''}<div class="grid gap-3 md:grid-cols-3 mb-4"><label class="form-control"><span class="label-text font-medium">Customer matched from sender</span><select id="entryCustomer" class="select select-bordered bg-base-200" disabled>${customerOptions}</select><span class="text-xs text-base-content/55 mt-1">Controlled by the registered customer email.</span></label><label class="form-control"><span class="label-text font-medium">Customer PO number</span><input id="entryPoNumber" class="input input-bordered" value="${esc(activeImport.customer_po_number || '')}" placeholder="Suggested when clearly shown" maxlength="80" ${readOnly ? 'disabled' : ''}><span id="poSuggestionHint" class="text-xs text-info mt-1 hidden"></span></label><label class="form-control"><span class="label-text font-medium">Requested delivery date</span><input id="entryDeliveryDate" class="input input-bordered" type="date" value="${esc(activeImport.effective_delivery_date || '')}" ${readOnly ? 'disabled' : ''}><span id="deliverySuggestionHint" class="text-xs text-info mt-1 hidden"></span></label></div><div class="flex items-center justify-between gap-3 mb-2"><div><h3 class="font-semibold">Order details</h3><p class="text-sm text-base-content/55">Enter the items shown in the original customer request. Leave price blank when it is not included.</p></div>${!readOnly ? '<button class="btn btn-outline btn-sm shrink-0" onclick="addManualLine()"><i class="fas fa-plus"></i>Add item</button>' : ''}</div><div class="overflow-x-auto border border-base-300 rounded-lg"><table class="table table-sm"><thead><tr><th>#</th><th>Product</th><th>Quantity</th><th>Order unit</th><th>Customer price</th><th>Remarks</th><th>Check</th><th>Original entered request</th></tr></thead><tbody id="manualLinesBody"></tbody></table></div>${removedHistory ? `<details class="mt-3 border border-base-300 rounded-lg p-3"><summary class="cursor-pointer font-medium text-sm">Previous typing removed from this draft (${removedTypingLines.length})</summary><div class="mt-2">${removedHistory}</div></details>` : ''}${callHistory ? `<div class="alert alert-warning mt-4 items-start"><i class="fas fa-phone-volume mt-1"></i><div><strong>Customer call record</strong>${callHistory}</div></div>` : ''}${activeImport.sales_order_id ? `<div class="alert alert-success mt-4"><i class="fas fa-check-circle"></i><span>Sales Order created: <a class="link font-semibold" href="orders.html?id=${Number(activeImport.sales_order_id)}">${esc(activeImport.order_number || activeImport.sales_order_id)}</a></span></div>` : ''}</section></div>`;
+            const linkedOrderStatus = String(activeImport.sales_order_status || '');
+            const orderClosed = Boolean(activeImport.sales_order_id) && ['cancelled', 'rejected'].includes(linkedOrderStatus);
+            const visibleStatus = activeImport.sales_order_id ? visibleOrderStatus(activeImport) : effectiveInboxStatus(activeImport);
+            $('reviewContent').innerHTML = `<div class="po-review-layout"><section class="po-source-panel border border-base-300 rounded-lg bg-base-100"><div class="p-3 border-b border-base-300 flex items-start gap-3"><div class="min-w-0 flex-1"><p class="font-semibold">${sourceTitle}</p><p class="text-xs text-base-content/55 break-all mt-1">${esc(sourceName)}</p></div>${sourceAvailable && activeImport.source_available ? '<button class="btn btn-outline btn-xs" onclick="viewAttachment()"><i class="fas fa-up-right-from-square attachment-open-icon"></i>Open</button>' : ''}</div><div class="po-meta-grid grid grid-cols-2 bg-base-300 border-b border-base-300"><div class="bg-base-100 p-3"><p class="text-xs text-base-content/45 uppercase">Sender</p><p class="text-sm font-medium break-all">${esc(activeImport.sender_email)}</p></div><div class="bg-base-100 p-3"><p class="text-xs text-base-content/45 uppercase">Received</p><p class="text-sm font-medium">${esc(dateTime(activeImport.received_at || activeImport.created_at))}</p></div><div class="bg-base-100 p-3 col-span-2"><p class="text-xs text-base-content/45 uppercase">Subject</p><p class="text-sm font-medium break-words">${esc(activeImport.subject || 'No subject')}</p></div></div><div id="attachmentPreviewBody" class="po-preview-body"><div class="h-full flex items-center justify-center"><span class="loading loading-spinner loading-lg"></span></div></div>${emailMessageDetails}</section><section class="po-entry-panel"><div class="alert alert-info py-3 mb-4"><i class="fas fa-lock"></i><span class="text-sm">The original customer request stays unchanged. Enter the Highland Fresh order here.</span><span class="ml-auto">${statusBadge(visibleStatus)}</span></div>${activeImport.error_message ? `<div class="alert alert-error py-3 mb-4"><i class="fas fa-circle-exclamation"></i><span class="text-sm">${esc(activeImport.error_message)}</span></div>` : ''}<div class="grid gap-3 md:grid-cols-3 mb-4"><label class="form-control"><span class="label-text font-medium">Customer matched from sender</span><select id="entryCustomer" class="select select-bordered bg-base-200" disabled>${customerOptions}</select><span class="text-xs text-base-content/55 mt-1">Controlled by the registered customer email.</span></label><label class="form-control"><span class="label-text font-medium">Customer PO number</span><input id="entryPoNumber" class="input input-bordered" value="${esc(activeImport.customer_po_number || '')}" placeholder="Suggested when clearly shown" maxlength="80" ${readOnly ? 'disabled' : ''}><span id="poSuggestionHint" class="text-xs text-info mt-1 hidden"></span></label><label class="form-control"><span class="label-text font-medium">Requested delivery date</span><input id="entryDeliveryDate" class="input input-bordered" type="date" value="${esc(activeImport.effective_delivery_date || '')}" ${readOnly ? 'disabled' : ''}><span id="deliverySuggestionHint" class="text-xs text-info mt-1 hidden"></span></label></div><div class="flex items-center justify-between gap-3 mb-2"><div><h3 class="font-semibold">Order details</h3><p class="text-sm text-base-content/55">Enter the items shown in the original customer request. Leave price blank when it is not included.</p></div>${!readOnly ? '<button class="btn btn-outline btn-sm shrink-0" onclick="addManualLine()"><i class="fas fa-plus"></i>Add item</button>' : ''}</div><div class="overflow-x-auto border border-base-300 rounded-lg"><table class="table table-sm"><thead><tr><th>#</th><th>Product</th><th>Quantity</th><th>Order unit</th><th>Customer price</th><th>Remarks</th><th>Check</th><th>Original entered request</th></tr></thead><tbody id="manualLinesBody"></tbody></table></div>${removedHistory ? `<details class="mt-3 border border-base-300 rounded-lg p-3"><summary class="cursor-pointer font-medium text-sm">Previous typing removed from this draft (${removedTypingLines.length})</summary><div class="mt-2">${removedHistory}</div></details>` : ''}${callHistory ? `<div class="alert alert-warning mt-4 items-start"><i class="fas fa-phone-volume mt-1"></i><div><strong>Customer call record</strong>${callHistory}</div></div>` : ''}${activeImport.sales_order_id ? `<div class="alert alert-success mt-4"><i class="fas fa-check-circle"></i><span>Sales Order created: <a class="link font-semibold" href="orders.html?id=${Number(activeImport.sales_order_id)}">${esc(activeImport.order_number || activeImport.sales_order_id)}</a></span></div>` : ''}</section></div>`;
             const legacyTableWrap = $('manualLinesBody').closest('.overflow-x-auto');
             const orderHeader = legacyTableWrap.previousElementSibling;
             orderHeader.id = 'orderDetailsHeader';
@@ -711,15 +746,18 @@
             $('entryPoNumber')?.addEventListener('input', markEntryChanged);
             $('entryDeliveryDate')?.addEventListener('change', markEntryChanged);
             const verificationPanel = document.createElement('div');
-            verificationPanel.className = 'review-stage mb-4';
+            verificationPanel.id = 'sourceReviewNotice';
+            verificationPanel.className = 'alert mb-4 items-start';
             const alreadyCompared = Boolean(activeImport.source_verified_at);
-            verificationPanel.innerHTML = `<div class="review-stage__heading"><div><h3 class="font-semibold">Verification</h3><p class="text-xs text-base-content/55">The original request remains unchanged and the system records who verified this order.</p></div></div><div class="p-4 space-y-3">${trustedLines.length ? `<div class="alert alert-success py-3 items-start"><i class="fas fa-shield-check mt-1"></i><div><p class="font-semibold text-sm">Automatic comparison available</p><p class="text-xs mt-1">${trustedSummary}</p><p class="text-xs mt-1">The system will stop a different product, quantity, unit, PO number, or delivery date.</p></div></div>` : `<div class="alert alert-info py-3 items-start"><i class="fas fa-eye mt-1"></i><div><p class="font-semibold text-sm">Check the document on the left</p><p class="text-xs mt-1">This customer document cannot be compared automatically. Clicking <strong>Verify &amp; Save</strong> records that you checked it.</p></div></div>`}${alreadyCompared ? `<div class="text-sm text-success"><i class="fas fa-check-circle mr-1"></i>Verified and saved on ${esc(dateTime(activeImport.source_verified_at))}.${!readOnly ? ' Editing any value requires verification again.' : ''}</div>` : (!readOnly ? '<p class="text-sm text-base-content/65">After checking every value, click <strong>Verify &amp; Save</strong>.</p>' : `<div class="alert alert-warning py-3 text-sm"><i class="fas fa-triangle-exclamation"></i><span>This older order has no recorded source verification.</span></div>`)}</div>`;
+            verificationPanel.dataset.verified = alreadyCompared ? '1' : '0';
+            verificationPanel.dataset.automatic = trustedLines.length ? '1' : '0';
+            verificationPanel.dataset.summary = trustedSummary;
             requestStage.after(verificationPanel);
             const summaryStage = document.createElement('section');
             summaryStage.className = 'review-stage mb-4';
             summaryStage.innerHTML = '<div class="review-stage__heading"><div><h3 class="font-semibold">Order summary</h3><p class="text-xs text-base-content/55">Totals, payment, delivery, stock, and approval information.</p></div></div><div id="orderSummaryPanel" class="p-4"></div>';
             verificationPanel.after(summaryStage);
-            if (orderCancelled) {
+            if (orderClosed) {
                 const orderLink = $('reviewContent').querySelector(`a[href="orders.html?id=${Number(activeImport.sales_order_id)}"]`);
                 const orderNotice = orderLink?.closest('.alert');
                 if (orderNotice) {
@@ -728,83 +766,162 @@
                     const icon = orderNotice.querySelector('i');
                     icon?.classList.remove('fa-check-circle');
                     icon?.classList.add('fa-ban');
-                    orderNotice.querySelector('span').firstChild.textContent = 'Sales Order cancelled: ';
+                    orderNotice.querySelector('span').firstChild.textContent = linkedOrderStatus === 'rejected'
+                        ? 'Sales Order rejected by GM: '
+                        : 'Sales Order cancelled: ';
                 }
             }
             renderManualRows(readOnly);
+            updateSourceNotice();
             applyHeaderSuggestions(activeImport.header_suggestions || {}, 'email');
             loadAttachmentPreview(sourceAvailable);
             $('warningApproval').checked = false;
             refreshWarningApproval();
             updateAttachmentDisplay();
             $('rejectEmailAction').classList.toggle('hidden', readOnly);
-            const showCallAction = !readOnly && (!saved || ['needs_customer_confirmation', 'draft_order'].includes(activeImport.status));
-            $('recordCallAction').classList.toggle('hidden', !showCallAction);
-            const callLabel = $('recordCallButton')?.querySelector('span');
-            if (callLabel) callLabel.textContent = saved && activeImport.status === 'needs_customer_confirmation' ? 'Record customer approval' : 'Record clarifying call';
             $('correctEncodingAction').classList.toggle('hidden', readOnly || activeImport.status !== 'needs_customer_confirmation' || !activeImport.has_encoding_changes || (activeImport.call_confirmations || []).some(call => call.confirmation_method === 'phone_call'));
             $('moreReviewActions').classList.toggle('hidden', readOnly);
-            $('saveDetailsButton').classList.toggle('hidden', readOnly);
-            $('createOrderButton').classList.toggle('hidden', readOnly);
-            $('recordCallPrimaryButton').classList.toggle('hidden', readOnly || activeImport.status !== 'needs_customer_confirmation');
-            $('saveDetailsButton').disabled = readOnly || !entryDirty;
-            $('saveDetailsButton').innerHTML = saved && !entryDirty
-                ? '<i class="fas fa-check"></i>Saved'
-                : '<i class="fas fa-clipboard-check"></i>Verify &amp; Save';
-            $('createOrderButton').disabled = !saved || entryDirty || !activeImport.source_verified_at || blocked > 0 || activeImport.status === 'needs_customer_confirmation';
+            $('primaryReviewButton').classList.toggle('hidden', readOnly);
+            updatePrimaryReviewAction();
         }
 
         function updateSourceVerification() {
-            if (!$('saveDetailsButton') || isReadOnly()) return;
-            $('saveDetailsButton').disabled = !entryDirty;
-            if ($('createOrderButton')) $('createOrderButton').disabled = entryDirty || !activeImport?.entry_saved_at || !activeImport?.source_verified_at;
+            if (!$('primaryReviewButton') || isReadOnly()) return;
+            updatePrimaryReviewAction();
         }
 
-        async function saveOrderDetails() {
-            if (!activeImport || isReadOnly()) return;
-            showReviewSaveError();
+        function updateSourceNotice() {
+            const panel = $('sourceReviewNotice');
+            if (!panel || !activeImport) return;
+            const verified = panel.dataset.verified === '1';
+            const automatic = panel.dataset.automatic === '1';
+            panel.className = `alert mb-4 items-start ${sourceDocumentReady ? 'alert-info' : 'alert-error'}`;
+            if (!sourceDocumentReady) {
+                panel.innerHTML = `<i class="fas fa-triangle-exclamation mt-1"></i><div><p class="font-semibold text-sm">Original request unavailable</p><p class="text-xs mt-1">${esc(activeImport.source_error || 'Restore the source document or ask the customer to resend it before submitting this order.')}</p></div>`;
+                return;
+            }
+            const detail = automatic
+                ? `The system can compare the encoded lines with the saved reference${panel.dataset.summary ? `: ${esc(panel.dataset.summary)}` : ''}.`
+                : 'Check every field against the original request shown on the left.';
+            panel.innerHTML = `<i class="fas fa-eye mt-1"></i><div><p class="font-semibold text-sm">Review the original request</p><p class="text-xs mt-1">${detail} Submitting records your verification and sends the Sales Order to the General Manager.</p>${verified ? `<p class="text-xs text-success mt-1"><i class="fas fa-check-circle mr-1"></i>Previously verified on ${esc(dateTime(activeImport.source_verified_at))}. Editing requires verification on submission again.</p>` : ''}</div>`;
+        }
+
+        function updatePrimaryReviewAction() {
+            const button = $('primaryReviewButton');
+            if (!button || !activeImport || isReadOnly()) return;
+            const needsCustomer = activeImport.status === 'needs_customer_confirmation' && !entryDirty;
+            button.classList.toggle('btn-primary', !needsCustomer);
+            button.classList.toggle('btn-warning', needsCustomer);
+            button.disabled = !sourceDocumentReady;
+            button.innerHTML = !sourceDocumentReady
+                ? '<i class="fas fa-triangle-exclamation"></i><span>Source unavailable</span>'
+                : (needsCustomer
+                    ? '<i class="fas fa-phone-volume"></i><span>Resolve issue</span>'
+                    : '<i class="fas fa-paper-plane"></i><span>Submit for GM Approval</span>');
+        }
+
+        function currentOrderPayload() {
             syncManualRows();
             const validationError = validateManualRows();
-            if (validationError) { showReviewSaveError(validationError); return; }
-            if (!$('entryPoNumber').value.trim()) { showReviewSaveError('Enter the customer PO number, or keep the prepared email reference when the customer did not provide one.'); return; }
-            if (!$('entryDeliveryDate').value) { showReviewSaveError('Enter the delivery date confirmed by the customer. If it was missing, record a clarifying call first.'); return; }
-            const data = { customer_id: Number($('entryCustomer').value), customer_po_number: $('entryPoNumber').value.trim(), delivery_date: $('entryDeliveryDate').value, source_verified: true, lines: manualRows };
-            $('saveDetailsButton').disabled = true; $('saveDetailsButton').classList.add('loading');
-            try { await SalesService.saveCustomerOrderDetails(activeImport.id, data); toast('Order verified and saved.', 'success'); await openReview(activeImport.id); } catch (error) { const message = error.message || 'Could not verify and save the order details.'; showReviewSaveError(message); toast(message, 'error'); } finally { const button = $('saveDetailsButton'); if (button) { button.disabled = false; button.classList.remove('loading'); } }
+            if (validationError) throw new Error(validationError);
+            const poNumber = $('entryPoNumber').value.trim();
+            const deliveryDate = $('entryDeliveryDate').value;
+            if (!poNumber) throw new Error('Enter the customer PO number, or keep the prepared email reference when the customer did not provide one.');
+            if (!deliveryDate) throw new Error('Enter the delivery date confirmed by the customer.');
+            return { customer_id: Number($('entryCustomer').value), customer_po_number: poNumber, delivery_date: deliveryDate, source_verified: true, lines: manualRows };
+        }
+
+        async function handlePrimaryReviewAction() {
+            if (!activeImport || isReadOnly()) return;
+            if (activeImport.status === 'needs_customer_confirmation' && !entryDirty) {
+                openCallModal();
+                return;
+            }
+            await submitForApproval();
         }
 
         function openCallModal() { if (!activeImport || isReadOnly()) return; callClarificationOnly = !activeImport.entry_saved_at || activeImport.status !== 'needs_customer_confirmation'; const approval = !callClarificationOnly; $('callModalTitle').textContent = approval ? 'Record Customer Approval' : 'Record Clarifying Call'; $('callModalSubtitle').textContent = approval ? 'Record approval for the exact saved details currently shown.' : 'Use this when the email is missing or unclear information.'; $('callGuidance').textContent = approval ? 'This call approves only the exact saved version currently shown. Any later edit will require a new customer approval.' : 'This records what the customer clarified. It does not approve later changes to a saved order.'; $('callSummaryLabel').textContent = approval ? 'What exact change did the customer approve?' : 'What information did the customer clarify?'; $('callChangeSummary').placeholder = approval ? 'Customer approved 6 boxes instead of 10.' : 'Customer confirmed the PO number and requested delivery date.'; $('callChangeSummary').value = ''; $('callReason').value = ''; $('callContact').value = ''; $('callDate').value = localDateTime(); $('callNote').value = ''; $('saveCallButton').querySelector('span').textContent = approval ? 'Save Customer Approval' : 'Save Clarification'; $('callModal').showModal(); }
-        function openCallFromInbox(id) { openReview(id).then(() => setTimeout(openCallModal, 250)); }
         async function saveCustomerCall(event) { event.preventDefault(); if (!activeImport) return; const button = $('saveCallButton'); button.disabled = true; button.classList.add('loading'); try { await SalesService.recordCustomerOrderCall(activeImport.id, { change_summary: $('callChangeSummary').value.trim(), reason: $('callReason').value.trim(), contact_name: $('callContact').value.trim(), confirmed_at: $('callDate').value, note: $('callNote').value.trim(), clarification_only: callClarificationOnly }); $('callModal').close(); toast(callClarificationOnly ? 'Clarifying call saved. Complete the request using the confirmed information.' : 'Customer approval saved for this exact order version.', 'success'); await openReview(activeImport.id); } catch (error) { toast(error.message || 'Could not save the phone call.', 'error'); } finally { button.disabled = false; button.classList.remove('loading'); } }
         function openEncodingCorrectionModal() { if (!activeImport || activeImport.status !== 'needs_customer_confirmation') return; $('encodingCorrectionReason').value = ''; $('encodingCorrectionConfirmed').checked = false; $('encodingCorrectionModal').showModal(); }
         async function correctEncoding(event) { event.preventDefault(); if (!activeImport || !$('encodingCorrectionConfirmed').checked) return; const button = $('saveEncodingCorrectionButton'); button.disabled = true; button.classList.add('loading'); try { await SalesService.correctCustomerOrderEncoding(activeImport.id, $('encodingCorrectionReason').value.trim()); $('encodingCorrectionModal').close(); toast('Encoding corrected. The original attachment remains unchanged.', 'success'); await openReview(activeImport.id); } catch (error) { toast(error.message || 'Could not correct the encoding.', 'error'); } finally { button.disabled = false; button.classList.remove('loading'); } }
         function openRejectModal() { if (activeImport) { $('rejectReason').value = ''; $('rejectModal').showModal(); } }
         function openRejectFromInbox(id) { openReview(id).then(() => setTimeout(openRejectModal, 250)); }
-        async function rejectEmail(event) { event.preventDefault(); if (!activeImport) return; try { await SalesService.rejectCustomerOrderEmail(activeImport.id, $('rejectReason').value.trim()); $('rejectModal').close(); $('reviewModal').close(); toast('Customer PO email rejected and kept for reference.', 'success'); await loadInbox(); } catch (error) { toast(error.message || 'Could not reject the email.', 'error'); } }
+        async function rejectEmail(event) { event.preventDefault(); if (!activeImport) return; try { await SalesService.rejectCustomerOrderEmail(activeImport.id, $('rejectReason').value.trim()); $('rejectModal').close(); $('reviewModal').close(); toast('Customer PO request closed and kept for reference.', 'success'); await loadInbox(); } catch (error) { toast(error.message || 'Could not close the request.', 'error'); } }
 
-        async function confirmImport() {
+        async function submitForApproval() {
             if (!activeImport) return;
-            const blocked = (activeImport.lines || []).filter(line => Number(line.quantity_base || 0) > 0 && line.line_status === 'blocked').length;
-            const warnings = (activeImport.lines || []).filter(line => Number(line.quantity_base || 0) > 0 && line.line_status === 'warning').length;
+            showReviewSaveError();
+            if (!sourceDocumentReady) {
+                showReviewSaveError(activeImport.source_error || 'The original request is unavailable. Restore it or ask the customer to resend it.');
+                return;
+            }
+            let payload;
+            try {
+                payload = currentOrderPayload();
+            } catch (error) {
+                showReviewSaveError(error.message);
+                return;
+            }
+            const button = $('primaryReviewButton');
+            const importId = activeImport.id;
+            const acceptedWarnings = Boolean($('warningApproval')?.checked);
             const creditWarning = hasCreditWarning();
-            if (!activeImport.entry_saved_at) { toast('Save the entered order details first.', 'warning'); return; }
-            if (!activeImport.source_verified_at) { toast('Compare the entered order with the original customer PO first.', 'warning'); return; }
-            if (blocked > 0) { toast('Fix the blocked product lines first.', 'warning'); return; }
-            if (activeImport.status === 'needs_customer_confirmation') { toast('Record the customer phone call before creating the Sales Order.', 'warning'); return; }
-            if ((warnings > 0 || creditWarning) && !$('warningApproval').checked) { toast(creditWarning ? 'Review the credit-limit warning before sending the order to the General Manager.' : 'Review the price or stock warning and customer decision first.', 'warning'); return; }
             const creditReason = $('creditOverrideReason')?.value.trim() || '';
-            if (creditWarning && creditReason.length < 10) { toast('Enter a reason for the General Manager credit review.', 'warning'); return; }
-            const confirmed = await AuthService.confirmAction({
-                title: 'Create Order and Send to GM',
-                message: 'This creates the Sales Order and places it in the General Manager approval queue.',
-                highlightLabel: 'Customer PO',
-                highlight: activeImport.customer_po_number || 'Verified customer request',
-                confirmText: 'Create & Send',
-                tone: 'primary'
-            });
-            if (!confirmed) return;
-            const button = $('createOrderButton'); button.disabled = true; button.classList.add('loading');
-            try { const response = await SalesService.confirmOrderImport(activeImport.id, $('warningApproval').checked, creditReason); toast(`${response.data.order_number} created and sent for General Manager approval.`, 'success'); closeReviewModal(); currentInboxView = 'recent'; $('statusFilter').value = ''; document.querySelectorAll('[data-inbox-view]').forEach(tab => tab.classList.toggle('is-active', tab.dataset.inboxView === 'recent')); await loadInbox(); } catch (error) { toast(error.message || 'Could not create and send the Sales Order.', 'error'); } finally { button.disabled = false; button.classList.remove('loading'); }
+            button.disabled = true;
+            button.classList.add('loading');
+            try {
+                const savedResponse = await SalesService.saveCustomerOrderDetails(importId, payload);
+                const saved = savedResponse.data || {};
+                if (saved.status === 'draft_order') {
+                    await openReview(importId);
+                    showReviewSaveError('Fix the highlighted product lines before submitting the order.');
+                    return;
+                }
+                if (saved.status === 'needs_customer_confirmation') {
+                    await openReview(importId);
+                    toast('This request needs customer confirmation. Use Resolve issue to record the customer decision.', 'warning');
+                    return;
+                }
+                if ((Number(saved.warning_count || 0) > 0 || creditWarning) && !acceptedWarnings) {
+                    await openReview(importId);
+                    showReviewSaveError(creditWarning ? 'Review the credit warning before submitting the order.' : 'Review the product warning before submitting the order.');
+                    return;
+                }
+                if (creditWarning && creditReason.length < 10) {
+                    await openReview(importId);
+                    showReviewSaveError('Enter a reason for the General Manager credit review.');
+                    return;
+                }
+                const confirmed = await AuthService.confirmAction({
+                    title: 'Submit for GM Approval',
+                    message: 'Your review and source verification will be recorded. The Sales Order will remain locked until the General Manager decides.',
+                    highlightLabel: 'Customer PO',
+                    highlight: payload.customer_po_number,
+                    confirmText: 'Submit Order',
+                    tone: 'primary'
+                });
+                if (!confirmed) {
+                    await openReview(importId);
+                    return;
+                }
+                const response = await SalesService.confirmOrderImport(importId, acceptedWarnings, creditReason);
+                toast(`${response.data.order_number} was sent for General Manager approval.`, 'success');
+                closeReviewModal();
+                currentInboxView = 'recent';
+                document.querySelectorAll('[data-inbox-view]').forEach(tab => tab.classList.toggle('is-active', tab.dataset.inboxView === 'recent'));
+                await loadInbox();
+            } catch (error) {
+                const message = error.message || 'Could not submit the customer order.';
+                showReviewSaveError(message);
+                toast(message, 'error');
+            } finally {
+                const currentButton = $('primaryReviewButton');
+                if (currentButton) {
+                    currentButton.disabled = !sourceDocumentReady;
+                    currentButton.classList.remove('loading');
+                    updatePrimaryReviewAction();
+                }
+            }
         }
 
         async function fetchAttachment(id, view = false) { const token = localStorage.getItem('highland_token'); const response = await fetch(`${API_BASE_URL}/sales/order_inbox.php?action=download&id=${Number(id)}${view ? '&view=1' : ''}`, { headers: { 'Authorization': `Bearer ${token}`, 'X-Auth-Token': token } }); if (!response.ok) throw new Error('The original attachment could not be opened.'); return response.blob(); }

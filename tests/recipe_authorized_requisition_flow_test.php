@@ -13,6 +13,10 @@ $gmPage = file_get_contents($root . '/html/admin/gm_approvals.html');
 $recipeAdminApi = file_get_contents($root . '/api/admin/recipes.php');
 $pasteurizationApi = file_get_contents($root . '/api/production/pasteurization.php');
 $pasteurizationPage = file_get_contents($root . '/html/production/pasteurization.html');
+$batchesPage = file_get_contents($root . '/html/production/batches.html');
+$dashboardPage = file_get_contents($root . '/html/production/dashboard.html');
+$recipesPage = file_get_contents($root . '/html/production/recipes.html');
+$workbenchPage = file_get_contents($root . '/html/production/run-workbench.html');
 
 $checks = [
     'server regenerates recipe items for planned and existing-run requests' =>
@@ -38,6 +42,20 @@ $checks = [
         str_contains($productionPage, 'Send to Warehouse')
         && str_contains($productionPage, 'Recipe-authorized request sent directly to Warehouse Raw.')
         && !str_contains($productionPage, 'Submit for GM Approval'),
+    'new production runs require a fully fulfilled cooking requisition' =>
+        str_contains($productionRunsApi, "\$errors['material_requisition_id']")
+        && str_contains($productionRunsApi, "!== 'cooking'")
+        && str_contains($productionRunsApi, "!== 'fulfilled'")
+        && str_contains($productionRunsApi, 'unfulfilled_item_count')
+        && !str_contains($productionRunsApi, "in_array(\$sourceRequisition['status'], ['fulfilled', 'partial'], true)"),
+    'Production UI has no direct or clear-requisition bypass' =>
+        str_contains($batchesPage, 'Start Linked Run')
+        && str_contains($batchesPage, "if (!activeRequisitionPrefill?.id)")
+        && !str_contains($batchesPage, 'Start from scratch instead')
+        && !str_contains($dashboardPage, 'batches.html?action=new')
+        && !str_contains($recipesPage, 'batches.html?action=new')
+        && !str_contains($workbenchPage, 'batches.html?action=new')
+        && str_contains($dashboardPage, 'Production starts after Warehouse fully issues'),
     'unreleased recipe requests can still be cancelled safely' =>
         str_contains($productionApi, "in_array(\$requisition['status'], ['pending', 'approved'], true)")
         && str_contains($productionApi, 'SUM(issued_quantity)')

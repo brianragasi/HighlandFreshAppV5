@@ -210,7 +210,9 @@ function getBaseProducts($conn) {
                 $sku['packaging_bom_count'] = count($sku['packaging_bom']);
                 $readiness = assessSkuPackagingBomReadiness(
                     $sku['base_unit'] ?? '',
-                    $sku['packaging_bom']
+                    $sku['packaging_bom'],
+                    $sku['unit_size'] ?? null,
+                    $sku['unit_measure'] ?? ''
                 );
                 $sku['packaging_bom_ready'] = $readiness['ready'];
                 $sku['packaging_bom_missing'] = $readiness['missing'];
@@ -515,7 +517,9 @@ function getProduct($conn, $id) {
     $product['packaging_bom_count'] = count($product['packaging_bom']);
     $readiness = assessSkuPackagingBomReadiness(
         $product['base_unit'] ?? '',
-        $product['packaging_bom']
+        $product['packaging_bom'],
+        $product['unit_size'] ?? null,
+        $product['unit_measure'] ?? ''
     );
     $product['packaging_bom_ready'] = $readiness['ready'];
     $product['packaging_bom_missing'] = $readiness['missing'];
@@ -547,7 +551,12 @@ function getProductPackagingBom(PDO $conn, $id) {
     }
 
     $items = getSkuPackagingBom($conn, $id);
-    $readiness = assessSkuPackagingBomReadiness($sku['base_unit'] ?? '', $items);
+    $readiness = assessSkuPackagingBomReadiness(
+        $sku['base_unit'] ?? '',
+        $items,
+        $sku['unit_size'] ?? null,
+        $sku['unit_measure'] ?? ''
+    );
     sendSuccess([
         'sku' => $sku,
         'items' => $items,
