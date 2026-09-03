@@ -60,11 +60,6 @@
                 <h1 class="text-lg lg:text-xl font-bold text-base-content" id="pageTitle">Purchase Orders</h1>
             </div>
             <div class="flex-none flex items-center gap-2">
-                <button class="btn btn-primary btn-sm gap-2" onclick="showCreateForm()">
-                    <i class="fas fa-file-circle-plus"></i>
-                    <span class="hidden md:inline">New PO</span>
-                    <span id="approvedPrHeaderBadge" class="badge badge-sm border-warning bg-warning/10 text-base-content hidden">0</span>
-                </button>
                 <label class="swap swap-rotate btn btn-ghost btn-circle">
                     <input type="checkbox" id="themeToggle" />
                     <i class="fas fa-sun swap-off text-lg"></i>
@@ -82,8 +77,8 @@
                         <h2 class="text-xl font-bold">Ongoing Purchase Orders</h2>
                         <p class="text-sm text-base-content/60">Track supplier orders from GM review through receiving.</p>
                     </div>
-                    <a class="btn btn-primary" href="purchase_orders.html?action=new">
-                        <i class="fas fa-file-circle-plus"></i> New PO
+                    <a class="btn btn-primary" href="purchase_orders.html?action=new" id="createPoButton">
+                        <i class="fas fa-file-circle-plus"></i> Create PO
                     </a>
                 </div>
                 <div id="approvedPrListAlert" class="hidden alert bg-warning/10 border border-warning/30 mb-6 items-start">
@@ -93,10 +88,6 @@
                         <p class="text-sm text-base-content/70" id="approvedPrListText"></p>
                         <div id="approvedPrListItems" class="flex flex-wrap gap-2 mt-3"></div>
                     </div>
-                    <a href="purchase_orders.html?action=new" class="btn btn-warning btn-sm">
-                        <i class="fas fa-file-circle-plus"></i>
-                        New PO
-                    </a>
                 </div>
 
                 <!-- Filters -->
@@ -488,8 +479,8 @@
     <script src="../../js/ui/dialogs.js"></script>
     <script src="../../js/ui/live-refresh.js?v=20260820-1"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="purchaser,general_manager"></script>
-    <script src="../../js/purchasing/purchasing.service.js?v=procurement-flow-3"></script>
-    <script src="../../js/purchasing/sidebar.js?v=20260829-purchasing-nav-1"></script>
+    <script src="../../js/purchasing/purchasing.service.js?v=working-calendar-1"></script>
+    <script src="../../js/purchasing/sidebar.js?v=20260903-purchasing-nav-2"></script>
 
     <script>
         let searchTimeout;
@@ -505,6 +496,8 @@
         let approvedPurchaseRequests = [];
         let pausedStockDecisions = [];
         let availableSuppliers = [];
+        let supplierNonWorkingDates = new Set();
+        let supplierDeliveryCalendarLoaded = false;
         let supplierEligibilityRequest = 0;
         let createPOInFlight = false;
         let markOrderedInFlight = new Set();
@@ -515,25 +508,15 @@
 
         function setPurchaseOrderNavigationState(view) {
             if (window.PurchasingSidebar) {
-                PurchasingSidebar.setActive(view === 'new' ? 'new_po' : 'purchase_orders');
+                PurchasingSidebar.setActive('purchase_orders');
                 return;
             }
-            const links = {
-                new: document.getElementById('navNewPo'),
-                list: document.getElementById('navPurchaseOrders')
-            };
-            Object.entries(links).forEach(([key, link]) => {
-                if (!link) return;
-                const active = key === view;
-                link.classList.toggle('bg-primary', active);
-                link.classList.toggle('text-primary-content', active);
-                link.classList.toggle('hover:bg-base-200', !active);
-                if (active) link.setAttribute('aria-current', 'page');
-                else link.removeAttribute('aria-current');
-
-                const icon = link.querySelector('i');
-                if (icon) icon.classList.toggle('text-base-content/60', !active);
-            });
+            const link = document.getElementById('navPurchaseOrders');
+            if (!link) return;
+            link.classList.add('bg-primary', 'text-primary-content');
+            link.classList.remove('hover:bg-base-200');
+            link.setAttribute('aria-current', 'page');
+            link.querySelector('i')?.classList.remove('text-base-content/60');
         }
 
         document.getElementById('themeToggle').addEventListener('change', function () {
@@ -566,10 +549,13 @@
                 document.getElementById('userInitials').textContent = f + l || 'PU';
             }
 
-            // PO dates are calculated from today and the selected supplier.
+            // PO dates are calculated from today using the shared working calendar.
             applySupplierDeliveryDates();
 
-            await loadItemCatalogs();
+            await Promise.all([
+                loadItemCatalogs(),
+                loadSupplierDeliveryCalendar()
+            ]);
 
             // Check URL for action
             if (params.get('action') === 'new') {
@@ -724,16 +710,10 @@
 
         function renderApprovedPurchaseRequestNotice(prs) {
             const alert = document.getElementById('approvedPrListAlert');
-            const badge = document.getElementById('approvedPrHeaderBadge');
             const title = document.getElementById('approvedPrListTitle');
             const text = document.getElementById('approvedPrListText');
             const items = document.getElementById('approvedPrListItems');
             const count = prs.length;
-
-            if (badge) {
-                badge.textContent = count;
-                badge.classList.toggle('hidden', count === 0);
-            }
 
             if (!count) {
                 alert.classList.add('hidden');
@@ -744,15 +724,12 @@
             const noun = count === 1 ? 'confirmed stock check' : 'confirmed stock checks';
             title.textContent = `${count} ${noun} ${count === 1 ? 'has' : 'have'} quantities left to order`;
             text.textContent = 'Choose a supplier. Matching confirmed shortages will appear automatically.';
-            items.innerHTML = prs.slice(0, 5).map(pr => {
-                const prLink = 'purchase_orders.html?action=new';
-                return `
-                    <a href="${prLink}" class="badge border-warning bg-warning/10 text-base-content gap-1 h-auto py-2">
+            items.innerHTML = prs.slice(0, 5).map(pr => `
+                    <span class="badge border-warning bg-warning/10 text-base-content gap-1 h-auto py-2">
                         <i class="fas fa-clipboard-check"></i>
                         ${escapeHtml(pr.pr_number)} - ${escapeHtml(getPurchaseRequestItemPreview(pr))}
-                    </a>
-                `;
-            }).join('');
+                    </span>
+                `).join('');
             alert.classList.remove('hidden');
         }
 
@@ -1004,7 +981,7 @@
             document.getElementById('supplierDetailName').textContent = supplier.supplier_name || '-';
             document.getElementById('supplierDetailContact').textContent = contactParts.length ? contactParts.join(' | ') : '-';
             document.getElementById('supplierDetailTerms').textContent = supplier.payment_terms || '-';
-            document.getElementById('supplierDetailLeadTime').textContent = `${Number(supplier.lead_time_days || 3)} day${Number(supplier.lead_time_days || 3) === 1 ? '' : 's'}`;
+            document.getElementById('supplierDetailLeadTime').textContent = `${Number(supplier.lead_time_days || 3)} working day${Number(supplier.lead_time_days || 3) === 1 ? '' : 's'}`;
             document.getElementById('supplierDetailAddress').textContent = supplier.address || '-';
             summary.classList.remove('hidden');
         }
@@ -1119,6 +1096,32 @@
             return `${year}-${month}-${day}`;
         }
 
+        function addSupplierWorkingDays(startDate, days) {
+            const date = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+            let remaining = days;
+            while (remaining > 0) {
+                date.setDate(date.getDate() + 1);
+                const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                const isConfiguredClosure = supplierNonWorkingDates.has(localDateValue(date));
+                if (isWeekend || isConfiguredClosure) continue;
+                remaining--;
+            }
+            return date;
+        }
+
+        async function loadSupplierDeliveryCalendar() {
+            try {
+                const response = await PurchasingService.getSupplierDeliveryCalendar();
+                supplierNonWorkingDates = new Set(response?.data?.non_working_dates || []);
+                supplierDeliveryCalendarLoaded = true;
+            } catch (error) {
+                console.error('Failed to load supplier delivery calendar:', error);
+                supplierNonWorkingDates = new Set();
+                supplierDeliveryCalendarLoaded = false;
+            }
+            applySupplierDeliveryDates();
+        }
+
         function applySupplierDeliveryDates() {
             const orderDate = document.getElementById('poOrderDate');
             const expectedDelivery = document.getElementById('poExpectedDelivery');
@@ -1135,9 +1138,13 @@
             }
 
             const leadDays = Math.min(60, Math.max(1, Number.parseInt(supplier.lead_time_days || 3, 10) || 3));
-            const deliveryDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + leadDays);
+            const deliveryDate = addSupplierWorkingDays(today, leadDays);
             expectedDelivery.value = localDateValue(deliveryDate);
-            if (helper) helper.textContent = `Calculated from this supplier's saved ${leadDays}-day delivery lead time.`;
+            if (helper) {
+                helper.textContent = supplierDeliveryCalendarLoaded
+                    ? `Calculated from this supplier's saved ${leadDays}-working-day lead time. Weekends and configured closures are skipped.`
+                    : `Weekend-adjusted preview for this supplier's ${leadDays}-working-day lead time. The final date is confirmed when the PO is saved.`;
+            }
         }
 
         function applySupplierPaymentTerms() {

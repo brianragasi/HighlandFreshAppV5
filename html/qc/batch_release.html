@@ -396,11 +396,12 @@
                                         <th>Rejected On</th>
                                         <th>Reason</th>
                                         <th>Rejected By</th>
+                                        <th class="text-center">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody id="rejectedTable">
                                     <tr>
-                                        <td colspan="6" class="text-center py-8 text-base-content/40">
+                                        <td colspan="7" class="text-center py-8 text-base-content/40">
                                             <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
                                             <p>Loading...</p>
                                         </td>
@@ -657,6 +658,14 @@
                 <i class="fas fa-box text-primary"></i>
                 Batch Details - <span id="viewBatchNumber">-</span>
             </h3>
+
+            <div id="viewFinalizedNotice" class="alert alert-info py-3 mb-4 hidden" role="status">
+                <i class="fas fa-lock" aria-hidden="true"></i>
+                <div>
+                    <p class="font-semibold">Finalized QC decision — read-only</p>
+                    <p class="text-xs">The verification findings and decision can no longer be changed.</p>
+                </div>
+            </div>
 
             <div class="space-y-4 overflow-y-auto max-h-[60vh] pr-2">
                 <!-- Batch Header -->
@@ -969,7 +978,7 @@
             const table = document.getElementById('rejectedTable');
             table.innerHTML = `
                 <tr>
-                    <td colspan="6" class="text-center py-8 text-base-content/40">
+                    <td colspan="7" class="text-center py-8 text-base-content/40">
                         <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
                         <p>Loading...</p>
                     </td>
@@ -989,19 +998,24 @@
                                 <td><code class="font-mono font-semibold">${escapeHtml(b.batch_code || '-')}</code></td>
                                 <td>${escapeHtml(b.product_name || b.product_type || '-')}</td>
                                 <td class="text-right">${b.raw_milk_liters?.toLocaleString() || '-'} L</td>
-                                <td>${b.updated_at ? formatDateTime(b.updated_at) : '-'}</td>
+                                <td>${b.qc_inspected_at ? formatDateTime(b.qc_inspected_at) : '-'}</td>
                                 <td>
                                     <span class="text-error truncate max-w-[200px] block" title="${escapeHtml(b.qc_notes || '-')}">
                                         ${escapeHtml(b.qc_notes || '-')}
                                     </span>
                                 </td>
-                                <td>${escapeHtml(b.created_by_first ? (b.created_by_first + ' ' + (b.created_by_last || '')) : '-')}</td>
+                                <td>${escapeHtml(b.inspected_by_first ? (b.inspected_by_first + ' ' + (b.inspected_by_last || '')) : '-')}</td>
+                                <td class="text-center">
+                                    <button class="btn btn-ghost btn-sm btn-square" onclick="viewBatch(${Number(b.id) || 0})" title="View read-only details" aria-label="View read-only details for batch ${escapeHtml(b.batch_code || '')}">
+                                        <i class="fas fa-eye" aria-hidden="true"></i>
+                                    </button>
+                                </td>
                             </tr>
                         `).join('');
                     } else {
                         table.innerHTML = `
                             <tr>
-                                <td colspan="6" class="text-center py-8 text-base-content/40">No rejected batches found</td>
+                                <td colspan="7" class="text-center py-8 text-base-content/40">No rejected batches found</td>
                             </tr>
                         `;
                     }
@@ -1010,7 +1024,7 @@
                 console.error('Failed to load rejected batches:', error);
                 table.innerHTML = `
                     <tr>
-                        <td colspan="6" class="text-center py-8 text-error">Failed to load batches</td>
+                        <td colspan="7" class="text-center py-8 text-error">Failed to load batches</td>
                     </tr>
                 `;
             }
@@ -1567,6 +1581,10 @@
                     };
                     document.getElementById('viewBatchStatus').innerHTML = statusBadges[qcStatus]
                         || `<span class="badge">${escapeHtml(qcStatus || '-')}</span>`;
+                    document.getElementById('viewFinalizedNotice').classList.toggle(
+                        'hidden',
+                        !['released', 'rejected'].includes(qcStatus)
+                    );
 
                     document.getElementById('viewProdDate').textContent = b.manufacturing_date
                         ? formatDate(b.manufacturing_date)
@@ -1609,10 +1627,11 @@
                     if (qcStatus === 'released' || qcStatus === 'rejected') {
                         document.getElementById('viewVerificationSection').classList.remove('hidden');
                         document.getElementById('viewVerifiedBy').textContent = (b.verified_by_name || '').trim()
+                            || (b.inspected_by_name || '').trim()
                             || [b.released_by_first, b.released_by_last].filter(Boolean).join(' ')
                             || '-';
-                        document.getElementById('viewVerifiedAt').textContent = b.released_at || b.qc_released_at
-                            ? formatDateTime(b.released_at || b.qc_released_at)
+                        document.getElementById('viewVerifiedAt').textContent = b.released_at || b.qc_released_at || b.qc_inspected_at
+                            ? formatDateTime(b.released_at || b.qc_released_at || b.qc_inspected_at)
                             : '-';
 
                         const notes = b.qc_notes || b.notes;

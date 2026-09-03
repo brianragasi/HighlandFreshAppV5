@@ -514,6 +514,7 @@
     <script src="../../../js/ui/live-refresh.js?v=20260820-1"></script>
     <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_fg,general_manager"></script>
     <script src="../../../js/utils/units.js?v=20260712"></script>
+    <script src="../../../js/utils/product-display.js?v=20260903-sku1"></script>
     <script src="../../../js/warehouse/fg.service.js?v=20260718"></script>
 
     <script>
@@ -687,8 +688,13 @@
                     console.warn('PackUnits display fallback', e);
                 }
 
-                let productName = batch.product_name || batch.product_type || 'Unknown';
-                productName = productName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                const skuLines = (batch.packaging_lines || []).filter(line => Number(line.quantity || 0) > 0);
+                const productName = skuLines.length === 1
+                    ? ProductDisplay.name(skuLines[0])
+                    : ProductDisplay.name(batch);
+                const skuSummary = skuLines.length > 1
+                    ? skuLines.map(line => `${ProductDisplay.name(line)} (${Number(line.quantity).toLocaleString()})`).join(' · ')
+                    : '';
 
                 const packagedAt = batch.packaged_at || batch.production_date;
                 const packagedLabel = packagedAt ? new Date(packagedAt).toLocaleDateString() : 'N/A';
@@ -703,8 +709,8 @@
                         <code class="font-mono text-sm bg-base-200 px-2 py-1 rounded">${escapeHtml(batch.batch_code || batch.batch_number || ('FG-' + batch.id))}</code>
                     </td>
                     <td>
-                        <div class="font-medium">${productName}</div>
-                        <div class="text-xs text-base-content/60">${escapeHtml(batch.variant || batch.product_variant || '')}</div>
+                        <div class="font-medium">${escapeHtml(productName)}</div>
+                        ${skuSummary ? `<div class="text-xs text-base-content/60">SKUs: ${escapeHtml(skuSummary)}</div>` : ''}
                         <div class="text-xs text-info mt-0.5">${packLine}</div>
                         ${integrityHtml}
                     </td>
@@ -779,7 +785,7 @@
                     <td class="text-sm">${new Date(r.created_at).toLocaleString()}</td>
                     <td><code class="text-xs bg-base-200 px-2 py-1 rounded">${escapeHtml(r.batch_code || 'N/A')}</code></td>
                     <td class="font-medium">
-                        ${escapeHtml(r.product_name || 'Unknown')}
+                        ${escapeHtml(ProductDisplay.name(r))}
                         <div class="text-xs text-info">${PackUnits.formatPackLine(row)}</div>
                     </td>
                     <td class="text-right">${packs > 0 ? packs : '-'}</td>
@@ -795,17 +801,10 @@
             const batch = pendingBatches.find(b => b.id === itemId || b.id == itemId);
             if (!batch) return;
 
-            let productName = batch.product_name || batch.product_type || 'Unknown';
-            productName = productName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-            
-            const sizeNum = batch.size_ml || batch.size_value;
-            const sizeUnit = batch.unit || batch.size_unit || 'ml';
-            if (sizeNum && !productName.includes(String(sizeNum))) {
-                productName += ` ${sizeNum}${sizeUnit}`;
-            }
-            if (batch.variant && !productName.toLowerCase().includes(batch.variant.toLowerCase())) {
-                productName += ` – ${batch.variant}`;
-            }
+            const skuLines = (batch.packaging_lines || []).filter(line => Number(line.quantity || 0) > 0);
+            const productName = skuLines.length > 1
+                ? skuLines.map(line => `${ProductDisplay.name(line)} (${Number(line.quantity).toLocaleString()})`).join(' · ')
+                : ProductDisplay.name(skuLines[0] || batch);
 
             const qtyDisplay = PackUnits.formatQuantity(batch, { preferSplit: true });
             const packLine = PackUnits.formatPackLine(batch);

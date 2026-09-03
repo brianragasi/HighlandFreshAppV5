@@ -717,6 +717,7 @@
     <script src="../../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_fg,general_manager"></script>
     <script src="../../../js/utils/units.js?v=20260712"></script>
+    <script src="../../../js/utils/product-display.js?v=20260903-sku1"></script>
     <script src="../../../js/warehouse/fg.service.js"></script>
 
     <script>
@@ -978,7 +979,7 @@
             const expiryPart = item.expiry_date ? ` (exp ${new Date(item.expiry_date).toLocaleDateString()})` : '';
             const confirmed = await AuthService.confirmAction({
                 title: 'Confirm Restock',
-                message: `Add ${item.quantity} unit(s) of ${item.product_name || 'Unknown'}${expiryPart} — Batch ${item.batch_code || 'N/A'}${locationPart}?`,
+                message: `Add ${item.quantity} unit(s) of ${ProductDisplay.name(item)}${expiryPart} — Batch ${item.batch_code || 'N/A'}${locationPart}?`,
                 confirmText: 'Confirm Restock',
                 tone: 'success',
                 icon: 'fa-check-circle'
@@ -1027,7 +1028,7 @@
                 return `
                     <tr class="awaiting-putaway" style="cursor:default">
                         <td>
-                            <div class="fg-product" title="${escapeHtml(item.product_name || 'Unknown')}">${escapeHtml(item.product_name || 'Unknown')}</div>
+                            <div class="fg-product" title="${escapeHtml(ProductDisplay.name(item))}">${escapeHtml(ProductDisplay.name(item))}</div>
                         </td>
                         <td>${batchText}</td>
                         <td>${locationText}</td>
@@ -1147,9 +1148,7 @@
                 const totalPieces = getTotalPieces(item);
                 const state = getInventoryState(item);
 
-                const sizeLine = [item.variant, `${item.size_value || ''}${item.size_unit || ''}`]
-                    .filter(Boolean).join(' ').trim();
-                const productTitle = [item.product_name, sizeLine].filter(Boolean).join(' · ');
+                const productTitle = ProductDisplay.name(item);
 
                 const locationText = item.chiller_name
                     ? `<span class="fg-loc" title="${escapeHtml(item.chiller_name)}">${escapeHtml(item.chiller_name)}</span>`
@@ -1176,7 +1175,7 @@
                         onclick="viewBatchDetails(${item.id})"
                         title="Open details">
                         <td>
-                            <div class="fg-product" title="${escapeHtml(productTitle)}">${escapeHtml(item.product_name || 'Unknown')}</div>
+                            <div class="fg-product" title="${escapeHtml(productTitle)}">${escapeHtml(productTitle)}</div>
                         </td>
                         <td><span class="fg-batch">${escapeHtml(item.batch_code || '—')}</span></td>
                         <td>${locationText}</td>
@@ -1247,7 +1246,7 @@
 
             let filtered = inventory.filter(item => {
                 const matchSearch = !combinedSearch ||
-                    (item.product_name && item.product_name.toLowerCase().includes(combinedSearch)) ||
+                    ProductDisplay.name(item).toLowerCase().includes(combinedSearch) ||
                     (item.batch_code && item.batch_code.toLowerCase().includes(combinedSearch));
                 const matchChiller = !chiller || item.chiller_id == chiller;
                 const state = getInventoryState(item);
@@ -1275,7 +1274,7 @@
                     case 'expiry_desc':
                         return new Date(b.expiry_date || 0) - new Date(a.expiry_date || 0);
                     case 'name_asc':
-                        return (a.product_name || '').localeCompare(b.product_name || '');
+                        return ProductDisplay.name(a).localeCompare(ProductDisplay.name(b));
                     case 'quantity_desc':
                         return getTotalPieces(b) - getTotalPieces(a);
                     default:
@@ -1307,7 +1306,7 @@
                 const totalPieces = getTotalPieces(item);
                 if (totalPieces <= 0) return;
                 const qty = `${totalPieces.toLocaleString()} ${shortUnit(item, totalPieces)}`;
-                select.innerHTML += `<option value="${item.id}">${escapeHtml(item.product_name)} · ${escapeHtml(item.batch_code || '—')} · ${escapeHtml(qty)}</option>`;
+                select.innerHTML += `<option value="${item.id}">${escapeHtml(ProductDisplay.name(item))} · ${escapeHtml(item.batch_code || '—')} · ${escapeHtml(qty)}</option>`;
             });
         }
 
@@ -1342,10 +1341,9 @@
 
             const state = getInventoryState(item);
             const total = getTotalPieces(item);
-            const sizeLine = [item.variant, `${item.size_value || ''}${item.size_unit || ''}`]
-                .filter(Boolean).join(' ').trim();
+            const sizeLine = ProductDisplay.size(item);
 
-            document.getElementById('detailProduct').textContent = item.product_name || 'Unknown';
+            document.getElementById('detailProduct').textContent = ProductDisplay.name(item);
             document.getElementById('detailBatch').textContent = item.batch_code || '—';
 
             const rows = [
@@ -1404,7 +1402,7 @@
 
             const confirmed = await AuthService.confirmAction({
                 title: 'Report Expired Stock to QC',
-                message: `Report ${item.product_name || 'this item'} (${item.batch_code || 'N/A'}) to QC? QC will verify the stock and prepare the disposal request. No stock will be removed now.`,
+                message: `Report ${ProductDisplay.name(item)} (${item.batch_code || 'N/A'}) to QC? QC will verify the stock and prepare the disposal request. No stock will be removed now.`,
                 confirmText: 'Send Report',
                 tone: 'warning',
                 icon: 'fa-flag'

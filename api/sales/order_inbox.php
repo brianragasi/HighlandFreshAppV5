@@ -230,7 +230,8 @@ function handleCustomerOrderInboxGet(PDO $db, string $action): void
             Response::notFound('Imported customer PO not found');
         }
         $lines = $db->prepare("
-            SELECT l.*, p.product_code, p.product_name, p.base_unit,
+            SELECT l.*, p.product_code, p.product_name, p.variant,
+                   p.unit_size, p.unit_measure, p.base_unit,
                    p.box_unit, p.pieces_per_box
             FROM customer_order_import_lines l
             LEFT JOIN products p ON p.id = l.product_id

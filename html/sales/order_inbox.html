@@ -129,6 +129,7 @@
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="sales_custodian,general_manager"></script>
+    <script src="../../js/utils/product-display.js?v=20260903-sku1"></script>
     <script src="../../js/sales/sidebar.js?v=20260828-salesnav1"></script>
     <script src="../../js/sales/sales.service.js"></script>
     <script>
@@ -348,14 +349,10 @@
             return Number.isFinite(quantity) ? quantity : 0;
         }
         function productLabel(product) {
-            const variant = String(product.variant || '').trim();
-            const size = !/\d/.test(variant)
-                ? [product.unit_size, product.unit_measure].filter(value => value !== '' && value !== null && value !== undefined).join(' ')
-                : '';
             const available = productAvailable(product);
             const quantityText = Number.isInteger(available) ? String(available) : available.toFixed(2);
             const stockText = available > 0 ? ` [${quantityText} ${product.quantity_unit || product.base_unit} available]` : ' [No usable stock]';
-            return `${product.product_code} - ${product.product_name}${variant ? ` (${variant})` : ''}${size ? ` ${size}` : ''}${stockText}`;
+            return `${ProductDisplay.name(product, { includeCode: true })}${stockText}`;
         }
         function productOptions(selected) {
             const selectedCode = String(selected || '').trim();

@@ -274,7 +274,7 @@
                     <div class="flex gap-2 flex-wrap">
                         <a href="purchase_orders.html?action=new"
                             class="btn btn-sm bg-white/20 border-white/30 text-white hover:bg-white/30 backdrop-blur-sm">
-                            <i class="fas fa-scale-balanced"></i> Review Confirmed Stock
+                            <i class="fas fa-file-circle-plus"></i> Create PO
                         </a>
                         <a href="suppliers.html"
                             class="btn btn-sm bg-white/20 border-white/30 text-white hover:bg-white/30 backdrop-blur-sm">
@@ -292,9 +292,9 @@
                     <p class="text-sm text-base-content/70" id="approvedPrAlertText"></p>
                     <div id="approvedPrAlertItems" class="flex flex-wrap gap-2 mt-3"></div>
                 </div>
-                <a href="purchase_orders.html?action=new" class="btn btn-warning btn-sm">
-                    <i class="fas fa-file-circle-plus"></i>
-                    New PO
+                <a href="#requisitionsSection" class="btn btn-warning btn-sm">
+                    <i class="fas fa-clipboard-list"></i>
+                    Review Items
                 </a>
             </div>
 
@@ -354,7 +354,7 @@
                 </a>
 
                 <!-- PRS Inbox -->
-                <a href="purchase_orders.html?action=new" class="bento-card card bg-base-100 border border-base-300 cursor-pointer" id="cardRequisitions">
+                <a href="#requisitionsSection" class="bento-card card bg-base-100 border border-base-300 cursor-pointer" id="cardRequisitions">
                     <div class="card-body p-4 lg:p-5">
                         <div class="flex items-center justify-between mb-3">
                             <div class="stat-icon cyan">
@@ -413,8 +413,8 @@
                             </h3>
                             <p class="text-xs text-base-content/60 mt-1">Usable stock at or below the minimum safety level.</p>
                         </div>
-                        <a href="purchase_orders.html?action=new" class="btn btn-outline btn-sm">
-                            <i class="fas fa-file-signature"></i> Create Supplier PO
+                        <a href="#requisitionsSection" class="btn btn-outline btn-sm">
+                            <i class="fas fa-clipboard-list"></i> View Requisitions
                         </a>
                     </div>
                     <div class="overflow-x-auto">
@@ -489,15 +489,6 @@
                     <div class="card-body p-4 lg:p-5">
                         <h3 class="font-bold text-sm text-base-content/70 uppercase tracking-wide mb-2">Quick Actions</h3>
                         <div class="space-y-1">
-                            <a href="purchase_orders.html?action=new" class="quick-action">
-                                <div class="qa-icon" style="background: linear-gradient(135deg, #3b82f6, #2563eb);">
-                                    <i class="fas fa-plus"></i>
-                                </div>
-                                <div>
-                                    <p class="text-sm font-semibold">Review Confirmed Stock</p>
-                                    <p class="text-xs text-base-content/50">Create a new PO</p>
-                                </div>
-                            </a>
                             <a href="suppliers.html" class="quick-action">
                                 <div class="qa-icon" style="background: linear-gradient(135deg, #10b981, #059669);">
                                     <i class="fas fa-address-book"></i>
@@ -527,9 +518,6 @@
                                     Ongoing Purchase Orders
                                 </h3>
                                 <div class="flex gap-2">
-                                    <a href="purchase_orders.html?action=new" class="btn btn-primary btn-sm">
-                                        <i class="fas fa-plus"></i> New P.O.
-                                    </a>
                                     <a href="purchase_orders.html" class="btn btn-ghost btn-sm text-primary" aria-label="View all purchase orders">
                                         <i class="fas fa-arrow-right"></i>
                                     </a>
@@ -637,7 +625,7 @@
     <script src="../../js/ui/live-refresh.js?v=20260820-1"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="purchaser,general_manager"></script>
     <script src="../../js/purchasing/purchasing.service.js?v=found-stock-1"></script>
-    <script src="../../js/purchasing/sidebar.js?v=20260829-purchasing-nav-1"></script>
+    <script src="../../js/purchasing/sidebar.js?v=20260903-purchasing-nav-2"></script>
 
     <script>
         // ========================================
@@ -750,7 +738,7 @@
             if (procNotifs.length) {
                 listHtml += procNotifs.map(n => `
                     <li>
-                            <a href="${n.notification_type === 'found_stock_price_check' ? '#foundStockPriceSection' : 'purchase_orders.html?action=new'}" class="items-start">
+                            <a href="${n.notification_type === 'found_stock_price_check' ? '#foundStockPriceSection' : '#requisitionsSection'}" class="items-start">
                             <i class="fas fa-file-signature text-warning mt-1"></i>
                             <div>
                                 <p class="font-medium">${escapeHtml(n.title)}</p>
@@ -772,22 +760,17 @@
                 const noun = count === 1 ? 'confirmed item needs' : 'confirmed items need';
                 title.textContent = `${count} ${noun} a Purchasing decision`;
                 text.textContent = 'Open the review to order now, defer until a chosen date, or close without ordering and record why.';
-                items.innerHTML = confirmedItems.slice(0, 4).map(item => {
-                    const prLink = 'purchase_orders.html?action=new';
-                    return `
-                        <a href="${prLink}" class="badge border-warning bg-warning/10 text-base-content gap-1 h-auto py-2">
+                items.innerHTML = confirmedItems.slice(0, 4).map(item => `
+                        <span class="badge border-warning bg-warning/10 text-base-content gap-1 h-auto py-2">
                             <i class="fas fa-box"></i>
                             ${escapeHtml(item.item_name)} — ${formatQuantity(item.remaining_quantity ?? item.quantity)} ${escapeHtml(item.unit || 'units')}
-                        </a>
-                    `;
-                }).join('');
+                        </span>
+                    `).join('');
                 alert.classList.remove('hidden');
 
-                listHtml += confirmedItems.map(item => {
-                    const prLink = 'purchase_orders.html?action=new';
-                    return `
+                listHtml += confirmedItems.map(item => `
                         <li>
-                            <a href="${prLink}" class="items-start">
+                            <a href="#requisitionsSection" class="items-start">
                                 <i class="fas fa-box text-warning mt-1"></i>
                                 <div>
                                     <p class="font-medium">${escapeHtml(item.item_name)} needs a decision</p>
@@ -796,8 +779,7 @@
                                 </div>
                             </a>
                         </li>
-                    `;
-                }).join('');
+                    `).join('');
             } else {
                 alert.classList.add('hidden');
                 items.innerHTML = '';

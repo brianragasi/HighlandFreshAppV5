@@ -223,6 +223,9 @@ function getSalesByProduct($db) {
             p.id,
             p.product_name,
             p.product_code as sku,
+            p.variant,
+            p.unit_size,
+            p.unit_measure,
             COALESCE(SUM(oi.quantity_ordered), 0) as quantity_sold,
             COALESCE(SUM(oi.quantity_ordered), 0) as quantity,
             COALESCE(SUM(oi.line_total), 0) as revenue
@@ -231,7 +234,7 @@ function getSalesByProduct($db) {
         JOIN products p ON oi.product_id = p.id
         WHERE DATE(o.created_at) BETWEEN ? AND ?
         AND o.status NOT IN ('cancelled', 'voided')
-        GROUP BY p.id, p.product_name, p.product_code
+        GROUP BY p.id, p.product_name, p.product_code, p.variant, p.unit_size, p.unit_measure
         HAVING revenue > 0
         ORDER BY revenue DESC
         LIMIT ?

@@ -1112,6 +1112,9 @@ function handleGet($db, $action) {
                 SELECT 
                     t.*,
                     fg.product_name,
+                    COALESCE(p.variant, fg.product_variant, fg.variant) AS variant,
+                    COALESCE(p.unit_size, fg.size_ml) AS size_value,
+                    COALESCE(p.unit_measure, fg.unit, 'ml') AS size_unit,
                     fg.batch_id,
                     pb.batch_code,
                     t.boxes_quantity as quantity_boxes,
@@ -1740,14 +1743,38 @@ function handlePost($db, $action, $currentUser) {
 
                     // Resolve product if missing
                     if (!$productId) {
-                        $prodLookup = $db->prepare("
-                            SELECT id FROM products
-                            WHERE product_name = ? OR category = ?
-                            LIMIT 1
-                        ");
-                        $prodLookup->execute([$productName, $batch['product_type'] ?? 'bottled_milk']);
-                        $found = $prodLookup->fetchColumn();
-                        $productId = $found ? (int) $found : null;
+                        if ($sizeMl) {
+                            $prodLookup = $db->prepare("
+                                SELECT id FROM products
+                                WHERE (product_name = ? OR category = ?)
+                                  AND unit_size = ?
+                                ORDER BY CASE WHEN product_name = ? THEN 0 ELSE 1 END, id
+                                LIMIT 2
+                            ");
+                            $prodLookup->execute([
+                                $productName,
+                                $batch['product_type'] ?? 'bottled_milk',
+                                $sizeMl,
+                                $productName,
+                            ]);
+                        } else {
+                            $prodLookup = $db->prepare("
+                                SELECT id FROM products
+                                WHERE product_name = ?
+                                ORDER BY id
+                                LIMIT 2
+                            ");
+                            $prodLookup->execute([$productName]);
+                        }
+                        $matches = $prodLookup->fetchAll(PDO::FETCH_COLUMN);
+                        if (count($matches) !== 1) {
+                            throw new Exception(
+                                "Cannot identify the exact packaged SKU for '{$productName}'"
+                                . ($sizeMl ? " ({$sizeMl} ml)" : '')
+                                . '. Link the packaging line to a product SKU before receiving it.'
+                            );
+                        }
+                        $productId = (int) $matches[0];
                     }
 
                     // Compute boxes/pieces from product pack config

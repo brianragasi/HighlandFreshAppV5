@@ -37,7 +37,7 @@ $checks = [
     'Purchasing reads and orders the confirmed shortage' =>
         str_contains($purchasingPage, 'getConfirmedLowStock()')
         && str_contains($purchasingPage, 'stock_validation_item_id: prItemId')
-        && str_contains($purchasingPage, 'purchasing.service.js?v=procurement-flow-3')
+        && str_contains($purchasingPage, 'purchasing.service.js?v=working-calendar-1')
         && str_contains($poApi, 'FROM stock_validation_items svi')
         && str_contains($poApi, 'insertStockValidationItemPOAllocation'),
     'Warehouse screen uses plain validation wording' =>

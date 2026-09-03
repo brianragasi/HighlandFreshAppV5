@@ -157,7 +157,8 @@ function handleGet($db, $action) {
             
             // Get invoice line items
             $itemsStmt = $db->prepare("
-                SELECT ii.*, p.product_name, p.product_code, p.unit
+                SELECT ii.*, p.product_name, p.product_code, p.variant,
+                       p.unit_size, p.unit_measure, p.unit
                 FROM sales_invoice_items ii
                 LEFT JOIN products p ON ii.product_id = p.id
                 WHERE ii.invoice_id = ?

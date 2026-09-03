@@ -80,7 +80,7 @@
                         </div>
                         <div>
                             <h2 class="font-semibold text-base-content">Material Requests</h2>
-                            <p class="text-sm text-base-content/60">Create and track material requests waiting for GM approval and Warehouse Raw release.</p>
+                            <p class="text-sm text-base-content/60">Create recipe-based material requests and track Warehouse Raw release.</p>
                         </div>
                     </div>
                     <button class="btn btn-primary" onclick="showNewRequisitionModal()">
@@ -100,7 +100,7 @@
                             </div>
                             <div>
                                 <div class="text-2xl font-bold stat-value" id="statPending">0</div>
-                                <div class="text-sm text-base-content/60">Waiting GM</div>
+                                <div class="text-sm text-base-content/60">Exception Review</div>
                             </div>
                         </div>
                     </div>
@@ -180,8 +180,8 @@
                             </label>
                             <select id="statusFilter" class="select select-bordered select-sm" onchange="loadRequisitions()">
                                 <option value="">All Status</option>
-                                <option value="pending">Waiting for GM</option>
-                                <option value="approved">Approved for Release</option>
+                                <option value="pending">Exception Review</option>
+                                <option value="approved">Ready for Warehouse</option>
                                 <option value="partial">Partial</option>
                                 <option value="fulfilled">Fulfilled</option>
                                 <option value="rejected">Rejected</option>
@@ -261,7 +261,7 @@
                 <div class="flex items-start justify-between gap-3">
                     <div>
                         <h3 class="text-lg font-semibold tracking-tight">Request materials</h3>
-                        <p class="text-sm text-base-content/55 mt-0.5">For GM approval — materials follow the finished liters you plan</p>
+                        <p class="text-sm text-base-content/55 mt-0.5">Uses the approved recipe and goes directly to Warehouse Raw</p>
                     </div>
                     <form method="dialog">
                         <button type="submit" class="btn btn-ghost btn-sm btn-circle" aria-label="Close">
@@ -366,7 +366,7 @@
                     <button type="button" class="btn btn-ghost" onclick="document.getElementById('newRequisitionModal').close()">Cancel</button>
                     <button type="submit" id="submitRequisitionBtn" class="btn btn-primary gap-2">
                         <i class="fas fa-paper-plane"></i>
-                        <span>Submit for GM Approval</span>
+                        <span>Send to Warehouse</span>
                     </button>
                 </div>
             </form>
@@ -1757,8 +1757,8 @@
                                     <i class="fas fa-exclamation-triangle"></i> Needs plan
                                 </button>
                             ` : ''}
-                            ${req.status === 'pending' && (req.requested_by === (currentUser && currentUser.id) || currentUser.role === 'general_manager') ? `
-                                <button class="btn btn-ghost btn-xs join-item text-error" onclick="cancelRequisition(${req.id})" title="Cancel this pending request">
+                            ${['pending', 'approved'].includes(req.status) && Number(req.total_issued_quantity || 0) <= 0.0005 && (String(req.requested_by) === String(currentUser && currentUser.id) || currentUser.role === 'general_manager') ? `
+                                <button class="btn btn-ghost btn-xs join-item text-error" onclick="cancelRequisition(${req.id})" title="Cancel this unreleased request">
                                     <i class="fas fa-ban"></i>
                                 </button>
                             ` : ''}
@@ -2113,7 +2113,11 @@
                 const response = await ProductionService.createRequisition(data);
 
                 if (response && response.success) {
-                    showToast('Request submitted. It is waiting for GM approval.', 'success');
+                    if (response.data?.status === 'pending') {
+                        showToast('This run contains material adjustments and was sent for GM exception review.', 'warning');
+                    } else {
+                        showToast('Recipe-authorized request sent directly to Warehouse Raw.', 'success');
+                    }
                     document.getElementById('newRequisitionModal').close();
                     closeStockShortageModal();
                     loadRequisitions();
@@ -2142,7 +2146,7 @@
                 requisitionSubmitInProgress = false;
                 if (submitButton) {
                     submitButton.disabled = false;
-                    submitButton.innerHTML = '<i class="fas fa-paper-plane"></i><span>Submit for GM Approval</span>';
+                    submitButton.innerHTML = '<i class="fas fa-paper-plane"></i><span>Send to Warehouse</span>';
                 }
             }
         }
@@ -2456,6 +2460,11 @@
                 : req.planned_product_name
                     ? `<tr><td class="text-base-content/60">Planned Product</td><td>${escapeHtml(req.planned_product_name)}${req.planned_variant ? ` (${escapeHtml(req.planned_variant)})` : ''}<br><span class="text-sm text-base-content/60">${escapeHtml(req.planned_quantity || '')} ${escapeHtml(req.planned_yield_unit || '')} planned before run creation</span></td></tr>`
                     : '';
+            const authorizationLabel = req.authorization_basis === 'approved_recipe'
+                ? 'Approved master recipe'
+                : req.authorization_basis === 'recipe_adjustment_exception' || req.status === 'pending'
+                    ? 'GM exception review required'
+                    : (req.approved_by_first ? `GM exception approval by ${escapeHtml(req.approved_by_first)} ${escapeHtml(req.approved_by_last || '')}` : 'Legacy workflow');
             
             // V4.0 — Render the stock-override block (audit trail) if the
             // requester self-acknowledged a shortage on submit. Sits above
@@ -2520,6 +2529,7 @@
                                 <tbody>
                                     <tr><td class="text-base-content/60 w-32">Requested By</td><td>${escapeHtml(req.requested_by_first ? req.requested_by_first + ' ' + req.requested_by_last : '-')}</td></tr>
                                     <tr><td class="text-base-content/60">Created</td><td>${formatDate(req.created_at)}</td></tr>
+                                    <tr><td class="text-base-content/60">Authorization</td><td>${authorizationLabel}</td></tr>
                                     ${req.fulfilled_by_first ? `<tr><td class="text-base-content/60">Fulfilled By</td><td>${escapeHtml(req.fulfilled_by_first)} ${escapeHtml(req.fulfilled_by_last)}</td></tr>` : ''}
                                 </tbody>
                             </table>
@@ -2694,8 +2704,8 @@
 
         function formatStatusLabel(status) {
             const labels = {
-                pending: 'Waiting for GM',
-                approved: 'Approved for Release',
+                pending: 'Exception Review',
+                approved: 'Ready for Warehouse',
                 partial: 'Partially Released',
                 fulfilled: 'Released'
             };

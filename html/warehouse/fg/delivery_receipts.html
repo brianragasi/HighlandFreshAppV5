@@ -1052,6 +1052,7 @@
     <script src="../../../js/ui/dialogs.js"></script>
     <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_fg,general_manager"></script>
     <script src="../../../js/utils/units.js?v=20260712"></script>
+    <script src="../../../js/utils/product-display.js?v=20260903-sku1"></script>
     <script src="../../../js/warehouse/fg.service.js"></script>
 
     <script>
@@ -1197,7 +1198,7 @@
                             <div class="flex items-center gap-3">
                                 <i class="fas fa-ban text-error text-2xl"></i>
                                 <div>
-                                    <div class="font-bold">${escapeHtml(pickCurrentScan.product_name)}</div>
+                                    <div class="font-bold">${escapeHtml(ProductDisplay.name(pickCurrentScan))}</div>
                                     <div class="text-sm text-error">Expired on ${expDate.toLocaleDateString()} — cannot dispatch.</div>
                                 </div>
                             </div>`;
@@ -1211,8 +1212,8 @@
                     if (pickModalDR && pickModalDR.items && pickModalDR.items.length > 0) {
                         const matchingItem = pickModalDR.items.find(item => item.product_id == pickCurrentScan.product_id);
                         if (!matchingItem) {
-                            const drProductNames = pickModalDR.items.map(i => i.product_name).join(', ');
-                            pickBlockOverScan(`This product (${pickCurrentScan.product_name}) is NOT on this picking ticket! Required: ${drProductNames}`);
+                            const drProductNames = pickModalDR.items.map(i => ProductDisplay.name(i)).join(', ');
+                            pickBlockOverScan(`This product (${ProductDisplay.name(pickCurrentScan)}) is NOT on this picking ticket! Required: ${drProductNames}`);
                             return;
                         }
                         const remaining = pickGetRemainingQty(pickCurrentScan.product_id);
@@ -1229,7 +1230,7 @@
                         <div class="flex items-center gap-3">
                             <i class="fas fa-barcode text-info text-xl"></i>
                             <div class="flex-1 min-w-0">
-                                <div class="font-semibold truncate">${escapeHtml(pickCurrentScan.product_name)}</div>
+                                <div class="font-semibold truncate">${escapeHtml(ProductDisplay.name(pickCurrentScan))}</div>
                                 <div class="text-xs text-base-content/60">Batch ${escapeHtml(pickCurrentScan.batch_code)} identified. Enter the quantity to add.</div>
                             </div>
                             <span class="badge badge-info badge-sm">0 ${escapeHtml(labels.base)} added</span>
@@ -1277,8 +1278,8 @@
                 const matchingItem = pickModalDR.items.find(item => item.product_id == scannedProductId);
 
                 if (!matchingItem) {
-                    const drProductNames = pickModalDR.items.map(i => i.product_name).join(', ');
-                    pickBlockOverScan(`This product (${pickCurrentScan.product_name}) is NOT on this picking ticket! Required: ${drProductNames}`);
+                    const drProductNames = pickModalDR.items.map(i => ProductDisplay.name(i)).join(', ');
+                    pickBlockOverScan(`This product (${ProductDisplay.name(pickCurrentScan)}) is NOT on this picking ticket! Required: ${drProductNames}`);
                     return;
                 }
 
@@ -1312,7 +1313,7 @@
             const piecesPerBox = Math.max(1, Number(labels.piecesPerPack) || 1);
 
             document.getElementById('pickQtyInventoryId').value = pickCurrentScan.id;
-            document.getElementById('pickQtyProduct').textContent = pickCurrentScan.product_name;
+            document.getElementById('pickQtyProduct').textContent = ProductDisplay.name(pickCurrentScan);
             document.getElementById('pickQtyBatch').textContent = pickCurrentScan.batch_code;
             document.getElementById('pickQtyAvailable').textContent = alreadySelectedFromBatch > 0
                 ? `${availableDisplay} (${alreadySelectedFromBatch.toLocaleString()} already selected)`
@@ -1468,8 +1469,8 @@
                 return `
                 <tr>
                     <td>
-                        <div class="font-medium">${escapeHtml(item.product_name)}</div>
-                        <div class="text-xs text-base-content/60">${escapeHtml(item.variant || '')}</div>
+                        <div class="font-medium">${escapeHtml(ProductDisplay.name(item))}</div>
+                        <div class="text-xs text-base-content/60">${escapeHtml(item.product_sku || item.product_code || '')}</div>
                     </td>
                     <td><code class="text-xs">${escapeHtml(item.batch_code)}</code></td>
                     <td>${item.expiry_date ? new Date(item.expiry_date).toLocaleDateString() : 'N/A'}</td>
@@ -1527,7 +1528,7 @@
             const packLine = PackUnits.formatPackLine(item);
 
             document.getElementById('pickQtyInventoryId').value = item.id;
-            document.getElementById('pickQtyProduct').textContent = item.product_name;
+            document.getElementById('pickQtyProduct').textContent = ProductDisplay.name(item);
             document.getElementById('pickQtyBatch').textContent = item.batch_code;
             document.getElementById('pickQtyAvailable').textContent = availableDisplay;
             document.getElementById('pickQtyPackConfig').textContent = packLine;
@@ -1576,14 +1577,14 @@
                     const required = pickGetRequiredQty(line);
                     const scanned = pickGetScannedQty(line.product_id);
                     if (scanned > required) {
-                        pickBlockOverScan(`Cannot exceed ordered quantity for ${line.product_name} (${scanned}/${required}).`);
+                        pickBlockOverScan(`Cannot exceed ordered quantity for ${ProductDisplay.name(line)} (${scanned}/${required}).`);
                         return;
                     }
                 }
                 for (const staged of pickScannedItems) {
                     const onTicket = pickModalDR.items.some(i => i.product_id == staged.product_id);
                     if (!onTicket) {
-                        pickBlockOverScan(`${staged.product_name} is not on this picking ticket.`);
+                        pickBlockOverScan(`${ProductDisplay.name(staged)} is not on this picking ticket.`);
                         return;
                     }
                 }
@@ -1730,7 +1731,7 @@
             }
 
             return `<div class="flex justify-between items-center gap-2 ${rowClass}">
-                <span class="min-w-0 truncate">${icon}${escapeHtml(item.product_name)}</span>
+                <span class="min-w-0 truncate">${icon}${escapeHtml(ProductDisplay.name(item))}</span>
                 <span class="${countClass} shrink-0">${scannedQty}/${requiredQty}</span>
             </div>`;
         }
@@ -1908,7 +1909,7 @@
 
                     document.getElementById('drReturnsTable').innerHTML = returns.map(ret => `
                         <tr>
-                            <td>${escapeHtml(ret.product_name || 'Unknown')}</td>
+                            <td>${escapeHtml(ProductDisplay.name(ret))}</td>
                             <td>${formatBatchBadge(ret.batch_code)}</td>
                             <td class="text-right font-semibold text-warning">${ret.quantity_returned}</td>
                             <td><span class="badge badge-sm badge-outline">${reasonLabels[ret.return_reason] || ret.return_reason}</span></td>
@@ -1953,7 +1954,7 @@
                 const hasItems = (o.item_count || 0) > 0;
                 const stockReady = Number(o.stock_ready || 0) === 1;
                 const shortageNames = (o.stock_shortages || [])
-                    .map(item => `${item.product_name}: ${item.remaining} more needed`)
+                    .map(item => `${ProductDisplay.name(item)}: ${item.remaining} more needed`)
                     .join('; ');
                 return `
                 <tr class="hover ${(!hasItems || !stockReady) ? 'bg-warning/10' : ''}">
@@ -2025,7 +2026,7 @@
                 tbody.innerHTML = order.items.map(item => `
                     <tr>
                         <td>
-                            <div class="font-medium">${escapeHtml(item.product_name || 'Unknown Product')}</div>
+                            <div class="font-medium">${escapeHtml(ProductDisplay.name(item))}</div>
                             <div class="text-xs text-base-content/60">${escapeHtml(item.product_code || '')}</div>
                         </td>
                         <td class="text-center">${item.quantity || item.quantity_ordered || 0}</td>
@@ -2322,7 +2323,7 @@
                         return `
                             <tr>
                                 <td>
-                                    <div class="font-medium">${escapeHtml(item.product_name || 'Unknown')}</div>
+                                    <div class="font-medium">${escapeHtml(ProductDisplay.name(item))}</div>
                                     ${item.product_sku ? `<div class="text-xs text-base-content/45">${escapeHtml(item.product_sku)}</div>` : ''}
                                 </td>
                                 <td>${formatBatchBadge(item.batch_code)}</td>
@@ -2791,7 +2792,7 @@
                 <div class="vd-item" data-return-index="${index}" data-dispatched="${dispatchedQty}">
                     <div class="vd-item__head">
                         <div>
-                            <div class="vd-item__name">${escapeHtml(item.product_name || 'Unknown')}</div>
+                            <div class="vd-item__name">${escapeHtml(ProductDisplay.name(item))}</div>
                             <div class="vd-item__meta">
                                 Batch ID: ${formatBatchBadge(item.batch_code)}
                                 <span class="mx-1">·</span>
@@ -2930,7 +2931,7 @@
                 const reason = reasonEl?.value || '';
 
                 if (qty > maxQty) {
-                    showToast(`Cannot return ${qty}: only ${maxQty} dispatched for ${items[i].product_name}`, 'error');
+                    showToast(`Cannot return ${qty}: only ${maxQty} dispatched for ${ProductDisplay.name(items[i])}`, 'error');
                     qtyEl?.focus();
                     updateVerifyDeliveryActions();
                     return;

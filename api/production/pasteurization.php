@@ -21,6 +21,10 @@ $currentUser = Auth::requireRole(['production_staff', 'general_manager']);
 
 try {
     $db = Database::getInstance()->getConnection();
+    if (!auditColumnExists($db, 'material_requisitions', 'authorization_basis')) {
+        $db->exec("ALTER TABLE material_requisitions
+            ADD COLUMN authorization_basis VARCHAR(40) NULL AFTER approved_at");
+    }
     // Use $requestMethod from bootstrap — it already resolves X-HTTP-Method-Override
     global $requestMethod;
 
@@ -239,8 +243,8 @@ try {
                         INSERT INTO material_requisitions (
                             requisition_code, planned_recipe_id, planned_quantity, planned_yield_unit,
                             requested_by, department, priority, needed_by_date, purpose,
-                            total_items, status
-                        ) VALUES (?, ?, ?, ?, ?, 'production', 'urgent', CURDATE(), ?, 1, 'pending')
+                            total_items, status, authorization_basis
+                        ) VALUES (?, ?, ?, ?, ?, 'production', 'urgent', CURDATE(), ?, 1, 'pending', 'process_shortfall_exception')
                     ");
                     $insStmt->execute([
                         $reqCode,
@@ -268,13 +272,21 @@ try {
 
                     $db->commit();
 
+                    logAudit($currentUser['user_id'], 'CREATE_REQUISITION_EXCEPTION', 'material_requisitions', $newReqId, null, [
+                        'requisition_code' => $reqCode,
+                        'status' => 'pending',
+                        'authorization_basis' => 'process_shortfall_exception',
+                        'source_requisition_id' => $sourceReqId,
+                        'shortfall_liters' => $shortfallLiters,
+                    ]);
+
                     Response::success([
                         'requisition_id' => $newReqId,
                         'requisition_code' => $reqCode,
                         'shortfall_liters' => $shortfallLiters,
                         'status' => 'pending',
                         'priority' => 'urgent'
-                    ], "Supplemental requisition {$reqCode} created for {$shortfallLiters} L raw milk. It is waiting for GM approval.");
+                    ], "Supplemental requisition {$reqCode} created for {$shortfallLiters} L raw milk. It is waiting for GM exception review.");
 
                 } catch (Exception $e) {
                     $db->rollBack();

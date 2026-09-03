@@ -151,11 +151,15 @@ try {
                            u.first_name as created_by_first, u.last_name as created_by_last,
                            CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) as produced_by_name,
                            u2.first_name as released_by_first, u2.last_name as released_by_last,
-                           CONCAT(COALESCE(u2.first_name, ''), ' ', COALESCE(u2.last_name, '')) as verified_by_name
+                           CONCAT(COALESCE(u2.first_name, ''), ' ', COALESCE(u2.last_name, '')) as verified_by_name,
+                           CONCAT(COALESCE(u3.first_name, ''), ' ', COALESCE(u3.last_name, '')) as inspected_by_name,
+                           qbr.inspection_datetime as qc_inspected_at
                     FROM production_batches pb
                     LEFT JOIN master_recipes mr ON pb.recipe_id = mr.id
                     LEFT JOIN users u ON pb.created_by = u.id
                     LEFT JOIN users u2 ON pb.released_by = u2.id
+                    LEFT JOIN qc_batch_release qbr ON qbr.batch_id = pb.id
+                    LEFT JOIN users u3 ON qbr.inspected_by = u3.id
                     WHERE pb.id = ?
                 ");
                 $stmt->execute([$batchId]);
@@ -186,6 +190,9 @@ try {
                     (int) $batch['id'],
                     (int) ($batch['run_id'] ?? 0)
                 );
+                // Printing and downstream handling must use the exact SKU lines
+                // that QC released, including any approved count correction.
+                $batch['released_packaging_lines'] = $effectiveLines;
                 $batch['qc_released_total'] = array_sum(array_map(
                     fn($line) => (int) ($line['quantity'] ?? 0),
                     $effectiveLines
@@ -244,11 +251,15 @@ try {
                 SELECT pb.*,
                        mr.product_name, mr.product_type as recipe_type, mr.variant as recipe_variant,
                        u.first_name as created_by_first, u.last_name as created_by_last,
-                       u2.first_name as released_by_first, u2.last_name as released_by_last
+                       u2.first_name as released_by_first, u2.last_name as released_by_last,
+                       u3.first_name as inspected_by_first, u3.last_name as inspected_by_last,
+                       qbr.inspection_datetime as qc_inspected_at
                 FROM production_batches pb
                 LEFT JOIN master_recipes mr ON pb.recipe_id = mr.id
                 LEFT JOIN users u ON pb.created_by = u.id
                 LEFT JOIN users u2 ON pb.released_by = u2.id
+                LEFT JOIN qc_batch_release qbr ON qbr.batch_id = pb.id
+                LEFT JOIN users u3 ON qbr.inspected_by = u3.id
                 {$where}
                 ORDER BY pb.manufacturing_date DESC, pb.created_at DESC
                 LIMIT ? OFFSET ?
@@ -320,8 +331,16 @@ try {
                 Response::notFound('Batch not found');
             }
 
-            if ($batch['qc_status'] === 'released') {
-                Response::error('Batch has already been released', 400);
+            $finalizedStatuses = ['released', 'rejected'];
+            if (in_array($batch['qc_status'], $finalizedStatuses, true)) {
+                Response::error(
+                    'This QC decision is finalized and read-only. Released or rejected batches cannot be changed.',
+                    409
+                );
+            }
+
+            if (!in_array($batch['qc_status'], ['pending', 'on_hold'], true)) {
+                Response::error('This batch is not available for QC verification.', 409);
             }
 
             $packagingLines = qcGetBatchPackagingLines($db, (int) $batchId, (int) ($batch['run_id'] ?? 0));
@@ -390,18 +409,27 @@ try {
                             $line['variance'],
                         ]);
                     }
-                    $db->prepare("
+                    $holdUpdate = $db->prepare("
                         UPDATE production_batches
                         SET qc_status = 'on_hold', qc_notes = ?,
                             qc_verified_boxes = NULL, qc_verified_pieces = ?,
                             qc_count_variance = ?, fg_received = 0
-                        WHERE id = ?
-                    ")->execute([
+                        WHERE id = ? AND qc_status = ?
+                    ");
+                    $holdUpdate->execute([
                         $holdReasonNotes,
                         $countSnapshot['counted_total'],
                         $countSnapshot['variance'],
                         (int) $batchId,
+                        $batch['qc_status'],
                     ]);
+                    if ($holdUpdate->rowCount() !== 1) {
+                        $db->rollBack();
+                        Response::error(
+                            'This batch changed while you were reviewing it. Refresh before trying again.',
+                            409
+                        );
+                    }
                     qcUpsertReleaseDecision($db, $batch, $currentUser, 'hold', $holdReasonNotes);
                     $db->commit();
                 } catch (Throwable $e) {
@@ -590,8 +618,8 @@ try {
                         qc_verified_boxes = ?,
                         qc_verified_pieces = ?,
                         qc_count_variance = ?,
-                        fg_received = 0
-                    WHERE id = ?
+                         fg_received = 0
+                    WHERE id = ? AND qc_status = ?
                 ");
                 $updateStmt->execute([
                     $newStatus,
@@ -611,7 +639,15 @@ try {
                     $releaseRequested ? ($countSnapshot['counted_total'] ?? 0) : null,
                     $releaseRequested ? ($countSnapshot['variance'] ?? 0) : null,
                     $batchId,
+                    $batch['qc_status'],
                 ]);
+                if ($updateStmt->rowCount() !== 1) {
+                    $db->rollBack();
+                    Response::error(
+                        'This batch changed while you were reviewing it. Refresh before trying again.',
+                        409
+                    );
+                }
 
                 qcUpsertReleaseDecision(
                     $db,

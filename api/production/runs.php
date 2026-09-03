@@ -42,6 +42,10 @@ function ensureProductionPackagingRequestSchema(PDO $db) {
         $db->exec("ALTER TABLE material_requisitions
             ADD COLUMN packaging_plan_json LONGTEXT NULL AFTER request_type");
     }
+    if (!auditColumnExists($db, 'material_requisitions', 'authorization_basis')) {
+        $db->exec("ALTER TABLE material_requisitions
+            ADD COLUMN authorization_basis VARCHAR(40) NULL AFTER approved_at");
+    }
 }
 
 function normalizeProductionUnit($unit) {
@@ -1453,10 +1457,12 @@ try {
                         ], $existing['requisition_code'] . ' already covers this run. Open the existing Warehouse request.');
                     }
 
-                    // The original cooking request proves the run already passed GM
-                    // approval. Packaging therefore goes directly to Warehouse.
+                    // The SKU packaging BOM is management-controlled and the
+                    // cooking materials were already released for this run.
+                    // Packaging therefore goes directly to Warehouse without
+                    // a duplicate GM decision.
                     $sourceStmt = $db->prepare("
-                        SELECT id, approved_by
+                        SELECT id
                         FROM material_requisitions
                         WHERE production_run_id = ?
                           AND COALESCE(request_type, 'cooking') = 'cooking'
@@ -1479,9 +1485,9 @@ try {
                                 requisition_code, production_run_id, request_type, packaging_plan_json,
                                 planned_recipe_id, planned_quantity, planned_yield_unit,
                                 requested_by, department, priority, purpose, total_items,
-                                status, approved_by, approved_at
+                                status, approved_at, authorization_basis
                             ) VALUES (?, ?, 'packaging', ?, ?, ?, 'liters', ?, 'production',
-                                      'normal', ?, ?, 'approved', ?, NOW())
+                                      'normal', ?, ?, 'approved', NOW(), 'approved_packaging_bom')
                         ");
                         $insertReq->execute([
                             $requisitionCode,
@@ -1492,7 +1498,6 @@ try {
                             $currentUser['user_id'],
                             'Packaging materials for ' . ($run['run_code'] ?? ('run #' . $runId)),
                             count($packagingRequirements),
-                            $sourceRequest['approved_by'] ?: null,
                         ]);
                         $packagingRequisitionId = (int) $db->lastInsertId();
 
@@ -1523,6 +1528,7 @@ try {
                             [
                                 'run_id' => (int) $runId,
                                 'status' => 'approved',
+                                'authorization_basis' => 'approved_packaging_bom',
                                 'source_requisition_id' => (int) $sourceRequest['id'],
                             ]
                         );
@@ -1532,6 +1538,7 @@ try {
                             'requisition_id' => $packagingRequisitionId,
                             'requisition_code' => $requisitionCode,
                             'status' => 'approved',
+                            'authorization_basis' => 'approved_packaging_bom',
                             'packaging_plan' => $plannedSkuItems,
                             'requirements' => $packagingRequirements,
                         ], 'Packaging request sent to Warehouse. Complete the run after Warehouse issues every material.');

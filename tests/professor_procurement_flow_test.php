@@ -10,6 +10,7 @@ $files = [
     'purchasing_supplier_api' => file_get_contents($root . '/api/purchasing/suppliers.php'),
     'po_api' => file_get_contents($root . '/api/purchasing/purchase_orders.php'),
     'po_page' => file_get_contents($root . '/html/purchasing/purchase_orders.html'),
+    'purchasing_dashboard' => file_get_contents($root . '/html/purchasing/dashboard.html'),
     'purchasing_sidebar' => file_get_contents($root . '/js/purchasing/sidebar.js'),
     'sidebar_nav' => file_get_contents($root . '/js/ui/sidebar-nav.js'),
     'farmer_receiving_api' => file_get_contents($root . '/api/qc/deliveries.php'),
@@ -45,12 +46,15 @@ $checks = [
         && str_contains(file_get_contents($root . '/api/helpers/supplier_ingredient_catalog.php'), 'FOREIGN KEY (ingredient_id) REFERENCES ingredients(id)'),
     'supplier delivery lead time is saved and validated' =>
         str_contains($files['delivery_helper'], 'ADD COLUMN lead_time_days')
-        && str_contains($files['delivery_helper'], "whole number from 1 to 60 days")
+        && str_contains($files['delivery_helper'], "whole number from 1 to 60 working days")
         && str_contains($files['admin_supplier_page'], 'id="lead_time_days"')
         && str_contains($files['admin_supplier_api'], "'lead_time_days'"),
     'order and expected-delivery dates are automatic and server enforced' =>
         substr_count($files['po_page'], 'readonly aria-readonly="true"') >= 2
         && str_contains($files['po_page'], 'applySupplierDeliveryDates()')
+        && str_contains($files['delivery_helper'], 'hfAddSupplierWorkingDays')
+        && str_contains($files['delivery_helper'], 'SUPPLIER_NON_WORKING_DATES')
+        && str_contains($files['po_page'], 'getSupplierDeliveryCalendar()')
         && substr_count($files['po_api'], 'hfSupplierPurchaseOrderDates(') >= 3,
     'farmer milk is recorded directly without a Purchase Order' =>
         str_contains($files['po_page'], 'Fresh milk delivered by farmers is not ordered here')
@@ -61,14 +65,19 @@ $checks = [
         && str_contains($files['po_api'], 'sendApprovedPurchaseOrderToSupplier')
         && str_contains($files['po_api'], "SET status = 'ordered'")
         && str_contains($files['po_api'], "'Purchase order approved and emailed to the supplier'"),
-    'New PO and Purchase Orders show the correct active navigation state' =>
-        str_contains($files['purchasing_sidebar'], "elementId: 'navNewPo'")
+    'Purchase Orders remains the active navigation section while creating a PO' =>
+        !str_contains($files['purchasing_sidebar'], "id: 'new_po'")
         && str_contains($files['purchasing_sidebar'], "elementId: 'navPurchaseOrders'")
-        && str_contains($files['purchasing_sidebar'], "params.get('action') === 'new' ? 'new_po' : 'purchase_orders'")
-        && str_contains($files['po_page'], "PurchasingSidebar.setActive(view === 'new' ? 'new_po' : 'purchase_orders')")
+        && str_contains($files['purchasing_sidebar'], "return { activeId: 'purchase_orders' }")
+        && str_contains($files['po_page'], "PurchasingSidebar.setActive('purchase_orders')")
         && str_contains($files['po_page'], "setPurchaseOrderNavigationState(params.get('action') === 'new' ? 'new' : 'list')")
         && str_contains($files['po_page'], "setPurchaseOrderNavigationState('list')")
         && str_contains($files['sidebar_nav'], 'currentUrl.searchParams.get(key) === value'),
+    'Purchasing pages expose one consistently named PO creation action' =>
+        substr_count($files['po_page'], 'href="purchase_orders.html?action=new"') === 1
+        && str_contains($files['po_page'], '> Create PO')
+        && substr_count($files['purchasing_dashboard'], 'href="purchase_orders.html?action=new"') === 1
+        && str_contains($files['purchasing_dashboard'], '> Create PO'),
 ];
 
 $failed = [];

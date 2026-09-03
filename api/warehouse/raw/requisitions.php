@@ -5,8 +5,8 @@
  * Manages requisition fulfillment from production/maintenance.
  *
  * Workflow:
- *   1. Production creates a requisition   -> status 'pending' for GM approval.
- *   2. GM approves the requisition        -> status 'approved'.
+ *   1. Production submits a server-validated, recipe-authorized request.
+ *   2. The request enters Warehouse Raw's queue as 'approved'.
  *   3. Warehouse Raw issues the materials -> status 'fulfilled' (all lines
  *      full) or 'partial' (some lines issued, top-up expected).
  *
@@ -33,6 +33,10 @@ function ensureWarehouseRequisitionQuantityPrecision($db) {
     if (!auditColumnExists($db, 'material_requisitions', 'packaging_plan_json')) {
         $db->exec("ALTER TABLE material_requisitions
             ADD COLUMN packaging_plan_json LONGTEXT NULL AFTER request_type");
+    }
+    if (!auditColumnExists($db, 'material_requisitions', 'authorization_basis')) {
+        $db->exec("ALTER TABLE material_requisitions
+            ADD COLUMN authorization_basis VARCHAR(40) NULL AFTER approved_at");
     }
     $precisionStmt = $db->prepare("
         SELECT COLUMN_NAME, COLUMN_TYPE
@@ -138,7 +142,8 @@ function handleGet($db, $currentUser) {
             ";
             $params = [];
 
-            // Warehouse Raw can only act after GM approval.
+            // Recipe-authorized requests arrive in the same actionable state
+            // used by older GM-approved records.
 
 
             if (!$status) {
@@ -164,7 +169,8 @@ function handleGet($db, $currentUser) {
                 $params[] = $priority;
             }
 
-            // Approved requests are the actionable queue for warehouse staff.
+            // Approved means ready for release; authorization_basis explains
+            // whether it came from the recipe policy or an exceptional GM decision.
 
             $sql .= " ORDER BY
                 ir.created_at DESC,
@@ -362,14 +368,15 @@ function handlePut($db, $currentUser) {
     }
     
     switch ($action) {
-        // Approve / Reject are handled by the GM approval queue.
+        // Normal recipe requests need no extra decision. Legacy or adjusted
+        // exceptions are reviewed through the GM approval queue.
 
 
 
 
         case 'approve':
             Response::error(
-                "GM approval is handled in the Admin Pending Approvals page.",
+                "Only exceptional requests are reviewed in the Admin Pending Approvals page.",
                 400
             );
             break;
@@ -386,7 +393,7 @@ function handlePut($db, $currentUser) {
             $db->beginTransaction();
 
             try {
-                // Only GM-approved requisitions can be released by Warehouse Raw.
+                // Only requests in the ready-for-release state can be fulfilled.
 
                 $requisition = $db->prepare("
                     SELECT * FROM material_requisitions WHERE id = ? AND status IN ('approved', 'partial', 'in_progress')
@@ -622,7 +629,7 @@ function handlePut($db, $currentUser) {
                     throw new Exception('Item not found');
                 }
 
-                // Only GM-approved requisitions can be released by Warehouse Raw.
+                // Only requests in the ready-for-release state can be fulfilled.
                 if (!in_array($itemData['req_status'], ['approved', 'partial', 'in_progress'])) {
                     throw new Exception('Requisition is not in a fulfillable status');
                 }

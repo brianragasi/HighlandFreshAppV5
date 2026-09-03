@@ -27,6 +27,10 @@ try {
     ensureStockValidationSupport($db);
     ensureSupplierPriceListHistory($db);
     ensureIngredientOpeningStockSupport($db);
+    if (!auditColumnExists($db, 'material_requisitions', 'authorization_basis')) {
+        $db->exec("ALTER TABLE material_requisitions
+            ADD COLUMN authorization_basis VARCHAR(40) NULL AFTER approved_at");
+    }
     if (!auditColumnExists($db, 'purchase_order_items', 'procurement_source')) {
         $db->exec("ALTER TABLE `purchase_order_items` ADD COLUMN `procurement_source` VARCHAR(30) NOT NULL DEFAULT 'warehouse_request' AFTER `purchase_request_item_id`");
     }
@@ -316,7 +320,9 @@ function buildGmApprovalStats(PDO $db): array {
 
     $stats['procurement'] = $poCount + $prCount;
 
-    // Production material requisitions waiting for GM approval
+    // Only exceptional/legacy Production requests and non-recipe department
+    // requests remain pending. Normal recipe-generated Production requests
+    // route directly to Warehouse Raw.
     try {
         $stmt = $db->query("SELECT COUNT(*) as count FROM material_requisitions WHERE status = 'pending'");
         $stats['production_materials'] = (int) $stmt->fetch()['count'];
@@ -739,6 +745,7 @@ function processApprovalDecision(PDO $db, string $decision, $currentUser) {
                 $stmt = $db->prepare("
                     UPDATE material_requisitions
                     SET status = ?, approved_by = ?, approved_at = ?,
+                        authorization_basis = 'gm_exception',
                         notes = CONCAT(COALESCE(notes, ''), '\n[GM ', ?, '] ', ?)
                     WHERE id = ? AND status = 'pending'
                 ");
@@ -779,7 +786,8 @@ function processApprovalDecision(PDO $db, string $decision, $currentUser) {
             ");
             $tableName = $type === 'credit_override' ? 'sales_orders' :
                          ($type === 'purchase_order' ? 'purchase_orders' :
-                         ($type === 'ingredient_opening_stock' ? 'ingredient_opening_stock_requests' : $type . 's'));
+                         ($type === 'requisition' ? 'material_requisitions' :
+                         ($type === 'ingredient_opening_stock' ? 'ingredient_opening_stock_requests' : $type . 's')));
             $auditStmt->execute([
                 $gmId,
                 strtoupper($decision),
@@ -989,7 +997,8 @@ function buildGmUnifiedQueue(PDO $db): array {
         }
     } catch (Exception $e) { /* ignore */     }
 
-    // Production material requisitions
+    // Material requests that actually require review. Normal recipe-generated
+    // Production requests are already in Warehouse Raw's release queue.
     try {
         $stmt = $db->query("
             SELECT mr.id, mr.requisition_code, mr.purpose, mr.priority, mr.created_at,
@@ -1008,6 +1017,7 @@ function buildGmUnifiedQueue(PDO $db): array {
             $code = $row['requisition_code'] ?: ('REQ-' . $row['id']);
             $product = trim(($row['planned_product_name'] ?? '') . ($row['planned_variant'] ? ' (' . $row['planned_variant'] . ')' : ''));
             $qty = $row['planned_quantity'] ? trim($row['planned_quantity'] . ' ' . ($row['planned_yield_unit'] ?? '')) : '';
+            $isProduction = ($row['department'] ?? 'production') === 'production';
             $items[] = [
                 'id' => 'req-' . $row['id'],
                 'source_id' => (int)$row['id'],
@@ -1015,8 +1025,8 @@ function buildGmUnifiedQueue(PDO $db): array {
                 'type' => 'requisition',
                 'priority' => in_array($row['priority'], ['urgent', 'high'], true) ? 'high' : 'medium',
                 'reference' => $code,
-                'title' => 'Production Requisition #' . $code . ' - Awaiting GM Approval',
-                'detail' => trim(($product ?: ($row['purpose'] ?: 'Material request')) . ($qty ? ' - ' . $qty : '') . ' - ' . ($row['requested_by_name'] ?: 'Production')),
+                'title' => ($isProduction ? 'Production Material Exception #' : 'Department Material Request #') . $code . ' - Awaiting GM Review',
+                'detail' => trim(($product ?: ($row['purpose'] ?: 'Material request')) . ($qty ? ' - ' . $qty : '') . ' - ' . ($row['requested_by_name'] ?: ucfirst($row['department'] ?: 'Department'))),
                 'amount' => null,
                 'meta' => ((int)($row['item_count'] ?? 0)) . ' item(s)',
                 'requested_at' => $row['created_at'],

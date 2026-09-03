@@ -70,10 +70,15 @@ function qcGetBatchPackagingLines(PDO $db, $batchId, $runId)
 {
     $stmt = $db->prepare("
         SELECT pri.id AS packaging_run_item_id, pri.product_id,
-               pri.product_name, pri.product_variant, pri.size_ml,
-               pri.unit_measure, pri.quantity
+               COALESCE(NULLIF(pri.product_name, ''), p.product_name) AS product_name,
+               COALESCE(NULLIF(pri.product_variant, ''), p.variant) AS product_variant,
+               COALESCE(pri.size_ml, p.unit_size) AS size_ml,
+               COALESCE(NULLIF(pri.unit_measure, ''), p.unit_measure, 'ml') AS unit_measure,
+               p.product_code,
+               pri.quantity
         FROM packaging_run_items pri
         JOIN packaging_runs pr ON pri.packaging_run_id = pr.id
+        LEFT JOIN products p ON p.id = pri.product_id
         WHERE pr.batch_id = ? OR pr.production_run_id = ?
         ORDER BY pri.size_ml DESC, pri.id ASC
     ");

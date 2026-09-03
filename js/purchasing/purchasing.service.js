@@ -95,6 +95,10 @@ const PurchasingService = {
         return await api.get('/purchasing/purchase_orders.php?action=next_number');
     },
 
+    async getSupplierDeliveryCalendar() {
+        return await api.get('/purchasing/purchase_orders.php?action=delivery_calendar');
+    },
+
     async createPurchaseOrder(data) {
         return await api.post('/purchasing/purchase_orders.php?action=create', data);
     },

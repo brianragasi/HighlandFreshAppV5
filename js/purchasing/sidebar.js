@@ -41,7 +41,6 @@
         {
             title: 'Procurement',
             items: [
-                { id: 'new_po', label: 'New PO', icon: 'fa-file-circle-plus', href: 'purchase_orders.html?action=new', elementId: 'navNewPo' },
                 { id: 'purchase_orders', label: 'Purchase Orders', icon: 'fa-file-invoice-dollar', href: 'purchase_orders.html', elementId: 'navPurchaseOrders', badgeId: 'pendingPOBadge', badgeClass: 'border-warning bg-warning/10 text-base-content' },
                 { id: 'approved_suppliers', label: 'Approved Suppliers', icon: 'fa-truck-field', href: 'suppliers.html' },
             ],
@@ -56,12 +55,11 @@
 
     function routeState() {
         const path = (window.location.pathname || '').replace(/\\/g, '/').toLowerCase();
-        const params = new URLSearchParams(window.location.search);
         const hash = (window.location.hash || '').toLowerCase();
 
-        if (path.endsWith('/purchasing/canvassing.html')) return { activeId: 'new_po' };
+        if (path.endsWith('/purchasing/canvassing.html')) return { activeId: 'purchase_orders' };
         if (path.endsWith('/purchasing/purchase_orders.html')) {
-            return { activeId: params.get('action') === 'new' ? 'new_po' : 'purchase_orders' };
+            return { activeId: 'purchase_orders' };
         }
         if (path.endsWith('/purchasing/suppliers.html')) return { activeId: 'approved_suppliers' };
         if (path.endsWith('/purchasing/dashboard.html')) {

@@ -14,16 +14,16 @@ if ($page === false || $service === false || $api === false || $pdf === false ||
 }
 
 $checks = [
-    'Purchaser starts from a clearly named New PO button' =>
-        str_contains($page, '<span class="hidden md:inline">New PO</span>')
-        && str_contains($page, '<i class="fas fa-file-circle-plus"></i> New PO'),
+    'Purchaser starts from one clearly named Create PO button' =>
+        substr_count($page, 'href="purchase_orders.html?action=new"') === 1
+        && str_contains($page, '<i class="fas fa-file-circle-plus"></i> Create PO'),
     'Visible form starts with supplier and removes the Warehouse PRS field' =>
         str_contains($page, '>Supplier *</span>')
         && str_contains($page, 'Choose a supplier for the confirmed needs')
         && !str_contains($page, '<span class="label-text">Warehouse PRS *</span>')
         && !str_contains($page, 'id="poPurchaseRequest"'),
     'Dashboard opens the supplier-first workbench without a PRS query field' =>
-        substr_count($dashboard, "const prLink = 'purchase_orders.html?action=new';") >= 2
+        substr_count($dashboard, 'href="purchase_orders.html?action=new"') === 1
         && !str_contains($dashboard, 'purchase_orders.html?action=new&pr_id='),
     'Supplier selection filters outstanding lines across Warehouse requests' =>
         str_contains($page, 'getScopedWarehouseRequests().flatMap(pr =>')

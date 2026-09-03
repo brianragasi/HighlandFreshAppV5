@@ -683,7 +683,7 @@
                             <p class="font-semibold">No requisitions found</p>
                             <p class="text-sm text-base-content/50 mt-1">
                                 ${currentFilter.status === 'pending'
-                                    ? 'All approved requisitions have been released.'
+                                    ? 'All ready requisitions have been released.'
                                     : 'Try adjusting your filters.'}
                             </p>
                         </td>
@@ -709,6 +709,11 @@
 
                 const requester = `${req.requested_by_first || ''} ${req.requested_by_last || ''}`.trim() || '—';
                 const hasOverride = Number(req.stock_override_acknowledged) === 1 || Number(req.stock_warning_count) > 0;
+                const authorizationBadge = req.authorization_basis === 'approved_recipe'
+                    ? '<span class="req-pill req-pill--fulfilled" title="Validated against a management-controlled master recipe"><i class="fas fa-book-open"></i> Recipe-authorized</span>'
+                    : req.authorization_basis === 'approved_packaging_bom'
+                        ? '<span class="req-pill req-pill--fulfilled" title="Calculated from a management-controlled SKU packaging BOM"><i class="fas fa-boxes"></i> BOM-authorized</span>'
+                        : '';
 
                 let dateCell = formatDate(req.created_at);
                 if (req.needed_by_date) {
@@ -732,6 +737,7 @@
                             ${isPackaging ? `<span class="req-pill req-pill--partial"><i class="fas fa-box"></i> Packaging</span>` : ''}
                             <span class="req-pill req-pill--${priority}">${escapeHtml(priority)}</span>
                             <span class="req-pill req-pill--${status === 'approved' ? 'pending' : status}">${escapeHtml(status === 'approved' ? 'for release' : status)}</span>
+                            ${authorizationBadge}
                             ${hasOverride ? `<span class="req-pill req-pill--warn" title="Stock override on submit"><i class="fas fa-exclamation-triangle"></i> Override</span>` : ''}
                         </div>
                     </td>
@@ -918,6 +924,11 @@
                 : neededByDays < 0 ? `Overdue (${Math.abs(neededByDays)}d)`
                 : neededByDays === 0 ? 'Due today'
                 : `${neededByDays} days left`;
+            const authorizationText = req.authorization_basis === 'approved_recipe'
+                ? 'Approved master recipe'
+                : req.authorization_basis === 'approved_packaging_bom'
+                    ? 'Approved SKU packaging BOM'
+                    : (req.approved_by_first ? `GM exception approval by ${escapeHtml(req.approved_by_first)} ${escapeHtml(req.approved_by_last || '')}` : 'Legacy workflow');
 
             document.getElementById('fulfillModalBody').innerHTML = `
                 <div>
@@ -941,6 +952,7 @@
                             <div class="req-meta-item__label">Items</div>
                             <div class="req-meta-item__value">${itemStats.total} total</div>
                             <div class="req-meta-item__sub">${itemStats.pending} pending · ${itemStats.completed} complete</div>
+                            <div class="req-meta-item__sub">${authorizationText}</div>
                         </div>
                     </div>
 

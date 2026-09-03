@@ -7312,6 +7312,7 @@ CREATE TABLE `material_requisitions` (
   `status` enum('draft','pending','approved','rejected','partial','fulfilled','cancelled') DEFAULT 'draft',
   `approved_by` int(11) DEFAULT NULL,
   `approved_at` datetime DEFAULT NULL,
+  `authorization_basis` varchar(40) DEFAULT NULL,
   `rejection_reason` text DEFAULT NULL,
   `fulfilled_by` int(11) DEFAULT NULL,
   `fulfilled_at` datetime DEFAULT NULL,

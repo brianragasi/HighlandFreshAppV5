@@ -387,6 +387,7 @@
     <script src="../../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_fg,general_manager"></script>
     <script src="../../../js/utils/units.js?v=20260712"></script>
+    <script src="../../../js/utils/product-display.js?v=20260903-sku1"></script>
     <script src="../../../js/warehouse/fg.service.js"></script>
     
     <script>
@@ -532,7 +533,7 @@
             }
 
             return `<div class="flex justify-between items-center gap-2 ${rowClass}">
-                <span class="min-w-0 truncate">${icon}${escapeHtml(item.product_name)}</span>
+                <span class="min-w-0 truncate">${icon}${escapeHtml(ProductDisplay.name(item))}</span>
                 <span class="${countClass} shrink-0">${scannedQty}/${requiredQty}</span>
             </div>`;
         }
@@ -849,7 +850,7 @@
                         contentDiv.innerHTML = `
                             <div class="flex justify-between items-start mb-3">
                                 <div>
-                                    <div class="font-bold text-lg">${escapeHtml(currentScanResult.product_name)}</div>
+                                    <div class="font-bold text-lg">${escapeHtml(ProductDisplay.name(currentScanResult))}</div>
                                     <div class="text-sm text-base-content/60">${escapeHtml(currentScanResult.variant || '')} ${escapeHtml(currentScanResult.size_value || '')}${escapeHtml(currentScanResult.size_unit || '')}</div>
                                 </div>
                                 <span class="badge badge-error"><i class="fas fa-ban mr-1"></i> EXPIRED</span>
@@ -882,8 +883,8 @@
                         if (currentDR && currentDR.items && currentDR.items.length > 0) {
                             const matchingItem = currentDR.items.find(item => item.product_id == currentScanResult.product_id);
                             if (!matchingItem) {
-                                const drProductNames = currentDR.items.map(i => i.product_name).join(', ');
-                                blockOverScan(`This product (${currentScanResult.product_name}) is NOT on this Delivery Receipt! Required: ${drProductNames}`);
+                                const drProductNames = currentDR.items.map(i => ProductDisplay.name(i)).join(', ');
+                                blockOverScan(`This product (${ProductDisplay.name(currentScanResult)}) is NOT on this Delivery Receipt! Required: ${drProductNames}`);
                                 return;
                             }
                             const remaining = getRemainingQtyForProduct(currentScanResult.product_id);
@@ -901,7 +902,7 @@
                             <div class="flex items-center gap-3">
                                 <i class="fas fa-barcode text-info text-xl"></i>
                                 <div class="flex-1 min-w-0">
-                                    <div class="font-semibold truncate">${escapeHtml(currentScanResult.product_name)}</div>
+                                    <div class="font-semibold truncate">${escapeHtml(ProductDisplay.name(currentScanResult))}</div>
                                     <div class="text-xs text-base-content/60">Batch ${escapeHtml(currentScanResult.batch_code)} found — review quantity before adding</div>
                                 </div>
                                 <span class="badge badge-info badge-sm">${remaining} ${escapeHtml(labels.base)} needed</span>
@@ -961,8 +962,8 @@
                 const matchingDRItem = currentDR.items.find(item => item.product_id == scannedProductId);
                 
                 if (!matchingDRItem) {
-                    const drProductNames = currentDR.items.map(i => i.product_name).join(', ');
-                    blockOverScan(`This product (${currentScanResult.product_name}) is NOT on this Delivery Receipt! Required: ${drProductNames}`);
+                    const drProductNames = currentDR.items.map(i => ProductDisplay.name(i)).join(', ');
+                    blockOverScan(`This product (${ProductDisplay.name(currentScanResult)}) is NOT on this Delivery Receipt! Required: ${drProductNames}`);
                     return;
                 }
 
@@ -1001,7 +1002,7 @@
             const suggestedPieces = piecesPerBox > 1 ? suggestedTotal % piecesPerBox : suggestedTotal;
             
             document.getElementById('qtyInventoryId').value = currentScanResult.id;
-            document.getElementById('qtyProduct').textContent = currentScanResult.product_name;
+            document.getElementById('qtyProduct').textContent = ProductDisplay.name(currentScanResult);
             document.getElementById('qtyBatch').textContent = currentScanResult.batch_code;
             document.getElementById('qtyAvailable').textContent = availableDisplay;
             document.getElementById('qtyPiecesPerBoxLabel').textContent = packLine;
@@ -1192,8 +1193,8 @@
                 return `
                 <tr>
                     <td>
-                        <div class="font-medium">${escapeHtml(item.product_name)}</div>
-                        <div class="text-xs text-base-content/60">${escapeHtml(item.variant || '')}</div>
+                        <div class="font-medium">${escapeHtml(ProductDisplay.name(item))}</div>
+                        <div class="text-xs text-base-content/60">${escapeHtml(item.product_code || '')}</div>
                     </td>
                     <td><code class="text-xs">${escapeHtml(item.batch_code)}</code></td>
                     <td>${item.expiry_date ? new Date(item.expiry_date).toLocaleDateString() : 'N/A'}</td>
@@ -1247,7 +1248,7 @@
             const packLine = PackUnits.formatPackLine(item);
 
             document.getElementById('qtyInventoryId').value = item.id;
-            document.getElementById('qtyProduct').textContent = item.product_name;
+            document.getElementById('qtyProduct').textContent = ProductDisplay.name(item);
             document.getElementById('qtyBatch').textContent = item.batch_code;
             document.getElementById('qtyAvailable').textContent = availableDisplay;
             document.getElementById('qtyPiecesPerBoxLabel').textContent = packLine;
@@ -1313,13 +1314,13 @@
                     const scanned = getScannedQtyForProduct(line.product_id);
                     if (scanned > required) {
                         blockOverScan(
-                            `Cannot exceed ordered quantity for ${line.product_name} (${scanned}/${required}). Remove excess scans first.`
+                            `Cannot exceed ordered quantity for ${ProductDisplay.name(line)} (${scanned}/${required}). Remove excess scans first.`
                         );
                         return;
                     }
                     if (scanned < required) {
                         showToast(
-                            `Picking is incomplete for ${line.product_name}: picked ${scanned} of ${required}.`,
+                            `Picking is incomplete for ${ProductDisplay.name(line)}: picked ${scanned} of ${required}.`,
                             'warning'
                         );
                         return;
@@ -1329,7 +1330,7 @@
                 for (const staged of scannedItems) {
                     const onTicket = currentDR.items.some(i => i.product_id == staged.product_id);
                     if (!onTicket) {
-                        blockOverScan(`${staged.product_name} is not on this picking ticket.`);
+                        blockOverScan(`${ProductDisplay.name(staged)} is not on this picking ticket.`);
                         return;
                     }
                 }

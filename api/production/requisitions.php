@@ -5,18 +5,16 @@
  * Handles ingredient requests from Production to Warehouse Raw.
  *
  * Workflow:
- *   1. Production staff creates a requisition     -> status 'pending'
- *   2. Server blocks submission when Warehouse
- *      cannot cover the saved recipe quantities
- *   3. GM approves a fully available request      -> status 'approved'
- *   4. Warehouse Raw sees approved requests and
- *      fulfills / partially fulfills them         -> status 'fulfilled' / 'partial'
+ *   1. Production selects a management-controlled recipe and batch plan.
+ *   2. The server regenerates the exact recipe quantities and blocks shortages.
+ *   3. The validated request enters Warehouse Raw's queue directly as 'approved'.
+ *   4. Warehouse Raw fulfills / partially fulfills it -> 'fulfilled' / 'partial'.
  *
  * GET    - List requisitions / Get single requisition
  * POST   - Create new requisition (with stock validation gate)
  * PUT    - Cancel pending requisition (own only)
  *
- * Approve / Reject are handled by api/admin/gm_approvals.php.
+ * Non-standard legacy/supplemental requests may still use GM approval elsewhere.
  *
  * @package HighlandFresh
  * @version 4.0
@@ -28,9 +26,9 @@ require_once dirname(__DIR__) . '/helpers/raw_milk_gate.php';
 require_once dirname(__DIR__) . '/warehouse/raw/ingredient_stock_helpers.php';
 
 // Require Production, GM, or Warehouse Raw role.
-//   - production_staff: create + cancel own pending
+//   - production_staff: create + cancel an unreleased own request
 //   - warehouse_raw: read approved/fulfilled requests through their own endpoint
-//   - general_manager: read-only oversight here; decisions use GM approvals API
+//   - general_manager: read-only oversight and exceptional cancellation
 $currentUser = Auth::requireRole(['production_staff', 'general_manager', 'warehouse_raw']);
 
 function requisitionParseIngredientAdjustments($ingredientAdjustmentsJson) {
@@ -127,6 +125,10 @@ function ensureProductionRequisitionPlanColumns($db) {
     }
     if (!auditColumnExists($db, 'material_requisitions', 'planned_yield_unit')) {
         $db->exec("ALTER TABLE material_requisitions ADD COLUMN planned_yield_unit VARCHAR(20) DEFAULT NULL AFTER planned_quantity");
+    }
+    if (!auditColumnExists($db, 'material_requisitions', 'authorization_basis')) {
+        $db->exec("ALTER TABLE material_requisitions
+            ADD COLUMN authorization_basis VARCHAR(40) NULL AFTER approved_at");
     }
 
     $precisionStmt = $db->prepare("
@@ -875,7 +877,8 @@ function getRequisitionRecipeItemsForRun($db, $runId) {
             'recipe_code' => $run['recipe_code'],
             'product_name' => $run['product_name'],
             'variant' => $run['variant'],
-            'planned_quantity' => (float) $run['planned_quantity']
+            'planned_quantity' => (float) $run['planned_quantity'],
+            'has_material_adjustments' => !empty($adjustments)
         ],
         'items' => $items
     ];
@@ -1128,7 +1131,7 @@ try {
                 SELECT ir.id, ir.requisition_code, ir.production_run_id, ir.planned_recipe_id,
                        ir.planned_quantity, ir.planned_yield_unit, ir.status,
                        ir.priority, ir.needed_by_date, ir.purpose, ir.total_items, ir.created_at,
-                       ir.stock_override_acknowledged, ir.stock_override_at,
+                       ir.stock_override_acknowledged, ir.stock_override_at, ir.authorization_basis,
                        (SELECT COALESCE(SUM(ri.requested_quantity), 0)
                           FROM requisition_items ri WHERE ri.requisition_id = ir.id) AS total_requested_quantity,
                        (SELECT COALESCE(SUM(ri.issued_quantity), 0)
@@ -1186,6 +1189,20 @@ try {
             $neededBy = getParam('needed_by');
             $purpose = trim(getParam('purpose', ''));
             $items = getParam('items', []);
+            $requiresGmExceptionReview = false;
+
+            // Every ordinary Production request is tied to a management-owned
+            // recipe. Regenerate its material lines on the server so browser
+            // edits can never turn the direct Warehouse route into a manual
+            // or unauthorized request.
+            if ($productionRunId) {
+                $authoritativePlan = getRequisitionRecipeItemsForRun($db, (int) $productionRunId);
+                $items = $authoritativePlan['items'];
+                $plannedRecipeId = (int) $authoritativePlan['run']['recipe_id'];
+                $plannedQuantity = (float) $authoritativePlan['run']['planned_quantity'];
+                $plannedYieldUnit = 'liters';
+                $requiresGmExceptionReview = !empty($authoritativePlan['run']['has_material_adjustments']);
+            }
             
             // Validation
             $errors = [];
@@ -1339,9 +1356,9 @@ try {
             );
             if ($duplicate) {
                 $statusLabel = $duplicate['status'] === 'pending'
-                    ? 'waiting for GM approval'
+                    ? 'waiting for exception review'
                     : ($duplicate['status'] === 'approved'
-                        ? 'approved for Warehouse Raw'
+                        ? 'ready for Warehouse Raw'
                         : 'being released by Warehouse Raw');
                 Response::error(
                     "{$duplicate['requisition_code']} already covers this production plan and is {$statusLabel}. Open that request instead of sending another one.",
@@ -1429,13 +1446,23 @@ try {
                 $count = $codeStmt->fetch()['count'] + 1;
                 $requisitionCode = "REQ-{$today}-" . str_pad($count, 3, '0', STR_PAD_LEFT);
 
+                // The active master recipe is already authorized by management.
+                // Only a run carrying material adjustments leaves the normal
+                // direct route and enters the GM exception queue.
+                $initialStatus = $requiresGmExceptionReview ? 'pending' : 'approved';
+                $authorizationBasis = $requiresGmExceptionReview
+                    ? 'recipe_adjustment_exception'
+                    : 'approved_recipe';
+                $authorizedAt = $requiresGmExceptionReview ? null : date('Y-m-d H:i:s');
+
                 // Insert requisition
                 $stmt = $db->prepare("
                     INSERT INTO material_requisitions (
                         requisition_code, production_run_id, planned_recipe_id, planned_quantity, planned_yield_unit, requested_by,
                         priority, needed_by_date, purpose, total_items, status,
+                        approved_at, authorization_basis,
                         stock_override_acknowledged, stock_override_by, stock_override_reason, stock_override_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
 
                 $overrideCols = [0, null, null, null];
@@ -1443,14 +1470,17 @@ try {
                 $stmt->execute([
                     $requisitionCode,
                     $productionRunId ?: null,
-                    $productionRunId ? null : ($plannedRecipeId ?: null),
-                    $productionRunId ? null : ($plannedQuantity ?: null),
-                    $productionRunId ? null : ($plannedYieldUnit ?: null),
+                    $plannedRecipeId ?: null,
+                    $plannedQuantity ?: null,
+                    $plannedYieldUnit ?: null,
                     $currentUser['user_id'],
                     $priority,
                     $neededBy,
                     $purpose,
                     count($items),
+                    $initialStatus,
+                    $authorizedAt,
+                    $authorizationBasis,
                     $overrideCols[0],
                     $overrideCols[1],
                     $overrideCols[2],
@@ -1598,12 +1628,32 @@ try {
                 
                 $db->commit();
 
-                $message = "Requisition {$requisitionCode} submitted. It is waiting for GM approval.";
+                logAudit(
+                    $currentUser['user_id'],
+                    $requiresGmExceptionReview ? 'CREATE_REQUISITION_EXCEPTION' : 'CREATE_RECIPE_REQUISITION',
+                    'material_requisitions',
+                    $requisitionId,
+                    null,
+                    [
+                    'requisition_code' => $requisitionCode,
+                    'status' => $initialStatus,
+                    'authorization_basis' => $authorizationBasis,
+                    'planned_recipe_id' => (int) $plannedRecipeId,
+                    'planned_quantity' => (float) $plannedQuantity,
+                    'planned_yield_unit' => $plannedYieldUnit,
+                    'total_items' => count($items),
+                    ]
+                );
+
+                $message = $requiresGmExceptionReview
+                    ? "Requisition {$requisitionCode} contains run-level material adjustments and was sent for GM exception review."
+                    : "Requisition {$requisitionCode} sent directly to Warehouse Raw under the approved recipe.";
 
                 Response::created([
                     'id' => $requisitionId,
                     'requisition_code' => $requisitionCode,
-                    'status' => 'pending',
+                    'status' => $initialStatus,
+                    'authorization_basis' => $authorizationBasis,
                     'total_items' => count($items),
                     'stock_override_acknowledged' => $hasShortage ? 1 : 0,
                     'pack_traceability' => [
@@ -1652,22 +1702,35 @@ try {
 
             $action = getParam('action');
 
-            // Approval happens in api/admin/gm_approvals.php. Warehouse
-            // fulfillment happens in api/warehouse/raw/requisitions.php.
-            // The only mutating action exposed to production staff here is
-            // `cancel` for their own pending requisitions.
+            // Warehouse fulfillment happens in api/warehouse/raw/requisitions.php.
+            // Production may cancel its own request only while nothing has
+            // been issued, including recipe-authorized requests already in
+            // the Warehouse queue.
             switch ($action) {
                 case 'cancel':
-                    if ($requisition['status'] !== 'pending') {
-                        Response::error('Can only cancel pending requisitions', 400);
+                    if (!in_array($requisition['status'], ['pending', 'approved'], true)) {
+                        Response::error('Only an unreleased requisition can be cancelled', 400);
                     }
 
                     if ($requisition['requested_by'] != $currentUser['user_id'] && $currentUser['role'] !== 'general_manager') {
                         Response::forbidden('You can only cancel your own requisitions');
                     }
 
-                    $stmt = $db->prepare("UPDATE material_requisitions SET status = 'cancelled' WHERE id = ?");
+                    $issuedStmt = $db->prepare("SELECT COALESCE(SUM(issued_quantity), 0) FROM requisition_items WHERE requisition_id = ?");
+                    $issuedStmt->execute([$reqId]);
+                    if ((float) $issuedStmt->fetchColumn() > 0.0005) {
+                        Response::error('Warehouse has already issued material from this request. It can no longer be cancelled.', 409);
+                    }
+
+                    $stmt = $db->prepare("UPDATE material_requisitions SET status = 'cancelled' WHERE id = ? AND status IN ('pending', 'approved')");
                     $stmt->execute([$reqId]);
+
+                    logAudit($currentUser['user_id'], 'CANCEL', 'material_requisitions', $reqId, [
+                        'status' => $requisition['status'],
+                    ], [
+                        'status' => 'cancelled',
+                        'authorization_basis' => $requisition['authorization_basis'] ?? null,
+                    ]);
 
                     Response::success(['status' => 'cancelled'], 'Requisition cancelled');
                     break;
@@ -1678,7 +1741,7 @@ try {
                 case 'partially_fulfill':
                     Response::error(
                         "The '{$action}' action is not handled here. " .
-                        "GM approval uses api/admin/gm_approvals.php, and Warehouse Raw issues approved requests only.",
+                        "Recipe-based requests route directly to Warehouse Raw, which handles material release.",
                         400
                     );
                     break;

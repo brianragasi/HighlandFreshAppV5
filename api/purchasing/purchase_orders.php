@@ -365,6 +365,14 @@ function handleGet($db, $action) {
             Response::success(['next_number' => (string) $nextNum], 'Next PO number');
             break;
 
+        case 'delivery_calendar':
+            Response::success([
+                'today' => (new DateTimeImmutable('today'))->format('Y-m-d'),
+                'weekends_excluded' => true,
+                'non_working_dates' => hfSupplierNonWorkingDates(),
+            ], 'Supplier delivery calendar retrieved');
+            break;
+
         default:
             Response::error('Invalid action', 400);
     }

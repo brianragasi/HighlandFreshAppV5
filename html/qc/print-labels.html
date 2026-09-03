@@ -596,12 +596,22 @@
                         </div>
 
                         <div>
+                            <label class="pl-field-label" for="skuSelect">Product size / SKU</label>
+                            <select id="skuSelect" class="select select-bordered w-full" onchange="onSkuChange()" disabled>
+                                <option value="">Select a released batch first...</option>
+                            </select>
+                            <p class="text-xs text-base-content/50 mt-1.5 m-0">
+                                Labels and serial numbers are generated only for this exact packaged SKU.
+                            </p>
+                        </div>
+
+                        <div>
                             <label class="pl-field-label" for="labelCount">Number of labels to print</label>
                             <input type="number" id="labelCount" class="input input-bordered w-full"
                                 value="1" min="1" max="5000" step="1"
                                 oninput="onLabelCountChange()" onchange="onLabelCountChange()">
                             <p class="text-xs text-base-content/50 mt-1.5 m-0" id="labelCountHint">
-                                Defaults to full batch size — each bottle gets a unique serial ID.
+                                Select the exact product size first.
                             </p>
                         </div>
 
@@ -628,7 +638,7 @@
                                 <strong id="infoProduct">—</strong>
                             </div>
                             <div class="pl-meta__item">
-                                <span>Batch qty</span>
+                                <span>Released SKU qty</span>
                                 <strong id="infoQuantity">—</strong>
                             </div>
                             <div class="pl-meta__item">
@@ -649,8 +659,8 @@
                             <i class="fas fa-fingerprint"></i>
                             <div>
                                 <strong class="block text-base-content mb-0.5">Unique unit serialization</strong>
-                                Each label encodes a distinct unit ID (e.g. <code class="text-xs">BATCH-…-0001</code>,
-                                <code class="text-xs">…-0002</code>). You are not printing duplicate barcodes.
+                                Each label includes the batch and SKU (e.g. <code class="text-xs">BATCH-…-FM250-0001</code>).
+                                Different package sizes cannot receive the same unit identity.
                             </div>
                         </div>
 
@@ -687,9 +697,11 @@
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="qc_officer,general_manager"></script>
+    <script src="../../js/utils/product-display.js?v=20260903-sku1"></script>
 
     <script>
         let currentBatch = null;
+        let currentSku = null;
         let batchUnitQty = 0;
         let previewTimer = null;
         /** Max labels fully rendered in on-screen preview (all still print) */
@@ -737,18 +749,19 @@
             return 1;
         }
 
-        /** Base barcode seed for the batch (falls back to batch_code). */
-        function getBaseBarcode(batch) {
+        /** Barcode seed identifies both the production batch and packaged SKU. */
+        function getBaseBarcode(batch, sku = currentSku) {
             const b = (batch?.barcode || batch?.batch_code || '').toString().trim();
-            return b || 'UNIT';
+            if (!b || !sku) return '';
+            return `${b}-${ProductDisplay.barcodeToken(sku)}`.replace(/\s+/g, '');
         }
 
         /**
          * Unique serialized unit ID for bottle index (1-based).
          * e.g. BATCH-20260712-0039-0001 … 0095
          */
-        function buildUnitSerial(batch, unitIndex, total) {
-            const base = getBaseBarcode(batch).replace(/\s+/g, '');
+        function buildUnitSerial(batch, sku, unitIndex, total) {
+            const base = getBaseBarcode(batch, sku);
             const pad = Math.max(4, String(total).length);
             const seq = String(unitIndex).padStart(pad, '0');
             return `${base}-${seq}`;
@@ -758,7 +771,7 @@
             const btn = document.getElementById('printBtn');
             const label = document.getElementById('printBtnLabel');
             const count = Math.max(0, parseInt(document.getElementById('labelCount').value, 10) || 0);
-            const ready = !!(currentBatch && getBaseBarcode(currentBatch) && count > 0);
+            const ready = !!(currentBatch && currentSku && getBaseBarcode(currentBatch, currentSku) && count > 0);
             btn.disabled = !ready;
             label.textContent = ready
                 ? `Print ${count.toLocaleString()} label${count === 1 ? '' : 's'}`
@@ -800,7 +813,11 @@
 
             if (!batchId) {
                 currentBatch = null;
+                currentSku = null;
                 batchUnitQty = 0;
+                const skuSelect = document.getElementById('skuSelect');
+                skuSelect.replaceChildren(new Option('Select a released batch first...', ''));
+                skuSelect.disabled = true;
                 document.getElementById('batchInfoCard').style.display = 'none';
                 document.getElementById('labelCount').value = 1;
                 clearPreview();
@@ -811,24 +828,16 @@
             try {
                 const response = await api.get(`/qc/batch_release.php?batch_id=${batchId}`);
                 currentBatch = response.data;
-                batchUnitQty = getBatchUnitQty(currentBatch);
+                currentSku = null;
+                batchUnitQty = 0;
 
                 document.getElementById('batchInfoCard').style.display = 'grid';
                 document.getElementById('infoBatchCode').textContent = currentBatch.batch_code || '—';
 
-                const base = getBaseBarcode(currentBatch);
-                if (currentBatch.barcode || currentBatch.batch_code) {
-                    const barcode = document.getElementById('infoBarcode');
-                    barcode.textContent = base;
-                    barcode.className = 'font-mono font-semibold text-success';
-                } else {
-                    const barcode = document.getElementById('infoBarcode');
-                    barcode.textContent = 'Missing';
-                    barcode.className = 'font-mono font-semibold text-error';
-                }
-
-                document.getElementById('infoProduct').textContent = currentBatch.product_name || '—';
-                document.getElementById('infoQuantity').textContent = `${batchUnitQty.toLocaleString()} units`;
+                document.getElementById('infoBarcode').textContent = 'Select a SKU';
+                document.getElementById('infoBarcode').className = 'font-mono text-sm text-base-content/60';
+                document.getElementById('infoProduct').textContent = 'Select a product size';
+                document.getElementById('infoQuantity').textContent = '—';
                 document.getElementById('infoMfgDate').textContent = currentBatch.manufacturing_date
                     ? new Date(currentBatch.manufacturing_date).toLocaleDateString() : '—';
                 document.getElementById('infoExpDate').textContent = currentBatch.expiry_date
@@ -845,21 +854,77 @@
                     : String(currentBatch.qc_status || 'Unknown');
                 status.appendChild(statusBadge);
 
-                // Default print qty = full batch
-                const countInput = document.getElementById('labelCount');
-                countInput.max = Math.max(batchUnitQty, 5000);
-                countInput.value = batchUnitQty;
-                document.getElementById('labelCountHint').textContent =
-                    `Batch has ${batchUnitQty.toLocaleString()} units. Default prints one unique label per bottle (1–${batchUnitQty}).`;
-
-                refreshPreview();
+                populateSkuOptions(currentBatch.released_packaging_lines || currentBatch.packaging_lines || []);
             } catch (error) {
                 console.error('Error loading batch details:', error);
                 currentBatch = null;
+                currentSku = null;
                 document.getElementById('batchInfoCard').style.display = 'none';
                 clearPreview();
                 updatePrintCta();
             }
+        }
+
+        function populateSkuOptions(lines) {
+            const select = document.getElementById('skuSelect');
+            select.replaceChildren(new Option('Select the product size to print...', ''));
+            const usable = (Array.isArray(lines) ? lines : []).filter(line => Number(line.quantity || 0) > 0);
+            usable.forEach((line, index) => {
+                const quantity = Number(line.quantity || 0);
+                const label = `${ProductDisplay.name(line, { includeCode: true })} — ${quantity.toLocaleString()} released`;
+                select.add(new Option(label, String(index)));
+            });
+            select.disabled = usable.length === 0;
+            select.dataset.lines = JSON.stringify(usable);
+
+            if (usable.length === 0) {
+                select.replaceChildren(new Option('No packaged SKU details recorded', ''));
+                document.getElementById('labelCountHint').textContent =
+                    'Printing is blocked because this batch has no size-specific packaging record.';
+                clearPreview();
+                return;
+            }
+            if (usable.length === 1) {
+                select.value = '0';
+                onSkuChange();
+            } else {
+                document.getElementById('labelCountHint').textContent =
+                    `${usable.length} product sizes were released. Choose one before printing.`;
+                clearPreview();
+            }
+        }
+
+        function onSkuChange() {
+            const select = document.getElementById('skuSelect');
+            const lines = JSON.parse(select.dataset.lines || '[]');
+            currentSku = select.value === '' ? null : lines[Number(select.value)] || null;
+            batchUnitQty = currentSku ? Math.max(0, Number(currentSku.quantity || 0)) : 0;
+
+            if (!currentSku || batchUnitQty < 1) {
+                document.getElementById('infoBarcode').textContent = 'Select a SKU';
+                document.getElementById('infoProduct').textContent = 'Select a product size';
+                document.getElementById('infoQuantity').textContent = '—';
+                clearPreview();
+                return;
+            }
+
+            const base = getBaseBarcode(currentBatch, currentSku);
+            const barcode = document.getElementById('infoBarcode');
+            barcode.textContent = base || 'Missing';
+            barcode.className = base
+                ? 'font-mono font-semibold text-success'
+                : 'font-mono font-semibold text-error';
+            document.getElementById('infoProduct').textContent = ProductDisplay.name(currentSku, { includeCode: true });
+            document.getElementById('infoQuantity').textContent = `${batchUnitQty.toLocaleString()} units`;
+
+            const printLimit = Math.min(batchUnitQty, 5000);
+            const countInput = document.getElementById('labelCount');
+            countInput.max = printLimit;
+            countInput.value = printLimit;
+            document.getElementById('labelCountHint').textContent = batchUnitQty > printLimit
+                ? `This SKU has ${batchUnitQty.toLocaleString()} released units. Print jobs are limited to ${printLimit.toLocaleString()} labels at a time.`
+                : `This SKU has ${batchUnitQty.toLocaleString()} released units. Default prints one unique label per unit.`;
+            refreshPreview();
         }
 
         function onLabelCountChange() {
@@ -882,8 +947,8 @@
             document.getElementById('labelsContainer').innerHTML = `
                 <div class="pl-empty no-print">
                     <i class="fas fa-tags text-5xl mb-3 opacity-40"></i>
-                    <p class="font-medium text-base-content/50">Select a released batch to preview serialized labels</p>
-                    <p class="text-xs mt-1 opacity-70">Preview updates automatically when you change batch, qty, or size</p>
+                    <p class="font-medium text-base-content/50">Select a released batch and product size to preview labels</p>
+                    <p class="text-xs mt-1 opacity-70">Preview updates automatically when you change the SKU, quantity, or label size</p>
                 </div>`;
             document.getElementById('sequenceStrip').style.display = 'none';
             document.getElementById('sequenceStrip').innerHTML = '';
@@ -902,7 +967,7 @@
         }
 
         function refreshPreview() {
-            if (!currentBatch) {
+            if (!currentBatch || !currentSku) {
                 clearPreview();
                 return;
             }
@@ -915,8 +980,8 @@
             // Screen: render up to PREVIEW_RENDER_CAP; print job uses full set via data attribute
             const renderCount = Math.min(total, PREVIEW_RENDER_CAP);
             for (let i = 1; i <= renderCount; i++) {
-                const serial = buildUnitSerial(currentBatch, i, total);
-                container.appendChild(createLabel(currentBatch, sizeConfig, serial, i, total));
+                const serial = buildUnitSerial(currentBatch, currentSku, i, total);
+                container.appendChild(createLabel(currentBatch, currentSku, sizeConfig, serial, i, total));
             }
 
             if (total > PREVIEW_RENDER_CAP) {
@@ -942,7 +1007,7 @@
 
         function renderSequenceStrip(total) {
             const strip = document.getElementById('sequenceStrip');
-            if (!currentBatch || total < 1) {
+            if (!currentBatch || !currentSku || total < 1) {
                 strip.style.display = 'none';
                 return;
             }
@@ -957,12 +1022,12 @@
                 if (idx > 0 && ordered[idx] - ordered[idx - 1] > 1) {
                     html += '<span class="pl-seq-more">…</span>';
                 }
-                html += `<span title="Unit ${n} of ${total}">${buildUnitSerial(currentBatch, n, total)}</span>`;
+                html += `<span title="Unit ${n} of ${total}">${buildUnitSerial(currentBatch, currentSku, n, total)}</span>`;
             });
             strip.innerHTML = html;
         }
 
-        function createLabel(batch, sizeConfig, unitSerial, unitIndex, total) {
+        function createLabel(batch, sku, sizeConfig, unitSerial, unitIndex, total) {
             const div = document.createElement('div');
             div.className = `pl-label-card pl-label-card--${sizeConfig.key}`;
             div.style.width = sizeConfig.width;
@@ -976,7 +1041,8 @@
                 ? new Date(batch.manufacturing_date).toLocaleDateString('en-PH') : '—';
             const expDate = batch.expiry_date
                 ? new Date(batch.expiry_date).toLocaleDateString('en-PH') : '—';
-            const product = batch.product_name || 'Dairy Product';
+            const product = ProductDisplay.name(sku);
+            const skuCode = sku.product_code || (sku.product_id ? `SKU-${sku.product_id}` : '');
             const batchCode = batch.batch_code || '—';
             const brandSize = sizeConfig.key === 'large' ? '0.95rem' : sizeConfig.key === 'medium' ? '0.8rem' : '0.65rem';
             const titleSize = sizeConfig.key === 'large' ? '0.95rem' : sizeConfig.key === 'medium' ? '0.8rem' : '0.6rem';
@@ -986,6 +1052,7 @@
                     <div class="pl-label-card__serial">${unitIndex}/${total}</div>
                     <div class="pl-label-card__inner" style="padding:0.3rem 0.35rem;">
                         <div class="pl-label-card__title" style="font-size:${titleSize}; margin:0;">${escapeHtml(product)}</div>
+                        ${skuCode ? `<div style="font-size:0.42rem;text-align:center;color:#6b7280;">${escapeHtml(skuCode)}</div>` : ''}
                         <div class="pl-label-card__barcode-wrap">
                             <svg class="barcode-svg" data-serial="${escapeAttr(unitSerial)}" preserveAspectRatio="xMidYMid meet"></svg>
                         </div>
@@ -1007,6 +1074,7 @@
                             </div>
                         </div>
                         <div class="pl-label-card__title" style="font-size:${titleSize};">${escapeHtml(product)}</div>
+                        ${skuCode ? `<div style="font-size:0.5rem;text-align:center;color:#6b7280;margin-top:-0.15rem;">SKU ${escapeHtml(skuCode)}</div>` : ''}
                         <div class="pl-label-card__barcode-wrap">
                             <svg class="barcode-svg" data-serial="${escapeAttr(unitSerial)}" preserveAspectRatio="xMidYMid meet"></svg>
                             <div class="pl-label-card__serial-text">${escapeHtml(unitSerial)}</div>
@@ -1039,7 +1107,7 @@
          * Preview may show a subset; print always includes every unit serial.
          */
         function printLabels() {
-            if (!currentBatch) return;
+            if (!currentBatch || !currentSku) return;
             const total = Math.max(1, parseInt(document.getElementById('labelCount').value, 10) || 1);
             const sizeConfig = getSizeConfig();
 
@@ -1049,8 +1117,8 @@
             container.innerHTML = '';
 
             for (let i = 1; i <= total; i++) {
-                const serial = buildUnitSerial(currentBatch, i, total);
-                container.appendChild(createLabel(currentBatch, sizeConfig, serial, i, total));
+                const serial = buildUnitSerial(currentBatch, currentSku, i, total);
+                container.appendChild(createLabel(currentBatch, currentSku, sizeConfig, serial, i, total));
             }
 
             renderBarcodesIn(container, sizeConfig);
