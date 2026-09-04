@@ -11,6 +11,7 @@ function ensureStockValidationSupport(PDO $db): void {
             id INT NOT NULL AUTO_INCREMENT,
             validation_number VARCHAR(45) NOT NULL,
             validated_by INT NOT NULL,
+            source_type VARCHAR(30) NOT NULL DEFAULT 'warehouse_count',
             status ENUM('open','partially_ordered','ordered','cancelled') NOT NULL DEFAULT 'open',
             notes TEXT NULL,
             legacy_purchase_request_id INT NULL,
@@ -22,6 +23,10 @@ function ensureStockValidationSupport(PDO $db): void {
             KEY idx_stock_validation_status (status, created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     ");
+    if (!auditColumnExists($db, 'stock_validations', 'source_type')) {
+        $db->exec("ALTER TABLE stock_validations
+            ADD COLUMN source_type VARCHAR(30) NOT NULL DEFAULT 'warehouse_count' AFTER validated_by");
+    }
 
     $db->exec("
         CREATE TABLE IF NOT EXISTS stock_validation_items (

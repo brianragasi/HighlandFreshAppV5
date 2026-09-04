@@ -7,6 +7,9 @@
 require_once __DIR__ . '/../bootstrap.php';
 require_once __DIR__ . '/../helpers/supplier_ingredient_catalog.php';
 require_once __DIR__ . '/../helpers/plain_text.php';
+require_once __DIR__ . '/../helpers/ingredient_onboarding.php';
+require_once __DIR__ . '/../helpers/stock_validation_support.php';
+require_once __DIR__ . '/../helpers/procurement_notifications.php';
 require_once __DIR__ . '/../warehouse/raw/ingredient_stock_helpers.php';
 
 // Require GM/Admin role
@@ -16,6 +19,7 @@ $currentUser = Auth::requireRole(['general_manager', 'admin']);
 $conn = Database::getInstance()->getConnection();
 ensureIngredientMasterSettings($conn);
 ensureSupplierIngredientCatalog($conn);
+ensureIngredientOnboardingSupport($conn);
 
 // Get request method and handle routing
 $method = $_SERVER['REQUEST_METHOD'];
@@ -699,17 +703,20 @@ function validateIngredientPlanningNumbers(array &$data): void {
 }
 
 function createIngredient($conn, $currentUser) {
+    ensureStockValidationSupport($conn);
     $data = json_decode(file_get_contents('php://input'), true);
     $data = hfPlainTextFields(is_array($data) ? $data : [], [
         'ingredient_code' => [40, false],
         'ingredient_name' => [160, false],
         'unit_of_measure' => [40, false],
         'physical_state' => [20, false],
+        'initial_stock_status' => [30, false],
         'storage_location' => [160, false],
         'storage_requirements' => [1000, true],
     ]);
     $isActive = isset($data['is_active']) ? intval($data['is_active']) : 1;
     $supplierIds = supplierCatalogNormalizeSupplierIds($data['supplier_ids'] ?? []);
+    $initialStockRoute = normalizeIngredientInitialStockRoute($data['initial_stock_status'] ?? '');
     validateIngredientPlanningNumbers($data);
     
     // Validation
@@ -726,6 +733,9 @@ function createIngredient($conn, $currentUser) {
     if (empty($data['physical_state'])) {
         $errors['physical_state'] = 'Choose whether the ingredient is solid, liquid, or counted';
     }
+    if ($initialStockRoute === '') {
+        $errors['initial_stock_status'] = 'Choose whether physical stock already exists for this new material';
+    }
     $createReorderPoint = array_key_exists('reorder_point', $data)
         && $data['reorder_point'] !== null && $data['reorder_point'] !== ''
         ? $data['reorder_point']
@@ -741,6 +751,10 @@ function createIngredient($conn, $currentUser) {
     );
     if ($thresholdError !== null) {
         $errors['stock_levels'] = $thresholdError;
+    }
+    $initialTarget = (float) ($data['maximum_stock'] ?? 0);
+    if ($initialStockRoute === 'purchase_required' && $initialTarget <= 0.0005) {
+        $errors['maximum_stock'] = 'Enter a restocking target greater than zero so Purchasing receives a quantity to source';
     }
     if (!empty($errors)) {
         sendValidationError($errors);
@@ -771,9 +785,9 @@ function createIngredient($conn, $currentUser) {
     }
     
         $sql = "INSERT INTO ingredients (ingredient_code, ingredient_name, category_id, unit_of_measure, physical_state,
-            minimum_stock, reorder_point, maximum_stock, lead_time_days, current_stock,
+            minimum_stock, reorder_point, maximum_stock, lead_time_days, current_stock, initial_stock_route, onboarding_status,
             storage_location, storage_requirements, shelf_life_days, is_perishable, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
     $conn->beginTransaction();
     try {
@@ -789,6 +803,8 @@ function createIngredient($conn, $currentUser) {
             $data['maximum_stock'] ?? null,
             $data['lead_time_days'] ?? 7,
             0,
+            $initialStockRoute,
+            $initialStockRoute === 'purchase_required' ? 'routed_to_purchasing' : 'pending_count',
             $data['storage_location'] ?? null,
             $data['storage_requirements'] ?? null,
             $data['shelf_life_days'] ?? null,
@@ -798,6 +814,58 @@ function createIngredient($conn, $currentUser) {
 
         $newId = (int) $conn->lastInsertId();
         supplierCatalogSyncIngredient($conn, $newId, $supplierIds, (int) $currentUser['user_id']);
+
+        if ($initialStockRoute === 'purchase_required' && $isActive === 1) {
+            $demandNumber = nextNewMaterialDemandNumber();
+            $header = $conn->prepare("INSERT INTO stock_validations
+                (validation_number, validated_by, source_type, status, notes)
+                VALUES (?, ?, 'admin_new_material', 'open', ?)");
+            $header->execute([
+                $demandNumber,
+                (int) $currentUser['user_id'],
+                'Admin registered a new material with no physical opening stock. Warehouse shelf validation is not required.',
+            ]);
+            $validationId = (int) $conn->lastInsertId();
+            $reorder = max((float) ($data['reorder_point'] ?? 0), (float) ($data['minimum_stock'] ?? 0));
+            $target = (float) ($data['maximum_stock'] ?? 0);
+            $item = $conn->prepare("INSERT INTO stock_validation_items
+                (stock_validation_id, ingredient_id, item_description, unit,
+                 system_stock_before, physical_stock, stock_variance, variance_reason,
+                 reorder_point_at_validation, target_stock_at_validation, quantity_needed,
+                 recommendation_type, forecast_reason)
+                VALUES (?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, 'new_material_purchase', ?)");
+            $item->execute([
+                $validationId,
+                $newId,
+                $data['ingredient_name'],
+                $data['unit_of_measure'],
+                'Admin declared that no physical opening stock exists.',
+                $reorder,
+                $target,
+                $target,
+                'Initial purchase demand created from the Admin ingredient setup.',
+            ]);
+            writeProcurementNotification(
+                $conn,
+                'purchaser',
+                'new_material_purchase',
+                'New material requires sourcing',
+                $data['ingredient_name'] . ' has no opening stock. Link an approved supplier and prepare a PO for ' .
+                    rtrim(rtrim(number_format($target, 3, '.', ''), '0'), '.') . ' ' . $data['unit_of_measure'] . '.',
+                'stock_validation',
+                $validationId
+            );
+        } elseif ($initialStockRoute === 'opening_stock' && $isActive === 1) {
+            writeProcurementNotification(
+                $conn,
+                'warehouse_raw',
+                'ingredient_opening_count',
+                'Opening stock count required',
+                $data['ingredient_name'] . ' was registered with physical stock already on site. Count it and record its source and lot details.',
+                'ingredient',
+                $newId
+            );
+        }
         $conn->commit();
     } catch (Exception $e) {
         if ($conn->inTransaction()) {
@@ -814,7 +882,10 @@ function createIngredient($conn, $currentUser) {
 
     logAudit($currentUser['user_id'], 'CREATE', 'ingredients', $newId, null, $ingredient);
     
-    sendSuccess(['ingredient' => $ingredient], 'Ingredient created successfully');
+    $message = $initialStockRoute === 'purchase_required'
+        ? 'Ingredient created and sent directly to Purchasing. Link an approved supplier from Admin > Suppliers before the PO is created.'
+        : 'Ingredient created. Warehouse must count and record the opening stock before any quantity becomes usable.';
+    sendSuccess(['ingredient' => $ingredient, 'initial_stock_route' => $initialStockRoute], $message);
 }
 
 /**

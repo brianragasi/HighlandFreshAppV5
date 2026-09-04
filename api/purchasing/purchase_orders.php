@@ -1707,7 +1707,7 @@ function buildPOItemsFromSubmittedPRS($prItems, $submittedItems) {
     return $poItems;
 }
 
-/** Load physically confirmed shortages for the selected supplier. */
+/** Load open material demand for the selected supplier. */
 function loadAndValidateSupplierFirstWarehouseItems(PDO $db, array $data, int $supplierId): array {
     $submittedItems = $data['items'] ?? [];
     if (!is_array($submittedItems)) {
@@ -1718,7 +1718,7 @@ function loadAndValidateSupplierFirstWarehouseItems(PDO $db, array $data, int $s
     foreach ($submittedItems as $index => $row) {
         $lineNo = $index + 1;
         if (!is_array($row) || empty($row['stock_validation_item_id'])) {
-            Response::error("Line {$lineNo}: select a confirmed low-stock item", 400);
+            Response::error("Line {$lineNo}: select an open material need", 400);
         }
         $prItemId = (int) $row['stock_validation_item_id'];
         if (isset($submittedById[$prItemId])) {
@@ -1793,7 +1793,7 @@ function loadAndValidateSupplierFirstWarehouseItems(PDO $db, array $data, int $s
             : 'mro:' . (int) $prItem['mro_item_id'];
         if (isset($selectedMaterialKeys[$materialKey])) {
             Response::error(
-                $prItem['item_description'] . ' appears more than once in the confirmed-needs queue. '
+                $prItem['item_description'] . ' appears more than once in the material-needs queue. '
                 . 'Keep one request and close the duplicate before creating this PO.',
                 409
             );
@@ -2368,7 +2368,7 @@ function handlePost($db, $action, $currentUser) {
             $sourceValidationIds = $validated['source_pr_ids'];
             $forecastItems = loadAndValidateSupplierForecastItems($db, $data, $supplierId);
             if (!$assignments && !$forecastItems) {
-                Response::error('Select validated low-stock demand or add one fast-moving forecast item', 400);
+                Response::error('Select open material demand or add one fast-moving forecast item', 400);
             }
             validateManualSupplierAssignments($db, $assignments, $prItemsById);
             applySupplierOrderTerms($db, $assignments, $prItemsById);
@@ -4345,7 +4345,7 @@ function lockAndValidateRemainingPRSQuantities(PDO $db, array $assignments): voi
             + (float) ($assignment['pr_allocation_quantity'] ?? $assignment['quantity']);
     }
     if (!$submittedByItem) {
-        throw new PurchaseOrderAllocationException('Select at least one confirmed low-stock item');
+        throw new PurchaseOrderAllocationException('Select at least one open material need');
     }
 
     $ids = array_keys($submittedByItem);
@@ -4386,7 +4386,7 @@ function lockAndValidateRemainingPRSQuantities(PDO $db, array $assignments): voi
         $remaining = max(0, (float) $locked[$prItemId]['quantity'] - $alreadyAllocated);
         if ($submittedQty > $remaining + 0.0001) {
             throw new PurchaseOrderAllocationException(sprintf(
-                '%s has only %.2f %s remaining. Refresh the confirmed low-stock list before creating the PO.',
+                '%s has only %.2f %s remaining. Refresh the material-demand list before creating the PO.',
                 $locked[$prItemId]['item_description'],
                 $remaining,
                 $locked[$prItemId]['unit'] ?: 'units'

@@ -1,11 +1,14 @@
 <?php
 
+require_once __DIR__ . '/ingredient_onboarding.php';
+
 /**
  * Safe intake for physical ingredient stock that exists on the shelf but has
  * no PO receipt in the system. Nothing becomes usable until the GM approves.
  */
 
 function ensureIngredientOpeningStockSupport(PDO $db): void {
+    ensureIngredientOnboardingSupport($db);
     $db->exec("
         CREATE TABLE IF NOT EXISTS ingredient_opening_stock_requests (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -208,6 +211,7 @@ function decideIngredientOpeningStock(PDO $db, int $requestId, string $decision,
             SET status = 'rejected', decided_by = ?, decided_at = NOW(), decision_notes = ?
             WHERE id = ? AND status = 'pending'");
         $update->execute([$gmId, $remarks ?: 'Rejected by General Manager', $requestId]);
+        markIngredientOnboardingStatus($db, (int) $request['ingredient_id'], 'pending_count');
         return ['status' => 'rejected', 'request' => $request];
     }
 
@@ -386,6 +390,8 @@ function decideIngredientOpeningStock(PDO $db, int $requestId, string $decision,
             $requestId,
         ]);
 
+        markIngredientOnboardingStatus($db, (int) $request['ingredient_id'], 'completed');
+
         return [
             'status' => 'approved',
             'request' => $request,
@@ -538,6 +544,8 @@ function decideIngredientOpeningStock(PDO $db, int $requestId, string $decision,
         SET status = 'approved', decided_by = ?, decided_at = NOW(), decision_notes = ?, created_batch_id = ?
         WHERE id = ? AND status = 'pending'");
     $update->execute([$gmId, $remarks ?: 'Approved by General Manager', $batchId, $requestId]);
+
+    markIngredientOnboardingStatus($db, (int) $request['ingredient_id'], 'completed');
 
     return ['status' => 'approved', 'request' => $request, 'batch_id' => $batchId, 'batch_code' => $batchCode];
 }

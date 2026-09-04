@@ -721,13 +721,13 @@
                 return;
             }
 
-            const noun = count === 1 ? 'confirmed stock check' : 'confirmed stock checks';
+            const noun = count === 1 ? 'material demand' : 'material demands';
             title.textContent = `${count} ${noun} ${count === 1 ? 'has' : 'have'} quantities left to order`;
-            text.textContent = 'Choose a supplier. Matching confirmed shortages will appear automatically.';
+            text.textContent = 'Choose a linked supplier. New materials without a supplier stay visible until Admin connects an approved supplier.';
             items.innerHTML = prs.slice(0, 5).map(pr => `
                     <span class="badge border-warning bg-warning/10 text-base-content gap-1 h-auto py-2">
-                        <i class="fas fa-clipboard-check"></i>
-                        ${escapeHtml(pr.pr_number)} - ${escapeHtml(getPurchaseRequestItemPreview(pr))}
+                        <i class="fas ${pr.source_type === 'admin_new_material' ? 'fa-box-open' : 'fa-clipboard-check'}"></i>
+                        ${escapeHtml(pr.pr_number)} - ${escapeHtml(pr.purpose || getPurchaseRequestItemPreview(pr))}: ${escapeHtml(getPurchaseRequestItemPreview(pr))}
                     </span>
                 `).join('');
             alert.classList.remove('hidden');
@@ -796,7 +796,7 @@
 
             lineItemCounter = 0;
             setPOEntryMode('prs');
-            renderDirectEntryPrompt('Choose an accredited supplier to see its validated low-stock demand.');
+            renderDirectEntryPrompt('Choose an accredited supplier to see its open material demand.');
             clearSelectedPurchaseRequestSummary();
         }
 
@@ -892,7 +892,7 @@
             const needNames = [...new Set(allNeeds.map(item => item.ingredient_name || item.mro_item_name || item.item_description || 'Material'))];
             summary.textContent = allNeeds.length
                 ? `${allNeeds.length} confirmed material${allNeeds.length === 1 ? '' : 's'} still need purchasing: ${needNames.slice(0, 5).join(' • ')}${needNames.length > 5 ? ` • +${needNames.length - 5} more` : ''}. Best supplier coverage is shown first.`
-                : 'There are no confirmed shortages waiting. Add an early-reorder item only when there is documented evidence.';
+                : 'There are no open material needs waiting. Add an early-reorder item only when there is documented evidence.';
 
             if (!availableSuppliers.length) {
                 container.innerHTML = allNeeds.length
@@ -1064,7 +1064,7 @@
                 <tr id="lineItem-empty">
                     <td colspan="5" class="text-center py-8 text-base-content/60">
                         <i class="fas fa-clipboard-check text-3xl mb-2"></i>
-                        <p class="font-medium">Choose a supplier to see confirmed low-stock items.</p>
+                        <p class="font-medium">Choose a supplier to see open material needs.</p>
                     </td>
                 </tr>
             `;
@@ -1252,13 +1252,13 @@
             clearSelectedPurchaseRequestSummary();
             document.getElementById('addForecastItemButton').disabled = !supplierId;
             if (!supplierId) {
-                renderDirectEntryPrompt('Choose an accredited supplier to see its validated low-stock demand.');
+                renderDirectEntryPrompt('Choose an accredited supplier to see its open material demand.');
                 renderSupplierCoverageHint();
                 renderPurchasingDecisionPanel();
                 return;
             }
 
-            renderDirectEntryPrompt('Loading confirmed low-stock items for this supplier...');
+            renderDirectEntryPrompt('Loading open material needs for this supplier...');
             try {
                 const response = await PurchasingService.getSupplierDetail(supplierId);
                 directSupplierIngredients = response?.data?.ingredients || [];
@@ -1285,7 +1285,9 @@
                             ...item,
                             source_purchase_request_id: Number(pr.id),
                             source_pr_number: pr.validation_number || pr.pr_number || `Validation ${pr.id}`,
-                            source_pr_purpose: item.recommendation_type === 'warehouse_early_reorder'
+                            source_pr_purpose: pr.source_type === 'admin_new_material'
+                                ? 'New material registered by Admin — no opening stock'
+                                : item.recommendation_type === 'warehouse_early_reorder'
                                 ? 'Early reorder recommended by Warehouse'
                                 : item.recommendation_type === 'early_reorder'
                                 ? 'System early-reorder forecast confirmed by Warehouse'
@@ -1306,7 +1308,7 @@
                 renderWarehouseRequestedItemsSummary();
 
                 if (!eligiblePrItems.length) {
-                    renderDirectEntryPrompt('No confirmed stock need is linked to this supplier. You may still add a documented early-reorder item.');
+                    renderDirectEntryPrompt('No open material need is linked to this supplier. You may still add a documented early-reorder item.');
                     renderSupplierCoverageHint();
                     renderPurchasingDecisionPanel();
                     return;
@@ -1508,8 +1510,8 @@
             });
             const repeatedProductCount = Array.from(productCounts.values()).filter(count => count > 1).length;
             const otherSupplierCount = Math.max(0, allOpenItems.length - eligiblePrItems.length);
-            title.textContent = `${eligiblePrItems.length} confirmed stock need${eligiblePrItems.length === 1 ? '' : 's'} available from ${supplier.supplier_name}`;
-            meta.textContent = `The supplier filter is applied across low-stock and early-reorder confirmations. All matching lines are selected automatically; every Warehouse check remains linked for review.`;
+            title.textContent = `${eligiblePrItems.length} open material need${eligiblePrItems.length === 1 ? '' : 's'} available from ${supplier.supplier_name}`;
+            meta.textContent = `The supplier filter is applied across new-material, low-stock, and early-reorder demand. All matching lines are selected automatically and every source record remains linked for review.`;
             itemContainer.innerHTML = `
                 <span class="badge badge-primary badge-outline">${eligiblePrItems.length} shown for this supplier</span>
                 <span class="badge badge-outline">${allOpenItems.length} total open</span>
@@ -1824,7 +1826,7 @@
                 .filter(row => document.getElementById(`include-${row.id.split('-')[1]}`)?.checked === true)
                 .length;
             hint.classList.add(selectedCount > 0 ? 'alert-success' : 'alert-info');
-            text.textContent = `${eligibleCount} confirmed stock need${eligibleCount === 1 ? '' : 's'} ${eligibleCount === 1 ? 'is' : 'are'} available from ${supplierName}. ${selectedCount} ${selectedCount === 1 ? 'item is' : 'items are'} currently inside this PO document. Move out only a line that should remain open for a later decision.`;
+            text.textContent = `${eligibleCount} open material need${eligibleCount === 1 ? '' : 's'} ${eligibleCount === 1 ? 'is' : 'are'} available from ${supplierName}. ${selectedCount} ${selectedCount === 1 ? 'item is' : 'items are'} currently inside this PO document. Move out only a line that should remain open for a later decision.`;
         }
 
         function addForecastLineItem() {
@@ -2359,12 +2361,12 @@
                 const remainingCount = approvedPurchaseRequests.reduce((count, request) =>
                     count + (request.items || []).filter(item => Number(item.remaining_quantity || 0) > 0.0001).length, 0
                 );
-                renderDirectEntryPrompt('Choose the next supplier to continue purchasing validated low-stock demand.');
+                renderDirectEntryPrompt('Choose the next supplier to continue purchasing open material demand.');
                 showPOContinuationNotice(
                     `${poNumber} submitted to the GM`,
                     remainingCount > 0
-                        ? `${remainingCount} confirmed shortage line${remainingCount === 1 ? '' : 's'} remain across Warehouse stock checks. Choose the next supplier to continue.`
-                        : 'All confirmed stock needs are covered. You may still add a documented early-reorder item.'
+                        ? `${remainingCount} material demand line${remainingCount === 1 ? '' : 's'} remain. Choose the next supplier to continue.`
+                        : 'All open material needs are covered. You may still add a documented early-reorder item.'
                 );
                 const url = new URL(window.location.href);
                 url.searchParams.set('action', 'new');
@@ -2376,10 +2378,10 @@
                 renderDirectEntryPrompt(`${poNumber} was submitted, but the remaining Warehouse items could not be refreshed. Reload this page to continue.`);
                 showPOContinuationNotice(
                     `${poNumber} submitted to the GM`,
-                    'The order was saved, but the confirmed shortage list could not be refreshed. Reload this page before creating the next supplier PO.',
+                    'The order was saved, but the material-demand list could not be refreshed. Reload this page before creating the next supplier PO.',
                     'warning'
                 );
-                showToast(`${poNumber} was submitted, but the confirmed shortage list could not be refreshed.`, 'warning');
+                showToast(`${poNumber} was submitted, but the material-demand list could not be refreshed.`, 'warning');
             }
         }
 
@@ -2449,7 +2451,7 @@
             });
 
             if (lines.length === 0 && forecastLines.length === 0) {
-                showToast('Include a confirmed stock need or add an early-reorder item.', 'error');
+                showToast('Include an open material need or add an early-reorder item.', 'error');
                 return;
             }
             if (hasInvalidQuantity) {

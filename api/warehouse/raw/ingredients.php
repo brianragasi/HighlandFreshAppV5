@@ -22,6 +22,7 @@ require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
 require_once dirname(dirname(__DIR__)) . '/helpers/plain_text.php';
 require_once __DIR__ . '/ingredient_stock_helpers.php';
 require_once dirname(dirname(__DIR__)) . '/helpers/ingredient_opening_stock.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/ingredient_onboarding.php';
 require_once dirname(dirname(__DIR__)) . '/helpers/procurement_notifications.php';
 require_once dirname(dirname(__DIR__)) . '/helpers/early_reorder.php';
 
@@ -30,6 +31,7 @@ $currentUser = Auth::requireRole(['warehouse_raw', 'general_manager', 'productio
 
 try {
     $db = Database::getInstance()->getConnection();
+    ensureIngredientOnboardingSupport($db);
     ensureIngredientPerishabilitySupport($db);
     ensureIngredientOpeningStockSupport($db);
     
@@ -517,6 +519,10 @@ function handleGet($db, $currentUser) {
                 FROM ingredients i
                 LEFT JOIN ingredient_categories ic ON i.category_id = ic.id
                 WHERE i.is_active = 1
+                  AND NOT (
+                      i.initial_stock_route = 'opening_stock'
+                      AND i.onboarding_status IN ('pending_count', 'under_review')
+                  )
             ";
             
             $sql .= " ORDER BY
@@ -801,6 +807,10 @@ function handlePost($db, $currentUser) {
                     $heldBatchId,
                 ]);
                 $requestId = (int) $db->lastInsertId();
+                if (($ingredient['initial_stock_route'] ?? '') === 'opening_stock'
+                    && ($ingredient['onboarding_status'] ?? '') === 'pending_count') {
+                    markIngredientOnboardingStatus($db, $ingredientId, 'under_review');
+                }
                 logAudit($currentUser['user_id'], 'REQUEST_OPENING_STOCK', 'ingredient_opening_stock_requests', $requestId, null, [
                     'request_code' => $requestCode,
                     'ingredient_id' => $ingredientId,
@@ -865,83 +875,10 @@ function handlePost($db, $currentUser) {
             break;
             
         case 'create':
-            // Create new ingredient (GM/Purchaser only)
-            if (!in_array($currentUser['role'], ['general_manager', 'purchaser'])) {
-                Response::error('Only GM or Purchaser can create ingredients', 403);
-            }
-
-            $ingredientCode = hfPlainText(getParam('ingredient_code'), 40, false);
-            $ingredientName = hfPlainText(getParam('ingredient_name'), 160, false);
-            $categoryId = getParam('category_id');
-            $unitOfMeasure = hfPlainText(getParam('unit_of_measure'), 40, false);
-            $minimumStock = getParam('minimum_stock', 0);
-            $maximumStock = getParam('maximum_stock');
-            $storageLocation = hfPlainText(getParam('storage_location'), 160, false);
-            $storageRequirements = hfPlainText(getParam('storage_requirements'), 1000, true);
-            $shelfLifeDays = getParam('shelf_life_days');
-            $isPerishable = getParam('is_perishable', 1);
-            $packSizeValue = getParam('pack_size_value');
-            $packSizeUnit = hfPlainText(getParam('pack_size_unit'), 40, false);
-            $packLabel = hfPlainText(getParam('pack_label'), 50, false);
-
-            if ($categoryId) {
-                $categoryStmt = $db->prepare('SELECT category_name FROM ingredient_categories WHERE id = ?');
-                $categoryStmt->execute([(int) $categoryId]);
-                $categoryName = strtolower(trim((string) $categoryStmt->fetchColumn()));
-                if ($categoryName !== '' && strpos($categoryName, 'packaging') !== false) {
-                    $isPerishable = 0;
-                    $shelfLifeDays = null;
-                }
-            }
-
-            if (!$ingredientCode || !$ingredientName || !$unitOfMeasure) {
-                Response::error('Ingredient code, name, and unit of measure are required', 400);
-            }
-
-            // Pack size sanity: if any pack field is provided, value+unit must both be present and positive.
-            $hasAnyPack = ($packSizeValue !== null && $packSizeValue !== '')
-                       || ($packSizeUnit !== null && $packSizeUnit !== '')
-                       || ($packLabel !== null && $packLabel !== '');
-            $hasAllPack = $packSizeValue !== null && $packSizeValue !== ''
-                       && $packSizeUnit !== null && $packSizeUnit !== '';
-            if ($hasAnyPack && !$hasAllPack) {
-                Response::error('Pack size requires both a value and a unit', 400);
-            }
-            if ($hasAllPack && floatval($packSizeValue) <= 0) {
-                Response::error('Pack size value must be greater than 0', 400);
-            }
-
-            // Check duplicate
-            $check = $db->prepare("SELECT id FROM ingredients WHERE ingredient_code = ?");
-            $check->execute([$ingredientCode]);
-            if ($check->fetch()) {
-                Response::error('Ingredient code already exists', 400);
-            }
-
-            $stmt = $db->prepare("
-                INSERT INTO ingredients
-                (ingredient_code, ingredient_name, category_id, unit_of_measure,
-                 pack_size_value, pack_size_unit, pack_label,
-                 minimum_stock, maximum_stock, storage_location, storage_requirements, shelf_life_days, is_perishable)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ");
-            $stmt->execute([
-                $ingredientCode,
-                $ingredientName,
-                $categoryId,
-                $unitOfMeasure,
-                $hasAllPack ? floatval($packSizeValue) : null,
-                $hasAllPack ? $packSizeUnit : null,
-                $packLabel ?: null,
-                $minimumStock,
-                $maximumStock !== null && $maximumStock !== '' ? $maximumStock : null,
-                $storageLocation,
-                $storageRequirements,
-                $shelfLifeDays,
-                $isPerishable ? 1 : 0
-            ]);
-
-            Response::success(['id' => $db->lastInsertId()], 'Ingredient created successfully');
+            Response::error(
+                'New ingredients must be configured in Admin → Ingredients so their starting-stock route and audit record are created.',
+                410
+            );
             break;
             
         default:

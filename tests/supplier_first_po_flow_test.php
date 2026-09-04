@@ -57,7 +57,7 @@ $checks = [
     'Successful supplier PO refreshes all remaining validated demand' =>
         str_contains($page, 'async function continueSupplierFirstAfterPO(po)')
         && str_contains($page, "supplierSelect.value = ''")
-        && str_contains($page, 'Choose the next supplier to continue purchasing validated low-stock demand.')
+        && str_contains($page, 'Choose the next supplier to continue purchasing open material demand.')
         && str_contains($page, 'await continueSupplierFirstAfterPO(po);'),
     'Server accepts one supplier PO with line-level stock-confirmation links' =>
         str_contains($api, "case 'create_supplier_po':")

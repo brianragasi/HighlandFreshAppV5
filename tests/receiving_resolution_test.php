@@ -50,7 +50,7 @@ foreach ([
 }
 assertResolution(strpos($backend, "UPDATE purchase_request_item_po SET quantity = ?") !== false, 'Short close must release only its allocation balance');
 assertResolution(strpos($backend, 'has rejected quantity. Resolve the discrepancy before closing') === false, 'Historical rejection must not be a permanent exact-verification blocker');
-assertResolution(strpos($backend, 'appears more than once in the confirmed-needs queue') !== false, 'PO creation must stop duplicate material requirements from becoming repeated receiving lines');
+assertResolution(strpos($backend, 'appears more than once in the material-needs queue') !== false, 'PO creation must stop duplicate material requirements from becoming repeated receiving lines');
 assertResolution(strpos($frontend, 'Close Short &amp; Verify') === false, 'Button text should be normal HTML, not double encoded');
 assertResolution(strpos($frontend, 'Close Short & Verify') !== false, 'Purchaser needs a distinct short-close action');
 assertResolution(strpos($frontend, 'remaining PR balance will reopen') !== false, 'UI must explain the allocation effect');

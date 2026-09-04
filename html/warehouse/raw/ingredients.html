@@ -732,6 +732,15 @@
                 </div>
             </div>
 
+            <div id="openingStockTaskAlert" class="alert alert-info mb-4 hidden">
+                <i class="fas fa-clipboard-check"></i>
+                <div class="flex-1">
+                    <h3 class="font-bold" id="openingStockTaskTitle">Opening stock needs counting</h3>
+                    <p class="text-sm" id="openingStockTaskText"></p>
+                    <div class="flex flex-wrap gap-2 mt-2" id="openingStockTaskActions"></div>
+                </div>
+            </div>
+
             <!-- Inventory Tabs -->
             <div class="tabs tabs-boxed mb-4" id="inventoryTabs">
                 <button class="tab tab-active" data-view="inventory">Inventory</button>
@@ -926,6 +935,7 @@
                             <label class="pro-label">What happened? <span class="text-error">*</span></label>
                             <select class="pro-select" id="openingStockSourceType" required onchange="syncOpeningStockFields()">
                                 <option value="">Choose delivery problem…</option>
+                                <option value="opening_balance">Opening stock already on site</option>
                                 <option value="unrecorded_delivery">Supplier delivery not recorded</option>
                             </select>
                         </div>
@@ -973,7 +983,7 @@
                         </div>
                     </div>
                     <div class="pro-field">
-                        <label class="pro-label">Why was this supplier delivery not recorded? <span class="text-error">*</span></label>
+                        <label class="pro-label" id="openingStockReasonLabel">Why was this supplier delivery not recorded? <span class="text-error">*</span></label>
                         <textarea class="pro-textarea" id="openingStockReason" maxlength="500" rows="3" required
                             placeholder="Example: Delivery was unloaded, but its receiving record was not completed."></textarea>
                     </div>
@@ -1447,6 +1457,32 @@
             document.getElementById('inStockCount').textContent = inStock;
             document.getElementById('lowStockCount').textContent = lowStock;
             document.getElementById('expiringCount').textContent = expiring;
+
+            const pendingOpening = ingredients.filter(i =>
+                i.initial_stock_route === 'opening_stock' && i.onboarding_status === 'pending_count'
+            );
+            const underReview = ingredients.filter(i =>
+                i.initial_stock_route === 'opening_stock' && i.onboarding_status === 'under_review'
+            );
+            const alert = document.getElementById('openingStockTaskAlert');
+            const actions = document.getElementById('openingStockTaskActions');
+            if (!pendingOpening.length && !underReview.length) {
+                alert.classList.add('hidden');
+                actions.innerHTML = '';
+            } else {
+                document.getElementById('openingStockTaskTitle').textContent = pendingOpening.length
+                    ? `${pendingOpening.length} new material${pendingOpening.length === 1 ? '' : 's'} need an opening count`
+                    : 'Opening stock is under review';
+                document.getElementById('openingStockTaskText').textContent = pendingOpening.length
+                    ? 'Admin confirmed that physical stock already exists. Count it and record its source, lot, and expiry; do not estimate the quantity.'
+                    : `${underReview.length} opening-stock record${underReview.length === 1 ? ' is' : 's are'} waiting for the required checks and GM decision.`;
+                actions.innerHTML = pendingOpening.slice(0, 5).map(item => `
+                    <button type="button" class="btn btn-sm btn-primary" onclick="openOpeningStockModal(${Number(item.id)})">
+                        <i class="fas fa-scale-balanced"></i> Count ${escapeHtml(item.ingredient_name)}
+                    </button>
+                `).join('');
+                alert.classList.remove('hidden');
+            }
         }
 
 
@@ -1626,6 +1662,13 @@
                 if (stock > max + 0.0005) {
                     stockNotices.push(`<div class="text-[10px] text-info font-semibold mt-1"><i class="fas fa-arrow-up mr-1"></i>${(stock - max).toLocaleString()} ${escapeHtml(unit)} above the restocking target</div>`);
                 }
+                const needsOpeningCount = ing.initial_stock_route === 'opening_stock' && ing.onboarding_status === 'pending_count';
+                const openingUnderReview = ing.initial_stock_route === 'opening_stock' && ing.onboarding_status === 'under_review';
+                if (needsOpeningCount) {
+                    stockNotices.push('<div class="text-[10px] text-info font-semibold mt-1"><i class="fas fa-clipboard-check mr-1"></i>Opening stock count required</div>');
+                } else if (openingUnderReview) {
+                    stockNotices.push('<div class="text-[10px] text-info font-semibold mt-1"><i class="fas fa-hourglass-half mr-1"></i>Opening stock under review</div>');
+                }
                 const stockCheckSubLine = stockNotices.join('');
 
                 // Expiry cell. Shows "— " if no batches, "12d left" if upcoming,
@@ -1683,6 +1726,7 @@
                                 </summary>
                                 <ul class="dropdown-content menu menu-sm bg-base-100 rounded-box border border-base-300 z-10 w-44 shadow-lg p-1">
                                     <li><a onclick="openDetailModal(${ing.id})"><i class="fas fa-eye w-4"></i> View Details</a></li>
+                                    ${needsOpeningCount ? `<li><a class="text-primary font-semibold" onclick="openOpeningStockModal(${ing.id})"><i class="fas fa-scale-balanced w-4"></i> Record Opening Stock</a></li>` : ''}
                                 </ul>
                             </details>
                         </td>
@@ -2361,6 +2405,9 @@
                 );
             const unit = ingredient.unit_of_measure || 'unit';
             const isPerishable = Number(ingredient.is_perishable) === 1;
+            const isOnboardingCount = ingredient.initial_stock_route === 'opening_stock'
+                && ingredient.onboarding_status === 'pending_count'
+                && !heldBatchId;
             const selectedHeldQuantity = parseFloat(heldBatchQuantity || 0);
             document.getElementById('openingStockIngredientId').value = ingredient.id;
             document.getElementById('openingStockIsPerishable').value = isPerishable ? '1' : '0';
@@ -2371,13 +2418,15 @@
             document.getElementById('openingStockIngredientName').textContent = `${ingredient.ingredient_name} · ${isPerishable ? 'Perishable' : 'Non-perishable'}`;
             document.getElementById('openingStockModalTitle').textContent = heldBatchId
                 ? 'Record Missing Supplier Lot'
-                : 'Report Unrecorded Supplier Delivery';
+                : (isOnboardingCount ? 'Record Opening Stock' : 'Report Unrecorded Supplier Delivery');
             document.getElementById('openingStockBannerTitle').textContent = heldBatchId
                 ? 'Correct one held supplier batch'
-                : 'This is not a normal stock adjustment';
+                : (isOnboardingCount ? 'Count the physical stock — do not estimate' : 'This is not a normal stock adjustment');
             document.getElementById('openingStockBannerText').innerHTML = heldBatchId
                 ? '<small>Use the package or supplier document to complete this held batch. Purchasing and QC verify the delivery evidence before the GM decides.</small>'
-                : '<small>Use this only when a supplier delivery physically arrived but was never recorded through Receive Deliveries. For misplaced stock, returned materials, or a count correction, use Full Stock Count instead.</small>';
+                : (isOnboardingCount
+                    ? '<small>Admin registered this new material as stock already on site. Enter the shelf count and real lot/expiry facts. It remains unusable until the required reviews finish.</small>'
+                    : '<small>Use this only when a supplier delivery physically arrived but was never recorded through Receive Deliveries. For misplaced stock, returned materials, or a count correction, use Full Stock Count instead.</small>');
             document.getElementById('openingStockCurrentLabel').textContent = heldBatchId ? 'Current usable stock' : 'Stock currently on file';
             document.getElementById('openingStockCurrent').value = `${current.toLocaleString()} ${unit}`;
             document.getElementById('openingStockCountedUnit').textContent = unit;
@@ -2394,7 +2443,15 @@
             document.getElementById('openingStockExpiry').required = isPerishable;
             document.getElementById('openingStockLotHelp').classList.toggle('hidden', !isPerishable);
             document.querySelectorAll('.opening-required-mark').forEach(mark => mark.classList.toggle('hidden', !isPerishable));
-            document.getElementById('openingStockSourceType').value = 'unrecorded_delivery';
+            const sourceTypeSelect = document.getElementById('openingStockSourceType');
+            sourceTypeSelect.disabled = isOnboardingCount;
+            sourceTypeSelect.value = isOnboardingCount ? 'opening_balance' : 'unrecorded_delivery';
+            document.getElementById('openingStockReasonLabel').innerHTML = isOnboardingCount
+                ? 'Where did this opening stock come from? <span class="text-error">*</span>'
+                : 'Why was this supplier delivery not recorded? <span class="text-error">*</span>';
+            document.getElementById('openingStockReason').placeholder = isOnboardingCount
+                ? 'Example: Existing storeroom stock counted during initial system setup.'
+                : 'Example: Delivery was unloaded, but its receiving record was not completed.';
             syncOpeningStockFields();
             if (heldBatchId && selectedHeldQuantity > 0.0005) {
                 document.getElementById('openingStockIngredientName').textContent = `${ingredient.ingredient_name} · Check the real details for this ${selectedHeldQuantity.toLocaleString()} ${unit} batch`;
@@ -2477,6 +2534,7 @@
                 showToast(response.message || 'Sent for verification', 'success');
                 openingStockOptions = null;
                 document.getElementById('openingStockModal').close();
+                await loadIngredients();
                 const url = new URL(window.location.href);
                 url.searchParams.delete('record_unlisted');
                 url.searchParams.delete('counted');

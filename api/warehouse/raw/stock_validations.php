@@ -142,7 +142,9 @@ function stockValidationInbox(PDO $db, array $currentUser): void {
         $header['remaining_item_count'] = count($items);
         $header['source_number'] = $header['validation_number'];
         $header['pr_number'] = $header['validation_number'];
-        $header['purpose'] = 'Confirmed shelf count';
+        $header['purpose'] = ($header['source_type'] ?? 'warehouse_count') === 'admin_new_material'
+            ? 'New material — no opening stock'
+            : 'Confirmed shelf count';
         $header['priority'] = 'normal';
     }
     unset($header);

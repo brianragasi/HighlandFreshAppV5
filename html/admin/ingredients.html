@@ -480,6 +480,26 @@
                     </div>
                 </fieldset>
 
+                <!-- Section: New ingredient routing (creation only) -->
+                <fieldset id="initialStockSection" class="border border-primary/30 bg-primary/5 rounded-xl p-4">
+                    <legend class="text-sm font-semibold px-2 text-primary">Starting Inventory</legend>
+                    <div class="form-control">
+                        <label class="label pt-0">
+                            <span class="label-text font-medium">Do we currently have physical stock of this material? *</span>
+                        </label>
+                        <select id="initial_stock_status" class="select select-bordered" required>
+                            <option value="">Choose the real situation</option>
+                            <option value="purchase_required">No stock — send the restocking target directly to Purchasing</option>
+                            <option value="opening_stock">Yes — ask Warehouse to count and record opening stock</option>
+                        </select>
+                        <div class="mt-3 rounded-lg border border-base-300 bg-base-100 p-3 text-xs text-base-content/70 space-y-1">
+                            <p><strong>No stock:</strong> Warehouse validation is skipped because the empty shelf is already known. Purchasing sees the need immediately.</p>
+                            <p><strong>Stock already here:</strong> Admin does not enter a quantity. Warehouse records the count, source, lot, and expiry before approval.</p>
+                            <p><strong>Supplier:</strong> If no approved supplier is linked yet, connect one afterward in <em>Admin → Suppliers</em>. The ingredient can still be created first.</p>
+                        </div>
+                    </div>
+                </fieldset>
+
                 <!-- Section: Cost & Shelf Life -->
                 <fieldset class="border border-base-300 rounded-xl p-4">
                     <legend class="text-sm font-semibold px-2 text-base-content/70">Cost & Shelf Life</legend>
@@ -1161,6 +1181,8 @@
             document.getElementById('dataForm').reset();
             document.getElementById('recordId').value = '';
             document.getElementById('physical_state').disabled = false;
+            document.getElementById('initialStockSection').classList.toggle('hidden', Boolean(id));
+            document.getElementById('initial_stock_status').required = !id;
             syncExpiryHandlingForCategory();
             // Reset UOM to placeholder until category is chosen
             populateUnitOfMeasureOptions(null, true);
@@ -1178,6 +1200,8 @@
                 if (response.success) {
                     const i = response.data.ingredient;
                     document.getElementById('recordId').value = i.id;
+                    document.getElementById('initialStockSection').classList.add('hidden');
+                    document.getElementById('initial_stock_status').required = false;
                     document.getElementById('ingredient_code').value = i.ingredient_code;
                     document.getElementById('ingredient_name').value = i.ingredient_name;
                     document.getElementById('category_id').value = i.category_id || '';
@@ -1341,6 +1365,14 @@
                 storage_requirements: document.getElementById('storage_requirements').value,
                 is_active: document.getElementById('is_active').value
             };
+            if (!recordId) {
+                formData.initial_stock_status = document.getElementById('initial_stock_status').value;
+                if (!formData.initial_stock_status) {
+                    showToast('Choose whether physical stock already exists for this material', 'error');
+                    document.getElementById('initial_stock_status').focus();
+                    return;
+                }
+            }
 
             try {
                 const saveBtn = document.getElementById('saveBtn');
@@ -1355,7 +1387,7 @@
                 }
 
                 if (response.success) {
-                    showToast(recordId ? 'Ingredient updated successfully' : 'Ingredient created successfully', 'success');
+                    showToast(response.message || (recordId ? 'Ingredient updated successfully' : 'Ingredient created successfully'), 'success', 9000);
                     closeModal();
                     if (!recordId) currentPage = 1;
                     loadData();
