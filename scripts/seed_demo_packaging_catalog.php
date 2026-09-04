@@ -27,6 +27,7 @@ require_once dirname(__DIR__) . '/api/helpers/sku_packaging_bom.php';
 $db = Database::getInstance()->getConnection();
 ensureIngredientPackagingRoleSupport($db);
 ensureSkuPackagingBomTable($db);
+ensureProductPrimaryContainerSupport($db);
 
 $categoryStmt = $db->query("
     SELECT id
@@ -91,17 +92,17 @@ $baseMaterials = [
     'container_250' => [
         'code' => 'TST-PKG-BTL-250', 'name' => '250 mL Food-Grade Bottle (Test)',
         'role' => 'container', 'unit' => 'pcs', 'stock' => 2500, 'minimum' => 250,
-        'reorder' => 500, 'maximum' => 2500, 'cost' => 4.25,
+        'reorder' => 500, 'maximum' => 2500, 'cost' => 4.25, 'capacity' => 250, 'capacity_unit' => 'ml',
     ],
     'container_500' => [
         'code' => 'TST-PKG-BTL-500', 'name' => '500 mL Food-Grade Bottle (Test)',
         'role' => 'container', 'unit' => 'pcs', 'stock' => 2500, 'minimum' => 250,
-        'reorder' => 500, 'maximum' => 2500, 'cost' => 5.50,
+        'reorder' => 500, 'maximum' => 2500, 'cost' => 5.50, 'capacity' => 500, 'capacity_unit' => 'ml',
     ],
     'container_1000' => [
         'code' => 'TST-PKG-BTL-1000', 'name' => '1000 mL Food-Grade Bottle (Test)',
         'role' => 'container', 'unit' => 'pcs', 'stock' => 2000, 'minimum' => 200,
-        'reorder' => 400, 'maximum' => 2000, 'cost' => 7.00,
+        'reorder' => 400, 'maximum' => 2000, 'cost' => 7.00, 'capacity' => 1000, 'capacity_unit' => 'ml',
     ],
     'closure' => [
         'code' => 'TST-PKG-CAP-28', 'name' => '28 mm Tamper-Evident Bottle Cap (Test)',
@@ -126,6 +127,7 @@ foreach ($skus as $sku) {
             trim((string) $sku['product_code']) . '] (Test)',
         'role' => 'label', 'unit' => 'pcs', 'stock' => 2500, 'minimum' => 250,
         'reorder' => 500, 'maximum' => 2500, 'cost' => 0.65,
+        'capacity' => $sizeMl, 'capacity_unit' => 'ml',
     ];
 }
 
@@ -133,18 +135,20 @@ $selectMaterial = $db->prepare('SELECT id, current_stock FROM ingredients WHERE 
 $insertMaterial = $db->prepare("
     INSERT INTO ingredients
         (ingredient_code, ingredient_name, category_id, unit_of_measure, physical_state,
-         packaging_role, purchase_format, purchase_price_basis, purchase_price,
+         packaging_role, packaging_capacity_value, packaging_capacity_unit,
+         purchase_format, purchase_price_basis, purchase_price,
          minimum_stock, reorder_point, maximum_stock, lead_time_days, current_stock,
          initial_stock_route, onboarding_status, reserved_stock, unit_cost,
          storage_location, storage_requirements, shelf_life_days, is_perishable, is_active)
-    VALUES (?, ?, ?, ?, 'count', ?, 'direct_unit', 'stock_unit', ?, ?, ?, ?, 7, ?,
+    VALUES (?, ?, ?, ?, 'count', ?, ?, ?, 'direct_unit', 'stock_unit', ?, ?, ?, ?, 7, ?,
             'opening_stock', 'completed', 0, ?, 'Packaging Store - TEST',
             'Demo-only packaging specification; replace with client-approved data.', NULL, 0, 1)
 ");
 $updateMaterial = $db->prepare("
     UPDATE ingredients
     SET ingredient_name = ?, category_id = ?, unit_of_measure = ?, physical_state = 'count',
-        packaging_role = ?, purchase_format = 'direct_unit', purchase_price_basis = 'stock_unit',
+        packaging_role = ?, packaging_capacity_value = ?, packaging_capacity_unit = ?,
+        purchase_format = 'direct_unit', purchase_price_basis = 'stock_unit',
         purchase_price = ?, minimum_stock = ?, reorder_point = ?, maximum_stock = ?,
         unit_cost = ?, storage_location = 'Packaging Store - TEST',
         storage_requirements = 'Demo-only packaging specification; replace with client-approved data.',
@@ -180,13 +184,15 @@ try {
             $materialId = (int) $existing['id'];
             $updateMaterial->execute([
                 $material['name'], $packagingCategoryId, $material['unit'], $material['role'],
+                $material['capacity'] ?? null, $material['capacity_unit'] ?? null,
                 $material['cost'], $material['minimum'], $material['reorder'], $material['maximum'],
                 $material['cost'], $materialId,
             ]);
         } else {
             $insertMaterial->execute([
                 $material['code'], $material['name'], $packagingCategoryId, $material['unit'],
-                $material['role'], $material['cost'], $material['minimum'], $material['reorder'],
+                $material['role'], $material['capacity'] ?? null, $material['capacity_unit'] ?? null,
+                $material['cost'], $material['minimum'], $material['reorder'],
                 $material['maximum'], $material['stock'], $material['cost'],
             ]);
             $materialId = (int) $db->lastInsertId();
@@ -234,6 +240,8 @@ try {
         $insertBom->execute([$productId, $materialIds['label_' . $productId], 1, 3, 'pcs']);
         // One test roll covers 50 finished units; the helper stores per-unit use.
         $insertBom->execute([$productId, $materialIds['secondary'], 0.02, 5, 'roll']);
+        $db->prepare('UPDATE products SET primary_container_id = ? WHERE id = ?')
+            ->execute([$materialIds['container_' . $sizeMl], $productId]);
     }
 
     $db->commit();
@@ -262,4 +270,3 @@ echo 'Demo packaging seed complete.' . PHP_EOL;
 echo 'Materials created: ' . $createdCount . '; catalog materials ensured: ' . count($materialIds) . PHP_EOL;
 echo 'Complete bottle SKU BOMs: ' . count($skus) . PHP_EOL;
 echo 'Test supplier link: ' . ($supplier ? $supplier['supplier_name'] : 'none (no existing packaging supplier found)') . PHP_EOL;
-

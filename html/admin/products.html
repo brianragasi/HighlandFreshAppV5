@@ -685,6 +685,12 @@
             <form id="skuEditForm" onsubmit="saveSkuEdit(event)">
                 <input type="hidden" id="sku_edit_id" value="">
                 <div class="grid grid-cols-2 gap-4">
+                    <div class="form-control col-span-2 hidden" id="sku_edit_container_field">
+                        <label class="label"><span class="label-text">Bottle / Container <span class="text-error">*</span></span></label>
+                        <select id="sku_edit_primary_container_id" class="select select-bordered"
+                            onchange="applySkuEditContainer()"></select>
+                        <label class="label py-0"><span class="label-text-alt text-info">The selected container determines and locks the SKU size.</span></label>
+                    </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Unit Size <span
                                     class="text-error">*</span></span></label>
@@ -708,7 +714,7 @@
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Base Unit</span></label>
-                        <select id="sku_edit_base_unit" class="select select-bordered">
+                        <select id="sku_edit_base_unit" class="select select-bordered" onchange="syncSkuEditContainerControl()">
                             <option value="piece">Piece</option>
                             <option value="bottle">Bottle</option>
                             <option value="pack">Pack</option>
@@ -843,6 +849,8 @@
         let packagingBomMaterials = [];
         let packagingBomRowCounter = 0;
         let packagingBomRequiresBottleSet = false;
+        let packagingBomPrimaryContainerId = 0;
+        let packagingContainerOptions = [];
 
         /* ─────────── Sidebar / Theme ─────────── */
         function toggleSidebar() {
@@ -1075,6 +1083,42 @@
         }
 
         /* ─────────── Load ─────────── */
+        async function loadPackagingContainerOptions() {
+            const response = await fetch(`${ApiConfig.baseUrl}/admin/products.php?action=packaging_options&_=${Date.now()}`, {
+                headers: ApiConfig.getHeaders(),
+                cache: 'no-store'
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || 'Failed to load packaging containers');
+            }
+            packagingContainerOptions = Array.isArray(payload.data?.containers)
+                ? payload.data.containers
+                : [];
+        }
+
+        function containerSizeLabel(container) {
+            const value = Number(container?.packaging_capacity_value || 0);
+            const shown = Number.isInteger(value) ? value : Number(value.toFixed(3));
+            return `${shown} ${container?.packaging_capacity_unit || ''}`.trim();
+        }
+
+        function fillContainerSelect(select, selectedId = '') {
+            if (!select) return;
+            select.innerHTML = '<option value="">Select the actual container...</option>';
+            packagingContainerOptions.forEach(container => {
+                const option = document.createElement('option');
+                option.value = String(container.id);
+                option.textContent = `${containerSizeLabel(container)} — ${container.ingredient_name} (${container.ingredient_code})`;
+                select.appendChild(option);
+            });
+            select.value = selectedId ? String(selectedId) : '';
+        }
+
+        function getContainerOption(id) {
+            return packagingContainerOptions.find(container => String(container.id) === String(id)) || null;
+        }
+
         async function loadData() {
             showProductsLoading();
             try {
@@ -1770,6 +1814,16 @@
                 const priceInput = row.querySelector('.sku-selling-price, [name^="sku_selling_price_"]');
                 if (!sizeInput || sizeInput.disabled) return;
 
+                const baseUnit = row.querySelector('[name^="sku_base_unit_"]')?.value || 'piece';
+                const containerSelect = row.querySelector('.sku-primary-container');
+                if (baseUnit === 'bottle' && !containerSelect?.value) {
+                    ok = false;
+                    containerSelect?.classList.add('select-error');
+                    if (!firstBad && containerSelect) firstBad = containerSelect;
+                } else {
+                    containerSelect?.classList.remove('select-error');
+                }
+
                 const size = parseFloat(sizeInput.value);
                 const price = parseFloat(priceInput?.value);
 
@@ -1801,7 +1855,7 @@
             });
 
             if (!ok) {
-                const msg = 'Price and Size must be greater than zero.';
+                const msg = 'Choose the actual container for every bottle SKU, and enter a valid price and size.';
                 if (typeof showToast === 'function') showToast(msg, 'error');
                 if (firstBad) {
                     firstBad.focus();
@@ -1822,6 +1876,15 @@
             const size = parseFloat(sizeInput?.value);
             const price = parseFloat(priceInput?.value);
             let ok = true;
+
+            const isBottle = document.getElementById('sku_edit_base_unit')?.value === 'bottle';
+            const containerSelect = document.getElementById('sku_edit_primary_container_id');
+            if (isBottle && !containerSelect?.value) {
+                ok = false;
+                containerSelect?.classList.add('select-error');
+            } else {
+                containerSelect?.classList.remove('select-error');
+            }
 
             if (!Number.isFinite(size) || size < MIN_SIZE) {
                 ok = false;
@@ -1844,6 +1907,30 @@
                 if (typeof showToast === 'function') showToast(msg, 'error');
             }
             return ok;
+        }
+
+        function applySkuEditContainer() {
+            const container = getContainerOption(document.getElementById('sku_edit_primary_container_id')?.value);
+            if (!container) return;
+            document.getElementById('sku_edit_unit_size').value = container.packaging_capacity_value;
+            document.getElementById('sku_edit_unit_measure').value = container.packaging_capacity_unit;
+            document.getElementById('sku_edit_primary_container_id')?.classList.remove('select-error');
+        }
+
+        function syncSkuEditContainerControl() {
+            const isBottle = document.getElementById('sku_edit_base_unit')?.value === 'bottle';
+            const field = document.getElementById('sku_edit_container_field');
+            const select = document.getElementById('sku_edit_primary_container_id');
+            const size = document.getElementById('sku_edit_unit_size');
+            const measure = document.getElementById('sku_edit_unit_measure');
+            field?.classList.toggle('hidden', !isBottle);
+            if (select) select.required = isBottle;
+            if (size) {
+                size.readOnly = isBottle;
+                size.classList.toggle('bg-base-200', isBottle);
+            }
+            if (measure) measure.disabled = isBottle;
+            if (isBottle) applySkuEditContainer();
         }
 
         /* ─────────── SKU Row Builder (empty or prefilled existing SKU) ─────────── */
@@ -1885,7 +1972,14 @@
                         <span class="badge badge-error badge-outline badge-xs hidden sku-will-disable-badge">will deactivate</span>
                     </div>
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-end">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
+                    <div class="form-control w-full min-w-0 hidden sku-container-field">
+                        <label class="label py-0"><span class="label-text text-xs">Bottle / Container <span class="text-error">*</span></span></label>
+                        <select name="sku_primary_container_id_${idx}"
+                            class="select select-sm select-bordered w-full sku-field sku-primary-container"
+                            onchange="applySkuRowContainer(this.closest('.sku-row'))"></select>
+                        <label class="label py-0"><span class="label-text-alt text-info">Determines size</span></label>
+                    </div>
                     <div class="form-control w-full min-w-0">
                         <label class="label py-0"><span class="label-text text-xs">Size <span class="text-error">*</span></span></label>
                         <div class="join w-full">
@@ -1909,7 +2003,8 @@
                     </div>
                     <div class="form-control w-full min-w-0">
                         <label class="label py-0"><span class="label-text text-xs">Packaging Type</span></label>
-                        <select name="sku_base_unit_${idx}" class="select select-sm select-bordered w-full sku-field">
+                        <select name="sku_base_unit_${idx}" class="select select-sm select-bordered w-full sku-field"
+                            onchange="syncSkuRowContainerControl(this.closest('.sku-row'))">
                             <option value="piece">Piece</option>
                             <option value="bottle">Bottle</option>
                             <option value="pack">Pack</option>
@@ -1942,6 +2037,19 @@
                 </div>`;
             document.getElementById('skuList').appendChild(div);
 
+            const containerSelect = div.querySelector(`[name="sku_primary_container_id_${idx}"]`);
+            let selectedContainerId = skuData?.primary_container_id || '';
+            if (!selectedContainerId && skuData && String(skuData.base_unit || '').toLowerCase() === 'bottle') {
+                const expected = normalizeSkuSize(skuData.unit_size, skuData.unit_measure);
+                const match = packagingContainerOptions.find(container => {
+                    const actual = normalizeSkuSize(container.packaging_capacity_value, container.packaging_capacity_unit);
+                    return expected && actual && expected.family === actual.family
+                        && Math.abs(expected.value - actual.value) < 0.001;
+                });
+                selectedContainerId = match?.id || '';
+            }
+            fillContainerSelect(containerSelect, selectedContainerId);
+
             // Prefill after mount so selects get correct values
             if (skuData) {
                 const sizeInput = div.querySelector(`[name="sku_unit_size_${idx}"]`);
@@ -1957,6 +2065,7 @@
                         : (skuData.unit_price != null ? skuData.unit_price : '');
                 }
             }
+            syncSkuRowContainerControl(div);
 
             if (shouldFocus) {
                 requestAnimationFrame(() => {
@@ -2038,6 +2147,7 @@
             if (removeBtn) removeBtn.classList.remove('hidden');
             const undoBtn = el.querySelector('.sku-undo-btn');
             if (undoBtn) undoBtn.classList.add('hidden');
+            syncSkuRowContainerControl(el);
         }
 
         /** Active (not soft-deleted) SKU rows to create/update. */
@@ -2059,13 +2169,16 @@
                 const unitSize = parseFloat(row.querySelector(`[name="sku_unit_size_${idx}"]`)?.value);
                 const unitMeasure = row.querySelector(`[name="sku_unit_measure_${idx}"]`)?.value || 'ml';
                 const baseUnit = row.querySelector(`[name="sku_base_unit_${idx}"]`)?.value || 'piece';
+                const primaryContainerId = parseInt(row.querySelector(`[name="sku_primary_container_id_${idx}"]`)?.value || '0', 10);
                 const sellingPrice = parseFloat(row.querySelector(`[name="sku_selling_price_${idx}"]`)?.value);
                 if (!Number.isFinite(unitSize) || unitSize <= 0) return;
+                if (baseUnit === 'bottle' && !(primaryContainerId > 0)) return;
                 rows.push({
                     product_id: isExisting ? productId : null,
                     unit_size: unitSize,
                     unit_measure: unitMeasure,
                     base_unit: baseUnit,
+                    primary_container_id: baseUnit === 'bottle' ? primaryContainerId : null,
                     selling_price: Number.isFinite(sellingPrice) ? sellingPrice : 0,
                     unit_price: Number.isFinite(sellingPrice) ? sellingPrice : 0
                 });
@@ -2256,6 +2369,7 @@
                             unit_size: row.unit_size,
                             unit_measure: row.unit_measure,
                             base_unit: row.base_unit,
+                            primary_container_id: row.primary_container_id,
                             selling_price: row.selling_price,
                             unit_price: row.unit_price
                         };
@@ -2304,6 +2418,7 @@
                             unit_size: row.unit_size,
                             unit_measure: row.unit_measure,
                             base_unit: row.base_unit,
+                            primary_container_id: row.primary_container_id,
                             box_unit: 'box',
                             pieces_per_box: 1,
                             shelf_life_days: shelfLife,
@@ -2345,6 +2460,18 @@
                     document.getElementById('sku_edit_unit_size').value = data.unit_size || '';
                     document.getElementById('sku_edit_unit_measure').value = data.unit_measure || 'ml';
                     document.getElementById('sku_edit_base_unit').value = data.base_unit || 'piece';
+                    let selectedContainerId = data.primary_container_id || '';
+                    if (!selectedContainerId && data.base_unit === 'bottle') {
+                        const expected = normalizeSkuSize(data.unit_size, data.unit_measure);
+                        const match = packagingContainerOptions.find(container => {
+                            const actual = normalizeSkuSize(container.packaging_capacity_value, container.packaging_capacity_unit);
+                            return expected && actual && expected.family === actual.family
+                                && Math.abs(expected.value - actual.value) < 0.001;
+                        });
+                        selectedContainerId = match?.id || '';
+                    }
+                    fillContainerSelect(document.getElementById('sku_edit_primary_container_id'), selectedContainerId);
+                    syncSkuEditContainerControl();
                     document.getElementById('sku_edit_box_unit').value = data.box_unit || 'box';
                     document.getElementById('sku_edit_pieces_per_box').value = data.pieces_per_box || 1;
                     document.getElementById('sku_edit_selling_price').value = data.selling_price || data.unit_price || 0;
@@ -2369,6 +2496,9 @@
                 unit_size: parseFloat(document.getElementById('sku_edit_unit_size').value),
                 unit_measure: document.getElementById('sku_edit_unit_measure').value,
                 base_unit: document.getElementById('sku_edit_base_unit').value,
+                primary_container_id: document.getElementById('sku_edit_base_unit').value === 'bottle'
+                    ? parseInt(document.getElementById('sku_edit_primary_container_id').value, 10)
+                    : null,
                 box_unit: document.getElementById('sku_edit_box_unit').value,
                 pieces_per_box: parseInt(document.getElementById('sku_edit_pieces_per_box').value) || 1,
                 selling_price: parseFloat(document.getElementById('sku_edit_selling_price').value),
@@ -2415,6 +2545,7 @@
                 packagingBomMaterials = data.available_materials || [];
                 packagingBomRowCounter = 0;
                 packagingBomRequiresBottleSet = ['bottle', 'bottles'].includes(String(sku.base_unit || '').toLowerCase());
+                packagingBomPrimaryContainerId = Number(sku.primary_container_id || 0);
                 document.getElementById('packaging_bom_product_id').value = productId;
                 document.getElementById('packagingBomContext').textContent =
                     `${sku.product_code || 'SKU'} — ${sku.base_product_name || sku.product_name || 'Product'} · ${sku.unit_size || ''} ${sku.unit_measure || ''}`;
@@ -2451,11 +2582,12 @@
             const initialCoverage = Number(item.quantity_per_unit) > 0
                 ? formatProductNumber(1 / Number(item.quantity_per_unit), 3)
                 : '';
+            const isPrimaryContainer = Number(item.ingredient_id || 0) === packagingBomPrimaryContainerId;
             const tr = document.createElement('tr');
             tr.id = `packagingBomRow_${rowId}`;
             tr.innerHTML = `
                 <td>
-                    <select class="select select-bordered select-sm w-full" data-pack-bom="ingredient" onchange="onPackagingBomMaterialChange(this)" required>
+                    <select class="select select-bordered select-sm w-full ${isPrimaryContainer ? 'bg-base-200' : ''}" data-pack-bom="ingredient" onchange="onPackagingBomMaterialChange(this)" required ${isPrimaryContainer ? 'disabled' : ''}>
                         <option value="">Select material…</option>${options}
                     </select>
                 </td>
@@ -2464,7 +2596,7 @@
                         <input type="number" class="input input-bordered input-sm w-full text-right" data-pack-bom="quantity"
                             min="0.000001" max="1000" step="0.000001" value="${escapeAttr(initialQuantity)}" placeholder="e.g. 1"
                             oninput="updatePackagingBomDirectPreview(this.closest('tr'))"
-                            onblur="formatProductNumberInput(this, 6); updatePackagingBomDirectPreview(this.closest('tr'))" required>
+                            onblur="formatProductNumberInput(this, 6); updatePackagingBomDirectPreview(this.closest('tr'))" required ${isPrimaryContainer ? 'readonly' : ''}>
                         <p class="text-[11px] mt-1 text-base-content/50" data-pack-bom="direct-help">unit per finished product</p>
                         <p class="text-[11px] mt-1 text-base-content/60" data-pack-bom="direct-preview"></p>
                     </div>
@@ -2482,7 +2614,9 @@
                 </td>
                 <td><input type="number" class="input input-bordered input-sm w-full text-right" data-pack-bom="waste" min="0" max="100" step="0.01" value="${escapeAttr(formatProductNumber(item.waste_percent ?? 0, 2))}" onblur="formatProductNumberInput(this, 2)"></td>
                 <td class="font-mono text-xs" data-pack-bom="unit">${escapeHtml(item.unit || '—')}</td>
-                <td><button type="button" class="btn btn-ghost btn-xs text-error" onclick="removePackagingBomRow(${rowId})" title="Remove"><i class="fas fa-times"></i></button></td>`;
+                <td>${isPrimaryContainer
+                    ? '<span class="badge badge-info badge-sm">Primary</span>'
+                    : `<button type="button" class="btn btn-ghost btn-xs text-error" onclick="removePackagingBomRow(${rowId})" title="Remove"><i class="fas fa-times"></i></button>`}</td>`;
             tbody.appendChild(tr);
             onPackagingBomMaterialChange(tr.querySelector('[data-pack-bom="ingredient"]'));
             refreshPackagingBomEmptyState();
@@ -2523,6 +2657,37 @@
             syncPackagingBomUsageControl(row);
             refreshPackagingBomMaterialChoices();
             updatePackagingBomReadinessMessage();
+        }
+
+        function applySkuRowContainer(row) {
+            if (!row) return;
+            const container = getContainerOption(row.querySelector('.sku-primary-container')?.value);
+            if (!container) return;
+            const sizeInput = row.querySelector('.sku-unit-size');
+            const measureSelect = row.querySelector('[name^="sku_unit_measure_"]');
+            if (sizeInput) sizeInput.value = container.packaging_capacity_value;
+            if (measureSelect) measureSelect.value = container.packaging_capacity_unit;
+            clearSkuFieldError(sizeInput);
+        }
+
+        function syncSkuRowContainerControl(row) {
+            if (!row) return;
+            const isBottle = String(row.querySelector('[name^="sku_base_unit_"]')?.value || '').toLowerCase() === 'bottle';
+            const field = row.querySelector('.sku-container-field');
+            const containerSelect = row.querySelector('.sku-primary-container');
+            const sizeInput = row.querySelector('.sku-unit-size');
+            const measureSelect = row.querySelector('[name^="sku_unit_measure_"]');
+            field?.classList.toggle('hidden', !isBottle);
+            if (containerSelect) containerSelect.required = isBottle;
+            if (sizeInput) {
+                sizeInput.readOnly = isBottle;
+                sizeInput.classList.toggle('bg-base-200', isBottle);
+                sizeInput.title = isBottle
+                    ? 'Size is controlled by the selected container'
+                    : 'Size must be greater than zero (min 1)';
+            }
+            if (measureSelect) measureSelect.disabled = isBottle || row.dataset.softDeleted === '1';
+            if (isBottle) applySkuRowContainer(row);
         }
 
         function refreshPackagingBomMaterialChoices() {
@@ -2736,6 +2901,7 @@
             }
             // Always attempt catalog load even if sidebar user chrome fails
             try {
+                await loadPackagingContainerOptions();
                 await loadData();
             } catch (err) {
                 console.error('Init loadData error:', err);

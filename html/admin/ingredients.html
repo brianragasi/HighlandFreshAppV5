@@ -503,7 +503,7 @@
                             <label class="label pt-0">
                                 <span class="label-text font-medium">Packaging Type *</span>
                             </label>
-                            <select id="packaging_role" class="select select-bordered">
+                            <select id="packaging_role" class="select select-bordered" onchange="syncPackagingCapacityFields()">
                                 <option value="">Choose what this material is used as</option>
                                 <option value="container">Bottle / Container</option>
                                 <option value="closure">Cap / Closure</option>
@@ -514,6 +514,25 @@
                             <label class="label pb-0">
                                 <span class="label-text-alt text-info">The SKU BOM uses this type—not words in the material name—to require the correct bottle, closure, and label.</span>
                             </label>
+                            <div id="packagingCapacityFields" class="hidden mt-3">
+                                <label class="label py-1">
+                                    <span class="label-text font-medium">Container / Label Capacity *</span>
+                                </label>
+                                <div class="join w-full">
+                                    <input type="number" id="packaging_capacity_value"
+                                        class="input input-bordered join-item w-full" min="0.001" step="0.001"
+                                        placeholder="e.g. 250">
+                                    <select id="packaging_capacity_unit" class="select select-bordered join-item w-28">
+                                        <option value="ml">mL</option>
+                                        <option value="L">L</option>
+                                        <option value="g">g</option>
+                                        <option value="kg">kg</option>
+                                    </select>
+                                </div>
+                                <label class="label pb-0">
+                                    <span class="label-text-alt text-info">This is the trusted SKU size. Products that select this container cannot type a different size.</span>
+                                </label>
+                            </div>
                         </div>
                     </div>
                 </fieldset>
@@ -870,12 +889,30 @@
             select.required = isPackaging;
             if (!isPackaging) {
                 select.value = '';
+                syncPackagingCapacityFields(true);
                 return;
             }
             if (preferredRole != null) {
                 select.value = String(preferredRole || '');
             } else if (forceReset) {
                 select.value = '';
+            }
+            syncPackagingCapacityFields(forceReset);
+        }
+
+        function syncPackagingCapacityFields(forceReset = false) {
+            const role = document.getElementById('packaging_role')?.value || '';
+            const section = document.getElementById('packagingCapacityFields');
+            const valueInput = document.getElementById('packaging_capacity_value');
+            const unitSelect = document.getElementById('packaging_capacity_unit');
+            if (!section || !valueInput || !unitSelect) return;
+            const needsCapacity = role === 'container' || role === 'label';
+            section.classList.toggle('hidden', !needsCapacity);
+            valueInput.required = needsCapacity;
+            unitSelect.required = needsCapacity;
+            if (!needsCapacity || forceReset) {
+                valueInput.value = '';
+                unitSelect.value = 'ml';
             }
         }
 
@@ -1157,6 +1194,7 @@
                     <td>
                         <div>${escapeHtml(i.category_name || '-')}</div>
                         ${i.packaging_role ? `<span class="badge badge-info badge-outline badge-xs mt-1">${escapeHtml({container: 'Bottle / Container', closure: 'Cap / Closure', label: 'Label', secondary: 'Secondary', other: 'Other'}[i.packaging_role] || i.packaging_role)}</span>` : ''}
+                        ${i.packaging_capacity_value ? `<span class="badge badge-ghost badge-xs mt-1">${escapeHtml(Number(i.packaging_capacity_value))} ${escapeHtml(i.packaging_capacity_unit || '')}</span>` : ''}
                     </td>
                     <td><span class="badge badge-ghost badge-sm">${escapeHtml(i.unit_of_measure)}</span></td>
                     <td>
@@ -1247,6 +1285,9 @@
                     document.getElementById('ingredient_name').value = i.ingredient_name;
                     document.getElementById('category_id').value = i.category_id || '';
                     syncPackagingRoleField(i.packaging_role || '', false);
+                    document.getElementById('packaging_capacity_value').value = i.packaging_capacity_value || '';
+                    document.getElementById('packaging_capacity_unit').value = i.packaging_capacity_unit || 'ml';
+                    syncPackagingCapacityFields(false);
                     document.getElementById('physical_state').disabled = false;
                     document.getElementById('physical_state').value = i.physical_state || inferPhysicalStateFromUnit(i.unit_of_measure);
                     if (getUnitGroupForCategoryName(getSelectedCategoryName()) === 'packaging') {
@@ -1380,6 +1421,14 @@
                 return;
             }
 
+            const needsPackagingCapacity = packagingRole === 'container' || packagingRole === 'label';
+            const packagingCapacity = parseFloat(document.getElementById('packaging_capacity_value').value);
+            if (isPackaging && needsPackagingCapacity && (!Number.isFinite(packagingCapacity) || packagingCapacity <= 0)) {
+                showToast('Enter the real container or label capacity greater than zero', 'error');
+                document.getElementById('packaging_capacity_value').focus();
+                return;
+            }
+
             // Guard: unit must be allowed for both category and material form.
             if (!unitOfMeasure) {
                 showToast('Please select a unit of measure', 'error');
@@ -1405,6 +1454,10 @@
                 category_id: categoryId,
                 physical_state: physicalState,
                 packaging_role: isPackaging ? packagingRole : null,
+                packaging_capacity_value: isPackaging && needsPackagingCapacity ? packagingCapacity : null,
+                packaging_capacity_unit: isPackaging && needsPackagingCapacity
+                    ? document.getElementById('packaging_capacity_unit').value
+                    : null,
                 unit_of_measure: unitOfMeasure,
                 minimum_stock: document.getElementById('minimum_stock').value,
                 reorder_point: document.getElementById('reorder_point').value,

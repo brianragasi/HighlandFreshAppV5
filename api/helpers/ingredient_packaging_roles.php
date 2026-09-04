@@ -61,6 +61,42 @@ function ingredientPackagingRoleColumnExists(PDO $db, string $column): bool
     return (bool) $stmt->fetchColumn();
 }
 
+function inferIngredientPackagingCapacityFromName($name): ?array
+{
+    if (preg_match(
+        '/(\d+(?:\.\d+)?)\s*(millilit(?:er|re)s?|ml|lit(?:er|re)s?|lt|l|kilograms?|kg|grams?|g)\b/i',
+        (string) $name,
+        $match
+    ) !== 1) {
+        return null;
+    }
+
+    $unit = strtolower($match[2]);
+    if (in_array($unit, ['milliliter', 'milliliters', 'millilitre', 'millilitres', 'ml'], true)) {
+        $unit = 'ml';
+    } elseif (in_array($unit, ['liter', 'liters', 'litre', 'litres', 'lt', 'l'], true)) {
+        $unit = 'L';
+    } elseif (in_array($unit, ['kilogram', 'kilograms', 'kg'], true)) {
+        $unit = 'kg';
+    } else {
+        $unit = 'g';
+    }
+
+    return ['value' => (float) $match[1], 'unit' => $unit];
+}
+
+function normalizeIngredientPackagingCapacityUnit($value): ?string
+{
+    $unit = strtolower(trim((string) $value));
+    $aliases = [
+        'milliliter' => 'ml', 'milliliters' => 'ml', 'millilitre' => 'ml', 'millilitres' => 'ml',
+        'liter' => 'L', 'liters' => 'L', 'litre' => 'L', 'litres' => 'L', 'lt' => 'L', 'l' => 'L',
+        'gram' => 'g', 'grams' => 'g',
+        'kilogram' => 'kg', 'kilograms' => 'kg', 'kg' => 'kg',
+    ];
+    return $aliases[$unit] ?? ($unit === 'ml' || $unit === 'g' ? $unit : null);
+}
+
 /**
  * Add the field and classify imported legacy records once. The closure and
  * label checks intentionally run before container, so names such as "Bottle
@@ -82,6 +118,21 @@ function ensureIngredientPackagingRoleSupport(PDO $db): void
         }
         $db->exec("ALTER TABLE `ingredients`
             ADD COLUMN `packaging_role` VARCHAR(30) NULL AFTER `physical_state`");
+    }
+
+    if (!ingredientPackagingRoleColumnExists($db, 'packaging_capacity_value')) {
+        if ($db->inTransaction()) {
+            throw new RuntimeException('Packaging capacity must be initialized before starting a database transaction');
+        }
+        $db->exec("ALTER TABLE `ingredients`
+            ADD COLUMN `packaging_capacity_value` DECIMAL(12,3) NULL AFTER `packaging_role`");
+    }
+    if (!ingredientPackagingRoleColumnExists($db, 'packaging_capacity_unit')) {
+        if ($db->inTransaction()) {
+            throw new RuntimeException('Packaging capacity must be initialized before starting a database transaction');
+        }
+        $db->exec("ALTER TABLE `ingredients`
+            ADD COLUMN `packaging_capacity_unit` VARCHAR(20) NULL AFTER `packaging_capacity_value`");
     }
 
     // This is migration/backfill logic only. All new and edited packaging
@@ -107,16 +158,102 @@ function ensureIngredientPackagingRoleSupport(PDO $db): void
                OR i.packaging_role NOT IN ('container', 'closure', 'label', 'secondary', 'other'))
     ");
 
+    // One-time compatibility backfill for imported bottle/label records. New
+    // master records must provide these fields explicitly in the Admin form.
+    $rows = $db->query("
+        SELECT id, ingredient_name
+        FROM ingredients
+        WHERE packaging_role IN ('container', 'label')
+          AND (packaging_capacity_value IS NULL OR packaging_capacity_value <= 0
+               OR packaging_capacity_unit IS NULL OR packaging_capacity_unit = '')
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    if ($rows) {
+        $update = $db->prepare("
+            UPDATE ingredients
+            SET packaging_capacity_value = ?, packaging_capacity_unit = ?
+            WHERE id = ?
+        ");
+        foreach ($rows as $row) {
+            $capacity = inferIngredientPackagingCapacityFromName($row['ingredient_name'] ?? '');
+            if ($capacity) {
+                $update->execute([$capacity['value'], $capacity['unit'], (int) $row['id']]);
+            }
+        }
+    }
+
+    $db->exec("
+        UPDATE ingredients
+        SET packaging_capacity_value = NULL, packaging_capacity_unit = NULL
+        WHERE packaging_role IS NULL
+           OR packaging_role NOT IN ('container', 'label')
+    ");
+
     // A role has no meaning outside the packaging inventory category.
     $db->exec("
         UPDATE ingredients i
         LEFT JOIN ingredient_categories c ON c.id = i.category_id
-        SET i.packaging_role = NULL
+        SET i.packaging_role = NULL,
+            i.packaging_capacity_value = NULL,
+            i.packaging_capacity_unit = NULL
         WHERE i.packaging_role IS NOT NULL
           AND NOT (LOWER(COALESCE(c.category_name, '')) LIKE '%packag%'
                    OR LOWER(COALESCE(c.category_code, '')) LIKE '%pack%'
                    OR LOWER(COALESCE(c.category_name, '')) LIKE '%container%')
     ");
+
+    $ensuredConnections[$connectionKey] = true;
+}
+
+function productPrimaryContainerColumnExists(PDO $db): bool
+{
+    $stmt = $db->query("
+        SELECT 1
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'products'
+          AND COLUMN_NAME = 'primary_container_id'
+        LIMIT 1
+    ");
+    return (bool) $stmt->fetchColumn();
+}
+
+function ensureProductPrimaryContainerSupport(PDO $db): void
+{
+    static $ensuredConnections = [];
+    $connectionKey = function_exists('spl_object_id') ? spl_object_id($db) : spl_object_hash($db);
+    if (isset($ensuredConnections[$connectionKey])) {
+        return;
+    }
+    if (!productPrimaryContainerColumnExists($db)) {
+        if ($db->inTransaction()) {
+            throw new RuntimeException('Primary container support must be initialized before starting a database transaction');
+        }
+        $db->exec("ALTER TABLE `products`
+            ADD COLUMN `primary_container_id` INT NULL AFTER `unit_measure`,
+            ADD KEY `idx_products_primary_container` (`primary_container_id`)");
+    }
+
+    // Preserve legacy SKU/BOM links when a clearly classified container is
+    // already present. Ambiguous legacy SKUs remain unset until Admin chooses.
+    try {
+        $db->exec("
+            UPDATE products p
+            JOIN (
+                SELECT spbi.product_id, MIN(spbi.ingredient_id) AS ingredient_id
+                FROM sku_packaging_bom_items spbi
+                JOIN ingredients i ON i.id = spbi.ingredient_id
+                WHERE spbi.is_active = 1 AND i.packaging_role = 'container'
+                GROUP BY spbi.product_id
+                HAVING COUNT(*) = 1
+            ) linked ON linked.product_id = p.id
+            SET p.primary_container_id = linked.ingredient_id
+            WHERE p.primary_container_id IS NULL
+              AND LOWER(COALESCE(p.base_unit, '')) IN ('bottle', 'bottles')
+        ");
+    } catch (Throwable $e) {
+        // The BOM table is optional on older installations; it is created by
+        // the product endpoint immediately after this schema check.
+    }
 
     $ensuredConnections[$connectionKey] = true;
 }

@@ -177,8 +177,20 @@ function validateSkuPackagingBomSizes($baseUnit, $unitSize, $unitMeasure, array 
         if ($name === '' || !in_array($role, ['container', 'label'], true)) {
             continue;
         }
-        $actual = packagingSizeFromMaterialName($name);
+        $actual = packagingCanonicalSize(
+            $item['packaging_capacity_value'] ?? null,
+            $item['packaging_capacity_unit'] ?? ''
+        );
+        // Compatibility for callers that pass an old in-memory BOM shape.
+        // Database-backed rows always include explicit capacity columns.
+        if (!$actual && !array_key_exists('packaging_capacity_value', $item)) {
+            $actual = packagingSizeFromMaterialName($name);
+        }
         if (!$actual) {
+            $errors[] = sprintf(
+                '%s has no configured container/label capacity in Admin → Ingredients',
+                $name
+            );
             continue;
         }
         if (($actual['family'] ?? '') !== ($expected['family'] ?? '')
@@ -253,6 +265,7 @@ function getAvailablePackagingMaterials(PDO $db)
     $stmt = $db->query("
         SELECT i.id, i.ingredient_code, i.ingredient_name, i.unit_of_measure,
                i.current_stock, i.available_stock, i.is_active, i.packaging_role,
+               i.packaging_capacity_value, i.packaging_capacity_unit,
                ic.category_name, ic.category_code
         FROM ingredients i
         JOIN ingredient_categories ic ON ic.id = i.category_id
@@ -273,7 +286,8 @@ function getSkuPackagingBom(PDO $db, $productId)
     $stmt = $db->prepare("
         SELECT spbi.id, spbi.product_id, spbi.ingredient_id,
                spbi.quantity_per_unit, spbi.waste_percent, spbi.unit,
-               i.ingredient_code, i.ingredient_name, i.packaging_role, i.current_stock,
+               i.ingredient_code, i.ingredient_name, i.packaging_role,
+               i.packaging_capacity_value, i.packaging_capacity_unit, i.current_stock,
                i.available_stock, ic.category_name
         FROM sku_packaging_bom_items spbi
         JOIN ingredients i ON i.id = spbi.ingredient_id
@@ -302,7 +316,9 @@ function getSkuPackagingBomMap(PDO $db, array $productIds)
     $stmt = $db->prepare("
         SELECT spbi.product_id, spbi.ingredient_id, spbi.quantity_per_unit,
                spbi.waste_percent, spbi.unit, i.ingredient_code,
-               i.ingredient_name, i.packaging_role, i.current_stock, i.available_stock
+               i.ingredient_name, i.packaging_role,
+               i.packaging_capacity_value, i.packaging_capacity_unit,
+               i.current_stock, i.available_stock
         FROM sku_packaging_bom_items spbi
         JOIN ingredients i ON i.id = spbi.ingredient_id
         LEFT JOIN ingredient_categories ic ON ic.id = i.category_id
@@ -335,7 +351,8 @@ function normalizeSkuPackagingBomInput(PDO $db, array $items)
     $seen = [];
 
     $lookup = $db->prepare("
-        SELECT i.id, i.ingredient_name, i.unit_of_measure, i.packaging_role, i.is_active,
+        SELECT i.id, i.ingredient_name, i.unit_of_measure, i.packaging_role,
+               i.packaging_capacity_value, i.packaging_capacity_unit, i.is_active,
                ic.category_name, ic.category_code
         FROM ingredients i
         LEFT JOIN ingredient_categories ic ON ic.id = i.category_id
@@ -423,6 +440,8 @@ function normalizeSkuPackagingBomInput(PDO $db, array $items)
             'ingredient_id' => $ingredientId,
             'ingredient_name' => $ingredient['ingredient_name'],
             'packaging_role' => $ingredient['packaging_role'],
+            'packaging_capacity_value' => $ingredient['packaging_capacity_value'],
+            'packaging_capacity_unit' => $ingredient['packaging_capacity_unit'],
             'quantity_per_unit' => round($quantity, 6),
             'units_per_stock_unit' => $coverage,
             'waste_percent' => round($waste, 2),

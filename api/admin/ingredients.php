@@ -705,6 +705,43 @@ function validateIngredientPlanningNumbers(array &$data): void {
     }
 }
 
+/**
+ * A container (and its matching label) carries the trusted sellable capacity.
+ * SKU size is derived from this master value and is never accepted from a
+ * free-text product size when the packaging type is Bottle.
+ */
+function applyIngredientPackagingCapacity(array &$data, $role, array $current = []): void {
+    $role = normalizeIngredientPackagingRole($role);
+    if (!in_array($role, ['container', 'label'], true)) {
+        $data['packaging_capacity_value'] = null;
+        $data['packaging_capacity_unit'] = null;
+        return;
+    }
+
+    $rawValue = array_key_exists('packaging_capacity_value', $data)
+        ? $data['packaging_capacity_value']
+        : ($current['packaging_capacity_value'] ?? null);
+    $rawUnit = array_key_exists('packaging_capacity_unit', $data)
+        ? $data['packaging_capacity_unit']
+        : ($current['packaging_capacity_unit'] ?? null);
+    $unit = normalizeIngredientPackagingCapacityUnit($rawUnit);
+    $errors = [];
+    try {
+        $value = hfParseBusinessDecimal($rawValue, 'Packaging capacity', 0.001, 99999999.999, 3);
+    } catch (InvalidArgumentException $error) {
+        $errors['packaging_capacity_value'] = 'Enter the real container or label capacity greater than zero';
+        $value = null;
+    }
+    if ($unit === null) {
+        $errors['packaging_capacity_unit'] = 'Choose mL, L, g, or kg for the packaging capacity';
+    }
+    if ($errors) {
+        sendValidationError($errors);
+    }
+    $data['packaging_capacity_value'] = $value;
+    $data['packaging_capacity_unit'] = $unit;
+}
+
 function createIngredient($conn, $currentUser) {
     ensureStockValidationSupport($conn);
     $data = json_decode(file_get_contents('php://input'), true);
@@ -714,6 +751,7 @@ function createIngredient($conn, $currentUser) {
         'unit_of_measure' => [40, false],
         'physical_state' => [20, false],
         'packaging_role' => [30, false],
+        'packaging_capacity_unit' => [20, false],
         'initial_stock_status' => [30, false],
         'storage_location' => [160, false],
         'storage_requirements' => [1000, true],
@@ -774,6 +812,7 @@ function createIngredient($conn, $currentUser) {
     validateIngredientPhysicalStateUnit($data['physical_state'], $data['unit_of_measure']);
     validateIngredientCategoryUnit($conn, $data['category_id'], $data['unit_of_measure']);
     $data['packaging_role'] = $isPackagingCategory ? $packagingRole : null;
+    applyIngredientPackagingCapacity($data, $data['packaging_role']);
     if ($isPackagingCategory) {
         $data['is_perishable'] = 0;
         $data['shelf_life_days'] = null;
@@ -796,9 +835,10 @@ function createIngredient($conn, $currentUser) {
     }
     
         $sql = "INSERT INTO ingredients (ingredient_code, ingredient_name, category_id, unit_of_measure, physical_state, packaging_role,
+            packaging_capacity_value, packaging_capacity_unit,
             minimum_stock, reorder_point, maximum_stock, lead_time_days, current_stock, initial_stock_route, onboarding_status,
             storage_location, storage_requirements, shelf_life_days, is_perishable, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
     $conn->beginTransaction();
     try {
@@ -810,6 +850,8 @@ function createIngredient($conn, $currentUser) {
             $data['unit_of_measure'],
             $data['physical_state'],
             $data['packaging_role'],
+            $data['packaging_capacity_value'],
+            $data['packaging_capacity_unit'],
             $data['minimum_stock'] ?? 0,
             $data['reorder_point'] ?? 0,
             $data['maximum_stock'] ?? null,
@@ -910,6 +952,7 @@ function updateIngredient($conn, $id, $currentUser) {
         'unit_of_measure' => [40, false],
         'physical_state' => [20, false],
         'packaging_role' => [30, false],
+        'packaging_capacity_unit' => [20, false],
         'storage_location' => [160, false],
         'storage_requirements' => [1000, true],
     ]);
@@ -962,6 +1005,7 @@ function updateIngredient($conn, $id, $currentUser) {
         ]);
     }
     $data['packaging_role'] = $isPackagingCategory ? $packagingRole : null;
+    applyIngredientPackagingCapacity($data, $data['packaging_role'], $currentIngredient);
     if ($isPackagingCategory) {
         $data['is_perishable'] = 0;
         $data['shelf_life_days'] = null;
@@ -1000,6 +1044,7 @@ function updateIngredient($conn, $id, $currentUser) {
     $params = [];
     
     $allowedFields = ['ingredient_name', 'category_id', 'unit_of_measure', 'physical_state', 'packaging_role', 'minimum_stock',
+                      'packaging_capacity_value', 'packaging_capacity_unit',
                       'reorder_point', 'maximum_stock', 'lead_time_days',
                       'storage_location', 'storage_requirements', 'shelf_life_days', 'is_perishable', 'is_active',
                      ];

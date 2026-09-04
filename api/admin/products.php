@@ -13,6 +13,8 @@ Auth::requireRole(['general_manager', 'admin']);
 // Get database connection
 $conn = Database::getInstance()->getConnection();
 ensureIngredientPackagingRoleSupport($conn);
+ensureSkuPackagingBomTable($conn);
+ensureProductPrimaryContainerSupport($conn);
 
 // Get request method and handle routing
 $method = $_SERVER['REQUEST_METHOD'];
@@ -24,6 +26,8 @@ try {
         case 'GET':
             if ($action === 'packaging_bom' && $id) {
                 getProductPackagingBom($conn, $id);
+            } elseif ($action === 'packaging_options') {
+                getProductPackagingOptions($conn);
             } elseif ($id) {
                 getProduct($conn, $id);
             } elseif ($action === 'statistics') {
@@ -137,7 +141,7 @@ function getBaseProducts($conn) {
             SELECT p.id, p.product_code, p.product_name, p.variant, p.unit_size, p.unit_measure,
                    p.base_unit, p.box_unit, p.pieces_per_box, p.selling_price, p.unit_price, p.is_active,
                    p.category, p.milk_type_id, p.shelf_life_days, p.storage_temp_min, p.storage_temp_max,
-                   p.description, p.base_product_id,
+                   p.description, p.base_product_id, p.primary_container_id,
                    mt.type_name AS milk_type_name,
                    (SELECT COALESCE(SUM(
                             GREATEST(
@@ -159,7 +163,7 @@ function getBaseProducts($conn) {
             SELECT p.id, p.product_code, p.product_name, p.variant, p.unit_size, p.unit_measure,
                    p.base_unit, p.box_unit, p.pieces_per_box, p.selling_price, p.unit_price, p.is_active,
                    p.category, p.milk_type_id, p.shelf_life_days, p.storage_temp_min, p.storage_temp_max,
-                   p.description, p.base_product_id,
+                   p.description, p.base_product_id, p.primary_container_id,
                    mt.type_name AS milk_type_name,
                    NULL AS current_stock
             FROM products p
@@ -534,7 +538,8 @@ function getProduct($conn, $id) {
 function getProductPackagingBom(PDO $conn, $id) {
     $stmt = $conn->prepare("
         SELECT p.id, p.product_code, p.product_name, p.variant,
-               p.unit_size, p.unit_measure, p.base_unit, p.base_product_id, p.is_active,
+               p.unit_size, p.unit_measure, p.base_unit, p.base_product_id,
+               p.primary_container_id, p.is_active,
                bp.name AS base_product_name
         FROM products p
         LEFT JOIN base_products bp ON bp.id = p.base_product_id
@@ -572,7 +577,7 @@ function saveProductPackagingBom(PDO $conn, $id) {
     $data = getRequestBody();
     $items = isset($data['items']) && is_array($data['items']) ? $data['items'] : [];
 
-    $stmt = $conn->prepare('SELECT id, base_product_id, is_active FROM products WHERE id = ?');
+    $stmt = $conn->prepare('SELECT id, base_product_id, base_unit, primary_container_id, is_active FROM products WHERE id = ?');
     $stmt->execute([(int) $id]);
     $sku = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$sku) {
@@ -582,6 +587,27 @@ function saveProductPackagingBom(PDO $conn, $id) {
     if (empty($sku['base_product_id'])) {
         sendValidationError(['product_id' => 'Select a sellable packaging SKU, not a bulk/base product']);
         return;
+    }
+
+    if (in_array(strtolower((string) ($sku['base_unit'] ?? '')), ['bottle', 'bottles'], true)) {
+        $primaryContainerId = (int) ($sku['primary_container_id'] ?? 0);
+        $submittedIds = array_values(array_unique(array_filter(array_map(
+            static fn($item) => (int) ($item['ingredient_id'] ?? 0),
+            $items
+        ))));
+        $submittedContainers = [];
+        if ($submittedIds) {
+            $placeholders = implode(',', array_fill(0, count($submittedIds), '?'));
+            $roleStmt = $conn->prepare("SELECT id FROM ingredients WHERE packaging_role = 'container' AND id IN ($placeholders)");
+            $roleStmt->execute($submittedIds);
+            $submittedContainers = array_map('intval', $roleStmt->fetchAll(PDO::FETCH_COLUMN) ?: []);
+        }
+        sort($submittedContainers);
+        if ($primaryContainerId <= 0 || $submittedContainers !== [$primaryContainerId]) {
+            sendValidationError([
+                'items.container' => 'Keep the SKU\'s selected primary container in the BOM. Change container from Edit SKU if the package size must change.'
+            ]);
+        }
     }
 
     $result = replaceSkuPackagingBom($conn, $id, $items);
@@ -597,6 +623,120 @@ function saveProductPackagingBom(PDO $conn, $id) {
     ], count($result['items']) > 0
         ? 'Packaging BOM saved'
         : 'Packaging BOM cleared; this SKU cannot be used to complete packaging');
+}
+
+/** Active container master records available to the SKU form. */
+function getProductPackagingOptions(PDO $conn): void {
+    $stmt = $conn->query("
+        SELECT i.id, i.ingredient_code, i.ingredient_name,
+               i.packaging_capacity_value, i.packaging_capacity_unit,
+               i.unit_of_measure, i.current_stock, i.available_stock
+        FROM ingredients i
+        JOIN ingredient_categories c ON c.id = i.category_id
+        WHERE i.is_active = 1
+          AND i.packaging_role = 'container'
+          AND i.packaging_capacity_value > 0
+          AND i.packaging_capacity_unit IN ('ml', 'L', 'g', 'kg')
+          AND (LOWER(c.category_name) LIKE '%packag%'
+               OR LOWER(c.category_code) LIKE '%pack%'
+               OR LOWER(c.category_name) LIKE '%container%')
+        ORDER BY
+          CASE WHEN i.packaging_capacity_unit IN ('ml', 'L') THEN 0 ELSE 1 END,
+          CASE i.packaging_capacity_unit
+            WHEN 'L' THEN i.packaging_capacity_value * 1000
+            WHEN 'kg' THEN i.packaging_capacity_value * 1000
+            ELSE i.packaging_capacity_value
+          END,
+          i.ingredient_name
+    ");
+    sendSuccess(['containers' => $stmt->fetchAll(PDO::FETCH_ASSOC) ?: []]);
+}
+
+/**
+ * For bottled SKUs the selected inventory container is the source of truth.
+ * Any client-supplied size is overwritten before duplicate checks and writes.
+ */
+function applyPrimaryContainerToSkuPayload(PDO $conn, array &$data, array $existing = []): ?array {
+    $baseUnit = strtolower(trim((string) (
+        $data['base_unit'] ?? ($existing['base_unit'] ?? 'piece')
+    )));
+    if (!in_array($baseUnit, ['bottle', 'bottles'], true)) {
+        $data['primary_container_id'] = null;
+        return null;
+    }
+
+    $containerId = (int) (
+        $data['primary_container_id'] ?? ($existing['primary_container_id'] ?? 0)
+    );
+    if ($containerId <= 0) {
+        sendValidationError([
+            'primary_container_id' => 'Select the actual bottle/container. The SKU size is taken from its configured capacity.'
+        ]);
+    }
+
+    $stmt = $conn->prepare("
+        SELECT i.id, i.ingredient_code, i.ingredient_name, i.unit_of_measure,
+               i.packaging_capacity_value, i.packaging_capacity_unit
+        FROM ingredients i
+        JOIN ingredient_categories c ON c.id = i.category_id
+        WHERE i.id = ? AND i.is_active = 1 AND i.packaging_role = 'container'
+          AND (LOWER(c.category_name) LIKE '%packag%'
+               OR LOWER(c.category_code) LIKE '%pack%'
+               OR LOWER(c.category_name) LIKE '%container%')
+        LIMIT 1
+    ");
+    $stmt->execute([$containerId]);
+    $container = $stmt->fetch(PDO::FETCH_ASSOC);
+    $capacity = $container
+        ? packagingCanonicalSize(
+            $container['packaging_capacity_value'] ?? null,
+            $container['packaging_capacity_unit'] ?? ''
+        )
+        : null;
+    if (!$container || !$capacity) {
+        sendValidationError([
+            'primary_container_id' => 'The selected container is inactive or has no valid capacity in Admin → Ingredients.'
+        ]);
+    }
+
+    $data['base_unit'] = 'bottle';
+    $data['primary_container_id'] = (int) $container['id'];
+    $data['unit_size'] = (float) $container['packaging_capacity_value'];
+    $data['unit_measure'] = $container['packaging_capacity_unit'];
+    return $container;
+}
+
+/** Keep exactly one trusted container component in the SKU BOM. */
+function syncSkuPrimaryContainer(PDO $conn, int $productId, ?array $container): void {
+    $containerId = $container ? (int) $container['id'] : 0;
+    $deleteSql = "
+        DELETE spbi
+        FROM sku_packaging_bom_items spbi
+        JOIN ingredients i ON i.id = spbi.ingredient_id
+        WHERE spbi.product_id = ? AND i.packaging_role = 'container'
+    ";
+    $deleteParams = [$productId];
+    if ($containerId > 0) {
+        $deleteSql .= ' AND spbi.ingredient_id <> ?';
+        $deleteParams[] = $containerId;
+    }
+    $conn->prepare($deleteSql)->execute($deleteParams);
+    if (!$container) {
+        return;
+    }
+
+    $insert = $conn->prepare("
+        INSERT INTO sku_packaging_bom_items
+            (product_id, ingredient_id, quantity_per_unit, waste_percent, unit, is_active)
+        VALUES (?, ?, 1, 0, ?, 1)
+        ON DUPLICATE KEY UPDATE
+            quantity_per_unit = 1, unit = VALUES(unit), is_active = 1
+    ");
+    $insert->execute([
+        $productId,
+        (int) $container['id'],
+        $container['unit_of_measure'] ?: 'piece',
+    ]);
 }
 
 /**
@@ -637,7 +777,8 @@ function validateProductNumericPayload(array &$data): void {
 }
 
 function createProduct($conn) {
-    $data = json_decode(file_get_contents('php://input'), true);
+    $data = json_decode(file_get_contents('php://input'), true) ?: [];
+    $primaryContainer = applyPrimaryContainerToSkuPayload($conn, $data);
     validateProductNumericPayload($data);
     
     // Validate required fields
@@ -777,10 +918,10 @@ function createProduct($conn) {
 
         $sql = "INSERT INTO products (
                     base_product_id, product_code, product_name, category, variant, milk_type_id,
-                    description, unit_size, unit_measure, shelf_life_days,
+                    description, unit_size, unit_measure, primary_container_id, shelf_life_days,
                     storage_temp_min, storage_temp_max, base_unit, box_unit,
                     pieces_per_box, selling_price, is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         $stmt = $conn->prepare($sql);
         $stmt->execute([
@@ -793,6 +934,7 @@ function createProduct($conn) {
             $data['description'] ?? null,
             $data['unit_size'] ?? null,
             $data['unit_measure'] ?? 'ml',
+            $data['primary_container_id'],
             $data['shelf_life_days'] ?? 7,
             $data['storage_temp_min'] ?? 2.00,
             $data['storage_temp_max'] ?? 6.00,
@@ -809,10 +951,10 @@ function createProduct($conn) {
 
         $sql = "INSERT INTO products (
                     product_code, product_name, category, variant, milk_type_id,
-                    description, unit_size, unit_measure, shelf_life_days,
+                    description, unit_size, unit_measure, primary_container_id, shelf_life_days,
                     storage_temp_min, storage_temp_max, base_unit, box_unit,
                     pieces_per_box, selling_price, is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         $stmt = $conn->prepare($sql);
         $stmt->execute([
@@ -824,6 +966,7 @@ function createProduct($conn) {
             $data['description'] ?? null,
             $data['unit_size'] ?? null,
             $data['unit_measure'] ?? 'ml',
+            $data['primary_container_id'],
             $data['shelf_life_days'] ?? 7,
             $data['storage_temp_min'] ?? 2.00,
             $data['storage_temp_max'] ?? 6.00,
@@ -835,7 +978,8 @@ function createProduct($conn) {
         ]);
     }
     
-        $productId = $conn->lastInsertId();
+        $productId = (int) $conn->lastInsertId();
+        syncSkuPrimaryContainer($conn, $productId, $primaryContainer);
     } finally {
         $releaseStmt = $conn->prepare('SELECT RELEASE_LOCK(?)');
         $releaseStmt->execute([$productCodeLock]);
@@ -961,12 +1105,12 @@ function updateBaseProduct($conn, $id) {
  * Update product
  */
 function updateProduct($conn, $id) {
-    $data = json_decode(file_get_contents('php://input'), true);
-    validateProductNumericPayload($data);
+    $data = json_decode(file_get_contents('php://input'), true) ?: [];
     
     // Check if product exists
     $checkStmt = $conn->prepare("
-        SELECT id, product_code, product_name, category, variant, unit_size, unit_measure, base_unit, base_product_id
+        SELECT id, product_code, product_name, category, variant, unit_size, unit_measure,
+               base_unit, base_product_id, primary_container_id
         FROM products
         WHERE id = ?
     ");
@@ -977,6 +1121,9 @@ function updateProduct($conn, $id) {
         sendError('Product not found', 404);
         return;
     }
+
+    $primaryContainer = applyPrimaryContainerToSkuPayload($conn, $data, $existing);
+    validateProductNumericPayload($data);
 
     // Keep legacy variant text intact for audit/migration, but do not allow it
     // to be edited on a base-linked SKU. Flavor belongs to base_products.
@@ -990,7 +1137,7 @@ function updateProduct($conn, $id) {
     
     $allowedFields = [
         'product_code', 'product_name', 'category', 'variant', 'milk_type_id',
-        'description', 'unit_size', 'unit_measure', 'shelf_life_days',
+        'description', 'unit_size', 'unit_measure', 'primary_container_id', 'shelf_life_days',
         'storage_temp_min', 'storage_temp_max', 'base_unit', 'box_unit',
         'pieces_per_box', 'selling_price', 'unit_price', 'is_active'
     ];
@@ -1053,6 +1200,7 @@ function updateProduct($conn, $id) {
     
     $stmt = $conn->prepare($sql);
     $stmt->execute($params);
+    syncSkuPrimaryContainer($conn, (int) $id, $primaryContainer);
     
     sendSuccess(['message' => 'Product updated successfully']);
 }
