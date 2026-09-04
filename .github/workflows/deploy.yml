@@ -142,6 +142,7 @@ jobs:
 
       - name: Resume deployment with low-concurrency FTP
         if: steps.deploy_primary.outcome == 'failure' && steps.deploy_retry.outcome == 'failure'
+        id: deploy_fallback
         shell: bash
         env:
           FTP_SERVER: ${{ secrets.FTP_SERVER }}
@@ -201,3 +202,15 @@ jobs:
             ./ ./
           bye
           LFTP_COMMANDS
+
+      - name: Synchronize live SMTP and customer mailbox settings
+        if: >-
+          steps.deploy_primary.outcome == 'success' ||
+          steps.deploy_retry.outcome == 'success' ||
+          steps.deploy_fallback.outcome == 'success'
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: python .github/scripts/sync_live_mail_env.py
