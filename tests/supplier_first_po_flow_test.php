@@ -30,7 +30,9 @@ $checks = [
         str_contains($page, 'const automaticSupplier = availableSuppliers.length === 1')
         && str_contains($page, 'await chooseRecommendedSupplier(automaticSupplierId, true)')
         && str_contains($page, 'was selected automatically')
-        && str_contains($page, 'confirmed material ${covered === 1 ? \'need is\' : \'needs are\'} loaded into this PO'),
+        && str_contains($page, 'confirmed material ${covered === 1 ? \'need is\' : \'needs are\'} loaded into this PO')
+        && strpos($page, "renderDirectEntryPrompt('Choose an accredited supplier to see its open material demand.')")
+            < strpos($page, 'await chooseRecommendedSupplier(automaticSupplierId, true)'),
     'Supplier selection filters outstanding lines across Warehouse requests' =>
         str_contains($page, 'getScopedWarehouseRequests().flatMap(pr =>')
         && str_contains($page, 'source_purchase_request_id: Number(pr.id)')
