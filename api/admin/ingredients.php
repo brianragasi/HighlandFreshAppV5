@@ -8,6 +8,7 @@ require_once __DIR__ . '/../bootstrap.php';
 require_once __DIR__ . '/../helpers/supplier_ingredient_catalog.php';
 require_once __DIR__ . '/../helpers/plain_text.php';
 require_once __DIR__ . '/../helpers/ingredient_onboarding.php';
+require_once __DIR__ . '/../helpers/ingredient_packaging_roles.php';
 require_once __DIR__ . '/../helpers/stock_validation_support.php';
 require_once __DIR__ . '/../helpers/procurement_notifications.php';
 require_once __DIR__ . '/../warehouse/raw/ingredient_stock_helpers.php';
@@ -188,6 +189,8 @@ function ensureIngredientMasterSettings($conn) {
             $conn->exec($sql);
         }
     }
+
+    ensureIngredientPackagingRoleSupport($conn);
 
     // Preserve existing package records as one-container packages. New records
     // can additionally describe an outer box/case without changing stock math.
@@ -710,6 +713,7 @@ function createIngredient($conn, $currentUser) {
         'ingredient_name' => [160, false],
         'unit_of_measure' => [40, false],
         'physical_state' => [20, false],
+        'packaging_role' => [30, false],
         'initial_stock_status' => [30, false],
         'storage_location' => [160, false],
         'storage_requirements' => [1000, true],
@@ -732,6 +736,12 @@ function createIngredient($conn, $currentUser) {
     }
     if (empty($data['physical_state'])) {
         $errors['physical_state'] = 'Choose whether the ingredient is solid, liquid, or counted';
+    }
+    $isPackagingCategory = !empty($data['category_id'])
+        && ingredientCategoryIsPackaging($conn, $data['category_id']);
+    $packagingRole = normalizeIngredientPackagingRole($data['packaging_role'] ?? null);
+    if ($isPackagingCategory && $packagingRole === null) {
+        $errors['packaging_role'] = 'Choose whether this packaging material is a container, closure, label, or secondary packaging';
     }
     if ($initialStockRoute === '') {
         $errors['initial_stock_status'] = 'Choose whether physical stock already exists for this new material';
@@ -763,7 +773,8 @@ function createIngredient($conn, $currentUser) {
     $data['physical_state'] = normalizeIngredientPhysicalState($data['physical_state'], $data['unit_of_measure']);
     validateIngredientPhysicalStateUnit($data['physical_state'], $data['unit_of_measure']);
     validateIngredientCategoryUnit($conn, $data['category_id'], $data['unit_of_measure']);
-    if (ingredientCategoryIsPackaging($conn, $data['category_id'])) {
+    $data['packaging_role'] = $isPackagingCategory ? $packagingRole : null;
+    if ($isPackagingCategory) {
         $data['is_perishable'] = 0;
         $data['shelf_life_days'] = null;
     }
@@ -784,10 +795,10 @@ function createIngredient($conn, $currentUser) {
         sendValidationError(['ingredient_code' => 'Ingredient code already exists']);
     }
     
-        $sql = "INSERT INTO ingredients (ingredient_code, ingredient_name, category_id, unit_of_measure, physical_state,
+        $sql = "INSERT INTO ingredients (ingredient_code, ingredient_name, category_id, unit_of_measure, physical_state, packaging_role,
             minimum_stock, reorder_point, maximum_stock, lead_time_days, current_stock, initial_stock_route, onboarding_status,
             storage_location, storage_requirements, shelf_life_days, is_perishable, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
     $conn->beginTransaction();
     try {
@@ -798,6 +809,7 @@ function createIngredient($conn, $currentUser) {
             $data['category_id'] ?? null,
             $data['unit_of_measure'],
             $data['physical_state'],
+            $data['packaging_role'],
             $data['minimum_stock'] ?? 0,
             $data['reorder_point'] ?? 0,
             $data['maximum_stock'] ?? null,
@@ -897,6 +909,7 @@ function updateIngredient($conn, $id, $currentUser) {
         'ingredient_name' => [160, false],
         'unit_of_measure' => [40, false],
         'physical_state' => [20, false],
+        'packaging_role' => [30, false],
         'storage_location' => [160, false],
         'storage_requirements' => [1000, true],
     ]);
@@ -937,7 +950,19 @@ function updateIngredient($conn, $id, $currentUser) {
     }
 
     $effectiveCategoryId = $data['category_id'] ?? $currentIngredient['category_id'];
-    if (ingredientCategoryIsPackaging($conn, $effectiveCategoryId)) {
+    $isPackagingCategory = ingredientCategoryIsPackaging($conn, $effectiveCategoryId);
+    $packagingRole = normalizeIngredientPackagingRole(
+        array_key_exists('packaging_role', $data)
+            ? $data['packaging_role']
+            : ($currentIngredient['packaging_role'] ?? null)
+    );
+    if ($isPackagingCategory && $packagingRole === null) {
+        sendValidationError([
+            'packaging_role' => 'Choose whether this packaging material is a container, closure, label, or secondary packaging'
+        ]);
+    }
+    $data['packaging_role'] = $isPackagingCategory ? $packagingRole : null;
+    if ($isPackagingCategory) {
         $data['is_perishable'] = 0;
         $data['shelf_life_days'] = null;
     }
@@ -974,7 +999,7 @@ function updateIngredient($conn, $id, $currentUser) {
     $fields = [];
     $params = [];
     
-    $allowedFields = ['ingredient_name', 'category_id', 'unit_of_measure', 'physical_state', 'minimum_stock',
+    $allowedFields = ['ingredient_name', 'category_id', 'unit_of_measure', 'physical_state', 'packaging_role', 'minimum_stock',
                       'reorder_point', 'maximum_stock', 'lead_time_days',
                       'storage_location', 'storage_requirements', 'shelf_life_days', 'is_perishable', 'is_active',
                      ];

@@ -439,6 +439,7 @@ try {
     $db = Database::getInstance()->getConnection();
     ensureRecipeBatchCapacityColumn($db);
     ensureProductionPackagingRequestSchema($db);
+    ensureIngredientPackagingRoleSupport($db);
     ensureQcCountDiscrepancyTables($db);
     
     // Ensure output_breakdown column exists for multi-unit output tracking

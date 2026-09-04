@@ -21,6 +21,12 @@ $checks = [
         && str_contains($sources['products_page'], 'SKU Packaging BOM')
         && str_contains($sources['products_page'], 'quantity_per_unit')
         && str_contains($sources['products_page'], 'function escapeAttr'),
+    'Packaging component roles are explicit instead of inferred from names' =>
+        str_contains($sources['packaging_helper'], "['container', 'closure', 'label']")
+        && str_contains($sources['packaging_helper'], "i.packaging_role")
+        && str_contains($sources['products_page'], 'data-role=')
+        && str_contains($sources['products_page'], "roles.includes('container')")
+        && !str_contains($sources['products_page'], "test(names)"),
     'Roll materials use coverage instead of asking users for a confusing fraction' =>
         str_contains($sources['products_page'], '1 roll covers')
         && str_contains($sources['products_page'], 'units_per_stock_unit')
@@ -93,6 +99,7 @@ require_once $root . '/api/config/database.php';
 require_once $root . '/api/helpers/sku_packaging_bom.php';
 
 $db = Database::getInstance()->getConnection();
+ensureIngredientPackagingRoleSupport($db);
 $schema = str_replace('`', '``', DB_NAME);
 $temporaryTables = [
     'ingredients',
@@ -115,6 +122,7 @@ try {
         SELECT i.* FROM ingredients i
         JOIN ingredient_categories ic ON ic.id = i.category_id
         WHERE i.is_active = 1 AND LOWER(ic.category_name) LIKE '%packag%'
+          AND i.packaging_role IN ('container', 'closure', 'label')
         ORDER BY i.id LIMIT 1
     ")->fetch(PDO::FETCH_ASSOC);
     $nonPackaging = $db->query("
@@ -196,27 +204,27 @@ try {
         throw new RuntimeException('A bottle/cap/label quantity above one was accepted per finished product');
     }
     $incompleteBottleProfile = assessSkuPackagingBomReadiness('bottle', [
-        ['ingredient_name' => '500 mL Bottle'],
-        ['ingredient_name' => '28 mm Cap'],
+        ['ingredient_name' => '500 mL Bottle', 'packaging_role' => 'container'],
+        ['ingredient_name' => '28 mm Cap', 'packaging_role' => 'closure'],
     ]);
     $completeBottleProfile = assessSkuPackagingBomReadiness('bottle', [
-        ['ingredient_name' => '500 mL Bottle'],
-        ['ingredient_name' => '28 mm Cap'],
-        ['ingredient_name' => '500 mL Label'],
+        ['ingredient_name' => '500 mL Bottle', 'packaging_role' => 'container'],
+        ['ingredient_name' => '28 mm Cap', 'packaging_role' => 'closure'],
+        ['ingredient_name' => '500 mL Label', 'packaging_role' => 'label'],
     ]);
     if ($incompleteBottleProfile['ready'] || !$completeBottleProfile['ready']) {
         throw new RuntimeException('Bottled SKU readiness did not require bottle, closure, and label');
     }
 
     $wrongSizeBottleProfile = assessSkuPackagingBomReadiness('bottle', [
-        ['ingredient_name' => '500 mL Bottle'],
-        ['ingredient_name' => '28 mm Cap'],
-        ['ingredient_name' => 'Chocolate Milk 500 mL Label'],
+        ['ingredient_name' => '500 mL Bottle', 'packaging_role' => 'container'],
+        ['ingredient_name' => '28 mm Cap', 'packaging_role' => 'closure'],
+        ['ingredient_name' => 'Chocolate Milk 500 mL Label', 'packaging_role' => 'label'],
     ], 250, 'mL');
     $correctSizeBottleProfile = assessSkuPackagingBomReadiness('bottle', [
-        ['ingredient_name' => '250 mL Bottle'],
-        ['ingredient_name' => '28 mm Cap'],
-        ['ingredient_name' => 'Chocolate Milk 250 mL Label'],
+        ['ingredient_name' => '250 mL Bottle', 'packaging_role' => 'container'],
+        ['ingredient_name' => '28 mm Cap', 'packaging_role' => 'closure'],
+        ['ingredient_name' => 'Chocolate Milk 250 mL Label', 'packaging_role' => 'label'],
     ], 250, 'mL');
     if ($wrongSizeBottleProfile['ready'] || !$correctSizeBottleProfile['ready']) {
         throw new RuntimeException('Packaging BOM size validation did not distinguish 250 mL from 500 mL materials');

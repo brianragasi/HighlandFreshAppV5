@@ -12,6 +12,7 @@ Auth::requireRole(['general_manager', 'admin']);
 
 // Get database connection
 $conn = Database::getInstance()->getConnection();
+ensureIngredientPackagingRoleSupport($conn);
 
 // Get request method and handle routing
 $method = $_SERVER['REQUEST_METHOD'];

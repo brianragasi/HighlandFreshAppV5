@@ -498,6 +498,24 @@
                             <p><strong>Supplier:</strong> If no approved supplier is linked yet, connect one afterward in <em>Admin → Suppliers</em>. The ingredient can still be created first.</p>
                         </div>
                     </div>
+                    <div id="packagingRoleSection" class="hidden mt-4 rounded-xl border border-info/30 bg-info/5 p-4">
+                        <div class="form-control">
+                            <label class="label pt-0">
+                                <span class="label-text font-medium">Packaging Type *</span>
+                            </label>
+                            <select id="packaging_role" class="select select-bordered">
+                                <option value="">Choose what this material is used as</option>
+                                <option value="container">Bottle / Container</option>
+                                <option value="closure">Cap / Closure</option>
+                                <option value="label">Label</option>
+                                <option value="secondary">Wrap / Secondary Packaging</option>
+                                <option value="other">Other Packaging</option>
+                            </select>
+                            <label class="label pb-0">
+                                <span class="label-text-alt text-info">The SKU BOM uses this type—not words in the material name—to require the correct bottle, closure, and label.</span>
+                            </label>
+                        </div>
+                    </div>
                 </fieldset>
 
                 <!-- Section: Cost & Shelf Life -->
@@ -839,7 +857,26 @@
                 }
             }
             syncExpiryHandlingForCategory();
+            syncPackagingRoleField(null, true);
             populateUnitOfMeasureOptions(null, true);
+        }
+
+        function syncPackagingRoleField(preferredRole = null, forceReset = false) {
+            const section = document.getElementById('packagingRoleSection');
+            const select = document.getElementById('packaging_role');
+            if (!section || !select) return;
+            const isPackaging = getUnitGroupForCategoryName(getSelectedCategoryName()) === 'packaging';
+            section.classList.toggle('hidden', !isPackaging);
+            select.required = isPackaging;
+            if (!isPackaging) {
+                select.value = '';
+                return;
+            }
+            if (preferredRole != null) {
+                select.value = String(preferredRole || '');
+            } else if (forceReset) {
+                select.value = '';
+            }
         }
 
         function onPhysicalStateChange() {
@@ -1117,7 +1154,10 @@
                 <tr>
                     <td><span class="font-mono text-sm">${escapeHtml(i.ingredient_code)}</span></td>
                     <td><span class="font-semibold">${escapeHtml(i.ingredient_name)}</span></td>
-                    <td>${escapeHtml(i.category_name || '-')}</td>
+                    <td>
+                        <div>${escapeHtml(i.category_name || '-')}</div>
+                        ${i.packaging_role ? `<span class="badge badge-info badge-outline badge-xs mt-1">${escapeHtml({container: 'Bottle / Container', closure: 'Cap / Closure', label: 'Label', secondary: 'Secondary', other: 'Other'}[i.packaging_role] || i.packaging_role)}</span>` : ''}
+                    </td>
                     <td><span class="badge badge-ghost badge-sm">${escapeHtml(i.unit_of_measure)}</span></td>
                     <td>
                         <span class="badge ${i.is_perishable == 1 ? 'badge-warning' : 'badge-ghost'} badge-sm">
@@ -1184,6 +1224,7 @@
             document.getElementById('initialStockSection').classList.toggle('hidden', Boolean(id));
             document.getElementById('initial_stock_status').required = !id;
             syncExpiryHandlingForCategory();
+            syncPackagingRoleField(null, true);
             // Reset UOM to placeholder until category is chosen
             populateUnitOfMeasureOptions(null, true);
             updateUnitBadges();
@@ -1205,6 +1246,7 @@
                     document.getElementById('ingredient_code').value = i.ingredient_code;
                     document.getElementById('ingredient_name').value = i.ingredient_name;
                     document.getElementById('category_id').value = i.category_id || '';
+                    syncPackagingRoleField(i.packaging_role || '', false);
                     document.getElementById('physical_state').disabled = false;
                     document.getElementById('physical_state').value = i.physical_state || inferPhysicalStateFromUnit(i.unit_of_measure);
                     if (getUnitGroupForCategoryName(getSelectedCategoryName()) === 'packaging') {
@@ -1323,10 +1365,18 @@
             const categoryId = document.getElementById('category_id').value || null;
             const unitOfMeasure = document.getElementById('unit_of_measure').value;
             const physicalState = getSelectedPhysicalState();
+            const isPackaging = getUnitGroupForCategoryName(getSelectedCategoryName()) === 'packaging';
+            const packagingRole = document.getElementById('packaging_role').value;
 
             if (!physicalState) {
                 showToast('Please choose whether the ingredient is solid, liquid, or counted', 'error');
                 document.getElementById('physical_state').focus();
+                return;
+            }
+
+            if (isPackaging && !packagingRole) {
+                showToast('Choose whether this is a bottle/container, cap/closure, label, or secondary packaging', 'error');
+                document.getElementById('packaging_role').focus();
                 return;
             }
 
@@ -1354,6 +1404,7 @@
                 ingredient_name: document.getElementById('ingredient_name').value,
                 category_id: categoryId,
                 physical_state: physicalState,
+                packaging_role: isPackaging ? packagingRole : null,
                 unit_of_measure: unitOfMeasure,
                 minimum_stock: document.getElementById('minimum_stock').value,
                 reorder_point: document.getElementById('reorder_point').value,

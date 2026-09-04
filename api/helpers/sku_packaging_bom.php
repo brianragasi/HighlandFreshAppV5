@@ -12,6 +12,8 @@ if (defined('SKU_PACKAGING_BOM_HELPERS_LOADED')) {
 }
 define('SKU_PACKAGING_BOM_HELPERS_LOADED', true);
 
+require_once __DIR__ . '/ingredient_packaging_roles.php';
+
 class SkuPackagingStockException extends RuntimeException
 {
     private $validationErrors;
@@ -100,12 +102,12 @@ function isCountedPackagingUnit($unit)
  * Separate front/back labels should be separate inventory materials, each with
  * a quantity of one, rather than hiding several parts in one BOM number.
  */
-function packagingMaterialMustBeOnePerFinishedUnit($name, $unit)
+function packagingMaterialMustBeOnePerFinishedUnit($role, $unit)
 {
     if (!isCountedPackagingUnit($unit)) {
         return false;
     }
-    return preg_match('/\b(bottle|container|jar|cup|cap|lid|closure|label)\b/i', (string) $name) === 1;
+    return in_array(normalizeIngredientPackagingRole($role), ['container', 'closure', 'label'], true);
 }
 
 function packagingCanonicalSize($size, $measure)
@@ -171,7 +173,8 @@ function validateSkuPackagingBomSizes($baseUnit, $unitSize, $unitMeasure, array 
     $errors = [];
     foreach ($items as $item) {
         $name = trim((string) ($item['ingredient_name'] ?? ''));
-        if ($name === '' || preg_match('/\b(bottle|container|jar|cup|tub|pouch|carton|label)\b/i', $name) !== 1) {
+        $role = normalizeIngredientPackagingRole($item['packaging_role'] ?? null);
+        if ($name === '' || !in_array($role, ['container', 'label'], true)) {
             continue;
         }
         $actual = packagingSizeFromMaterialName($name);
@@ -202,18 +205,18 @@ function assessSkuPackagingBomReadiness($baseUnit, array $items, $unitSize = nul
         return ['ready' => true, 'missing' => []];
     }
 
-    $names = strtolower(implode(' ', array_map(
-        static fn($item) => (string) ($item['ingredient_name'] ?? ''),
+    $required = [
+        'bottle/container' => 'container',
+        'cap/closure' => 'closure',
+        'label' => 'label',
+    ];
+    $roles = array_values(array_filter(array_map(
+        static fn($item) => normalizeIngredientPackagingRole($item['packaging_role'] ?? null),
         $items
     )));
-    $required = [
-        'bottle/container' => '/\b(bottle|container)\b/i',
-        'cap/closure' => '/\b(cap|lid|closure)\b/i',
-        'label' => '/\blabel\b/i',
-    ];
     $missing = [];
-    foreach ($required as $label => $pattern) {
-        if (preg_match($pattern, $names) !== 1) {
+    foreach ($required as $label => $role) {
+        if (!in_array($role, $roles, true)) {
             $missing[] = $label;
         }
     }
@@ -246,9 +249,10 @@ function roundPackagingRequirementForStock($quantity, $unit)
 
 function getAvailablePackagingMaterials(PDO $db)
 {
+    ensureIngredientPackagingRoleSupport($db);
     $stmt = $db->query("
         SELECT i.id, i.ingredient_code, i.ingredient_name, i.unit_of_measure,
-               i.current_stock, i.available_stock, i.is_active,
+               i.current_stock, i.available_stock, i.is_active, i.packaging_role,
                ic.category_name, ic.category_code
         FROM ingredients i
         JOIN ingredient_categories ic ON ic.id = i.category_id
@@ -264,11 +268,12 @@ function getAvailablePackagingMaterials(PDO $db)
 
 function getSkuPackagingBom(PDO $db, $productId)
 {
+    ensureIngredientPackagingRoleSupport($db);
     ensureSkuPackagingBomTable($db);
     $stmt = $db->prepare("
         SELECT spbi.id, spbi.product_id, spbi.ingredient_id,
                spbi.quantity_per_unit, spbi.waste_percent, spbi.unit,
-               i.ingredient_code, i.ingredient_name, i.current_stock,
+               i.ingredient_code, i.ingredient_name, i.packaging_role, i.current_stock,
                i.available_stock, ic.category_name
         FROM sku_packaging_bom_items spbi
         JOIN ingredients i ON i.id = spbi.ingredient_id
@@ -286,6 +291,7 @@ function getSkuPackagingBom(PDO $db, $productId)
 
 function getSkuPackagingBomMap(PDO $db, array $productIds)
 {
+    ensureIngredientPackagingRoleSupport($db);
     ensureSkuPackagingBomTable($db);
     $ids = array_values(array_unique(array_filter(array_map('intval', $productIds))));
     if (empty($ids)) {
@@ -296,7 +302,7 @@ function getSkuPackagingBomMap(PDO $db, array $productIds)
     $stmt = $db->prepare("
         SELECT spbi.product_id, spbi.ingredient_id, spbi.quantity_per_unit,
                spbi.waste_percent, spbi.unit, i.ingredient_code,
-               i.ingredient_name, i.current_stock, i.available_stock
+               i.ingredient_name, i.packaging_role, i.current_stock, i.available_stock
         FROM sku_packaging_bom_items spbi
         JOIN ingredients i ON i.id = spbi.ingredient_id
         LEFT JOIN ingredient_categories ic ON ic.id = i.category_id
@@ -323,12 +329,13 @@ function getSkuPackagingBomMap(PDO $db, array $productIds)
 
 function normalizeSkuPackagingBomInput(PDO $db, array $items)
 {
+    ensureIngredientPackagingRoleSupport($db);
     $normalized = [];
     $errors = [];
     $seen = [];
 
     $lookup = $db->prepare("
-        SELECT i.id, i.ingredient_name, i.unit_of_measure, i.is_active,
+        SELECT i.id, i.ingredient_name, i.unit_of_measure, i.packaging_role, i.is_active,
                ic.category_name, ic.category_code
         FROM ingredients i
         LEFT JOIN ingredient_categories ic ON ic.id = i.category_id
@@ -391,7 +398,7 @@ function normalizeSkuPackagingBomInput(PDO $db, array $items)
                 continue;
             }
             if (packagingMaterialMustBeOnePerFinishedUnit(
-                $ingredient['ingredient_name'] ?? '',
+                $ingredient['packaging_role'] ?? null,
                 $ingredient['unit_of_measure'] ?? ''
             ) && abs($quantity - 1.0) > 0.000001) {
                 $errors["items.$idx.quantity_per_unit"] =
@@ -415,6 +422,7 @@ function normalizeSkuPackagingBomInput(PDO $db, array $items)
         $normalized[] = [
             'ingredient_id' => $ingredientId,
             'ingredient_name' => $ingredient['ingredient_name'],
+            'packaging_role' => $ingredient['packaging_role'],
             'quantity_per_unit' => round($quantity, 6),
             'units_per_stock_unit' => $coverage,
             'waste_percent' => round($waste, 2),

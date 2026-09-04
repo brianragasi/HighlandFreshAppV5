@@ -40,8 +40,8 @@ $checks = [
         str_contains($sources['supplier_helper'], 'function supplierCatalogConvertToStockUnit')
         && str_contains($sources['supplier_helper'], 'must match its stock unit'),
     'Create and update both save physical state' =>
-        str_contains($sources['api'], 'unit_of_measure, physical_state')
-        && str_contains($sources['api'], "'unit_of_measure', 'physical_state', 'minimum_stock'"),
+        str_contains($sources['api'], 'unit_of_measure, physical_state, packaging_role')
+        && str_contains($sources['api'], "'unit_of_measure', 'physical_state', 'packaging_role', 'minimum_stock'"),
     'Packaging is always non-perishable in both the form and server' =>
         str_contains($sources['page'], 'function syncExpiryHandlingForCategory()')
         && str_contains($sources['api'], 'function ingredientCategoryIsPackaging')

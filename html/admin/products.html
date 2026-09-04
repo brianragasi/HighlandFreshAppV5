@@ -884,9 +884,19 @@
                 .includes(String(unit || '').trim().toLowerCase());
         }
 
-        function packagingMaterialMustBeOne(name, unit) {
+        function packagingRoleLabel(role) {
+            return {
+                container: 'Bottle / Container',
+                closure: 'Cap / Closure',
+                label: 'Label',
+                secondary: 'Wrap / Secondary',
+                other: 'Other Packaging'
+            }[String(role || '').toLowerCase()] || 'Unclassified';
+        }
+
+        function packagingMaterialMustBeOne(role, unit) {
             return isCountedPackagingUnit(unit)
-                && /\b(bottle|container|jar|cup|cap|lid|closure|label)\b/i.test(String(name || ''));
+                && ['container', 'closure', 'label'].includes(String(role || '').toLowerCase());
         }
 
         function updatePackagingBomDirectPreview(row) {
@@ -895,7 +905,7 @@
             const quantityInput = row.querySelector('[data-pack-bom="quantity"]');
             const preview = row.querySelector('[data-pack-bom="direct-preview"]');
             const select = row.querySelector('[data-pack-bom="ingredient"]');
-            const materialName = select?.options?.[select.selectedIndex]?.textContent || '';
+            const packagingRole = select?.options?.[select.selectedIndex]?.dataset?.role || '';
             if (!quantityInput || !preview || isRollPackagingUnit(unit)) return;
             const quantity = Number(quantityInput.value || 0);
             if (!Number.isFinite(quantity) || quantity <= 0) {
@@ -903,7 +913,7 @@
                 preview.className = 'text-[11px] mt-1 text-error';
                 return;
             }
-            if (packagingMaterialMustBeOne(materialName, unit) && Math.abs(quantity - 1) > 0.000001) {
+            if (packagingMaterialMustBeOne(packagingRole, unit) && Math.abs(quantity - 1) > 0.000001) {
                 preview.textContent = 'Bottle, cap, lid, container, and label materials must be 1 per finished product. Use waste % for extras.';
                 preview.className = 'text-[11px] mt-1 text-error font-semibold';
                 return;
@@ -2434,7 +2444,8 @@
             const rowId = ++packagingBomRowCounter;
             const options = packagingBomMaterials.map(material => {
                 const selected = String(material.id) === String(item.ingredient_id || '') ? 'selected' : '';
-                return `<option value="${material.id}" data-unit="${escapeAttr(material.unit_of_measure || 'piece')}" ${selected}>${escapeHtml(material.ingredient_name)} (${escapeHtml(material.ingredient_code || '—')})</option>`;
+                const role = material.packaging_role || '';
+                return `<option value="${material.id}" data-unit="${escapeAttr(material.unit_of_measure || 'piece')}" data-role="${escapeAttr(role)}" ${selected}>[${escapeHtml(packagingRoleLabel(role))}] ${escapeHtml(material.ingredient_name)} (${escapeHtml(material.ingredient_code || '—')})</option>`;
             }).join('');
             const initialQuantity = formatProductNumber(item.quantity_per_unit, 6);
             const initialCoverage = Number(item.quantity_per_unit) > 0
@@ -2553,13 +2564,13 @@
                 alert.classList.add('hidden');
                 return;
             }
-            const names = Array.from(document.querySelectorAll('#packagingBomRows [data-pack-bom="ingredient"]'))
-                .map(select => select.options?.[select.selectedIndex]?.textContent || '')
-                .join(' ');
+            const roles = Array.from(document.querySelectorAll('#packagingBomRows [data-pack-bom="ingredient"]'))
+                .map(select => select.options?.[select.selectedIndex]?.dataset?.role || '')
+                .filter(Boolean);
             const missing = [];
-            if (!/\b(bottle|container)\b/i.test(names)) missing.push('bottle/container');
-            if (!/\b(cap|lid|closure)\b/i.test(names)) missing.push('cap/closure');
-            if (!/\blabel\b/i.test(names)) missing.push('label');
+            if (!roles.includes('container')) missing.push('bottle/container');
+            if (!roles.includes('closure')) missing.push('cap/closure');
+            if (!roles.includes('label')) missing.push('label');
             if (missing.length) {
                 text.textContent = `Not ready for Production. Add: ${missing.join(', ')}.`;
                 alert.classList.remove('hidden');
@@ -2598,13 +2609,15 @@
                     row.querySelector('[data-pack-bom="quantity"]')?.focus();
                     return;
                 }
-                const materialName = row.querySelector('[data-pack-bom="ingredient"]')?.selectedOptions?.[0]?.textContent || '';
+                const selectedMaterial = row.querySelector('[data-pack-bom="ingredient"]')?.selectedOptions?.[0];
+                const materialName = selectedMaterial?.textContent || '';
+                const packagingRole = selectedMaterial?.dataset?.role || '';
                 if (!isRoll && isCountedPackagingUnit(unit) && !Number.isInteger(quantity)) {
                     showToast('Packaging counted by piece must use a whole number.', 'error');
                     row.querySelector('[data-pack-bom="quantity"]')?.focus();
                     return;
                 }
-                if (!isRoll && packagingMaterialMustBeOne(materialName, unit) && Math.abs(quantity - 1) > 0.000001) {
+                if (!isRoll && packagingMaterialMustBeOne(packagingRole, unit) && Math.abs(quantity - 1) > 0.000001) {
                     showToast(`${materialName.trim()} must be 1 per finished product. Use waste allowance for extras.`, 'error');
                     row.querySelector('[data-pack-bom="quantity"]')?.focus();
                     return;

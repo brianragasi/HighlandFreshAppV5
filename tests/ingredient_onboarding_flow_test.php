@@ -6,6 +6,7 @@ $root = dirname(__DIR__);
 $adminApi = file_get_contents($root . '/api/admin/ingredients.php');
 $adminPage = file_get_contents($root . '/html/admin/ingredients.html');
 $onboarding = file_get_contents($root . '/api/helpers/ingredient_onboarding.php');
+$packagingRoles = file_get_contents($root . '/api/helpers/ingredient_packaging_roles.php');
 $validationSupport = file_get_contents($root . '/api/helpers/stock_validation_support.php');
 $validationApi = file_get_contents($root . '/api/warehouse/raw/stock_validations.php');
 $warehouseApi = file_get_contents($root . '/api/warehouse/raw/ingredients.php');
@@ -18,6 +19,11 @@ $checks = [
         && str_contains($adminPage, 'value="purchase_required"')
         && str_contains($adminPage, 'value="opening_stock"')
         && str_contains($adminApi, "normalizeIngredientInitialStockRoute"),
+    'Packaging materials require an explicit BOM component type' =>
+        str_contains($adminPage, 'Packaging Type *')
+        && str_contains($adminPage, 'id="packaging_role"')
+        && str_contains($adminApi, "'packaging_role'")
+        && str_contains($packagingRoles, "['container', 'closure', 'label', 'secondary', 'other']"),
     'Legacy Warehouse/Purchasing ingredient creation cannot bypass Admin routing' =>
         str_contains($warehouseApi, 'New ingredients must be configured in Admin → Ingredients')
         && !str_contains($warehouseApi, 'Only GM or Purchaser can create ingredients'),
