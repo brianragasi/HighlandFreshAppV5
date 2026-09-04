@@ -12,6 +12,7 @@ $validationApi = file_get_contents($root . '/api/warehouse/raw/stock_validations
 $warehouseApi = file_get_contents($root . '/api/warehouse/raw/ingredients.php');
 $warehousePage = file_get_contents($root . '/html/warehouse/raw/ingredients.html');
 $purchasingPage = file_get_contents($root . '/html/purchasing/purchase_orders.html');
+$notificationRules = file_get_contents($root . '/api/helpers/procurement_notifications.php');
 
 $checks = [
     'Admin must choose the real starting-stock situation' =>
@@ -36,6 +37,7 @@ $checks = [
         && str_contains($adminApi, "'new_material_purchase'")
         && str_contains($adminApi, 'INSERT INTO stock_validation_items')
         && str_contains($adminApi, "'purchaser'")
+        && str_contains($notificationRules, "'new_material_purchase' => ['purchaser']")
         && !str_contains($adminApi, 'createStockValidation('),
     'The demand source is distinguished from a Warehouse shelf count' =>
         str_contains($validationSupport, "DEFAULT 'warehouse_count'")
@@ -49,6 +51,7 @@ $checks = [
     'Existing physical stock creates a Warehouse count action' =>
         str_contains($adminApi, "'warehouse_raw'")
         && str_contains($adminApi, "'ingredient_opening_count'")
+        && str_contains($notificationRules, "'ingredient_opening_count' => ['warehouse_raw']")
         && str_contains($warehousePage, 'Opening stock count required')
         && str_contains($warehousePage, 'Record Opening Stock'),
     'Opening-stock onboarding cannot also enter ordinary low-stock validation' =>

@@ -24,6 +24,11 @@ if (!function_exists('procurementNotificationRecipients')) {
             'found_stock_rejected' => ['warehouse_raw'],
             'stock_adjustment_ready_for_gm' => ['general_manager'],
             'stock_adjustment_decided' => ['warehouse_raw'],
+            // Admin ingredient onboarding has two explicit next owners.
+            // A known-empty shelf goes straight to Purchasing, while stock
+            // already on site goes to Warehouse for an opening count.
+            'new_material_purchase' => ['purchaser'],
+            'ingredient_opening_count' => ['warehouse_raw'],
         ];
     }
 }
