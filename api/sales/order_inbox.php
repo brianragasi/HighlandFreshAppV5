@@ -23,8 +23,6 @@ try {
     }
 
     $db = Database::getInstance()->getConnection();
-    hfEnsureManualCustomerOrderSchema($db);
-
     if ($requestMethod === 'GET' && $action === 'schema_diagnostics') {
         if (($currentUser['role'] ?? '') !== 'general_manager') {
             Response::error('Only the General Manager can view database diagnostics.', 403);
@@ -42,6 +40,8 @@ try {
         }
         Response::success(['tables' => $tables], 'Customer order inbox schema diagnostics');
     }
+
+    hfEnsureManualCustomerOrderSchema($db);
 
     if ($requestMethod === 'GET') {
         handleCustomerOrderInboxGet($db, $action);
