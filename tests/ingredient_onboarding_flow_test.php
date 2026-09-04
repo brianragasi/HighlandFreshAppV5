@@ -19,10 +19,11 @@ $checks = [
         && str_contains($adminPage, 'value="purchase_required"')
         && str_contains($adminPage, 'value="opening_stock"')
         && str_contains($adminApi, "normalizeIngredientInitialStockRoute"),
-    'Packaging materials require an explicit BOM component type' =>
-        str_contains($adminPage, 'Packaging Type *')
+    'Packaging materials require an explicit physical component and BOM role' =>
+        str_contains($adminPage, 'Packaging Component')
+        && str_contains($adminPage, 'id="packaging_form"')
         && str_contains($adminPage, 'id="packaging_role"')
-        && str_contains($adminApi, "'packaging_role'")
+        && str_contains($adminApi, "'packaging_form'")
         && str_contains($packagingRoles, "['container', 'closure', 'label', 'secondary', 'other']"),
     'Legacy Warehouse/Purchasing ingredient creation cannot bypass Admin routing' =>
         str_contains($warehouseApi, 'New ingredients must be configured in Admin → Ingredients')

@@ -761,6 +761,7 @@ function createIngredient($conn, $currentUser) {
         'unit_of_measure' => [40, false],
         'physical_state' => [20, false],
         'packaging_role' => [30, false],
+        'packaging_form' => [30, false],
         'packaging_capacity_unit' => [20, false],
         'initial_stock_status' => [30, false],
         'storage_location' => [160, false],
@@ -788,8 +789,14 @@ function createIngredient($conn, $currentUser) {
     $isPackagingCategory = !empty($data['category_id'])
         && ingredientCategoryIsPackaging($conn, $data['category_id']);
     $packagingRole = normalizeIngredientPackagingRole($data['packaging_role'] ?? null);
+    $packagingForm = normalizeIngredientPackagingForm($data['packaging_form'] ?? null);
     if ($isPackagingCategory && $packagingRole === null) {
         $errors['packaging_role'] = 'Choose whether this packaging material is a container, closure, label, or secondary packaging';
+    }
+    if ($isPackagingCategory && $packagingForm === null) {
+        $errors['packaging_form'] = 'Choose the real packaging component: bottle, pouch, cup/tub, closure, label, wrapper, or carton';
+    } elseif ($isPackagingCategory && ingredientPackagingFormRole($packagingForm) !== $packagingRole) {
+        $errors['packaging_form'] = 'The selected packaging component does not match its BOM role';
     }
     if ($initialStockRoute === '') {
         $errors['initial_stock_status'] = 'Choose whether physical stock already exists for this new material';
@@ -822,6 +829,7 @@ function createIngredient($conn, $currentUser) {
     validateIngredientPhysicalStateUnit($data['physical_state'], $data['unit_of_measure']);
     validateIngredientCategoryUnit($conn, $data['category_id'], $data['unit_of_measure']);
     $data['packaging_role'] = $isPackagingCategory ? $packagingRole : null;
+    $data['packaging_form'] = $isPackagingCategory ? $packagingForm : null;
     applyIngredientPackagingCapacity($data, $data['packaging_role']);
     if (in_array($data['packaging_role'], ['container', 'label'], true)
         && strtolower((string) ($data['packaging_capacity_unit'] ?? '')) === 'l'
@@ -856,11 +864,11 @@ function createIngredient($conn, $currentUser) {
         sendValidationError(['ingredient_code' => 'Ingredient code already exists']);
     }
     
-        $sql = "INSERT INTO ingredients (ingredient_code, ingredient_name, category_id, unit_of_measure, physical_state, packaging_role,
+        $sql = "INSERT INTO ingredients (ingredient_code, ingredient_name, category_id, unit_of_measure, physical_state, packaging_role, packaging_form,
             packaging_capacity_value, packaging_capacity_unit, packaging_capacity_confirmed,
             minimum_stock, reorder_point, maximum_stock, lead_time_days, current_stock, initial_stock_route, onboarding_status,
             storage_location, storage_requirements, shelf_life_days, is_perishable, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
     $conn->beginTransaction();
     try {
@@ -872,6 +880,7 @@ function createIngredient($conn, $currentUser) {
             $data['unit_of_measure'],
             $data['physical_state'],
             $data['packaging_role'],
+            $data['packaging_form'],
             $data['packaging_capacity_value'],
             $data['packaging_capacity_unit'],
             $data['packaging_capacity_confirmed'],
@@ -975,6 +984,7 @@ function updateIngredient($conn, $id, $currentUser) {
         'unit_of_measure' => [40, false],
         'physical_state' => [20, false],
         'packaging_role' => [30, false],
+        'packaging_form' => [30, false],
         'packaging_capacity_unit' => [20, false],
         'storage_location' => [160, false],
         'storage_requirements' => [1000, true],
@@ -1022,12 +1032,26 @@ function updateIngredient($conn, $id, $currentUser) {
             ? $data['packaging_role']
             : ($currentIngredient['packaging_role'] ?? null)
     );
+    $packagingForm = normalizeIngredientPackagingForm(
+        array_key_exists('packaging_form', $data)
+            ? $data['packaging_form']
+            : ($currentIngredient['packaging_form'] ?? null)
+    );
     if ($isPackagingCategory && $packagingRole === null) {
         sendValidationError([
             'packaging_role' => 'Choose whether this packaging material is a container, closure, label, or secondary packaging'
         ]);
     }
+    if ($isPackagingCategory && $packagingForm === null) {
+        sendValidationError([
+            'packaging_form' => 'Choose the real packaging component: bottle, pouch, cup/tub, closure, label, wrapper, or carton'
+        ]);
+    }
+    if ($isPackagingCategory && ingredientPackagingFormRole($packagingForm) !== $packagingRole) {
+        sendValidationError(['packaging_form' => 'The packaging component does not match its BOM role']);
+    }
     $data['packaging_role'] = $isPackagingCategory ? $packagingRole : null;
+    $data['packaging_form'] = $isPackagingCategory ? $packagingForm : null;
     applyIngredientPackagingCapacity($data, $data['packaging_role'], $currentIngredient);
     $keptConfirmedCapacity = (int) ($currentIngredient['packaging_capacity_confirmed'] ?? 0) === 1
         && abs((float) ($data['packaging_capacity_value'] ?? 0) - (float) ($currentIngredient['packaging_capacity_value'] ?? 0)) < 0.000001
@@ -1082,7 +1106,7 @@ function updateIngredient($conn, $id, $currentUser) {
     $fields = [];
     $params = [];
     
-    $allowedFields = ['ingredient_name', 'category_id', 'unit_of_measure', 'physical_state', 'packaging_role', 'minimum_stock',
+    $allowedFields = ['ingredient_name', 'category_id', 'unit_of_measure', 'physical_state', 'packaging_role', 'packaging_form', 'minimum_stock',
                       'packaging_capacity_value', 'packaging_capacity_unit', 'packaging_capacity_confirmed',
                       'reorder_point', 'maximum_stock', 'lead_time_days',
                       'storage_location', 'storage_requirements', 'shelf_life_days', 'is_perishable', 'is_active',

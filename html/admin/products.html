@@ -531,6 +531,7 @@
                         <option value="cheese">Cheese</option>
                         <option value="butter">Butter</option>
                         <option value="cream">Cream</option>
+                        <option value="milk_bar">Milk Bar / Frozen Dairy Bar</option>
                     </select>
                     <select id="statusFilter" class="select select-bordered select-sm w-full md:w-32 min-h-9" onchange="filterData()">
                         <option value="">All status</option>
@@ -552,7 +553,7 @@
                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
                     <div>
                         <h2 class="font-bold"><i class="fas fa-layer-group text-primary mr-2"></i>Reusable Packaging Sets</h2>
-                        <p class="text-xs text-base-content/60">Save a compatible bottle, cap, label, and optional secondary packaging once; reuse it for SKUs of the same size.</p>
+                        <p class="text-xs text-base-content/60">Optional reusable sets for standard bottle packages. Pouch, tub, and wrapper rules come from each SKU's package style.</p>
                     </div>
                     <div class="flex gap-2">
                         <a class="btn btn-ghost btn-sm" href="ingredients.html?view=packaging"><i class="fas fa-box-open"></i>Packaging Materials</a>
@@ -633,6 +634,7 @@
                             <option value="cheese">Cheese</option>
                             <option value="butter">Butter</option>
                             <option value="cream">Cream</option>
+                            <option value="milk_bar">Milk Bar / Frozen Dairy Bar</option>
                         </select>
                     </div>
 
@@ -751,7 +753,7 @@
                 <input type="hidden" id="sku_edit_id" value="">
                 <div class="grid grid-cols-2 gap-4">
                     <div class="form-control col-span-2 hidden" id="sku_edit_container_field">
-                        <label class="label"><span class="label-text">Bottle / Container <span class="text-error">*</span></span></label>
+                        <label class="label"><span class="label-text">Primary Package <span class="text-error">*</span></span></label>
                         <select id="sku_edit_primary_container_id" class="select select-bordered"
                             onchange="applySkuEditContainer()"></select>
                         <label class="label py-0"><span class="label-text-alt text-info">The selected container determines and locks the SKU size.</span></label>
@@ -778,13 +780,18 @@
                         </select>
                     </div>
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Base Unit</span></label>
+                        <label class="label"><span class="label-text">Package Style</span></label>
                         <select id="sku_edit_base_unit" class="select select-bordered" onchange="syncSkuEditContainerControl()">
-                            <option value="piece">Piece</option>
-                            <option value="bottle">Bottle</option>
-                            <option value="pack">Pack</option>
-                            <option value="tub">Tub</option>
-                            <option value="jar">Jar</option>
+                            <option value="">Choose package style</option>
+                            <option value="bottle">Bottle + cap + label</option>
+                            <option value="printed_pouch">Printed pouch / sachet</option>
+                            <option value="plain_pouch">Plain pouch + label</option>
+                            <option value="tub">Cup / tub + lid + label</option>
+                            <option value="wrapped_block">Wrapped bar / block</option>
+                            <option value="bulk_container">Bulk container</option>
+                            <option value="piece">Loose piece (legacy)</option>
+                            <option value="pack">Pack (legacy)</option>
+                            <option value="jar">Jar + lid + label</option>
                         </select>
                     </div>
                     <div class="form-control">
@@ -884,7 +891,7 @@
 
             <div class="alert alert-info py-2 my-4 text-sm">
                 <i class="fas fa-box-open"></i>
-                <span>For bottles, caps, and labels, enter the quantity used by one finished product. For a roll, enter how many finished products one roll can cover; the system calculates the fraction for you. If one roll covers more than 100, track that material in a smaller unit such as meters.</span>
+                <span>Your package style decides what is required. A printed pouch needs only the pouch; a plain pouch also needs a label; bottles and tubs need a closure and label. Enter the amount used by one finished product.</span>
             </div>
 
             <input type="hidden" id="packaging_bom_product_id" value="">
@@ -954,6 +961,7 @@
         let packagingBomMaterials = [];
         let packagingBomRowCounter = 0;
         let packagingBomRequiresBottleSet = false;
+        let packagingBomPackageStyle = '';
         let packagingBomPrimaryContainerId = 0;
         let packagingContainerOptions = [];
         let packagingSets = [];
@@ -999,6 +1007,35 @@
         function isCountedPackagingUnit(unit) {
             return ['pc', 'pcs', 'piece', 'pieces', 'unit', 'units', 'set', 'sets']
                 .includes(String(unit || '').trim().toLowerCase());
+        }
+
+        const PRIMARY_PACKAGE_STYLES = new Set(['bottle', 'printed_pouch', 'plain_pouch', 'tub', 'jar', 'wrapped_block', 'bulk_container']);
+        const PACKAGE_STYLE_FORMS = {
+            bottle: ['bottle'], printed_pouch: ['printed_pouch'], plain_pouch: ['plain_pouch'],
+            tub: ['cup_tub'], jar: ['cup_tub', 'bottle'], wrapped_block: ['wrapper'],
+            bulk_container: ['bottle', 'cup_tub', 'other']
+        };
+        const PACKAGE_STYLE_REQUIREMENTS = {
+            bottle: { container: 'bottle', closure: 'cap', label: 'label' },
+            printed_pouch: { container: 'printed pouch' },
+            plain_pouch: { container: 'plain pouch', label: 'label' },
+            tub: { container: 'cup/tub', closure: 'lid', label: 'label' },
+            jar: { container: 'jar', closure: 'lid', label: 'label' },
+            wrapped_block: { container: 'primary wrapper' },
+            bulk_container: { container: 'bulk container' }
+        };
+
+        function normalizePackageStyle(value) {
+            const style = String(value || '').trim().toLowerCase();
+            return ({ bottles: 'bottle', pouch: 'plain_pouch', sachet: 'plain_pouch', block: 'wrapped_block', bulk: 'bulk_container' })[style] || style;
+        }
+
+        function requiresPrimaryPackage(value) {
+            return PRIMARY_PACKAGE_STYLES.has(normalizePackageStyle(value));
+        }
+
+        function packageStyleLabel(value) {
+            return ({ bottle: 'Bottle', printed_pouch: 'Printed pouch', plain_pouch: 'Plain pouch', tub: 'Cup / tub', jar: 'Jar', wrapped_block: 'Wrapped bar / block', bulk_container: 'Bulk container', piece: 'Loose piece', pack: 'Pack' })[normalizePackageStyle(value)] || value || 'Not set';
         }
 
         function packagingRoleLabel(role) {
@@ -1093,15 +1130,16 @@
 
         const CATEGORY_LABELS = {
             pasteurized_milk: 'Pasteurized Milk', flavored_milk: 'Flavored Milk',
-            yogurt: 'Yogurt', cheese: 'Cheese', butter: 'Butter', cream: 'Cream'
+            yogurt: 'Yogurt', cheese: 'Cheese', butter: 'Butter', cream: 'Cream',
+            milk_bar: 'Milk Bar / Frozen Dairy Bar'
         };
         const CATEGORY_ICONS = {
             pasteurized_milk: 'fa-bottle-water', flavored_milk: 'fa-mug-hot',
-            yogurt: 'fa-jar', cheese: 'fa-cheese', butter: 'fa-cube', cream: 'fa-fill-drip'
+            yogurt: 'fa-jar', cheese: 'fa-cheese', butter: 'fa-cube', cream: 'fa-fill-drip', milk_bar: 'fa-ice-cream'
         };
         const CATEGORY_COLORS = {
             pasteurized_milk: 'primary', flavored_milk: 'secondary',
-            yogurt: 'accent', cheese: 'warning', butter: 'info', cream: 'success'
+            yogurt: 'accent', cheese: 'warning', butter: 'info', cream: 'success', milk_bar: 'secondary'
         };
 
         /**
@@ -1352,10 +1390,16 @@
             return `${shown} ${container?.packaging_capacity_unit || ''}`.trim();
         }
 
-        function fillContainerSelect(select, selectedId = '') {
+        function fillContainerSelect(select, selectedId = '', packageStyle = '') {
             if (!select) return;
-            select.innerHTML = '<option value="">Select the actual container...</option>';
-            packagingContainerOptions.forEach(container => {
+            const style = normalizePackageStyle(packageStyle);
+            const allowedForms = PACKAGE_STYLE_FORMS[style] || [];
+            select.innerHTML = '<option value="">Select the actual primary package...</option>';
+            const compatible = packagingContainerOptions.filter(container => {
+                const form = String(container.packaging_form || '').trim().toLowerCase();
+                return !style || !form || allowedForms.includes(form);
+            });
+            compatible.forEach(container => {
                 const option = document.createElement('option');
                 option.value = String(container.id);
                 const suspicious = String(container.packaging_capacity_unit || '').toLowerCase() === 'l'
@@ -1365,6 +1409,12 @@
                 option.dataset.suspiciousCapacity = suspicious ? '1' : '0';
                 select.appendChild(option);
             });
+            if (style && !compatible.length) {
+                const option = document.createElement('option');
+                option.disabled = true;
+                option.textContent = `No ${packageStyleLabel(style).toLowerCase()} material exists — create it in Packaging Materials`;
+                select.appendChild(option);
+            }
             select.value = selectedId ? String(selectedId) : '';
         }
 
@@ -1687,7 +1737,7 @@
                                         : `<i class="fas fa-triangle-exclamation"></i> Missing: ${escapeHtml((s.packaging_bom_missing || ['packaging components']).join(', '))}`}
                                 </div>
                             </td>
-                            <td class="text-base-content/60 capitalize">${escapeHtml(s.base_unit || 'piece')}</td>
+                            <td class="text-base-content/60">${escapeHtml(packageStyleLabel(s.base_unit))}</td>
                             <td class="sku-price num">${price}</td>
                             <td class="num meta-muted">${escapeHtml(String(stockDisp))}</td>
                             <td>
@@ -1896,7 +1946,7 @@
                     ${stepButton(readiness.steps[0], `document.getElementById('productSetupModal').close(); editBaseProduct('${safeName}', '${safeCategory}', '${safeKey}')`, 'Edit details')}
                     ${stepButton(readiness.steps[1], `document.getElementById('productSetupModal').close(); openAddSkuModal('${safeName}', '${safeCategory}', '${safeKey}')`, 'Add package size')}
                     ${stepButton(readiness.steps[2], `window.location.href='recipes.html?base_product_id=${Number(group.base_product_id)}'`, readiness.steps[2].complete ? 'Review recipe' : 'Create recipe')}
-                    <article class="rounded-xl border ${readiness.steps[3].complete ? 'border-success/30 bg-success/5' : 'border-warning/40 bg-warning/5'} p-3"><div class="flex items-center gap-3 mb-2"><span class="w-8 h-8 rounded-full flex items-center justify-center ${readiness.steps[3].complete ? 'bg-success text-success-content' : 'bg-warning text-warning-content'}"><i class="fas ${readiness.steps[3].complete ? 'fa-check' : 'fa-box-open'}"></i></span><div><p class="font-semibold text-sm">Packaging BOM</p><p class="text-xs text-base-content/60">Bottle/container, cap/closure, label, and optional secondary packaging</p></div></div><div class="flex flex-wrap gap-1 ml-11">${packagingActions || '<span class="text-xs text-warning">Add a package size first.</span>'}</div></article>
+                    <article class="rounded-xl border ${readiness.steps[3].complete ? 'border-success/30 bg-success/5' : 'border-warning/40 bg-warning/5'} p-3"><div class="flex items-center gap-3 mb-2"><span class="w-8 h-8 rounded-full flex items-center justify-center ${readiness.steps[3].complete ? 'bg-success text-success-content' : 'bg-warning text-warning-content'}"><i class="fas ${readiness.steps[3].complete ? 'fa-check' : 'fa-box-open'}"></i></span><div><p class="font-semibold text-sm">Packaging BOM</p><p class="text-xs text-base-content/60">Required components are based on each SKU's selected package style</p></div></div><div class="flex flex-wrap gap-1 ml-11">${packagingActions || '<span class="text-xs text-warning">Add a package size first.</span>'}</div></article>
                 </div>
                 <div class="mt-4 rounded-xl border border-base-300 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"><div><p class="font-semibold text-sm">Review &amp; Activate</p><p class="text-xs text-base-content/60">Activation is available only after all four setup requirements are complete.</p></div><button type="button" class="btn btn-success btn-sm" ${readiness.ready ? '' : `disabled title="Complete the missing steps first"`} onclick="activateProductSetup(${Number(group.base_product_id)})"><i class="fas fa-circle-check"></i>Activate Product</button></div>`;
         }
@@ -2210,11 +2260,17 @@
 
                 const baseUnit = row.querySelector('[name^="sku_base_unit_"]')?.value || 'piece';
                 const containerSelect = row.querySelector('.sku-primary-container');
-                if (baseUnit === 'bottle' && !containerSelect?.value) {
+                if (!baseUnit) {
+                    ok = false;
+                    row.querySelector('[name^="sku_base_unit_"]')?.classList.add('select-error');
+                } else {
+                    row.querySelector('[name^="sku_base_unit_"]')?.classList.remove('select-error');
+                }
+                if (requiresPrimaryPackage(baseUnit) && !containerSelect?.value) {
                     ok = false;
                     containerSelect?.classList.add('select-error');
                     if (!firstBad && containerSelect) firstBad = containerSelect;
-                } else if (baseUnit === 'bottle'
+                } else if (requiresPrimaryPackage(baseUnit)
                     && containerSelect?.selectedOptions?.[0]?.dataset?.suspiciousCapacity === '1') {
                     ok = false;
                     containerSelect.classList.add('select-error');
@@ -2257,7 +2313,7 @@
                 const suspiciousSelected = document.querySelector('#skuList .sku-primary-container option:checked[data-suspicious-capacity="1"]');
                 const msg = suspiciousSelected
                     ? 'This container has an unusually large liter value. Review it in Packaging Materials before using it on a product.'
-                    : 'Choose the actual container for every bottle SKU, and enter a valid price and size.';
+                    : 'Choose a package style and its actual primary package, then enter a valid price.';
                 if (typeof showToast === 'function') showToast(msg, 'error');
                 if (firstBad) {
                     firstBad.focus();
@@ -2279,8 +2335,15 @@
             const price = parseFloat(priceInput?.value);
             let ok = true;
 
-            const isBottle = document.getElementById('sku_edit_base_unit')?.value === 'bottle';
+            const packageStyle = document.getElementById('sku_edit_base_unit')?.value || '';
+            const isBottle = requiresPrimaryPackage(packageStyle);
             const containerSelect = document.getElementById('sku_edit_primary_container_id');
+            if (!packageStyle) {
+                ok = false;
+                document.getElementById('sku_edit_base_unit')?.classList.add('select-error');
+            } else {
+                document.getElementById('sku_edit_base_unit')?.classList.remove('select-error');
+            }
             if (isBottle && !containerSelect?.value) {
                 ok = false;
                 containerSelect?.classList.add('select-error');
@@ -2325,18 +2388,22 @@
         }
 
         function syncSkuEditContainerControl() {
-            const isBottle = document.getElementById('sku_edit_base_unit')?.value === 'bottle';
+            const packageStyle = document.getElementById('sku_edit_base_unit')?.value || '';
+            const isBottle = requiresPrimaryPackage(packageStyle);
             const field = document.getElementById('sku_edit_container_field');
             const select = document.getElementById('sku_edit_primary_container_id');
             const size = document.getElementById('sku_edit_unit_size');
             const measure = document.getElementById('sku_edit_unit_measure');
             field?.classList.toggle('hidden', !isBottle);
+            const fieldLabel = field?.querySelector('.label-text');
+            if (fieldLabel) fieldLabel.innerHTML = `Primary Package <span class="text-error">*</span>`;
             if (select) select.required = isBottle;
             if (size) {
                 size.readOnly = isBottle;
                 size.classList.toggle('bg-base-200', isBottle);
             }
             if (measure) measure.disabled = isBottle;
+            if (select) fillContainerSelect(select, select.value, packageStyle);
             if (isBottle) applySkuEditContainer();
         }
 
@@ -2381,12 +2448,12 @@
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
                     <div class="form-control w-full min-w-0 hidden sku-container-field">
-                        <label class="label py-0"><span class="label-text text-xs">Bottle / Container <span class="text-error">*</span></span></label>
+                        <label class="label py-0"><span class="label-text text-xs">Primary Package <span class="text-error">*</span></span></label>
                         <select name="sku_primary_container_id_${idx}"
                             class="select select-sm select-bordered w-full sku-field sku-primary-container"
                             onchange="applySkuRowContainer(this.closest('.sku-row'))"></select>
                         <label class="label py-0"><span class="label-text-alt text-info">Determines size</span></label>
-                        <a href="ingredients.html?view=packaging" class="link link-primary text-[11px] mt-1"><i class="fas fa-plus-circle mr-1"></i>Create bottle / container</a>
+                        <a href="ingredients.html?view=packaging" class="link link-primary text-[11px] mt-1"><i class="fas fa-plus-circle mr-1"></i>Create packaging material</a>
                     </div>
                     <div class="form-control w-full min-w-0">
                         <label class="label py-0"><span class="label-text text-xs">Size <span class="text-error">*</span></span></label>
@@ -2410,15 +2477,19 @@
                         </label>
                     </div>
                     <div class="form-control w-full min-w-0">
-                        <label class="label py-0"><span class="label-text text-xs">Packaging Type</span></label>
+                        <label class="label py-0"><span class="label-text text-xs">Package Style <span class="text-error">*</span></span></label>
                         <select name="sku_base_unit_${idx}" class="select select-sm select-bordered w-full sku-field"
-                            onchange="syncSkuRowContainerControl(this.closest('.sku-row'))">
-                            <option value="piece">Piece</option>
-                            <option value="bottle">Bottle</option>
-                            <option value="pack">Pack</option>
-                            <option value="tub">Tub</option>
-                            <option value="jar">Jar</option>
-                            <option value="block">Block</option>
+                            onchange="syncSkuRowContainerControl(this.closest('.sku-row'))" required>
+                            <option value="">Choose style</option>
+                            <option value="bottle">Bottle + cap + label</option>
+                            <option value="printed_pouch">Printed pouch / sachet</option>
+                            <option value="plain_pouch">Plain pouch + label</option>
+                            <option value="tub">Cup / tub + lid + label</option>
+                            <option value="wrapped_block">Wrapped bar / block</option>
+                            <option value="bulk_container">Bulk container</option>
+                            <option value="piece">Loose piece (legacy)</option>
+                            <option value="pack">Pack (legacy)</option>
+                            <option value="jar">Jar + lid + label</option>
                         </select>
                     </div>
                     <div class="form-control w-full min-w-0">
@@ -2447,7 +2518,7 @@
 
             const containerSelect = div.querySelector(`[name="sku_primary_container_id_${idx}"]`);
             let selectedContainerId = skuData?.primary_container_id || '';
-            if (!selectedContainerId && skuData && String(skuData.base_unit || '').toLowerCase() === 'bottle') {
+            if (!selectedContainerId && skuData && requiresPrimaryPackage(skuData.base_unit)) {
                 const expected = normalizeSkuSize(skuData.unit_size, skuData.unit_measure);
                 const match = packagingContainerOptions.find(container => {
                     const actual = normalizeSkuSize(container.packaging_capacity_value, container.packaging_capacity_unit);
@@ -2456,7 +2527,7 @@
                 });
                 selectedContainerId = match?.id || '';
             }
-            fillContainerSelect(containerSelect, selectedContainerId);
+            fillContainerSelect(containerSelect, selectedContainerId, skuData?.base_unit || '');
 
             // Prefill after mount so selects get correct values
             if (skuData) {
@@ -2580,13 +2651,13 @@
                 const primaryContainerId = parseInt(row.querySelector(`[name="sku_primary_container_id_${idx}"]`)?.value || '0', 10);
                 const sellingPrice = parseFloat(row.querySelector(`[name="sku_selling_price_${idx}"]`)?.value);
                 if (!Number.isFinite(unitSize) || unitSize <= 0) return;
-                if (baseUnit === 'bottle' && !(primaryContainerId > 0)) return;
+                if (!baseUnit || (requiresPrimaryPackage(baseUnit) && !(primaryContainerId > 0))) return;
                 rows.push({
                     product_id: isExisting ? productId : null,
                     unit_size: unitSize,
                     unit_measure: unitMeasure,
                     base_unit: baseUnit,
-                    primary_container_id: baseUnit === 'bottle' ? primaryContainerId : null,
+                    primary_container_id: requiresPrimaryPackage(baseUnit) ? primaryContainerId : null,
                     selling_price: Number.isFinite(sellingPrice) ? sellingPrice : 0,
                     unit_price: Number.isFinite(sellingPrice) ? sellingPrice : 0
                 });
@@ -2878,7 +2949,7 @@
                     document.getElementById('sku_edit_unit_measure').value = data.unit_measure || 'ml';
                     document.getElementById('sku_edit_base_unit').value = data.base_unit || 'piece';
                     let selectedContainerId = data.primary_container_id || '';
-                    if (!selectedContainerId && data.base_unit === 'bottle') {
+                    if (!selectedContainerId && requiresPrimaryPackage(data.base_unit)) {
                         const expected = normalizeSkuSize(data.unit_size, data.unit_measure);
                         const match = packagingContainerOptions.find(container => {
                             const actual = normalizeSkuSize(container.packaging_capacity_value, container.packaging_capacity_unit);
@@ -2887,7 +2958,7 @@
                         });
                         selectedContainerId = match?.id || '';
                     }
-                    fillContainerSelect(document.getElementById('sku_edit_primary_container_id'), selectedContainerId);
+                    fillContainerSelect(document.getElementById('sku_edit_primary_container_id'), selectedContainerId, data.base_unit);
                     syncSkuEditContainerControl();
                     document.getElementById('sku_edit_box_unit').value = data.box_unit || 'box';
                     document.getElementById('sku_edit_pieces_per_box').value = data.pieces_per_box || 1;
@@ -2913,7 +2984,7 @@
                 unit_size: parseFloat(document.getElementById('sku_edit_unit_size').value),
                 unit_measure: document.getElementById('sku_edit_unit_measure').value,
                 base_unit: document.getElementById('sku_edit_base_unit').value,
-                primary_container_id: document.getElementById('sku_edit_base_unit').value === 'bottle'
+                primary_container_id: requiresPrimaryPackage(document.getElementById('sku_edit_base_unit').value)
                     ? parseInt(document.getElementById('sku_edit_primary_container_id').value, 10)
                     : null,
                 box_unit: document.getElementById('sku_edit_box_unit').value,
@@ -2961,7 +3032,8 @@
                 const sku = data.sku || {};
                 packagingBomMaterials = data.available_materials || [];
                 packagingBomRowCounter = 0;
-                packagingBomRequiresBottleSet = ['bottle', 'bottles'].includes(String(sku.base_unit || '').toLowerCase());
+                packagingBomPackageStyle = normalizePackageStyle(sku.base_unit || '');
+                packagingBomRequiresBottleSet = Boolean(PACKAGE_STYLE_REQUIREMENTS[packagingBomPackageStyle]);
                 packagingBomPrimaryContainerId = Number(sku.primary_container_id || 0);
                 document.getElementById('packaging_bom_product_id').value = productId;
                 document.getElementById('packagingBomContext').textContent =
@@ -2969,12 +3041,12 @@
                 document.getElementById('packagingBomRows').innerHTML = '';
 
                 const skuCapacity = normalizeSkuSize(sku.unit_size, sku.unit_measure);
-                const suggestion = packagingSets.find(set => {
+                const suggestion = packagingBomPackageStyle === 'bottle' ? packagingSets.find(set => {
                     if (Number(set.is_active) !== 1 || !set.is_ready) return false;
                     const setCapacity = normalizeSkuSize(set.capacity_value, set.capacity_unit);
                     return skuCapacity && setCapacity && skuCapacity.family === setCapacity.family
                         && Math.abs(skuCapacity.value - setCapacity.value) < 0.01;
-                });
+                }) : null;
                 currentSuggestedPackagingSetId = Number(suggestion?.id || 0);
                 const suggestionBox = document.getElementById('packagingSetSuggestion');
                 suggestionBox.classList.toggle('hidden', !suggestion);
@@ -3036,7 +3108,8 @@
             const initialCoverage = Number(item.quantity_per_unit) > 0
                 ? formatProductNumber(1 / Number(item.quantity_per_unit), 3)
                 : '';
-            const isPrimaryContainer = Number(item.ingredient_id || 0) === packagingBomPrimaryContainerId;
+            const isPrimaryContainer = packagingBomPrimaryContainerId > 0
+                && Number(item.ingredient_id || 0) === packagingBomPrimaryContainerId;
             const tr = document.createElement('tr');
             tr.id = `packagingBomRow_${rowId}`;
             tr.innerHTML = `
@@ -3126,18 +3199,20 @@
 
         function syncSkuRowContainerControl(row) {
             if (!row) return;
-            const isBottle = String(row.querySelector('[name^="sku_base_unit_"]')?.value || '').toLowerCase() === 'bottle';
+            const packageStyle = row.querySelector('[name^="sku_base_unit_"]')?.value || '';
+            const isBottle = requiresPrimaryPackage(packageStyle);
             const field = row.querySelector('.sku-container-field');
             const containerSelect = row.querySelector('.sku-primary-container');
             const sizeInput = row.querySelector('.sku-unit-size');
             const measureSelect = row.querySelector('[name^="sku_unit_measure_"]');
             field?.classList.toggle('hidden', !isBottle);
             if (containerSelect) containerSelect.required = isBottle;
+            if (containerSelect) fillContainerSelect(containerSelect, containerSelect.value, packageStyle);
             if (sizeInput) {
                 sizeInput.readOnly = isBottle;
                 sizeInput.classList.toggle('bg-base-200', isBottle);
                 sizeInput.title = isBottle
-                    ? 'Size is controlled by the selected container'
+                    ? 'Size is controlled by the selected primary package'
                     : 'Size must be greater than zero (min 1)';
             }
             if (measureSelect) measureSelect.disabled = isBottle || row.dataset.softDeleted === '1';
@@ -3187,9 +3262,10 @@
                 .map(select => select.options?.[select.selectedIndex]?.dataset?.role || '')
                 .filter(Boolean);
             const missing = [];
-            if (!roles.includes('container')) missing.push('bottle/container');
-            if (!roles.includes('closure')) missing.push('cap/closure');
-            if (!roles.includes('label')) missing.push('label');
+            const required = PACKAGE_STYLE_REQUIREMENTS[packagingBomPackageStyle] || {};
+            Object.entries(required).forEach(([role, label]) => {
+                if (!roles.includes(role)) missing.push(label);
+            });
             if (missing.length) {
                 text.textContent = `Not ready for Production. Add: ${missing.join(', ')}.`;
                 alert.classList.remove('hidden');

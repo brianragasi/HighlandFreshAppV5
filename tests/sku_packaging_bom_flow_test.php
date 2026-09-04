@@ -25,7 +25,8 @@ $checks = [
         str_contains($sources['packaging_helper'], "['container', 'closure', 'label']")
         && str_contains($sources['packaging_helper'], "i.packaging_role")
         && str_contains($sources['products_page'], 'data-role=')
-        && str_contains($sources['products_page'], "roles.includes('container')")
+        && str_contains($sources['products_page'], 'PACKAGE_STYLE_REQUIREMENTS')
+        && str_contains($sources['products_page'], 'roles.includes(role)')
         && !str_contains($sources['products_page'], "test(names)"),
     'Roll materials use coverage instead of asking users for a confusing fraction' =>
         str_contains($sources['products_page'], '1 roll covers')

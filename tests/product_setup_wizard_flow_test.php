@@ -16,11 +16,11 @@ $checks = [
         && str_contains($sources['ingredients_page'], 'Packaging Materials')
         && str_contains($sources['ingredients_api'], "materialScope === 'packaging'")
         && str_contains($sources['ingredients_api'], "materialScope === 'raw'"),
-    'Packaging workspace provides role-specific creation actions' =>
-        str_contains($sources['ingredients_page'], 'Add Bottle / Container')
-        && str_contains($sources['ingredients_page'], 'Add Cap / Closure')
-        && str_contains($sources['ingredients_page'], 'Add Label')
-        && str_contains($sources['ingredients_page'], 'Add Secondary Packaging'),
+    'Packaging workspace provides one guided physical-component chooser' =>
+        str_contains($sources['ingredients_page'], 'id="packagingChooserModal"')
+        && str_contains($sources['ingredients_page'], 'Printed pouch / sachet')
+        && str_contains($sources['ingredients_page'], 'Cap / lid')
+        && str_contains($sources['ingredients_page'], 'Carton / case'),
     'Guided setup exposes all requested steps and draft save' =>
         str_contains($sources['products_page'], 'Product Setup Wizard')
         && str_contains($sources['products_page'], 'Product details')

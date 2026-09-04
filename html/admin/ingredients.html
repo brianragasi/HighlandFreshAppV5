@@ -316,7 +316,7 @@
                         <span id="totalCount">0</span> total · <span id="activeCount">0</span> active ·
                         <span id="lowStockCount">0</span> low · <span id="totalValue">₱0</span>
                     </span>
-                    <button class="btn btn-primary btn-sm" onclick="openModal()">
+                    <button class="btn btn-primary btn-sm" onclick="openPrimaryAdd()">
                         <i class="fas fa-plus"></i><span class="ml-1" id="primaryAddLabel">Add Ingredient</span>
                     </button>
                 </div>
@@ -325,15 +325,12 @@
             <div id="packagingQuickActions" class="hidden bg-base-100 border border-base-300 rounded-xl p-3">
                 <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                     <div>
-                        <p class="font-semibold text-sm">What packaging component are you adding?</p>
-                        <p class="text-xs text-base-content/55">Choose the real component type. Product setup uses it to find compatible materials.</p>
+                        <p class="font-semibold text-sm">Packaging master data</p>
+                        <p class="text-xs text-base-content/55">Add the real item once here. Product setup will show compatible package components.</p>
                     </div>
                     <div class="flex flex-wrap gap-2">
-                        <button type="button" class="btn btn-sm btn-outline" onclick="openModal(null, 'container')"><i class="fas fa-bottle-water"></i>Add Bottle / Container</button>
-                        <button type="button" class="btn btn-sm btn-outline" onclick="openModal(null, 'closure')"><i class="fas fa-circle-dot"></i>Add Cap / Closure</button>
-                        <button type="button" class="btn btn-sm btn-outline" onclick="openModal(null, 'label')"><i class="fas fa-tag"></i>Add Label</button>
-                        <button type="button" class="btn btn-sm btn-outline" onclick="openModal(null, 'secondary')"><i class="fas fa-box"></i>Add Secondary Packaging</button>
-                        <a href="products.html#packaging-sets" class="btn btn-sm btn-primary"><i class="fas fa-layer-group"></i>Manage Packaging Sets</a>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="openPackagingChooser()"><i class="fas fa-plus"></i>Add Packaging Material</button>
+                        <a href="products.html" class="btn btn-sm btn-outline"><i class="fas fa-box-open"></i>Use on a Product</a>
                     </div>
                 </div>
             </div>
@@ -471,8 +468,14 @@
                     </div>
                 </fieldset>
 
+                <div id="materialAdvancedToggleWrap" class="hidden">
+                    <button type="button" class="btn btn-ghost btn-sm px-0" onclick="toggleMaterialAdvancedSettings()">
+                        <i class="fas fa-sliders"></i><span id="materialAdvancedToggleText">Show planning &amp; storage settings</span>
+                    </button>
+                </div>
+
                 <!-- Section: Stock Levels -->
-                <fieldset class="border border-base-300 rounded-xl p-4">
+                <fieldset id="stockPlanningSection" class="border border-base-300 rounded-xl p-4">
                     <legend class="text-sm font-semibold px-2 text-base-content/70">Stock Levels</legend>
                     <p class="text-xs text-base-content/50 mb-3">Controls when reorder alerts fire. All values in the ingredient's unit of measure.</p>
                     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -529,47 +532,54 @@
                             <p><strong>Supplier:</strong> If no approved supplier is linked yet, connect one afterward in <em>Admin → Suppliers</em>. The ingredient can still be created first.</p>
                         </div>
                     </div>
-                    <div id="packagingRoleSection" class="hidden mt-4 rounded-xl border border-info/30 bg-info/5 p-4">
+                </fieldset>
+
+                <fieldset id="packagingRoleSection" class="hidden rounded-xl border border-info/30 bg-info/5 p-4">
+                    <legend class="text-sm font-semibold px-2 text-info">Packaging Component</legend>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div class="form-control">
-                            <label class="label pt-0">
-                                <span class="label-text font-medium">Packaging Type *</span>
-                            </label>
-                            <select id="packaging_role" class="select select-bordered" onchange="syncPackagingCapacityFields()">
-                                <option value="">Choose what this material is used as</option>
-                                <option value="container">Bottle / Container</option>
-                                <option value="closure">Cap / Closure</option>
-                                <option value="label">Label</option>
-                                <option value="secondary">Wrap / Secondary Packaging</option>
+                            <label class="label pt-0"><span class="label-text font-medium">Component *</span></label>
+                            <select id="packaging_form" class="select select-bordered" onchange="applyPackagingFormSelection()">
+                                <option value="">Choose the real component</option>
+                                <option value="bottle">Bottle / Container</option>
+                                <option value="printed_pouch">Printed Pouch / Sachet</option>
+                                <option value="plain_pouch">Plain Pouch / Sachet</option>
+                                <option value="cup_tub">Cup / Tub</option>
+                                <option value="wrapper">Primary Wrapper</option>
+                                <option value="cap_lid">Cap / Lid</option>
+                                <option value="label">Separate Label</option>
+                                <option value="carton_case">Carton / Case</option>
                                 <option value="other">Other Packaging</option>
                             </select>
-                            <label class="label pb-0">
-                                <span class="label-text-alt text-info">The SKU BOM uses this type—not words in the material name—to require the correct bottle, closure, and label.</span>
-                            </label>
-                            <div id="packagingCapacityFields" class="hidden mt-3">
-                                <label class="label py-1">
-                                    <span class="label-text font-medium">Container / Label Capacity *</span>
-                                </label>
-                                <div class="join w-full">
-                                    <input type="number" id="packaging_capacity_value"
-                                        class="input input-bordered join-item w-full" min="0.001" step="0.001"
-                                        placeholder="e.g. 250">
-                                    <select id="packaging_capacity_unit" class="select select-bordered join-item w-28">
-                                        <option value="ml">mL</option>
-                                        <option value="L">L</option>
-                                        <option value="g">g</option>
-                                        <option value="kg">kg</option>
-                                    </select>
-                                </div>
-                                <label class="label pb-0">
-                                    <span class="label-text-alt text-info">This is the trusted SKU size. Products that select this container cannot type a different size.</span>
-                                </label>
-                            </div>
+                            <label class="label pb-0"><span id="packagingFormHelp" class="label-text-alt text-info">Choose the physical item—not a generic category.</span></label>
                         </div>
+                        <div class="form-control">
+                            <label class="label pt-0"><span class="label-text font-medium">BOM Role</span></label>
+                            <select id="packaging_role" class="select select-bordered bg-base-200 pointer-events-none" tabindex="-1" aria-readonly="true">
+                                <option value="">Set by component</option>
+                                <option value="container">Primary Package</option>
+                                <option value="closure">Cap / Closure</option>
+                                <option value="label">Label</option>
+                                <option value="secondary">Secondary Packaging</option>
+                                <option value="other">Other Packaging</option>
+                            </select>
+                            <label class="label pb-0"><span class="label-text-alt text-info">The system sets this automatically.</span></label>
+                        </div>
+                    </div>
+                    <div id="packagingCapacityFields" class="hidden mt-3">
+                        <label class="label py-1"><span class="label-text font-medium">Package Size / Capacity *</span></label>
+                        <div class="join w-full">
+                            <input type="number" id="packaging_capacity_value" class="input input-bordered join-item w-full" min="0.001" step="0.001" placeholder="e.g. 320">
+                            <select id="packaging_capacity_unit" class="select select-bordered join-item w-28">
+                                <option value="ml">mL</option><option value="L">L</option><option value="g">g</option><option value="kg">kg</option>
+                            </select>
+                        </div>
+                        <label class="label pb-0"><span class="label-text-alt text-info">This becomes the trusted SKU size; users cannot type a conflicting size.</span></label>
                     </div>
                 </fieldset>
 
                 <!-- Section: Cost & Shelf Life -->
-                <fieldset class="border border-base-300 rounded-xl p-4">
+                <fieldset id="costShelfSection" class="border border-base-300 rounded-xl p-4">
                     <legend class="text-sm font-semibold px-2 text-base-content/70">Cost & Shelf Life</legend>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="form-control">
@@ -590,7 +600,7 @@
                 </fieldset>
 
                 <!-- Section: Storage -->
-                <fieldset class="border border-base-300 rounded-xl p-4">
+                <fieldset id="storageSection" class="border border-base-300 rounded-xl p-4">
                     <legend class="text-sm font-semibold px-2 text-base-content/70">Storage</legend>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="form-control">
@@ -621,6 +631,26 @@
                 </div>
             </form>
         </div>
+    </dialog>
+
+    <dialog id="packagingChooserModal" class="modal">
+        <div class="modal-box w-11/12 max-w-3xl">
+            <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button></form>
+            <h3 class="font-bold text-lg">What are you adding?</h3>
+            <p class="text-sm text-base-content/60 mt-1">Choose the item people can physically count in the storeroom.</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
+                <button type="button" class="btn h-auto min-h-24 justify-start text-left p-4" onclick="choosePackagingForm('bottle')"><i class="fas fa-bottle-water text-xl"></i><span><strong class="block">Bottle</strong><small class="font-normal opacity-65">Needs cap and usually a label</small></span></button>
+                <button type="button" class="btn h-auto min-h-24 justify-start text-left p-4" onclick="choosePackagingForm('printed_pouch')"><i class="fas fa-bag-shopping text-xl"></i><span><strong class="block">Printed pouch / sachet</strong><small class="font-normal opacity-65">Milk Bar artwork is on the pouch</small></span></button>
+                <button type="button" class="btn h-auto min-h-24 justify-start text-left p-4" onclick="choosePackagingForm('plain_pouch')"><i class="fas fa-bag-shopping text-xl"></i><span><strong class="block">Plain pouch / sachet</strong><small class="font-normal opacity-65">Requires a separate label</small></span></button>
+                <button type="button" class="btn h-auto min-h-24 justify-start text-left p-4" onclick="choosePackagingForm('cup_tub')"><i class="fas fa-bowl-food text-xl"></i><span><strong class="block">Cup / tub</strong><small class="font-normal opacity-65">Needs a lid and usually a label</small></span></button>
+                <button type="button" class="btn h-auto min-h-24 justify-start text-left p-4" onclick="choosePackagingForm('cap_lid')"><i class="fas fa-circle-dot text-xl"></i><span><strong class="block">Cap / lid</strong><small class="font-normal opacity-65">Closure used with a container</small></span></button>
+                <button type="button" class="btn h-auto min-h-24 justify-start text-left p-4" onclick="choosePackagingForm('label')"><i class="fas fa-tag text-xl"></i><span><strong class="block">Separate label</strong><small class="font-normal opacity-65">Product and size-specific artwork</small></span></button>
+                <button type="button" class="btn h-auto min-h-24 justify-start text-left p-4" onclick="choosePackagingForm('wrapper')"><i class="fas fa-scroll text-xl"></i><span><strong class="block">Primary wrapper</strong><small class="font-normal opacity-65">Direct wrapper for a block or bar</small></span></button>
+                <button type="button" class="btn h-auto min-h-24 justify-start text-left p-4" onclick="choosePackagingForm('carton_case')"><i class="fas fa-box text-xl"></i><span><strong class="block">Carton / case</strong><small class="font-normal opacity-65">Optional outer shipping pack</small></span></button>
+                <button type="button" class="btn h-auto min-h-24 justify-start text-left p-4" onclick="choosePackagingForm('other')"><i class="fas fa-ellipsis text-xl"></i><span><strong class="block">Other</strong><small class="font-normal opacity-65">Use only when none match</small></span></button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
 
     <!-- Toast Container -->
@@ -654,6 +684,18 @@
             : 'raw';
         let packagingCategoryId = null;
         let unusualCapacityConfirmed = false;
+        let materialAdvancedVisible = false;
+        const PACKAGING_FORMS = {
+            bottle: { role: 'container', name: 'e.g. PET Bottle — 500 mL', help: 'The bottle is the primary package. The product will also require a cap and label.' },
+            printed_pouch: { role: 'container', name: 'e.g. WakoKabalo Printed Pouch — 320 mL', help: 'Printed artwork replaces a separate label. Heat sealing is a production step, not another inventory item.' },
+            plain_pouch: { role: 'container', name: 'e.g. Plain Food-grade Pouch — 320 mL', help: 'A plain pouch is the primary package and the product will require a separate label.' },
+            cup_tub: { role: 'container', name: 'e.g. Yogurt Cup — 250 mL', help: 'The cup/tub is the primary package. Add its lid and label separately.' },
+            wrapper: { role: 'container', name: 'e.g. Butter Bar Wrapper — 250 g', help: 'Use for material directly wrapping one sellable bar or block.' },
+            cap_lid: { role: 'closure', name: 'e.g. 28 mm Tamper-evident Cap', help: 'A closure is linked to a bottle, cup, or tub in the product BOM.' },
+            label: { role: 'label', name: 'e.g. WakoKabalo Label — 320 mL', help: 'Use only when the primary package is not already printed.' },
+            carton_case: { role: 'secondary', name: 'e.g. Shipping Carton — 24 pouches', help: 'Optional outer packaging for handling or dispatch.' },
+            other: { role: 'other', name: 'Describe the physical packaging item', help: 'Use only when none of the standard components match.' }
+        };
 
         function escapeHtml(value) {
             const div = document.createElement('div');
@@ -678,6 +720,40 @@
             toast.appendChild(messageElement);
             container.appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
+        }
+
+        function openPrimaryAdd() {
+            materialWorkspace === 'packaging' ? openPackagingChooser() : openModal();
+        }
+
+        function openPackagingChooser() {
+            document.getElementById('packagingChooserModal')?.showModal();
+        }
+
+        function choosePackagingForm(form) {
+            document.getElementById('packagingChooserModal')?.close();
+            openModal(null, form);
+        }
+
+        function toggleMaterialAdvancedSettings(force = null) {
+            materialAdvancedVisible = force == null ? !materialAdvancedVisible : Boolean(force);
+            ['stockPlanningSection', 'costShelfSection', 'storageSection'].forEach(id => {
+                document.getElementById(id)?.classList.toggle('hidden', materialWorkspace === 'packaging' && !materialAdvancedVisible);
+            });
+            const label = document.getElementById('materialAdvancedToggleText');
+            if (label) label.textContent = materialAdvancedVisible ? 'Hide planning & storage settings' : 'Show planning & storage settings';
+        }
+
+        function applyPackagingFormSelection() {
+            const form = document.getElementById('packaging_form')?.value || '';
+            const config = PACKAGING_FORMS[form];
+            const role = document.getElementById('packaging_role');
+            if (role) role.value = config?.role || '';
+            const help = document.getElementById('packagingFormHelp');
+            if (help) help.textContent = config?.help || 'Choose the physical item—not a generic category.';
+            const name = document.getElementById('ingredient_name');
+            if (name && config) name.placeholder = config.name;
+            syncPackagingCapacityFields(false);
         }
 
         function formatCurrency(amount) {
@@ -946,6 +1022,8 @@
             select.required = isPackaging;
             if (!isPackaging) {
                 select.value = '';
+                const form = document.getElementById('packaging_form');
+                if (form) form.value = '';
                 syncPackagingCapacityFields(true);
                 return;
             }
@@ -953,6 +1031,8 @@
                 select.value = String(preferredRole || '');
             } else if (forceReset) {
                 select.value = '';
+                const form = document.getElementById('packaging_form');
+                if (form) form.value = '';
             }
             syncPackagingCapacityFields(forceReset);
         }
@@ -1248,6 +1328,31 @@
                 }
             }
 
+            if (materialWorkspace === 'packaging') {
+                if (!ingredients || ingredients.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-base-content/60">No packaging materials found</td></tr>';
+                    return;
+                }
+                const formLabels = { bottle:'Bottle', printed_pouch:'Printed pouch', plain_pouch:'Plain pouch', cup_tub:'Cup / tub', wrapper:'Primary wrapper', cap_lid:'Cap / lid', label:'Separate label', carton_case:'Carton / case', other:'Other' };
+                tableBody.innerHTML = ingredients.map(i => {
+                    const current = Number(i.current_stock || 0);
+                    const reorder = Number(i.reorder_point || 0);
+                    const size = i.packaging_capacity_value
+                        ? `${Number(i.packaging_capacity_value)} ${i.packaging_capacity_unit || ''}`
+                        : 'Not size-specific';
+                    return `<tr>
+                        <td><span class="font-mono text-sm">${escapeHtml(i.ingredient_code)}</span></td>
+                        <td><span class="font-semibold">${escapeHtml(i.ingredient_name)}</span><div class="text-xs text-base-content/50">${escapeHtml(i.unit_of_measure || 'unit')} per stock unit</div></td>
+                        <td><span class="badge badge-info badge-outline badge-sm">${escapeHtml(formLabels[i.packaging_form] || i.packaging_role || 'Unclassified')}</span><div class="text-xs mt-1 text-base-content/60">${escapeHtml(size)}</div></td>
+                        <td><span class="font-semibold ${current <= reorder ? 'text-warning' : ''}">${current.toLocaleString()}</span><div class="text-xs text-base-content/50">Reorder at ${reorder.toLocaleString()}</div></td>
+                        <td><span class="badge badge-outline badge-sm">${Number(i.supplier_count || 0)} linked</span><div class="text-xs text-base-content/50 mt-1 max-w-48 truncate">${escapeHtml(i.supplier_names || 'Supplier not linked yet')}</div></td>
+                        <td><span class="badge ${Number(i.is_active) === 1 ? 'badge-success' : 'badge-warning'} badge-sm">${Number(i.is_active) === 1 ? 'Active' : 'Inactive'}</span></td>
+                        <td><div class="flex gap-1"><button type="button" class="btn btn-ghost btn-xs" onclick="editRecord(${i.id})"><i class="fas fa-edit"></i>Edit</button><button type="button" class="btn btn-ghost btn-xs text-warning" onclick="deleteRecord(${i.id})"><i class="fas fa-box-archive"></i>Archive</button></div></td>
+                    </tr>`;
+                }).join('');
+                return;
+            }
+
             if (!ingredients || ingredients.length === 0) {
                 tableBody.innerHTML = '<tr><td colspan="11" class="text-center py-8 text-base-content/60">No ingredients found</td></tr>';
                 return;
@@ -1266,7 +1371,7 @@
                     <td><span class="font-semibold">${escapeHtml(i.ingredient_name)}</span></td>
                     <td>
                         <div>${escapeHtml(i.category_name || '-')}</div>
-                        ${i.packaging_role ? `<span class="badge badge-info badge-outline badge-xs mt-1">${escapeHtml({container: 'Bottle / Container', closure: 'Cap / Closure', label: 'Label', secondary: 'Secondary', other: 'Other'}[i.packaging_role] || i.packaging_role)}</span>` : ''}
+                        ${i.packaging_form ? `<span class="badge badge-info badge-outline badge-xs mt-1">${escapeHtml({bottle:'Bottle', printed_pouch:'Printed pouch', plain_pouch:'Plain pouch', cup_tub:'Cup / tub', wrapper:'Primary wrapper', cap_lid:'Cap / lid', label:'Label', carton_case:'Carton / case', other:'Other'}[i.packaging_form] || i.packaging_form)}</span>` : (i.packaging_role ? `<span class="badge badge-info badge-outline badge-xs mt-1">${escapeHtml(i.packaging_role)}</span>` : '')}
                         ${i.packaging_capacity_value ? `<span class="badge badge-ghost badge-xs mt-1">${escapeHtml(Number(i.packaging_capacity_value))} ${escapeHtml(i.packaging_capacity_unit || '')}</span>` : ''}
                     </td>
                     <td><span class="badge badge-ghost badge-sm">${escapeHtml(i.unit_of_measure)}</span></td>
@@ -1327,7 +1432,7 @@
             loadData();
         }
 
-        function openModal(id = null, preferredPackagingRole = '') {
+        function openModal(id = null, preferredPackagingForm = '') {
             document.getElementById('modalTitle').textContent = id
                 ? (materialWorkspace === 'packaging' ? 'Edit Packaging Material' : 'Edit Raw Ingredient')
                 : (materialWorkspace === 'packaging' ? 'Add Packaging Material' : 'Add Raw Ingredient');
@@ -1342,19 +1447,21 @@
             populateUnitOfMeasureOptions(null, true);
             updateUnitBadges();
             unusualCapacityConfirmed = false;
+            materialAdvancedVisible = materialWorkspace !== 'packaging' || Boolean(id);
+            document.getElementById('materialAdvancedToggleWrap')?.classList.toggle('hidden', materialWorkspace !== 'packaging');
+            toggleMaterialAdvancedSettings(materialAdvancedVisible);
             if (!id && materialWorkspace === 'packaging' && packagingCategoryId) {
                 document.getElementById('category_id').value = String(packagingCategoryId);
                 onIngredientCategoryChange();
-                document.getElementById('packaging_role').value = preferredPackagingRole || '';
-                syncPackagingCapacityFields(true);
-                if (preferredPackagingRole) {
-                    document.getElementById('ingredient_name').placeholder = {
-                        container: 'e.g. PET Bottle — 500 mL',
-                        closure: 'e.g. 28 mm Tamper-evident Cap',
-                        label: 'e.g. Ube Milk Label — 500 mL',
-                        secondary: 'e.g. Shrink Wrap — 12 bottles'
-                    }[preferredPackagingRole] || 'Packaging material name';
-                }
+                document.getElementById('packaging_form').value = preferredPackagingForm || '';
+                applyPackagingFormSelection();
+                document.getElementById('unit_of_measure').value = 'pcs';
+                updateUnitBadges();
+                document.getElementById('minimum_stock').value = 0;
+                document.getElementById('reorder_point').value = 100;
+                document.getElementById('maximum_stock').value = 500;
+                document.getElementById('is_perishable').value = '0';
+                document.getElementById('storage_location').value = 'Dry Storage';
             }
             document.getElementById('formModal').showModal();
         }
@@ -1394,7 +1501,9 @@
                     document.getElementById('ingredient_code').value = i.ingredient_code;
                     document.getElementById('ingredient_name').value = i.ingredient_name;
                     document.getElementById('category_id').value = i.category_id || '';
+                    document.getElementById('packaging_form').value = i.packaging_form || '';
                     syncPackagingRoleField(i.packaging_role || '', false);
+                    applyPackagingFormSelection();
                     document.getElementById('packaging_capacity_value').value = i.packaging_capacity_value || '';
                     document.getElementById('packaging_capacity_unit').value = i.packaging_capacity_unit || 'ml';
                     syncPackagingCapacityFields(false);
@@ -1434,6 +1543,9 @@
                     storageSelect.value = storageVal;
                     document.getElementById('storage_requirements').value = i.storage_requirements || '';
                     document.getElementById('is_active').value = i.is_active;
+                    materialAdvancedVisible = materialWorkspace !== 'packaging';
+                    document.getElementById('materialAdvancedToggleWrap')?.classList.toggle('hidden', materialWorkspace !== 'packaging');
+                    toggleMaterialAdvancedSettings(materialAdvancedVisible);
                     document.getElementById('modalTitle').textContent = 'Edit Ingredient';
                     document.getElementById('formModal').showModal();
                 }
@@ -1518,6 +1630,7 @@
             const physicalState = getSelectedPhysicalState();
             const isPackaging = getUnitGroupForCategoryName(getSelectedCategoryName()) === 'packaging';
             const packagingRole = document.getElementById('packaging_role').value;
+            const packagingForm = document.getElementById('packaging_form').value;
 
             if (!physicalState) {
                 showToast('Please choose whether the ingredient is solid, liquid, or counted', 'error');
@@ -1528,6 +1641,12 @@
             if (isPackaging && !packagingRole) {
                 showToast('Choose whether this is a bottle/container, cap/closure, label, or secondary packaging', 'error');
                 document.getElementById('packaging_role').focus();
+                return;
+            }
+
+            if (isPackaging && !packagingForm) {
+                showToast('Choose the real packaging component first', 'error');
+                document.getElementById('packaging_form').focus();
                 return;
             }
 
@@ -1577,6 +1696,7 @@
                 category_id: categoryId,
                 physical_state: physicalState,
                 packaging_role: isPackaging ? packagingRole : null,
+                packaging_form: isPackaging ? packagingForm : null,
                 packaging_capacity_value: isPackaging && needsPackagingCapacity ? packagingCapacity : null,
                 packaging_capacity_unit: isPackaging && needsPackagingCapacity
                     ? document.getElementById('packaging_capacity_unit').value
@@ -1660,6 +1780,9 @@
                 : 'Food and process materials — units, reorder points, and costs';
             document.getElementById('primaryAddLabel').textContent = packagingMode ? 'Add Packaging Material' : 'Add Raw Ingredient';
             document.getElementById('packagingQuickActions').classList.toggle('hidden', !packagingMode);
+            if (packagingMode) {
+                document.querySelector('#ingredientsTable thead tr').innerHTML = '<th>Code</th><th>Component</th><th>Type / Size</th><th>Stock</th><th>Supplier</th><th>Status</th><th>Actions</th>';
+            }
             const activeNav = document.getElementById(packagingMode ? 'packagingMaterialsNav' : 'rawIngredientsNav');
             activeNav?.classList.add('bg-primary', 'text-primary-content');
             activeNav?.classList.remove('hover:bg-base-200');

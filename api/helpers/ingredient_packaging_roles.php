@@ -18,6 +18,72 @@ function ingredientPackagingRoleValues(): array
     return ['container', 'closure', 'label', 'secondary', 'other'];
 }
 
+/**
+ * The physical packaging component selected by Admin.  `packaging_role`
+ * remains the accounting/BOM role; this field prevents a pouch, bottle, and
+ * tub from becoming indistinguishable just because all three are primary
+ * containers.
+ */
+function ingredientPackagingFormValues(): array
+{
+    return [
+        'bottle', 'printed_pouch', 'plain_pouch', 'cup_tub', 'wrapper',
+        'cap_lid', 'label', 'carton_case', 'other',
+    ];
+}
+
+function normalizeIngredientPackagingForm($value): ?string
+{
+    $form = strtolower(trim((string) $value));
+    $aliases = [
+        'pouch' => 'plain_pouch',
+        'sachet' => 'plain_pouch',
+        'printed_sachet' => 'printed_pouch',
+        'cup' => 'cup_tub',
+        'tub' => 'cup_tub',
+        'cap' => 'cap_lid',
+        'lid' => 'cap_lid',
+        'case' => 'carton_case',
+        'carton' => 'carton_case',
+    ];
+    $form = $aliases[$form] ?? $form;
+    return in_array($form, ingredientPackagingFormValues(), true) ? $form : null;
+}
+
+function ingredientPackagingFormRole($value): ?string
+{
+    $form = normalizeIngredientPackagingForm($value);
+    $roles = [
+        'bottle' => 'container',
+        'printed_pouch' => 'container',
+        'plain_pouch' => 'container',
+        'cup_tub' => 'container',
+        'wrapper' => 'container',
+        'cap_lid' => 'closure',
+        'label' => 'label',
+        'carton_case' => 'secondary',
+        'other' => 'other',
+    ];
+    return $form !== null ? $roles[$form] : null;
+}
+
+function ingredientPackagingFormLabel($value): string
+{
+    $labels = [
+        'bottle' => 'Bottle / Container',
+        'printed_pouch' => 'Printed Pouch / Sachet',
+        'plain_pouch' => 'Plain Pouch / Sachet',
+        'cup_tub' => 'Cup / Tub',
+        'wrapper' => 'Primary Wrapper',
+        'cap_lid' => 'Cap / Lid',
+        'label' => 'Separate Label',
+        'carton_case' => 'Carton / Case',
+        'other' => 'Other Packaging',
+    ];
+    $form = normalizeIngredientPackagingForm($value);
+    return $form !== null ? $labels[$form] : 'Unclassified Packaging';
+}
+
 function normalizeIngredientPackagingRole($value): ?string
 {
     $role = strtolower(trim((string) $value));
@@ -120,6 +186,14 @@ function ensureIngredientPackagingRoleSupport(PDO $db): void
             ADD COLUMN `packaging_role` VARCHAR(30) NULL AFTER `physical_state`");
     }
 
+    if (!ingredientPackagingRoleColumnExists($db, 'packaging_form')) {
+        if ($db->inTransaction()) {
+            throw new RuntimeException('Packaging form must be initialized before starting a database transaction');
+        }
+        $db->exec("ALTER TABLE `ingredients`
+            ADD COLUMN `packaging_form` VARCHAR(30) NULL AFTER `packaging_role`");
+    }
+
     if (!ingredientPackagingRoleColumnExists($db, 'packaging_capacity_value')) {
         if ($db->inTransaction()) {
             throw new RuntimeException('Packaging capacity must be initialized before starting a database transaction');
@@ -168,6 +242,29 @@ function ensureIngredientPackagingRoleSupport(PDO $db): void
                OR i.packaging_role NOT IN ('container', 'closure', 'label', 'secondary', 'other'))
     ");
 
+    // Preserve imported records with a conservative one-time classification.
+    // New records never depend on their name: the Admin wizard sends the form.
+    $db->exec("
+        UPDATE ingredients i
+        JOIN ingredient_categories c ON c.id = i.category_id
+        SET i.packaging_form = CASE
+            WHEN i.packaging_role = 'label' THEN 'label'
+            WHEN i.packaging_role = 'closure' THEN 'cap_lid'
+            WHEN i.packaging_role = 'secondary' THEN 'carton_case'
+            WHEN LOWER(COALESCE(i.ingredient_name, '')) REGEXP 'printed.*(pouch|sachet)|(pouch|sachet).*printed' THEN 'printed_pouch'
+            WHEN LOWER(COALESCE(i.ingredient_name, '')) REGEXP 'pouch|sachet' THEN 'plain_pouch'
+            WHEN LOWER(COALESCE(i.ingredient_name, '')) REGEXP 'cup|tub' THEN 'cup_tub'
+            WHEN LOWER(COALESCE(i.ingredient_name, '')) REGEXP 'wrapper|film|cellophane' THEN 'wrapper'
+            WHEN i.packaging_role = 'container' THEN 'bottle'
+            ELSE 'other'
+        END
+        WHERE (LOWER(COALESCE(c.category_name, '')) LIKE '%packag%'
+               OR LOWER(COALESCE(c.category_code, '')) LIKE '%pack%'
+               OR LOWER(COALESCE(c.category_name, '')) LIKE '%container%')
+          AND (i.packaging_form IS NULL
+               OR i.packaging_form NOT IN ('bottle','printed_pouch','plain_pouch','cup_tub','wrapper','cap_lid','label','carton_case','other'))
+    ");
+
     // One-time compatibility backfill for imported bottle/label records. New
     // master records must provide these fields explicitly in the Admin form.
     $rows = $db->query("
@@ -203,6 +300,7 @@ function ensureIngredientPackagingRoleSupport(PDO $db): void
         UPDATE ingredients i
         LEFT JOIN ingredient_categories c ON c.id = i.category_id
         SET i.packaging_role = NULL,
+            i.packaging_form = NULL,
             i.packaging_capacity_value = NULL,
             i.packaging_capacity_unit = NULL
         WHERE i.packaging_role IS NOT NULL
@@ -258,7 +356,8 @@ function ensureProductPrimaryContainerSupport(PDO $db): void
             ) linked ON linked.product_id = p.id
             SET p.primary_container_id = linked.ingredient_id
             WHERE p.primary_container_id IS NULL
-              AND LOWER(COALESCE(p.base_unit, '')) IN ('bottle', 'bottles')
+              AND LOWER(COALESCE(p.base_unit, '')) IN
+                  ('bottle', 'bottles', 'printed_pouch', 'plain_pouch', 'tub', 'jar', 'wrapped_block', 'bulk_container')
         ");
     } catch (Throwable $e) {
         // The BOM table is optional on older installations; it is created by

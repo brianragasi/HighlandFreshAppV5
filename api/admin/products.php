@@ -15,6 +15,7 @@ $conn = Database::getInstance()->getConnection();
 ensureIngredientPackagingRoleSupport($conn);
 ensureSkuPackagingBomTable($conn);
 ensureProductPrimaryContainerSupport($conn);
+ensureMilkBarProductCategorySupport($conn);
 
 // Get request method and handle routing
 $method = $_SERVER['REQUEST_METHOD'];
@@ -103,6 +104,26 @@ function isLegacyProductSchemaException(Throwable $e) {
         || in_array($sqlState, ['42S02', '42S22'], true)
         || stripos($message, 'base_products') !== false
         || stripos($message, 'base_product_id') !== false;
+}
+
+/** Make the already-supported Production milk_bar type selectable in Product master data. */
+function ensureMilkBarProductCategorySupport(PDO $db): void {
+    static $done = false;
+    if ($done) return;
+    foreach (['base_products', 'products'] as $table) {
+        $stmt = $db->prepare("SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'category' LIMIT 1");
+        $stmt->execute([$table]);
+        $type = (string) ($stmt->fetchColumn() ?: '');
+        if ($type !== '' && stripos($type, "'milk_bar'") === false) {
+            if ($db->inTransaction()) {
+                throw new RuntimeException('Milk Bar product category must be initialized before starting a transaction');
+            }
+            $db->exec("ALTER TABLE `{$table}` MODIFY `category`
+                ENUM('pasteurized_milk','flavored_milk','yogurt','cheese','butter','cream','milk_bar') NOT NULL");
+        }
+    }
+    $done = true;
 }
 
 /**
@@ -576,7 +597,7 @@ function saveProductPackagingBom(PDO $conn, $id) {
     $data = getRequestBody();
     $items = isset($data['items']) && is_array($data['items']) ? $data['items'] : [];
 
-    $stmt = $conn->prepare('SELECT id, base_product_id, base_unit, primary_container_id, is_active FROM products WHERE id = ?');
+    $stmt = $conn->prepare('SELECT id, base_product_id, base_unit, primary_container_id, unit_size, unit_measure, is_active FROM products WHERE id = ?');
     $stmt->execute([(int) $id]);
     $sku = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$sku) {
@@ -588,7 +609,7 @@ function saveProductPackagingBom(PDO $conn, $id) {
         return;
     }
 
-    if (in_array(strtolower((string) ($sku['base_unit'] ?? '')), ['bottle', 'bottles'], true)) {
+    if (skuPackageStyleRequiresPrimaryMaterial($sku['base_unit'] ?? '')) {
         $primaryContainerId = (int) ($sku['primary_container_id'] ?? 0);
         $submittedIds = array_values(array_unique(array_filter(array_map(
             static fn($item) => (int) ($item['ingredient_id'] ?? 0),
@@ -615,21 +636,29 @@ function saveProductPackagingBom(PDO $conn, $id) {
         return;
     }
 
+    $readiness = assessSkuPackagingBomReadiness(
+        $sku['base_unit'] ?? '',
+        $result['items'],
+        $sku['unit_size'] ?? null,
+        $sku['unit_measure'] ?? ''
+    );
     sendSuccess([
         'product_id' => (int) $id,
         'items' => $result['items'],
-        'ready' => count($result['items']) > 0,
-    ], count($result['items']) > 0
+        'ready' => $readiness['ready'],
+        'missing_components' => $readiness['missing'],
+    ], $readiness['ready']
         ? 'Packaging BOM saved'
-        : 'Packaging BOM cleared; this SKU cannot be used to complete packaging');
+        : 'Packaging BOM saved but still incomplete for this package style');
 }
 
-/** Active container master records available to the SKU form. */
+/** Active primary-package master records available to the SKU form. */
 function getProductPackagingOptions(PDO $conn): void {
     $stmt = $conn->query("
         SELECT i.id, i.ingredient_code, i.ingredient_name,
                i.packaging_capacity_value, i.packaging_capacity_unit,
                i.packaging_capacity_confirmed,
+               i.packaging_form,
                i.unit_of_measure, i.current_stock, i.available_stock
         FROM ingredients i
         JOIN ingredient_categories c ON c.id = i.category_id
@@ -653,14 +682,15 @@ function getProductPackagingOptions(PDO $conn): void {
 }
 
 /**
- * For bottled SKUs the selected inventory container is the source of truth.
+ * For package styles with a primary package, the selected inventory material is the source of truth.
  * Any client-supplied size is overwritten before duplicate checks and writes.
  */
 function applyPrimaryContainerToSkuPayload(PDO $conn, array &$data, array $existing = []): ?array {
     $baseUnit = strtolower(trim((string) (
         $data['base_unit'] ?? ($existing['base_unit'] ?? 'piece')
     )));
-    if (!in_array($baseUnit, ['bottle', 'bottles'], true)) {
+    $baseUnit = normalizeSkuPackageStyle($baseUnit);
+    if (!skuPackageStyleRequiresPrimaryMaterial($baseUnit)) {
         $data['primary_container_id'] = null;
         return null;
     }
@@ -670,7 +700,7 @@ function applyPrimaryContainerToSkuPayload(PDO $conn, array &$data, array $exist
     );
     if ($containerId <= 0) {
         sendValidationError([
-            'primary_container_id' => 'Select the actual bottle/container. The SKU size is taken from its configured capacity.'
+            'primary_container_id' => 'Select the actual primary package. The SKU size is taken from its configured capacity.'
         ]);
     }
 
@@ -678,6 +708,7 @@ function applyPrimaryContainerToSkuPayload(PDO $conn, array &$data, array $exist
         SELECT i.id, i.ingredient_code, i.ingredient_name, i.unit_of_measure,
                i.packaging_capacity_value, i.packaging_capacity_unit,
                i.packaging_capacity_confirmed
+               , i.packaging_form
         FROM ingredients i
         JOIN ingredient_categories c ON c.id = i.category_id
         WHERE i.id = ? AND i.is_active = 1 AND i.packaging_role = 'container'
@@ -700,7 +731,24 @@ function applyPrimaryContainerToSkuPayload(PDO $conn, array &$data, array $exist
         ]);
     }
 
-    $data['base_unit'] = 'bottle';
+
+    $allowedForms = [
+        'bottle' => ['bottle'],
+        'printed_pouch' => ['printed_pouch'],
+        'plain_pouch' => ['plain_pouch'],
+        'tub' => ['cup_tub'],
+        'jar' => ['cup_tub', 'bottle'],
+        'wrapped_block' => ['wrapper'],
+        'bulk_container' => ['bottle', 'cup_tub', 'other'],
+    ];
+    $selectedForm = normalizeIngredientPackagingForm($container['packaging_form'] ?? null);
+    if ($selectedForm !== null && !in_array($selectedForm, $allowedForms[$baseUnit] ?? [], true)) {
+        sendValidationError([
+            'primary_container_id' => 'The selected primary package does not match the SKU package style.'
+        ]);
+    }
+
+    $data['base_unit'] = $baseUnit;
     $data['primary_container_id'] = (int) $container['id'];
     $data['unit_size'] = (float) $container['packaging_capacity_value'];
     $data['unit_measure'] = $container['packaging_capacity_unit'];
@@ -779,7 +827,7 @@ function validateProductNumericPayload(array &$data): void {
 }
 
 function validateUnusualSkuCapacity(array $data): void {
-    $isBottle = in_array(strtolower(trim((string) ($data['base_unit'] ?? ''))), ['bottle', 'bottles'], true);
+    $isBottle = skuPackageStyleRequiresPrimaryMaterial($data['base_unit'] ?? '');
     $isLargeLiterValue = strtolower(trim((string) ($data['unit_measure'] ?? ''))) === 'l'
         && (float) ($data['unit_size'] ?? 0) >= 20;
     if ($isBottle && $isLargeLiterValue && empty($data['confirm_unusual_capacity'])) {
@@ -840,7 +888,7 @@ function createProduct($conn) {
     }
     
     // Validate category
-    $validCategories = ['pasteurized_milk', 'flavored_milk', 'yogurt', 'cheese', 'butter', 'cream'];
+    $validCategories = ['pasteurized_milk', 'flavored_milk', 'yogurt', 'cheese', 'butter', 'cream', 'milk_bar'];
     if (!in_array($data['category'], $validCategories)) {
         sendError('Invalid category', 400);
         return;
@@ -867,7 +915,8 @@ function createProduct($conn) {
             'yogurt' => 'YG',
             'cheese' => 'CH',
             'butter' => 'BT',
-            'cream' => 'CR'
+            'cream' => 'CR',
+            'milk_bar' => 'MB'
         ];
         $prefix = $categoryPrefixes[$data['category']] ?? 'PRD';
         $stmt = $conn->query("SELECT MAX(CAST(SUBSTRING(product_code, 3) AS UNSIGNED)) as max_num FROM products WHERE product_code LIKE '{$prefix}%'");
@@ -938,7 +987,8 @@ function createProduct($conn) {
             if (!$baseProductId) {
                 $prefixMap = [
                     'pasteurized_milk' => 'BASE-PM', 'flavored_milk' => 'BASE-FM',
-                    'yogurt' => 'BASE-YG', 'cheese' => 'BASE-CH', 'butter' => 'BASE-BT', 'cream' => 'BASE-CR'
+                    'yogurt' => 'BASE-YG', 'cheese' => 'BASE-CH', 'butter' => 'BASE-BT', 'cream' => 'BASE-CR',
+                    'milk_bar' => 'BASE-MB'
                 ];
                 $prefix = $prefixMap[$data['category']] ?? 'BASE-XX';
                 $code = $prefix . '-' . strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $data['product_name']), 0, 6)) . rand(10, 99);

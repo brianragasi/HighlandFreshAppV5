@@ -98,6 +98,57 @@ function isCountedPackagingUnit($unit)
 }
 
 /**
+ * A SKU package style is stored in the existing products.base_unit field so
+ * old deployments need no destructive product-table migration.
+ */
+function normalizeSkuPackageStyle($value): string
+{
+    $style = strtolower(trim((string) $value));
+    $aliases = [
+        'bottles' => 'bottle',
+        'pouch' => 'plain_pouch',
+        'sachet' => 'plain_pouch',
+        'cup' => 'tub',
+        'wrapped_bar' => 'wrapped_block',
+        'block' => 'wrapped_block',
+        'bulk' => 'bulk_container',
+    ];
+    return $aliases[$style] ?? ($style ?: 'piece');
+}
+
+function skuPackageStyleRequiresPrimaryMaterial($value): bool
+{
+    return in_array(normalizeSkuPackageStyle($value), [
+        'bottle', 'printed_pouch', 'plain_pouch', 'tub', 'jar',
+        'wrapped_block', 'bulk_container',
+    ], true);
+}
+
+function skuPackageStyleRequiredRoles($value): array
+{
+    switch (normalizeSkuPackageStyle($value)) {
+        case 'bottle':
+        case 'tub':
+        case 'jar':
+            return [
+                'primary package' => 'container',
+                'cap/lid' => 'closure',
+                'label' => 'label',
+            ];
+        case 'plain_pouch':
+            return ['plain pouch/sachet' => 'container', 'label' => 'label'];
+        case 'printed_pouch':
+            return ['printed pouch/sachet' => 'container'];
+        case 'wrapped_block':
+            return ['primary wrapper' => 'container'];
+        case 'bulk_container':
+            return ['bulk container' => 'container'];
+        default:
+            return [];
+    }
+}
+
+/**
  * These components represent one physical part attached to one finished SKU.
  * Separate front/back labels should be separate inventory materials, each with
  * a quantity of one, rather than hiding several parts in one BOM number.
@@ -161,7 +212,7 @@ function formatPackagingCanonicalSize(array $size)
 function validateSkuPackagingBomSizes($baseUnit, $unitSize, $unitMeasure, array $items)
 {
     $base = strtolower(trim((string) $baseUnit));
-    if (!in_array($base, ['bottle', 'bottles'], true)) {
+    if (!skuPackageStyleRequiresPrimaryMaterial($base)) {
         return [];
     }
 
@@ -212,16 +263,10 @@ function assessSkuPackagingBomReadiness($baseUnit, array $items, $unitSize = nul
         return ['ready' => false, 'missing' => ['packaging material']];
     }
 
-    $base = strtolower(trim((string) $baseUnit));
-    if (!in_array($base, ['bottle', 'bottles'], true)) {
+    $required = skuPackageStyleRequiredRoles($baseUnit);
+    if (!$required) {
         return ['ready' => true, 'missing' => []];
     }
-
-    $required = [
-        'bottle/container' => 'container',
-        'cap/closure' => 'closure',
-        'label' => 'label',
-    ];
     $roles = array_values(array_filter(array_map(
         static fn($item) => normalizeIngredientPackagingRole($item['packaging_role'] ?? null),
         $items
