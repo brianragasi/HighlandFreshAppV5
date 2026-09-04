@@ -789,8 +789,43 @@ function validateUnusualSkuCapacity(array $data): void {
     }
 }
 
+/**
+ * Normalize the optional milk-type selector before it reaches a foreign key.
+ * The UI historically used 0 for "N/A", but milk_types IDs start at 1, so
+ * passing that sentinel through caused an opaque SQL 1452/HTTP 500 response.
+ */
+function normalizeProductMilkType($conn, array &$data): void {
+    if (!array_key_exists('milk_type_id', $data)) {
+        return;
+    }
+
+    $raw = $data['milk_type_id'];
+    if ($raw === null || $raw === '' || $raw === 0 || $raw === '0') {
+        $data['milk_type_id'] = null;
+        return;
+    }
+
+    if (filter_var($raw, FILTER_VALIDATE_INT) === false || (int) $raw <= 0) {
+        sendValidationError([
+            'milk_type_id' => 'Select a valid milk type or choose Not specified / N/A.'
+        ]);
+    }
+
+    $milkTypeId = (int) $raw;
+    $stmt = $conn->prepare('SELECT id FROM milk_types WHERE id = ? LIMIT 1');
+    $stmt->execute([$milkTypeId]);
+    if (!$stmt->fetchColumn()) {
+        sendValidationError([
+            'milk_type_id' => 'The selected milk type is no longer available. Refresh the page and choose again.'
+        ]);
+    }
+
+    $data['milk_type_id'] = $milkTypeId;
+}
+
 function createProduct($conn) {
     $data = json_decode(file_get_contents('php://input'), true) ?: [];
+    normalizeProductMilkType($conn, $data);
     $primaryContainer = applyPrimaryContainerToSkuPayload($conn, $data);
     validateProductNumericPayload($data);
     validateUnusualSkuCapacity($data);
@@ -1013,6 +1048,7 @@ function createProduct($conn) {
  */
 function updateBaseProduct($conn, $id) {
     $data = json_decode(file_get_contents('php://input'), true) ?: [];
+    normalizeProductMilkType($conn, $data);
     $id = (int) $id;
     if ($id <= 0) {
         sendError('Base product ID required', 400);
@@ -1121,6 +1157,7 @@ function updateBaseProduct($conn, $id) {
  */
 function updateProduct($conn, $id) {
     $data = json_decode(file_get_contents('php://input'), true) ?: [];
+    normalizeProductMilkType($conn, $data);
     
     // Check if product exists
     $checkStmt = $conn->prepare("

@@ -640,8 +640,7 @@
                     <div class="form-control">
                         <label class="label"><span class="label-text font-medium">Milk Type</span></label>
                         <select id="base_milk_type_id" class="select select-bordered">
-                            <option value="">— Not Specified —</option>
-                            <option value="0">N/A (Not Applicable)</option>
+                            <option value="">— Not Specified / N/A —</option>
                             <option value="1">Cow Milk</option>
                             <option value="2">Goat Milk</option>
                         </select>
@@ -1330,7 +1329,14 @@
         }
 
         async function archivePackagingSet(id) {
-            if (!confirm('Archive this packaging set? Existing SKU BOMs will stay unchanged.')) return;
+            const confirmed = await AuthService.confirmAction({
+                title: 'Archive Packaging Set',
+                message: 'Archive this packaging set? Existing SKU packaging BOMs will stay unchanged.',
+                confirmText: 'Archive',
+                tone: 'warning',
+                icon: 'fa-box-archive'
+            });
+            if (!confirmed) return;
             try {
                 await packagingSetRequest({ query: `?id=${id}`, method: 'DELETE' });
                 showToast('Packaging set archived', 'success');
@@ -1364,6 +1370,32 @@
 
         function getContainerOption(id) {
             return packagingContainerOptions.find(container => String(container.id) === String(id)) || null;
+        }
+
+        async function loadMilkTypeOptions() {
+            const select = document.getElementById('base_milk_type_id');
+            if (!select) return;
+
+            const previousValue = select.value;
+            const response = await fetch(`${ApiConfig.baseUrl}/admin/products.php?action=milk-types&_=${Date.now()}`, {
+                headers: ApiConfig.getHeaders(),
+                cache: 'no-store'
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload?.success || !Array.isArray(payload.data?.milk_types)) {
+                throw new Error(payload?.message || 'Could not load milk types');
+            }
+
+            select.innerHTML = '<option value="">— Not Specified / N/A —</option>';
+            payload.data.milk_types.forEach(milkType => {
+                const option = document.createElement('option');
+                option.value = String(milkType.id);
+                option.textContent = milkType.type_name;
+                select.appendChild(option);
+            });
+            if (previousValue && Array.from(select.options).some(option => option.value === previousValue)) {
+                select.value = previousValue;
+            }
         }
 
         async function loadData() {
@@ -3333,7 +3365,7 @@
             }
             // Always attempt catalog load even if sidebar user chrome fails
             try {
-                await Promise.all([loadPackagingContainerOptions(), loadPackagingSets()]);
+                await Promise.all([loadPackagingContainerOptions(), loadPackagingSets(), loadMilkTypeOptions()]);
                 await loadData();
                 if (window.location.hash === '#packaging-sets') {
                     document.getElementById('packaging-sets')?.scrollIntoView({ behavior: 'smooth' });

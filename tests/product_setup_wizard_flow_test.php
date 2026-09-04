@@ -53,6 +53,11 @@ $checks = [
         !str_contains($sources['products_api'], "WHERE bp.is_active = 1\n            ORDER BY bp.id DESC")
         && str_contains($sources['products_page'], "g.is_active === false")
         && str_contains($sources['products_page'], "document.getElementById('base_is_active').checked = false"),
+    'Optional milk type cannot send the old zero sentinel into a foreign key' =>
+        str_contains($sources['products_api'], 'function normalizeProductMilkType')
+        && str_contains($sources['products_api'], '$raw === 0')
+        && !str_contains($sources['products_page'], '<option value="0">N/A (Not Applicable)</option>')
+        && str_contains($sources['products_page'], 'function loadMilkTypeOptions()'),
 ];
 
 $failed = 0;

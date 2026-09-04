@@ -230,8 +230,9 @@ recordResult(
         && strpos($adminIngredientApi, "'storage_location' => [160, false]") !== false
         && strpos($supplierCatalogHelper, '$allowedPackageTypes') !== false
         && strpos($supplierCatalogHelper, "'offer_label' => supplierCatalogNumber(") !== false
-        && strpos($warehouseIngredientApi, "hfPlainText(getParam('storage_location'), 160, false)") !== false
-        && strpos($warehouseIngredientApi, "hfPlainText(getParam('pack_label'), 50, false)") !== false
+        && strpos($warehouseIngredientApi, "'storage_location' => [160, false]") !== false
+        && strpos($warehouseIngredientApi, "'pack_label' => [50, false]") !== false
+        && strpos($warehouseIngredientApi, 'New ingredients must be configured in Admin') !== false
         && strpos($warehouseMroApi, "hfPlainText(getParam('storage_location'), 160, false)") !== false
         && strpos($warehouseMroPage, '${safeStorageLocation}') !== false
         && strpos($warehouseMroPage, '>${item.storage_location}</p>') === false,
