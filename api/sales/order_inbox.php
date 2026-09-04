@@ -34,6 +34,11 @@ try {
     }
 } catch (InvalidArgumentException $e) {
     Response::error($e->getMessage(), 422);
+} catch (PDOException $e) {
+    // PDOException extends RuntimeException. This must stay above the runtime
+    // branch so a live database/schema fault is not blamed on form input.
+    error_log('Customer Order Inbox Database Error: ' . $e->getMessage());
+    Response::error('The customer order could not be saved because the live database needs attention. Please try again after the database update.', 500);
 } catch (RuntimeException $e) {
     Response::error($e->getMessage(), 400);
 } catch (Throwable $e) {

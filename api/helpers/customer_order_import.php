@@ -86,9 +86,26 @@ function hfEnsureManualCustomerOrderSchema(PDO $db): void
 
     $lineColumns = [];
     foreach ($db->query('SHOW COLUMNS FROM customer_order_import_lines')->fetchAll(PDO::FETCH_ASSOC) as $column) {
-        $lineColumns[$column['Field']] = true;
+        $lineColumns[$column['Field']] = $column;
     }
+    // A restored legacy database can already have this table while still
+    // missing fields used by the current manual-entry save. Detail/list reads
+    // then work, but the first order save fails with an unknown-column error.
+    // Repair every writable field, not only the later comparison fields.
     foreach ([
+        'customer_product_code' => 'VARCHAR(100) NULL',
+        'description' => 'VARCHAR(255) NULL',
+        'product_id' => 'INT NULL',
+        'quantity_entered' => 'DECIMAL(12,3) NULL',
+        'unit_entered' => 'VARCHAR(40) NULL',
+        'quantity_base' => 'INT NULL',
+        'quantity_boxes' => 'INT NOT NULL DEFAULT 0',
+        'quantity_pieces' => 'INT NOT NULL DEFAULT 0',
+        'po_unit_price' => 'DECIMAL(12,2) NULL',
+        'system_unit_price' => 'DECIMAL(12,2) NULL',
+        'line_status' => "ENUM('matched', 'warning', 'blocked') NOT NULL DEFAULT 'blocked'",
+        'issue_text' => 'VARCHAR(500) NULL',
+        'raw_data' => 'JSON NULL',
         'original_customer_product_code' => 'VARCHAR(100) NULL',
         'original_description' => 'VARCHAR(255) NULL',
         'original_product_id' => 'INT NULL',
@@ -96,9 +113,19 @@ function hfEnsureManualCustomerOrderSchema(PDO $db): void
         'original_unit_entered' => 'VARCHAR(40) NULL',
         'original_po_unit_price' => 'DECIMAL(12,2) NULL',
     ] as $column => $definition) {
-        if (!isset($lineColumns[$column])) {
+        if (!array_key_exists($column, $lineColumns)) {
             $db->exec("ALTER TABLE customer_order_import_lines ADD COLUMN {$column} {$definition}");
         }
+    }
+
+    $lineStatusType = strtolower((string)($lineColumns['line_status']['Type'] ?? ''));
+    $missingLineStatuses = array_filter(
+        ['matched', 'warning', 'blocked'],
+        static fn(string $status): bool => !str_contains($lineStatusType, "'{$status}'")
+    );
+    if ($lineStatusType !== '' && $missingLineStatuses) {
+        $db->exec("ALTER TABLE customer_order_import_lines
+            MODIFY COLUMN line_status ENUM('matched', 'warning', 'blocked') NOT NULL DEFAULT 'blocked'");
     }
 
     $legacyUnmatchedOrder = $db->query("SELECT 1

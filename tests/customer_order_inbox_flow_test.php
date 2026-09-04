@@ -50,4 +50,15 @@ $laterEdit = ['customer_id' => 3, 'customer_po_number' => 'PO-1', 'delivery_date
 inboxAssert(hfManualSnapshotMatches($approved, $approved), 'An approval must match the exact saved order.');
 inboxAssert(!hfManualSnapshotMatches($approved, $laterEdit), 'A later quantity change must require a new customer approval.');
 
+$helperSource = file_get_contents(__DIR__ . '/../api/helpers/customer_order_import.php');
+$endpointSource = file_get_contents(__DIR__ . '/../api/sales/order_inbox.php');
+inboxAssert(str_contains($helperSource, "'quantity_boxes' => 'INT NOT NULL DEFAULT 0'"), 'Legacy inbox schemas must repair quantity-box fields before save.');
+inboxAssert(str_contains($helperSource, "'system_unit_price' => 'DECIMAL(12,2) NULL'"), 'Legacy inbox schemas must repair system-price fields before save.');
+inboxAssert(str_contains($helperSource, "'raw_data' => 'JSON NULL'"), 'Legacy inbox schemas must repair raw line details before save.');
+inboxAssert(str_contains($endpointSource, 'catch (PDOException $e)'), 'Inbox endpoint must classify database faults separately from input errors.');
+inboxAssert(
+    strpos($endpointSource, 'catch (PDOException $e)') < strpos($endpointSource, 'catch (RuntimeException $e)'),
+    'PDO exceptions must be caught before RuntimeException because PDOException inherits from RuntimeException.'
+);
+
 echo "Customer order inbox flow checks passed.\n";
