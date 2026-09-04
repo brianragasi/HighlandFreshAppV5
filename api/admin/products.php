@@ -131,7 +131,6 @@ function getBaseProducts($conn) {
                    (SELECT COUNT(*) FROM master_recipes mr WHERE mr.base_product_id = bp.id AND mr.is_active = 1) AS recipe_count
             FROM base_products bp
             LEFT JOIN milk_types mt ON mt.id = bp.milk_type_id
-            WHERE bp.is_active = 1
             ORDER BY bp.id DESC
         ");
         $bases = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -630,6 +629,7 @@ function getProductPackagingOptions(PDO $conn): void {
     $stmt = $conn->query("
         SELECT i.id, i.ingredient_code, i.ingredient_name,
                i.packaging_capacity_value, i.packaging_capacity_unit,
+               i.packaging_capacity_confirmed,
                i.unit_of_measure, i.current_stock, i.available_stock
         FROM ingredients i
         JOIN ingredient_categories c ON c.id = i.category_id
@@ -676,7 +676,8 @@ function applyPrimaryContainerToSkuPayload(PDO $conn, array &$data, array $exist
 
     $stmt = $conn->prepare("
         SELECT i.id, i.ingredient_code, i.ingredient_name, i.unit_of_measure,
-               i.packaging_capacity_value, i.packaging_capacity_unit
+               i.packaging_capacity_value, i.packaging_capacity_unit,
+               i.packaging_capacity_confirmed
         FROM ingredients i
         JOIN ingredient_categories c ON c.id = i.category_id
         WHERE i.id = ? AND i.is_active = 1 AND i.packaging_role = 'container'
@@ -703,6 +704,7 @@ function applyPrimaryContainerToSkuPayload(PDO $conn, array &$data, array $exist
     $data['primary_container_id'] = (int) $container['id'];
     $data['unit_size'] = (float) $container['packaging_capacity_value'];
     $data['unit_measure'] = $container['packaging_capacity_unit'];
+    $data['confirm_unusual_capacity'] = (int) ($container['packaging_capacity_confirmed'] ?? 0) === 1;
     return $container;
 }
 
@@ -776,10 +778,22 @@ function validateProductNumericPayload(array &$data): void {
     }
 }
 
+function validateUnusualSkuCapacity(array $data): void {
+    $isBottle = in_array(strtolower(trim((string) ($data['base_unit'] ?? ''))), ['bottle', 'bottles'], true);
+    $isLargeLiterValue = strtolower(trim((string) ($data['unit_measure'] ?? ''))) === 'l'
+        && (float) ($data['unit_size'] ?? 0) >= 20;
+    if ($isBottle && $isLargeLiterValue && empty($data['confirm_unusual_capacity'])) {
+        sendValidationError([
+            'unit_size' => 'This bottle size is unusually large. Review the container in Admin > Packaging Materials and confirm whether liters or milliliters is correct.'
+        ]);
+    }
+}
+
 function createProduct($conn) {
     $data = json_decode(file_get_contents('php://input'), true) ?: [];
     $primaryContainer = applyPrimaryContainerToSkuPayload($conn, $data);
     validateProductNumericPayload($data);
+    validateUnusualSkuCapacity($data);
     
     // Validate required fields
     $required = ['product_name', 'category'];
@@ -896,7 +910,7 @@ function createProduct($conn) {
                 $insBp = $conn->prepare("
                     INSERT INTO base_products (code, name, category, milk_type_id, description,
                         default_shelf_life_days, storage_temp_min, storage_temp_max, is_active)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $insBp->execute([
                     $code,
@@ -907,6 +921,7 @@ function createProduct($conn) {
                     $data['shelf_life_days'] ?? 7,
                     $data['storage_temp_min'] ?? 2.00,
                     $data['storage_temp_max'] ?? 6.00,
+                    $data['is_active'] ?? 1,
                 ]);
                 $baseProductId = (int) $conn->lastInsertId();
             }
@@ -1124,6 +1139,7 @@ function updateProduct($conn, $id) {
 
     $primaryContainer = applyPrimaryContainerToSkuPayload($conn, $data, $existing);
     validateProductNumericPayload($data);
+    validateUnusualSkuCapacity(array_merge($existing, $data));
 
     // Keep legacy variant text intact for audit/migration, but do not allow it
     // to be edited on a base-linked SKU. Flavor belongs to base_products.

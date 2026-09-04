@@ -341,10 +341,17 @@
                         </a>
                     </li>
                     <li>
-                        <a href="ingredients.html"
+                        <a href="ingredients.html?view=raw"
                             class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-seedling w-5 text-center text-base-content/60"></i>
-                            <span class="flex-1">Ingredients</span>
+                            <span class="flex-1">Raw Ingredients</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="ingredients.html?view=packaging"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-box-open w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Packaging Materials</span>
                         </a>
                     </li>
                 </ul>
@@ -474,9 +481,19 @@
                 </div>
                 <div class="flex items-center gap-2">
                     <span class="erp-toolbar-count" id="listCountLabel">0 bases / 0 SKUs</span>
-                    <button class="btn btn-primary btn-sm" onclick="openAddModal()">
-                        <i class="fas fa-plus"></i><span class="ml-1">New formula / base</span>
+                    <button class="btn btn-primary btn-sm" onclick="openProductSetup()">
+                        <i class="fas fa-wand-magic-sparkles"></i><span class="ml-1">Set Up Product</span>
                     </button>
+                </div>
+            </div>
+
+            <div id="productSetupSummary" class="bg-base-100 border border-primary/25 rounded-xl p-3 mb-3">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                    <div>
+                        <p class="font-semibold text-sm"><i class="fas fa-list-check text-primary mr-2"></i>Finish Product Setup</p>
+                        <p id="productSetupSummaryText" class="text-xs text-base-content/60">Loading product readiness…</p>
+                    </div>
+                    <button type="button" class="btn btn-outline btn-primary btn-sm" onclick="openProductSetup()">Open Guided Setup</button>
                 </div>
             </div>
 
@@ -530,8 +547,46 @@
                     <p class="mt-2">Loading…</p>
                 </div>
             </div>
+
+            <section id="packaging-sets" class="mt-5 bg-base-100 border border-base-300 rounded-xl p-4 scroll-mt-4">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
+                    <div>
+                        <h2 class="font-bold"><i class="fas fa-layer-group text-primary mr-2"></i>Reusable Packaging Sets</h2>
+                        <p class="text-xs text-base-content/60">Save a compatible bottle, cap, label, and optional secondary packaging once; reuse it for SKUs of the same size.</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <a class="btn btn-ghost btn-sm" href="ingredients.html?view=packaging"><i class="fas fa-box-open"></i>Packaging Materials</a>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="openPackagingSetModal()"><i class="fas fa-plus"></i>Create Packaging Set</button>
+                    </div>
+                </div>
+                <div id="packagingSetsList" class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                    <div class="text-sm text-base-content/50"><span class="loading loading-spinner loading-xs"></span> Loading packaging sets…</div>
+                </div>
+            </section>
         </main>
     </div>
+
+    <dialog id="productSetupModal" class="modal">
+        <div class="modal-box w-11/12 max-w-4xl max-h-[90vh] overflow-y-auto">
+            <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button></form>
+            <h3 class="font-bold text-xl">Product Setup Wizard</h3>
+            <p class="text-sm text-base-content/60 mb-4">Follow one path from product details to a Production-ready SKU.</p>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4 text-xs">
+                <div class="rounded-lg border border-primary/30 bg-primary/5 p-2"><strong>1</strong> Product details</div>
+                <div class="rounded-lg border border-primary/30 bg-primary/5 p-2"><strong>2</strong> Package sizes</div>
+                <div class="rounded-lg border border-primary/30 bg-primary/5 p-2"><strong>3</strong> Recipe</div>
+                <div class="rounded-lg border border-primary/30 bg-primary/5 p-2"><strong>4</strong> Packaging</div>
+                <div class="rounded-lg border border-primary/30 bg-primary/5 p-2"><strong>5</strong> Review</div>
+            </div>
+            <label class="form-control mb-4">
+                <span class="label-text font-medium mb-1">Product to continue</span>
+                <select id="setupProductSelect" class="select select-bordered" onchange="renderProductSetupWizard()"></select>
+            </label>
+            <div id="productSetupWizardBody"></div>
+            <div class="modal-action"><button type="button" class="btn" onclick="document.getElementById('productSetupModal').close()">Close</button></div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
 
     <!-- ====================== ADD/EDIT BASE PRODUCT MODAL ====================== -->
     <dialog id="baseProductModal" class="modal">
@@ -539,9 +594,11 @@
             <form method="dialog">
                 <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
-            <h3 class="font-bold text-lg mb-1" id="baseModalTitle">Add Base Product</h3>
-            <p class="text-sm text-base-content/60 mb-5" id="baseModalSubtitle">Define one manufacturable formula or
-                flavor, then add its sellable packaging SKUs.</p>
+            <h3 class="font-bold text-lg mb-1" id="baseModalTitle">Product Setup — Details &amp; Package Sizes</h3>
+            <p class="text-sm text-base-content/60 mb-3" id="baseModalSubtitle">Create the product as a draft, then continue its recipe and packaging from the guided setup.</p>
+            <div class="grid grid-cols-5 gap-1 text-[11px] mb-5">
+                <span class="badge badge-primary h-auto py-2">1 Details</span><span class="badge badge-primary h-auto py-2">2 Sizes</span><span class="badge badge-ghost h-auto py-2">3 Recipe</span><span class="badge badge-ghost h-auto py-2">4 Packaging</span><span class="badge badge-ghost h-auto py-2">5 Review</span>
+            </div>
 
             <form id="baseProductForm" onsubmit="saveBaseProduct(event)">
                 <input type="hidden" id="baseRecordId" value="">
@@ -590,38 +647,44 @@
                         </select>
                     </div>
 
+                    <div class="md:col-span-2">
+                        <button type="button" id="productAdvancedToggle" class="btn btn-ghost btn-sm px-0" onclick="toggleProductAdvancedSettings(this)">
+                            <i class="fas fa-sliders"></i><span>Show advanced settings</span>
+                        </button>
+                    </div>
+
                     <!-- Divider -->
-                    <div class="md:col-span-2 divider my-0 text-xs text-base-content/40">Storage &amp; Shelf Life</div>
+                    <div class="advanced-product-field hidden md:col-span-2 divider my-0 text-xs text-base-content/40">Advanced settings — Storage &amp; Shelf Life</div>
 
                     <!-- Shelf Life -->
-                    <div class="form-control">
+                    <div class="form-control advanced-product-field hidden">
                         <label class="label"><span class="label-text font-medium">Shelf Life (days)</span></label>
                         <input type="number" id="base_shelf_life_days" class="input input-bordered" value="7" min="1" max="3650" step="1" inputmode="numeric" />
                     </div>
 
                     <!-- Storage Temp Min -->
-                    <div class="form-control">
+                    <div class="form-control advanced-product-field hidden">
                         <label class="label"><span class="label-text font-medium">Storage Temp Min (°C)</span></label>
                         <input type="number" id="base_storage_temp_min" class="input input-bordered" value="2"
                             step="0.1" min="-50" max="100" data-allow-negative />
                     </div>
 
                     <!-- Storage Temp Max -->
-                    <div class="form-control">
+                    <div class="form-control advanced-product-field hidden">
                         <label class="label"><span class="label-text font-medium">Storage Temp Max (°C)</span></label>
                         <input type="number" id="base_storage_temp_max" class="input input-bordered" value="6"
                             step="0.1" min="-50" max="100" data-allow-negative />
                     </div>
 
                     <!-- Description -->
-                    <div class="form-control md:col-span-2">
+                    <div class="form-control md:col-span-2 advanced-product-field hidden">
                         <label class="label"><span class="label-text font-medium">Description</span></label>
                         <textarea id="base_description" class="textarea textarea-bordered" rows="2"
                             placeholder="Optional product description"></textarea>
                     </div>
 
                     <!-- Active Toggle -->
-                    <div class="form-control md:col-span-2">
+                    <div class="form-control md:col-span-2 advanced-product-field hidden">
                         <label class="label cursor-pointer justify-start gap-4">
                             <input type="checkbox" id="base_is_active" class="toggle toggle-primary" checked />
                             <span class="label-text font-medium">Active Product</span>
@@ -664,8 +727,11 @@
                 <div class="modal-action">
                     <button type="button" class="btn btn-ghost"
                         onclick="document.getElementById('baseProductModal').close()">Cancel</button>
+                    <button type="button" class="btn btn-outline" id="baseModalDraftBtn" onclick="saveProductAsDraft()">
+                        <i class="fas fa-file-pen mr-2"></i>Save as Draft
+                    </button>
                     <button type="submit" class="btn btn-primary" id="baseModalSaveBtn">
-                        <i class="fas fa-save mr-2"></i><span id="baseModalSaveLabel">Save Product</span>
+                        <i class="fas fa-save mr-2"></i><span id="baseModalSaveLabel">Save &amp; Continue</span>
                     </button>
                 </div>
             </form>
@@ -764,6 +830,36 @@
     </dialog>
 
     <!-- ====================== SKU PACKAGING BOM MODAL ====================== -->
+    <dialog id="packagingSetModal" class="modal">
+        <div class="modal-box w-11/12 max-w-4xl max-h-[90vh] overflow-y-auto">
+            <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button></form>
+            <h3 id="packagingSetModalTitle" class="font-bold text-lg">Create Packaging Set</h3>
+            <p class="text-sm text-base-content/60 mb-4">A reusable template for SKUs with the same finished package size.</p>
+            <form id="packagingSetForm" onsubmit="savePackagingSet(event)">
+                <input type="hidden" id="packaging_set_id">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <label class="form-control md:col-span-2"><span class="label-text mb-1">Set name *</span><input id="packaging_set_name" class="input input-bordered" required placeholder="e.g. Standard 500 mL Bottle Set"></label>
+                    <label class="form-control"><span class="label-text mb-1">Package size *</span><input id="packaging_set_capacity" type="number" min="0.001" step="0.001" class="input input-bordered" required placeholder="500"></label>
+                    <label class="form-control"><span class="label-text mb-1">Unit *</span><select id="packaging_set_unit" class="select select-bordered"><option value="ml">mL</option><option value="L">L</option><option value="g">g</option><option value="kg">kg</option></select></label>
+                </div>
+                <details class="collapse collapse-arrow border border-base-300 mt-3">
+                    <summary class="collapse-title min-h-0 py-3 text-sm font-semibold">Advanced settings</summary>
+                    <div class="collapse-content"><label class="form-control"><span class="label-text mb-1">Internal notes</span><textarea id="packaging_set_description" class="textarea textarea-bordered" rows="2" placeholder="Optional compatibility or supplier notes"></textarea></label></div>
+                </details>
+                <div class="alert alert-info py-2 text-xs my-3"><i class="fas fa-circle-info"></i><span>Use 1 for bottles, caps, and labels. Use Waste % for expected extras. Product-specific artwork can be changed after applying the set.</span></div>
+                <div class="overflow-x-auto border border-base-300 rounded-lg">
+                    <table class="table table-sm"><thead><tr><th>Component</th><th class="w-44">Used per product</th><th class="w-28">Waste %</th><th class="w-16"></th></tr></thead><tbody id="packagingSetRows"></tbody></table>
+                </div>
+                <button type="button" id="addPackagingSetRowButton" class="btn btn-ghost btn-sm mt-2" onclick="addPackagingSetRow()"><i class="fas fa-plus"></i>Add component</button>
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('packagingSetModal').close()">Cancel</button>
+                    <button type="submit" id="savePackagingSetButton" class="btn btn-primary"><i class="fas fa-save"></i>Save Packaging Set</button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
     <dialog id="packagingBomModal" class="modal">
         <div class="modal-box w-11/12 max-w-4xl">
             <form method="dialog">
@@ -775,6 +871,16 @@
             <div id="packagingBomReadiness" class="alert alert-warning py-2 mt-3 text-sm hidden">
                 <i class="fas fa-triangle-exclamation"></i>
                 <span id="packagingBomReadinessText"></span>
+            </div>
+
+            <div id="packagingSetSuggestion" class="hidden rounded-xl border border-primary/30 bg-primary/5 p-3 mt-3">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div>
+                        <p class="text-sm font-semibold">Suggested Packaging Set</p>
+                        <p id="packagingSetSuggestionText" class="text-xs text-base-content/60"></p>
+                    </div>
+                    <button type="button" id="applyPackagingSetButton" class="btn btn-primary btn-sm" onclick="applySuggestedPackagingSet()"><i class="fas fa-wand-magic-sparkles"></i>Use This Set</button>
+                </div>
             </div>
 
             <div class="alert alert-info py-2 my-4 text-sm">
@@ -851,6 +957,10 @@
         let packagingBomRequiresBottleSet = false;
         let packagingBomPrimaryContainerId = 0;
         let packagingContainerOptions = [];
+        let packagingSets = [];
+        let packagingSetMaterials = [];
+        let packagingSetRowCounter = 0;
+        let currentSuggestedPackagingSetId = 0;
 
         /* ─────────── Sidebar / Theme ─────────── */
         function toggleSidebar() {
@@ -1097,6 +1207,139 @@
                 : [];
         }
 
+        async function packagingSetRequest(options = {}) {
+            const query = options.query || '';
+            const response = await fetch(`${ApiConfig.baseUrl}/admin/packaging_sets.php${query}`, {
+                method: options.method || 'GET',
+                headers: { ...ApiConfig.getHeaders(), ...(options.headers || {}) },
+                body: options.body,
+                cache: 'no-store'
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                const error = new Error(payload.message || 'Packaging set request failed');
+                error.errors = payload.errors || null;
+                throw error;
+            }
+            return payload;
+        }
+
+        async function loadPackagingSets() {
+            try {
+                const response = await packagingSetRequest({ query: '?include_inactive=1' });
+                packagingSets = Array.isArray(response.data?.sets) ? response.data.sets : [];
+                packagingSetMaterials = Array.isArray(response.data?.available_materials)
+                    ? response.data.available_materials
+                    : [];
+                renderPackagingSets();
+            } catch (error) {
+                document.getElementById('packagingSetsList').innerHTML = `<div class="alert alert-error text-sm"><i class="fas fa-triangle-exclamation"></i><span>${escapeHtml(error.message)}</span></div>`;
+            }
+        }
+
+        function renderPackagingSets() {
+            const target = document.getElementById('packagingSetsList');
+            if (!target) return;
+            const activeSets = packagingSets.filter(set => Number(set.is_active) === 1);
+            if (!activeSets.length) {
+                target.innerHTML = `<div class="lg:col-span-2 rounded-xl border border-dashed border-base-300 p-6 text-center text-sm text-base-content/60">No packaging sets yet. Create one for each standard package size.</div>`;
+                return;
+            }
+            target.innerHTML = activeSets.map(set => {
+                const components = (set.items || []).map(item => `${packagingRoleLabel(item.packaging_role)}: ${item.ingredient_name}`).join(' · ');
+                return `<article class="rounded-xl border border-base-300 p-3">
+                    <div class="flex items-start justify-between gap-2">
+                        <div><p class="font-semibold">${escapeHtml(set.set_name)}</p><p class="text-xs text-base-content/60">${escapeHtml(formatProductNumber(set.capacity_value, 3))} ${escapeHtml(set.capacity_unit)}</p></div>
+                        <span class="badge ${set.is_ready ? 'badge-success' : 'badge-warning'} badge-sm">${set.is_ready ? 'Ready' : 'Incomplete'}</span>
+                    </div>
+                    <p class="text-xs text-base-content/60 mt-2">${escapeHtml(components || 'No active components')}</p>
+                    ${set.is_ready ? '' : `<p class="text-xs text-warning mt-1">Missing: ${escapeHtml((set.missing_components || []).join(', '))}</p>`}
+                    <div class="flex gap-2 mt-3"><button class="btn btn-ghost btn-xs" onclick="openPackagingSetModal(${Number(set.id)})"><i class="fas fa-pen"></i>Edit set</button><button class="btn btn-ghost btn-xs text-warning" onclick="archivePackagingSet(${Number(set.id)})"><i class="fas fa-box-archive"></i>Archive</button></div>
+                </article>`;
+            }).join('');
+        }
+
+        function packagingSetMaterialOptions(selectedId = '') {
+            return packagingSetMaterials.map(material => `<option value="${Number(material.id)}" data-role="${escapeAttr(material.packaging_role || '')}" ${String(material.id) === String(selectedId) ? 'selected' : ''}>[${escapeHtml(packagingRoleLabel(material.packaging_role))}] ${escapeHtml(material.ingredient_name)} (${escapeHtml(material.ingredient_code || '—')})</option>`).join('');
+        }
+
+        function addPackagingSetRow(item = {}) {
+            const tbody = document.getElementById('packagingSetRows');
+            const id = ++packagingSetRowCounter;
+            const row = document.createElement('tr');
+            row.id = `packagingSetRow_${id}`;
+            row.innerHTML = `<td><select class="select select-bordered select-sm w-full" data-set="ingredient" required><option value="">Select component…</option>${packagingSetMaterialOptions(item.ingredient_id)}</select></td>
+                <td><input class="input input-bordered input-sm w-full text-right" data-set="quantity" type="number" min="0.000001" max="1000" step="0.000001" value="${escapeAttr(formatProductNumber(item.quantity_per_unit ?? 1, 6))}" required></td>
+                <td><input class="input input-bordered input-sm w-full text-right" data-set="waste" type="number" min="0" max="100" step="0.01" value="${escapeAttr(formatProductNumber(item.waste_percent ?? 0, 2))}"></td>
+                <td><button type="button" class="btn btn-ghost btn-xs text-error" title="Remove component" onclick="document.getElementById('packagingSetRow_${id}').remove()"><i class="fas fa-times"></i>Remove</button></td>`;
+            tbody.appendChild(row);
+        }
+
+        function openPackagingSetModal(setId = 0) {
+            const set = packagingSets.find(item => Number(item.id) === Number(setId));
+            document.getElementById('packagingSetForm').reset();
+            document.getElementById('packagingSetRows').innerHTML = '';
+            packagingSetRowCounter = 0;
+            document.getElementById('packaging_set_id').value = set?.id || '';
+            document.getElementById('packagingSetModalTitle').textContent = set ? 'Edit Packaging Set' : 'Create Packaging Set';
+            document.getElementById('packaging_set_name').value = set?.set_name || '';
+            document.getElementById('packaging_set_capacity').value = formatProductNumber(set?.capacity_value || '', 3);
+            document.getElementById('packaging_set_unit').value = set?.capacity_unit || 'ml';
+            document.getElementById('packaging_set_description').value = set?.description || '';
+            (set?.items || []).forEach(addPackagingSetRow);
+            if (!(set?.items || []).length) {
+                ['container', 'closure', 'label'].forEach(role => {
+                    const material = packagingSetMaterials.find(item => item.packaging_role === role);
+                    addPackagingSetRow(material ? { ingredient_id: material.id, quantity_per_unit: 1 } : {});
+                });
+            }
+            document.getElementById('packagingSetModal').showModal();
+        }
+
+        async function savePackagingSet(event) {
+            event.preventDefault();
+            const id = Number(document.getElementById('packaging_set_id').value || 0);
+            const items = Array.from(document.querySelectorAll('#packagingSetRows tr')).map(row => ({
+                ingredient_id: Number(row.querySelector('[data-set="ingredient"]')?.value || 0),
+                quantity_per_unit: Number(row.querySelector('[data-set="quantity"]')?.value || 0),
+                waste_percent: Number(row.querySelector('[data-set="waste"]')?.value || 0)
+            }));
+            const button = document.getElementById('savePackagingSetButton');
+            button.disabled = true;
+            try {
+                await packagingSetRequest({
+                    query: id ? `?id=${id}` : '',
+                    method: id ? 'PUT' : 'POST',
+                    body: JSON.stringify({
+                        set_name: document.getElementById('packaging_set_name').value.trim(),
+                        capacity_value: document.getElementById('packaging_set_capacity').value,
+                        capacity_unit: document.getElementById('packaging_set_unit').value,
+                        description: document.getElementById('packaging_set_description').value.trim(),
+                        is_active: 1,
+                        items
+                    })
+                });
+                showToast(id ? 'Packaging set updated' : 'Packaging set created', 'success');
+                document.getElementById('packagingSetModal').close();
+                await loadPackagingSets();
+            } catch (error) {
+                showToast(error.errors ? Object.values(error.errors)[0] : error.message, 'error');
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        async function archivePackagingSet(id) {
+            if (!confirm('Archive this packaging set? Existing SKU BOMs will stay unchanged.')) return;
+            try {
+                await packagingSetRequest({ query: `?id=${id}`, method: 'DELETE' });
+                showToast('Packaging set archived', 'success');
+                await loadPackagingSets();
+            } catch (error) {
+                showToast(error.message, 'error');
+            }
+        }
+
         function containerSizeLabel(container) {
             const value = Number(container?.packaging_capacity_value || 0);
             const shown = Number.isInteger(value) ? value : Number(value.toFixed(3));
@@ -1109,7 +1352,11 @@
             packagingContainerOptions.forEach(container => {
                 const option = document.createElement('option');
                 option.value = String(container.id);
-                option.textContent = `${containerSizeLabel(container)} — ${container.ingredient_name} (${container.ingredient_code})`;
+                const suspicious = String(container.packaging_capacity_unit || '').toLowerCase() === 'l'
+                    && Number(container.packaging_capacity_value || 0) >= 20
+                    && Number(container.packaging_capacity_confirmed || 0) !== 1;
+                option.textContent = `${suspicious ? '⚠ REVIEW SIZE — ' : ''}${containerSizeLabel(container)} — ${container.ingredient_name} (${container.ingredient_code})`;
+                option.dataset.suspiciousCapacity = suspicious ? '1' : '0';
                 select.appendChild(option);
             });
             select.value = selectedId ? String(selectedId) : '';
@@ -1155,6 +1402,7 @@
                             storage_temp_min: bp.storage_temp_min,
                             storage_temp_max: bp.storage_temp_max,
                             description: bp.description,
+                            is_active: Number(bp.is_active) === 1,
                             recipe_count: Number(bp.recipe_count) || 0,
                             has_active_recipe: bp.has_active_recipe !== false && (Number(bp.recipe_count) || 0) > 0,
                             is_orphan: bp.is_orphan === true || (Number(bp.recipe_count) || 0) === 0,
@@ -1216,6 +1464,7 @@
                 // Always recompute orphan banner from live group data
                 renderOrphanRecipeBanner(buildOrphanSummaryFromGroups(productGroups));
                 updateStats();
+                updateProductSetupSummary();
                 try {
                     renderGroups();
                 } catch (renderErr) {
@@ -1402,8 +1651,8 @@
                                 <div class="sku-code">${escapeHtml(s.product_code || '—')}</div>
                                 <div class="text-[10px] mt-1 ${s.packaging_bom_ready ? 'text-success' : 'text-warning'}">
                                     ${s.packaging_bom_ready
-                                        ? `<i class="fas fa-check-circle"></i> Packaging BOM · ${Number(s.packaging_bom_count || 0)} item(s)`
-                                        : '<i class="fas fa-triangle-exclamation"></i> Packaging BOM needed'}
+                                        ? `<i class="fas fa-check-circle"></i> Production packaging complete · ${Number(s.packaging_bom_count || 0)} component(s)`
+                                        : `<i class="fas fa-triangle-exclamation"></i> Missing: ${escapeHtml((s.packaging_bom_missing || ['packaging components']).join(', '))}`}
                                 </div>
                             </td>
                             <td class="text-base-content/60 capitalize">${escapeHtml(s.base_unit || 'piece')}</td>
@@ -1415,16 +1664,16 @@
                                 </span>
                             </td>
                             <td class="text-right">
-                                <div class="sku-actions">
-                                    <button type="button" title="Configure Packaging BOM" onclick="event.stopPropagation(); openPackagingBom(${s.id})">
-                                        <i class="fas fa-boxes-stacked"></i>
+                                <div class="flex flex-wrap justify-end gap-1">
+                                    <button type="button" class="btn btn-ghost btn-xs" title="Configure packaging" onclick="event.stopPropagation(); openPackagingBom(${s.id})">
+                                        <i class="fas fa-boxes-stacked"></i><span>${s.packaging_bom_ready ? 'Review packaging' : 'Add packaging'}</span>
                                     </button>
-                                    <button type="button" title="Edit SKU" onclick="event.stopPropagation(); editSku(${s.id})">
-                                        <i class="fas fa-pen"></i>
+                                    <button type="button" class="btn btn-ghost btn-xs" title="Edit SKU" onclick="event.stopPropagation(); editSku(${s.id})">
+                                        <i class="fas fa-pen"></i><span>Edit size</span>
                                     </button>
-                                    <button type="button" class="danger" title="Delete SKU"
+                                    <button type="button" class="btn btn-ghost btn-xs text-error" title="Archive SKU"
                                         onclick="event.stopPropagation(); deleteSku(${s.id}, '${safeName} ${safeSize}')">
-                                        <i class="fas fa-trash"></i>
+                                        <i class="fas fa-box-archive"></i><span>Archive</span>
                                     </button>
                                 </div>
                             </td>
@@ -1483,6 +1732,7 @@
                             ${g.is_orphan || !(Number(g.recipe_count) > 0)
                                 ? '<span class="badge badge-warning badge-xs" title="No active recipe — cannot manufacture">No recipe</span>'
                                 : ''}
+                            ${g.is_active === false ? '<span class="badge badge-ghost badge-xs">Draft</span>' : ''}
                             ${hasLegacySkuCollision
                                 ? '<span class="badge badge-error badge-xs" title="Duplicate active packaging configurations">Legacy SKU conflict</span>'
                                 : ''}
@@ -1494,13 +1744,17 @@
                     <td class="num">${skuCount}${activeCount < skuCount ? ` <span class="meta-muted">(${activeCount} on)</span>` : ''}</td>
                     <td class="num ${lowStock > 0 ? 'text-warning font-bold' : 'meta-muted'}">${lowStock > 0 ? lowStock : '0'}</td>
                     <td class="col-actions" onclick="event.stopPropagation()">
-                        <button type="button" class="btn btn-ghost btn-xs" title="Edit base"
+                        <button type="button" class="btn btn-ghost btn-xs" title="Continue setup"
+                            onclick="openProductSetup(${Number(g.base_product_id || 0)})">
+                            <i class="fas fa-list-check"></i>Setup
+                        </button>
+                        <button type="button" class="btn btn-ghost btn-xs" title="Edit product details"
                             onclick="editBaseProduct('${safeName}', '${safeCat}', '${safeKey}')">
-                            <i class="fas fa-pen"></i>
+                            <i class="fas fa-pen"></i>Edit
                         </button>
                         <button type="button" class="btn btn-ghost btn-xs text-primary" title="Add SKU"
                             onclick="openAddSkuModal('${safeName}', '${safeCat}', '${safeKey}')">
-                            <i class="fas fa-plus"></i>
+                            <i class="fas fa-plus"></i>Add size
                         </button>
                     </td>
                 </tr>
@@ -1558,6 +1812,115 @@
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
         }
+
+        function productSetupReadiness(group) {
+            const configuredSkus = group?.skus || [];
+            const steps = [
+                { key: 'details', label: 'Product details', complete: Boolean(group?.name && group?.category) },
+                { key: 'sizes', label: 'Package sizes', complete: configuredSkus.length > 0 },
+                { key: 'recipe', label: 'Active recipe', complete: Boolean(group?.has_active_recipe || Number(group?.recipe_count) > 0) },
+                { key: 'packaging', label: 'Packaging BOM', complete: configuredSkus.length > 0 && configuredSkus.every(sku => sku.packaging_bom_ready) }
+            ];
+            return { steps, completed: steps.filter(step => step.complete).length, ready: steps.every(step => step.complete), activeSkus: configuredSkus };
+        }
+
+        function updateProductSetupSummary() {
+            const target = document.getElementById('productSetupSummaryText');
+            if (!target) return;
+            const unfinished = productGroups.filter(group => !productSetupReadiness(group).ready);
+            target.textContent = unfinished.length
+                ? `${unfinished.length} product${unfinished.length === 1 ? '' : 's'} still need a package size, active recipe, or complete packaging BOM.`
+                : (productGroups.length ? 'Every listed product has all four setup requirements.' : 'Create the first product to begin.');
+        }
+
+        function openProductSetup(baseProductId = 0) {
+            const select = document.getElementById('setupProductSelect');
+            select.innerHTML = '<option value="new">+ Create a new product</option>' + productGroups.map(group => {
+                const readiness = productSetupReadiness(group);
+                return `<option value="${Number(group.base_product_id || 0)}">${escapeHtml(group.name)} — ${readiness.completed} of 4 complete</option>`;
+            }).join('');
+            if (baseProductId && productGroups.some(group => Number(group.base_product_id) === Number(baseProductId))) {
+                select.value = String(baseProductId);
+            } else if (productGroups.length) {
+                const unfinished = productGroups.find(group => !productSetupReadiness(group).ready);
+                select.value = String(unfinished?.base_product_id || productGroups[0].base_product_id || 'new');
+            } else {
+                select.value = 'new';
+            }
+            renderProductSetupWizard();
+            document.getElementById('productSetupModal').showModal();
+        }
+
+        function renderProductSetupWizard() {
+            const value = document.getElementById('setupProductSelect').value;
+            const body = document.getElementById('productSetupWizardBody');
+            if (value === 'new') {
+                body.innerHTML = `<div class="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-6 text-center"><i class="fas fa-box-open text-3xl text-primary mb-2"></i><p class="font-semibold">Start with the product and its sellable package sizes</p><p class="text-xs text-base-content/60 my-2">Save as Draft if the recipe or packaging master data is not ready yet.</p><button type="button" class="btn btn-primary btn-sm mt-2" onclick="document.getElementById('productSetupModal').close(); openAddModal()"><i class="fas fa-arrow-right"></i>Enter Product Details</button></div>`;
+                return;
+            }
+            const group = productGroups.find(item => Number(item.base_product_id) === Number(value));
+            if (!group) {
+                body.innerHTML = '<div class="alert alert-warning">Product could not be loaded.</div>';
+                return;
+            }
+            const readiness = productSetupReadiness(group);
+            const safeName = escapeJs(group.name);
+            const safeCategory = escapeJs(group.category);
+            const safeKey = escapeJs(group.key || `id:${group.base_product_id}`);
+            const stepButton = (step, action, label) => `<article class="rounded-xl border ${step.complete ? 'border-success/30 bg-success/5' : 'border-warning/40 bg-warning/5'} p-3 flex items-center justify-between gap-3"><div class="flex items-center gap-3"><span class="w-8 h-8 rounded-full flex items-center justify-center ${step.complete ? 'bg-success text-success-content' : 'bg-warning text-warning-content'}"><i class="fas ${step.complete ? 'fa-check' : 'fa-arrow-right'}"></i></span><div><p class="font-semibold text-sm">${escapeHtml(step.label)}</p><p class="text-xs text-base-content/60">${step.complete ? 'Complete' : 'Needs attention'}</p></div></div><button type="button" class="btn btn-sm ${step.complete ? 'btn-ghost' : 'btn-primary'}" onclick="${action}">${label}</button></article>`;
+            const packagingActions = readiness.activeSkus.map(sku => `<button type="button" class="btn btn-xs ${sku.packaging_bom_ready ? 'btn-ghost' : 'btn-warning'}" onclick="document.getElementById('productSetupModal').close(); openPackagingBom(${Number(sku.id)})">${escapeHtml(formatSize(sku) || sku.product_code)} — ${sku.packaging_bom_ready ? 'Review packaging' : 'Add packaging'}</button>`).join(' ');
+            body.innerHTML = `<div class="alert ${readiness.ready ? 'alert-success' : 'alert-warning'} mb-3"><i class="fas ${readiness.ready ? 'fa-circle-check' : 'fa-list-check'}"></i><div><p class="font-bold">${readiness.completed} of 4 setup steps complete</p><p class="text-xs">${readiness.ready ? 'Ready for Production. Review and activate the product.' : 'Choose the next incomplete step below.'}</p></div></div>
+                <div class="space-y-2">
+                    ${stepButton(readiness.steps[0], `document.getElementById('productSetupModal').close(); editBaseProduct('${safeName}', '${safeCategory}', '${safeKey}')`, 'Edit details')}
+                    ${stepButton(readiness.steps[1], `document.getElementById('productSetupModal').close(); openAddSkuModal('${safeName}', '${safeCategory}', '${safeKey}')`, 'Add package size')}
+                    ${stepButton(readiness.steps[2], `window.location.href='recipes.html?base_product_id=${Number(group.base_product_id)}'`, readiness.steps[2].complete ? 'Review recipe' : 'Create recipe')}
+                    <article class="rounded-xl border ${readiness.steps[3].complete ? 'border-success/30 bg-success/5' : 'border-warning/40 bg-warning/5'} p-3"><div class="flex items-center gap-3 mb-2"><span class="w-8 h-8 rounded-full flex items-center justify-center ${readiness.steps[3].complete ? 'bg-success text-success-content' : 'bg-warning text-warning-content'}"><i class="fas ${readiness.steps[3].complete ? 'fa-check' : 'fa-box-open'}"></i></span><div><p class="font-semibold text-sm">Packaging BOM</p><p class="text-xs text-base-content/60">Bottle/container, cap/closure, label, and optional secondary packaging</p></div></div><div class="flex flex-wrap gap-1 ml-11">${packagingActions || '<span class="text-xs text-warning">Add a package size first.</span>'}</div></article>
+                </div>
+                <div class="mt-4 rounded-xl border border-base-300 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"><div><p class="font-semibold text-sm">Review &amp; Activate</p><p class="text-xs text-base-content/60">Activation is available only after all four setup requirements are complete.</p></div><button type="button" class="btn btn-success btn-sm" ${readiness.ready ? '' : `disabled title="Complete the missing steps first"`} onclick="activateProductSetup(${Number(group.base_product_id)})"><i class="fas fa-circle-check"></i>Activate Product</button></div>`;
+        }
+
+        async function activateProductSetup(baseProductId) {
+            const group = productGroups.find(item => Number(item.base_product_id) === Number(baseProductId));
+            const readiness = productSetupReadiness(group);
+            if (!group || !readiness.ready) {
+                showToast('Complete product details, package sizes, recipe, and packaging first.', 'warning');
+                return;
+            }
+            try {
+                const response = await fetch(`${ApiConfig.baseUrl}/admin/products.php?action=update_base&id=${baseProductId}`, {
+                    method: 'PUT', headers: { ...ApiConfig.getHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: 1 })
+                });
+                const payload = await response.json();
+                if (!response.ok || !payload.success) throw new Error(payload.message || 'Activation failed');
+                for (const sku of group.skus || []) {
+                    if (Number(sku.is_active) !== 1) await AdminService.updateProduct(sku.id, { is_active: 1 });
+                }
+                showToast('Product activated and ready for Production', 'success');
+                await loadData();
+                renderProductSetupWizard();
+            } catch (error) {
+                showToast(error.message || 'Could not activate product', 'error');
+            }
+        }
+
+        function saveProductAsDraft() {
+            document.getElementById('base_is_active').checked = false;
+            document.getElementById('baseProductForm').requestSubmit();
+        }
+
+        function toggleProductAdvancedSettings(button) {
+            const fields = Array.from(document.querySelectorAll('#base-product-fields .advanced-product-field'));
+            const showing = fields.some(field => field.classList.contains('hidden'));
+            fields.forEach(field => field.classList.toggle('hidden', !showing));
+            const label = button?.querySelector('span');
+            if (label) label.textContent = showing ? 'Hide advanced settings' : 'Show advanced settings';
+        }
+
+        function resetProductAdvancedSettings() {
+            document.querySelectorAll('#base-product-fields .advanced-product-field').forEach(field => field.classList.add('hidden'));
+            const label = document.querySelector('#productAdvancedToggle span');
+            if (label) label.textContent = 'Show advanced settings';
+        }
         function escapeAttr(s) {
             return escapeHtml(s);
         }
@@ -1573,6 +1936,7 @@
             const title = document.getElementById('baseModalTitle');
             const subtitle = document.getElementById('baseModalSubtitle');
             const saveLabel = document.getElementById('baseModalSaveLabel');
+            const draftButton = document.getElementById('baseModalDraftBtn');
             const skuTitle = document.getElementById('skuSectionTitle');
             const skuHelp = document.getElementById('skuSectionHelp');
             const actionInput = document.getElementById('baseModalAction');
@@ -1594,6 +1958,7 @@
                     subtitle.textContent = 'Create another sellable packaging SKU for this formula. Base settings are not shown here.';
                 }
                 if (saveLabel) saveLabel.textContent = 'Save New SKU';
+                if (draftButton) draftButton.classList.add('hidden');
                 if (skuTitle) skuTitle.textContent = 'New packaging SKU';
                 if (skuHelp) {
                     skuHelp.textContent = 'Enter packaging type, size, and selling price. Existing SKUs are listed above for read-only context.';
@@ -1606,14 +1971,17 @@
                 if (fields) fields.classList.remove('hidden');
                 if (banner) banner.classList.add('hidden');
                 if (title) {
-                    title.textContent = action === 'create' ? 'Add Base Product' : 'Edit Base Product';
+                    title.textContent = action === 'create'
+                        ? 'Product Setup — Details & Package Sizes'
+                        : 'Edit Product Details & Package Sizes';
                 }
                 if (subtitle) {
                     subtitle.textContent = action === 'create'
-                        ? 'Define one manufacturable formula or flavor, then add its sellable packaging SKUs.'
+                        ? 'Create the product as a draft, then continue its recipe and packaging from the guided setup.'
                         : 'Update the shared formula identity and its packaging SKUs.';
                 }
-                if (saveLabel) saveLabel.textContent = action === 'create' ? 'Save Product' : 'Save Changes';
+                if (saveLabel) saveLabel.textContent = action === 'create' ? 'Save & Continue' : 'Save Changes';
+                if (draftButton) draftButton.classList.toggle('hidden', action !== 'create');
                 if (skuTitle) skuTitle.textContent = 'Sellable Packaging SKUs';
                 if (skuHelp) {
                     skuHelp.textContent = 'Add every packaging size you sell. Each SKU has its own product code, packaging BOM, and price.';
@@ -1627,11 +1995,14 @@
 
         /* ─────────── Open Add Base Product Modal ─────────── */
         function openAddModal() {
+            resetProductAdvancedSettings();
             document.getElementById('baseProductForm').reset();
             document.getElementById('baseRecordId').value = '';
             document.getElementById('baseOriginalKey').value = '';
             document.getElementById('baseProductId').value = '';
-            document.getElementById('base_is_active').checked = true;
+            // New products stay outside Production until the guided setup has
+            // a size, active recipe, and complete packaging BOM.
+            document.getElementById('base_is_active').checked = false;
             ['base_product_name', 'base_category', 'base_milk_type_id'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.removeAttribute('disabled');
@@ -1651,6 +2022,7 @@
          * @param {'edit'|'add_sku'} action - pencil vs + Add SKU
          */
         function editBaseProduct(productName, category, groupKey, action = 'edit') {
+            resetProductAdvancedSettings();
             const group = findGroup(productName, category, groupKey);
             if (!group) return;
             const firstSku = group.skus[0];
@@ -1820,6 +2192,11 @@
                     ok = false;
                     containerSelect?.classList.add('select-error');
                     if (!firstBad && containerSelect) firstBad = containerSelect;
+                } else if (baseUnit === 'bottle'
+                    && containerSelect?.selectedOptions?.[0]?.dataset?.suspiciousCapacity === '1') {
+                    ok = false;
+                    containerSelect.classList.add('select-error');
+                    if (!firstBad) firstBad = containerSelect;
                 } else {
                     containerSelect?.classList.remove('select-error');
                 }
@@ -1855,7 +2232,10 @@
             });
 
             if (!ok) {
-                const msg = 'Choose the actual container for every bottle SKU, and enter a valid price and size.';
+                const suspiciousSelected = document.querySelector('#skuList .sku-primary-container option:checked[data-suspicious-capacity="1"]');
+                const msg = suspiciousSelected
+                    ? 'This container has an unusually large liter value. Review it in Packaging Materials before using it on a product.'
+                    : 'Choose the actual container for every bottle SKU, and enter a valid price and size.';
                 if (typeof showToast === 'function') showToast(msg, 'error');
                 if (firstBad) {
                     firstBad.focus();
@@ -1882,6 +2262,9 @@
             if (isBottle && !containerSelect?.value) {
                 ok = false;
                 containerSelect?.classList.add('select-error');
+            } else if (isBottle && containerSelect?.selectedOptions?.[0]?.dataset?.suspiciousCapacity === '1') {
+                ok = false;
+                containerSelect.classList.add('select-error');
             } else {
                 containerSelect?.classList.remove('select-error');
             }
@@ -1903,7 +2286,9 @@
                 priceErr?.classList.add('hidden');
             }
             if (!ok) {
-                const msg = 'Price and Size must be greater than zero.';
+                const msg = containerSelect?.selectedOptions?.[0]?.dataset?.suspiciousCapacity === '1'
+                    ? 'Review this unusually large liter value in Packaging Materials before using the container.'
+                    : 'Price and Size must be greater than zero.';
                 if (typeof showToast === 'function') showToast(msg, 'error');
             }
             return ok;
@@ -1979,6 +2364,7 @@
                             class="select select-sm select-bordered w-full sku-field sku-primary-container"
                             onchange="applySkuRowContainer(this.closest('.sku-row'))"></select>
                         <label class="label py-0"><span class="label-text-alt text-info">Determines size</span></label>
+                        <a href="ingredients.html?view=packaging" class="link link-primary text-[11px] mt-1"><i class="fas fa-plus-circle mr-1"></i>Create bottle / container</a>
                     </div>
                     <div class="form-control w-full min-w-0">
                         <label class="label py-0"><span class="label-text text-xs">Size <span class="text-error">*</span></span></label>
@@ -2430,7 +2816,9 @@
                             is_active: isActive
                         });
                     }
-                    showToast(`Product saved with ${skuRows.length} SKU(s)`, 'success');
+                    showToast(isActive
+                        ? `Product saved with ${skuRows.length} SKU(s)`
+                        : `Draft saved with ${skuRows.length} package size(s)`, 'success');
                 }
 
                 document.getElementById('baseProductModal').close();
@@ -2439,7 +2827,14 @@
                     const el = document.getElementById(id);
                     if (el) el.removeAttribute('disabled');
                 });
-                loadData();
+                await loadData();
+                const savedGroup = productGroups.find(group =>
+                    String(group.name || '').trim().toLowerCase() === baseName.toLowerCase()
+                    && group.category === category
+                );
+                if (savedGroup?.base_product_id) {
+                    openProductSetup(savedGroup.base_product_id);
+                }
             } catch (err) {
                 console.error(err);
                 showToast(err?.message || 'Failed to save product', 'error');
@@ -2551,6 +2946,21 @@
                     `${sku.product_code || 'SKU'} — ${sku.base_product_name || sku.product_name || 'Product'} · ${sku.unit_size || ''} ${sku.unit_measure || ''}`;
                 document.getElementById('packagingBomRows').innerHTML = '';
 
+                const skuCapacity = normalizeSkuSize(sku.unit_size, sku.unit_measure);
+                const suggestion = packagingSets.find(set => {
+                    if (Number(set.is_active) !== 1 || !set.is_ready) return false;
+                    const setCapacity = normalizeSkuSize(set.capacity_value, set.capacity_unit);
+                    return skuCapacity && setCapacity && skuCapacity.family === setCapacity.family
+                        && Math.abs(skuCapacity.value - setCapacity.value) < 0.01;
+                });
+                currentSuggestedPackagingSetId = Number(suggestion?.id || 0);
+                const suggestionBox = document.getElementById('packagingSetSuggestion');
+                suggestionBox.classList.toggle('hidden', !suggestion);
+                if (suggestion) {
+                    document.getElementById('packagingSetSuggestionText').textContent =
+                        `${suggestion.set_name} matches ${sku.unit_size} ${sku.unit_measure}. Applying it replaces this SKU's current packaging lines; you can edit them before saving.`;
+                }
+
                 (data.items || []).forEach(item => addPackagingBomRow(item));
                 if (!(data.items || []).length) addPackagingBomRow();
                 refreshPackagingBomEmptyState();
@@ -2559,6 +2969,28 @@
             } catch (error) {
                 const detail = error.errors ? Object.values(error.errors).join('; ') : error.message;
                 showToast(detail || 'Failed to load packaging BOM', 'error');
+            }
+        }
+
+        async function applySuggestedPackagingSet() {
+            const productId = Number(document.getElementById('packaging_bom_product_id').value || 0);
+            if (!productId || !currentSuggestedPackagingSetId) return;
+            const button = document.getElementById('applyPackagingSetButton');
+            button.disabled = true;
+            try {
+                await packagingSetRequest({
+                    query: '?action=apply',
+                    method: 'POST',
+                    body: JSON.stringify({ product_id: productId, packaging_set_id: currentSuggestedPackagingSetId })
+                });
+                showToast('Packaging set applied. Review the component lines, then save if you make changes.', 'success');
+                document.getElementById('packagingBomModal').close();
+                await Promise.all([loadData(), loadPackagingSets()]);
+                await openPackagingBom(productId);
+            } catch (error) {
+                showToast(error.errors ? Object.values(error.errors)[0] : error.message, 'error');
+            } finally {
+                button.disabled = false;
             }
         }
 
@@ -2901,8 +3333,11 @@
             }
             // Always attempt catalog load even if sidebar user chrome fails
             try {
-                await loadPackagingContainerOptions();
+                await Promise.all([loadPackagingContainerOptions(), loadPackagingSets()]);
                 await loadData();
+                if (window.location.hash === '#packaging-sets') {
+                    document.getElementById('packaging-sets')?.scrollIntoView({ behavior: 'smooth' });
+                }
             } catch (err) {
                 console.error('Init loadData error:', err);
                 showProductsLoadError(err?.message || 'Failed to initialize product catalog');

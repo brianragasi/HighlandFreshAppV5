@@ -631,9 +631,9 @@ function createRecipe($conn) {
     if ($master && empty($master['milk_type_id'])) {
         $errors['milk_type_id'] = 'Set the milk type on the base product before saving a recipe';
     }
-    if ($master && $willBeActive && (int) ($master['base_product_is_active'] ?? 1) !== 1) {
-        $errors['base_product_id'] = 'Activate the base product before making its recipe active for production';
-    }
+    // An approved recipe may be configured while its product is still a draft.
+    // Production continues to require an active product; Product Setup performs
+    // that final activation only after SKU packaging is complete.
 
     if (empty($data['base_milk_liters']) || (float) $data['base_milk_liters'] < 1) {
         $errors['base_milk_liters'] = 'Base milk liters must be at least 1';
@@ -786,9 +786,8 @@ function updateRecipe($conn, $id) {
     if ($master && empty($master['milk_type_id'])) {
         $errors['milk_type_id'] = 'Set the milk type on the base product before saving a recipe';
     }
-    if ($master && $willBeActive && (int) ($master['base_product_is_active'] ?? 1) !== 1) {
-        $errors['base_product_id'] = 'Activate the base product before making its recipe active for production';
-    }
+    // Allow recipe configuration for a draft product. The active-product gate
+    // remains in Production and the Product Setup readiness flow.
 
     if (isset($data['base_milk_liters']) && (float) $data['base_milk_liters'] < 1) {
         $errors['base_milk_liters'] = 'Base milk liters must be at least 1';

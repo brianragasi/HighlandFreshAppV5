@@ -167,10 +167,17 @@
                         </a>
                     </li>
                     <li>
-                        <a href="ingredients.html"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                        <a id="rawIngredientsNav" href="ingredients.html?view=raw"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-seedling w-5 text-center"></i>
-                            <span class="flex-1">Ingredients</span>
+                            <span class="flex-1">Raw Ingredients</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a id="packagingMaterialsNav" href="ingredients.html?view=packaging"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-box-open w-5 text-center"></i>
+                            <span class="flex-1">Packaging Materials</span>
                         </a>
                     </li>
                 </ul>
@@ -301,8 +308,8 @@
             <!-- Master-data list: KPIs live on warehouse/purchasing dashboards, not here -->
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div>
-                    <h1 class="text-lg font-bold leading-tight">Ingredients</h1>
-                    <p class="text-xs text-base-content/50">Master data — UOM, reorder points, costs</p>
+                    <h1 id="pageTitle" class="text-lg font-bold leading-tight">Raw Ingredients</h1>
+                    <p id="pageSubtitle" class="text-xs text-base-content/50">Food and process materials — units, reorder points, and costs</p>
                 </div>
                 <div class="flex items-center gap-2">
                     <span class="text-xs text-base-content/50 font-mono" id="listCountLabel">
@@ -310,8 +317,32 @@
                         <span id="lowStockCount">0</span> low · <span id="totalValue">₱0</span>
                     </span>
                     <button class="btn btn-primary btn-sm" onclick="openModal()">
-                        <i class="fas fa-plus"></i><span class="ml-1">Add</span>
+                        <i class="fas fa-plus"></i><span class="ml-1" id="primaryAddLabel">Add Ingredient</span>
                     </button>
+                </div>
+            </div>
+
+            <div id="packagingQuickActions" class="hidden bg-base-100 border border-base-300 rounded-xl p-3">
+                <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                    <div>
+                        <p class="font-semibold text-sm">What packaging component are you adding?</p>
+                        <p class="text-xs text-base-content/55">Choose the real component type. Product setup uses it to find compatible materials.</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-sm btn-outline" onclick="openModal(null, 'container')"><i class="fas fa-bottle-water"></i>Add Bottle / Container</button>
+                        <button type="button" class="btn btn-sm btn-outline" onclick="openModal(null, 'closure')"><i class="fas fa-circle-dot"></i>Add Cap / Closure</button>
+                        <button type="button" class="btn btn-sm btn-outline" onclick="openModal(null, 'label')"><i class="fas fa-tag"></i>Add Label</button>
+                        <button type="button" class="btn btn-sm btn-outline" onclick="openModal(null, 'secondary')"><i class="fas fa-box"></i>Add Secondary Packaging</button>
+                        <a href="products.html#packaging-sets" class="btn btn-sm btn-primary"><i class="fas fa-layer-group"></i>Manage Packaging Sets</a>
+                    </div>
+                </div>
+            </div>
+
+            <div id="capacityReviewBanner" class="hidden alert alert-warning py-3">
+                <i class="fas fa-triangle-exclamation"></i>
+                <div>
+                    <p class="font-semibold">Some package sizes need review</p>
+                    <p id="capacityReviewText" class="text-xs"></p>
                 </div>
             </div>
 
@@ -595,6 +626,19 @@
     <!-- Toast Container -->
     <div class="toast toast-end" id="toastContainer"></div>
 
+    <dialog id="capacityWarningModal" class="modal">
+        <div class="modal-box max-w-lg">
+            <h3 class="font-bold text-lg"><i class="fas fa-ruler-combined text-warning mr-2"></i>Check this package size</h3>
+            <p id="capacityWarningMessage" class="py-4 text-sm"></p>
+            <p class="text-xs text-base-content/60">The system will not change the record unless you choose an option.</p>
+            <div class="modal-action flex-wrap">
+                <button type="button" class="btn btn-ghost" data-capacity-choice="back">Go back</button>
+                <button type="button" class="btn btn-outline" data-capacity-choice="keep">Keep liters</button>
+                <button type="button" class="btn btn-warning" data-capacity-choice="milliliters">Change to mL</button>
+            </div>
+        </div>
+    </dialog>
+
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../js/ui/notification-layer.js?v=20260816-1"></script>
@@ -605,6 +649,11 @@
         let currentPage = 1;
         let searchTimeout = null;
         let categories = [];
+        const materialWorkspace = new URLSearchParams(window.location.search).get('view') === 'packaging'
+            ? 'packaging'
+            : 'raw';
+        let packagingCategoryId = null;
+        let unusualCapacityConfirmed = false;
 
         function escapeHtml(value) {
             const div = document.createElement('div');
@@ -650,12 +699,20 @@
                     categories = response.data.categories || [];
                     const filterSelect = document.getElementById('categoryFilter');
                     const formSelect = document.getElementById('category_id');
+                    const packagingCategory = categories.find(c => getUnitGroupForCategoryName(c.category_name) === 'packaging');
+                    packagingCategoryId = packagingCategory ? Number(packagingCategory.id) : null;
 
                     categories.forEach(c => {
                         const categoryId = Number(c.id) || 0;
+                        const isPackagingCategory = getUnitGroupForCategoryName(c.category_name) === 'packaging';
+                        if ((materialWorkspace === 'packaging') !== isPackagingCategory) return;
                         filterSelect.innerHTML += `<option value="${categoryId}">${escapeHtml(c.category_name)}</option>`;
                         formSelect.innerHTML += `<option value="${categoryId}" data-category-name="${escapeAttr(c.category_name)}">${escapeHtml(c.category_name)}</option>`;
                     });
+                    if (materialWorkspace === 'packaging' && packagingCategoryId) {
+                        filterSelect.value = String(packagingCategoryId);
+                        filterSelect.disabled = true;
+                    }
                 }
             } catch (error) {
                 console.error('Error loading categories:', error);
@@ -1140,7 +1197,8 @@
                     limit: 20,
                     search: document.getElementById('searchInput').value,
                     category_id: document.getElementById('categoryFilter').value,
-                    is_active: document.getElementById('statusFilter').value
+                    is_active: document.getElementById('statusFilter').value,
+                    material_scope: materialWorkspace
                 };
 
                 const response = await AdminService.getIngredients(params);
@@ -1174,6 +1232,21 @@
 
         function renderTable(ingredients) {
             const tableBody = document.getElementById('dataTable');
+
+            if (materialWorkspace === 'packaging') {
+                const suspicious = (ingredients || []).filter(item =>
+                    ['container', 'label'].includes(String(item.packaging_role || ''))
+                    && String(item.packaging_capacity_unit || '').toLowerCase() === 'l'
+                    && Number(item.packaging_capacity_value || 0) >= 20
+                    && Number(item.packaging_capacity_confirmed || 0) !== 1
+                );
+                const banner = document.getElementById('capacityReviewBanner');
+                banner?.classList.toggle('hidden', suspicious.length === 0);
+                const text = document.getElementById('capacityReviewText');
+                if (text && suspicious.length) {
+                    text.textContent = `${suspicious.map(item => `${item.ingredient_name} (${Number(item.packaging_capacity_value)} L)`).join(', ')}. Open each record and confirm whether the unit should be mL.`;
+                }
+            }
 
             if (!ingredients || ingredients.length === 0) {
                 tableBody.innerHTML = '<tr><td colspan="11" class="text-center py-8 text-base-content/60">No ingredients found</td></tr>';
@@ -1221,12 +1294,12 @@
                         </span>
                     </td>
                     <td>
-                        <div class="ingredient-row-actions flex gap-1">
-                            <button type="button" class="btn btn-ghost btn-sm btn-square" onclick="editRecord(${i.id})" title="Edit ingredient" aria-label="Edit ingredient">
-                                <i class="fas fa-edit"></i>
+                        <div class="ingredient-row-actions flex flex-wrap gap-1">
+                            <button type="button" class="btn btn-ghost btn-xs" onclick="editRecord(${i.id})" title="Edit ${materialWorkspace === 'packaging' ? 'packaging material' : 'ingredient'}">
+                                <i class="fas fa-edit"></i><span>Edit</span>
                             </button>
-                            <button type="button" class="btn btn-ghost btn-sm btn-square text-warning" onclick="deleteRecord(${i.id})" title="Archive ingredient" aria-label="Archive ingredient">
-                                <i class="fas fa-box-archive"></i>
+                            <button type="button" class="btn btn-ghost btn-xs text-warning" onclick="deleteRecord(${i.id})" title="Archive ${materialWorkspace === 'packaging' ? 'packaging material' : 'ingredient'}">
+                                <i class="fas fa-box-archive"></i><span>Archive</span>
                             </button>
                         </div>
                     </td>
@@ -1254,8 +1327,10 @@
             loadData();
         }
 
-        function openModal(id = null) {
-            document.getElementById('modalTitle').textContent = id ? 'Edit Ingredient' : 'Add Ingredient';
+        function openModal(id = null, preferredPackagingRole = '') {
+            document.getElementById('modalTitle').textContent = id
+                ? (materialWorkspace === 'packaging' ? 'Edit Packaging Material' : 'Edit Raw Ingredient')
+                : (materialWorkspace === 'packaging' ? 'Add Packaging Material' : 'Add Raw Ingredient');
             document.getElementById('dataForm').reset();
             document.getElementById('recordId').value = '';
             document.getElementById('physical_state').disabled = false;
@@ -1266,7 +1341,42 @@
             // Reset UOM to placeholder until category is chosen
             populateUnitOfMeasureOptions(null, true);
             updateUnitBadges();
+            unusualCapacityConfirmed = false;
+            if (!id && materialWorkspace === 'packaging' && packagingCategoryId) {
+                document.getElementById('category_id').value = String(packagingCategoryId);
+                onIngredientCategoryChange();
+                document.getElementById('packaging_role').value = preferredPackagingRole || '';
+                syncPackagingCapacityFields(true);
+                if (preferredPackagingRole) {
+                    document.getElementById('ingredient_name').placeholder = {
+                        container: 'e.g. PET Bottle — 500 mL',
+                        closure: 'e.g. 28 mm Tamper-evident Cap',
+                        label: 'e.g. Ube Milk Label — 500 mL',
+                        secondary: 'e.g. Shrink Wrap — 12 bottles'
+                    }[preferredPackagingRole] || 'Packaging material name';
+                }
+            }
             document.getElementById('formModal').showModal();
+        }
+
+        function reviewSuspiciousCapacity(value, unit) {
+            if (String(unit).toLowerCase() !== 'l' || Number(value) < 20 || unusualCapacityConfirmed) {
+                return Promise.resolve('continue');
+            }
+            const modal = document.getElementById('capacityWarningModal');
+            document.getElementById('capacityWarningMessage').textContent =
+                `You entered ${Number(value)} L. This is unusually large for a sellable dairy package. Did you mean ${Number(value)} mL?`;
+            modal.showModal();
+            return new Promise(resolve => {
+                const handler = event => {
+                    const choice = event.target.closest('[data-capacity-choice]')?.dataset.capacityChoice;
+                    if (!choice) return;
+                    modal.removeEventListener('click', handler);
+                    modal.close();
+                    resolve(choice);
+                };
+                modal.addEventListener('click', handler);
+            });
         }
 
         function closeModal() {
@@ -1428,6 +1538,19 @@
                 document.getElementById('packaging_capacity_value').focus();
                 return;
             }
+            if (isPackaging && needsPackagingCapacity) {
+                const capacityUnit = document.getElementById('packaging_capacity_unit').value;
+                const choice = await reviewSuspiciousCapacity(packagingCapacity, capacityUnit);
+                if (choice === 'back') {
+                    document.getElementById('packaging_capacity_value').focus();
+                    return;
+                }
+                if (choice === 'milliliters') {
+                    document.getElementById('packaging_capacity_unit').value = 'ml';
+                } else if (choice === 'keep') {
+                    unusualCapacityConfirmed = true;
+                }
+            }
 
             // Guard: unit must be allowed for both category and material form.
             if (!unitOfMeasure) {
@@ -1458,6 +1581,7 @@
                 packaging_capacity_unit: isPackaging && needsPackagingCapacity
                     ? document.getElementById('packaging_capacity_unit').value
                     : null,
+                confirm_unusual_capacity: unusualCapacityConfirmed,
                 unit_of_measure: unitOfMeasure,
                 minimum_stock: document.getElementById('minimum_stock').value,
                 reorder_point: document.getElementById('reorder_point').value,
@@ -1529,6 +1653,16 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
+            const packagingMode = materialWorkspace === 'packaging';
+            document.getElementById('pageTitle').textContent = packagingMode ? 'Packaging Materials' : 'Raw Ingredients';
+            document.getElementById('pageSubtitle').textContent = packagingMode
+                ? 'Bottles, caps, labels, and secondary packaging used by sellable SKUs'
+                : 'Food and process materials — units, reorder points, and costs';
+            document.getElementById('primaryAddLabel').textContent = packagingMode ? 'Add Packaging Material' : 'Add Raw Ingredient';
+            document.getElementById('packagingQuickActions').classList.toggle('hidden', !packagingMode);
+            const activeNav = document.getElementById(packagingMode ? 'packagingMaterialsNav' : 'rawIngredientsNav');
+            activeNav?.classList.add('bg-primary', 'text-primary-content');
+            activeNav?.classList.remove('hover:bg-base-200');
             await loadCategories();
             loadData();
         });

@@ -285,10 +285,17 @@
                         </a>
                     </li>
                     <li>
-                        <a href="ingredients.html"
+                        <a href="ingredients.html?view=raw"
                             class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-seedling w-5 text-center text-base-content/60"></i>
-                            <span class="flex-1">Ingredients</span>
+                            <span class="flex-1">Raw Ingredients</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="ingredients.html?view=packaging"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-box-open w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Packaging Materials</span>
                         </a>
                     </li>
                 </ul>
@@ -466,6 +473,16 @@
                     </div>
                     <div class="stat-title text-xs">Customers</div>
                     <div class="stat-value text-2xl" id="statCustomers">0</div>
+                </div>
+            </div>
+
+            <div id="productSetupDashboardCard" class="bg-base-100 rounded-2xl border border-primary/30 shadow-sm p-5 mb-6">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div class="flex items-start gap-3">
+                        <span class="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center"><i class="fas fa-list-check"></i></span>
+                        <div><h3 class="font-bold">Finish Product Setup</h3><p id="productSetupDashboardText" class="text-xs text-base-content/60 mt-1">Checking products, recipes, and packaging…</p></div>
+                    </div>
+                    <a href="products.html" class="btn btn-primary btn-sm">Continue Setup</a>
                 </div>
             </div>
 
@@ -883,6 +900,7 @@
                 renderLowStockAlerts(stats.low_stock_alerts || []);
                 renderRecentActivity(stats.recent_activity || []);
                 await loadApprovalDecisionHistory();
+                await loadProductSetupReadiness();
 
                 // Sidebar disposal / recall badges (best-effort)
                 try {
@@ -927,6 +945,30 @@
             renderLowStockAlerts(stats.low_stock_alerts || []);
             renderRecentActivity(stats.recent_activity || []);
             await loadApprovalDecisionHistory();
+            await loadProductSetupReadiness();
+        }
+
+        async function loadProductSetupReadiness() {
+            const text = document.getElementById('productSetupDashboardText');
+            try {
+                const response = await fetch(`${ApiConfig.baseUrl}/admin/products.php?action=base_products&_=${Date.now()}`, {
+                    headers: ApiConfig.getHeaders(), cache: 'no-store'
+                });
+                const payload = await response.json();
+                if (!response.ok || !payload.success) throw new Error(payload.message || 'Readiness unavailable');
+                const bases = payload.data?.base_products || [];
+                const incomplete = bases.filter(base => {
+                    const configuredSkus = base.skus || [];
+                    return !base.name || !base.category || configuredSkus.length === 0
+                        || !base.has_active_recipe
+                        || !configuredSkus.every(sku => sku.packaging_bom_ready);
+                });
+                text.textContent = incomplete.length
+                    ? `${incomplete.length} product${incomplete.length === 1 ? '' : 's'} need a package size, active recipe, or complete packaging before Production can use them.`
+                    : (bases.length ? 'All products have the required setup for Production.' : 'No products yet. Start the guided product setup.');
+            } catch (error) {
+                text.textContent = 'Open Products to review setup readiness.';
+            }
         }
 
         async function testEmailService(button) {

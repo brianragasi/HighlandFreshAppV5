@@ -77,6 +77,7 @@ function getIngredients($conn) {
     $search = isset($_GET['search']) ? $_GET['search'] : '';
     $categoryId = isset($_GET['category_id']) ? intval($_GET['category_id']) : null;
     $isActive = isset($_GET['is_active']) ? $_GET['is_active'] : '';
+    $materialScope = strtolower(trim((string) ($_GET['material_scope'] ?? '')));
     
     // Build WHERE clause
     $where = [];
@@ -98,11 +99,20 @@ function getIngredients($conn) {
         $where[] = "i.is_active = ?";
         $params[] = intval($isActive);
     }
+    if ($materialScope === 'packaging') {
+        $where[] = "(LOWER(COALESCE(c.category_name, '')) LIKE '%packag%'
+            OR LOWER(COALESCE(c.category_code, '')) LIKE '%pack%'
+            OR LOWER(COALESCE(c.category_name, '')) LIKE '%container%')";
+    } elseif ($materialScope === 'raw') {
+        $where[] = "NOT (LOWER(COALESCE(c.category_name, '')) LIKE '%packag%'
+            OR LOWER(COALESCE(c.category_code, '')) LIKE '%pack%'
+            OR LOWER(COALESCE(c.category_name, '')) LIKE '%container%')";
+    }
     
     $whereClause = count($where) > 0 ? 'WHERE ' . implode(' AND ', $where) : '';
     
     // Get total count
-    $countSql = "SELECT COUNT(*) as total FROM ingredients i $whereClause";
+    $countSql = "SELECT COUNT(*) as total FROM ingredients i LEFT JOIN ingredient_categories c ON i.category_id = c.id $whereClause";
     $countStmt = $conn->prepare($countSql);
     $countStmt->execute($params);
     $total = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
@@ -813,6 +823,18 @@ function createIngredient($conn, $currentUser) {
     validateIngredientCategoryUnit($conn, $data['category_id'], $data['unit_of_measure']);
     $data['packaging_role'] = $isPackagingCategory ? $packagingRole : null;
     applyIngredientPackagingCapacity($data, $data['packaging_role']);
+    if (in_array($data['packaging_role'], ['container', 'label'], true)
+        && strtolower((string) ($data['packaging_capacity_unit'] ?? '')) === 'l'
+        && (float) ($data['packaging_capacity_value'] ?? 0) >= 20
+        && empty($data['confirm_unusual_capacity'])) {
+        sendValidationError([
+            'packaging_capacity_value' => 'This package size is unusually large. Confirm that liters—not milliliters—is intentional.'
+        ]);
+    }
+    $data['packaging_capacity_confirmed'] = !in_array($data['packaging_role'], ['container', 'label'], true)
+        || strtolower((string) ($data['packaging_capacity_unit'] ?? '')) !== 'l'
+        || (float) ($data['packaging_capacity_value'] ?? 0) < 20
+        || !empty($data['confirm_unusual_capacity']) ? 1 : 0;
     if ($isPackagingCategory) {
         $data['is_perishable'] = 0;
         $data['shelf_life_days'] = null;
@@ -835,10 +857,10 @@ function createIngredient($conn, $currentUser) {
     }
     
         $sql = "INSERT INTO ingredients (ingredient_code, ingredient_name, category_id, unit_of_measure, physical_state, packaging_role,
-            packaging_capacity_value, packaging_capacity_unit,
+            packaging_capacity_value, packaging_capacity_unit, packaging_capacity_confirmed,
             minimum_stock, reorder_point, maximum_stock, lead_time_days, current_stock, initial_stock_route, onboarding_status,
             storage_location, storage_requirements, shelf_life_days, is_perishable, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
     $conn->beginTransaction();
     try {
@@ -852,6 +874,7 @@ function createIngredient($conn, $currentUser) {
             $data['packaging_role'],
             $data['packaging_capacity_value'],
             $data['packaging_capacity_unit'],
+            $data['packaging_capacity_confirmed'],
             $data['minimum_stock'] ?? 0,
             $data['reorder_point'] ?? 0,
             $data['maximum_stock'] ?? null,
@@ -1006,6 +1029,22 @@ function updateIngredient($conn, $id, $currentUser) {
     }
     $data['packaging_role'] = $isPackagingCategory ? $packagingRole : null;
     applyIngredientPackagingCapacity($data, $data['packaging_role'], $currentIngredient);
+    $keptConfirmedCapacity = (int) ($currentIngredient['packaging_capacity_confirmed'] ?? 0) === 1
+        && abs((float) ($data['packaging_capacity_value'] ?? 0) - (float) ($currentIngredient['packaging_capacity_value'] ?? 0)) < 0.000001
+        && strtolower((string) ($data['packaging_capacity_unit'] ?? '')) === strtolower((string) ($currentIngredient['packaging_capacity_unit'] ?? ''));
+    $unusualCapacityConfirmed = !empty($data['confirm_unusual_capacity']) || $keptConfirmedCapacity;
+    if (in_array($data['packaging_role'], ['container', 'label'], true)
+        && strtolower((string) ($data['packaging_capacity_unit'] ?? '')) === 'l'
+        && (float) ($data['packaging_capacity_value'] ?? 0) >= 20
+        && !$unusualCapacityConfirmed) {
+        sendValidationError([
+            'packaging_capacity_value' => 'This package size is unusually large. Confirm that liters—not milliliters—is intentional.'
+        ]);
+    }
+    $data['packaging_capacity_confirmed'] = !in_array($data['packaging_role'], ['container', 'label'], true)
+        || strtolower((string) ($data['packaging_capacity_unit'] ?? '')) !== 'l'
+        || (float) ($data['packaging_capacity_value'] ?? 0) < 20
+        || $unusualCapacityConfirmed ? 1 : 0;
     if ($isPackagingCategory) {
         $data['is_perishable'] = 0;
         $data['shelf_life_days'] = null;
@@ -1044,7 +1083,7 @@ function updateIngredient($conn, $id, $currentUser) {
     $params = [];
     
     $allowedFields = ['ingredient_name', 'category_id', 'unit_of_measure', 'physical_state', 'packaging_role', 'minimum_stock',
-                      'packaging_capacity_value', 'packaging_capacity_unit',
+                      'packaging_capacity_value', 'packaging_capacity_unit', 'packaging_capacity_confirmed',
                       'reorder_point', 'maximum_stock', 'lead_time_days',
                       'storage_location', 'storage_requirements', 'shelf_life_days', 'is_perishable', 'is_active',
                      ];

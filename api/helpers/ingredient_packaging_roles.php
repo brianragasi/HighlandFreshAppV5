@@ -134,6 +134,16 @@ function ensureIngredientPackagingRoleSupport(PDO $db): void
         $db->exec("ALTER TABLE `ingredients`
             ADD COLUMN `packaging_capacity_unit` VARCHAR(20) NULL AFTER `packaging_capacity_value`");
     }
+    if (!ingredientPackagingRoleColumnExists($db, 'packaging_capacity_confirmed')) {
+        if ($db->inTransaction()) {
+            throw new RuntimeException('Packaging capacity confirmation must be initialized before starting a transaction');
+        }
+        $db->exec("ALTER TABLE `ingredients`
+            ADD COLUMN `packaging_capacity_confirmed` TINYINT(1) NOT NULL DEFAULT 0 AFTER `packaging_capacity_unit`");
+        $db->exec("UPDATE ingredients
+            SET packaging_capacity_confirmed = 1
+            WHERE packaging_capacity_unit <> 'L' OR packaging_capacity_value < 20");
+    }
 
     // This is migration/backfill logic only. All new and edited packaging
     // materials must provide an explicit role through the Admin form/API.
