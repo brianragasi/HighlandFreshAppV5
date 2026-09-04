@@ -58,6 +58,12 @@ $checks = [
         && str_contains($sources['products_api'], '$raw === 0')
         && !str_contains($sources['products_page'], '<option value="0">N/A (Not Applicable)</option>')
         && str_contains($sources['products_page'], 'function loadMilkTypeOptions()'),
+    'Recipe continuation opens the requested draft product without guessing its milk type' =>
+        str_contains(file_get_contents($root . '/html/admin/recipes.html'), "params.get('base_product_id')")
+        && str_contains(file_get_contents($root . '/html/admin/recipes.html'), 'openEditor(null, parseInt(requestedBaseProductId, 10))')
+        && !str_contains($sources['products_page'], 'inferMilkType(g.name, g.category)')
+        && str_contains($sources['products_page'], "|| 'Not set'")
+        && str_contains($sources['products_page'], 'Product details & milk type'),
 ];
 
 $failed = 0;

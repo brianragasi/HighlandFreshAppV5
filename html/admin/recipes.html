@@ -1430,7 +1430,7 @@
             syncStatusBadge();
         }
 
-        async function openEditor(id = null) {
+        async function openEditor(id = null, requestedBaseProductId = null) {
             resetEditorForm();
             if (!baseProducts.length) await loadBaseProducts();
             if (!availableIngredients.length) await loadIngredients();
@@ -1478,14 +1478,33 @@
                     showToast('Failed to load recipe', 'error');
                     return;
                 }
+            } else if (requestedBaseProductId) {
+                const requestedBase = baseProducts.find(
+                    bp => String(bp.id) === String(requestedBaseProductId)
+                );
+                if (!requestedBase) {
+                    showToast('The selected product could not be found. Return to Products and try again.', 'error');
+                    return;
+                }
+                populateBaseProductSelect(requestedBaseProductId);
+                onBaseProductSelect();
             }
 
             setEditorChrome(true);
             refreshMassBalanceHint();
             try {
                 const url = new URL(window.location.href);
-                if (id) url.searchParams.set('id', id);
-                else url.searchParams.delete('id');
+                if (id) {
+                    url.searchParams.set('id', id);
+                    url.searchParams.delete('base_product_id');
+                } else {
+                    url.searchParams.delete('id');
+                    if (requestedBaseProductId) {
+                        url.searchParams.set('base_product_id', requestedBaseProductId);
+                    } else {
+                        url.searchParams.delete('base_product_id');
+                    }
+                }
                 history.replaceState({}, '', url);
             } catch (_) { /* ignore */ }
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1496,6 +1515,7 @@
             try {
                 const url = new URL(window.location.href);
                 url.searchParams.delete('id');
+                url.searchParams.delete('base_product_id');
                 history.replaceState({}, '', url);
             } catch (_) { /* ignore */ }
             loadData();
@@ -1651,8 +1671,11 @@
 
             const params = new URLSearchParams(window.location.search);
             const openId = params.get('id');
+            const requestedBaseProductId = params.get('base_product_id');
             if (openId) {
-                openEditor(parseInt(openId, 10));
+                await openEditor(parseInt(openId, 10));
+            } else if (requestedBaseProductId) {
+                await openEditor(null, parseInt(requestedBaseProductId, 10));
             }
         });
     </script>

@@ -1665,7 +1665,7 @@
                 }).length;
                 const milkLabel = g.milk_type_name
                     || (g.skus.find(s => s.milk_type_name)?.milk_type_name)
-                    || inferMilkType(g.name, g.category);
+                    || 'Not set';
 
                 const skuRows = g.skus.length === 0
                     ? `<tr><td colspan="6" class="empty-skus">No SKUs — add a packaging size</td></tr>`
@@ -1821,20 +1821,6 @@
                 || productGroups.find(g => g.name === name);
         }
 
-        /** Manufacturing default milk base when API milk_type is blank. */
-        function inferMilkType(name, category) {
-            const n = String(name || '').toLowerCase();
-            const c = String(category || '').toLowerCase();
-            if (n.includes('kesong') || c === 'cheese') return 'Carabao Milk';
-            if (
-                n.includes('fresh milk') || n.includes('chocolate milk') || n.includes('fresh cream')
-                || n.includes('butter') || n.includes('yogurt') || n.includes('milkbar')
-                || n.includes('yippe') || c === 'pasteurized_milk' || c === 'flavored_milk'
-                || c === 'cream' || c === 'butter' || c === 'yogurt'
-            ) return 'Cow Milk';
-            return 'Cow Milk';
-        }
-
         function escapeJs(s) { return (s || '').replace(/'/g, "\\'").replace(/"/g, '\\"'); }
         function escapeHtml(s) {
             return String(s ?? '')
@@ -1847,8 +1833,12 @@
 
         function productSetupReadiness(group) {
             const configuredSkus = group?.skus || [];
+            const hasMilkType = group?.milk_type_id !== null
+                && group?.milk_type_id !== undefined
+                && String(group.milk_type_id) !== ''
+                && Number(group.milk_type_id) > 0;
             const steps = [
-                { key: 'details', label: 'Product details', complete: Boolean(group?.name && group?.category) },
+                { key: 'details', label: 'Product details & milk type', complete: Boolean(group?.name && group?.category && hasMilkType) },
                 { key: 'sizes', label: 'Package sizes', complete: configuredSkus.length > 0 },
                 { key: 'recipe', label: 'Active recipe', complete: Boolean(group?.has_active_recipe || Number(group?.recipe_count) > 0) },
                 { key: 'packaging', label: 'Packaging BOM', complete: configuredSkus.length > 0 && configuredSkus.every(sku => sku.packaging_bom_ready) }
@@ -1861,7 +1851,7 @@
             if (!target) return;
             const unfinished = productGroups.filter(group => !productSetupReadiness(group).ready);
             target.textContent = unfinished.length
-                ? `${unfinished.length} product${unfinished.length === 1 ? '' : 's'} still need a package size, active recipe, or complete packaging BOM.`
+                ? `${unfinished.length} product${unfinished.length === 1 ? '' : 's'} still need a milk type, package size, active recipe, or complete packaging BOM.`
                 : (productGroups.length ? 'Every listed product has all four setup requirements.' : 'Create the first product to begin.');
         }
 
@@ -1915,7 +1905,7 @@
             const group = productGroups.find(item => Number(item.base_product_id) === Number(baseProductId));
             const readiness = productSetupReadiness(group);
             if (!group || !readiness.ready) {
-                showToast('Complete product details, package sizes, recipe, and packaging first.', 'warning');
+                showToast('Complete product details and milk type, package sizes, recipe, and packaging first.', 'warning');
                 return;
             }
             try {
