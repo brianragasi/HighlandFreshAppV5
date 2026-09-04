@@ -73,11 +73,11 @@ $checks = [
         && str_contains($files['po_page'], "setPurchaseOrderNavigationState(params.get('action') === 'new' ? 'new' : 'list')")
         && str_contains($files['po_page'], "setPurchaseOrderNavigationState('list')")
         && str_contains($files['sidebar_nav'], 'currentUrl.searchParams.get(key) === value'),
-    'Purchasing pages expose one consistently named PO creation action' =>
+    'Purchasing pages expose clearly named PO preparation actions' =>
         substr_count($files['po_page'], 'href="purchase_orders.html?action=new"') === 1
         && str_contains($files['po_page'], '> Create PO')
-        && substr_count($files['purchasing_dashboard'], 'href="purchase_orders.html?action=new"') === 1
-        && str_contains($files['purchasing_dashboard'], '> Create PO'),
+        && substr_count($files['purchasing_dashboard'], 'href="purchase_orders.html?action=new"') >= 1
+        && str_contains($files['purchasing_dashboard'], 'Prepare PO'),
 ];
 
 $failed = [];

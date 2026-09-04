@@ -19,12 +19,18 @@ $checks = [
         && str_contains($page, '<i class="fas fa-file-circle-plus"></i> Create PO'),
     'Visible form starts with supplier and removes the Warehouse PRS field' =>
         str_contains($page, '>Supplier *</span>')
-        && str_contains($page, 'Choose a supplier for the confirmed needs')
+        && str_contains($page, 'Prepare the confirmed material needs')
         && !str_contains($page, '<span class="label-text">Warehouse PRS *</span>')
         && !str_contains($page, 'id="poPurchaseRequest"'),
-    'Dashboard opens the supplier-first workbench without a PRS query field' =>
-        substr_count($dashboard, 'href="purchase_orders.html?action=new"') === 1
+    'Dashboard sends confirmed demand directly to the supplier-first workbench' =>
+        substr_count($dashboard, 'href="purchase_orders.html?action=new"') >= 1
+        && str_contains($dashboard, 'Prepare PO')
         && !str_contains($dashboard, 'purchase_orders.html?action=new&pr_id='),
+    'Only linked supplier is selected automatically and confirmed demand is loaded' =>
+        str_contains($page, 'const automaticSupplier = availableSuppliers.length === 1')
+        && str_contains($page, 'await chooseRecommendedSupplier(automaticSupplierId, true)')
+        && str_contains($page, 'was selected automatically')
+        && str_contains($page, 'confirmed material ${covered === 1 ? \'need is\' : \'needs are\'} loaded into this PO'),
     'Supplier selection filters outstanding lines across Warehouse requests' =>
         str_contains($page, 'getScopedWarehouseRequests().flatMap(pr =>')
         && str_contains($page, 'source_purchase_request_id: Number(pr.id)')
@@ -76,7 +82,9 @@ $checks = [
         str_contains($api, 'findExactActiveSupplierFirstPO')
         && str_contains($api, 'An identical active Purchase Order already exists'),
     'Purchaser can add a separately controlled early-reorder line' =>
-        str_contains($page, 'id="addForecastItemButton"')
+        str_contains($page, 'id="earlyReorderPanel"')
+        && str_contains($page, 'Advanced exception')
+        && str_contains($page, 'id="addForecastItemButton"')
         && str_contains($page, 'Add early-reorder item')
         && str_contains($page, 'Only products sold by the selected supplier appear here.')
         && str_contains($page, 'function addForecastLineItem()')

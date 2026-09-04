@@ -29,8 +29,9 @@ $checks = [
     'closed and future-deferred items cannot be forced onto a PO' =>
         str_contains($poApi, "purchasing_decision'] === 'closed_without_order'")
         && str_contains($poApi, "purchasing_decision'] === 'deferred'"),
-    'Purchasing chooses one supplier while keeping exception decisions' =>
-        str_contains($poPage, 'Choose a supplier for the confirmed needs')
+    'Purchasing prepares one supplier PO while keeping exception decisions' =>
+        str_contains($poPage, 'Prepare the confirmed material needs')
+        && str_contains($poPage, 'const automaticSupplier = availableSuppliers.length === 1')
         && str_contains($poPage, 'Defer')
         && str_contains($poPage, 'Close without order')
         && str_contains($poPage, 'decideConfirmedLowStock')

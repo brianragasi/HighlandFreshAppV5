@@ -180,15 +180,19 @@
                         <section class="rounded-xl border border-primary/30 bg-primary/5 p-4" aria-labelledby="supplierFirstTitle">
                             <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,32rem)] gap-4 items-end">
                                 <div>
-                                    <h3 id="supplierFirstTitle" class="font-bold"><span class="badge badge-primary mr-2">Step 1</span>Choose a supplier for the confirmed needs</h3>
+                                    <h3 id="supplierFirstTitle" class="font-bold"><span class="badge badge-primary mr-2">Step 1</span>Prepare the confirmed material needs</h3>
                                     <p id="confirmedNeedsSummary" class="text-sm text-base-content/65 mt-2">Loading the materials confirmed by Warehouse...</p>
                                 </div>
-                                <div class="form-control">
+                                <div id="supplierSelectControl" class="form-control">
                                     <label class="label pt-0"><span class="label-text font-semibold">Supplier *</span></label>
                                     <select id="poSupplier" class="select select-bordered w-full" required onchange="onMainSupplierChange()">
                                         <option value="">Loading accredited suppliers...</option>
                                     </select>
                                 </div>
+                            </div>
+                            <div id="supplierAutoSelectionNotice" class="hidden alert alert-success py-3 mt-4" role="status">
+                                <i class="fas fa-wand-magic-sparkles"></i>
+                                <span id="supplierAutoSelectionText"></span>
                             </div>
                             <div id="supplierRecommendationList" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 mt-4"></div>
                         </section>
@@ -207,18 +211,18 @@
                             <i class="fas fa-truck-field"></i><span id="supplierCoverageText"></span>
                         </div>
 
-                        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 rounded-xl border border-info/25 bg-info/5 p-4 mt-4">
-                            <div>
-                                <h3 class="font-semibold"><i class="fas fa-chart-line text-info mr-2"></i>Early-reorder exception</h3>
-                                <p class="text-sm text-base-content/60 mt-1">Add a selected supplier's item before normal low stock only when the system recommends it or Purchasing can document the operational reason.</p>
-                            </div>
-                            <div class="flex items-center gap-2 shrink-0">
-                                <span id="lineSourceBadge" class="badge badge-primary badge-outline">Selected supplier items</span>
-                                <button type="button" id="addForecastItemButton" class="btn btn-outline btn-info btn-sm" onclick="addForecastLineItem()" disabled>
+                        <details id="earlyReorderPanel" class="rounded-xl border border-base-300 bg-base-200/35 mt-4">
+                            <summary class="cursor-pointer list-none p-3 flex items-center justify-between gap-3 text-sm">
+                                <span><i class="fas fa-ellipsis text-base-content/55 mr-2"></i><strong>Advanced exception</strong><span class="text-base-content/55"> — order something before it reaches low stock</span></span>
+                                <span id="lineSourceBadge" class="badge badge-ghost badge-sm">Optional</span>
+                            </summary>
+                            <div class="border-t border-base-300 p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                <p class="text-sm text-base-content/60">Use Early Reorder only when the system recommends it or Purchasing records a separate operational reason. Confirmed zero-stock demand is already loaded above.</p>
+                                <button type="button" id="addForecastItemButton" class="btn btn-outline btn-info btn-sm shrink-0" onclick="addForecastLineItem()" disabled>
                                     <i class="fas fa-plus"></i> Add early-reorder item
                                 </button>
                             </div>
-                        </div>
+                        </details>
 
                         <div id="excludedCurrentSupplierPanel" class="hidden rounded-xl border border-base-300 bg-base-200/40 p-4 mt-4">
                             <div class="flex items-center justify-between gap-3"><div><h3 class="font-semibold">Excluded from this PO</h3><p class="text-sm text-base-content/60">These confirmed items remain open and can be restored to the document.</p></div><span id="excludedCurrentSupplierCount" class="badge badge-outline"></span></div>
@@ -782,9 +786,12 @@
                 pausedStockDecisions = decisionResponse?.data || [];
                 const supplierResponse = await loadRelevantSuppliers();
                 availableSuppliers = rankRelevantSuppliers(supplierResponse?.data || []);
-                renderSupplierFirstOptions();
+                const automaticSupplierId = renderSupplierFirstOptions();
                 renderPurchasingDecisionPanel();
                 renderPausedStockDecisions();
+                if (automaticSupplierId) {
+                    await chooseRecommendedSupplier(automaticSupplierId, true);
+                }
             } catch (e) {
                 console.error('Failed to load supplier-first PO workbench:', e);
                 approvedPurchaseRequests = [];
@@ -806,8 +813,12 @@
             directSupplierIngredients = [];
             directSupplierMroItems = [];
             eligiblePrItems = [];
+            const automaticSupplier = availableSuppliers.length === 1
+                && supplierCoveredItems(availableSuppliers[0]).length > 0
+                ? availableSuppliers[0]
+                : null;
             select.value = '';
-            select.disabled = availableSuppliers.length === 0;
+            select.disabled = availableSuppliers.length === 0 || Boolean(automaticSupplier);
             applySupplierDeliveryDates();
             applySupplierPaymentTerms();
             renderSelectedSupplierDetails();
@@ -819,7 +830,20 @@
                 ).join('')
                 : '<option value="">No linked supplier for the confirmed needs</option>';
             document.getElementById('addForecastItemButton').disabled = true;
+            const selectControl = document.getElementById('supplierSelectControl');
+            const autoNotice = document.getElementById('supplierAutoSelectionNotice');
+            const autoText = document.getElementById('supplierAutoSelectionText');
+            const recommendationList = document.getElementById('supplierRecommendationList');
+            selectControl?.classList.toggle('hidden', Boolean(automaticSupplier));
+            autoNotice?.classList.toggle('hidden', !automaticSupplier);
+            recommendationList?.classList.toggle('hidden', Boolean(automaticSupplier));
+            if (autoText) {
+                autoText.textContent = automaticSupplier
+                    ? `${automaticSupplier.supplier_name} is the only approved supplier linked to this demand. It was selected automatically.`
+                    : '';
+            }
             renderSupplierRecommendations();
+            return automaticSupplier ? Number(automaticSupplier.id) : null;
         }
 
         function escapeHtml(value) {
@@ -918,12 +942,20 @@
             }).join('');
         }
 
-        async function chooseRecommendedSupplier(supplierId) {
+        async function chooseRecommendedSupplier(supplierId, automatic = false) {
             const select = document.getElementById('poSupplier');
             if (!select) return;
             select.value = String(supplierId);
             renderSupplierRecommendations();
             await onMainSupplierChange();
+            if (automatic) {
+                const supplier = availableSuppliers.find(item => Number(item.id) === Number(supplierId));
+                const covered = supplier ? supplierCoveredItems(supplier).length : 0;
+                const autoText = document.getElementById('supplierAutoSelectionText');
+                if (autoText && supplier) {
+                    autoText.textContent = `${supplier.supplier_name} was selected automatically. ${covered} confirmed material ${covered === 1 ? 'need is' : 'needs are'} loaded into this PO.`;
+                }
+            }
         }
 
         function matchingSuppliersForConfirmedItem(item) {
@@ -2357,11 +2389,15 @@
                 approvedPurchaseRequests = prsResponse?.data || [];
                 const supplierResponse = await loadRelevantSuppliers();
                 availableSuppliers = rankRelevantSuppliers(supplierResponse?.data || []);
-                renderSupplierFirstOptions();
+                const automaticSupplierId = renderSupplierFirstOptions();
                 const remainingCount = approvedPurchaseRequests.reduce((count, request) =>
                     count + (request.items || []).filter(item => Number(item.remaining_quantity || 0) > 0.0001).length, 0
                 );
-                renderDirectEntryPrompt('Choose the next supplier to continue purchasing open material demand.');
+                if (automaticSupplierId) {
+                    await chooseRecommendedSupplier(automaticSupplierId, true);
+                } else {
+                    renderDirectEntryPrompt('Choose the next supplier to continue purchasing open material demand.');
+                }
                 showPOContinuationNotice(
                     `${poNumber} submitted to the GM`,
                     remainingCount > 0
