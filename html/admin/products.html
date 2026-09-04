@@ -746,8 +746,8 @@
             <form method="dialog">
                 <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
-            <h3 class="font-bold text-lg mb-1">Edit Packaging SKU</h3>
-            <p class="text-sm text-base-content/60 mb-4">Update packaging and pricing. The formula/flavor comes from the base product.</p>
+            <h3 id="skuEditModalTitle" class="font-bold text-lg mb-1">Edit Packaging SKU</h3>
+            <p id="skuEditModalHelp" class="text-sm text-base-content/60 mb-4">Update packaging and pricing. The formula/flavor comes from the base product.</p>
 
             <form id="skuEditForm" onsubmit="saveSkuEdit(event)">
                 <input type="hidden" id="sku_edit_id" value="">
@@ -780,8 +780,8 @@
                         </select>
                     </div>
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Package Style</span></label>
-                        <select id="sku_edit_base_unit" class="select select-bordered" onchange="syncSkuEditContainerControl()">
+                        <label class="label"><span class="label-text">Package Style <span class="text-error">*</span></span></label>
+                        <select id="sku_edit_base_unit" class="select select-bordered" onchange="syncSkuEditContainerControl()" required>
                             <option value="">Choose package style</option>
                             <option value="bottle">Bottle + cap + label</option>
                             <option value="printed_pouch">Printed pouch / sachet</option>
@@ -789,8 +789,6 @@
                             <option value="tub">Cup / tub + lid + label</option>
                             <option value="wrapped_block">Wrapped bar / block</option>
                             <option value="bulk_container">Bulk container</option>
-                            <option value="piece">Loose piece (legacy)</option>
-                            <option value="pack">Pack (legacy)</option>
                             <option value="jar">Jar + lid + label</option>
                         </select>
                     </div>
@@ -1032,6 +1030,53 @@
 
         function requiresPrimaryPackage(value) {
             return PRIMARY_PACKAGE_STYLES.has(normalizePackageStyle(value));
+        }
+
+        function skuHasConfiguredPackage(sku) {
+            return Boolean(sku
+                && requiresPrimaryPackage(sku.base_unit)
+                && Number(sku.primary_container_id || 0) > 0);
+        }
+
+        function packagingBomAdditionalRoles(value) {
+            return ({
+                bottle: ['closure', 'label', 'secondary', 'other'],
+                printed_pouch: ['secondary', 'other'],
+                plain_pouch: ['label', 'secondary', 'other'],
+                tub: ['closure', 'label', 'secondary', 'other'],
+                jar: ['closure', 'label', 'secondary', 'other'],
+                wrapped_block: ['label', 'secondary', 'other'],
+                bulk_container: ['label', 'secondary', 'other']
+            })[normalizePackageStyle(value)] || [];
+        }
+
+        function filterPackagingBomMaterials(materials, sku, currentItems = []) {
+            const primaryId = Number(sku?.primary_container_id || 0);
+            const retainedIds = new Set((currentItems || []).map(item => Number(item.ingredient_id || 0)));
+            const allowedRoles = packagingBomAdditionalRoles(sku?.base_unit);
+            const skuSize = normalizeSkuSize(sku?.unit_size, sku?.unit_measure);
+            return (materials || []).filter(material => {
+                const id = Number(material.id || 0);
+                if (id === primaryId || retainedIds.has(id)) return true;
+                const role = String(material.packaging_role || '').toLowerCase();
+                if (role === 'container' || !allowedRoles.includes(role)) return false;
+                if (role !== 'label') return true;
+                const materialSize = normalizeSkuSize(
+                    material.packaging_capacity_value,
+                    material.packaging_capacity_unit
+                );
+                return !materialSize || !skuSize
+                    || (materialSize.family === skuSize.family
+                        && Math.abs(materialSize.value - skuSize.value) < 0.01);
+            });
+        }
+
+        function packagingBomNextMissingRole() {
+            const required = PACKAGE_STYLE_REQUIREMENTS[packagingBomPackageStyle] || {};
+            const selectedRoles = Array.from(document.querySelectorAll('#packagingBomRows [data-pack-bom="ingredient"]'))
+                .map(select => select.options?.[select.selectedIndex]?.dataset?.role || '')
+                .filter(Boolean);
+            return Object.keys(required).find(role => !selectedRoles.includes(role)) || '';
         }
 
         function packageStyleLabel(value) {
@@ -1726,6 +1771,14 @@
                         const safeSize = escapeJs(sizeText);
                         const stock = parseFloat(s.current_stock);
                         const stockDisp = Number.isFinite(stock) ? stock : '—';
+                        const packageConfigured = skuHasConfiguredPackage(s);
+                        const packageAction = packageConfigured
+                            ? `<button type="button" class="btn btn-ghost btn-xs" title="Review compatible packaging components" onclick="event.stopPropagation(); openPackagingBom(${s.id})">
+                                    <i class="fas fa-boxes-stacked"></i><span>${s.packaging_bom_ready ? 'Review packaging' : 'Complete packaging'}</span>
+                               </button>`
+                            : `<button type="button" class="btn btn-warning btn-xs" title="Choose the real package before building its BOM" onclick="event.stopPropagation(); editSku(${s.id})">
+                                    <i class="fas fa-box-open"></i><span>Set package</span>
+                               </button>`;
                         return `
                         <tr>
                             <td>
@@ -1747,12 +1800,8 @@
                             </td>
                             <td class="text-right">
                                 <div class="flex flex-wrap justify-end gap-1">
-                                    <button type="button" class="btn btn-ghost btn-xs" title="Configure packaging" onclick="event.stopPropagation(); openPackagingBom(${s.id})">
-                                        <i class="fas fa-boxes-stacked"></i><span>${s.packaging_bom_ready ? 'Review packaging' : 'Add packaging'}</span>
-                                    </button>
-                                    <button type="button" class="btn btn-ghost btn-xs" title="Edit SKU" onclick="event.stopPropagation(); editSku(${s.id})">
-                                        <i class="fas fa-pen"></i><span>Edit size</span>
-                                    </button>
+                                    ${packageAction}
+                                    ${packageConfigured ? `<button type="button" class="btn btn-ghost btn-xs" title="Edit SKU package or price" onclick="event.stopPropagation(); editSku(${s.id})"><i class="fas fa-pen"></i><span>Edit SKU</span></button>` : ''}
                                     <button type="button" class="btn btn-ghost btn-xs text-error" title="Archive SKU"
                                         onclick="event.stopPropagation(); deleteSku(${s.id}, '${safeName} ${safeSize}')">
                                         <i class="fas fa-box-archive"></i><span>Archive</span>
@@ -1940,7 +1989,16 @@
             const safeCategory = escapeJs(group.category);
             const safeKey = escapeJs(group.key || `id:${group.base_product_id}`);
             const stepButton = (step, action, label) => `<article class="rounded-xl border ${step.complete ? 'border-success/30 bg-success/5' : 'border-warning/40 bg-warning/5'} p-3 flex items-center justify-between gap-3"><div class="flex items-center gap-3"><span class="w-8 h-8 rounded-full flex items-center justify-center ${step.complete ? 'bg-success text-success-content' : 'bg-warning text-warning-content'}"><i class="fas ${step.complete ? 'fa-check' : 'fa-arrow-right'}"></i></span><div><p class="font-semibold text-sm">${escapeHtml(step.label)}</p><p class="text-xs text-base-content/60">${step.complete ? 'Complete' : 'Needs attention'}</p></div></div><button type="button" class="btn btn-sm ${step.complete ? 'btn-ghost' : 'btn-primary'}" onclick="${action}">${label}</button></article>`;
-            const packagingActions = readiness.activeSkus.map(sku => `<button type="button" class="btn btn-xs ${sku.packaging_bom_ready ? 'btn-ghost' : 'btn-warning'}" onclick="document.getElementById('productSetupModal').close(); openPackagingBom(${Number(sku.id)})">${escapeHtml(formatSize(sku) || sku.product_code)} — ${sku.packaging_bom_ready ? 'Review packaging' : 'Add packaging'}</button>`).join(' ');
+            const packagingActions = readiness.activeSkus.map(sku => {
+                const configured = skuHasConfiguredPackage(sku);
+                const action = configured
+                    ? `openPackagingBom(${Number(sku.id)})`
+                    : `editSku(${Number(sku.id)})`;
+                const label = configured
+                    ? (sku.packaging_bom_ready ? 'Review packaging' : 'Complete packaging')
+                    : 'Set package first';
+                return `<button type="button" class="btn btn-xs ${sku.packaging_bom_ready ? 'btn-ghost' : 'btn-warning'}" onclick="document.getElementById('productSetupModal').close(); ${action}">${escapeHtml(formatSize(sku) || sku.product_code)} — ${label}</button>`;
+            }).join(' ');
             body.innerHTML = `<div class="alert ${readiness.ready ? 'alert-success' : 'alert-warning'} mb-3"><i class="fas ${readiness.ready ? 'fa-circle-check' : 'fa-list-check'}"></i><div><p class="font-bold">${readiness.completed} of 4 setup steps complete</p><p class="text-xs">${readiness.ready ? 'Ready for Production. Review and activate the product.' : 'Choose the next incomplete step below.'}</p></div></div>
                 <div class="space-y-2">
                     ${stepButton(readiness.steps[0], `document.getElementById('productSetupModal').close(); editBaseProduct('${safeName}', '${safeCategory}', '${safeKey}')`, 'Edit details')}
@@ -2258,7 +2316,7 @@
                 const priceInput = row.querySelector('.sku-selling-price, [name^="sku_selling_price_"]');
                 if (!sizeInput || sizeInput.disabled) return;
 
-                const baseUnit = row.querySelector('[name^="sku_base_unit_"]')?.value || 'piece';
+                const baseUnit = row.querySelector('[name^="sku_base_unit_"]')?.value || '';
                 const containerSelect = row.querySelector('.sku-primary-container');
                 if (!baseUnit) {
                     ok = false;
@@ -2487,8 +2545,6 @@
                             <option value="tub">Cup / tub + lid + label</option>
                             <option value="wrapped_block">Wrapped bar / block</option>
                             <option value="bulk_container">Bulk container</option>
-                            <option value="piece">Loose piece (legacy)</option>
-                            <option value="pack">Pack (legacy)</option>
                             <option value="jar">Jar + lid + label</option>
                         </select>
                     </div>
@@ -2647,7 +2703,7 @@
                 // Re-enable temporarily so disabled context fields aren't skipped if needed later
                 const unitSize = parseFloat(row.querySelector(`[name="sku_unit_size_${idx}"]`)?.value);
                 const unitMeasure = row.querySelector(`[name="sku_unit_measure_${idx}"]`)?.value || 'ml';
-                const baseUnit = row.querySelector(`[name="sku_base_unit_${idx}"]`)?.value || 'piece';
+                const baseUnit = row.querySelector(`[name="sku_base_unit_${idx}"]`)?.value || '';
                 const primaryContainerId = parseInt(row.querySelector(`[name="sku_primary_container_id_${idx}"]`)?.value || '0', 10);
                 const sellingPrice = parseFloat(row.querySelector(`[name="sku_selling_price_${idx}"]`)?.value);
                 if (!Number.isFinite(unitSize) || unitSize <= 0) return;
@@ -2944,6 +3000,13 @@
                 if (response.success) {
                     // FIX: API returns { data: { product: {...} } }
                     const data = response.data?.product || response.data;
+                    const needsPackageSetup = !skuHasConfiguredPackage(data);
+                    document.getElementById('skuEditModalTitle').textContent = needsPackageSetup
+                        ? 'Set SKU Package'
+                        : 'Edit Packaging SKU';
+                    document.getElementById('skuEditModalHelp').textContent = needsPackageSetup
+                        ? 'Choose the real package style first, then select the matching physical package. Its configured capacity controls the SKU size.'
+                        : 'Update the package, box quantity, or price. The formula/flavor stays on the base product.';
                     document.getElementById('sku_edit_id').value = data.id;
                     document.getElementById('sku_edit_unit_size').value = data.unit_size || '';
                     document.getElementById('sku_edit_unit_measure').value = data.unit_measure || 'ml';
@@ -3030,11 +3093,29 @@
                 const response = await packagingBomRequest(productId);
                 const data = response.data || {};
                 const sku = data.sku || {};
-                packagingBomMaterials = data.available_materials || [];
                 packagingBomRowCounter = 0;
                 packagingBomPackageStyle = normalizePackageStyle(sku.base_unit || '');
                 packagingBomRequiresBottleSet = Boolean(PACKAGE_STYLE_REQUIREMENTS[packagingBomPackageStyle]);
                 packagingBomPrimaryContainerId = Number(sku.primary_container_id || 0);
+                if (!skuHasConfiguredPackage(sku)) {
+                    showToast('Choose the SKU package style and its actual primary package first.', 'info', 7000);
+                    await editSku(productId);
+                    return;
+                }
+                const currentItems = data.items || [];
+                const hasPrimaryLine = currentItems.some(item =>
+                    Number(item.ingredient_id || 0) === packagingBomPrimaryContainerId
+                );
+                if (!hasPrimaryLine) {
+                    showToast('The primary package link needs to be refreshed. Select it again and save the SKU.', 'warning', 7000);
+                    await editSku(productId);
+                    return;
+                }
+                packagingBomMaterials = filterPackagingBomMaterials(
+                    data.available_materials || [],
+                    sku,
+                    currentItems
+                );
                 document.getElementById('packaging_bom_product_id').value = productId;
                 document.getElementById('packagingBomContext').textContent =
                     `${sku.product_code || 'SKU'} — ${sku.base_product_name || sku.product_name || 'Product'} · ${sku.unit_size || ''} ${sku.unit_measure || ''}`;
@@ -3055,8 +3136,9 @@
                         `${suggestion.set_name} matches ${sku.unit_size} ${sku.unit_measure}. Applying it replaces this SKU's current packaging lines; you can edit them before saving.`;
                 }
 
-                (data.items || []).forEach(item => addPackagingBomRow(item));
-                if (!(data.items || []).length) addPackagingBomRow();
+                currentItems.forEach(item => addPackagingBomRow(item));
+                const nextRequiredRole = packagingBomNextMissingRole();
+                if (nextRequiredRole) addPackagingBomRow({}, nextRequiredRole);
                 refreshPackagingBomEmptyState();
                 updatePackagingBomReadinessMessage();
                 document.getElementById('packagingBomModal').showModal();
@@ -3088,18 +3170,30 @@
             }
         }
 
-        function addPackagingBomRow(item = {}) {
+        function addPackagingBomRow(item = {}, requestedRole = '') {
             const tbody = document.getElementById('packagingBomRows');
             if (!tbody) return;
             const selectedIds = new Set(Array.from(tbody.querySelectorAll('[data-pack-bom="ingredient"]'))
                 .map(select => select.value)
                 .filter(Boolean));
-            if (!item.ingredient_id && packagingBomMaterials.length > 0 && selectedIds.size >= packagingBomMaterials.length) {
-                showToast('Every available packaging material is already on the list. Update an existing row instead.', 'info');
+            const requiredRole = item.ingredient_id ? '' : (requestedRole || packagingBomNextMissingRole());
+            const isPrimaryContainer = packagingBomPrimaryContainerId > 0
+                && Number(item.ingredient_id || 0) === packagingBomPrimaryContainerId;
+            const rowMaterials = packagingBomMaterials.filter(material => {
+                const id = Number(material.id || 0);
+                if (isPrimaryContainer) return id === packagingBomPrimaryContainerId;
+                if (id === packagingBomPrimaryContainerId) return false;
+                return !requiredRole || String(material.packaging_role || '') === requiredRole;
+            });
+            const availableForNewRow = rowMaterials.filter(material => !selectedIds.has(String(material.id)));
+            if (!item.ingredient_id && !availableForNewRow.length) {
+                const component = (PACKAGE_STYLE_REQUIREMENTS[packagingBomPackageStyle] || {})[requiredRole]
+                    || 'compatible optional packaging';
+                showToast(`No unused ${component} material is available. Create it in Packaging Materials first.`, 'info', 7000);
                 return;
             }
             const rowId = ++packagingBomRowCounter;
-            const options = packagingBomMaterials.map(material => {
+            const options = rowMaterials.map(material => {
                 const selected = String(material.id) === String(item.ingredient_id || '') ? 'selected' : '';
                 const role = material.packaging_role || '';
                 return `<option value="${material.id}" data-unit="${escapeAttr(material.unit_of_measure || 'piece')}" data-role="${escapeAttr(role)}" ${selected}>[${escapeHtml(packagingRoleLabel(role))}] ${escapeHtml(material.ingredient_name)} (${escapeHtml(material.ingredient_code || '—')})</option>`;
@@ -3108,14 +3202,14 @@
             const initialCoverage = Number(item.quantity_per_unit) > 0
                 ? formatProductNumber(1 / Number(item.quantity_per_unit), 3)
                 : '';
-            const isPrimaryContainer = packagingBomPrimaryContainerId > 0
-                && Number(item.ingredient_id || 0) === packagingBomPrimaryContainerId;
+            const requestedLabel = (PACKAGE_STYLE_REQUIREMENTS[packagingBomPackageStyle] || {})[requiredRole]
+                || 'compatible optional packaging';
             const tr = document.createElement('tr');
             tr.id = `packagingBomRow_${rowId}`;
             tr.innerHTML = `
                 <td>
                     <select class="select select-bordered select-sm w-full ${isPrimaryContainer ? 'bg-base-200' : ''}" data-pack-bom="ingredient" onchange="onPackagingBomMaterialChange(this)" required ${isPrimaryContainer ? 'disabled' : ''}>
-                        <option value="">Select material…</option>${options}
+                        <option value="">Select ${escapeHtml(requestedLabel)}…</option>${options}
                     </select>
                 </td>
                 <td class="min-w-[18rem]">
@@ -3230,11 +3324,21 @@
             });
             const addButton = document.getElementById('addPackagingBomRowBtn');
             if (addButton) {
-                const noChoicesRemain = packagingBomMaterials.length > 0 && selectedIds.size >= packagingBomMaterials.length;
-                addButton.disabled = noChoicesRemain;
-                addButton.title = noChoicesRemain
-                    ? 'Every available packaging material is already listed'
-                    : 'Add packaging material';
+                const blankRowExists = selects.some(select => !select.value);
+                const nextRole = packagingBomNextMissingRole();
+                const candidates = packagingBomMaterials.filter(material => {
+                    const id = String(material.id || '');
+                    if (!id || Number(id) === packagingBomPrimaryContainerId || selectedIds.has(id)) return false;
+                    return !nextRole || String(material.packaging_role || '') === nextRole;
+                });
+                const component = (PACKAGE_STYLE_REQUIREMENTS[packagingBomPackageStyle] || {})[nextRole] || '';
+                addButton.disabled = blankRowExists || candidates.length === 0;
+                addButton.innerHTML = `<i class="fas fa-plus text-primary"></i>${nextRole ? `Add ${escapeHtml(component)}` : 'Add optional packaging'}`;
+                addButton.title = blankRowExists
+                    ? 'Choose the material on the unfinished row first'
+                    : (candidates.length === 0
+                        ? `No unused ${component || 'compatible optional packaging'} material is available`
+                        : (nextRole ? `Add the required ${component}` : 'Add an optional carton or secondary component'));
             }
         }
 

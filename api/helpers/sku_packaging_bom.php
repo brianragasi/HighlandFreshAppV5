@@ -310,6 +310,7 @@ function getAvailablePackagingMaterials(PDO $db)
     $stmt = $db->query("
         SELECT i.id, i.ingredient_code, i.ingredient_name, i.unit_of_measure,
                i.current_stock, i.available_stock, i.is_active, i.packaging_role,
+               i.packaging_form,
                i.packaging_capacity_value, i.packaging_capacity_unit,
                ic.category_name, ic.category_code
         FROM ingredients i
@@ -331,7 +332,7 @@ function getSkuPackagingBom(PDO $db, $productId)
     $stmt = $db->prepare("
         SELECT spbi.id, spbi.product_id, spbi.ingredient_id,
                spbi.quantity_per_unit, spbi.waste_percent, spbi.unit,
-               i.ingredient_code, i.ingredient_name, i.packaging_role,
+               i.ingredient_code, i.ingredient_name, i.packaging_role, i.packaging_form,
                i.packaging_capacity_value, i.packaging_capacity_unit, i.current_stock,
                i.available_stock, ic.category_name
         FROM sku_packaging_bom_items spbi

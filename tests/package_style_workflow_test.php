@@ -22,7 +22,16 @@ $checks = [
     'Product form exposes explicit real-world package styles' =>
         str_contains($sources['products'], '<option value="printed_pouch">Printed pouch / sachet</option>')
         && str_contains($sources['products'], '<option value="plain_pouch">Plain pouch + label</option>')
-        && str_contains($sources['products'], '<option value="wrapped_block">Wrapped bar / block</option>'),
+        && str_contains($sources['products'], '<option value="wrapped_block">Wrapped bar / block</option>')
+        && !str_contains($sources['products'], '<option value="piece">Loose piece (legacy)</option>'),
+    'Legacy SKUs must choose a real package before opening the BOM' =>
+        str_contains($sources['products'], 'skuHasConfiguredPackage')
+        && str_contains($sources['products'], 'Set package first')
+        && str_contains($sources['product_api'], 'Choose the SKU package style and actual primary package'),
+    'BOM choices are narrowed to the next compatible component' =>
+        str_contains($sources['products'], 'filterPackagingBomMaterials')
+        && str_contains($sources['products'], 'packagingBomNextMissingRole')
+        && str_contains($sources['products'], 'No unused ${component} material is available'),
     'Blank BOM row cannot be mistaken for the primary package' =>
         str_contains($sources['products'], 'packagingBomPrimaryContainerId > 0')
         && str_contains($sources['products'], 'Number(item.ingredient_id || 0) === packagingBomPrimaryContainerId'),

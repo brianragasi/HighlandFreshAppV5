@@ -609,6 +609,12 @@ function saveProductPackagingBom(PDO $conn, $id) {
         return;
     }
 
+    if (!skuPackageStyleRequiresPrimaryMaterial($sku['base_unit'] ?? '')) {
+        sendValidationError([
+            'base_unit' => 'Choose the SKU package style and actual primary package before editing its packaging BOM.'
+        ]);
+    }
+
     if (skuPackageStyleRequiresPrimaryMaterial($sku['base_unit'] ?? '')) {
         $primaryContainerId = (int) ($sku['primary_container_id'] ?? 0);
         $submittedIds = array_values(array_unique(array_filter(array_map(
@@ -690,6 +696,14 @@ function applyPrimaryContainerToSkuPayload(PDO $conn, array &$data, array $exist
         $data['base_unit'] ?? ($existing['base_unit'] ?? 'piece')
     )));
     $baseUnit = normalizeSkuPackageStyle($baseUnit);
+    $baseProductId = (int) (
+        $data['base_product_id'] ?? ($existing['base_product_id'] ?? 0)
+    );
+    if ($baseProductId > 0 && !skuPackageStyleRequiresPrimaryMaterial($baseUnit)) {
+        sendValidationError([
+            'base_unit' => 'Choose the real package style and primary package before saving this sellable SKU.'
+        ]);
+    }
     if (!skuPackageStyleRequiresPrimaryMaterial($baseUnit)) {
         $data['primary_container_id'] = null;
         return null;
