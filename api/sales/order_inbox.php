@@ -25,6 +25,24 @@ try {
     $db = Database::getInstance()->getConnection();
     hfEnsureManualCustomerOrderSchema($db);
 
+    if ($requestMethod === 'GET' && $action === 'schema_diagnostics') {
+        if (($currentUser['role'] ?? '') !== 'general_manager') {
+            Response::error('Only the General Manager can view database diagnostics.', 403);
+        }
+        $tables = [];
+        foreach (['customer_order_imports', 'customer_order_import_lines'] as $table) {
+            $columns = $db->query("SHOW COLUMNS FROM {$table}")->fetchAll(PDO::FETCH_ASSOC);
+            $tables[$table] = array_map(static fn(array $column): array => [
+                'field' => $column['Field'],
+                'type' => $column['Type'],
+                'nullable' => $column['Null'],
+                'default' => $column['Default'],
+                'extra' => $column['Extra'],
+            ], $columns);
+        }
+        Response::success(['tables' => $tables], 'Customer order inbox schema diagnostics');
+    }
+
     if ($requestMethod === 'GET') {
         handleCustomerOrderInboxGet($db, $action);
     } elseif ($requestMethod === 'POST') {
